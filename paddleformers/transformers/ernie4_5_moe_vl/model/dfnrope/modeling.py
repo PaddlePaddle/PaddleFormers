@@ -300,15 +300,15 @@ class DFNRopeVisionBlock(nn.Layer):
             attn_implementation (str, optional): attention implementation. Defaults to "sdpa".
         """
         super().__init__()
-        self.norm1 = nn.LayerNorm(config.hidden_size, epsilon=1e-6)
-        self.norm2 = nn.LayerNorm(config.hidden_size, epsilon=1e-6)
-        mlp_hidden_dim = int(config.embed_dim * config.mlp_ratio)
+        self.norm1 = nn.LayerNorm(config.vision_config.hidden_size, epsilon=1e-6)
+        self.norm2 = nn.LayerNorm(config.vision_config.hidden_size, epsilon=1e-6)
+        mlp_hidden_dim = int(config.vision_config.embed_dim * config.vision_config.mlp_ratio)
 
-        self.attn = VisionFlashAttention2(config.hidden_size, num_heads=config.num_heads)
+        self.attn = VisionFlashAttention2(config.vision_config.hidden_size, num_heads=config.vision_config.num_heads)
         self.mlp = VisionMlp(
-            dim=config.hidden_size,
+            dim=config.vision_config.hidden_size,
             hidden_dim=mlp_hidden_dim,
-            hidden_act=config.hidden_act,
+            hidden_act=config.vision_config.hidden_act,
         )
         self.config = config
 
@@ -343,25 +343,25 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
             config (dict): model configuration
         """
         super().__init__(config)
-        self.spatial_merge_size = config.spatial_merge_size
+        self.spatial_merge_size = config.vision_config.spatial_merge_size
 
         self.patch_embed = PatchEmbed(
-            patch_size=config.patch_size,
-            in_channels=config.in_channels,
-            embed_dim=config.hidden_size,
+            patch_size=config.vision_config.patch_size,
+            in_channels=config.vision_config.in_channels,
+            embed_dim=config.vision_config.hidden_size,
         )
 
-        self.attn_sep = getattr(config, "attn_sep", False) and config.tensor_parallel_degree > 1
+        self.attn_sep = getattr(config.vision_config, "attn_sep", False) and config.tensor_model_parallel_size > 1
 
-        head_dim = config.hidden_size // config.num_heads
+        head_dim = config.vision_config.hidden_size // config.vision_config.num_heads
         self.rotary_pos_emb = VisionRotaryEmbedding(head_dim // 2)
 
-        self.blocks = nn.LayerList([DFNRopeVisionBlock(config) for _ in range(config.depth)])
+        self.blocks = nn.LayerList([DFNRopeVisionBlock(config) for _ in range(config.vision_config.depth)])
 
         assert (
-            config.hidden_size == config.hidden_size
-        ), "in DFNRope, vit's config.hidden must be equal to config.hidden_size"
-        self.ln = nn.LayerNorm(config.hidden_size, epsilon=1e-6)
+            config.vision_config.hidden_size == config.pixel_hidden_size
+        ), "in DFNRope, vit's config.hidden must be equal to config.pixel_hidden_size"
+        self.ln = nn.LayerNorm(config.vision_config.hidden_size, epsilon=1e-6)
 
     def get_dtype(self) -> paddle.dtype:
         """
@@ -449,11 +449,13 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
         startend_row_indices_ute = paddle.repeat_interleave(cu_seqlens_rm_last, repeats).reshape([1, 1, -1, 1])
         startend_row_indices = paddle.concat([startend_row_indices_lts, startend_row_indices_ute], axis=-1)
 
-        attn_sep = getattr(self.config, "attn_sep", False)
-        vit_num_recompute_layers = getattr(self.config, "vit_num_recompute_layers", self.config.depth)
+        attn_sep = getattr(self.config.vision_config, "attn_sep", False)
+        vit_num_recompute_layers = getattr(
+            self.config.vision_config, "vit_num_recompute_layers", self.config.vision_config.depth
+        )
 
         for idx, blk in enumerate(self.blocks):
-            if self.config.recompute and self.training and idx < vit_num_recompute_layers:
+            if self.config.recompute_granularity is not None and self.training and idx < vit_num_recompute_layers:
                 hidden_states = recompute(blk, hidden_states, startend_row_indices, rotary_pos_emb, attn_sep)
             else:
                 hidden_states = blk(
@@ -468,7 +470,7 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
 
     def extract_feature(self, images, grid_thw):
         """extract feature"""
-        if self.config.tensor_parallel_degree <= 1:
+        if self.config.tensor_model_parallel_size <= 1:
             return self._extract_feature(images, grid_thw)
         else:
             grid_thw = grid_thw.clone()
@@ -495,7 +497,7 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
                 image_features = self._extract_feature(images, grid_thw, num_pad=num_pad)
             else:
                 image_features = paddle.empty(
-                    [0, self.config.hidden_size],
+                    [0, self.config.vision_config.hidden_size],
                     dtype=self.patch_embed.proj.weight.dtype,
                 )
                 image_features.stop_gradient = self.patch_embed.proj.weight.stop_gradient

@@ -21,18 +21,40 @@ import_structure = {
     "configuration": [
         "Ernie4_5_VLConfig",
     ],
+    "image_processor": [
+        "Ernie4_5_VLImageProcessor",
+    ],
+    "processor": [
+        "Ernie4_5_VLProcessor",
+    ],
     "modeling": [
         "Ernie4_5_VLMoeForConditionalGenerationModel",
         "Ernie4_5_VLMoeForConditionalGenerationPipe",
+    ],
+    "vision_process": [
+        "read_frames_decord",
+        "read_video_decord",
+        "RAW_IMAGE_DIR",
+        "get_downloadable",
+        "render_frame_timestamp",
     ],
     "model": [],
 }
 
 if TYPE_CHECKING:
     from .configuration import *
+    from .image_processor import Ernie4_5_VLImageProcessor
     from .model import *
     from .modeling import *
+    from .processor import Ernie4_5_VLProcessor
     from .tokenizer import Ernie4_5_VLTokenizer
+    from .vision_process import (
+        RAW_IMAGE_DIR,
+        get_downloadable,
+        read_frames_decord,
+        read_video_decord,
+        render_frame_timestamp,
+    )
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

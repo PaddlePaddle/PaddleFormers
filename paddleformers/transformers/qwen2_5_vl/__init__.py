@@ -19,10 +19,19 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
+    "configuration": ["Qwen2_5_VLConfig", "Qwen2_5_VLTextConfig"],
+    "modeling": [
+        "Qwen2_5_VLForConditionalGeneration",
+        "Qwen2_5_VLModel",
+        "Qwen2_5_VLPretrainedModel",
+        "Qwen2_5_VLTextModel",
+    ],
     "processor": ["Qwen2_5_VLProcessor"],
 }
 
 if TYPE_CHECKING:
+    from .configuration import *
+    from .modeling import *
     from .processor import *
 
 else:

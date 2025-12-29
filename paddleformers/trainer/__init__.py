@@ -31,6 +31,7 @@ import_structure = {
         "nested_truncate",
         "should_skip_data",
         "set_seed",
+        "set_random_seed",
         "unwrap_model",
         "distributed_isfile",
         "split_parallel_config",

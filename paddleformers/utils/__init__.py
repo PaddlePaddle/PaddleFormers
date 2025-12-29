@@ -50,6 +50,7 @@ import_structure = {
         "is_g2p_en_available",
         "is_datasets_available",
         "is_transformers_available",
+        "is_paddlefleet_available",
         "dynamic_graph_pybind_context",
         "custom_import",
         "direct_paddleformers_import",
@@ -90,7 +91,9 @@ import_structure = {
         "get_use_casual_mask",
         "get_triangle_upper_mask",
     ],
-    "tools": ["device_guard"],
+    "tools": [
+        "device_guard",
+    ],
     "downloader": ["get_weights_path_from_url"],
     "type_validators": [
         "positive_any_number",

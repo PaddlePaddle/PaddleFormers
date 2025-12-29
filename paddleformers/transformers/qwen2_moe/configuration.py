@@ -15,6 +15,7 @@
 """ Qwen2Moe model configuration"""
 
 from ..configuration_utils import PretrainedConfig
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 
 class Qwen2MoeConfig(PretrainedConfig):
@@ -200,7 +201,9 @@ class Qwen2MoeConfig(PretrainedConfig):
         # BC: if there is a 'type' field, move it to 'rope_type'.
         if self.rope_scaling is not None and "type" in self.rope_scaling:
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
-        # rope_config_validation(self)
+        self.rope_parameters = self.rope_scaling
+        standardize_rope_params(self, rope_theta=rope_theta)
+        rope_config_validation(self)
 
         # MoE arguments
         self.decoder_sparse_step = decoder_sparse_step

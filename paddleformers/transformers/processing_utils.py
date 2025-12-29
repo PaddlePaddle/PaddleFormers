@@ -128,6 +128,10 @@ class VideosKwargs(TypedDict, total=False):
             If set, will return tensors of a particular framework. Acceptable values are:
             - `'pd'`: Return Paddle `paddle.Tensor` objects.
             - `'np'`: Return NumPy `np.ndarray` objects.
+        video_backend (`str`, *optional*):
+            The video_backend to be used for video loading. Acceptable values are:
+            - `'decord'`: Use `decord` library.
+            - `'paddlecodec'`: Use `paddlecodec` library.
     """
 
     do_convert_rgb: Optional[bool]
@@ -152,6 +156,7 @@ class VideosKwargs(TypedDict, total=False):
     num_frames: Annotated[Optional[int], positive_int()]
     return_metadata: Optional[bool]
     return_tensors: Annotated[Optional[Union[str, TensorType]], tensor_type_validator()]
+    video_backend: Optional[str]
 
 
 class ProcessingKwargs(ProcessingKwargs_hf):
@@ -648,6 +653,15 @@ class PaddleProcessorMixin:
                 elif custom_class is not None and custom_class.__name__ == module_name:
                     return custom_class
         raise ValueError(f"Could not find module {module_name} in `paddleformers`.")
+
+    def batch_decode(self, *args, **kwargs):
+        """
+        This method forwards all its arguments to PreTrainedTokenizer's [`~PreTrainedTokenizer.batch_decode`]. Please
+        refer to the docstring of this method for more information.
+        """
+        if not hasattr(self, "tokenizer"):
+            raise ValueError(f"Cannot batch decode text: {self.__class__.__name__} has no tokenizer.")
+        return self.tokenizer.batch_decode(*args, **kwargs)
 
     def decode(self, *args, **kwargs):
         """

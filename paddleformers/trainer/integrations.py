@@ -17,13 +17,12 @@
 #  https://github.com/huggingface/transformers/blob/main/src/transformers/integrations.py
 
 import importlib
-import json
 import numbers
 import os
 import tempfile
 from pathlib import Path
 
-from ..peft import LoRAModel, PrefixModelForCausalLM, VeRAModel
+from ..peft import LoRAModel
 from ..transformers import PretrainedModel
 from ..utils.log import logger
 from .trainer_callback import TrainerCallback
@@ -122,18 +121,14 @@ class VisualDLCallback(TrainerCallback):
             self.vdl_writer.add_text("args", args.to_json_string())
             if "model" in kwargs and logger.logger.level < 20:
                 model = kwargs["model"]
-                if (
-                    isinstance(model, LoRAModel)
-                    or isinstance(model, PrefixModelForCausalLM)
-                    or isinstance(model, VeRAModel)
-                ):
+                if isinstance(model, LoRAModel):
                     model = kwargs["model"].model
                 if isinstance(model, PretrainedModel) and model.constructed_from_pretrained_config():
                     model.config.architectures = [model.__class__.__name__]
                     self.vdl_writer.add_text("model_config", str(model.config))
-                elif hasattr(model, "init_config") and model.init_config is not None:
-                    model_config_json = json.dumps(model.get_model_config(), ensure_ascii=False, indent=2)
-                    self.vdl_writer.add_text("model_config", model_config_json)
+                # elif hasattr(model, "init_config") and model.init_config is not None:
+                #    model_config_json = json.dumps(model.get_model_config(), ensure_ascii=False, indent=2)
+                #    self.vdl_writer.add_text("model_config", model_config_json)
 
             if hasattr(self.vdl_writer, "add_hparams"):
                 self.vdl_writer.add_hparams(args.to_sanitized_dict(), metrics_list=[])

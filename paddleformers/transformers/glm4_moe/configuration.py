@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from ..configuration_utils import PretrainedConfig
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 
 class Glm4MoeConfig(PretrainedConfig):
@@ -157,7 +158,7 @@ class Glm4MoeConfig(PretrainedConfig):
         seq_aux=True,
         topk_method="noaux_tc",
         using_flex_token=True,
-        moe_subbatch_token_num=0,
+        moe_subbatch_token_num_before_dispatch=0,
         sliding_window=None,
         **kwargs,
     ):
@@ -183,6 +184,9 @@ class Glm4MoeConfig(PretrainedConfig):
         # BC: if there is a 'type' field, move it to 'rope_type'.
         if self.rope_scaling is not None and "type" in self.rope_scaling:
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
+        self.rope_parameters = self.rope_scaling
+        standardize_rope_params(self, rope_theta=rope_theta)
+        rope_config_validation(self)
 
         # MoE arguments
         self.moe_intermediate_size = moe_intermediate_size
@@ -201,7 +205,7 @@ class Glm4MoeConfig(PretrainedConfig):
         self.topk_method = topk_method
         self.using_flex_token = using_flex_token
         self.use_fp8 = False
-        self.moe_subbatch_token_num = moe_subbatch_token_num
+        self.moe_subbatch_token_num_before_dispatch = moe_subbatch_token_num_before_dispatch
 
         self.pp_seg_method = pp_seg_method
         self.disable_ffn_model_parallel = disable_ffn_model_parallel

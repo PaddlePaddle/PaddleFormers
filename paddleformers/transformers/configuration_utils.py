@@ -27,7 +27,7 @@ import sys
 import warnings
 from dataclasses import field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError
@@ -229,25 +229,30 @@ def llmmetaclass(cls):
 class LlmMetaConfig:
     op_fusion_attributes = [
         # name, type, default_value, comment
-        ("use_flash_attention", bool, False, "Whether to use flash attention to accelerate training."),
-        ("use_fused_rms_norm", bool, False, "llama or other model, use_fused_rms_norm"),
-        ("use_fused_rope", bool, False, "Enable rope fusion or not."),
-        ("use_fused_linear", bool, False, "GPT3 model, use fused linear layer"),
-        ("use_fused_dropout_add", bool, False, "GPT3 model, use fused `dropout + residual add` op."),
+        ("use_flash_attention", bool, False, "Only used in `ernie45_vl` and `deepseek_v3_pretrain`."),
+        ("fuse_rms_norm", bool, False, "Whether to fuse RMSNorm for efficiency"),
         ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
         ("fuse_linear", bool, False, "Use fused linear layer instead of normal linear layer."),
-        ("fuse_rope", bool, False, "Whether to fuse RoPE operation"),
+        ("apply_rope_fusion", bool, False, "Whether to fuse RoPE operation"),
         ("fuse_swiglu", bool, False, "Whether to fuse SwiGLU operations"),
+        ("fuse_attention_qkv", bool, False, "Whether to fuse Attention QKV operations"),
+        ("fuse_attention_ffn", bool, False, "Whether to fuse Attention FFN operations"),
     ]
 
     hybrid_parallel_attributes = [
         # tensor_parallel
-        ("tensor_parallel_degree", int, 1, "tensor_parallel_degree"),
+        ("tensor_model_parallel_size", int, 1, "tensor_model_parallel_size"),
         ("tensor_parallel_rank", int, 0, "tensor_parallel_rank"),
         ("tensor_parallel_output", bool, True, "tensor_parallel_output"),
         # pipeline_parallel
-        ("pipeline_parallel_degree", int, 1, "pipeline_parallel_degree"),
-        ("virtual_pp_degree", int, 1, "Virtual pipeline degree"),
+        ("pipeline_model_parallel_size", int, 1, "pipeline_model_parallel_size"),
+        ("num_empty_layers_add_in_head", int, 0, "num_empty_layers_add_in_head"),
+        ("num_empty_layers_add_in_tail", int, 0, "num_empty_layers_add_in_tail"),
+        ("virtual_pipeline_model_parallel_size", int, 1, "Virtual pipeline degree"),
+        # expert_parallel
+        ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
+        # context_parallel
+        ("context_parallel_size", int, 1, "context_parallel_size"),
         # pp refine recompute
         ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
         (
@@ -258,28 +263,32 @@ class LlmMetaConfig:
         ),
         ("add_tail_layers", int, 0, "Additional layers to append at the end"),
         # sep_parallel
-        ("sep_parallel_degree", int, 1, "sep_parallel_degree"),
-        ("context_parallel_degree", int, 1, "context_parallel_degree"),
+        ("sep_parallel_size", int, 1, "sep_parallel_size"),
+        ("context_parallel_size", int, 1, "context_parallel_size"),
+        ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
         ("sequence_parallel", bool, False, "Whether to use sequence parallel"),
         ("fuse_sequence_parallel_allreduce", bool, False, "Whether to use fuse sequence parallel allreduce"),
     ]
 
     recompute_attributes = [
-        ("recompute", bool, False, "recompute"),
         (
             "recompute_granularity",
             str,
-            "full",
+            None,
             "Recompute granularity, Choose among ['full', 'core_attn', 'full_attn']",
         ),
-        ("recompute_use_reentrant", bool, True, "recompute_use_reentrant"),
-        # refined_recompute attributes
+        ("recompute_method", str, None, "Determines which transformer layers will be recomputed."),
         (
-            "refined_recompute",
-            str,
-            "",
-            "refined_recompute, Choose from 'mlp_row_ln', 'mlp_column_ln', 'attention_row_ln', 'attention_column_ln', 'flash_attn']",
+            "recompute_num_layers",
+            int,
+            None,
+            "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in each uniformly divided recompute unit.",
         ),
+        ("recompute_modules", Optional[List[str]], None, "List of module names to apply recomputation."),
+        ("recompute_mtp_granularity", str, None, "Recomputation granularity for MTP layers."),
+        ("recompute_mtp_method", str, None, "Recomputation method for MTP layers."),
+        ("recompute_mtp_modules", str, None, "List of MTP module names to apply recomputation."),
+        ("recompute_use_reentrant", bool, True, "recompute_use_reentrant"),
         ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
     ]
 
@@ -301,14 +310,202 @@ class LlmMetaConfig:
     ]
 
     moe_attributes = [
-        ("moe_subbatch_token_num", int, 0, "The number of tokens in each subbatch for MoE model processing."),
+        (
+            "moe_subbatch_token_num_before_dispatch",
+            int,
+            0,
+            "The number of tokens in each subbatch for MoE model processing.",
+        ),
         ("using_fake_gate", bool, False, "Whether to fake gate."),
         ("ep_communication_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
         ("use_unified_moe", bool, False, "Whether to use unified moe."),
+        (
+            "moe_deepep_num_sms",
+            bool,
+            None,
+            "Whether to enable DeepEP (Deep Expert Pruning) with SMS (Sub-Model Selection) for MoE. Defaults to False.",
+        ),
+        (
+            "moe_token_dispatcher_type",
+            str,
+            "deepep",
+            "Type of token dispatcher for MoE (e.g., 'round_robin', 'top_k'). Defaults to None (use default dispatcher).",
+        ),
+        (
+            "moe_pad_expert_input_to_capacity",
+            bool,
+            False,
+            "Whether to pad MoE expert inputs to match expert capacity. Defaults to False (no padding).",
+        ),
+        (
+            "moe_token_drop_policy",
+            str,
+            "probs",
+            "Defines the policy for token dropping. It can be set to either 'probs' or 'position'. If set to 'probs', tokens with the lowest probabilities will be dropped. If set to 'position', tokens from the end of each batch will be dropped. Defaults to 'probs'.",
+        ),
+        (
+            "moe_expert_capacity_factor",
+            float,
+            0.0,
+            "Scaling factor for MoE expert capacity (controls maximum tokens per expert). Defaults to 0.0 (no dropping tokens).",
+        ),
+        (
+            "router_aux_loss_coef",
+            float,
+            None,
+            "Coefficient for MoE router auxiliary loss (encourages balanced expert usage). Defaults to 0.0 (disable auxiliary loss).",
+        ),
+        (
+            "router_z_loss_coef",
+            float,
+            None,
+            "Coefficient for MoE router Z-loss (regularizes router logits to avoid extreme values). Defaults to 0.0 (disable Z-loss).",
+        ),
+        (
+            "moe_router_force_load_balancing",
+            bool,
+            False,
+            "Whether to enforce load balancing across MoE experts. Prevents overutilization of a small subset of experts. Defaults to True (critical optimization for MoE stability and efficiency).",
+        ),
+        ("moe_router_load_balancing_type", str, "seq_aux_loss", "Strategy for MoE expert load balancing."),
+        (
+            "moe_router_bias_update_rate",
+            float,
+            0.01,
+            "Update rate for MoE router biases (only effective if `moe_router_enable_expert_bias=True`). Controls the magnitude of bias adjustments to prevent unstable updates. Defaults to 0.01.",
+        ),
+        (
+            "moe_shared_expert_overlap",
+            bool,
+            True,
+            "Whether to allow shared experts to be reused across layers/modules. Reduces memory footprint but may limit model expressivity. Defaults to False (prioritizes model capacity).",
+        ),
+        (
+            "moe_dequant_input",
+            bool,
+            False,
+            "Whether to dequantize inputs to MoE experts (only applicable if inputs are quantized). Defaults to False (enable only for quantized inference/training pipelines).",
+        ),
+        (
+            "moe_expert_fusion",
+            bool,
+            True,
+            "Whether to fuse experts. Default to True.",
+        ),
+        (
+            "moe_router_fusion",
+            bool,
+            True,
+            "Whether to enable operator fusion for the MoE router (e.g., Gating + Softmax fusion). Reduces computation latency for expert selection. Defaults to True.",
+        ),
+        (
+            "moe_subbatch_token_num_after_dispatch",
+            int,
+            None,
+            "Number of tokens per sub-batch after MoE expert dispatch. Controls memory usage for expert computations. Defaults to 4096 (balances memory efficiency and parallelism for most GPUs).",
+        ),
+        (
+            "moe_grouped_gemm",
+            bool,
+            False,
+            "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
+        ),
+        (
+            "moe_deep_gemm",
+            bool,
+            True,
+            "Whether to enable deep GEMM for MoE experts. Defaults to True. Effective only after the moe_grouped_gemm is set. ",
+        ),
     ]
 
     mtp_attributes = [
         ("num_nextn_predict_layers", int, 0, "Number of nextn predict layers."),
+        (
+            "mtp_loss_scaling_factor",
+            float,
+            1.0,
+            "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues).",
+        ),
+    ]
+
+    fp8_attributes = [
+        (
+            "fp8",
+            str,
+            None,
+            "Whether to enable FP8 mixed-precision training/inference. Reduces memory usage and accelerates computation (requires hardware support). Defaults to False (enable only for Ampere+/Hopper GPUs with FP8 support).",
+        ),
+        (
+            "fp8_wgrad",
+            bool,
+            True,
+            "Whether to use FP8 for gradient storage during training (only effective if `fp8=True`). Further reduces memory footprint but may introduce minor numerical error. Defaults to False.",
+        ),
+    ]
+
+    model_attributes = [
+        (
+            "multi_latent_attention",
+            bool,
+            False,
+            "Whether to enable multi-latent attention mechanism. Defaults to False.",
+        ),
+        (
+            "no_rope_freq",
+            bool,
+            False,
+            "Whether to disable RoPE (Rotary Position Embedding) frequency scaling. Defaults to False (enable frequency scaling).",
+        ),
+        (
+            "position_embedding_type",
+            str,
+            "rope",
+            "Type of position embedding. Defaults to RoPE (Rotary Position Embedding).",
+        ),
+        (
+            "gated_linear_unit",
+            bool,
+            True,
+            "Whether to use Gated Linear Units (GLU) instead of standard Linear layers. Enhances model expressivity (common in SwiGLU). Defaults to False (compatible with basic transformer architectures).",
+        ),
+        ("normalization", str, "RMSNorm", "Type of normalization layer. Defaults to RMSNorm."),
+        (
+            "fp32_residual_connection",
+            bool,
+            True,
+            "Whether to use FP32 precision for residual connections. Mitigates numerical underflow/overflow in deep transformers. Defaults to True (standard practice for stable LLM training).",
+        ),
+        (
+            "softmax_scale",
+            float,
+            None,
+            "Scaling factor for Softmax inputs. If None, uses automatic scaling (e.g., sqrt(d_model) for attention). Defaults to None (adapts to model dimension automatically).",
+        ),
+        (
+            "softmax_type",
+            str,
+            "vanilla",
+            "Applies modified softmax from https://www.evanmiller.org/attention-is-off-by-one.html. Supports both TE FusedAttention and local unfused attention. Supports both a fixed offset and learnable offset.",
+        ),
+        ("init_method", Callable, None, "Method to initialize weights."),
+        (
+            "output_layer_init_method",
+            Callable,
+            None,
+            "Method to initialize weights of the output layer of both attention and MLP blocks.",
+        ),
+        (
+            "embedding_init_method",
+            Callable,
+            None,
+            "Method to initialize weights of the embedding layer. If None, will be set as described in init_method above.",
+        ),
+        (
+            "embedding_init_method_std",
+            float,
+            0.02,
+            "Standard deviation for embedding layer initialization (only effective if `embedding_init_method='normal'`). Defaults to 0.02 (common choice for transformer embeddings to avoid saturation).",
+        ),
     ]
 
     @classmethod
@@ -321,6 +518,8 @@ class LlmMetaConfig:
             cls.loss_attributes,
             cls.moe_attributes,
             cls.mtp_attributes,
+            cls.fp8_attributes,
+            cls.model_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -336,6 +535,8 @@ class LlmMetaConfig:
             cls.recompute_attributes,
             cls.loss_attributes,
             cls.moe_attributes,
+            cls.fp8_attributes,
+            cls.model_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -351,6 +552,8 @@ class LlmMetaConfig:
             cls.recompute_attributes,
             cls.loss_attributes,
             cls.moe_attributes,
+            cls.fp8_attributes,
+            cls.model_attributes,
         ]:
             for attr in attrs:
                 ret.add(attr[0])
@@ -359,7 +562,10 @@ class LlmMetaConfig:
     @classmethod
     def set_llm_config(cls, config, args):
         for key, value in cls._get_defaults().items():
-            setattr(config, key, getattr(args, key, value))
+            value = getattr(args, key, value)
+            if value is None:
+                continue
+            setattr(config, key, value)
 
 
 class PretrainedConfig:
@@ -509,7 +715,7 @@ class PretrainedConfig:
         problem_type (`str`, *optional*):
             Problem type for `XxxForSequenceClassification` models. Can be one of `"regression"`,
             `"single_label_classification"` or `"multi_label_classification"`.
-        moe_subbatch_token_num (`int`, *optional*, defaults to 0):
+        moe_subbatch_token_num_before_dispatch (`int`, *optional*, defaults to 0):
             The number of tokens in a subbatch for MoE.
         ep_communication_type (`str`, *optional*, defaults to `deepep`):
             Communication type for expert parallel. Can be one of `deepep`, `alltoall`.
@@ -537,6 +743,9 @@ class PretrainedConfig:
             Whether the model's input and output word embeddings should be tied. Note that this is only relevant if the
             model has a output word embedding layer.
 
+        use_single_model_implementation (`bool`, *optional*, defaults to `False`):
+            Whether to run the model in single card mode. When enabled, all parallel degree configurations will be disabled.
+
         dtype (`str`, *optional*):
             The `dtype` of the weights. This attribute can be used to initialize the model to a non-default `dtype`
             (which is normally `float32`) and thus allow for optimal storage allocation. For example, if the saved
@@ -549,6 +758,8 @@ class PretrainedConfig:
             versions. But we can already start preparing for the future by saving the dtype with save_pretrained.
     """
     model_type: str = ""
+    base_config_key: str = ""
+    sub_configs: dict[str, type["PretrainedConfig"]] = {}
     is_composition: bool = False
 
     pretrained_init_configuration = {}
@@ -586,21 +797,30 @@ class PretrainedConfig:
         kwargs.pop("transformers_version", None)
         llm_meta = LlmMetaConfig._get_defaults()
         self._unsavable_keys.update(LlmMetaConfig._get_unsavable_keys())
-        self._unsavable_keys.remove("tensor_parallel_degree")
+        self._unsavable_keys.remove("tensor_model_parallel_size")
+        self._unsavable_keys.remove("fuse_attention_qkv")
+        self._unsavable_keys.remove("fuse_attention_ffn")
         self._unsavable_keys.add("_attn_implementation")
 
         kwargs = set_expected_keys(self, llm_meta, kwargs)
         if self.sequence_parallel:
             assert (
-                self.tensor_parallel_degree > 1
-            ), f"senquence-parallel only works in tensor parallel, got tensor parallel degree={self.tensor_parallel_degree}"
+                self.tensor_model_parallel_size > 1
+            ), f"senquence-parallel only works in tensor parallel, got tensor parallel degree={self.tensor_model_parallel_size}"
 
         self.chunk_size_feed_forward = kwargs.pop("chunk_size_feed_forward", 0)
         self.return_dict = kwargs.pop("return_dict", False)
         self.output_hidden_states = kwargs.pop("output_hidden_states", False)
         self.output_attentions = kwargs.pop("output_attentions", False)
-        self.use_cache = kwargs.pop("use_cache", False)
+        self.dtype = kwargs.pop("dtype", None)
         self.tie_word_embeddings = kwargs.pop("tie_word_embeddings", True)
+
+        # for run model in single card mode
+        self.use_single_model_implementation = kwargs.pop("use_single_model_implementation", False)
+        if self.use_single_model_implementation:
+            self.tensor_model_parallel_size = 1
+            self.sep_parallel_size = 1
+            self.context_parallel_size = 1
 
         # for transformers fuse
         self.fuse_linear = kwargs.pop("fuse_linear", False)
@@ -619,10 +839,6 @@ class PretrainedConfig:
         # parameter for model dtype
         if "torch_dtype" in kwargs:
             self.dtype = kwargs.pop("torch_dtype")
-        else:
-            import paddle
-
-            self.dtype = kwargs.pop("dtype", paddle.get_default_dtype())
 
         # Is decoder is used in encoder-decoder models to differentiate encoder from decoder
         self.is_encoder_decoder = kwargs.pop("is_encoder_decoder", False)
@@ -659,7 +875,6 @@ class PretrainedConfig:
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
 
-        self.moe_subbatch_token_num = kwargs.pop("moe_subbatch_token_num", 0)
         self.ep_communication_type = kwargs.pop("ep_communication_type", "deepep")
         self.use_unified_moe = kwargs.pop("use_unified_moe", False)
         self.using_fake_gate = kwargs.pop("using_fake_gate", False)
@@ -709,6 +924,10 @@ class PretrainedConfig:
             except AttributeError as err:
                 logger.error(f"Can't set {key} with value {value} for {self}")
                 raise err
+
+    def _create_id_label_maps(self, num_labels: int):
+        self.id2label = {i: f"LABEL_{i}" for i in range(num_labels)}
+        self.label2id = dict(zip(self.id2label.values(), self.id2label.keys()))
 
     @staticmethod
     def _get_generation_defaults() -> Dict[str, Any]:
@@ -773,9 +992,8 @@ class PretrainedConfig:
 
     @num_labels.setter
     def num_labels(self, num_labels: int):
-        if not hasattr(self, "id2label") or self.id2label is None or len(self.id2label) != num_labels:
-            self.id2label = {i: f"LABEL_{i}" for i in range(num_labels)}
-            self.label2id = dict(zip(self.id2label.values(), self.id2label.keys()))
+        if self.id2label is None or self.num_labels != num_labels:
+            self._create_id_label_maps(num_labels)
 
     def save_pretrained(self, save_directory: Union[str, os.PathLike], **kwargs):
         """
@@ -856,6 +1074,22 @@ class PretrainedConfig:
         assert unused_kwargs == {"foo": False}
         ```"""
         config_dict, kwargs = cls.get_config_dict(pretrained_model_name_or_path, **kwargs)
+        if cls.base_config_key and cls.base_config_key in config_dict:
+            config_dict = config_dict[cls.base_config_key]
+
+        if "model_type" in config_dict and hasattr(cls, "model_type") and config_dict["model_type"] != cls.model_type:
+            # sometimes the config has no `base_config_key` if the config is used in several composite models
+            # e.g. LlamaConfig. In that case we try to see if there is match in `model_type` before raising a warning
+            for v in config_dict.values():
+                if isinstance(v, dict) and v.get("model_type") == cls.model_type:
+                    config_dict = v
+
+            # raise warning only if we still can't see a match in `model_type`
+            if config_dict["model_type"] != cls.model_type:
+                logger.warning(
+                    f"You are using a model of type {config_dict['model_type']} to instantiate a model of type "
+                    f"{cls.model_type}. This is not supported for all configurations of models and can yield errors."
+                )
 
         return cls.from_dict(config_dict, **kwargs)
 
@@ -1072,12 +1306,27 @@ class PretrainedConfig:
                     serializable_config_dict[key] = quantization_diff_dict
                 continue
             if (
+                isinstance(getattr(self, key, None), PretrainedConfig)
+                and key in class_config_dict
+                and isinstance(class_config_dict[key], dict)
+                or key in self.sub_configs
+            ):
+                # For nested configs we need to clean the diff recursively
+                diff = recursive_diff_dict(value, default_config_dict, config_obj=getattr(self, key, None))
+                if "model_type" in value:
+                    # Needs to be set even if it's not in the diff
+                    diff["model_type"] = value["model_type"]
+
+                serializable_config_dict[key] = diff
+            elif (
                 key not in default_config_dict
                 or key == "paddleformers_version"
                 or value != default_config_dict[key]
                 or (key in class_config_dict and value != class_config_dict[key])
             ):
                 serializable_config_dict[key] = value
+
+        self._remove_keys_not_serialized(serializable_config_dict, saving_file)
 
         return serializable_config_dict
 
@@ -1227,6 +1476,25 @@ class PretrainedConfig:
 
             setattr(self, k, v)
 
+    def _remove_keys_not_serialized(self, d: dict[str, Any], saving_file: bool = False) -> None:
+        """
+        Checks and removes if there are any keys in the dict that should not be serialized when saving the config.
+        Runs recursive check on the dict, to remove from all sub configs.
+        """
+        if "_auto_class" in d:
+            del d["_auto_class"]
+        if "_output_attentions" in d:
+            d["output_attentions"] = d.pop("_output_attentions")
+        if "_commit_hash" in d:
+            del d["_commit_hash"]
+        if saving_file:
+            for unsavable_ke in self._unsavable_keys:
+                if unsavable_ke in d:
+                    del d[unsavable_ke]
+        for value in d.values():
+            if isinstance(value, dict):
+                self._remove_keys_not_serialized(value, saving_file)
+
     @classmethod
     def register_for_auto_class(cls, auto_class="AutoConfig"):
         """
@@ -1264,6 +1532,78 @@ class PretrainedConfig:
             return default
         else:
             return value
+
+    def get_text_config(self, decoder=None, encoder=None) -> "PretrainedConfig":
+        """
+        Returns the text config related to the text input (encoder) or text output (decoder) of the model. The
+        `decoder` and `encoder` input arguments can be used to specify which end of the model we are interested in,
+        which is useful on models that have both text input and output modalities.
+
+        Args:
+            decoder (`Optional[bool]`, *optional*):
+                If set to `True`, then only search for decoder config names.
+            encoder (`Optional[bool]`, *optional*):
+                If set to `True`, then only search for encoder config names.
+        """
+        return_both = decoder == encoder  # both unset or both set -> search all possible names
+
+        decoder_possible_text_config_names = ("decoder", "generator", "text_config")
+        encoder_possible_text_config_names = ("text_encoder",)
+        if return_both:
+            possible_text_config_names = encoder_possible_text_config_names + decoder_possible_text_config_names
+        elif decoder:
+            possible_text_config_names = decoder_possible_text_config_names
+        else:
+            possible_text_config_names = encoder_possible_text_config_names
+
+        valid_text_config_names = []
+        for text_config_name in possible_text_config_names:
+            if hasattr(self, text_config_name):
+                text_config = getattr(self, text_config_name, None)
+                if text_config is not None:
+                    valid_text_config_names += [text_config_name]
+
+        if len(valid_text_config_names) > 1:
+            raise ValueError(
+                f"Multiple valid text configs were found in the model config: {valid_text_config_names}. In this "
+                "case, using `get_text_config()` would be ambiguous. Please specify the desired text config directly, "
+                "e.g. `text_config = config.sub_config_name`"
+            )
+        elif len(valid_text_config_names) == 1:
+            config_to_return = getattr(self, valid_text_config_names[0])
+        else:
+            config_to_return = self
+
+        # handle legacy models with flat config structure, when we only want one of the configs
+        if not return_both and len(valid_text_config_names) == 0 and config_to_return.is_encoder_decoder:
+            config_to_return = copy.deepcopy(config_to_return)
+            prefix_to_discard = "encoder" if decoder else "decoder"
+            prefix_to_keep = "decoder" if decoder else "encoder"
+            for key in config_to_return.to_dict():
+                # NOTE: We don't want to discard the key if it is mapped from a different attribute name at read time
+                if key.startswith(prefix_to_discard) and key not in config_to_return.attribute_map.values():
+                    delattr(config_to_return, key)
+                if key.startswith(prefix_to_keep):
+                    # [encoder/decoder]_layers -> num_hidden_layers
+                    if key == prefix_to_keep + "_layers":
+                        new_key = "num_hidden_layers"
+                    # [encoder/decoder]_attention_heads -> num_attention_heads
+                    elif key == prefix_to_keep + "_attention_heads":
+                        new_key = "num_attention_heads"
+                    # e.g. encoder_hidden_act -> hidden_act
+                    else:
+                        new_key = key[len(prefix_to_keep) + 1 :]
+
+                    # Does the class map the new key into a different attribute name at read time? if so, let's write
+                    # into that attribute instead
+                    if new_key in config_to_return.attribute_map:
+                        new_key = config_to_return.attribute_map[new_key]
+
+                    value = getattr(config_to_return, key)
+                    delattr(config_to_return, key)
+                    setattr(config_to_return, new_key, value)
+
+        return config_to_return
 
 
 def get_configuration_file(configuration_files: List[str]) -> str:
@@ -1304,6 +1644,24 @@ def get_configuration_file(configuration_files: List[str]) -> str:
             break
 
     return configuration_file
+
+
+def recursive_diff_dict(dict_a, dict_b, config_obj=None):
+    """
+    Helper function to recursively take the diff between two nested dictionaries. The resulting diff only contains the
+    values from `dict_a` that are different from values in `dict_b`.
+    dict_b : the default config dictionary. We want to remove values that are in this one
+    """
+    diff = {}
+    default = config_obj.__class__().to_dict() if config_obj is not None else {}
+    for key, value in dict_a.items():
+        obj_value = getattr(config_obj, str(key), None)
+        if isinstance(obj_value, PretrainedConfig) and key in dict_b and isinstance(dict_b[key], dict):
+            diff_value = recursive_diff_dict(value, dict_b[key], config_obj=obj_value)
+            diff[key] = diff_value
+        elif key not in dict_b or (value != default[key]):
+            diff[key] = value
+    return diff
 
 
 ALLOWED_LAYER_TYPES = (

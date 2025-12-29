@@ -620,7 +620,7 @@ class BaseModelOutputWithPast(ModelOutput):
     """
 
     last_hidden_state: paddle.Tensor = None
-    past_key_values: Optional[Tuple[Tuple[paddle.Tensor]]] = None
+    past_key_values: Optional[Tuple[Tuple[paddle.Tensor, paddle.Tensor]]] = None
     hidden_states: Optional[Tuple[paddle.Tensor]] = None
     attentions: Optional[Tuple[paddle.Tensor]] = None
 

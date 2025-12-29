@@ -15,8 +15,7 @@
 import os
 import unittest
 
-from paddleformers.datasets.dpo import create_dataset as create_dataset_dpo
-from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
+from paddleformers.datasets.loader import create_dataset as create_dataset
 from paddleformers.transformers import AutoTokenizer
 from tests.testing_utils import get_tests_dir
 
@@ -25,7 +24,7 @@ class TestPTDataset(unittest.TestCase):
     def test_random_dataset_len(self):
 
         ernie_dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
-        ernie_dataset_path = os.path.join(ernie_dataset_dir, "ernie", "pt-train.jsonl")
+        ernie_dataset_path = os.path.join(ernie_dataset_dir, "pt", "train.jsonl")
 
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT")
         num_samples_each_epoch = 6000000
@@ -44,9 +43,11 @@ class TestPTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": True,
+            "truncate_packing": True,
+            "stage": "PT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=ernie_dataset_path,
             task_group_prob="1.0",
             sub_dataset_type="erniekit",
@@ -57,7 +58,7 @@ class TestPTDataset(unittest.TestCase):
 
     def test_concat_dataset_len(self):
         ernie_dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
-        ernie_dataset_path = os.path.join(ernie_dataset_dir, "ernie", "pt-train.jsonl")
+        ernie_dataset_path = os.path.join(ernie_dataset_dir, "pt", "train.jsonl")
 
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT")
 
@@ -75,20 +76,22 @@ class TestPTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": True,
+            "truncate_packing": True,
+            "stage": "PT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
             **dataset_config,
         )
 
-        self.assertEqual(len(train_dataset.mix_datasets), 20)
+        self.assertEqual(len(train_dataset.mix_datasets), 40)
 
     def test_interleave_under_dataset_len(self):
         ernie_dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
-        ernie_dataset_path = os.path.join(ernie_dataset_dir, "ernie", "pt-train.jsonl")
+        ernie_dataset_path = os.path.join(ernie_dataset_dir, "pt", "train.jsonl")
 
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT")
 
@@ -106,20 +109,22 @@ class TestPTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": True,
+            "truncate_packing": True,
+            "stage": "PT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
             **dataset_config,
         )
 
-        self.assertEqual(len(train_dataset.mix_datasets), 17)
+        self.assertEqual(len(train_dataset.mix_datasets), 39)
 
     def test_interleave_over_dataset_len(self):
         ernie_dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
-        ernie_dataset_path = os.path.join(ernie_dataset_dir, "ernie", "pt-train.jsonl")
+        ernie_dataset_path = os.path.join(ernie_dataset_dir, "pt", "train.jsonl")
 
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT")
 
@@ -137,23 +142,25 @@ class TestPTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": True,
+            "truncate_packing": True,
+            "stage": "PT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
             **dataset_config,
         )
 
-        self.assertEqual(len(train_dataset.mix_datasets), 26)
+        self.assertEqual(len(train_dataset.mix_datasets), 40)
 
 
 class TestSFTDataset(unittest.TestCase):
     def test_random_dataset_len(self):
 
         ernie_dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
-        ernie_dataset_path = os.path.join(ernie_dataset_dir, "ernie", "sft-train.jsonl")
+        ernie_dataset_path = os.path.join(ernie_dataset_dir, "sft", "train.jsonl")
 
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT")
         num_samples_each_epoch = 6000000
@@ -172,9 +179,11 @@ class TestSFTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": False,
+            "truncate_packing": True,
+            "stage": "SFT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=ernie_dataset_path,
             task_group_prob="1.0",
             sub_dataset_type="erniekit",
@@ -185,7 +194,7 @@ class TestSFTDataset(unittest.TestCase):
 
     def test_concat_dataset_len(self):
         ernie_dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
-        ernie_dataset_path = os.path.join(ernie_dataset_dir, "ernie", "sft-train.jsonl")
+        ernie_dataset_path = os.path.join(ernie_dataset_dir, "sft", "train.jsonl")
 
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT")
 
@@ -203,9 +212,11 @@ class TestSFTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": False,
+            "truncate_packing": True,
+            "stage": "SFT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
@@ -216,7 +227,7 @@ class TestSFTDataset(unittest.TestCase):
 
     def test_interleave_under_dataset_len(self):
         ernie_dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
-        ernie_dataset_path = os.path.join(ernie_dataset_dir, "ernie", "sft-train.jsonl")
+        ernie_dataset_path = os.path.join(ernie_dataset_dir, "sft", "train.jsonl")
 
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT")
 
@@ -234,9 +245,11 @@ class TestSFTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": False,
+            "truncate_packing": True,
+            "stage": "SFT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
@@ -247,7 +260,7 @@ class TestSFTDataset(unittest.TestCase):
 
     def test_interleave_over_dataset_len(self):
         ernie_dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
-        ernie_dataset_path = os.path.join(ernie_dataset_dir, "ernie", "sft-train.jsonl")
+        ernie_dataset_path = os.path.join(ernie_dataset_dir, "sft", "train.jsonl")
 
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT")
 
@@ -265,9 +278,11 @@ class TestSFTDataset(unittest.TestCase):
             "encode_one_turn": True,
             "use_template": True,
             "is_pretraining": False,
+            "truncate_packing": True,
+            "stage": "SFT",
         }
 
-        train_dataset = create_dataset_sft(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
@@ -281,7 +296,7 @@ class TestDPODataset(unittest.TestCase):
     def test_random_dataset_len(self):
 
         ernie_dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
-        ernie_dataset_path = os.path.join(ernie_dataset_dir, "ernie", "dpo-train.jsonl")
+        ernie_dataset_path = os.path.join(ernie_dataset_dir, "dpo", "train.jsonl")
 
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT")
 
@@ -303,9 +318,10 @@ class TestDPODataset(unittest.TestCase):
             "packing": False,
             "mix_strategy": "random",
             "encode_one_turn": True,
+            "stage": "DPO",
         }
 
-        train_dataset = create_dataset_dpo(
+        train_dataset = create_dataset(
             task_group=ernie_dataset_path,
             task_group_prob="1.0",
             sub_dataset_type="erniekit",
@@ -317,7 +333,7 @@ class TestDPODataset(unittest.TestCase):
     def test_concat_dataset_len(self):
 
         ernie_dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
-        ernie_dataset_path = os.path.join(ernie_dataset_dir, "ernie", "dpo-train.jsonl")
+        ernie_dataset_path = os.path.join(ernie_dataset_dir, "dpo", "train.jsonl")
 
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT")
 
@@ -339,9 +355,10 @@ class TestDPODataset(unittest.TestCase):
             "packing": False,
             "mix_strategy": "concat",
             "encode_one_turn": True,
+            "stage": "DPO",
         }
 
-        train_dataset = create_dataset_dpo(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
@@ -353,7 +370,7 @@ class TestDPODataset(unittest.TestCase):
     def test_interleave_under_dataset_len(self):
 
         ernie_dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
-        ernie_dataset_path = os.path.join(ernie_dataset_dir, "ernie", "dpo-train.jsonl")
+        ernie_dataset_path = os.path.join(ernie_dataset_dir, "dpo", "train.jsonl")
 
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT")
 
@@ -375,9 +392,10 @@ class TestDPODataset(unittest.TestCase):
             "packing": False,
             "mix_strategy": "interleave_under",
             "encode_one_turn": True,
+            "stage": "DPO",
         }
 
-        train_dataset = create_dataset_dpo(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",
@@ -389,7 +407,7 @@ class TestDPODataset(unittest.TestCase):
     def test_interleave_over_dataset_len(self):
 
         ernie_dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
-        ernie_dataset_path = os.path.join(ernie_dataset_dir, "ernie", "dpo-train.jsonl")
+        ernie_dataset_path = os.path.join(ernie_dataset_dir, "dpo", "train.jsonl")
 
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT")
 
@@ -411,9 +429,10 @@ class TestDPODataset(unittest.TestCase):
             "packing": False,
             "mix_strategy": "interleave_over",
             "encode_one_turn": True,
+            "stage": "DPO",
         }
 
-        train_dataset = create_dataset_dpo(
+        train_dataset = create_dataset(
             task_group=", ".join([ernie_dataset_path, ernie_dataset_path]),
             task_group_prob="1.0,1.0",
             sub_dataset_type="erniekit,erniekit",

@@ -53,7 +53,7 @@ from paddleformers.transformers import (
     LinearAnnealingWithWarmupDecay,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig, llmmetaclass
-from paddleformers.transformers.deepseek_v2 import DeepseekV2ForCausalLM
+from paddleformers.transformers.deepseek_v3 import DeepseekV3ForCausalLM
 from paddleformers.utils.batch_sampler import DistributedBatchSampler
 from paddleformers.utils.log import logger
 
@@ -169,15 +169,6 @@ class ModelArguments:
 
     hidden_dropout_prob: float = field(default=0.1, metadata={"help": "The hidden dropout prob."})
     attention_probs_dropout_prob: float = field(default=0.1, metadata={"help": "The attention hidden dropout prob."})
-
-    fuse_attention_qkv: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse attention qkv"},
-    )
-    fuse_attention_ffn: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse first up and gate proj in mlp block"},
-    )
 
     continue_training: bool = field(
         default=False,
@@ -409,6 +400,8 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
             )
 
     tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token_id = tokenizer.eos_token_id
     config = DeepseekV2FastConfig.from_pretrained(model_args.model_name_or_path)
 
     # set all llm config
@@ -434,34 +427,28 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
         # models are separate. Therefore, first we need to set the flag in the model config
         # to perform V-shape segmentation. Second, we need to set the flag in the training_args
         # to configure strategy.hybrid_configs to choose the DualPipeV schedule.
-        config.use_dualpipev = "use_dualpipev" in training_args.pipeline_parallel_config
+        config.use_dualpipev = training_args.use_dualpipev
     if hasattr(config, "hidden_dropout_prob"):
         config.hidden_dropout_prob = model_args.hidden_dropout_prob
     if hasattr(config, "attention_probs_dropout_prob"):
         config.attention_probs_dropout_prob = model_args.attention_probs_dropout_prob
-    if model_args.fuse_attention_qkv is not None:
-        config.fuse_attention_qkv = model_args.fuse_attention_qkv
-    if model_args.fuse_attention_ffn is not None:
-        config.fuse_attention_ffn = model_args.fuse_attention_ffn
 
     if config.sequence_parallel:
-        assert config.tensor_parallel_degree > 1, "tensor_parallel_degree must be larger than 1 for sequence parallel."
+        assert (
+            config.tensor_model_parallel_size > 1
+        ), "tensor_model_parallel_size must be larger than 1 for sequence parallel."
     assert (
-        config.num_attention_heads % config.sep_parallel_degree == 0
-    ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_degree {config.sep_parallel_degree}"
+        config.num_attention_heads % config.sep_parallel_size == 0
+    ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_size {config.sep_parallel_size}"
     assert (
-        config.seq_length % config.context_parallel_degree == 0
-    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_degree {config.context_parallel_degree}"
+        config.seq_length % config.context_parallel_size == 0
+    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_size {config.context_parallel_size}"
 
-    if training_args.sharding_parallel_config is not None:
-        # for stage1 overlap optimization
-        if (
-            "enable_stage1_allgather_overlap" in training_args.sharding_parallel_config
-            or "enable_stage1_broadcast_overlap" in training_args.sharding_parallel_config
-        ):
-            from paddle.io.reader import use_pinned_memory
+    # for stage1 overlap optimization
+    if training_args.stage1_allgather_overlap or training_args.stage1_broadcast_overlap:
+        from paddle.io.reader import use_pinned_memory
 
-            use_pinned_memory(False)
+        use_pinned_memory(False)
 
     if get_env_device() == "xpu" and training_args.gradient_accumulation_steps > 1:
         try:
@@ -483,8 +470,8 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
         if training_args.bf16:
             dtype = "bfloat16"
 
-    model_class = DeepseekV2ForCausalLM
-    if training_args.pipeline_parallel_degree > 1:
+    model_class = DeepseekV3ForCausalLM
+    if training_args.pipeline_model_parallel_size > 1:
         model_class = DeepseekV2ForCausalLMPipe
         if "LLama" in str(config.architectures):
             try:
@@ -497,7 +484,7 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
     architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
     if (
         any(architecture in str(config.architectures) for architecture in architectures_to_check)
-        and training_args.data_parallel_degree > 1
+        and training_args.data_parallel_size > 1
     ):
         training_args.use_expert_parallel = True
 
@@ -523,13 +510,13 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
         # config.using_flex_token = True
         # config.num_nextn_predict_layers = 1
         # config.using_fake_gate = True
-        # config.use_fused_rms_norm = True
+        # config.fuse_rms_norm = True
         # config.fuse_attention_ffn = True
-        # config.use_fused_rope = True
+        # config.apply_rope_fusion = True
         # config.token_drop_steps = 0
         model = model_class.from_config(config, dtype=dtype)
 
-    if training_args.recompute:
+    if training_args.recompute_granularity is not None:
         model.recompute_enable()
 
     # Create the learning_rate sheduler and optimizer

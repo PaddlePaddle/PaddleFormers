@@ -14,6 +14,7 @@
 
 """ Ernie4_5 model configuration."""
 from ..configuration_utils import PretrainedConfig
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 
 class Ernie4_5Config(PretrainedConfig):
@@ -39,9 +40,6 @@ class Ernie4_5Config(PretrainedConfig):
         initializer_range=0.02,
         rms_norm_eps=1e-6,
         use_cache=False,
-        use_flash_attention=False,
-        recompute=False,
-        recompute_granularity="core_attn",
         recompute_use_reentrant=False,
         tie_word_embeddings=True,
         pad_token_id=0,
@@ -49,7 +47,7 @@ class Ernie4_5Config(PretrainedConfig):
         eos_token_id=2,
         use_bias=False,
         rope_theta=10000,
-        fuse_rope=False,
+        apply_rope_fusion=False,
         fuse_softmax_mask=False,
         fuse_linear=False,
         max_sequence_length=None,
@@ -62,6 +60,13 @@ class Ernie4_5Config(PretrainedConfig):
         pp_seg_method="layer:Ernie4_5DecoderLayer|EmptyLayer",
         dpo_config=None,
         kto_config=None,
+        recompute_granularity=None,
+        recompute_method=None,
+        recompute_modules=None,
+        recompute_num_layers=None,
+        recompute_mtp_granularity=None,
+        recompute_mtp_method=None,
+        recompute_mtp_modules=None,
         **kwargs,
     ):
         """
@@ -76,9 +81,6 @@ class Ernie4_5Config(PretrainedConfig):
             num_attention_heads (int): Number of attention heads for each attention layer
             rms_norm_eps (float): The epsilon used by the RMS normalization layers
             use_cache (bool): Whether to use caching for faster generation (decoding)
-            use_flash_attention (bool): Whether to use FlashAttention for optimized attention computation
-            recompute (bool): Whether to use gradient checkpointing to save memory
-            recompute_granularity (str): Granularity of recomputation ("core_attn", "full", etc.)
             recompute_use_reentrant (bool): Whether to use reentrant checkpointing
             tie_word_embeddings (bool):  Whether the input and output word embeddings should be tied
             Whether the model's input and output word embeddings should be tied. Note that this is only relevant if the
@@ -88,7 +90,7 @@ class Ernie4_5Config(PretrainedConfig):
             eos_token_id (int): Token ID used for end-of-sequence
             use_bias (bool): Whether to use bias terms in linear layers
             rope_theta (float): The base period of the RoPE embeddings
-            fuse_rope (bool): Whether to fuse RoPE operations
+            apply_rope_fusion (bool): Whether to fuse RoPE operations
             fuse_linear (bool): Whether to fuse linear operations
             fuse_up_gate (bool): Whether to fuse up_proj and gate_proj to a single linear layer
             max_sequence_length (int): Maximum sequence length for positional embeddings
@@ -120,9 +122,6 @@ class Ernie4_5Config(PretrainedConfig):
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
-        self.recompute = recompute
-        self.recompute_granularity = recompute_granularity
-        self.use_flash_attention = use_flash_attention
         self.recompute_use_reentrant = recompute_use_reentrant
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
@@ -133,7 +132,7 @@ class Ernie4_5Config(PretrainedConfig):
         self.use_bias = use_bias
         self.rope_theta = rope_theta
         self.tie_word_embeddings = tie_word_embeddings
-        self.fuse_rope = fuse_rope
+        self.apply_rope_fusion = apply_rope_fusion
         self.fuse_softmax_mask = fuse_softmax_mask
         self.fuse_linear = fuse_linear
         self.ignored_index = ignored_index
@@ -144,23 +143,38 @@ class Ernie4_5Config(PretrainedConfig):
         self.pp_seg_method = pp_seg_method
         self.dpo_config = dpo_config
         self.kto_config = kto_config
+        self.recompute_granularity = None
+        self.recompute_granularity = None
+        self.recompute_method = None
+        self.recompute_modules = None
+        self.recompute_num_layers = None
+        self.recompute_mtp_granularity = None
+        self.recompute_mtp_method = None
+        self.recompute_mtp_modules = None
         self.register_unsavable_keys(
             [
                 "attention_dropout_prob",
                 "hidden_dropout_prob",
                 "ignored_index",
                 "scale_qk_coeff",
-                "recompute",
                 "recompute_use_reentrant",
-                "recompute_granularity",
                 "pp_seg_method",
                 "micro_batch_size",
                 "fuse_softmax_mask",
                 "max_sequence_length",
                 "dpo_config",
                 "kto_config",
+                "recompute_granularity",
+                "recompute_method",
+                "recompute_modules",
+                "recompute_num_layers",
+                "recompute_mtp_granularity",
+                "recompute_mtp_method",
+                "recompute_mtp_modules",
             ]
         )
+        standardize_rope_params(self, rope_theta=rope_theta)
+        rope_config_validation(self)
 
 
 __all__ = ["Ernie4_5Config"]

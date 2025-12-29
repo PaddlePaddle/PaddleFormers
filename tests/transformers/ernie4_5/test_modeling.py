@@ -14,6 +14,7 @@
 # limitations under the License.
 from __future__ import annotations
 
+import sys
 import tempfile
 import unittest
 
@@ -284,7 +285,7 @@ class Ernie4_5ModelTester:
     def create_and_check_gqa_model(self, config, input_ids, input_mask, *args):
         model = Ernie4_5ForCausalLM(config)
         config.num_key_value_heads = 8  # gqa
-        config.use_fused_rope = True
+        config.apply_rope_fusion = True
         model.eval()
 
         result = model(
@@ -470,6 +471,14 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         # 3. forward the torch  model
+        try:
+            sys.modules["torch"] = sys.modules["torch_save"]
+        except:
+            pass
+        try:
+            del sys.modules["transformers"]
+        except:
+            pass
         import torch
         from transformers import Ernie4_5Model
 
@@ -484,6 +493,11 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                 rtol=1e2,
             )
         )
+        sys.modules["torch"] = None
+        try:
+            del sys.modules["transformers"]
+        except:
+            pass
 
     @require_package("transformers", "torch")
     def test_ernie4_5_converter_from_local_dir(self):
@@ -493,6 +507,14 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch  model
+            try:
+                sys.modules["torch"] = sys.modules["torch_save"]
+            except:
+                pass
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass
             import torch
             from transformers import Ernie4_5Model
 
@@ -515,6 +537,57 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                     rtol=1e2,
                 )
             )
+            sys.modules["torch"] = None
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass
+
+            # 3. forward with fc
+            from paddleformers.transformers import Ernie4_5Config, Ernie4_5ForCausalLM
+
+            uc_load_model = Ernie4_5ForCausalLM.from_pretrained(
+                self.torch_model_path,
+                convert_from_hf=True,
+                dtype="float32",
+                load_checkpoint_format="unified_checkpoint",
+            )
+            fc_load_model = Ernie4_5ForCausalLM.from_pretrained(
+                self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
+            uc_load_model.eval()
+            fc_load_model.eval()
+            uc_logit = uc_load_model(paddle.to_tensor(input_ids))[0]
+            fc_logit = fc_load_model(paddle.to_tensor(input_ids))[0]
+            self.assertTrue(
+                np.allclose(
+                    uc_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    fc_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    atol=1e-5,
+                    rtol=1e-5,
+                )
+            )
+
+            model_config = Ernie4_5Config.from_pretrained(self.torch_model_path)
+            model_config.fuse_attention_qkv = True
+            model_config.fuse_attention_ffn = True
+            fc_fused_load_model = Ernie4_5ForCausalLM.from_pretrained(
+                self.torch_model_path,
+                config=model_config,
+                convert_from_hf=True,
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
+            )
+            fc_fused_load_model.eval()
+            fc_fused_logit = fc_fused_load_model(paddle.to_tensor(input_ids))[0]
+            self.assertTrue(
+                np.allclose(
+                    fc_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    fc_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    atol=1e-5,
+                    rtol=1e-5,
+                )
+            )
 
     @parameterized.expand([("Ernie4_5Model",), ("Ernie4_5ForCausalLM",)])
     @require_package("transformers", "torch")
@@ -526,6 +599,14 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch model
+            try:
+                sys.modules["torch"] = sys.modules["torch_save"]
+            except:
+                pass
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass
             import torch
             import transformers
 
@@ -555,6 +636,11 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                     atol=1e2,
                 )
             )
+            sys.modules["torch"] = None
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass
 
 
 if __name__ == "__main__":

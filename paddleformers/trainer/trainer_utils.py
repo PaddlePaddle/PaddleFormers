@@ -28,8 +28,10 @@ import json
 import math
 import os
 import random
+import re
 import threading
 import time
+from collections import OrderedDict, namedtuple
 from contextlib import contextmanager
 from enum import Enum
 from pathlib import Path
@@ -47,19 +49,36 @@ from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_stage2 import (
     GroupShardedOptimizerStage2,
 )
+from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+    create_sharded_weight_with_new_local,
+)
 from paddle.io import IterableDataset
 from paddle.optimizer.lr import LambdaDecay
 from transformers.tokenization_utils_base import BatchEncoding
 
-from ..ops import Topology
+# from ..ops import Topology
 from ..trainer.argparser import strtobool
-from ..utils.env import PREFIX_CHECKPOINT_DIR, _re_checkpoint  # noqa for compatibility
+from ..transformers.model_utils import (
+    EMAStateHFFormatFullParamSaver,
+    _add_variant,
+    replace_name_and_gen_index,
+    save_full_param,
+)
+from ..utils.env import (  # noqa for compatibility
+    PADDLE_OPTIMIZER_NAME,
+    PREFIX_CHECKPOINT_DIR,
+    PREFIX_EMA_HF_CHECKPOINT_DIR,
+    _re_checkpoint,
+)
 from ..utils.fault_tolerance import PDC_DOWNLOAD_ERROR
 from ..utils.import_utils import is_paddle_cuda_available, is_psutil_available
 from ..utils.log import logger
 from ..utils.pdc_sdk import PDCErrorCode, PDCErrorMessageMap, pdc_tool
-from ..utils.tools import get_env_device
+from ..utils.tools import get_env_device, paddle_device
+from .utils import reshard as reshard_util
 from .utils.helper import distributed_file
+from .utils.reshard import SHARDING_STRATEGY_V1, split_opt_state
+from .utils.sharding_io import GroupGetter, to_device
 
 __all__ = [
     "TrainOutput",
@@ -68,6 +87,7 @@ __all__ = [
     "IntervalStrategy",
     "SchedulerType",
     "set_seed",
+    "set_random_seed",
     "speed_metrics",
     "get_last_checkpoint",
     "get_scheduler",
@@ -94,6 +114,74 @@ def log_trainer_start():
         start_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
         logger.info(f"The Training Main Process Started Successfully. time: {start_time}, pid: {os.getpid()}")
         os.environ["MAIN_PROCESS_STARTED"] = "1"
+
+
+GroupInfo = namedtuple("GroupInfo", ["size", "rank", "world"])
+
+
+class Topology:
+    def __init__(
+        self,
+        device_rank,
+        world_size,
+        dp_degree=None,
+        pp_degree=1,
+        sharding_degree=1,
+        mp_degree=1,
+        sep_degree=1,
+        order=["dp", "pp", "sharding", "mp", "sep"],
+    ):
+        assert set(order) == {"dp", "pp", "sharding", "mp", "sep"}, f"Illegal order : {order}"
+        self.order = order
+
+        degree_map = {
+            "dp": dp_degree,
+            "pp": pp_degree,
+            "sharding": sharding_degree,
+            "mp": mp_degree,
+            "sep": sep_degree,
+        }
+        shape = [degree_map[key] for key in self.order]
+
+        arr = np.arange(0, dp_degree * pp_degree * sharding_degree * mp_degree * sep_degree).reshape(shape)
+        ranks = [rank[0] for rank in np.where(arr == device_rank)]
+
+        self.world = GroupInfo(size=world_size, rank=device_rank, world=list(range(0, world_size)))
+        worlds = []
+        for i in range(len(ranks)):
+            indexes = tuple(ranks[:i] + [slice(None)] + ranks[(i + 1) :])
+            worlds.append(arr[indexes])
+
+        for i, key in enumerate(self.order):
+            if key == "dp":
+                self.dp_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+            elif key == "pp":
+                self.pp_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+            elif key == "sharding":
+                self.sharding_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+            elif key == "mp":
+                self.mp_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+            elif key == "sep":
+                self.sep_info = GroupInfo(size=len(worlds[i]), rank=ranks[i], world=worlds[i].tolist())
+
+        self.is_last = self.pp_info.rank == self.pp_info.size - 1
+
+        data_arr = np.arange(0, dp_degree * sharding_degree).reshape([dp_degree, sharding_degree])
+        for i, key in enumerate(self.order):
+            if key != "dp" and key != "sharding":
+                data_arr = np.expand_dims(data_arr, axis=i).repeat(degree_map[key], axis=i)
+
+        self.data_info = GroupInfo(
+            size=int(self.dp_info.size * self.sharding_info.size),
+            rank=int(self.dp_info.rank * self.sharding_info.size + self.sharding_info.rank),
+            world=data_arr.reshape(-1).tolist(),
+        )
+
+        assert self.data_info.world[device_rank] == self.data_info.rank, "Data rank calculate error!"
+        self.data_inner_times = self.world.size // self.data_info.size
+
+    def __repr__(self):
+        return f"dp_info:\n\t {self.dp_info}, \npp_info:\n\t {self.pp_info}, \nsharding_info:\n\t {self.sharding_info}, \nmp_info:\n\t {self.mp_info}, \nsep_info:\n\t {self.sep_info}, \ndata_info:\n\t {self.data_info}, \norder:\n\t {self.order}"
 
 
 def _get_distributed_seeds(seed: int = 1234, topo: Topology = None):
@@ -129,6 +217,8 @@ def _get_distributed_seeds(seed: int = 1234, topo: Topology = None):
         sep_size = topo.sep_info.size
 
         sharding_rank = topo.sharding_info.rank
+
+        cp_rank, cp_size = 0, 1
     elif hcg is not None and paddle.distributed.get_world_size() > 1:
         # obtain rank message of hybrid parallel
 
@@ -147,8 +237,15 @@ def _get_distributed_seeds(seed: int = 1234, topo: Topology = None):
         dp_rank = hcg.get_data_parallel_rank()
         dp_size = hcg.get_data_parallel_world_size()
 
-        sharding_rank = hcg.get_sharding_parallel_rank()
+        if hasattr(fleet, "get_context_parallel_rank"):
+            cp_rank = hcg.get_context_parallel_rank()
+            cp_size = hcg.get_context_parallel_world_size()
+            sharding_rank = hcg.get_sharding_parallel_rank(with_context_parallel=cp_size > 1)
+        else:
+            cp_rank, cp_size = 0, 1
+            sharding_rank = hcg.get_sharding_parallel_rank()
     else:
+        cp_rank, cp_size = 0, 1
         mp_rank, mp_size = 0, 1
         sep_rank, sep_size = 0, 1
         pp_rank, pp_size = 0, 1
@@ -156,23 +253,41 @@ def _get_distributed_seeds(seed: int = 1234, topo: Topology = None):
         sharding_rank, _ = 0, 1
 
     seed_offset = seed
-    global_seed = (
-        seed_offset
-        + sep_rank * (mp_size)
-        + pp_rank * (mp_size * sep_size)
-        + dp_rank * (mp_size * sep_size * pp_size)
-        + sharding_rank * (mp_size * sep_size * pp_size * dp_size)
-    )
+    if cp_size == 1:
+        global_seed = (
+            seed_offset
+            + sep_rank * (mp_size)
+            + pp_rank * (mp_size * sep_size)
+            + dp_rank * (mp_size * sep_size * pp_size)
+            + sharding_rank * (mp_size * sep_size * pp_size * dp_size)
+        )
 
-    seed_offset += paddle.distributed.get_world_size()
-    local_seed = (
-        seed_offset
-        + mp_rank
-        + sep_rank * (mp_size)
-        + pp_rank * (mp_size * sep_size)
-        + dp_rank * (mp_size * sep_size * pp_size)
-        + sharding_rank * (mp_size * sep_size * pp_size * dp_size)
-    )
+        seed_offset += paddle.distributed.get_world_size()
+        local_seed = (
+            seed_offset
+            + mp_rank
+            + sep_rank * (mp_size)
+            + pp_rank * (mp_size * sep_size)
+            + dp_rank * (mp_size * sep_size * pp_size)
+            + sharding_rank * (mp_size * sep_size * pp_size * dp_size)
+        )
+    else:
+        assert sep_size == 1, f"When cp_size != 1, sep_size must be 1, but get sep_size = {sep_size}"
+        global_seed = (
+            seed_offset
+            + pp_rank * (mp_size * cp_size)
+            + dp_rank * (mp_size * cp_size * pp_size)
+            + sharding_rank * (mp_size * cp_size * pp_size * dp_size)
+        )
+        seed_offset += paddle.distributed.get_world_size()
+        local_seed = (
+            seed_offset
+            + mp_rank
+            + cp_rank * mp_size
+            + pp_rank * (mp_size * cp_size)
+            + dp_rank * (mp_size * cp_size * pp_size)
+            + sharding_rank * (mp_size * cp_size * pp_size * dp_size)
+        )
 
     # NOTE: the commented seeds are set only for precision validation
     random_seed = seed + 100 * pp_rank
@@ -198,6 +313,41 @@ def set_seed(seed: int = 1234, topo=None):
         "The global seed is set to {}, local seed is set to {} and "
         "random seed is set to {}.".format(global_seed, local_seed, random_seed)
     )
+
+
+def set_random_seed(
+    seed_: int,
+    data_parallel_random_init: bool = False,
+    te_rng_tracker: bool = False,
+    inference_rng_tracker: bool = False,
+    use_cudagraphable_rng: bool = False,
+):
+    """Set random seed for reproducability."""
+    if seed_ is not None and seed_ > 0:
+        from ..utils.import_utils import is_paddlefleet_available
+
+        if is_paddlefleet_available():
+            import paddlefleet
+
+            # Ensure that different pipeline MP stages get different seeds.
+            seed = seed_ + (100 * paddlefleet.parallel_state.get_pipeline_model_parallel_rank())
+            # Ensure different data parallel ranks get different seeds
+            if data_parallel_random_init:
+                seed = seed + (10 * paddlefleet.parallel_state.get_data_parallel_rank())
+            random.seed(seed)
+            np.random.seed(seed)
+            paddle.manual_seed(seed)
+            if paddle.cuda.device_count() > 0:
+                paddlefleet.tensor_parallel.model_parallel_cuda_manual_seed(
+                    seed, te_rng_tracker, inference_rng_tracker, use_cudagraphable_rng
+                )
+        else:
+            # Fallback for when paddlefleet is not available
+            random.seed(seed_)
+            np.random.seed(seed_)
+            paddle.manual_seed(seed_)
+    else:
+        raise ValueError("Seed ({}) should be a positive integer.".format(seed_))
 
 
 def _switch_mode(mode="dynamic"):
@@ -866,11 +1016,11 @@ class TrainerMemoryTracker:
 
         if self.paddle is not None:
             # self.paddle.cuda.reset_peak_memory_stats()?
-            self.paddle.device.cuda.empty_cache()
+            self.paddle_device.empty_cache()
 
         # gpu
         if self.paddle is not None:
-            self.gpu_mem_used_at_start = self.paddle.device.cuda.memory_allocated()
+            self.gpu_mem_used_at_start = paddle_device.memory_allocated()
 
         # cpu
         self.cpu_mem_used_at_start = self.cpu_mem_used()
@@ -894,7 +1044,7 @@ class TrainerMemoryTracker:
         gc.collect()
 
         if self.paddle is not None:
-            self.paddle.device.cuda.empty_cache()
+            paddle_device.empty_cache()
 
         # concepts:
         # - alloc_delta:  the difference of allocated memory between the end and the start
@@ -903,8 +1053,8 @@ class TrainerMemoryTracker:
 
         # gpu
         if self.paddle is not None:
-            self.gpu_mem_used_now = self.paddle.device.cuda.memory_allocated()
-            self.gpu_mem_used_peak = self.paddle.device.cuda.max_memory_allocated()
+            self.gpu_mem_used_now = paddle_device.memory_allocated()
+            self.gpu_mem_used_peak = paddle_device.max_memory_allocated()
             self.gpu[self.cur_stage] = dict(
                 begin=self.gpu_mem_used_at_start,
                 end=self.gpu_mem_used_now,
@@ -935,7 +1085,7 @@ class TrainerMemoryTracker:
 
         if hasattr(self, "gpu_mem_used_peak"):
             metrics["gpu_mem_max_memory_allocated"] = self.gpu_mem_used_peak
-            metrics["gpu_mem_max_memory_reserved"] = self.paddle.device.cuda.max_memory_reserved()
+            metrics["gpu_mem_max_memory_reserved"] = paddle_device.max_memory_reserved()
 
         # since we don't have a way to return init metrics, we push them into the first of train/val/predict
         stages = [stage]
@@ -1280,7 +1430,11 @@ def download_recovery_ckpt_from_pdc(recovery_checkpoint_path, timeout):
 
 def _insert_sync(self, sync_var, src, mp_group, sync_mode):
     # Get device type where the sync_var is located
-    original_device = "pin_memory" if str(sync_var.place) == "Place(gpu_pinned)" else "Other"
+    original_device = (
+        "pin_memory"
+        if str(sync_var.place) == "Place(gpu_pinned)" or str(sync_var.place) == "Place(xpu_pinned)"
+        else "Other"
+    )
 
     # If the sync_var is on pin memory, first move it to CUDA or other decives
     if original_device == "pin_memory":
@@ -1303,7 +1457,10 @@ def _insert_sync(self, sync_var, src, mp_group, sync_mode):
 
     # Move it back to pin memory
     if original_device == "pin_memory":
-        sync_var = paddle.to_tensor(sync_var, place=paddle.CUDAPinnedPlace())
+        if get_env_device() == "gpu":
+            sync_var = paddle.to_tensor(sync_var, place=paddle.CUDAPinnedPlace())
+        elif get_env_device() == "xpu":
+            sync_var = paddle.to_tensor(sync_var, place=paddle.XPUPinnedPlace())
 
 
 def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
@@ -1496,3 +1653,443 @@ def init_nccl_config(nccl_comm_group_config, strategy):
     set_comm_config("moe_sharding_configs", "check_nccl_config", nccl_config.get("moe_sharding_check", None))
     set_comm_config("default_comm_group_configs", "nccl_config", nccl_config.get("default", None))
     return strategy
+
+
+class HFFormatFullParamSaver:
+    def __init__(
+        self,
+        model,
+        aoa_config,
+        h_group=None,
+        v_group=None,
+        num_splits=None,
+        shard_idx=None,
+        saved_in_one_node=False,
+        memory_growth_threshold=8 * (2**30),
+    ):
+        self.model = model
+        self.aoa_config = aoa_config
+        self.h_group = h_group
+        self.v_group = v_group
+        self.num_splits = num_splits
+        self.shard_idx = shard_idx
+        self.saved_in_one_node = saved_in_one_node
+        self.memory_growth_threshold = memory_growth_threshold
+        self.determin_saver_based_group()
+
+    def get_full_param_iter(self):
+        assert (self.v_group and self.h_group) or not (
+            self.v_group or self.h_group
+        ), f"both h_group and v_group are provided or none of them, but got {self.v_group} and {self.h_group}"
+        if self.v_group and self.h_group:
+            assert self.shard_idx is not None, "expected shard_idx is not None"
+            assert self.num_splits is not None, "expected num_splits is not None"
+
+            param_iter = self.model.full(
+                aoa_config=self.aoa_config,
+                h_group=self.h_group,
+                v_group=self.v_group,
+                num_splits=self.num_splits,
+                shard_idx=self.shard_idx,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+        else:
+            param_iter = self.model.full(aoa_config=self.aoa_config)
+        return param_iter
+
+    def determin_saver_based_group(self):
+        self.num_saver_ranks = paddle.distributed.get_world_size()
+        self.rank = paddle.distributed.get_rank()
+
+        if self.h_group and self.v_group:
+            self.num_saver_ranks = self.h_group.nranks * self.v_group.nranks
+            self.rank = self.h_group.rank + self.v_group.rank * self.h_group.nranks
+
+        if self.saved_in_one_node:
+            local_world_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
+            self.num_saver_ranks = min(local_world_size, self.num_saver_ranks)
+
+    def save_checkpoint(self, path, max_shard_size="16GB"):
+        total_saved_size = save_full_param(
+            itr=self.get_full_param_iter(),
+            save_dir=path,
+            rank=self.rank,
+            moe_sharding_world_size=self.num_saver_ranks,
+            max_shard_size=max_shard_size,
+            num_saver_ranks=self.num_saver_ranks,
+        )
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.barrier()
+
+        # TODO(): fix total size
+        all_sizes = []
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.all_gather_object(all_sizes, total_saved_size)
+        else:
+            all_sizes.append(total_saved_size)
+        total_size = sum(all_sizes)
+        replace_name_and_gen_index(path, total_size)
+        return total_saved_size
+
+
+def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
+    master_weights = ema_state_dict["master_weights"]
+    tmp = OrderedDict()
+    (master_weights, tmp) = (tmp, master_weights)
+    # cast to before
+    for (k, v) in tmp.items():
+        name = v.name
+        master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
+        master_weights[k].name = name
+
+    structure_name_map = {k: v.name for (k, v) in model.state_dict().items()}
+    node_model_state = reshard_util.NodeModelState(group=group)
+    node_model_state_tmp = reshard_util.NodeModelState(group=group)
+    node_model_state_tmp.add_master_weights(master_weights)
+    node_model_state_tmp.pack_keys(structure_name_map)
+    node_model_state.merge_from(node_model_state_tmp, max(group.rank, 0))
+    del node_model_state_tmp
+    sharding_strategy = reshard_util.get_sharding_strategy(optimizer)
+    logger.debug(f"sharding_strategy: {sharding_strategy}")
+    restore_func = (
+        reshard_util.sharding_v1.restore
+        if sharding_strategy == SHARDING_STRATEGY_V1
+        else reshard_util.sharding_v2.restore
+    )
+    node_model_state = restore_func(node_model_state, model, optimizer)
+    node_model_state.unpack_keys()
+    master_weights = node_model_state.master_weights
+
+    master_weights = reshard_util.all_gather_state_dict(master_weights, lambda x: True, group)
+
+    model_state_dict = model.state_dict()
+    ema_param_state_dict = OrderedDict()
+    for key, param in model_state_dict.items():
+        if param.name in master_weights and param.dtype == paddle.bfloat16:
+            logger.debug(
+                f"key {key}, convert master weights {param.name} shape {master_weights[param.name].shape} to param {param.name} shape{param.shape}"
+            )
+            assert (
+                param.shape == master_weights[param.name].shape
+            ), f"got {param.shape} vs {master_weights[param.name].shape}"
+            master_weight = paddle.reshape(master_weights[param.name], param.shape)
+            ema_param_state_dict[key] = paddle.cast(to_device(master_weight), paddle.bfloat16)
+
+    for k, v in master_weights.items():
+        v._clear()
+
+    del master_weights
+    return ema_param_state_dict
+
+
+class EMAStateAssembler:
+    def __init__(
+        self,
+        output_dir,
+        save_checkpoint_format,
+        save_hf_steps,
+        save_steps,
+        optimizer_name_suffix,
+        model,
+        optimizer,
+    ):
+        self.output_dir = Path(output_dir)
+        self.save_checkpoint_format = save_checkpoint_format
+        self.save_hf_steps = save_hf_steps
+        if save_hf_steps > 0 and save_hf_steps % save_steps != 0:
+            raise ValueError("[EMAStateAssembler] save_hf_steps must be a multiple of save_steps.")
+
+        self.rank = dist.get_rank()
+        self.world_size = dist.get_world_size()
+
+        self.optimizer_name_suffix = optimizer_name_suffix
+        self.model = model
+        self.optimizer = optimizer
+        self.model_sharded_state_dict = self.model.sharded_state_dict()
+
+        hcg = paddle.distributed.fleet.get_hybrid_communicate_group()
+        try:
+            pp_group = hcg.get_pipe_parallel_group()
+            if pp_group is None or pp_group.nranks < 1:
+                raise NotImplementedError("[EMAStateAssembler] Only support when pp_group is not None.")
+        except Exception:
+            raise RuntimeError("[EMAStateAssembler] Only support when pp_group is not None.")
+
+        try:
+            moe_group = hcg.get_expert_parallel_group()
+            if moe_group is None or moe_group.nranks < 1:
+                raise NotImplementedError("[EMAStateAssembler] Only support when moe_group is not None.")
+        except Exception:
+            raise RuntimeError("[EMAStateAssembler] Only support when moe_group is not None.")
+
+        try:
+            moe_sharding_group = hcg.get_moe_sharding_parallel_group()
+            if moe_sharding_group is None:
+                raise NotImplementedError("[EMAStateAssembler] Only support when moe_sharding_group is not None.")
+        except Exception:
+            raise RuntimeError("[EMAStateAssembler] Only support when moe_sharding_group is not None.")
+
+        moe_sharding_rank = hcg.get_moe_sharding_parallel_rank()
+
+        self.moe_sharding_group = moe_sharding_group
+
+        n_routed_experts = self.model.config.n_routed_experts
+        assert (
+            n_routed_experts % moe_group.nranks == 0
+        ), "[EMAStateAssembler] n_routed_experts must be divisible by moe_group size."
+
+        self.h_group = moe_group
+        self.v_group = pp_group
+        self.num_splits = moe_sharding_group.nranks
+        self.shard_idx = moe_sharding_rank
+        self.expert_id_offset = (n_routed_experts // moe_group.nranks) * moe_group.rank
+        self.latest_processed_checkpoint_step = -1
+
+    def run(self):
+        if self.save_hf_steps < 0:
+            logger.info("[EMAStateAssembler] save_hf_steps is negative. Skipping.")
+            return
+
+        next_step, next_ckpt_dir = self._find_next_checkpoint()
+        if next_step is None:
+            next_step = -1
+        next_steps = []
+        dist.all_gather_object(next_steps, next_step)
+        if -1 in next_steps:
+            # At this point, some trainers no longer have any checkpoints to process. Each trainer checks whether it has any checkpoints left to process.
+            if next_step != -1 and next_ckpt_dir is not None:
+                # There are still checkpoints available locally for processing.
+                if self._is_already_handled(next_ckpt_dir):
+                    # Already processed, skip. It may enter here during the first warm start.
+                    self.latest_processed_checkpoint_step = next_step
+                    logger.info(
+                        f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
+                        "already been handled. Skipping."
+                    )
+                    return
+                # Not yet processed, check if EMA state needs to be merged.
+                is_hf_save_step = next_step % self.save_hf_steps == 0
+                if not is_hf_save_step:
+                    self._handle_naive_checkpoint(next_step, next_ckpt_dir)
+                    return
+            logger.info(
+                f"[EMAStateAssembler][Rank {self.rank}] No unprocessed checkpoint found in {self.output_dir} "
+                f"in current training step. Latest processed checkpoint step is {self.latest_processed_checkpoint_step}. Skipping."
+            )
+            return
+
+        # At this point, each trainer has a checkpoint to process, but the step counts are not consistent.
+        if len(set(next_steps)) != 1:
+            # If the checkpoint does not need to be used for merging EMA state, then try to process it.
+            is_hf_save_step = next_step % self.save_hf_steps == 0
+            if not is_hf_save_step and next_ckpt_dir is not None:
+                if self._is_already_handled(next_ckpt_dir):
+                    self.latest_processed_checkpoint_step = next_step
+                    logger.info(
+                        f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
+                        "already been handled. Skipping."
+                    )
+                    return
+                self._handle_naive_checkpoint(next_step, next_ckpt_dir)
+                return
+
+            logger.warning(
+                f"[EMAStateAssembler][Rank {self.rank}] Multiple checkpoints detected. "
+                f"Selected checkpoint path: {next_ckpt_dir}. Skipping processing for this checkpoint."
+            )
+            return
+        # If the checkpoint has already been processed, skip it.
+        if self._is_already_handled(next_ckpt_dir):
+            self.latest_processed_checkpoint_step = next_step
+            logger.info(
+                f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
+                "already been handled. Skipping."
+            )
+            return
+
+        is_hf_save_step = next_step % self.save_hf_steps == 0
+
+        if is_hf_save_step:
+            self._handle_checkpoint_with_ema(next_step, next_ckpt_dir)
+        else:
+            self._handle_naive_checkpoint(next_step, next_ckpt_dir)
+
+    def _find_next_checkpoint(self) -> Tuple[Optional[int], Optional[Path]]:
+        pattern = re.compile(_re_checkpoint)
+        min_step = None
+        min_ckpt_path = None
+
+        if not self.output_dir.is_dir():
+            return None, None
+
+        for item in self.output_dir.iterdir():
+            if item.is_dir():
+                match = pattern.match(item.name)
+                if match:
+                    step = int(match.group(1))
+                    if step > self.latest_processed_checkpoint_step:
+                        if min_step is None or step < min_step:
+                            min_step = step
+                            min_ckpt_path = item
+
+        return min_step, min_ckpt_path
+
+    def _is_already_handled(self, checkpoint_dir: Path) -> bool:
+        final_signal_file = checkpoint_dir / f"saved_signal_{self.rank}"
+        return final_signal_file.exists()
+
+    def _check_all_ranks_saved(self, checkpoint_dir: Path) -> bool:
+        temp_signal_file = checkpoint_dir / f"saved_signal_TMP_{self.rank}"
+
+        local_rank_is_saved = temp_signal_file.exists()
+
+        flag_tensor = paddle.to_tensor([1 if local_rank_is_saved else 0], dtype="int32")
+        dist.all_reduce(flag_tensor, op=dist.ReduceOp.SUM)
+
+        all_ranks_saved = flag_tensor.item() == self.world_size
+        return all_ranks_saved
+
+    def _mark_as_handled(self, checkpoint_dir: Path, step: int):
+        final_signal_file = checkpoint_dir / f"saved_signal_{self.rank}"
+        with open(final_signal_file, "w") as f:
+            f.write("1")
+
+        temp_signal_file = checkpoint_dir / f"saved_signal_TMP_{self.rank}"
+        if temp_signal_file.exists():
+            try:
+                temp_signal_file.unlink()
+            except OSError as e:
+                logger.warning(f"[EMAStateAssembler] Failed to remove temp signal file {temp_signal_file}: {e}")
+        self.latest_processed_checkpoint_step = step
+
+    def _handle_checkpoint_with_ema(self, step: int, checkpoint_dir: Path):
+        if self._check_all_ranks_saved(checkpoint_dir):
+            logger.info(
+                f"[EMAStateAssembler] [Rank {self.rank}] All ranks ready. Proceeding with EMA state assembly for step {step}."
+            )
+            ema_state_path = self._get_ema_state_path(checkpoint_dir)
+            if not ema_state_path.exists():
+                self._mark_as_handled(checkpoint_dir, step)
+                logger.warning(
+                    f"[EMAStateAssembler] [Rank {self.rank}] EMA state file not found at {ema_state_path}, skipping and updating signal. "
+                )
+                return
+            ema_sharded_state_dict = self._build_ema_sharded_state_dict(ema_state_path)
+            self._mark_as_handled(checkpoint_dir, step)
+            self._save_full_ema_states(step, ema_sharded_state_dict)
+            del ema_sharded_state_dict
+            logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Finished merging EMA states and updated signal.")
+        else:
+            logger.info(
+                f"[EMAStateAssembler] [Rank {self.rank}] Waiting for other ranks to finish saving checkpoint at step {step}."
+            )
+
+    def _handle_naive_checkpoint(self, step: int, checkpoint_dir: Path):
+        logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Processing a no need merge EMA checkpoint.")
+        temp_signal_file = checkpoint_dir / f"saved_signal_TMP_{self.rank}"
+
+        if not temp_signal_file.exists():
+            logger.warning(
+                f"[EMAStateAssembler] [Rank {self.rank}] Temporary signal file not found at {temp_signal_file}. "
+            )
+            return
+
+        self._mark_as_handled(checkpoint_dir, step)
+        logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Marked naive checkpoint as handled and updated signal.")
+
+    def _get_ema_state_path(self, checkpoint_dir: Path) -> Path:
+        if self.save_checkpoint_format == "flex_checkpoint":
+            return checkpoint_dir / "ema_state" / f"{self.rank}_0.distcp"
+        else:
+            optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.optimizer_name_suffix)
+            ema_file_name = optimizer_name.replace("optimizer", "ema")
+            return checkpoint_dir / ema_file_name
+
+    def _build_ema_sharded_state_dict(self, ema_state_path: Path):
+        if not ema_state_path.exists():
+            raise FileNotFoundError(f"[EMAStateAssembler] EMA state file not found at {ema_state_path}.")
+
+        logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Loading EMA state from {ema_state_path}.")
+        ema_state_dict = paddle.load(str(ema_state_path))
+
+        group_getter = GroupGetter(self.model)
+        ema_state_dict_grouped = split_opt_state(ema_state_dict, group_getter)
+        ema_params_recovered = {}
+        for gid in group_getter.get_group_ids():
+            sub_ema_state_dict = ema_state_dict_grouped[gid]
+            group = group_getter.get_group_by_id(gid)
+            recovered = recover_params_from_master_weight(sub_ema_state_dict, self.model, self.optimizer, group)
+            ema_params_recovered.update(recovered)
+
+        ema_sharded_state_dict = {}
+
+        def _remove_layer_suffix(s):
+            return re.sub(r"_layer_\d+$", "", s)
+
+        def _update_expert_number(s, increment, add_mode=True):
+            def replace(match):
+                original_number = int(match.group(0))
+                if add_mode:
+                    new_number = original_number + increment
+                else:
+                    new_number = original_number - increment
+                return str(new_number)
+
+            return re.sub(r"(?<=experts\.)\d+", replace, s)
+
+        def _rename(key, add_mode=True):
+            if ".experts." in key:
+                key = _update_expert_number(key, self.expert_id_offset, add_mode)
+            elif "_layer_" in key:
+                key = _remove_layer_suffix(key)
+            return key
+
+        for k, v in self.model_sharded_state_dict.items():
+            if v.local_tensor.dtype == paddle.bfloat16:
+                ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(
+                    k, ema_params_recovered[_rename(k, False)], v
+                )
+
+        ema_state_dict.pop("master_weights")
+        del ema_params_recovered
+        if self.moe_sharding_group.nranks > 1:
+            extra_params = {}
+            extra_params_meta_info = {}
+            for k, v in ema_state_dict.items():
+                extra_params_meta_info[k] = {"shape": tuple(v.shape), "dtype": v.dtype, "src": self.rank}
+
+            extra_params_meta_infos = []
+            dist.all_gather_object(extra_params_meta_infos, extra_params_meta_info, group=self.moe_sharding_group)
+            extra_params_meta_info = {k: info for infos in extra_params_meta_infos for k, info in infos.items()}
+
+            for k, v in extra_params_meta_info.items():
+                if v["src"] == self.rank:
+                    buffer = ema_state_dict[k]
+                else:
+                    buffer = paddle.zeros(v["shape"], dtype=v["dtype"])
+                dist.broadcast(buffer, src=v["src"], group=self.moe_sharding_group)
+                extra_params[k] = buffer
+        else:
+            extra_params = ema_state_dict
+
+        for k, v in extra_params.items():
+            assert k in self.model_sharded_state_dict, f"[EMAStateAssembler] {k} not in model_sharded_state_dict"
+            ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, v, self.model_sharded_state_dict[k])
+        return ema_sharded_state_dict
+
+    def _save_full_ema_states(self, step, ema_sharded_state_dict):
+        hf_checkpoint_folder = f"{PREFIX_EMA_HF_CHECKPOINT_DIR}-{step}"
+        save_path = self.output_dir / hf_checkpoint_folder
+        config = self.model.config
+        aoa_config = self.model._gen_inv_aoa_config(config)
+
+        logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Saving full EMA states to {save_path}.")
+        saver = EMAStateHFFormatFullParamSaver(
+            ema_sharded_state_dict=ema_sharded_state_dict,
+            aoa_config=aoa_config,
+            h_group=self.h_group,
+            v_group=self.v_group,
+            num_splits=self.num_splits,
+            shard_idx=self.shard_idx,
+        )
+        saver.save_checkpoint(str(save_path))

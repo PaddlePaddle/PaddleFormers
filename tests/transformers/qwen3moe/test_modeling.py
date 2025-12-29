@@ -14,6 +14,7 @@
 # limitations under the License.
 from __future__ import annotations
 
+import sys
 import tempfile
 import unittest
 
@@ -405,6 +406,14 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         # 3. forward the torch  model
+        try:
+            sys.modules["torch"] = sys.modules["torch_save"]
+        except:
+            pass
+        try:
+            del sys.modules["transformers"]
+        except:
+            pass
         import torch
         from transformers import Qwen3MoeModel
 
@@ -420,6 +429,11 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
                 rtol=1e-2,
             )
         )
+        sys.modules["torch"] = None
+        try:
+            del sys.modules["transformers"]
+        except:
+            pass
 
     @require_package("transformers", "torch")
     def test_Qwen3Moe_converter_from_local_dir(self):
@@ -429,18 +443,28 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch  model
+            try:
+                sys.modules["torch"] = sys.modules["torch_save"]
+            except:
+                pass
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass
             import torch
-            from transformers import Qwen3MoeModel
+            from transformers import Qwen3MoeForCausalLM
 
-            torch_model = Qwen3MoeModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = Qwen3MoeForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
-            # 2. forward the paddle model
-            from paddleformers.transformers import Qwen3MoeModel
+            # 2. forward the paddle model with fc
+            from paddleformers.transformers import Qwen3MoeConfig, Qwen3MoeForCausalLM
 
-            paddle_model = Qwen3MoeModel.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = Qwen3MoeForCausalLM.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -453,6 +477,34 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
                 )
             )
 
+            # 3. fuse qkv/ffn with fc
+            model_config = Qwen3MoeConfig.from_pretrained(tempdir)
+            model_config.fuse_attention_qkv = True
+            model_config.fuse_attention_ffn = True
+            paddle_model_fused = Qwen3MoeForCausalLM.from_pretrained(
+                tempdir,
+                config=model_config,
+                convert_from_hf=True,
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
+            )
+            paddle_model_fused.eval()
+            paddle_fused_logit = paddle_model_fused(paddle.to_tensor(input_ids))[0]
+
+            self.assertTrue(
+                np.allclose(
+                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    paddle_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    atol=1e-2,
+                    rtol=1e-2,
+                )
+            )
+            sys.modules["torch"] = None
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass
+
     @parameterized.expand([("Qwen3MoeModel",), ("Qwen3MoeForCausalLM",)])
     @require_package("transformers", "torch")
     def test_Qwen3Moe_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
@@ -463,6 +515,14 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch model
+            try:
+                sys.modules["torch"] = sys.modules["torch_save"]
+            except:
+                pass
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass
             import torch
             import transformers
 
@@ -493,3 +553,9 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
+
+            sys.modules["torch"] = None
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass

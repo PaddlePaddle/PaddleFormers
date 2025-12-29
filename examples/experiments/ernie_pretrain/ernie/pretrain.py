@@ -18,13 +18,14 @@ import random
 import re
 import time
 from dataclasses import dataclass
+from functools import partial
 
 import numpy as np
 import paddle
 from paddle.distributed import fleet
 from src.utils import logger
 
-from paddleformers.utils.tools import get_env_device
+from paddleformers.utils.tools import get_env_device, paddle_device
 
 try:
     from paddle.distributed.utils.process_utils import SUCCESS_CODE, set_affinity
@@ -40,6 +41,7 @@ except ImportError:
     get_static_model_on_pdc = None
 
 from config import get_config
+from model_config import ModelConfig
 from models.ernie import ErnieMoEConfig
 from models.ernie.modeling_moe import ErnieMoEForCausalLM
 from models.ernie.modeling_pp import ErnieMoEForCausalLMPipe
@@ -60,6 +62,9 @@ from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
     check_data_split,
 )
+from paddleformers.datasets.finetuning import collate_fn
+from paddleformers.datasets.finetuning import create_dataset as create_dataset_sft
+from paddleformers.trainer import TrainingArguments
 
 try:
     from paddleformers.trainer.trainer_utils import log_trainer_start
@@ -86,7 +91,7 @@ def update_model_config_from_args(config: ErnieMoEConfig, model_args: dict):
 
 
 def get_tp_split_ckpt(args, path):
-    tp_degree = args.tensor_parallel_degree
+    tp_degree = args.tensor_model_parallel_size
     tp_rank = max(args.tensor_parallel_rank, 0)
 
     if tp_degree > 1:
@@ -170,23 +175,20 @@ def main():
         config.trainer_args.pipeline_parallel_config = ""
 
     if getattr(config.model_args, "sequence_parallel", 0):
-        logger.warning("disabling `disable_partial_send_recv` when using sequence parallel")
-        config.trainer_args.pipeline_parallel_config += " disable_partial_send_recv"
+        logger.warning("disabling `partial_send_recv` when using sequence parallel")
+        config.trainer_args.partial_send_recv = False
 
-    if (
-        getattr(config.trainer_args, "bf16", False)
-        and "enable_delay_scale_loss" not in config.trainer_args.pipeline_parallel_config
-    ):
+    if getattr(config.trainer_args, "bf16", False) and not config.trainer_args.pp_delay_scale_loss:
         logger.warning(
-            "It is recommended to enable delay_scale_loss for better performance "
+            "It is recommended to enable pp_delay_scale_loss for better performance "
             "of precision when using bf16 in training"
         )
-        config.trainer_args.pipeline_parallel_config += " enable_delay_scale_loss"
+        config.trainer_args.pp_delay_scale_loss = True
 
-    if "enable_dp_comm_overlap" in config.trainer_args.pipeline_parallel_config:
+    if config.trainer_args.dp_comm_overlap:
         logger.warning("Pipeline dp_comm_overlap and FusedLinearWithGradAdd can not be used at " "the same time.")
 
-    if "enable_timer" in config.trainer_args.pipeline_parallel_config:
+    if config.trainer_args.timer:
         from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
             PipelineParallel,
         )
@@ -204,18 +206,16 @@ def main():
     trainer_args = {k: formatv(v) for k, v in dict(config.trainer_args).items()}
     if trainer_args["moe_group"] == "ep":
         assert (
-            trainer_args.get("expert_parallel_degree", -1) > 1
-        ), "When moe_group is 'ep', 'expert_parallel_degree' must be set to greater than 1."
+            trainer_args.get("expert_model_parallel_size", -1) > 1
+        ), "When moe_group is 'ep', 'expert_model_parallel_size' must be set to greater than 1."
         assert (
-            trainer_args.get("sharding_parallel_degree", -1) > 1
-        ), "sharding_parallel_degree should > 1 in when moe_group is 'ep'."
+            trainer_args.get("sharding_parallel_size", -1) > 1
+        ), "sharding_parallel_size should > 1 in when moe_group is 'ep'."
         assert trainer_args.get("sharding") == "stage1", "Hybrid expert parallel only supports sharding stage1 now."
+        assert trainer_args.get("split_param", False), "Hybrid expert parallel only supports Sharding stage1 V2 now."
         assert (
-            "sharding_parallel_config" in trainer_args and "split_param" in trainer_args["sharding_parallel_config"]
-        ), "Hybrid expert parallel only supports Sharding stage1 V2 now."
-        assert (
-            trainer_args.get("data_parallel_degree", 1) == 1
-        ), "Now, moe_group = 'ep' cannot be used with data_parallel_degree > 1."
+            trainer_args.get("data_parallel_size", 1) == 1
+        ), "Now, moe_group = 'ep' cannot be used with data_parallel_size > 1."
 
     data_processor_args = {k: formatv(v) for k, v in dict(getattr(config, "data_processor_args", {})).items()}
     (args,) = parser.parse_dict(dict(**model_args, **trainer_args, **data_processor_args))
@@ -227,7 +227,7 @@ def main():
     args.eval_iters = 10
     args.test_iters = args.eval_iters * 10
 
-    args.enable_delay_scale_loss = "enable_delay_scale_loss" in config.trainer_args.pipeline_parallel_config
+    args.enable_delay_scale_loss = config.trainer_args.pp_delay_scale_loss
 
     model_config = dict(getattr(config.model_args, "model_config", {}))
     model_config = {k: formatv(v) for k, v in model_config.items()}
@@ -246,7 +246,7 @@ def main():
         logger.info("set enable_optimizer_timer to True")
 
     if get_env_device() == "gpu":
-        prop = paddle.device.cuda.get_device_properties()
+        prop = paddle_device.get_device_properties()
         if prop.total_memory < args.pre_alloc_memory * 1024 * 1024 * 1024:
             logger.warning("Invalid value for `pre_alloc_memory`, so pre-allocating just failed.")
         elif args.pre_alloc_memory > 0:
@@ -411,13 +411,13 @@ def main():
         logger.info("using orthogonal loss callback")
         cfg.moe_orthogonal_loss_lambda = 0.0
 
-    if args.tensor_parallel_degree > 1:
+    if args.tensor_model_parallel_size > 1:
         cfg.sequence_parallel = args.sequence_parallel
-        cfg.tensor_parallel_degree = max(fleet.get_hybrid_communicate_group().get_model_parallel_world_size(), 1)
+        cfg.tensor_model_parallel_size = max(fleet.get_hybrid_communicate_group().get_model_parallel_world_size(), 1)
         cfg.tensor_parallel_rank = max(fleet.get_hybrid_communicate_group().get_model_parallel_rank(), 0)
     else:
         cfg.sequence_parallel = False
-        cfg.tensor_parallel_degree = 1
+        cfg.tensor_model_parallel_size = 1
         cfg.tensor_parallel_rank = 0
     cfg.micro_batch_size = args.per_device_train_batch_size
 
@@ -430,8 +430,8 @@ def main():
 
     cfg = update_model_config_from_args(cfg, model_config)
 
-    if args.pipeline_parallel_degree > 1:
-        cfg.virtual_pp_degree = args.virtual_pp_degree
+    if args.pipeline_model_parallel_size > 1:
+        cfg.virtual_pipeline_model_parallel_size = args.virtual_pipeline_model_parallel_size
         cfg.num_acc_steps = args.gradient_accumulation_steps
         cfg.moe_with_send_router_loss = args.moe_with_send_router_loss
         cfg.enable_delay_scale_loss = args.enable_delay_scale_loss
@@ -459,7 +459,47 @@ def main():
 
     logger.info(f"using model={type(model)}, cfg={cfg}")
 
-    train_dataset, eval_dataset, test_dataset, data_collator = create_pretrained_dataset(args)
+    dataset_config = {
+        "tokenizer": tokenizer,
+        "max_seq_len": args.max_seq_length + 1,
+        "random_seed": args.seed,
+        "num_replicas": args.dataset_world_size,
+        "rank": args.dataset_rank,
+        "num_samples_each_epoch": trainer_args.get("num_samples_each_epoch", 6000000),
+        "random_shuffle": True,
+        "greedy_intokens": True,
+        "packing": True,
+        "mix_strategy": "concat",
+        "encode_one_turn": True,
+        "use_template": True,
+        "is_pretraining": False,
+    }
+
+    if trainer_args.get("stage") == "sft":
+        train_dataset = create_dataset_sft(
+            task_group=trainer_args["train_dataset_path"],
+            task_group_prob=trainer_args.get("train_dataset_prob", 1.0),
+            sub_dataset_type=trainer_args.get("train_dataset_type", "erniekit"),
+            **dataset_config,
+        )
+        eval_dataset = create_dataset_sft(
+            task_group=trainer_args["eval_dataset_path"],
+            task_group_prob=trainer_args.get("eval_dataset_prob", 1.0),
+            sub_dataset_type=trainer_args.get("eval_dataset_type", "erniekit"),
+            is_valid=True,
+            **dataset_config,
+        )
+        data_collator = partial(
+            collate_fn,
+            tokenizer=tokenizer,
+            training_args=TrainingArguments(
+                output_dir=args.output_dir, num_nextn_predict_layers=args.multi_token_pred_depth
+            ),
+            model_args=ModelConfig(stage="SFT", use_attn_mask_startend_row_indices=True),
+            max_seq_len=args.max_seq_length + 1,
+        )
+    else:
+        train_dataset, eval_dataset, _, data_collator = create_pretrained_dataset(args)
 
     callbacks = []
     callbacks += [GlobalRNGCallback()]

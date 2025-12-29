@@ -443,6 +443,10 @@ class GPTDataset(paddle.io.Dataset):
             sample, mask = self.indexed_dataset.get(
                 self.doc_idx[doc_index_f], offset=offset_f, length=offset_l - offset_f + 1
             )
+
+            # position_ids
+            all_position_ids = []
+            all_position_ids.append(list(range(len(sample))))
         else:
             # Otherwise, get the rest of the initial document.
             doc_ids.append(self.doc_idx[doc_index_f])
@@ -468,6 +472,10 @@ class GPTDataset(paddle.io.Dataset):
             sample_list.append(sample)
             if append_mask:
                 mask_list.append(mask)
+            # position_ids
+            all_position_ids = []
+            for item in sample_list:
+                all_position_ids.append(list(range(len(item))))
             sample = np.concatenate(sample_list)
             if append_mask:
                 mask = np.concatenate(mask_list)
@@ -499,11 +507,15 @@ class GPTDataset(paddle.io.Dataset):
                 }
 
         if self.self_constraint_cpt:
-            res.update = {
-                "logits": kl_logits,
-                "ids": kl_ids,
-                "CPT": self.CPT,
-            }
+            res.update.update(
+                {
+                    "logits": kl_logits,
+                    "ids": kl_ids,
+                    "CPT": self.CPT,
+                }
+            )
+
+        res.update({"position_ids": all_position_ids})
 
         return res
 

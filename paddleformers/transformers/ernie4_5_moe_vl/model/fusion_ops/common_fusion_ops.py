@@ -93,11 +93,7 @@ def _fusion_flash_attention(
             attention_mask = _gen_from_sparse_attn_mask_indices(attn_mask_start_row_indices, q.dtype)
             if rr_flash_attn is None:
                 out = F.scaled_dot_product_attention(
-                    q,
-                    k,
-                    v,
-                    attn_mask=attention_mask,
-                    is_causal=False,
+                    q, k, v, attn_mask=attention_mask, is_causal=False, enable_gqa=True
                 )
             else:
                 out = rr_flash_attn(
@@ -107,6 +103,7 @@ def _fusion_flash_attention(
                     v,
                     attn_mask=attention_mask,
                     is_causal=False,
+                    enable_gqa=True,
                 )
         weights = None
     else:
@@ -117,6 +114,7 @@ def _fusion_flash_attention(
                 v,
                 attn_mask=attention_mask,
                 is_causal=attention_mask is None and q.shape[1] != 1,
+                enable_gqa=True,
             )
             weights = None
         else:
@@ -127,6 +125,7 @@ def _fusion_flash_attention(
                 v,
                 attn_mask=attention_mask,
                 is_causal=attention_mask is None and q.shape[1] != 1,
+                enable_gqa=True,
             )
             weights = None
 

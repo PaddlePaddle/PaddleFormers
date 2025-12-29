@@ -35,6 +35,15 @@ from paddle.distributed.fleet.utils.hybrid_parallel_util import (
 from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     is_sequence_parallel_parameter,
 )
+
+from ..utils.import_utils import is_paddlefleet_available
+
+# Conditionally import paddlefleet modules
+if is_paddlefleet_available():
+    from paddlefleet.models.gpt import GPTModel
+else:
+    GPTModel = None  # Define a mock or None when not available
+
 from tqdm.auto import tqdm
 
 from ..transformers.moe_gate import PretrainedMoEGate
@@ -58,6 +67,7 @@ __all__ = [
     "MoeExpertsGradScaleCallback",
     "MoEGateSpGradSyncCallBack",
     "SPGradSyncCallback",
+    "EMAStateAssemblerCallback",
 ]
 
 
@@ -688,14 +698,20 @@ class FP8QuantWeightCallback(TrainerCallback):
         global skip_count
 
         if (not g_shard_bypass_dygraph_optimizer or skip_count == 0) and hasattr(model, "fp8_quant_weight"):
+            self.moe_weights_name = []
+            self.use_fp8 = True
+            if GPTModel is not None and isinstance(model, GPTModel):
+                self.use_fp8 = model.use_fp8()
+            if not self.use_fp8:
+                return
             model.fp8_quant_weight(True, quant_transpose=True)
             optimizer.clear_param_storage("moe_expert")
             optimizer.clear_param_storage("rms_linear")
             optimizer.clear_param_storage("memory_attn")
             optimizer.clear_param_storage("attn_out_project")
             optimizer.clear_param_storage("shared_expert")
-
-            self.moe_weights_name = []
+            if not args.offload_fp8_expert_master_weight:
+                return
             for param in optimizer._inner_opt._parameter_list:
                 color = getattr(param, "color", -1)
                 if isinstance(color, dict) and color["color"] == "moe_expert":
@@ -792,29 +808,17 @@ class MoeExpertsGradScaleCallback(TrainerCallback):
         """
         if not args.use_expert_parallel:
             raise ValueError("This callback should be used with expert parallel")
-        if args.expert_parallel_degree > 1:
-            self.expert_gradient_scaling_factor = 1.0 / args.expert_parallel_degree
-            if args.tensor_parallel_degree > 1:
-                self.expert_gradient_scaling_factor *= args.tensor_parallel_degree
+        if args.expert_model_parallel_size > 1:
+            self.expert_gradient_scaling_factor = 1.0 / args.expert_model_parallel_size
+            if args.tensor_model_parallel_size > 1:
+                self.expert_gradient_scaling_factor *= args.tensor_model_parallel_size
             logger.info(
                 f"EP-MoE is used, expert gradient scaling factor is set to {self.expert_gradient_scaling_factor}"
             )
 
     def on_optimizer_begin(self, args, state, control, **kwargs):
-        model = kwargs["model"]
-        param_count = 0
-        for p in model.parameters():
-            if not getattr(p, "no_sync", False):
-                continue
-            if hasattr(p, "is_moe_param") and p.is_moe_param:
-                with paddle.no_grad():
-                    if hasattr(p, "main_grad") and p.main_grad is not None:
-                        p.main_grad.scale_(self.expert_gradient_scaling_factor)
-                        param_count += 1
-                    elif p.grad is not None:
-                        p.grad.scale_(self.expert_gradient_scaling_factor)
-                        param_count += 1
-        logger.info("correct ep grad count:{}".format(param_count))
+        # moe_param grad scale for ep and tp is moved trainer.hybrid_parallel_scale_param_grad
+        pass
 
 
 class MoEGateSpGradSyncCallBack(TrainerCallback):
@@ -828,7 +832,7 @@ class MoEGateSpGradSyncCallBack(TrainerCallback):
         logger.info("MoEGateSpGradSyncCallBack Created")
 
     def on_optimizer_begin(self, args, state, control, **kwargs):
-        if args.tensor_parallel_degree > 1 and args.sequence_parallel:
+        if args.tensor_model_parallel_size > 1 and args.sequence_parallel:
             model = kwargs["model"]
             hcg = fleet.get_hybrid_communicate_group()
             pg = hcg.get_model_parallel_group().process_group
@@ -873,3 +877,14 @@ class SPGradSyncCallback(TrainerCallback):
             fused_allreduce_gradients_with_group(self._sp_params, group=mp_group, scale=1.0)  # sum not mean
             another_time = time.time()
             logger.info(f"sync gradients takes {another_time - now} time")
+
+
+class EMAStateAssemblerCallback(TrainerCallback):
+    def __init__(self, ema_state_assembler):
+        self.ema_state_assembler = ema_state_assembler
+
+    def on_step_end(self, args, state, control, **kwargs):
+        start = time.time()
+        self.ema_state_assembler.run()
+        duration = time.time() - start
+        logger.info(f"[EMAStateAssembler] Assembling EMA state took {duration:.3f} seconds.")

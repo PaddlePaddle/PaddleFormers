@@ -42,12 +42,18 @@ warmup_steps: 20
 learning_rate: 1.0e-5
 
 # performance
-tensor_parallel_degree: 2
-pipeline_parallel_degree: 2
-pipeline_parallel_config: enable_clear_every_step_cache disable_partial_send_recv
+tensor_model_parallel_size: 2
+pipeline_model_parallel_size: 2
+
+# pipeline_parallel_config
+clear_every_step_cache: true
+partial_send_recv: false
+
 sequence_parallel: true
 sharding: stage1
-recompute: true
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
 unified_checkpoint: true

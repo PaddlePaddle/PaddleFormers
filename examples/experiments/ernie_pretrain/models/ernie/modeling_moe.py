@@ -243,7 +243,7 @@ def _parse_moe_group(
 
 
 def moe_ep2mp(state_dict: Dict[str, paddle.Tensor], config: ErnieMoEConfig, split_actions):
-    if config.tensor_parallel_degree <= 1 or dist.get_world_size(config.moe_group) > 1:
+    if config.tensor_model_parallel_size <= 1 or dist.get_world_size(config.moe_group) > 1:
         return state_dict
     if isinstance(config.moe_num_experts, (list, tuple)):
         num_lm_experts, num_mm_experts = config.moe_num_experts
@@ -492,7 +492,7 @@ class ErnieMoeMLP(ErnieMLP):
     def __init__(self, config, is_shared_expert=False):
         if getattr(config, "disable_ffn_model_parallel", False):
             config = deepcopy(config)
-            config.tensor_parallel_degree = 1
+            config.tensor_model_parallel_size = 1
         super().__init__(config)
         self.moe_dropout_prob = config.moe_dropout_prob
         self.fuse_swiglu = config.fuse_swiglu
@@ -503,7 +503,7 @@ class ErnieMoeMLP(ErnieMLP):
 
     def forward(self, x, use_comm=True):
         if (
-            self.config.tensor_parallel_degree <= 1
+            self.config.tensor_model_parallel_size <= 1
             and self.fuse_ffn
             and self.config.use_fp8_mlp
             and not self.config.use_bias
@@ -568,7 +568,7 @@ class ErnieMoeDenseExpert(nn.Layer):
         super().__init__()
         self.config = config
         LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else nn.Linear
-        mp_degree = max(1, config.tensor_parallel_degree)
+        mp_degree = max(1, config.tensor_model_parallel_size)
         self.is_mp = mp_degree > 1
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
@@ -657,8 +657,8 @@ class BMMLinear(nn.Layer):
 class ErnieMoeMLPFused(nn.Layer):
     def __init__(self, config):
         assert (
-            hasattr(config, "disable_ffn_model_parallel") or config.tensor_parallel_degree == 1
-        ), f"fused mlp only support mp-moe, mp={config.tensor_parallel_degree}"
+            hasattr(config, "disable_ffn_model_parallel") or config.tensor_model_parallel_size == 1
+        ), f"fused mlp only support mp-moe, mp={config.tensor_model_parallel_size}"
         assert config.fuse_attn_ffn, "fused mlp only support fuse_attn_ffn"
         super().__init__()
         self.moe_dropout_prob = config.moe_dropout_prob
@@ -821,6 +821,7 @@ class ErnieMoEAttention(ErnieAttention):
         use_cache: bool = False,
         inbatch_pack_offset: Optional[Tuple[paddle.Tensor]] = None,
         token_type_ids: Optional[Tuple[paddle.Tensor]] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         if token_type_ids is not None:
             token_type_ids = token_type_ids[:, :-1]
@@ -901,6 +902,7 @@ class ErnieMoEAttention(ErnieAttention):
                 past_key_value,
                 use_cache,
                 inbatch_pack_offset,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 use_reentrant=False,
             )
         else:
@@ -915,6 +917,7 @@ class ErnieMoEAttention(ErnieAttention):
                 past_key_value=past_key_value,
                 use_cache=use_cache,
                 inbatch_pack_offset=inbatch_pack_offset,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             )
         if self.config.sequence_parallel:
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
@@ -1152,6 +1155,7 @@ class ErnieDecoderLayer(nn.Layer):
         use_cache: Optional[bool] = False,
         inbatch_pack_offset: Optional[paddle.Tensor] = None,
         output_gate_logits=True,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         residual = hidden_states
         if token_type_ids is not None:
@@ -1178,6 +1182,7 @@ class ErnieDecoderLayer(nn.Layer):
             use_cache=use_cache,
             inbatch_pack_offset=inbatch_pack_offset,
             token_type_ids=token_type_ids,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )
 
         if self.use_linear_residual_norm_recompute is True:
@@ -1224,7 +1229,7 @@ class ErnieDecoderLayer(nn.Layer):
         return outputs
 
     def model_parallel_dropout(self):
-        if self.config.tensor_parallel_degree > 1 and self.config.hidden_dropout_prob > 0.0:
+        if self.config.tensor_model_parallel_size > 1 and self.config.hidden_dropout_prob > 0.0:
             current_seed = "local_seed" if self.config.sequence_parallel else "global_seed"
             return get_rng_state_tracker().rng_state(current_seed)
         return contextlib.nullcontext()
@@ -1312,7 +1317,7 @@ class ErniePretrainedModel(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -1321,7 +1326,7 @@ class ErniePretrainedModel(PretrainedModel):
             if is_split:
                 qkv_fn = partial(
                     gqa_qkv_split_func,
-                    tensor_parallel_degree=config.tensor_parallel_degree,
+                    tensor_model_parallel_size=config.tensor_model_parallel_size,
                     tensor_parallel_rank=config.tensor_parallel_rank,
                     num_attention_heads=config.num_attention_heads,
                     num_key_value_heads=config.num_key_value_heads,
@@ -1520,7 +1525,7 @@ class ErnieModel(ErniePretrainedModel):
         self.hidden_size = config.hidden_size
         self.config = config
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             self.embed_tokens = VocabParallelEmbedding(
                 self.vocab_size,
                 self.hidden_size,
@@ -1660,6 +1665,7 @@ class ErnieModel(ErniePretrainedModel):
         output_hidden_states=None,
         return_dict=False,
         inbatch_pack_offset=None,
+        attn_mask_startend_row_indices=None,
         **kwargs,
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -1719,6 +1725,12 @@ class ErnieModel(ErniePretrainedModel):
             )
         hidden_states = inputs_embeds
 
+        attn_mask_startend_row_indices_ori = attn_mask_startend_row_indices
+        if attn_mask_startend_row_indices is not None:
+            attn_mask_startend_row_indices = attn_mask_startend_row_indices[
+                :, :, : -self.config.multi_token_pred_depth
+            ]
+
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
         next_decoder_cache = () if use_cache else None
@@ -1743,6 +1755,7 @@ class ErnieModel(ErniePretrainedModel):
                     past_key_value,
                     use_cache,
                     inbatch_pack_offset,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -1754,6 +1767,7 @@ class ErnieModel(ErniePretrainedModel):
                     past_key_value,
                     use_cache,
                     inbatch_pack_offset,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 )
 
             if isinstance(layer_outputs, (tuple, list)):
@@ -1786,6 +1800,11 @@ class ErnieModel(ErniePretrainedModel):
                     ],
                     axis=1,
                 )
+                attn_mask_startend_row_indices_cur_depth = None
+                if attn_mask_startend_row_indices is not None:
+                    attn_mask_startend_row_indices_cur_depth = attn_mask_startend_row_indices_ori[
+                        :, :, (depth + 1) : inputs_embeds_ori.shape[1] + (depth + 1)
+                    ] - (depth + 1)
 
                 inputs_embeds_cur_depth_norm = self.mtp_emb_norm[depth](inputs_embeds_cur_depth)
                 hidden_states_norm = self.mtp_hidden_norm[depth](hidden_states)
@@ -1809,6 +1828,7 @@ class ErnieModel(ErniePretrainedModel):
                     past_key_value,
                     use_cache,
                     inbatch_pack_offset,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices_cur_depth,
                 )
 
                 if isinstance(layer_outputs, (tuple, list)):
@@ -1871,7 +1891,7 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
         self.ignored_index = getattr(config, "ignored_index", -100)
         self.config = config
         self.return_tuple = return_tuple
-        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
+        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
 
         if self.enable_parallel_cross_entropy:
             logger.info("using parallel cross entropy, take care")
@@ -1944,8 +1964,8 @@ class ErnieMoEForCausalLM(ErniePretrainedModel):
             logger.info(f"using sequence_parallel, input seqlen={config.seqlen}")
             assert config.seqlen is not None
             assert (
-                config.tensor_parallel_degree > 1
-            ), f"sequence-parallel needs mp>1, got mp={config.tensor_parallel_degree}"
+                config.tensor_model_parallel_size > 1
+            ), f"sequence-parallel needs mp>1, got mp={config.tensor_model_parallel_size}"
 
         new_initializer_range = math.sqrt(0.3333 / config.hidden_size)
         logger.info(f"change initializer-range from {config.initializer_range} to {new_initializer_range}")
@@ -2132,6 +2152,8 @@ class ErnieMoEForCausalLM(ErniePretrainedModel):
         data_id=None,
         src_id=None,
         inbatch_pack_offset=None,
+        attn_mask_startend_row_indices=None,
+        **kwargs,
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -2151,6 +2173,7 @@ class ErnieMoEForCausalLM(ErniePretrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=True,
             inbatch_pack_offset=inbatch_pack_offset,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )
 
         hidden_states = outputs.last_hidden_state

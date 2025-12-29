@@ -105,16 +105,29 @@ def create_skip_config_for_refined_recompute(layer_idx, config):
               the original configuration file is returned.
 
     """
-    if not config.recompute:
+    if config.recompute_granularity is None or not isinstance(config.recompute_modules, dict):
         return config
     skip_config = dict()
 
-    if len(config.refined_recompute) > 0 and config.recompute_granularity != "full":
+    if len(config.recompute_modules) > 0 and config.recompute_granularity != "full":
         raise ValueError(
             "Selective recompute only support full recompute now, " "please set recompute_granularity to `full`."
         )
+    layer_num = config.num_layers if hasattr(config, "num_layers") else config.num_hidden_layers
+    if hasattr(config, "add_tail_layer") and config.add_tail_layer:
+        layer_num += 1
+    layer_num = config.num_layers if hasattr(config, "num_layers") else config.num_hidden_layers
+    if hasattr(config, "add_tail_layer") and config.add_tail_layer:
+        layer_num += 1
 
-    for op_name, skip_num in config.refined_recompute.items():
+    for op_name, recompute_num in config.recompute_modules.items():
+        skip_num = -1
+        if recompute_num < 0:
+            skip_num = 0
+        elif recompute_num == 0:
+            skip_num = -1
+        else:
+            skip_num = max(layer_num - recompute_num, 0)
         if skip_num == 0:  # 0 means all recompute
             skip_config[op_name] = False
         elif skip_num < 0:  # < 0 means all skip recompute

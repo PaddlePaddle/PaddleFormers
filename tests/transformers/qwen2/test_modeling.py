@@ -14,6 +14,7 @@
 # limitations under the License.
 from __future__ import annotations
 
+import sys
 import tempfile
 import unittest
 
@@ -425,6 +426,14 @@ class Qwen2CompatibilityTest(unittest.TestCase):
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         # 3. forward the torch  model
+        try:
+            sys.modules["torch"] = sys.modules["torch_save"]
+        except:
+            pass
+        try:
+            del sys.modules["transformers"]
+        except:
+            pass
         import torch
         from transformers import Qwen2Model
 
@@ -440,6 +449,11 @@ class Qwen2CompatibilityTest(unittest.TestCase):
                 rtol=1e-2,
             )
         )
+        sys.modules["torch"] = None
+        try:
+            del sys.modules["transformers"]
+        except:
+            pass
 
     @require_package("transformers", "torch")
     def test_Qwen2_converter_from_local_dir(self):
@@ -449,18 +463,28 @@ class Qwen2CompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch  model
+            try:
+                sys.modules["torch"] = sys.modules["torch_save"]
+            except:
+                pass
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass
             import torch
-            from transformers import Qwen2Model
+            from transformers import Qwen2ForCausalLM
 
-            torch_model = Qwen2Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = Qwen2ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
-            # 2. forward the paddle model
-            from paddleformers.transformers import Qwen2Model
+            # 2. forward the paddle model with fc
+            from paddleformers.transformers import Qwen2Config, Qwen2ForCausalLM
 
-            paddle_model = Qwen2Model.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = Qwen2ForCausalLM.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -473,6 +497,34 @@ class Qwen2CompatibilityTest(unittest.TestCase):
                 )
             )
 
+            # 3. fuse qkv/ffn with fc
+            model_config = Qwen2Config.from_pretrained(tempdir)
+            model_config.fuse_attention_qkv = True
+            model_config.fuse_attention_ffn = True
+            paddle_model_fused = Qwen2ForCausalLM.from_pretrained(
+                tempdir,
+                config=model_config,
+                convert_from_hf=True,
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
+            )
+            paddle_model_fused.eval()
+            paddle_fused_logit = paddle_model_fused(paddle.to_tensor(input_ids))[0]
+
+            self.assertTrue(
+                np.allclose(
+                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    paddle_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    atol=1e-2,
+                    rtol=1e-2,
+                )
+            )
+            sys.modules["torch"] = None
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass
+
     @parameterized.expand([("Qwen2Model",), ("Qwen2ForCausalLM",)])
     @require_package("transformers", "torch")
     def test_qwen2_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
@@ -483,6 +535,14 @@ class Qwen2CompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch model
+            try:
+                sys.modules["torch"] = sys.modules["torch_save"]
+            except:
+                pass
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass
             import torch
             import transformers
 
@@ -513,3 +573,8 @@ class Qwen2CompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
+            sys.modules["torch"] = None
+            try:
+                del sys.modules["transformers"]
+            except:
+                pass

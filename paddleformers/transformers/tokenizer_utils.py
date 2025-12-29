@@ -26,12 +26,16 @@ from transformers import BatchEncoding
 from transformers.tokenization_utils import (
     PreTrainedTokenizer as PreTrainedTokenizer_tf,
 )
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase  # noqa: F401
 from transformers.tokenization_utils_base import (
     ADDED_TOKENS_FILE,
     CHAT_TEMPLATE_FILE,
     FULL_TOKENIZER_FILE,
     SPECIAL_TOKENS_MAP_FILE,
     TOKENIZER_CONFIG_FILE,
+)
+from transformers.tokenization_utils_fast import (
+    PreTrainedTokenizerFast as PreTrainedTokenizerFast_tf,
 )
 from transformers.utils.generic import ExplicitEnum
 
@@ -232,6 +236,11 @@ class PaddleTokenizerMixin:
                 **kwargs,
             )
 
+    # No Mistral-specific regex checks are required.
+    @classmethod
+    def _patch_mistral_regex(cls, tokenizer, *args, **kwargs):
+        return tokenizer
+
     # Rewrite hf's tokenizer function from_pretrained
     @classmethod
     def from_pretrained(
@@ -309,7 +318,7 @@ class PaddleTokenizerMixin:
                 cache_dir = os.path.dirname(resolved_vocab_files[file_id])
                 break
 
-        if not any(key in resolved_vocab_files for key in cls.vocab_files_names.keys()):
+        if not any(key in resolved_vocab_files for key in vocab_files.keys()):
             hf_link = f"https://huggingface.co/{pretrained_model_name_or_path}"
             modelscope_link = f"https://modelscope.cn/models/{pretrained_model_name_or_path}"
             encoded_model_name = pretrained_model_name_or_path.replace("/", "%2F")
@@ -608,5 +617,10 @@ def warp_tokenizer(hf_tokenizer_class: PreTrainedTokenizer_tf):
 
 
 class PreTrainedTokenizer(PaddleTokenizerMixin, PreTrainedTokenizer_tf):
+    def init(self, *args, **kwargs):
+        super().init(*args, **kwargs)
+
+
+class PreTrainedTokenizerFast(PaddleTokenizerMixin, PreTrainedTokenizerFast_tf):
     def init(self, *args, **kwargs):
         super().init(*args, **kwargs)

@@ -14,6 +14,7 @@
 
 from typing import Optional
 
+import numpy as np
 import paddle
 from paddle.autograd.py_layer import PyLayer
 
@@ -193,7 +194,6 @@ def _flashmask_attention_backward_dispatch(
     Note: Only FlashMask v1 doesn't support custom softmax_scale.
     """
     fa_version = _get_fa_version()
-
     if fa_version == 2:
         # FlashMask v1 doesn't support custom softmax_scale
         seed_offset = paddle.zeros(shape=[2], dtype="int64")
@@ -207,8 +207,9 @@ def _flashmask_attention_backward_dispatch(
         # FlashMask v2 supports custom softmax_scale
         softmax_scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
         if hasattr(paddle.base.libpaddle.pir.ops, "flashmask_attention_v2_grad"):
+            block_mask = None
             grad_q, grad_k, grad_v = _C_ops.flashmask_attention_v2_grad(
-                query, key, value, output, lse, startend_row_indices, grad_output, softmax_scale, causal
+                query, key, value, output, lse, startend_row_indices, block_mask, grad_output, softmax_scale, causal
             )
         else:
             assert False, "flashmask_attention_v2_grad is not supported, may be due to paddle version"
@@ -348,12 +349,19 @@ class FlashMaskSinkPyLayer(PyLayer):
         # Apply sink mechanism
         origin_dtype = raw_output.dtype
         scale = softmax_scale or 1.0 / (query.shape[-1] ** 0.5)
+        batch_size, seq_len, num_heads, _ = query.shape
+
+        # For compatibility with old LSE shape (seqlen_q_rounded)
+        # https://github.com/PaddlePaddle/Paddle/pull/76886/files#diff-ee0d08bc31cf15fbd774537e4130ea4e7a40d00eeb557f7b5e4e6d8bde10b0f4L730
+        if lse_original.shape[-1] != seq_len:
+            new_shape = (lse_original.shape[0], lse_original.shape[1], seq_len)
+            num = np.prod(lse_original.shape[:2]) * seq_len
+            lse_original = lse_original.flatten()[:num].reshape(new_shape)
 
         # Reshape tensors for sink computation
         lse_transposed = lse_original.transpose(perm=[0, 2, 1]).unsqueeze(-1)
         sink_reshaped = sink.reshape(shape=[1, 1, -1, 1])
 
-        batch_size, seq_len, num_heads, _ = query.shape
         sink_expanded = sink_reshaped.expand([batch_size, seq_len, num_heads, 1])
 
         # Compute sink multiplier: 1 / (exp(sink - lse) + 1)
