@@ -76,8 +76,6 @@ class MoEGateMixin:
         self,
         gates: paddle.Tensor,
         capacity_factor: float,
-        max_capacity: int,
-        min_capacity: int,
     ) -> paddle.Tensor:
         """Calculate the capacity for each expert based on the gates and capacity factor.
 
@@ -85,7 +83,6 @@ class MoEGateMixin:
             gates (paddle.Tensor): A tensor of shape [num_tokens, num_experts] representing the probability distribution
                 over experts for each token.
             capacity_factor (float): A scalar float value representing the capacity factor for each expert.
-            min_capacity (int): A scalar integer value representing the minimum capacity for each expert.
 
         Returns:
             int: A tensor value representing the calculated capacity for each expert.
@@ -95,10 +92,6 @@ class MoEGateMixin:
         num_tokens = gates.shape[0]
         num_experts = gates.shape[1]
         capacity = int((num_tokens // num_experts) * capacity_factor)
-        if capacity < min_capacity:
-            capacity = min_capacity
-        if capacity > max_capacity:
-            capacity = max_capacity
         assert capacity > 0, f"requires capacity > 0, capacity_factor: {capacity_factor}, input_shape: {gates.shape}"
 
         return capacity
@@ -183,10 +176,8 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         # force keep in float32 when using amp
         self._cast_to_low_precision = False
 
-        self.capacity_factor = kwargs.pop("capacity_factor", 1.0)
+        self.moe_expert_capacity_factor = kwargs.pop("moe_expert_capacity_factor", 0.0)
         self.eval_capacity_factor = kwargs.pop("eval_capacity_factor", 1.0)
-        self.min_capacity = kwargs.pop("min_capacity", 1.0)
-        self.max_capacity = kwargs.pop("max_capacity", pow(2, 32))
 
         self.group = kwargs.pop("group", None)
         self.global_aux_loss = kwargs.pop("global_aux_loss", False)
@@ -196,11 +187,11 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
 
         self.expert_drop = kwargs.pop("expert_drop", False)
         self.noisy_gate_policy = kwargs.pop("noisy_gate_policy", None)
-        self.drop_tokens = kwargs.pop("drop_tokens", True)
+        self.drop_tokens = self.moe_expert_capacity_factor is not None and self.moe_expert_capacity_factor != 0.0
         self.use_rts = kwargs.pop("use_rts", True)
         self.top2_2nd_expert_sampling = kwargs.pop("top2_2nd_expert_sampling", True)
 
-        self.drop_policy = kwargs.pop("drop_policy", "probs")
+        self.moe_token_drop_policy = kwargs.pop("moe_token_drop_policy", "probs")
         # Qwen2MoE: greedy
         # DeepSeekV2&V3: group_limited_greedy for training, and noaux_tc for inference
         self.topk_method = kwargs.pop("topk_method", "greedy")
@@ -353,7 +344,6 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             logits += self.gumbel_rsample(logits.shape)
 
         gates = self.gate_score_func(logits=logits)
-        capacity = self._capacity(gates, self.capacity_factor, self.max_capacity, self.min_capacity)
 
         # Create a mask for 1st's expert per token
         # noisy gating
@@ -381,6 +371,8 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
                 )  # Calculate the maximum value among expert processes
             # Make sure the capacity value does not exceed the number of tokens.
             capacity = int(min(new_capacity, paddle.tensor(mask1.size(0))))
+        else:
+            capacity = self._capacity(gates, self.moe_expert_capacity_factor)
 
         l_aux = self._cal_aux_loss(gates, mask1)
         l_zloss = self._cal_z_loss(logits)
@@ -390,10 +382,6 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             mask1_rand = mask1 * self.uniform_sample(mask1)
         else:
             mask1_rand = mask1
-
-        assert (
-            logits.shape[0] >= self.min_capacity
-        ), "No. of tokens (batch-size) should be greater than min_capacity. Either set min_capacity to 0 or increase your batch size."
 
         _, top_idx = paddle.topk(mask1_rand, k=capacity, axis=0)  # Select top_capacity tokens
 
@@ -454,7 +442,7 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
         exp_counts = paddle.sum(mask1 + mask2, axis=0)
         if self.drop_tokens:
             # Calculate configured capacity and remove locations outside capacity from mask
-            capacity = self._capacity(gates, self.capacity_factor, self.max_capacity, self.min_capacity)
+            capacity = self._capacity(gates, self.moe_expert_capacity_factor)
             # Remove locations outside capacity from mask.
             mask1 *= (locations1 < capacity).cast(paddle.int64)
             mask2 *= (locations2 < capacity).cast(paddle.int64)
@@ -534,21 +522,19 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             # Calculate configured capacity and remove locations outside capacity from mask
             capacity = self._capacity(
                 gates,
-                self.capacity_factor * self.top_k,
-                self.max_capacity,
-                self.min_capacity,
+                self.moe_expert_capacity_factor * self.top_k,
             )
 
             # update mask and locations by capacity
-            if self.drop_policy == "probs":
+            if self.moe_token_drop_policy == "probs":
                 topk_masked_gates = paddle.zeros_like(gates).put_along_axis(top_idx, top_gate, axis=1)
                 capacity_probs, capacity_indices = paddle.topk(topk_masked_gates, k=capacity, axis=0, sorted=False)
                 token_priority = self._priority(capacity_indices, capacity)
 
-            elif self.drop_policy == "position":
+            elif self.moe_token_drop_policy == "position":
                 token_priority = self._priority(top_idx, capacity)
             else:
-                raise ValueError(f"Invalid drop_policy: {self.drop_policy}")
+                raise ValueError(f"Invalid moe_token_drop_policy: {self.moe_token_drop_policy}")
         else:
             # Do not drop tokens - set capacity according to current expert assignments
             local_capacity = paddle.max(exp_counts)
@@ -609,21 +595,19 @@ class PretrainedMoEGate(nn.Layer, MoEGateMixin):
             # Calculate configured capacity and remove locations outside capacity from mask
             capacity = self._capacity(
                 gates,
-                self.capacity_factor * self.top_k,
-                self.max_capacity,
-                self.min_capacity,
+                self.moe_expert_capacity_factor * self.top_k,
             )
 
             # update mask and locations by capacity
-            if self.drop_policy == "probs":
+            if self.moe_token_drop_policy == "probs":
                 topk_masked_gates = paddle.zeros_like(gates).put_along_axis(top_idx, top_gate, axis=1)
                 capacity_probs, capacity_indices = paddle.topk(topk_masked_gates, k=capacity, axis=0, sorted=False)
                 token_priority = self._priority(capacity_indices, capacity)
 
-            elif self.drop_policy == "position":
+            elif self.moe_token_drop_policy == "position":
                 token_priority = self._priority(top_idx, capacity)
             else:
-                raise ValueError(f"Invalid drop_policy: {self.drop_policy}")
+                raise ValueError(f"Invalid moe_token_drop_policy: {self.moe_token_drop_policy}")
         else:
             # Do not drop tokens - set capacity according to current expert assignments
             # local_capacity = paddle.max(exp_counts)

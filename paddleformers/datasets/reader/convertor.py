@@ -100,21 +100,21 @@ def convert_txt_data(item):
 
     # data check
     if len(item["src"]) == 0 or len(item["tgt"]) == 0:
-        # raise ValueError("Ignore example with empty src or empty tgt.")
+        raise ValueError("Ignore example with empty src or empty tgt.")
         return None
 
     for item_str in item["src"] + item["tgt"]:
         if len(item_str.strip()) == 0:
-            # raise ValueError("Ignore example with empty string in str / tgt field.")
+            raise ValueError("Ignore example with empty string in str / tgt field.")
             return None
 
     if "label" not in item:
         item["label"] = [1] * len(item["src"])
 
     if not (len(item["src"]) == len(item["tgt"]) == len(item["label"])):
-        # raise ValueError(
-        #     f"The length of src & tgt & label must be equal, but get len(item['src']) : {len(item['src'])}, ' len(item['tgt']) : {len(item['tgt'])}, ' len(item['label']) : {len(item['label'])}"
-        # )
+        raise ValueError(
+            f"The length of src & tgt & label must be equal, but get len(item['src']) : {len(item['src'])}, ' len(item['tgt']) : {len(item['tgt'])}, ' len(item['label']) : {len(item['label'])}"
+        )
         return None
 
     if "is_system" not in item:
@@ -244,23 +244,15 @@ def convert_mm_data(item):
 
 
 def convert_pretraining_data(data):
-    res = {}
     # convert to messages format
-    if isinstance(data["text"], str):
-        data["text"] = [data["text"]]
+    if isinstance(data["text"], list):
+        data["text"] = data["text"][0]
+    assert isinstance(data["text"], str)
 
-    if len(data["text"]) == 0:
-        raise ValueError("Ignore example with empty src or empty tgt.")
+    if len(data["text"].strip()) == 0:
+        raise ValueError("Ignore example with empty string.")
 
-    for item in data["text"]:
-        if len(item.strip()) == 0:
-            raise ValueError("Ignore example with empty string in str / tgt field.")
-
-    data["messages"] = []
-    for a in data["text"]:
-        data["messages"].append({"role": "assistant", "content": a.strip()})
-
-    res = {"messages": data["messages"]}
+    res = {"messages": [{"role": "assistant", "content": data["text"]}]}
 
     return res
 

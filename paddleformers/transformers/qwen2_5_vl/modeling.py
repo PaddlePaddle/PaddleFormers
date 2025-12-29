@@ -43,7 +43,7 @@ from ..masking_utils import (
     create_sliding_window_causal_mask_and_row_indices,
 )
 from ..model_outputs import BaseModelOutputWithPast, ModelOutput
-from ..model_utils import PretrainedModel
+from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS
 from ..utils import logger
 from .configuration import (
@@ -696,7 +696,12 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPretrainedModel):
                 cu_seqlens_now = cu_window_seqlens
 
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 hidden_states = self.recompute_training_full(
                     blk,
                     hidden_states,
@@ -1309,7 +1314,12 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
                 all_hidden_states += (hidden_states,)
 
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
@@ -1362,6 +1372,7 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPretrainedModel):
         )
 
 
+@register_base_model
 class Qwen2_5_VLModel(Qwen2_5_VLPretrainedModel):
     base_model_prefix = ""
     _checkpoint_conversion_mapping = {"^model": "language_model"}

@@ -464,7 +464,11 @@ class Ernie4_5_DecoderLayer(nn.Layer):
                 layer_idx=layer_idx,
                 shared_experts=shared_experts,
                 group=config.moe_group,
-                recompute=config.use_recompute_moe,
+                recompute=bool(
+                    self.config.recompute_granularity == "selective"
+                    and self.config.recompute_modules is not None
+                    and "moe" in self.config.recompute_modules
+                ),
                 k=config.moe_k,
                 all_to_all_dropout=config.moe_all_to_all_dropout,
                 group_experts=config.moe_group_experts,  # false
@@ -480,7 +484,11 @@ class Ernie4_5_DecoderLayer(nn.Layer):
                     use_padding=False,
                     shared_experts=shared_experts,
                     group=config.moe_group,
-                    recompute=config.use_recompute_moe,
+                    recompute=bool(
+                        self.config.recompute_granularity == "selective"
+                        and self.config.recompute_modules is not None
+                        and "moe" in self.config.recompute_modules
+                    ),
                     k=config.moe_k,
                     all_to_all_dropout=config.moe_all_to_all_dropout,
                     group_experts=config.moe_group_experts,
@@ -657,7 +665,12 @@ class Ernie4_5_DecoderLayer(nn.Layer):
         hidden_states = self.input_layernorm(hidden_states)
         # Self Attention
         has_gradient = not hidden_states.stop_gradient
-        if self.config.recompute and self.config.recompute_granularity == "full_attn" and has_gradient:
+        if (
+            self.config.recompute_granularity == "selective"
+            and self.config.recompute_modules is not None
+            and "full_attn" in self.config.recompute_modules
+            and has_gradient
+        ):
             hidden_states, self_attn_weights, present_key_value = recompute(
                 self.self_attn,
                 hidden_states,
@@ -1176,7 +1189,12 @@ class Ernie4_5_Model(Ernie4_5_PretrainedModel):
 
             past_key_value = past_key_values[idx] if past_key_values is not None else None
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 layer_outputs = self.recompute_training(
                     decoder_layer,
                     hidden_states,
@@ -1211,7 +1229,12 @@ class Ernie4_5_Model(Ernie4_5_PretrainedModel):
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
             if self.config.use_moe:
-                if not (self.config.recompute and self.config.recompute_granularity == "full" and has_gradient):
+                if not (
+                    self.config.recompute_granularity == "full"
+                    and self.config.recompute_method == "uniform"
+                    and self.config.recompute_num_layers == 1
+                    and has_gradient
+                ):
                     layer_outputs, gate_logits = layer_outputs[:-1], layer_outputs[-1]
                     all_gate_logits = all_gate_logits + (gate_logits,)
 
@@ -1296,7 +1319,7 @@ class Ernie4_5_Model(Ernie4_5_PretrainedModel):
                     hidden_states = layer_outputs
 
                 if self.config.use_moe:
-                    if not (self.config.recompute and has_gradient):
+                    if not (self.config.recompute_granularity is not None and has_gradient):
                         layer_outputs, gate_logits = (
                             layer_outputs[:-1],
                             layer_outputs[-1],

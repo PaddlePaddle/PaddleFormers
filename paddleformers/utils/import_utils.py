@@ -298,6 +298,15 @@ def is_transformers_available() -> bool:
     return is_package_available("transformers")
 
 
+def is_paddlefleet_available() -> bool:
+    """check if `paddlefleet` package is installed and can be imported
+
+    Returns:
+        bool: if `paddlefleet` is available
+    """
+    return is_package_available("paddlefleet")
+
+
 def install_package(
     package_name: str,
     version: Optional[str] = None,

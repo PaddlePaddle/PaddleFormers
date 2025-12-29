@@ -6,6 +6,7 @@ train_dataset_prob: "1.0"
 eval_dataset_path: ./tests/fixtures/dummy/pt/eval.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
+packing: true
 mix_strategy: concat
 
 ### model
@@ -42,7 +43,9 @@ learning_rate: 1.0e-5
 tensor_model_parallel_size: 1
 pipeline_model_parallel_size: 1
 sharding: stage1
-recompute: true
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
 unified_checkpoint: true

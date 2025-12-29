@@ -21,12 +21,9 @@ PF_HOME              -->  the root directory for storing PaddleFormers related d
 import os
 import re
 
-try:
-    from paddle.base.framework import use_pir_api
+from paddle.base.framework import use_pir_api
 
-    pir_enabled = use_pir_api()
-except ImportError:
-    pir_enabled = False
+pir_enabled = use_pir_api()
 
 
 def _get_user_home():
@@ -176,3 +173,6 @@ PREFIX_HF_CHECKPOINT_DIR = "hf_checkpoint"
 
 # FlexCheckpoint auto generated metadata file name
 FLEX_CKPT_AUTO_GENERATED_METADATA = "flex-ckpt.auto_generated.metadata"
+
+# ema hf checkpoint dir name
+PREFIX_EMA_HF_CHECKPOINT_DIR = "ema_hf_checkpoint"
