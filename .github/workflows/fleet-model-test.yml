@@ -319,7 +319,7 @@ jobs:
           '
         
       - name: Qwen sft
-        # if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
@@ -334,7 +334,7 @@ jobs:
           '
 
       - name: Qwen lora
-        # if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
