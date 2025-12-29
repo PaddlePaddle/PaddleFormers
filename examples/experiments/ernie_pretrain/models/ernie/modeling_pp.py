@@ -908,7 +908,9 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             else:
                 self.add_sequential_layer(LayerDesc(self.ErnieEmbeddingPipeClass, config=config), "ernie")
 
-        num_empty_layers = config.num_empty_layers_add_in_tail if isinstance(config.num_empty_layers_add_in_tail, int) else 1
+        num_empty_layers = (
+            config.num_empty_layers_add_in_tail if isinstance(config.num_empty_layers_add_in_tail, int) else 1
+        )
         for i in range(config.num_hidden_layers):
             self.add_sequential_layer(
                 LayerDesc(

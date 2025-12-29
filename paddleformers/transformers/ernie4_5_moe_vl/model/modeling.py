@@ -28,6 +28,9 @@ from paddle.distributed.fleet.meta_parallel import (
     get_rng_state_tracker,
 )
 from paddle.distributed.fleet.utils import recompute
+from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+    build_sharded_state_dict,
+)
 
 from paddleformers.utils.log import logger
 
@@ -53,13 +56,6 @@ from .fusion_ops import (
 )
 from .refined_recompute.utils import RefinedRecomputeFunction
 from .sequence_parallel_utils import ScatterOp
-
-try:
-    from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
-        build_sharded_state_dict,
-    )
-except:
-    build_sharded_state_dict = None
 
 
 def calc_lm_head_logits(config, hidden_states, weight, bias, tensor_parallel_output=None, training=True):
@@ -935,7 +931,7 @@ class Ernie4_5_Attention(nn.Layer):
         k = paddle.repeat_interleave(k, replicate, axis=1)
         v = paddle.repeat_interleave(v, replicate, axis=1)
 
-        scale_qk_coeff = self.config.scale_qk_coeff * self.head_dim**0.5
+        scale_qk_coeff = self.config.get("scale_qk_coeff", 1.0) * self.head_dim**0.5
         attention_mask = paddle.where(
             attention_mask,
             paddle.to_tensor(0.0, dtype=q.dtype),

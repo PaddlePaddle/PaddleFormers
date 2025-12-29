@@ -18,11 +18,6 @@ from typing import Optional
 
 import paddle
 
-try:
-    from paddle import scatter_add_
-except ImportError:
-    scatter_add_ = None
-
 from ..utils.tools import get_env_device
 
 

@@ -92,7 +92,7 @@ messages = [
 text = processor.apply_chat_template(
     messages, tokenize=False, add_generation_prompt=True
 )
-image_inputs, video_inputs = process_vision_info(messages, backend="paddlecodec")    # load_video backend支持: ["paddlecodec"、"decord"], 默认"paddlecodec"
+image_inputs, video_inputs = process_vision_info(messages, video_backend="paddlecodec")    # load_video backend支持: ["paddlecodec"、"decord"], 默认"paddlecodec"
 inputs = processor(
     text=[text],
     images=image_inputs,

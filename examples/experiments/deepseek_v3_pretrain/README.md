@@ -82,4 +82,3 @@ python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7"  --master=<ma
 |dsv3_use_fp8_dispatch|moe_layer.py:  在 forward_flex_token 中决定是否进行 pre_dispatch; 在 Fp8DispatchQuantNode::forward 中决定是否在 pre_dispatch 前先进行1x128 quant; 在 Fp8CombineQuantNode 的 backward 中，增加额外多的多流等待机制，用于接收 fp8 combine 的 grad 和其 scale; 在 FusionMlpNode 的 forward 中决定 subbatch 策略的开启; 在 FusionMoeNode 的前反向中，mlp 前后决定是否进行 dispatch_quant <br>modeling_pp.py:  决定 combine_backward_wait_event 是 quant_event 还是 previous_event|影响较广，非单算子|examples/experiments/deepseek_v3_pretrain/config/config.json|
 |use_ds_gemm|fp8_utils.py:  决定在环境中 import deep_gemm（use_ds_gemm=true）还是使用框架内算子|deep_gemm|examples/experiments/deepseek_v3_pretrain/config/config.json|
 |reorder_pipeline_priority|training_args.py:  在 order 顺序里把 sharding 和 pp 的优先级提前|无|examples/experiments/deepseek_v3_pretrain/config/pretrain_argument.json|
-

@@ -34,6 +34,7 @@ from paddle.distributed.fleet.meta_parallel import (
     RowParallelLinear,
 )
 
+from ...transformers.model_utils import VLMS
 from ...utils.import_utils import is_paddlefleet_available
 
 # Conditionally import paddlefleet modules
@@ -579,6 +580,27 @@ class LoRAModel(nn.Layer):
 
         # save lora weight
         total_size = 0
+
+        # Map the key names that the model expects from the serialized keys in VLMs (Supports for MLLM LoRA training)
+        if any(
+            allowed_name in class_name.__name__.lower()
+            for class_name in self.model.__class__.__mro__[:-1]
+            for allowed_name in VLMS
+        ):
+            reverse_key_mapping = {v: k for k, v in self.model._checkpoint_conversion_mapping.items()}
+
+            original_state_dict = {}
+            for key, value in trainable_state_dict.items():
+                for pattern, replacement in reverse_key_mapping.items():
+                    replacement = replacement.lstrip("^")  # strip off un-needed chars and patterns
+                    replacement = re.sub(r"\(.*\)", "", replacement)
+                    key, n_replace = re.subn(pattern, replacement, key)
+                    # Early exit of the loop
+                    if n_replace > 0:
+                        break
+                original_state_dict[key] = value
+            trainable_state_dict = original_state_dict
+
         if safetensors:
             clean_unrelated_safetensors(save_directory)
             lora_weight_name = _add_variant(LORA_WEIGHTS_NAME, variant)

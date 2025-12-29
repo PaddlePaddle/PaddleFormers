@@ -15,13 +15,9 @@
 import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet
-
-try:
-    from paddle.distributed.fleet.utils.sequence_parallel_utils import (
-        register_sequence_parallel_allreduce_hooks,
-    )
-except:
-    pass
+from paddle.distributed.fleet.utils.sequence_parallel_utils import (
+    register_sequence_parallel_allreduce_hooks,
+)
 
 from ...trainer import Trainer, TrainingArguments
 from ...trainer.trainer_utils import ShardingOption

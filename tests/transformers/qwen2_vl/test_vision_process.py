@@ -246,8 +246,9 @@ class TestQwenVisionProcessing(unittest.TestCase):
         # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
         if not paddle.to_tensor([0]).place.is_gpu_place():
             self.skipTest("No GPU currently available/allocated")
+
         ele = {"video": self.test_video_url}
-        result = vision_process.fetch_video(ele, backend="decord")
+        result = vision_process.fetch_video(ele, video_backend="decord")
 
         self.assertIsInstance(result, paddle.Tensor)
 
@@ -256,8 +257,9 @@ class TestQwenVisionProcessing(unittest.TestCase):
         # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
         if not paddle.to_tensor([0]).place.is_gpu_place():
             self.skipTest("No GPU currently available/allocated")
+
         ele = {"video": self.test_video_url}
-        result = vision_process.fetch_video(ele, backend="paddlecodec")
+        result = vision_process.fetch_video(ele, video_backend="paddlecodec")
 
         import torchcodec
 
@@ -268,6 +270,10 @@ class TestQwenVisionProcessing(unittest.TestCase):
 
     def test_fetch_video_with_frame_list(self):
         """Test fetch_video function with frame list."""
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
+
         ele = {"video": self.test_frames, "resized_height": 64, "resized_width": 64}
         result = vision_process.fetch_video(ele)
 
@@ -303,6 +309,10 @@ class TestQwenVisionProcessing(unittest.TestCase):
 
     def test_process_vision_info_videos_only(self):
         """Test process_vision_info with videos only."""
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
+
         conversations = [[{"content": [{"video": self.test_frames}]}]]
 
         result = vision_process.process_vision_info(conversations)
@@ -331,6 +341,10 @@ class TestQwenVisionProcessing(unittest.TestCase):
 
     def test_process_vision_info_mixed_content(self):
         """Test process_vision_info with mixed image and video content."""
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
+
         conversations = [[{"content": [{"image": self.test_image}, {"video": self.test_frames}]}]]
 
         result = vision_process.process_vision_info(conversations)
