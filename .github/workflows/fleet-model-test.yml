@@ -287,6 +287,21 @@ jobs:
             echo -e "\033[32mIntegration test succeeded: GLM4.5 sft+lora.\033[0m"
           fi
           '
+      
+      - name: GLM4.5 dpo
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          bash -x PaddleFormers/tests/integration_test/glm45_dpo.sh
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 dpo.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 dpo.\033[0m"
+          fi
+          '
 
       - name: Integration test (GLM4.5 multi-card FP8)
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
