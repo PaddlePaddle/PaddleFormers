@@ -238,6 +238,21 @@ class LoRAModel(nn.Layer):
         logger.info("Mark only lora and trainable_module as trainable.")
         self.mark_only_lora_as_trainable()
 
+        # Mark PEFT type for downstream components that need LoRA-specific handling
+        # (e.g. PipelineParallel recompute input stop_gradient).
+        if getattr(self.model, "config", None) is not None:
+            # Some config implementations (e.g. external configs with __slots__) may forbid adding new attrs.
+            try:
+                self.model.config._paddleformers_peft_type = "lora"
+            except Exception as exc:
+                logger.warning(
+                    "Failed to mark LoRA PEFT type on model config; LoRA+PP recompute special-casing may be disabled: "
+                    f"{exc}"
+                )
+            else:
+                if hasattr(self.model.config, "register_unsavable_keys"):
+                    self.model.config.register_unsavable_keys("_paddleformers_peft_type")
+
     def add_lora_split_mapping(self, module_name, is_column=False):
         self.lora_split_mapping[module_name] = is_column
 
