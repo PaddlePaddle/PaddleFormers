@@ -24,13 +24,13 @@ import paddle.distributed as dist
 
 logger = logging.getLogger(__name__)
 
-try:
-    from paddle.incubate.tensor.manipulation import async_offload
+from paddle.incubate.tensor.manipulation import async_offload
 
+try:
     from ..distributed.common_dist_utils import get_async_loader
 except ImportError:
     logger.warning("cannot import async_loader, upgrate to fleety 10.8+")
-    get_async_loader = async_offload = None
+    get_async_loader = None
 
 
 __all__ = (

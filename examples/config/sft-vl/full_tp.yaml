@@ -5,7 +5,7 @@ train_dataset_path: ./tests/fixtures/dummy/sft-vl/train.jsonl
 train_dataset_prob: "1.0"
 eval_dataset_path: ./tests/fixtures/dummy/sft-vl/train.jsonl
 eval_dataset_prob: "1.0"
-max_seq_len: 32768
+max_seq_len: 8192
 packing: true
 mix_strategy: concat
 template_backend: custom

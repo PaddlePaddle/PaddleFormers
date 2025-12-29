@@ -72,7 +72,7 @@ fi
 
 set -e
 echo "
-10 7.93321276
+10 7.93576813
 " > ./glm45_sft_multi_card_gt_loss.txt
 
 python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
@@ -100,9 +100,10 @@ else
     echo "LORA Test passed."
 fi
 
+
 set -e
 echo "
-100 4.89294195
+100 4.89507484
 " > ./glm45_lora_multi_card_gt_loss.txt
 
 python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \

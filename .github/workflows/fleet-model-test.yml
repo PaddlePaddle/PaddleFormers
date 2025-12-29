@@ -288,7 +288,7 @@ jobs:
           fi
           '
 
-      - name: Integration test (GLM4.5 multi-card FP8)
+      - name: GLM4.5 pre-train (FP8)
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
@@ -301,6 +301,30 @@ jobs:
           else
             echo -e "\033[32mIntegration test succeeded: GLM4.5 FP8.\033[0m"
           fi
+          '
+
+      - name: Qwen pre-train
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          bash -x PaddleFormers/tests/integration_test/qwen.sh pt
+          '
+        
+      - name: Qwen sft
+        # if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          bash -x PaddleFormers/tests/integration_test/qwen.sh sft
+          '
+
+      - name: Qwen lora
+        # if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          bash -x PaddleFormers/tests/integration_test/qwen.sh lora
           '
 
       - name: Terminate and delete the container
