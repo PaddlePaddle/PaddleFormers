@@ -309,13 +309,6 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
           bash -x PaddleFormers/tests/integration_test/qwen.sh pt
-          glm45_exit_code=$?
-          if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "::error:: \033[31mIntegration test failed: Qwen pre-train.\033[0m"
-            exit 1
-          else
-            echo -e "\033[32mIntegration test succeeded: Qwen pre-train.\033[0m"
-          fi
           '
         
       - name: Qwen sft
@@ -324,13 +317,6 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
           bash -x PaddleFormers/tests/integration_test/qwen.sh sft
-          glm45_exit_code=$?
-          if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "::error:: \033[31mIntegration test failed: Qwen sft.\033[0m"
-            exit 1
-          else
-            echo -e "\033[32mIntegration test succeeded: Qwen sft.\033[0m"
-          fi
           '
 
       - name: Qwen lora
@@ -339,13 +325,6 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
           bash -x PaddleFormers/tests/integration_test/qwen.sh lora
-          glm45_exit_code=$?
-          if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "::error:: \033[31mIntegration test failed: Qwen lora.\033[0m"
-            exit 1
-          else
-            echo -e "\033[32mIntegration test succeeded: Qwen lora.\033[0m"
-          fi
           '
 
       - name: Terminate and delete the container
