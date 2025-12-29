@@ -14,12 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-try:
-    import paddle.distributed.communication.deep_ep as deep_ep
+import paddle.distributed.communication.deep_ep as deep_ep
 
-    HAVE_DEEP_EP = True
-except ImportError:
-    HAVE_DEEP_EP = False
+HAVE_DEEP_EP = True
 
 import paddle
 from paddle.autograd import PyLayer

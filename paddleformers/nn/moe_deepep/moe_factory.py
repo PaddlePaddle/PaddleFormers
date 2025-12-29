@@ -25,7 +25,6 @@ class QuickAccessMoEFactory:
         expert_activation: str,
         train_topk_method: str,
         inference_topk_method: str,
-        drop_tokens: bool,
         transpose_gate_weight: bool,
     ) -> ModularMoELayer:
         model_type = getattr(pretrained_config, "model_type", None)
@@ -37,7 +36,6 @@ class QuickAccessMoEFactory:
             "expert_activation": expert_activation,
             "train_topk_method": train_topk_method,
             "inference_topk_method": inference_topk_method,
-            "drop_tokens": drop_tokens
             # TODO: support aux_loss_weight, z_loss_weight, expert_dropout, use_flexible_loss, loss_configs
         }
 

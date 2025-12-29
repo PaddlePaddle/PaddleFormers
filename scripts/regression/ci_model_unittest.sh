@@ -29,6 +29,7 @@ install_requirements() {
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
     # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
+    python -m pip install -U --no-cache-dir transformers
     python setup.py bdist_wheel > /dev/null
     uv pip install dist/p****.whl --system --prerelease=allow -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
@@ -83,12 +84,10 @@ else
         ext="${file_name##*.}"
         echo "file_name: ${file_name}, ext: ${file_name##*.}"
         
-        if [ ! -f ${file_name} ];then # Delete Files for a Pull Request
-            continue
-        elif [[ "$ext" == "md" || "$ext" == "rst" || "$file_name" == docs/* ]]; then
-            continue
-        else
+        [[ -f "$file_name" ]] || continue
+        if [[ "$ext" == "py" ]]; then
             FLAGS_enable_CI=true
+            break
         fi
     done
 fi

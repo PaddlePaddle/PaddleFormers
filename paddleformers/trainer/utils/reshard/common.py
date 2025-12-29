@@ -19,18 +19,11 @@ import paddle
 import paddle.distributed.fleet as fleet
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
     DygraphShardingOptimizer,
+    DygraphShardingOptimizerV2,
 )
 from paddle.distributed.fleet.utils.log_util import logger
 
 from paddleformers.utils.tools import get_env_device
-
-try:
-    from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
-        DygraphShardingOptimizerV2,
-    )
-except:
-    DygraphShardingOptimizerV2 = None
-
 
 from ....transformers.model_utils import unwrap_optimizer
 

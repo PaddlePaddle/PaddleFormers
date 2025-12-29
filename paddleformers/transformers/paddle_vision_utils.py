@@ -101,6 +101,7 @@ def resize(
     interpolation: Optional[str] = "bilinear",
     max_size: Optional[int] = None,
     align_corners: Optional[bool] = None,
+    antialias: Optional[bool] = True,
 ) -> paddle.Tensor:
     if interpolation == "bilinear" or interpolation == "bicubic":
         align_corners = False
@@ -118,8 +119,10 @@ def resize(
         if interpolation == "nearest":
             # uint8 dtype can be included for cpu and cuda input if nearest mode
             acceptable_dtypes.append(paddle.uint8)
-        elif _should_use_native_uint8_kernel(interpolation):
-            acceptable_dtypes.append(paddle.uint8)
+        # NOTE: Paddle currently does not support uint8 resize on CPU. Uncomment this when supported.
+        # elif image.place.is_cpu_place():
+        #     if _should_use_native_uint8_kernel(interpolation):
+        #         acceptable_dtypes.append(paddle.uint8)
 
         image = image.reshape(-1, num_channels, old_height, old_width)
         strides = image.stride()
@@ -137,6 +140,7 @@ def resize(
             size=[new_height, new_width],
             mode=interpolation,
             align_corners=align_corners,
+            antialias=antialias,
         )
 
         if need_cast:
@@ -277,13 +281,13 @@ def crop(image: paddle.Tensor, top: int, left: int, height: int, width: int) -> 
 
     if left < 0 or top < 0 or right > w or bottom > h:
         image = image[..., max(top, 0) : bottom, max(left, 0) : right]
-        torch_padding = [
+        paddle_padding = [
             max(min(right, 0) - left, 0),
             max(right - max(w, left), 0),
             max(min(bottom, 0) - top, 0),
             max(bottom - max(h, top), 0),
         ]
-        return _pad_with_scalar_fill(image, torch_padding, fill=0, padding_mode="constant")
+        return _pad_with_scalar_fill(image, paddle_padding, fill=0, padding_mode="constant")
     return image[..., top:bottom, left:right]
 
 

@@ -22,23 +22,23 @@ from paddleformers.transformers import AutoProcessor, Qwen2_5_VLProcessor
 
 class AutoProcessorTest(unittest.TestCase):
     def test_video_processor_from_pretrained(self):
-        processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen2.5vl")
+        processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2")
         self.assertIsInstance(processor, Qwen2_5_VLProcessor)
 
     def test_auto_processor_load_tokenizer(self):
-        processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen2.5vl")
+        processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2")
         self.assertEqual(processor.tokenizer.__class__.__name__, "Qwen2TokenizerFast")
 
     def test_auto_processor_load_image_processor(self):
-        processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen2.5vl")
+        processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2")
         self.assertEqual(processor.image_processor.__class__.__name__, "Qwen2VLImageProcessor")
 
     def test_auto_processor_load_video_processor(self):
-        processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen2.5vl")
+        processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2")
         self.assertEqual(processor.video_processor.__class__.__name__, "Qwen2VLVideoProcessor")
 
     def test_auto_processor_save_load(self):
-        processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen2.5vl")
+        processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2")
         with tempfile.TemporaryDirectory() as tmp_dir:
             processor.save_pretrained(tmp_dir)
             second_processor = AutoProcessor.from_pretrained(tmp_dir)
