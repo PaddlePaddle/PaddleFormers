@@ -1974,7 +1974,7 @@ class EMAStateAssembler:
                     f"[EMAStateAssembler] [Rank {self.rank}] EMA state file not found at {ema_state_path}, skipping and updating signal. "
                 )
                 return
-            ema_sharded_state_dict = self._build_ema_sharded_state_dict(ema_state_path)
+            ema_sharded_state_dict = self._build_ema_sharded_state_dict(self._load_ema_state_dict(ema_state_path))
             self._mark_as_handled(checkpoint_dir, step)
             self._save_full_ema_states(step, ema_sharded_state_dict)
             del ema_sharded_state_dict
@@ -2005,13 +2005,15 @@ class EMAStateAssembler:
             ema_file_name = optimizer_name.replace("optimizer", "ema")
             return checkpoint_dir / ema_file_name
 
-    def _build_ema_sharded_state_dict(self, ema_state_path: Path):
+    def _load_ema_state_dict(self, ema_state_path: Path):
         if not ema_state_path.exists():
             raise FileNotFoundError(f"[EMAStateAssembler] EMA state file not found at {ema_state_path}.")
 
         logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Loading EMA state from {ema_state_path}.")
         ema_state_dict = paddle.load(str(ema_state_path))
+        return ema_state_dict
 
+    def _build_ema_sharded_state_dict(self, ema_state_dict):
         group_getter = GroupGetter(self.model)
         ema_state_dict_grouped = split_opt_state(ema_state_dict, group_getter)
         ema_params_recovered = {}
