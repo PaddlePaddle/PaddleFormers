@@ -46,7 +46,7 @@ rm -rf outputs/
 set +e
 NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./glm45_pt_fp8.log
 
-exit_code=1
+exit_code=$?
 if [ $exit_code -ne 0 ]; then
    echo "Training failed with exit code $exit_cod, see ./glm45_pt_fp8.log for details."
    python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_pt_fp8.log "***** train metrics *****"

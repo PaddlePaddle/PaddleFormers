@@ -51,7 +51,7 @@ export FLAGS_cudnn_deterministic=1
 
 set +e
 NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_dpo_yaml 2>&1 | tee ./glm45_dpo.log
-sft_exit_code=1
+sft_exit_code=$?
 if [ $sft_exit_code -ne 0 ]; then
    echo "GLM4.5 multi-cards training failed, try to check the log file"
    python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_dpo.log "***** eval metrics *****"

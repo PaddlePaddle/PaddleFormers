@@ -71,7 +71,7 @@ set +e
 # coverage run run_pretrain.py $config_json 2>&1 | tee ./qwen3_single_card.log
 NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./qwen3_single_card.log
 
-exit_code=1
+exit_code=$?
 if [ $exit_code -ne 0 ]; then
       echo "Qwen3-30B-A3B single card training failed, try to check the log ./qwen3_single_card.log"
       python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./qwen3_single_card.log "***** train metrics *****"
