@@ -36,7 +36,6 @@ logging_dir: ./glm_full_single_lora_log
 output_dir: ./checkpoints/glm_single_lora_ckps
 disable_tqdm: true
 eval_accumulation_steps: 16
-num_hidden_layers: 4
 
 # train
 warmup_steps: 20
@@ -65,3 +64,4 @@ load_checkpoint_format: flex_checkpoint
 save_checkpoint_format: flex_checkpoint
 
 moe_router_force_load_balancing: true
+num_hidden_layers: 4
