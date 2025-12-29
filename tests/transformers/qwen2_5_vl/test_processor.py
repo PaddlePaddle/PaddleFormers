@@ -34,7 +34,7 @@ class Qwen2_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     def setUpClass(cls):
         cls.tmpdir = tempfile.mkdtemp()
         processor = Qwen2_5_VLProcessor.from_pretrained(
-            "PaddleFormers/tiny-random-qwen2.5vl", patch_size=4, max_pixels=56 * 56, min_pixels=28 * 28
+            "PaddleFormers/tiny-random-qwen25vlv2", patch_size=4, max_pixels=56 * 56, min_pixels=28 * 28
         )
         processor.save_pretrained(cls.tmpdir)
         cls.image_token = processor.image_token

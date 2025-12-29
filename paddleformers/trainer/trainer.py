@@ -71,13 +71,12 @@ if is_paddlefleet_available():
     from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
     from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
 
-    HAS_PADDLEFLEET = True
+    from paddleformers.transformers.gpt_provider import GPTModel
 else:
     paddlefleet_dist_model = None
     FleetGPTModel = None
     PaddleFleetParallelBase = None
     PaddleFleetPipelineLayer = None
-    HAS_PADDLEFLEET = False
 
 from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_optimizer import (
@@ -494,7 +493,7 @@ class Trainer:
             )
 
         if self.args.pipeline_model_parallel_size > 1 and self.args.use_hybrid_parallel:
-            if HAS_PADDLEFLEET and PaddleFleetPipelineLayer is not None:
+            if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
                 assert (
                     isinstance(model, LoRAModel) and isinstance(model.model, (PaddleFleetPipelineLayer, PipelineLayer))
                 ) or isinstance(
@@ -2714,7 +2713,9 @@ class Trainer:
                 drop_last=False,
             )
         else:
-            if self.args.pipeline_model_parallel_size > 1:
+            if (
+                is_paddlefleet_available() and isinstance(self.model, PaddleFleetPipelineLayer)
+            ) or self.args.pipeline_model_parallel_size > 1:
                 # In pipeline parallelism, batch size will be strictly checked
                 # Use LastBatchPaddingSampler to pad the last batch with the first batch
                 from .trainer_utils import LastBatchPaddingSampler
@@ -3187,7 +3188,11 @@ class Trainer:
                 assert self.optimizer is not None, "optimizer is empty!"
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
 
-        if HAS_PADDLEFLEET and PaddleFleetPipelineLayer is not None and isinstance(model, PaddleFleetPipelineLayer):
+        if (
+            is_paddlefleet_available()
+            and PaddleFleetPipelineLayer is not None
+            and isinstance(model, PaddleFleetPipelineLayer)
+        ):
             in_pipeline_parallel_mode = True
         else:
             in_pipeline_parallel_mode = self.args.pipeline_model_parallel_size > 1
@@ -3231,7 +3236,7 @@ class Trainer:
             if isinstance(model, LoRAModel):
                 model = model.model
             if (
-                HAS_PADDLEFLEET
+                is_paddlefleet_available()
                 and paddlefleet_dist_model is not None
                 and PaddleFleetPipelineLayer is not None
                 and isinstance(model, PaddleFleetPipelineLayer)
@@ -3262,7 +3267,7 @@ class Trainer:
                     keys = list(inputs[0].keys())
                     inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
                     if (
-                        HAS_PADDLEFLEET
+                        is_paddlefleet_available()
                         and PaddleFleetParallelBase is not None
                         and isinstance(model, PaddleFleetParallelBase)
                     ):
@@ -3540,7 +3545,11 @@ class Trainer:
         Return:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
-        if HAS_PADDLEFLEET and PaddleFleetParallelBase is not None and isinstance(model, PaddleFleetParallelBase):
+        if (
+            is_paddlefleet_available()
+            and PaddleFleetParallelBase is not None
+            and isinstance(model, PaddleFleetParallelBase)
+        ):
             return self.training_pipeline_step(model, inputs)
 
         if self.args.pipeline_model_parallel_size > 1:
@@ -4468,6 +4477,8 @@ class Trainer:
             model = self.model_wrapped
             if _prepare_pipeline_inputs_func is not None:
                 model._prepare_pipeline_inputs_func = _prepare_pipeline_inputs_func
+        elif is_paddlefleet_available() and isinstance(self.model, GPTModel):
+            model = self.model_wrapped
         else:
             model = self.model
 
