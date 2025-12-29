@@ -99,7 +99,7 @@ NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformer
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
    echo "qwen multi-cards training failed, try to check the log file"
-   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./qwen_${step}.log
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./qwen_${step}.log "***** eval metrics *****"
    check_exit_code=$?
    if [ $check_exit_code -ne 0 ]; then
      echo "Failed to find 'Training completed' in log file."
