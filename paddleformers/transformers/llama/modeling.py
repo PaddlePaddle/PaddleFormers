@@ -163,8 +163,8 @@ class LLamaAttention(nn.Layer):
         else:
             batch_size, seq_len = hidden_states.shape[:2]
 
-        q_shape = (batch_size, seq_len, self.num_heads, self.head_dim)
-        kv_shape = (batch_size, seq_len, self.num_key_value_heads, self.head_dim)
+        q_shape = (batch_size, seq_len, -1, self.head_dim)
+        kv_shape = (batch_size, seq_len, -1, self.head_dim)
 
         query_states = self.q_proj(hidden_states).reshape(q_shape).transpose(1, 2)
         key_states = self.k_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
@@ -584,7 +584,12 @@ class LlamaModel(LlamaPretrainedModel):
             if output_hidden_states:
                 all_hidden_states.append(hidden_states)
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 layer_outputs = self.recompute_training(
                     decoder_layer,
                     hidden_states,

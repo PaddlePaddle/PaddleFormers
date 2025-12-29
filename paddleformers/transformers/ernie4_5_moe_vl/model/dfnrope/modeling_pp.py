@@ -44,7 +44,7 @@ class DFNRopeVisionTransformerPipe(DFNRopeVisionTransformerPretrainedModel):
         if self.use_full_recompute:
             logger.info("use full recompute, vision model will NOT use recompute inner")
             config.vision_config.recompute = False
-        super().__init__(config.vision_config)
+        super().__init__(config)
         if self.config.tensor_model_parallel_size > 1:
             logger.info("use sp extract feature, vit parameter will be marked as sequence parallel")
             for p in self.parameters():
