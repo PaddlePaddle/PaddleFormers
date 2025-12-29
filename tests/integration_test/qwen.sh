@@ -53,7 +53,7 @@ source PaddleFleet/.venv/bin/activate
 if [[ "$step" == "pt" ]]; then
     export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen_pt.yaml
     export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
-    export model_name_or_path=$CACHE_DIR/models/tiny-random-glm4moe
+    export model_name_or_path=$CACHE_DIR/models/tiny-random-qwen3
     export output_dir=$root_dir/checkpoints/qwen-pt
 elif [[ "$step" == "sft" ]]; then
     export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen_sft.yaml
