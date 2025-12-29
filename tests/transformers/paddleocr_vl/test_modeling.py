@@ -377,6 +377,12 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
     def test_group_beam_search_generate(self):
         pass
 
+    @unittest.skip(
+        "PaddleOCR-VL uses non-tied weights (tie_word_embeddings=False), so lm_head dimensions are not updated when resize_token_embeddings is called"
+    )
+    def test_resize_tokens_embeddings(self):
+        pass
+
     def test_greedy_generate(self):
         for model_class in self.all_generative_model_classes:
             config, inputs_dict = self.prepare_config_and_inputs_for_generate()

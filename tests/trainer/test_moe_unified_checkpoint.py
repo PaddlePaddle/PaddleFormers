@@ -156,7 +156,7 @@ rng = np.random.default_rng(seed=seed)
 #         remove_ckpt(moe_arguments["output_dir"])
 
 #         train_args = self.configs["TP2Sharding4"]
-#         train_args.update({"sharding_parallel_config": "split_param"})
+#         train_args.update({"split_param": True})
 #         train_args.update({"amp_master_grad": True})
 #         self.runfirst(train_args)
 #         self.rerun(train_args)

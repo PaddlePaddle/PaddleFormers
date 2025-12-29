@@ -319,7 +319,8 @@ class EmbeddingPipe(nn.Layer):
 
             ret = (emb,)
 
-        ret[0].stop_gradient = False  # 开启lora 防止recompute pylayer因base weight输入没有gradient而报错
+        if paddle.core._has_grad():
+            ret[0].stop_gradient = False  # 开启lora 防止recompute pylayer因base weight输入没有gradient而报错
         if attention_mask is not None:
             if attention_mask.dtype != paddle.int32:
                 if len(attention_mask.shape) == 2:
@@ -442,7 +443,12 @@ def make_decoder_layer_pipe(decoder_layer):
             tuple_position_embeddings = None
 
         has_gradient = not hidden_states.stop_gradient
-        if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+        if (
+            self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+            and has_gradient
+        ):
             hidden_states = recompute(
                 decoder_layer.forward,
                 self,

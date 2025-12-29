@@ -24,7 +24,7 @@ from paddleformers.transformers import AutoVideoProcessor, Qwen2VLVideoProcessor
 
 class AutoVideoProcessorTest(unittest.TestCase):
     def test_video_processor_from_pretrained(self):
-        processor = AutoVideoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen2.5vl")
+        processor = AutoVideoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2")
         self.assertIsInstance(processor, Qwen2VLVideoProcessor)
 
     def test_video_processor_from_local_directory_from_key(self):
@@ -75,7 +75,7 @@ class AutoVideoProcessorTest(unittest.TestCase):
             self.assertIsInstance(config, Qwen2VLVideoProcessor)
 
     def test_video_processor_save_pretrained(self):
-        config_dict = AutoVideoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen2.5vl").to_dict()
+        config_dict = AutoVideoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2").to_dict()
         config_dict.pop("video_processor_type")
         config = Qwen2VLVideoProcessor(**config_dict)
         with tempfile.TemporaryDirectory() as tmpdir:

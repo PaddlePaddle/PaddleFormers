@@ -21,21 +21,8 @@ import copy
 import paddle
 import paddle.distributed as dist
 import paddle.nn.functional as F
-
-try:
-    from paddle.distributed.auto_parallel.local_layer import LocalLayer
-except:
-
-    class LocalLayer(object):
-        """
-        A dummy class for LocalLayer, used when the actual class
-        cannot be imported.
-        """
-
-        pass
-
-
 from paddle import nn
+from paddle.distributed.auto_parallel.local_layer import LocalLayer
 
 from .auto_utils import einsum, get_mesh
 from .moe_gate_auto import PretrainedMoEGate

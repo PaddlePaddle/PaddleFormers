@@ -30,15 +30,9 @@ from paddle.autograd import PyLayer
 from paddle.distributed import fleet
 from paddle.distributed.communication.group import Group
 from paddle.distributed.fleet.utils import recompute
+from paddle.incubate.nn.functional import moe_combine, moe_gate_dispatch
 
 from paddleformers.utils.log import logger
-
-try:
-    from paddle.incubate.nn.functional import moe_combine, moe_gate_dispatch
-except ImportError:
-    logger.warning_once("Fail to import moe_combine and moe_gate_dispatch.")
-    moe_combine = None
-    moe_gate_dispatch = None
 
 from .abstract import MOELayerBase
 from .all_to_all import AlltoAll, AlltoAllAsync
