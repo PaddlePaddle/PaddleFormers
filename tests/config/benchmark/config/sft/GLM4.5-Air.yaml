@@ -5,6 +5,7 @@ train_dataset_path: ./data/sft/train.jsonl
 train_dataset_prob: "1.0"
 eval_dataset_path: ./data/sft/eval.jsonl
 eval_dataset_prob: "1.0"
+packing: true
 max_seq_len: 8192
 mix_strategy: concat
 
@@ -46,9 +47,23 @@ pipeline_model_parallel_size: 4
 use_expert_parallel: true
 expert_model_parallel_size: 8
 sequence_parallel: true
+num_empty_layers_add_in_head: 1
+num_empty_layers_add_in_tail: 1
 
 # sharding_parallel_config
 split_param: true
+
+amp_master_grad: true
+sharding: stage1
+stage1_overlap: true
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
+moe_grouped_gemm: true
+moe_deep_gemm: true
+apply_rope_fusion: true
+fuse_rms_norm: true
+moe_router_force_load_balancing: true
 
 amp_master_grad: true
 #sharding_parallel_size: 8
@@ -57,6 +72,14 @@ recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
 bf16: true
+
+# pp
+pp_delay_scale_loss: true
+overlap_p2p_comm: true
+variable_seq_lengths: true
+best_unbalanced_scheduler: true
+tp_delay_scale_loss: true
+
 fp16_opt_level: O2
 # unified_checkpoint: true
 load_via_cpu: true
@@ -69,3 +92,7 @@ benchmark: true
 num_empty_layers_add_in_head: 1
 num_empty_layers_add_in_tail: 1
 continue_training: false
+dataloader_shuffle: false
+
+dataloader_num_workers: 24
+prefetch_factor: 24

@@ -5,6 +5,7 @@ train_dataset_path: ./data/pt/train.jsonl
 train_dataset_prob: '1.0'
 eval_dataset_path: ./data/pt/eval.jsonl
 eval_dataset_prob: '1.0'
+packing: true
 max_seq_len: 8192
 mix_strategy: concat
 
@@ -29,11 +30,14 @@ evaluation_strategy: steps
 save_steps: 100
 save_strategy: steps
 logging_steps: 1
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 64
 logging_dir: ./vdl_log
 output_dir: /root/paddlejob/tmpspace/GLM-4.5-Air-PT/outputs/checkpoint
 disable_tqdm: true
 eval_accumulation_steps: 16
+
+#args
+router_aux_loss_coef: 0.001
 
 # train
 warmup_steps: 20
@@ -46,15 +50,32 @@ pipeline_model_parallel_size: 4
 use_expert_parallel: true
 expert_model_parallel_size: 8
 sequence_parallel: true
+num_empty_layers_add_in_head: 1
+num_empty_layers_add_in_tail: 1
 
 # sharding_parallel_config
 split_param: true
 
 amp_master_grad: true
 sharding: stage1
+stage1_overlap: true
 recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
+moe_grouped_gemm: true
+moe_deep_gemm: true
+apply_rope_fusion: true
+fuse_rms_norm: true
+moe_router_force_load_balancing: true
+
+# pp
+pp_delay_scale_loss: true
+overlap_p2p_comm: true
+variable_seq_lengths: true
+best_unbalanced_scheduler: true
+
+tp_delay_scale_loss: true
+
 bf16: true
 fp16_opt_level: O2
 unified_checkpoint: false
@@ -67,3 +88,7 @@ benchmark: true
 num_empty_layers_add_in_head: 1
 num_empty_layers_add_in_tail: 1
 continue_training: false
+dataloader_shuffle: false
+
+dataloader_num_workers: 24
+prefetch_factor: 24
