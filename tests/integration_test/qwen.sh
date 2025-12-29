@@ -17,6 +17,13 @@ export root_dir=$(pwd)
 
 step=$1
 
+if [[ ! -d $CACHE_DIR/Qwen3-30B-A3B ]]; then
+    pushd $CACHE_DIR
+    wget -q --tries=5 --no-proxy https://xly-devops.cdn.bcebos.com/PaddleFleet/Qwen/Qwen3-30B-A3B.tar.gz --no-check-certificate
+    tar xf Qwen3-30B-A3B.tar.gz
+    popd
+fi
+
 if [[ "$step" == "pt" ]]; then
     pushd $root_dir/PaddleFormers
     git reset --hard HEAD
@@ -51,18 +58,18 @@ fi
 source PaddleFleet/.venv/bin/activate
 
 if [[ "$step" == "pt" ]]; then
-    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen_pt.yaml
+    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_multicard_pt.yaml
     export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
     export model_name_or_path=$CACHE_DIR/models/tiny-random-qwen3
     export output_dir=$root_dir/checkpoints/qwen-pt
 elif [[ "$step" == "sft" ]]; then
-    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen_sft.yaml
+    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_multicard_sft.yaml
     export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
     export model_name_or_path=$root_dir/checkpoints/qwen-pt
     export output_dir=$root_dir/checkpoints/qwen-sft
 else
-    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen_lora.yaml
-    export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/lora
+    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_multicard_lora.yaml
+    export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
     export model_name_or_path=$root_dir/checkpoints/qwen-sft
     export output_dir=$root_dir/checkpoints/qwen-lora
 fi
