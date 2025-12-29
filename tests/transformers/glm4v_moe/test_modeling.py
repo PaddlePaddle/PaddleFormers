@@ -514,7 +514,7 @@ class Glm4vMoeIntegrationTest(unittest.TestCase):
                 ],
             }
         ]
-        self.video = load_video(self.video_url, backend="decord")[0][
+        self.video = load_video(self.video_url, video_backend="decord")[0][
             :3, ::4, ::4
         ]  # Only the first 3 frames for testing
 

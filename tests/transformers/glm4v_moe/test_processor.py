@@ -226,7 +226,7 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             self.assertIsInstance(out_dict[k], return_tensor_to_type[return_tensors])
 
     def test_apply_chat_template_video_frame_sampling(self):
-        processor = self.get_processor()
+        processor = self.get_processor(video_backend="decord")
         if processor.chat_template is None:
             self.skipTest("Processor has no chat template")
 
@@ -273,7 +273,6 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             tokenize=True,
             return_dict=True,
             fps=fps,
-            backend="decord",
         )
         self.assertTrue(self.videos_input_name in out_dict_with_video)
         self.assertEqual(len(out_dict_with_video[self.videos_input_name]), 16)
@@ -284,7 +283,6 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             add_generation_prompt=True,
             tokenize=True,
             return_dict=True,
-            backend="decord",
         )
         self.assertTrue(self.videos_input_name in out_dict_with_video)
         self.assertEqual(len(out_dict_with_video[self.videos_input_name]), 36)
@@ -303,7 +301,6 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             tokenize=True,
             return_dict=True,
             do_sample_frames=False,
-            backend="decord",
         )
         self.assertTrue(self.videos_input_name in out_dict_with_video)
         self.assertEqual(len(out_dict_with_video[self.videos_input_name]), 4)
@@ -319,7 +316,6 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
                 tokenize=True,
                 return_dict=True,
                 do_sample_frames=True,
-                backend="decord",
             )
 
     def test_kwargs_overrides_custom_image_processor_kwargs(self):

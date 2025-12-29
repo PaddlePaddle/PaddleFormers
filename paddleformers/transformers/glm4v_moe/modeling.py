@@ -473,6 +473,175 @@ class Glm4vMoePreTrainedModel(PretrainedModel):
     input_modalities = ("text", "image", "video")
 
     @classmethod
+    def _get_tensor_parallel_mappings(cls, config: Glm4vMoeConfig, is_split=True):
+        from ..conversion_utils import split_or_merge_func
+
+        llm_target = next(
+            (v for v in cls._checkpoint_conversion_mapping.values() if "language_model" in v), "language_model"
+        )
+        llm_prefix = f"{llm_target}" if not llm_target.endswith(".") else llm_target
+
+        fn = split_or_merge_func(
+            is_split=is_split,
+            tensor_model_parallel_size=config.text_config.tensor_model_parallel_size,
+            tensor_parallel_rank=config.text_config.tensor_parallel_rank,
+            num_attention_heads=config.text_config.num_attention_heads,
+        )
+
+        ATTN_LAYER_COLWISE = [
+            "self_attn.q_proj.weight",
+            "self_attn.k_proj.weight",
+            "self_attn.v_proj.weight",
+        ]
+        FUSE_ATTN_LAYER_COLWISE = [
+            "self_attn.qkv_proj.weight",
+        ]
+        LAYER_ROWWISE = ["self_attn.o_proj.weight"]
+
+        EXPERT_LAYER_COLWISE = [
+            "up_proj.weight",
+            "gate_proj.weight",
+        ]
+        FUSE_EXPERT_LAYER_COLWISE = [
+            "up_gate_proj.weight",
+        ]
+
+        EXPERT_LAYER_ROWWISE = ["down_proj.weight"]
+
+        BIAS_KEYS = [
+            "self_attn.q_proj.bias",
+            "self_attn.k_proj.bias",
+            "self_attn.v_proj.bias",
+        ]
+        FUSE_BIAS_KEYS = [
+            "self_attn.qkv_proj.bias",
+        ]
+
+        def make_base_actions():
+            actions = {
+                "lm_head.weight": partial(fn, is_column=False),
+                f"{llm_prefix}.embed_tokens.weight": partial(fn, is_column=False),
+            }
+
+            for layer_idx in range(config.text_config.num_hidden_layers):
+                # attention
+                if not config.text_config.fuse_attention_qkv:
+                    actions.update(
+                        {
+                            f"{llm_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                            for k in ATTN_LAYER_COLWISE
+                        }
+                    )
+                else:
+                    actions.update(
+                        {
+                            f"{llm_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
+                            for k in FUSE_ATTN_LAYER_COLWISE
+                        }
+                    )
+
+                # row-wise
+                actions.update(
+                    {f"{llm_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False) for k in LAYER_ROWWISE}
+                )
+
+                # moe experts
+                is_fused_ffn = config.text_config.fuse_attention_ffn
+                colwise_keys = FUSE_EXPERT_LAYER_COLWISE if is_fused_ffn else EXPERT_LAYER_COLWISE
+                colwise_fused_param = {"is_naive_2fuse": True} if is_fused_ffn else {}
+
+                if layer_idx >= config.text_config.first_k_dense_replace:
+                    try:
+                        moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
+                    except:
+                        moe_group = None
+                    expert_model_parallel_size = dist.get_world_size(moe_group) if moe_group is not None else 1
+
+                    # experts
+                    if expert_model_parallel_size <= 1:
+                        # col-wise
+                        actions.update(
+                            {
+                                f"{llm_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
+                                    fn, is_column=True, **colwise_fused_param
+                                )
+                                for e in range(config.text_config.n_routed_experts)
+                                for k in colwise_keys
+                            }
+                        )
+                    else:
+                        actions.update(
+                            {
+                                f"{llm_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
+                                    fn, is_column=True, is_naive_2fuse=True
+                                )
+                                for e in range(config.text_config.n_routed_experts)
+                                for k in FUSE_EXPERT_LAYER_COLWISE
+                            }
+                        )
+                    # row-wise
+                    actions.update(
+                        {
+                            f"{llm_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(fn, is_column=False)
+                            for e in range(config.text_config.n_routed_experts)
+                            for k in EXPERT_LAYER_ROWWISE
+                        }
+                    )
+
+                    # shared experts
+                    actions.update(
+                        {
+                            f"{llm_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(
+                                fn, is_column=True, **colwise_fused_param
+                            )
+                            for k in colwise_keys
+                        }
+                    )
+                    actions.update(
+                        {
+                            f"{llm_prefix}.layers.{layer_idx}.mlp.shared_experts.{k}": partial(fn, is_column=False)
+                            for k in EXPERT_LAYER_ROWWISE
+                        }
+                    )
+
+                # standard MLP
+                elif layer_idx < config.text_config.first_k_dense_replace:
+                    # row-wise
+                    actions.update(
+                        {
+                            f"{llm_prefix}.layers.{layer_idx}.mlp.{k}": partial(fn, is_column=False)
+                            for k in EXPERT_LAYER_ROWWISE
+                        }
+                    )
+                    # col-wise
+                    actions.update(
+                        {
+                            f"{llm_prefix}.layers.{layer_idx}.mlp.{k}": partial(
+                                fn, is_column=True, **colwise_fused_param
+                            )
+                            for k in colwise_keys
+                        }
+                    )
+
+                # bias
+                if config.text_config.attention_bias:
+                    if not config.text_config.fuse_attention_qkv:
+                        actions.update(
+                            {f"{llm_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True) for b in BIAS_KEYS}
+                        )
+                    else:
+                        actions.update(
+                            {
+                                f"{llm_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
+                                for b in FUSE_BIAS_KEYS
+                            }
+                        )
+            return actions
+
+        mappings = make_base_actions()
+        return mappings
+
+    @classmethod
     def _get_fuse_or_split_param_mappings(cls, config: Glm4vMoeConfig, is_fuse=False):
         config = config.text_config
         # return parameter fuse utils
