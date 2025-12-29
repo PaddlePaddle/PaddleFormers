@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
-train_dataset_path: ./data/pt/train.jsonl
+train_dataset_path: ./data/sft/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./data/pt/eval.jsonl
+eval_dataset_path: ./data/sft/eval.jsonl
 eval_dataset_prob: "1.0"
 packing: true
 truncate_packing: true
