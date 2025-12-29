@@ -60,7 +60,7 @@ source PaddleFleet/.venv/bin/activate
 if [[ "$step" == "pt" ]]; then
     export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_multicard_pt.yaml
     export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
-    export model_name_or_path=$CACHE_DIR/models/tiny-random-qwen3
+    export model_name_or_path=$CACHE_DIR/Qwen3-30B-A3B
     export output_dir=$root_dir/checkpoints/qwen-pt
 elif [[ "$step" == "sft" ]]; then
     export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_multicard_sft.yaml
