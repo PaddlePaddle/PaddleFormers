@@ -92,8 +92,7 @@ def scaled_dot_product_attention(
 
     # Attention Interface input [bz, nhead, seqlen, headdim]
 
-    fa_version = paddle.base.framework.get_flags(["FLAGS_flash_attn_version"])["FLAGS_flash_attn_version"]
-    if fa_version == 2 and config._attn_implementation == "flashmask":
+    if config._attn_implementation == "flashmask":
         q_head_dim = query_states.shape[-1]
         softmax_scale = softmax_scale * (q_head_dim**0.5)
         query_states = query_states * softmax_scale
@@ -117,7 +116,7 @@ def scaled_dot_product_attention(
         scaling=softmax_scale,
     )
 
-    if fa_version == 2 and config._attn_implementation == "flashmask":
+    if config._attn_implementation == "flashmask":
         attn_output = attn_output.reshape([bsz, q_len, v_num_heads, head_dim])
         attn_output = attn_output[..., :v_head_dim]
         attn_output = attn_output.reshape([bsz, q_len, -1])
@@ -1260,7 +1259,7 @@ class DeepseekV3PretrainedModel(PretrainedModel):
                 f"model.norm.weight -> {model_prefix}norm.weight",
                 f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
-                f"model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> {model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias",
+                f"model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> {model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias, dtype='float32'",
                 f"model.layers.$LAYER_ID.mlp.gate.weight -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
                 f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
@@ -1781,6 +1780,7 @@ class DeepseekV3PretrainingCriterion(nn.Layer):
 
         def compute_loss(preds, labels):
             with paddle.amp.auto_cast(False):
+                labels = labels.reshape(preds.shape[:2]).contiguous()
                 masked_lm_loss = self.loss_func(preds.astype("float32"), labels.unsqueeze(2))
                 binary_sequence = paddle.where(
                     masked_lm_loss > 0, paddle.ones_like(masked_lm_loss), paddle.zeros_like(masked_lm_loss)

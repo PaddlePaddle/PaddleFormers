@@ -1419,9 +1419,7 @@ class ErniePretrainedModel(PretrainedModel):
 
             return final_actions
 
-        mappings = get_tensor_parallel_split_mappings(
-            config.num_hidden_layers
-        )
+        mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers)
 
         return mappings
 
@@ -1492,12 +1490,7 @@ class ErnieModel(ErniePretrainedModel):
                 self.hidden_size,
             )
 
-        layers_list = [
-            ErnieDecoderLayer(config, layer_idx)
-            for layer_idx in range(
-                config.num_hidden_layers
-            )
-        ]
+        layers_list = [ErnieDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
 
         self.layers = nn.LayerList(layers_list)
         Norm = RMSNorm

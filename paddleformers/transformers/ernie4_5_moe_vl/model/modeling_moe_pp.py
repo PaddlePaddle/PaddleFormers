@@ -177,6 +177,7 @@ def create_skip_config_for_refined_recompute(layer_idx, config):
 
     """
     if config.recompute_granularity is not None or not isinstance(config.recompute_modules, dict):
+        config.skip_recompute_ops[layer_idx] = {}
         return config
     skip_config = dict()
 

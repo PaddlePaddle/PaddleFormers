@@ -34,9 +34,10 @@ import_structure = {
     ],
     "model_utils": ["PretrainedModel", "register_base_model"],
     "tokenizer_utils": [
-        "PreTrainedTokenizer",
         "PretrainedTokenizer",
+        "PreTrainedTokenizer",
         "PreTrainedTokenizerBase",
+        "PreTrainedTokenizerFast",
         "BPETokenizer",
         "tokenize_chinese_chars",
         "is_chinese_char",
@@ -48,7 +49,6 @@ import_structure = {
     "attention_utils": ["create_bigbird_rand_mask_idx_list"],
     "tensor_parallel_utils": [],
     "configuration_utils": ["PretrainedConfig"],
-    "tokenizer_utils_fast": ["PretrainedTokenizerFast"],
     "processing_utils": ["ProcessorMixin"],
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
     "image_processing_utils": ["PaddleImageProcessingMixin", "ImageProcessingMixin", "BaseImageProcessor"],
@@ -205,6 +205,15 @@ import_structure = {
         "Qwen2_5_VLTextModel",
     ],
     "qwen2_5_vl.processor": ["Qwen2_5_VLProcessor"],
+    "qwen3_vl.configuration": ["Qwen3VLConfig", "Qwen3VLTextConfig"],
+    "qwen3_vl.modeling": [
+        "Qwen3VLForConditionalGeneration",
+        "Qwen3VLModel",
+        "Qwen3VLPretrainedModel",
+        "Qwen3VLTextModel",
+    ],
+    "qwen3_vl.processor": ["Qwen3VLProcessor"],
+    "qwen3_vl.video_processor": ["Qwen3VLVideoProcessor"],
     "qwen2_moe.configuration": ["Qwen2MoeConfig"],
     "qwen2_moe.modeling": [
         "Qwen2MoeModel",
@@ -253,6 +262,7 @@ import_structure = {
     "ernie4_5_moe_vl": [],
     "paddleocr_vl": [],
     "qwen2_5_vl": [],
+    "qwen3_vl": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
@@ -272,7 +282,9 @@ if TYPE_CHECKING:
     from .model_utils import PretrainedModel, register_base_model
     from .tokenizer_utils import (
         PretrainedTokenizer,
+        PreTrainedTokenizer,
         PreTrainedTokenizerBase,
+        PreTrainedTokenizerFast,
         BPETokenizer,
         tokenize_chinese_chars,
         is_chinese_char,
@@ -281,7 +293,6 @@ if TYPE_CHECKING:
         tokenize_special_chars,
         convert_to_unicode,
     )
-    from .tokenizer_utils_fast import PretrainedTokenizerFast
     from .processing_utils import ProcessorMixin
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
     from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
@@ -325,6 +336,7 @@ if TYPE_CHECKING:
     from .qwen3 import *
     from .qwen3_moe import *
     from .qwen3_next import *
+    from .qwen3_vl import *
     from .glm4_moe import *
     from .gpt_oss import *
     from .phi3 import *
