@@ -56,7 +56,7 @@ moe_router_force_load_balancing: true
 
 sharding: stage1
 split_param: true
-tensor_model_parallel_size: 4
+tensor_model_parallel_size: 2
 sequence_parallel: true
 pipeline_model_parallel_size: 2
 use_expert_parallel: true
