@@ -266,7 +266,7 @@ class Ernie4_5_MoeConfig(Ernie4_5_Config):
         sinkhorn_temp=3e-2,
         global_aux_loss=False,
         moe_dropout_prob=0.0,
-        moe_group="world",
+        moe_group="mp",
         moe_gate="topk",
         moe_intermediate_size: Union[int, list] = 0,
         moe_num_shared_experts: int = 0,

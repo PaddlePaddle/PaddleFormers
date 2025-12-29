@@ -17,16 +17,34 @@ set -exo pipefail
 source PaddleFleet/.venv/bin/activate
 
 export root_dir=$(pwd)
-cd $root_dir/PaddleFormers/examples/experiments/paddlefleet
 
-config_json="glm45_single_card.json"
+python -c "
+infile = '$root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py'
+print(infile)
+outfile = infile + '.new'
+with open(infile) as fin:
+    lines = fin.readlines()
+with open(outfile, 'w') as fout:
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        next_line = lines[i+1] if i+1 < len(lines) else ''
+        pad = line[:len(line)-len(line.lstrip())]
+        if line.lstrip().startswith('class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel)') and next_line.strip().startswith('is_fleet'):
+            fout.write(pad + 'class Glm4MoeForCausalLM(Glm4MoePreTrainedModel)' + line.lstrip()[len('class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel)'):])
+        elif line.lstrip().startswith('class Glm4MoeForCausalLM(Glm4MoePreTrainedModel)') and next_line.strip().startswith('_tied_weights_keys'):
+            fout.write(pad + 'class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel)' + line.lstrip()[len('class Glm4MoeForCausalLM(Glm4MoePreTrainedModel)'):])
+        elif line.lstrip().startswith('class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel') and next_line.strip().startswith('is_fleet'):
+            fout.write(pad + 'class Glm4MoeForCausalLMPipe(Glm4MoePreTrainedModel' + line.lstrip()[len('class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel'):])
+        elif line.lstrip().startswith('class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe)') and next_line.strip().startswith('config_class'):
+            fout.write(pad + 'class Glm4MoeForCausalLMPipeFleet(GeneralModelForCausalLMPipe)' + line.lstrip()[len('class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe)'):])
+        else:
+            fout.write(line)
+        i += 1
+"
+mv $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
 
-jq --arg cache "$CACHE_DIR" \
-   '.save_steps = 100
-    | .input_dir = "1.0 \($cache)/glm45/data/pre-training/llama_openwebtext_100k"
-    | .model_name_or_path = "\($cache)/glm45/GLM-4.5-Air"' \
-   $config_json > $config_json.tmp
-mv $config_json.tmp $config_json
+config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_single_pt-test.yaml 
 
 
 rm -rf checkpoint/
@@ -40,7 +58,8 @@ export FLAGS_use_stride_compute_kernel=False
 unset http_proxy https_proxy
 
 set +e
-coverage run run_pretrain.py $config_json 2>&1 | tee ./glm45_single_card.log
+# coverage run run_pretrain.py $config_json 2>&1 | tee ./glm45_single_card.log
+NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./glm45_single_card.log
 
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
@@ -60,16 +79,16 @@ fi
 
 set -e
 echo "
-1 12.10431099
-2 12.05327988
-3 12.03885174
-4 12.03460503
-5 12.02089691
-6 12.00885010
-7 11.95639896
-8 11.96551323
-9 11.97876358
-10 11.97223091
+1 12.10422421
+2 12.05354404
+3 12.03884697
+4 12.03464031
+5 12.02043915
+6 12.00771523
+7 11.95508194
+8 11.96421719
+9 11.97694683
+10 11.96971035
 " > ./glm45_single_card_gt_loss.txt
 
 export FLAGS_use_stride_compute_kernel=False
