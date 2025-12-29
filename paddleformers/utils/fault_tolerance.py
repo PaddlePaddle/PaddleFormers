@@ -14,16 +14,6 @@
 
 import os
 
-try:
-    from paddle.framework.recall_error import LOSS_NAN_ERROR
-except ImportError:
-    LOSS_NAN_ERROR = "PaddleRecall error(102): LossNan"
-
-try:
-    from paddle.framework.recall_error import LOSS_INF_ERROR
-except ImportError:
-    LOSS_INF_ERROR = "PaddleRecall error(104): LossInf"
-
 PDC_DOWNLOAD_ERROR = "PaddleRecall error(105): PDCDownloadError"
 # only warn msg
 FC_DUMP_ERROR = "PaddleRecall error(106): FlashCheckpointDumpError"

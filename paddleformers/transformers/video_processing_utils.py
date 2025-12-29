@@ -187,7 +187,7 @@ class BaseVideoProcessor(BaseImageProcessor):
     valid_kwargs = VideosKwargs
     model_input_names = ["pixel_values_videos"]
     unused_kwargs = None
-    backend = "paddlecodec"
+    video_backend = "paddlecodec"
 
     def __init__(self, **kwargs: Unpack[VideosKwargs]):
         super().__init__()
@@ -913,11 +913,11 @@ class BaseVideoProcessor(BaseImageProcessor):
         If a single url is passed, the return value will be a single object. If a list is passed a list of objects is
         returned.
         """
-        backend = kwargs.get("backend", "paddlecodec")
+        video_backend = kwargs.get("video_backend", "paddlecodec")
 
         if isinstance(video_url_or_urls, list):
             return list(
                 zip(*[self.fetch_videos(x, sample_indices_fn=sample_indices_fn, **kwargs) for x in video_url_or_urls])
             )
         else:
-            return load_video(video_url_or_urls, backend=backend, sample_indices_fn=sample_indices_fn)
+            return load_video(video_url_or_urls, video_backend=video_backend, sample_indices_fn=sample_indices_fn)

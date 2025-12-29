@@ -30,7 +30,6 @@ import shutil
 import sys
 import time
 import types
-import warnings
 from collections import OrderedDict
 from collections.abc import Mapping
 from pathlib import Path
@@ -45,23 +44,13 @@ import paddle.nn as nn
 import psutil
 from packaging import version
 from paddle import framework
+from paddle.base import core
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
-from paddle.distributed.fleet.meta_parallel import PipelineLayer
+from paddle.distributed.fleet.meta_parallel import (
+    PipelineDatasetPreprocessor,
+    PipelineLayer,
+)
 
-try:
-    from paddle.distributed.flex_checkpoint.dcp.sharded_weight import ShardedWeight
-except:
-    ShardedWeight = None
-
-try:
-    from paddle.distributed.fleet.meta_parallel import PipelineDatasetPreprocessor
-except:
-    PipelineDatasetPreprocessor = None
-
-try:
-    from paddle.base import core
-except:
-    core = None
 from ..utils.import_utils import is_paddlefleet_available
 
 # Conditionally import paddlefleet modules
@@ -85,23 +74,18 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_
 from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_stage2 import (
     GroupShardedOptimizerStage2,
 )
+from paddle.distributed.fleet.utils.hybrid_parallel_util import (
+    obtain_optimizer_parameters_list,
+)
 
-try:
-    from paddle.distributed.fleet.utils.hybrid_parallel_util import (
-        obtain_optimizer_parameters_list,
-    )
+_obtain_optimizer_parameters_list = obtain_optimizer_parameters_list
 
-    _obtain_optimizer_parameters_list = obtain_optimizer_parameters_list
-except:
-    try:
-        from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_optimizer import (
-            _obtain_optimizer_parameters_list,
-        )
-    except:
-        _obtain_optimizer_parameters_list = None
 
 from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     fused_allreduce_gradients,
+)
+from paddle.distributed.fleet.utils.sequence_parallel_utils import (
+    register_sequence_parallel_allreduce_hooks,
 )
 from paddle.io import DataLoader, Dataset, DistributedBatchSampler
 from tqdm.auto import tqdm
@@ -121,21 +105,14 @@ from ..quantization.quantization_linear import (
     RowParallelQuantizationLinear,
 )
 
-try:
-    from paddle.distributed.fleet.utils.sequence_parallel_utils import (
-        register_sequence_parallel_allreduce_hooks,
-    )
-except:
-    pass
 if is_paddlefleet_available():
-    try:
-        from paddlefleet.utils import get_batch_on_this_cp_rank
-    except ImportError:
-        get_batch_on_this_cp_rank = None
+    from paddlefleet.utils import get_batch_on_this_cp_rank
 else:
     get_batch_on_this_cp_rank = None
 if TYPE_CHECKING:
     from transformers.tokenization_utils import PreTrainedTokenizer
+
+from paddle.framework.recall_error import LOSS_INF_ERROR, LOSS_NAN_ERROR
 
 from ..transformers.context_parallel_utils import auto_split_sequence_dim_load_balance
 from ..transformers.image_processing_utils import ImageProcessingMixin
@@ -173,7 +150,6 @@ from ..utils.env import (
     TRAINER_STATE_NAME,
     TRAINING_ARGS_NAME,
 )
-from ..utils.fault_tolerance import LOSS_INF_ERROR, LOSS_NAN_ERROR
 from ..utils.import_utils import is_datasets_available, is_paddle_cuda_available
 from ..utils.log import MetricsDumper, logger
 from ..utils.pdc_sdk import FLASH_DEVICE
@@ -256,27 +232,9 @@ DEFAULT_PROGRESS_CALLBACK = ProgressCallback
 if is_datasets_available():
     import datasets
 
-
-try:
-    from paddle.distributed.fleet.utils import mix_precision_utils
-except:
-    mix_precision_utils = None
-
-try:
-    from paddle.io.dataloader.dataloader_iter import _DataLoaderIterBase
-except:
-    from paddle.fluid.dataloader.dataloader_iter import _DataLoaderIterBase
-
-try:
-    from paddle.distributed import in_auto_parallel_align_mode
-except:
-
-    def in_auto_parallel_align_mode():
-        """
-        hack for paddleformers develop branch.
-        """
-        return False
-
+from paddle.distributed import in_auto_parallel_align_mode
+from paddle.distributed.fleet.utils import mix_precision_utils
+from paddle.io.dataloader.dataloader_iter import _DataLoaderIterBase
 
 __all__ = ["Trainer"]
 
@@ -2444,8 +2402,6 @@ class Trainer:
                 elapsed_time = timer.elapsed(reset=False) * 1000.0
                 paddle_timer_info += f" | {name}: {elapsed_time:.2f}"
             paddle_pipeline_timers.log(paddle_pipeline_timers.timers.keys(), reset=True)
-        except ImportError:  # paddle version too old, timer not support
-            warnings.warn(f"paddle version:{paddle.__git_commit__} does not support pipeline timer")
         except AssertionError:  # paddle timer not enabled
             pass
 
@@ -4358,9 +4314,6 @@ class Trainer:
             )
 
             paddle_pipeline_timers = paddle_get_timers()
-        except ImportError:  # paddle version too old, timer not support
-            warnings.warn(f"paddle version:{paddle.__git_commit__} does not support pipeline timer")
-            paddle_pipeline_timers = None
         except AssertionError:
             paddle_pipeline_timers = None
         kwargs.update(

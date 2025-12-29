@@ -48,6 +48,7 @@ from paddleformers.transformers import (
     AutoTokenizer,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
+from paddleformers.utils.import_utils import is_paddlefleet_available
 from paddleformers.utils.log import logger
 
 from ...hparams import (
@@ -60,6 +61,9 @@ from ...utils.llm_utils import get_lora_target_modules
 from .dpo_argument import DPOConfig
 from .dpo_estimate_training import dpo_estimate_training
 from .dpo_trainer import DPOTrainer
+
+if is_paddlefleet_available():
+    from paddleformers.transformers.gpt_provider import GPTModel
 
 
 def run_dpo(
@@ -196,6 +200,13 @@ def run_dpo(
             ref_model.set_state_dict(model.state_dict())
         else:
             ref_model = None
+
+    if is_paddlefleet_available() and isinstance(model, GPTModel):
+        training_args.per_device_eval_batch_size = (
+            training_args.per_device_train_batch_size * training_args.gradient_accumulation_steps
+        )
+        logger.warning(f"eval_batch_size set to {training_args.per_device_eval_batch_size} in Pipeline Parallel!")
+
     if training_args.pipeline_model_parallel_size > 1:
         model.config.dpo_config = None
 

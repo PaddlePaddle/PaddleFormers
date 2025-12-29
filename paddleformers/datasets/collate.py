@@ -359,6 +359,10 @@ def mm_collate_fn(
             )
         else:
             padded_position_ids = []
+        if len(pixel_values) > 0:
+            pixel_values = paddle.concat(pixel_values, axis=0)
+        if len(pixel_values_videos) > 0:
+            pixel_values_videos = paddle.concat(pixel_values_videos, axis=0)
         if get_token_type_func is not None:  # ernie45vl
             padded_position_ids = padded_position_ids.transpose([1, 2, 0])
             padded_token_type_ids, images, grid_thw = get_token_type_func(
@@ -373,10 +377,6 @@ def mm_collate_fn(
                 ]
             )
         else:
-            if len(pixel_values) > 0:
-                pixel_values = paddle.concat(pixel_values, axis=0)
-            if len(pixel_values_videos) > 0:
-                pixel_values_videos = paddle.concat(pixel_values_videos, axis=0)
             return_list[-1].extend(
                 [
                     padded_position_ids,

@@ -308,7 +308,7 @@ def read_video_decord(
     """
     if not is_decord_available():
         raise ImportError(
-            "Backend=decord for loading the video but the required library is not found in your environment."
+            "video_backend=decord for loading the video but the required library is not found in your environment."
             "Make sure to install 'decord' before loading the video."
         )
     from decord import VideoReader, cpu
@@ -424,7 +424,7 @@ def load_video(
     video: VideoInput,
     num_frames: Optional[int] = None,
     fps: Optional[Union[int, float]] = None,
-    backend: str = "paddlecodec",
+    video_backend: str = "paddlecodec",
     sample_indices_fn: Optional[Callable] = None,
     **kwargs,
 ) -> np.ndarray:
@@ -439,8 +439,8 @@ def load_video(
         fps (`int` or `float`, *optional*):
             Number of frames to sample per second. Should be passed only when `num_frames=None`.
             If not specified and `num_frames==None`, all frames are sampled.
-        backend (`str`, *optional*, defaults to `"paddlecodec"`):
-            The backend to use when loading the video. Can be any of ["paddlecodec", "decord"]. Defaults to "paddlecodec".
+        video_backend (`str`, *optional*, defaults to `"paddlecodec"`):
+            The video_backend to use when loading the video. Can be any of ["paddlecodec", "decord"]. Defaults to "paddlecodec".
         sample_indices_fn (`Callable`, *optional*):
             A callable function that will return indices at which the video should be sampled. If the video has to be loaded using
             by a different sampling technique than provided by `num_frames` or `fps` arguments, one should provide their own `sample_indices_fn`.
@@ -485,13 +485,13 @@ def load_video(
         raise TypeError("Incorrect format used for video. Should be an url linking to an video or a local path.")
 
     # load with decord
-    if not is_decord_available() and backend == "decord":
+    if not is_decord_available() and video_backend == "decord":
         raise ImportError(
-            f"You chose backend={backend} for loading the video but the required library is not found in your environment "
-            f"Make sure to install {backend} before loading the video."
+            f"You chose video_backend={video_backend} for loading the video but the required library is not found in your environment "
+            f"Make sure to install {video_backend} before loading the video."
         )
 
-    video_decoder = VIDEO_DECODERS[backend]
+    video_decoder = VIDEO_DECODERS[video_backend]
     video, metadata = video_decoder(file_obj, sample_indices_fn, **kwargs)
     return video, metadata
 

@@ -23,14 +23,11 @@ except ImportError:
 
 from paddle import distributed as dist
 from paddle.autograd import PyLayer
+from paddle.distributed.fleet.utils.sequence_parallel_utils import (
+    ColumnSequenceParallelLinear,
+    RowSequenceParallelLinear,
+)
 
-try:
-    from paddle.distributed.fleet.utils.sequence_parallel_utils import (
-        ColumnSequenceParallelLinear,
-        RowSequenceParallelLinear,
-    )
-except:
-    pass
 from ..utils.tools import get_env_device
 
 __all_gather_recomputation__ = False

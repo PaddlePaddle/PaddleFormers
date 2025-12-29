@@ -21,12 +21,9 @@ PF_HOME              -->  the root directory for storing PaddleFormers related d
 import os
 import re
 
-try:
-    from paddle.base.framework import use_pir_api
+from paddle.base.framework import use_pir_api
 
-    pir_enabled = use_pir_api()
-except ImportError:
-    pir_enabled = False
+pir_enabled = use_pir_api()
 
 
 def _get_user_home():

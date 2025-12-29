@@ -17,22 +17,17 @@ set -exo pipefail
 source PaddleFleet/.venv/bin/activate
 
 export root_dir=$(pwd)
-cd $root_dir/PaddleFormers/examples/experiments/paddlefleet
 
-config_json="glm45_fp8.json"
+export config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_pt_fp8.yaml
+export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
 
-jq --arg cache "$CACHE_DIR" \
-   '.expert_model_parallel_size = 8
-    | .save_steps = 100
-    | .input_dir = "1.0 \($cache)/glm45/data/pre-training/llama_openwebtext_100k"
-    | .model_name_or_path = "\($cache)/glm45/GLM-4.5-Air"' \
-   $config_json > $config_json.tmp
-mv $config_json.tmp $config_json
-
-# use fp8 Provider
-sed -i 's/GLM_muiti_cards/GLM_muiti_cards_fp8/' glm45_fp8.json
-sed -i 's/num_hidden_layers: int = 10/num_hidden_layers: int = 3/g' $root_dir/PaddleFormers/examples/experiments/paddlefleet/glm45_provider.py
-sed -i 's/\[0\] \* 1 + \[1\] \* 9/\[0\] \* 1 + \[1\] \* 2/g' $root_dir/PaddleFormers/examples/experiments/paddlefleet/glm45_provider.py
+yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+    | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
+    | .model_name_or_path = strenv(CACHE_DIR) + "/glm45/GLM-4.5-Air"
+    | .logging_dir = strenv(data_dir) + "/vdl_log"
+    | .output_dir = strenv(data_dir) + "/checkpoints"' \
+   $config_yaml > ${config_yaml}.tmp
+mv ${config_yaml}.tmp $config_yaml
 
 rm -rf checkpoint/
 rm -rf outputs/
@@ -42,25 +37,19 @@ port=36677
 export FLAGS_embedding_deterministic=1
 export FLAGS_cudnn_deterministic=1
 export FLAGS_use_stride_compute_kernel=False
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 
 unset http_proxy https_proxy
 rm -rf checkpoint/
 rm -rf outputs/
 
 set +e
-coverage run -m paddle.distributed.launch \
-   --log_dir ./log \
-   --master $master:$port \
-   --nnodes 1 \
-   --rank 0 \
-   --run_mode=collective \
-   run_pretrain.py $config_json \
-   --output_dir ./checkpoint 2>&1 | tee ./glm45_fp8.log
+NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./glm45_pt_fp8.log
 
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
-   echo "Training failed with exit code $exit_cod, see ./glm45_fp8.log for details."
-   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_fp8.log
+   echo "Training failed with exit code $exit_cod, see ./glm45_pt_fp8.log for details."
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_pt_fp8.log
    check_result=$?
    if [ $check_result -ne 0 ]; then
        echo "Failed to find 'Training completed' in log file."
@@ -74,10 +63,10 @@ fi
 
 set -e
 echo "
-20 10.29259872
+10 12.14463234
 " > ./glm45_multi_cards_fp8_gt_loss.txt
 
 python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
-   --compare_step 20 \
-   --log_file ./glm45_fp8.log \
+   --compare_step 10 \
+   --log_file ./glm45_pt_fp8.log \
    --gt_file ./glm45_multi_cards_fp8_gt_loss.txt

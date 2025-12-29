@@ -260,6 +260,7 @@ class FakeMoERouterLoss(PyLayer):
 class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
     def __init__(self, config, layer_idx):
         # correction bias (yes it seems to be a typo with statics <> statistics)
+        self.config = config
         moe_num_experts = config.moe_num_experts
         config.moe_world_size = dist.get_world_size(config.moe_group)
         self.use_multimodel_experts = False
