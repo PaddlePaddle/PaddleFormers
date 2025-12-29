@@ -265,27 +265,18 @@ class LlmMetaConfig:
         # sep_parallel
         ("sep_parallel_size", int, 1, "sep_parallel_size"),
         ("context_parallel_size", int, 1, "context_parallel_size"),
+        ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
         ("sequence_parallel", bool, False, "Whether to use sequence parallel"),
         ("fuse_sequence_parallel_allreduce", bool, False, "Whether to use fuse sequence parallel allreduce"),
     ]
 
     recompute_attributes = [
-        ("recompute", bool, False, "recompute"),
         (
             "recompute_granularity",
             str,
-            "full",
+            None,
             "Recompute granularity, Choose among ['full', 'core_attn', 'full_attn']",
         ),
-        ("recompute_use_reentrant", bool, True, "recompute_use_reentrant"),
-        # refined_recompute attributes
-        (
-            "refined_recompute",
-            str,
-            "",
-            "refined_recompute, Choose from 'mlp_row_ln', 'mlp_column_ln', 'attention_row_ln', 'attention_column_ln', 'flash_attn']",
-        ),
-        ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
         ("recompute_method", str, None, "Determines which transformer layers will be recomputed."),
         (
             "recompute_num_layers",
@@ -294,15 +285,11 @@ class LlmMetaConfig:
             "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in each uniformly divided recompute unit.",
         ),
         ("recompute_modules", Optional[List[str]], None, "List of module names to apply recomputation."),
-        (
-            "recompute_mtp_granularity",
-            str,
-            None,
-            "Recomputation granularity for MTP (Mixture of Token-Parallel) layers.",
-        ),
         ("recompute_mtp_granularity", str, None, "Recomputation granularity for MTP layers."),
         ("recompute_mtp_method", str, None, "Recomputation method for MTP layers."),
         ("recompute_mtp_modules", str, None, "List of MTP module names to apply recomputation."),
+        ("recompute_use_reentrant", bool, True, "recompute_use_reentrant"),
+        ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
     ]
 
     loss_attributes = [
@@ -352,15 +339,15 @@ class LlmMetaConfig:
         ),
         (
             "moe_token_drop_policy",
-            bool,
-            False,
-            "Whether to enable token dropping policy for MoE (discard low-importance tokens). Defaults to False.",
+            str,
+            "probs",
+            "Defines the policy for token dropping. It can be set to either 'probs' or 'position'. If set to 'probs', tokens with the lowest probabilities will be dropped. If set to 'position', tokens from the end of each batch will be dropped. Defaults to 'probs'.",
         ),
         (
             "moe_expert_capacity_factor",
             float,
             0.0,
-            "Scaling factor for MoE expert capacity (controls maximum tokens per expert). Defaults to 0.0 (use default capacity).",
+            "Scaling factor for MoE expert capacity (controls maximum tokens per expert). Defaults to 0.0 (no dropping tokens).",
         ),
         (
             "router_aux_loss_coef",
@@ -403,7 +390,7 @@ class LlmMetaConfig:
             "moe_expert_fusion",
             bool,
             True,
-            "Whether to enable operator fusion for MoE expert layers (e.g., Linear + Activation fusion). Improves training/inference throughput by reducing kernel launch overhead. Defaults to True.",
+            "Whether to fuse experts. Default to True.",
         ),
         (
             "moe_router_fusion",
@@ -422,6 +409,12 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
+        ),
+        (
+            "moe_deep_gemm",
+            bool,
+            True,
+            "Whether to enable deep GEMM for MoE experts. Defaults to True. Effective only after the moe_grouped_gemm is set. ",
         ),
     ]
 

@@ -33,17 +33,37 @@ from paddle.distributed.fleet.meta_parallel import (
     PipelineLayer,
     RowParallelLinear,
 )
-from paddlefleet.parallel_state import (
-    get_tensor_model_parallel_group,
-    get_tensor_model_parallel_world_size,
-)
-from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
 
-# paddlefleet
-from paddlefleet.tensor_parallel import (
-    ColumnParallelLinear as FleetColumnParallelLinear,
-)
-from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
+from ...utils.import_utils import is_paddlefleet_available
+
+# Conditionally import paddlefleet modules
+if is_paddlefleet_available():
+    from paddlefleet.parallel_state import (
+        get_tensor_model_parallel_group,
+        get_tensor_model_parallel_world_size,
+    )
+    from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
+    from paddlefleet.tensor_parallel import (
+        ColumnParallelLinear as FleetColumnParallelLinear,
+    )
+    from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
+else:
+    # Define mock objects or alternative implementations when paddlefleet is not available
+    def get_tensor_model_parallel_group():
+        return None
+
+    def get_tensor_model_parallel_world_size():
+        return 1
+
+    class PaddleFleetPipelineLayer:
+        pass
+
+    class FleetColumnParallelLinear:
+        pass
+
+    class FleetRowParallelLinear:
+        pass
+
 
 from ...trainer.argparser import strtobool
 from ...transformers import linear_utils
@@ -187,13 +207,17 @@ class LoRAModel(nn.Layer):
         with dtype_guard(self.lora_config.dtype):
             self.model = self.get_lora_model(model, lora_config)
         self.is_pipelinemodel = False
-        if issubclass(type(self.model), (PipelineLayer, PaddleFleetPipelineLayer)):
+        pipeline_layer_types = [PipelineLayer]
+        if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
+            pipeline_layer_types.append(PaddleFleetPipelineLayer)
+        if issubclass(type(self.model), tuple(pipeline_layer_types)):
             self.is_pipelinemodel = True
             self.model._single_to_pp_mapping = None
 
         self.use_paddlefleet = False
-        if isinstance(self.model, PaddleFleetPipelineLayer):
-            self.use_paddlefleet = True
+        if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
+            if isinstance(self.model, PaddleFleetPipelineLayer):
+                self.use_paddlefleet = True
 
         if (self.lora_config.tensor_model_parallel_size > 1 or self.is_pipelinemodel) and (
             self.lora_config.lora_use_mixer or self.lora_config.use_mora
@@ -238,7 +262,10 @@ class LoRAModel(nn.Layer):
         )
 
         rename_lora_split_mapping = {}
-        if issubclass(type(self.model), (PipelineLayer, PaddleFleetPipelineLayer)):
+        pipeline_layer_types = [PipelineLayer]
+        if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
+            pipeline_layer_types.append(PaddleFleetPipelineLayer)
+        if issubclass(type(self.model), tuple(pipeline_layer_types)):
             # rename lora_split_mapping
             prefixes = self.model.get_sequential_name_prefixes()
             keys = self.lora_split_mapping.keys()
@@ -281,9 +308,13 @@ class LoRAModel(nn.Layer):
                         raise ValueError(f"Unexpected key: {k} for pp lora layer.")
                 rename_lora_split_mapping[".".join(single_name)] = self.lora_split_mapping[k]
 
+        pipeline_layer_types = [PipelineLayer]
+        if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
+            pipeline_layer_types.append(PaddleFleetPipelineLayer)
+
         lora_split_mapping = (
             rename_lora_split_mapping
-            if issubclass(type(self.model), (PipelineLayer, PaddleFleetPipelineLayer))
+            if issubclass(type(self.model), tuple(pipeline_layer_types))
             else self.lora_split_mapping
         )
 
@@ -433,6 +464,10 @@ class LoRAModel(nn.Layer):
             trainable_state_dict.keys(), is_split=False
         )
         if self.use_paddlefleet:
+            if not is_paddlefleet_available():
+                raise ImportError(
+                    "paddlefleet is required for _merge_trainable_tensor_parallel with paddlefleet. Please install paddlefleet."
+                )
             mp_group = get_tensor_model_parallel_group()
             is_dst = get_tensor_model_parallel_world_size() > 1
         else:
@@ -753,7 +788,9 @@ class LoRAModel(nn.Layer):
                 self.add_lora_split_mapping(module_name + ".weight_quanter._scale", is_column=False)
                 self.add_lora_split_mapping(module_name + ".activation_quanter._scale", is_column=False)
                 self.add_lora_split_mapping(module_name + ".activation_quanter.quanter._scale", is_column=False)
-        elif isinstance(module, FleetColumnParallelLinear) or isinstance(module, FleetRowParallelLinear):
+        elif is_paddlefleet_available() and (
+            isinstance(module, FleetColumnParallelLinear) or isinstance(module, FleetRowParallelLinear)
+        ):
             if module.world_size == 1:
                 lora_module = FleetLoRALinear(
                     in_features=module.weight.shape[0],

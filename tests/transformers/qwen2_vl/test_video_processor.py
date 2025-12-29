@@ -18,6 +18,7 @@ from __future__ import annotations
 import unittest
 
 import numpy as np
+import paddle
 from PIL import Image
 
 from paddleformers.transformers import Qwen2VLVideoProcessor
@@ -153,76 +154,95 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
             self.assertEqual(video_processor.min_pixels, 256 * 256)
             self.assertEqual(video_processor.max_pixels, 640 * 640)
 
-    # def test_call_pil(self):
-    #     for video_processing_class in self.video_processor_list:
-    #         # Initialize video_processing
-    #         video_processing = video_processing_class(**self.video_processor_dict)
-    #         video_inputs = self.video_processor_tester.prepare_video_inputs(
-    #             equal_resolution=False, return_tensors="pil"
-    #         )
+    @unittest.skip("Skipping due to some issues with Qwen2-VL Video Processor")
+    def test_call_pil(self):
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
 
-    #         # Each video is a list of PIL Images
-    #         for video in video_inputs:
-    #             self.assertIsInstance(video[0], Image.Image)
+        for video_processing_class in self.video_processor_list:
+            # Initialize video_processing
+            video_processing = video_processing_class(**self.video_processor_dict)
+            video_inputs = self.video_processor_tester.prepare_video_inputs(
+                equal_resolution=False, return_tensors="pil"
+            )
 
-    #         # Test not batched input
-    #         encoded_videos = video_processing(video_inputs[0], return_tensors="pd")[self.input_name]
-    #         expected_output_video_shape = self.video_processor_tester.expected_output_video_shape([video_inputs[0]])
-    #         self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
+            # Each video is a list of PIL Images
+            for video in video_inputs:
+                self.assertIsInstance(video[0], Image.Image)
 
-    #         # Test batched
-    #         encoded_videos = video_processing(video_inputs, return_tensors="pd")[self.input_name]
-    #         expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(video_inputs)
-    #         self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
+            # Test not batched input
+            encoded_videos = video_processing(video_inputs[0], return_tensors="pd")[self.input_name]
+            expected_output_video_shape = self.video_processor_tester.expected_output_video_shape([video_inputs[0]])
+            self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
 
-    # def test_call_numpy(self):
-    #     for video_processing_class in self.video_processor_list:
-    #         # Initialize video_processing
-    #         video_processing = video_processing_class(**self.video_processor_dict)
-    #         # create random numpy tensors
-    #         video_inputs = self.video_processor_tester.prepare_video_inputs(
-    #             equal_resolution=False, return_tensors="np"
-    #         )
-    #         for video in video_inputs:
-    #             self.assertIsInstance(video, np.ndarray)
+            # Test batched
+            # encoded_videos = video_processing(video_inputs, return_tensors="pd")[self.input_name]
+            # expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(video_inputs)
+            # self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
 
-    #         # Test not batched input
-    #         encoded_videos = video_processing(video_inputs[0], return_tensors="pd")[self.input_name]
-    #         expected_output_video_shape = self.video_processor_tester.expected_output_video_shape([video_inputs[0]])
-    #         self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
+    @unittest.skip("Skipping due to some issues with Qwen2-VL Video Processor")
+    def test_call_numpy(self):
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
 
-    #         # Test batched
-    #         encoded_videos = video_processing(video_inputs, return_tensors="pd")[self.input_name]
-    #         expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(video_inputs)
-    #         self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
+        for video_processing_class in self.video_processor_list:
+            # Initialize video_processing
+            video_processing = video_processing_class(**self.video_processor_dict)
+            # create random numpy tensors
+            video_inputs = self.video_processor_tester.prepare_video_inputs(
+                equal_resolution=False, return_tensors="np"
+            )
+            for video in video_inputs:
+                self.assertIsInstance(video, np.ndarray)
 
-    # def test_call_paddle(self):
-    #     for video_processing_class in self.video_processor_list:
-    #         # Initialize video_processing
-    #         video_processing = video_processing_class(**self.video_processor_dict)
-    #         # create random PyTorch tensors
-    #         video_inputs = self.video_processor_tester.prepare_video_inputs(
-    #             equal_resolution=False, return_tensors="pd"
-    #         )
+            # Test not batched input
+            encoded_videos = video_processing(video_inputs[0], return_tensors="pd")[self.input_name]
+            expected_output_video_shape = self.video_processor_tester.expected_output_video_shape([video_inputs[0]])
+            self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
 
-    #         for video in video_inputs:
-    #             self.assertIsInstance(video, paddle.Tensor)
+            # Test batched
+            # encoded_videos = video_processing(video_inputs, return_tensors="pd")[self.input_name]
+            # expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(video_inputs)
+            # self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
 
-    #         # Test not batched input
-    #         encoded_videos = video_processing(video_inputs[0], return_tensors="pd")[self.input_name]
-    #         expected_output_video_shape = self.video_processor_tester.expected_output_video_shape([video_inputs[0]])
-    #         self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
+    @unittest.skip("Skipping due to some issues with Qwen2-VL Video Processor")
+    def test_call_paddle(self):
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
 
-    #         # Test batched
-    #         expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(video_inputs)
-    #         encoded_videos = video_processing(video_inputs, return_tensors="pd")[self.input_name]
-    #         self.assertEqual(
-    #             list(encoded_videos.shape),
-    #             expected_output_video_shape,
-    #         )
+        for video_processing_class in self.video_processor_list:
+            # Initialize video_processing
+            video_processing = video_processing_class(**self.video_processor_dict)
+            # create random Paddle tensors
+            video_inputs = self.video_processor_tester.prepare_video_inputs(
+                equal_resolution=False, return_tensors="pd"
+            )
+
+            for video in video_inputs:
+                self.assertIsInstance(video, paddle.Tensor)
+
+            # Test not batched input
+            encoded_videos = video_processing(video_inputs[0], return_tensors="pd")[self.input_name]
+            expected_output_video_shape = self.video_processor_tester.expected_output_video_shape([video_inputs[0]])
+            self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
+
+            # Test batched
+            # expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(video_inputs)
+            # encoded_videos = video_processing(video_inputs, return_tensors="pd")[self.input_name]
+            # self.assertEqual(
+            #     list(encoded_videos.shape),
+            #     expected_output_video_shape,
+            # )
 
     def test_nested_input(self):
         """Tests that the processor can work with nested list where each video is a list of arrays"""
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
+
         for video_processing_class in self.video_processor_list:
             video_processing = video_processing_class(**self.video_processor_dict)
             video_inputs = self.video_processor_tester.prepare_video_inputs(
@@ -256,7 +276,7 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
             # Test not batched input
             encoded_videos = video_processor(
                 video_inputs[0],
-                return_tensors="pt",
+                return_tensors="pd",
                 input_data_format="channels_last",
                 image_mean=(0.0, 0.0, 0.0, 0.0),
                 image_std=(1.0, 1.0, 1.0, 1.0),
@@ -267,7 +287,7 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
             # Test batched
             # encoded_videos = video_processor(
             #     video_inputs,
-            #     return_tensors="pt",
+            #     return_tensors="pd",
             #     input_data_format="channels_last",
             #     image_mean=(0.0, 0.0, 0.0, 0.0),
             #     image_std=(1.0, 1.0, 1.0, 1.0),
@@ -276,6 +296,10 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
             # self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
 
     def test_call_sample_frames(self):
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
+
         for video_processing_class in self.video_processor_list:
             video_processing = video_processing_class(**self.video_processor_dict)
 

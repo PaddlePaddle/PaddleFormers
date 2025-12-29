@@ -24,13 +24,9 @@ from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer import (
     DygraphShardingOptimizer,
 )
-
-try:
-    from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
-        DygraphShardingOptimizerV2,
-    )
-except:
-    DygraphShardingOptimizerV2 = None
+from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
+    DygraphShardingOptimizerV2,
+)
 
 from ...transformers.model_utils import (
     _add_variant,

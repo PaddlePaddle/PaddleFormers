@@ -37,7 +37,7 @@ class TestImageProcessor(unittest.TestCase):
                 shutil.rmtree(test_dir)
 
     def test_slow_image_processor_from_pretrained(self):
-        image_processor = AutoImageProcessor.from_pretrained("PaddleFormers/tiny-random-qwen2.5vl")
+        image_processor = AutoImageProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2")
         if hasattr(image_processor, "use"):
             self.assertFalse(image_processor.is_fast)
         else:
@@ -46,7 +46,7 @@ class TestImageProcessor(unittest.TestCase):
 
     def test_slow_image_processor_save_pretrained(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            image_processor = AutoImageProcessor.from_pretrained("PaddleFormers/tiny-random-qwen2.5vl")
+            image_processor = AutoImageProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2")
             image_processor.min_pixels = 2048
             image_processor.save_pretrained(tmpdir)
             self.assertTrue(os.path.exists(os.path.join(tmpdir, "preprocessor_config.json")))

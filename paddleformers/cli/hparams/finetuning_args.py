@@ -21,16 +21,6 @@ from paddleformers.trainer import TrainingArguments
 from paddleformers.transformers.configuration_utils import llmmetaclass
 from paddleformers.utils.log import logger
 
-try:
-    from paddle.distributed import in_auto_parallel_align_mode
-except Exception:
-
-    def in_auto_parallel_align_mode():
-        """
-        hack for paddle develop branch.
-        """
-        return False
-
 
 @dataclass
 class PreTrainingArguments(TrainingArguments):

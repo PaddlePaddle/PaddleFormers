@@ -67,9 +67,10 @@ batch_p2p_comm: false
 # sharding_parallel_config
 split_param: true
 
-recompute: true
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
 recompute_use_reentrant: true
-recompute_granularity: "full"
 sharding: stage1
 bf16: true
 amp_master_grad: true
