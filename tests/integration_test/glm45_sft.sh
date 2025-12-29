@@ -88,7 +88,7 @@ NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformer
 lora_exit_code=$?
 if [ $lora_exit_code -ne 0 ]; then
    echo "GLM4.5 multi-cards training failed, try to check the log file"
-   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_lora.log
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_lora.log "***** train metrics *****"
    lora_check_exit_code=$?
    if [ $lora_check_exit_code -ne 0 ]; then
      echo "Failed to find 'Training completed' in log file."
