@@ -13,7 +13,7 @@
 # limitations under the License.
 import paddle
 import paddle.nn as nn
-from paddle.incubate.nn.functional import swiglu as fused_swiglu
+from paddle.nn.functional import swiglu as fused_swiglu
 
 from ..generation.configuration_utils import PretrainedConfig
 from .activation import ACT2FN
