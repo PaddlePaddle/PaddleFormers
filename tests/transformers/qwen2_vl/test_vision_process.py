@@ -248,7 +248,7 @@ class TestQwenVisionProcessing(unittest.TestCase):
             self.skipTest("No GPU currently available/allocated")
 
         ele = {"video": self.test_video_url}
-        result = vision_process.fetch_video(ele, backend="decord")
+        result = vision_process.fetch_video(ele, video_backend="decord")
 
         self.assertIsInstance(result, paddle.Tensor)
 
@@ -259,7 +259,7 @@ class TestQwenVisionProcessing(unittest.TestCase):
             self.skipTest("No GPU currently available/allocated")
 
         ele = {"video": self.test_video_url}
-        result = vision_process.fetch_video(ele, backend="paddlecodec")
+        result = vision_process.fetch_video(ele, video_backend="paddlecodec")
 
         import torchcodec
 

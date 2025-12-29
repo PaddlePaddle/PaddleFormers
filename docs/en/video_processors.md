@@ -22,7 +22,7 @@ from paddleformers.transformers.video_utils import load_video
 
 video_processor = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct")
 
-video = load_video("your_video.mp4", backend="paddlecodec")    # or video URL. load_video backend support: ["paddlecodec", "decord"], default: "paddlecodec"
+video = load_video("your_video.mp4", video_backend="paddlecodec")    # or video URL. load_video backend support: ["paddlecodec", "decord"], default: "paddlecodec"
 processed_video = video_processor(video[0], return_tensors="pd")    # return Paddle Tensor
 ```
 

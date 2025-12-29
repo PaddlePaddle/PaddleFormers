@@ -376,13 +376,13 @@ def fetch_video(
     image_patch_size: int = 14,
     return_video_sample_fps: bool = False,
     return_video_metadata: bool = False,
-    backend: str = "paddlecodec",
+    video_backend: str = "paddlecodec",
 ) -> Union[paddle.Tensor, List[Image.Image]]:
     image_factor = image_patch_size * SPATIAL_MERGE_SIZE
     VIDEO_FRAME_MIN_PIXELS = VIDEO_MIN_TOKEN_NUM * image_factor * image_factor
     VIDEO_FRAME_MAX_PIXELS = VIDEO_MAX_TOKEN_NUM * image_factor * image_factor
     if isinstance(ele["video"], str):
-        video, video_metadata, sample_fps = VIDEO_READER_BACKENDS[backend](ele)
+        video, video_metadata, sample_fps = VIDEO_READER_BACKENDS[video_backend](ele)
     else:
         # The input is a list of frames
         assert isinstance(ele["video"], (list, tuple))
@@ -473,7 +473,7 @@ def process_vision_info(
     return_video_kwargs: bool = False,
     return_video_metadata: bool = False,
     image_patch_size: int = 14,
-    backend: str = "paddlecodec",
+    video_backend: str = "paddlecodec",
 ) -> Tuple[
     Optional[List[Image.Image]], Optional[List[Union[paddle.Tensor, List[Image.Image]]]], Optional[Dict[str, Any]]
 ]:
@@ -492,7 +492,7 @@ def process_vision_info(
                 return_video_sample_fps=True,
                 image_patch_size=image_patch_size,
                 return_video_metadata=return_video_metadata,
-                backend=backend,
+                video_backend=video_backend,
             )
             video_sample_fps_list.append(video_sample_fps)
             video_inputs.append(video_input)

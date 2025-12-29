@@ -15,24 +15,17 @@
 import numpy as np
 import paddle
 import paddle.distributed.fleet as fleet
+from paddle.distributed.communication.reduce import ReduceOp
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer import (
     HybridParallelOptimizer,
+)
+from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
+    DygraphShardingOptimizerV2,
 )
 from paddle.distributed.fleet.model import PipelineParallel
 
 from ....transformers.model_utils import unwrap_optimizer
 from ....utils.log import logger
-
-try:
-    from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
-        DygraphShardingOptimizerV2,
-    )
-except:
-    DygraphShardingOptimizerV2 = None
-
-
-from paddle.distributed.communication.reduce import ReduceOp
-
 from .common import get_moe_sharding_group
 
 
