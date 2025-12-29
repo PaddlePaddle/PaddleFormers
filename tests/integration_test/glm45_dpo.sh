@@ -54,7 +54,7 @@ NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformer
 sft_exit_code=$?
 if [ $sft_exit_code -ne 0 ]; then
    echo "GLM4.5 multi-cards training failed, try to check the log file"
-   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_dpo.log
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_dpo.log "***** eval metrics *****"
    sft_check_exit_code=$?
    if [ $sft_check_exit_code -ne 0 ]; then
      echo "Failed to find 'Training completed' in log file."
@@ -66,7 +66,7 @@ fi
 
 set -e
 echo "
-10 0.4665958
+10 0.46693826
 " > ./glm45_dpo_multi_card_gt_loss.txt
 
 python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \

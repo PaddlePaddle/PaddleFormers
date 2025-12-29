@@ -36,6 +36,7 @@ logging_dir: ./glm_full_single_lora_log
 output_dir: ./checkpoints/glm_single_lora_ckps
 disable_tqdm: true
 eval_accumulation_steps: 16
+num_hidden_layers: 4
 
 # train
 warmup_steps: 20
