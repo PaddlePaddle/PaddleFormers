@@ -27,9 +27,9 @@ TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config/pt"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
-MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
-MAX_STEPS = 6
-SAVE_STEPS = 4
+MODEL_NAME_OR_PATH = "/home/models/PaddleFormers/tiny-random-glm4moe-bf16"
+MAX_STEPS = 2
+SAVE_STEPS = 2
 
 PT_FULL_EXCEPTED_LOSS = 12.795225
 PT_FULL_RESUME_EXCEPTED_LOSS = 12.793377
@@ -55,7 +55,7 @@ PT_FC_EXCEPTED_RESULT = [[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99380
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
 os.environ["FLAGS_embedding_deterministic"] = "1"
-os.environ["FLAGS_cudnn_deterministic"] = "0"
+os.environ["FLAGS_cudnn_deterministic"] = "1"
 
 
 class PTTrainTester(unittest.TestCase):

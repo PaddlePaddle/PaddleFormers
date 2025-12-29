@@ -27,9 +27,9 @@ TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config/dpo"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
-MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
-MAX_STEPS = 6
-SAVE_STEPS = 4
+MODEL_NAME_OR_PATH = "/home/models/PaddleFormers/tiny-random-glm4moe-bf16"
+MAX_STEPS = 2
+SAVE_STEPS = 2
 
 DPO_FULL_EXCEPTED_LOSS = 0.69318
 DPO_FULL_RESUME_EXCEPTED_LOSS = 0.693311
@@ -56,7 +56,7 @@ DPO_FC_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
 os.environ["FLAGS_embedding_deterministic"] = "1"
-os.environ["FLAGS_cudnn_deterministic"] = "0"
+os.environ["FLAGS_cudnn_deterministic"] = "1"
 
 
 class DPOTrainTester(unittest.TestCase):

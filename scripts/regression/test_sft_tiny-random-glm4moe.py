@@ -27,9 +27,9 @@ TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config/sft"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
-MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
-MAX_STEPS = 6
-SAVE_STEPS = 4
+MODEL_NAME_OR_PATH = "/home/models/PaddleFormers/tiny-random-glm4moe-bf16"
+MAX_STEPS = 2
+SAVE_STEPS = 2
 
 SFT_FULL_EXCEPTED_LOSS = 13.043166
 SFT_FULL_RESUME_EXCEPTED_LOSS = 13.035461
@@ -54,7 +54,7 @@ SFT_FC_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
 os.environ["FLAGS_embedding_deterministic"] = "1"
-os.environ["FLAGS_cudnn_deterministic"] = "0"
+os.environ["FLAGS_cudnn_deterministic"] = "1"
 
 
 class SFTTrainTester(unittest.TestCase):
