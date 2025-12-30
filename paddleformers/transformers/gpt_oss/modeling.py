@@ -280,7 +280,7 @@ class GptOssRotaryEmbedding(nn.Layer):
 
             freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
 
-            emb = paddle.concat((freqs, freqs), axis=-1)
+            emb = freqs
 
             cos = emb.cos() * self.attention_scaling
             sin = emb.sin() * self.attention_scaling
