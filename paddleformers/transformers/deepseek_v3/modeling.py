@@ -350,7 +350,7 @@ class DeepseekV3TopkRouter(nn.Layer):
             dtype=paddle.float32,
             is_bias=False,
         )
-        self.register_buffer("e_score_correction_bias", paddle.zeros(self.n_routed_experts))
+        self.register_buffer("e_score_correction_bias", paddle.zeros((self.n_routed_experts,), dtype=paddle.float32))
         self._cast_to_low_precision = False
 
     @paddle.no_grad()
@@ -1737,6 +1737,8 @@ class DeepseekV3PretrainingCriterion(nn.Layer):
             self.loss_func = paddle.nn.CrossEntropyLoss(reduction="none", ignore_index=self.ignore_index)
 
     def forward(self, prediction_scores, masked_lm_labels, router_loss=None, mtp_logits=None):
+        if len(masked_lm_labels.shape) == 1:
+            masked_lm_labels = masked_lm_labels.unsqueeze(0)
         if self.enable_parallel_cross_entropy:
             if prediction_scores.shape[-1] == self.config.vocab_size:
                 warnings.warn(
@@ -2265,6 +2267,9 @@ class DeepseekV3EmbeddingPipe(EmbeddingPipe):
                 .unsqueeze(0)
                 .tile([input_ids.shape[0], 1])
             ).contiguous()
+        if position_ids.shape[-1] != max_seq_len:
+            position_ids = position_ids[..., :max_seq_len]
+
         position_ids = position_ids.reshape([batch_size, max_seq_len]).contiguous()
         position_embeddings = paddle.stack(self.rotary_emb(inputs_embeds, position_ids=position_ids))
         if num_nextn_predict_layers > 0:
@@ -2443,6 +2448,8 @@ class DeepseekV3ForCausalLMPipe(GeneralModelForCausalLMPipe):
     _keys_to_ignore_on_load_unexpected = DeepseekV3PretrainedModel._keys_to_ignore_on_load_unexpected
     transpose_weight_keys = DeepseekV3PretrainedModel.transpose_weight_keys
     _keep_in_fp32_modules = DeepseekV3PretrainedModel._keep_in_fp32_modules
+    _gen_aoa_config = DeepseekV3PretrainedModel._gen_aoa_config
+    _gen_inv_aoa_config = DeepseekV3PretrainedModel._gen_inv_aoa_config
 
     _tied_weights_keys = ["lm_head.weight"]
 
