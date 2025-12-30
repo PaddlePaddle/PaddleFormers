@@ -26,18 +26,14 @@ import numpy as np
 import paddle
 import paddle.autograd
 from paddle.distributed import fleet
+from paddle.distributed.fleet.layers.mpu import mp_layers, mp_ops
 from paddle.distributed.fleet.meta_parallel.parallel_layers.random import (
     get_rng_state_tracker,
 )
 from paddle.distributed.fleet.recompute.recompute import check_recompute_necessary
 from paddle.distributed.fleet.recompute.recompute import recompute as original_recompute
 from paddle.distributed.fleet.recompute.recompute import switch_rng_state_tracker
-
-try:
-    from paddle.distributed.fleet.utils import sequence_parallel_utils
-except ImportError:
-    sequence_parallel_utils = None
-from paddle.distributed.fleet.layers.mpu import mp_layers, mp_ops
+from paddle.distributed.fleet.utils import sequence_parallel_utils
 
 from .linear_utils import (
     ColumnParallelLinear,

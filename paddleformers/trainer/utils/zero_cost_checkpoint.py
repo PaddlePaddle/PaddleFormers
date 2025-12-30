@@ -33,6 +33,12 @@ import paddle.distributed as dist
 from paddle.base import core
 from paddle.distributed.communication.group import is_initialized
 from paddle.distributed.fleet import fleet
+from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer import (
+    DygraphShardingOptimizer,
+)
+from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
+    DygraphShardingOptimizerV2,
+)
 from paddle.distributed.fleet.meta_parallel import PipelineLayer
 from paddle.distributed.flex_checkpoint.dcp.metadata import (
     LocalTensorIndex,
@@ -55,30 +61,12 @@ from paddleformers.trainer.trainer_callback import TrainerCallback
 from paddleformers.trainer.utils.sharding_io import GroupGetter
 from paddleformers.utils.tools import paddle_device
 
-from ...transformers.model_utils import unwrap_optimizer
-from . import reshard as reshard_util
-from .reshard import (
-    SHARDING_STRATEGY_V1,
-    merge_model_state,
-    split_model_state,
-    split_opt_state,
-)
-
-try:
-    from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
-        DygraphShardingOptimizerV2,
-    )
-except:
-    DygraphShardingOptimizerV2 = None
-from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer import (
-    DygraphShardingOptimizer,
-)
-
 from ...transformers.model_utils import (
     _add_variant,
     clean_model_class_name,
     get_parameter_dtype,
     unwrap_model,
+    unwrap_optimizer,
 )
 from ...transformers.utils import device_guard
 from ...utils.env import (
@@ -98,6 +86,13 @@ from ...utils.env import (
 from ...utils.fault_tolerance import FC_DUMP_ERROR, PC_DUMP_ERROR
 from ...utils.log import logger
 from ...utils.pdc_sdk import FLASH_DEVICE
+from . import reshard as reshard_util
+from .reshard import (
+    SHARDING_STRATEGY_V1,
+    merge_model_state,
+    split_model_state,
+    split_opt_state,
+)
 
 
 def md5(tensor):

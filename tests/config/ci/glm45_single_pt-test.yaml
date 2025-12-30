@@ -58,7 +58,7 @@ moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
 num_hidden_layers: 2
 apply_rope_fusion: False
-moe_router_fusion: False
+moe_router_fusion: True
 router_aux_loss_coef: 1e-4
 
 num_attention_heads: 8

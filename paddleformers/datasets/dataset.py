@@ -24,21 +24,16 @@ from itertools import islice
 # Add this for extremely slow connection to hf sever even for local dataset.
 os.environ["HF_UPDATE_DOWNLOAD_COUNTS"] = "False"
 
-import datasets
-from multiprocess import Pool, RLock
-
-import paddleformers
-
-try:
-    import paddle.distributed as dist
-except Exception:
-    warnings.warn("paddle.distributed is not contains in you paddle!")
-
 import importlib
 from functools import partial
 
+import datasets
+import paddle.distributed as dist
+from multiprocess import Pool, RLock
 from paddle.io import Dataset, IterableDataset
 from paddle.utils.download import _get_unique_endpoints
+
+import paddleformers
 
 from ..utils.env import DATA_HOME
 
