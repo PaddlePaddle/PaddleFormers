@@ -134,3 +134,14 @@ paddleformers-cli export examples/config/run_export.yaml \
     convert_from_hf=False \
     save_to_hf=False
 ```
+
+## 5. PaddleNLP 权重转 HF 权重
+
+针对此前使用 PaddleNLP 权重的用户，我们提供一键式转换脚本，可快速将现有 Paddle 格式权重迁移至 Torch 的 Safetensors 格式，适配 HuggingFace 的加载方式。
+
+```bash
+python tools/trans_paddlenlp2hf.py \
+    --paddlenlp_model_path ${paddlenlp_model_path} \
+    --hf_model_path ${hf_model_path}
+```
+默认分片最大为4GB，如需更改，可添加`--max_shard_size`参数。
