@@ -178,7 +178,7 @@ class Ernie4_5RotaryEmbedding(nn.Layer):
             cos = emb.cos() * self.attention_scaling
             sin = emb.sin() * self.attention_scaling
 
-            return cos.astype(dtype=x.dtype), sin.astype(dtype=x.dtype)
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 class Ernie4_5Attention(nn.Layer):

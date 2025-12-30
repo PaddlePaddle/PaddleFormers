@@ -248,12 +248,15 @@ class Qwen3NextRotaryEmbedding(nn.Layer):
     @dynamic_rope_update
     @paddle.no_grad()
     def forward(self, x, position_ids):
-        inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
-        position_ids_expanded = position_ids[:, None, :].float()
+        with paddle.amp.auto_cast(enable=False):
+            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
-        with paddle.amp.auto_cast(False):  # Force float32
+            position_ids_expanded = position_ids[:, None, :].float()
+
             freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
-            emb = paddle.cat((freqs, freqs), dim=-1)
+
+            emb = paddle.concat((freqs, freqs), axis=-1)
+
             cos = emb.cos() * self.attention_scaling
             sin = emb.sin() * self.attention_scaling
 

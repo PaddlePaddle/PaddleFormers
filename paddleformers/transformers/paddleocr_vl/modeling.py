@@ -982,22 +982,19 @@ class PaddleOCRRotaryEmbedding(nn.Layer):
     def forward(self, x, position_ids):
         # Core RoPE block. In contrast to other models, PaddleOCR-VL has different position ids for the grids
         # So we expand the inv_freq to shape (3, ...)
-        inv_freq_expanded = (
-            self.inv_freq[None, None, :, None].cast("float32").expand((3, position_ids.shape[1], -1, 1))
-        )
-        position_ids_expanded = position_ids[:, :, None, :].cast("float32")  # shape (3, bs, 1, positions)
-
         with paddle.amp.auto_cast(enable=False):
-            freqs = (inv_freq_expanded.cast("float32") @ position_ids_expanded.cast("float32")).transpose((0, 1, 3, 2))
+            inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand([3, position_ids.shape[1], -1, 1])
+
+            position_ids_expanded = position_ids[:, :, None, :].float()
+
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(2, 3)
+
             emb = paddle.concat((freqs, freqs), axis=-1)
-            cos = emb.cos()
-            sin = emb.sin()
 
-        # Advanced RoPE types (e.g. yarn) apply a post-processing scaling factor, equivalent to scaling attention
-        cos = cos * self.attention_scaling
-        sin = sin * self.attention_scaling
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
 
-        return cos.astype(dtype=x.dtype), sin.astype(dtype=x.dtype)
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 class Ernie4_5Attention(nn.Layer):

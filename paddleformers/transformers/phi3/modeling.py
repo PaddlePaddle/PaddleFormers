@@ -297,21 +297,19 @@ class Phi3RotaryEmbedding(nn.Layer):
     @dynamic_rope_update
     @paddle.no_grad()
     def forward(self, x, position_ids):
-        inv_freq_expanded = (
-            self.inv_freq.unsqueeze(0)
-            .unsqueeze(-1)
-            .cast(paddle.float32)
-            .expand([position_ids.shape[0], -1, 1])
-            .to(x.place)
-        )
-        position_ids_expanded = position_ids.unsqueeze(1).cast(paddle.float32)
+        with paddle.amp.auto_cast(enable=False):
+            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
-        freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 2, 1])
-        emb = paddle.cat((freqs, freqs), axis=-1)
-        cos = paddle.cos(emb) * self.attention_scaling
-        sin = paddle.sin(emb) * self.attention_scaling
+            position_ids_expanded = position_ids[:, None, :].float()
 
-        return cos.cast(dtype=x.dtype), sin.cast(dtype=x.dtype)
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+
+            emb = paddle.concat((freqs, freqs), axis=-1)
+
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 class Phi3PreTrainedModel(PretrainedModel):
