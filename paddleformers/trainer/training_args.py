@@ -838,7 +838,7 @@ class TrainingArguments:
     )
     # Deprecated
     sharding_parallel_config: str = field(
-        default="split_param",
+        default="",
         metadata={
             "help": (
                 "@deprecated Please promote the secondary switchs to primary switchs."
@@ -1544,7 +1544,7 @@ class TrainingArguments:
         },
     )
     split_param: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "Enable parameter sharding to distribute model parameters across devices, reducing memory footprint per GPU (ZeRO-style optimization)."
         },
