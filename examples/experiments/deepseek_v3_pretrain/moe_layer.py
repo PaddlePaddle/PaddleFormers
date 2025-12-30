@@ -49,11 +49,6 @@ try:
 except ImportError:
     deep_ep = None
 
-try:
-    import TokenDispatcherUtils as TDU
-except ImportError:
-    TDU = None
-
 
 def record_stream_for_multi_input(x):
     if isinstance(x, (tuple, list)):

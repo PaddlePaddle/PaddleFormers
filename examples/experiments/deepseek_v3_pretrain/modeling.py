@@ -934,6 +934,139 @@ class DeepseekV2Attention(nn.Layer):
         return outputs
 
 
+class GroupedQueryAttention(nn.Layer):
+
+    def __init__(self, config, layerwise_recompute: bool = False, recompute_fa3: bool = False):
+        super().__init__()
+        self.hidden_size = config.hidden_size
+        self.num_heads = 96
+        self.num_key_value_heads = 4
+        self.head_dim = 128
+
+        q_hidden_size = self.head_dim * self.num_heads
+        kv_hidden_size = self.head_dim * self.num_key_value_heads
+
+        self.qkv_proj = FP8Linear(
+            self.hidden_size,
+            q_hidden_size + 2 * kv_hidden_size,
+            bias_attr=False,
+        )
+        self.o_proj = FP8Linear(
+            q_hidden_size,
+            self.hidden_size,
+            bias_attr=False,
+        )
+
+    def forward(
+        self,
+        hidden_states: paddle.Tensor,
+        position_ids: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
+        output_attentions: bool = False,
+        use_cache: bool = False,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        **kwargs,
+    ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
+
+        bsz, q_len, _ = hidden_states.shape
+
+        mix_layer = self.qkv_proj(hidden_states)
+        query_states, key_states, value_states = paddle.split(
+            mix_layer.reshape([bsz, q_len, -1, self.head_dim]),
+            [self.num_heads, self.num_key_value_heads, self.num_key_value_heads],
+            axis=2,
+        )
+        mix_layer = None
+
+        attn_output = self.rope_attn(
+            mix_layer=mix_layer,
+            query_states=query_states,
+            key_states=key_states,
+            value_states=value_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            output_attentions=output_attentions,
+            past_key_value=past_key_value,
+            use_cache=use_cache,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+        )
+
+        attn_output = self.o_proj(attn_output)
+        attn_output *= 0.0  # avoid nan
+
+        return attn_output
+
+    def rope_attn(
+        self,
+        mix_layer,
+        query_states,
+        key_states,
+        value_states,
+        attention_mask,
+        position_ids,
+        output_attentions=False,
+        past_key_value=None,
+        use_cache=False,
+        attn_mask_startend_row_indices=None,
+    ):
+        if mix_layer is not None:
+            query_states, key_states, value_states = paddle.split(mix_layer, 3, axis=-1)
+        query_states_dtype = query_states.dtype
+
+        kv_seq_len = key_states.shape[-3]
+
+        cos = sin = paddle.full([query_states.shape[1], query_states.shape[3]], 2**-.5, dtype="float32")
+        query_states, key_states = self.apply_rotary_pos_emb(
+            query_states,
+            key_states,
+            cos,
+            sin,
+            position_ids=position_ids,
+        )
+
+        attn_output = paddle.nn.functional.scaled_dot_product_attention(
+            query=query_states,
+            key=key_states,
+            value=value_states,
+            attn_mask=attention_mask,
+            training=self.training,
+        )
+        attn_output = attn_output.reshape([*attn_output.shape[:-2], -1])
+
+        return attn_output
+
+    @classmethod
+    def rotate_half(cls, x):
+        x1 = x[..., : x.shape[-1] // 2]
+        x2 = x[..., x.shape[-1] // 2 :]
+        return paddle.concat([-x2, x1], axis=-1)
+
+    @classmethod
+    def apply_rotary_pos_emb(cls, q, k, cos, sin, offset: int = 0, position_ids=None):
+        if position_ids is not None:
+            assert offset == 0, offset
+            cos = F.embedding(position_ids, cos)
+            sin = F.embedding(position_ids, sin)
+        else:
+            cos = cos.unsqueeze(0)
+            sin = sin.unsqueeze(0)
+        cos = cos[:, offset : q.shape[1] + offset, None, :]
+        sin = sin[:, offset : q.shape[1] + offset, None, :]
+
+        q_embed = (q * cos) + (cls.rotate_half(q) * sin)
+        k_embed = (k * cos) + (cls.rotate_half(k) * sin)
+        q_embed = q_embed.astype(q.dtype)
+        k_embed = k_embed.astype(k.dtype)
+        return q_embed, k_embed
+
+    def fp8_quant_weight(self, quant_transpose=None):
+        pass
+
+
+DeepseekV2Attention = GroupedQueryAttention
+
+
 class DeepseekV2DecoderLayer(nn.Layer):
     def __init__(
         self,
