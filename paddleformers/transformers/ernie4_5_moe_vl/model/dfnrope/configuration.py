@@ -80,5 +80,6 @@ class DFNRopeVisionTransformerConfig(PretrainedConfig):
         self.patch_size = patch_size
         self.spatial_merge_size = spatial_merge_size
         self.attn_implementation = attn_implementation
+        self.recompute = recompute
         self.attn_sep = attn_sep
         self.vit_num_recompute_layers = vit_num_recompute_layers

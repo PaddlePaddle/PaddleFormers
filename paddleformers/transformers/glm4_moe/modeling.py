@@ -611,12 +611,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
         offload_kwargs["offload_indices"] = [0]
 
         has_gradient = not hidden_states.stop_gradient
-        if (
-            self.config.recompute_granularity is not None
-            and self.config.recompute_modules is not None
-            and "full_attn" not in self.config.recompute_modules
-            and has_gradient
-        ):
+        if self.config.recompute and has_gradient and self.config.recompute_granularity != "full_attn":
             attn_outputs = recompute(
                 self.attn,
                 hidden_states,
@@ -665,12 +660,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
             if self.config.sequence_parallel:
                 chunk = chunk.reshape([-1, hidden_size])
             has_gradient = not chunk.stop_gradient
-            if (
-                self.config.recompute_granularity is not None
-                and self.config.recompute_modules is not None
-                and "full_attn" not in self.config.recompute_modules
-                and has_gradient
-            ):
+            if self.config.recompute and has_gradient and self.config.recompute_granularity != "full_attn":
                 out = recompute(
                     self.mlp.forward,
                     chunk,
@@ -707,12 +697,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
 
         # Self Attention
         has_gradient = not hidden_states.stop_gradient
-        if (
-            self.config.recompute_granularity == "selective"
-            and self.config.recompute_modules is not None
-            and "full_attn" in self.config.recompute_modules
-            and has_gradient
-        ):
+        if self.config.recompute and has_gradient and self.config.recompute_granularity == "full_attn":
             outputs = recompute(
                 self.self_attn,
                 hidden_states=hidden_states,
@@ -1258,6 +1243,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
         self.sequence_parallel = config.sequence_parallel
+        self.recompute_granularity = config.recompute_granularity
         self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
 
         self.embed_tokens = GeneralEmbedding.create(
@@ -1402,12 +1388,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
                     attn_mask_startend_row_indices,
                     position_embeddings,
                 )
-            elif (
-                self.config.recompute_granularity == "full"
-                and self.config.recompute_method == "uniform"
-                and self.config.recompute_num_layers == 1
-                and has_gradient
-            ):
+            elif self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
                 layer_outputs = self.recompute_training_full(
                     layer_module=decoder_layer,
                     hidden_states=hidden_states,
@@ -1621,12 +1602,7 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 position_embeddings=tuple_position_embeddings,
             )
-        elif (
-            self.config.recompute_granularity == "full"
-            and self.config.recompute_method == "uniform"
-            and self.config.recompute_num_layers == 1
-            and has_gradient
-        ):
+        elif self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
             hidden_states = recompute(
                 super().forward,
                 hidden_states,

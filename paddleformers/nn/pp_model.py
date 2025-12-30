@@ -442,12 +442,7 @@ def make_decoder_layer_pipe(decoder_layer):
             tuple_position_embeddings = None
 
         has_gradient = not hidden_states.stop_gradient
-        if (
-            self.config.recompute_granularity == "full"
-            and self.config.recompute_method == "uniform"
-            and self.config.recompute_num_layers == 1
-            and has_gradient
-        ):
+        if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
             hidden_states = recompute(
                 decoder_layer.forward,
                 self,

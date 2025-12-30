@@ -299,6 +299,18 @@ class TrainingArguments:
               disable_stage1_reduce_avg, replace reduce_avg with original reduce_sum+scale in stage1, which can be used for accuracy verification.
               enable_release_grads, reduce peak memory usage by releasing gradients after each iteration. The creation of gradients will be postponed until backward propagation of the next iteration.
               enable_fuse_optimizer_states, fuse optimizer states to a single storage.
+        recompute (`bool`, *optional*, defaults to `False`):
+            Recompute the forward pass to calculate gradients. Used for saving memory.
+            Only support for networks with transformer blocks.
+        refined_recompute (`str`, *optional*, defaults to `""`):
+            The refined recompute parameter is designed to optimize the balance between GPU memory usage and computational speed.
+            An example configuration could be: `attention_column_ln:-1,attention_row_ln:-1,flash_attn:-1,mlp_column_ln:5,mlp_row_ln:-1`.
+            The supported parameters for refining recompute are `attention_column_ln`, `attention_row_ln`, `flash_attn`, `mlp_column_ln`, and `mlp_row_ln`.
+            The associated number, `skip_num`, determines how many times to bypass recomputation for the specified operation.
+            A `skip_num` of `-1` indicates no recomputation across all stages, maximizing memory usage;
+            A `skip_num` of `0` enforces recomputation at every stage, minimizing memory usage.
+            You can also set `skip_num` to a value within the range [1, ..., num_layers]. If `skip_num` exceeds `num_layers`, it will behave as if set to `-1`.
+            If a parameter is omitted, it defaults to `xxx:0`."
         scale_loss (`float`,  *optional*, defaults to 32768):
             The value of initial scale_loss for fp16. (default: 32768)
         local_rank (`int`, *optional*, defaults to -1):
@@ -818,38 +830,25 @@ class TrainingArguments:
             )
         },
     )
-
-    recompute_granularity: Optional[str] = field(
-        default=None, metadata={"help": "Determines which type of activation recompute to use"}
-    )
-
-    recompute_method: Optional[str] = field(
-        default=None, metadata={"help": "Determines which transformer layers will be recomputed"}
-    )
-
-    recompute_modules: Optional[Any] = field(default=None, metadata={"help": "The submodules to recompute"})
-
-    recompute_num_layers: Optional[int] = field(
-        default=None,
+    recompute: bool = field(
+        default=False,
         metadata={
-            "help": (
-                "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in"
-                "each uniformly divided recompute unit.  When recompute_method is block, recompute_num_layers is"
-                "the number of transformer layers to recompute within each pipeline stage."
-            )
+            "help": "Recompute the forward pass to calculate gradients. Used for saving memory. "
+            "Only support for networks with transformer blocks."
         },
     )
-
-    recompute_mtp_granularity: Optional[str] = field(
-        default=None, metadata={"help": "Determines which type of activation recompute to use in MTP layer"}
-    )
-
-    recompute_mtp_method: Optional[str] = field(
-        default=None, metadata={"help": "Determines which layers will be recomputed in MTP layer"}
-    )
-
-    recompute_mtp_modules: Optional[Any] = field(
-        default=None, metadata={"help": "The submodules to recompute in MTP layer"}
+    refined_recompute: str = field(
+        default="",
+        metadata={
+            "help": "The refined recompute parameter is designed to optimize the balance between GPU memory usage and computational speed.\n"
+            "An example configuration could be: `attention_column_ln:-1,attention_row_ln:-1,flash_attn:-1,mlp_column_ln:5,mlp_row_ln:-1`.\n"
+            "The supported parameters for refining recompute are `attention_column_ln`, `attention_row_ln`, `flash_attn`, `mlp_column_ln`, and `mlp_row_ln`.\n"
+            "The associated number, `skip_num`, determines how many times to bypass recomputation for the specified operation.\n"
+            "A `skip_num` of `-1` indicates no recomputation across all stages, maximizing memory usage;\n"
+            "A `skip_num` of `0` enforces recomputation at every stage, minimizing memory usage.\n"
+            "You can also set `skip_num` to a value within the range [1, ..., num_layers]. If `skip_num` exceeds `num_layers`, it will behave as if set to `-1`.\n"
+            "If a parameter is omitted, it defaults to `xxx:0`."
+        },
     )
 
     scale_loss: float = field(default=2**15, metadata={"help": "The value of initial scale_loss for fp16."})
@@ -1198,28 +1197,11 @@ class TrainingArguments:
 
     save_hf_steps: int = field(default=-1, metadata={"help": "Save huggingface checkpoint every X updates steps."})
 
-    hybrid_parallel_expert_grad_scale: Optional[float] = field(
-        default=None,
-        metadata={"help": ("Scaling factor for expert gradients.")},
-    )
-    use_intermediate_api: bool = field(
-        default=True,
-        metadata={"help": "whether to use auto_parallel intermediate API."},
-    )
-    offload_fp8_expert_master_weight: bool = field(
-        default=True,
-        metadata={"help": "Offload FP8 expert weights."},
-    )
-    use_cache: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether or not to use cache for the model For training, this is usually not needed apart from some PEFT methods that uses `past_key_values`."
-        },
-    )
     load_from_hf: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to load a checkpoint in the HuggingFace format."},
     )
+
     flex_ckpt_comm_method: Optional[str] = field(
         default="broadcast",
         metadata={
@@ -1230,214 +1212,11 @@ class TrainingArguments:
             )
         },
     )
-    deterministic_mode: bool = field(
-        default=False,
-        metadata={"help": "Whether to use deterministic mode."},
-    )
-    cp_comm_type: str = field(
-        default=None,
-        metadata={"help": "Communication type."},
-    )
+
     replicate_saved_into_local: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to save replicas cross files in distributed save load system."},
     )
-    dp_comm_overlap: bool = field(
-        default=True, metadata={"help": "Whether to overlap data parallelism (DP) communication with computation."}
-    )
-    sharding_comm_overlap: bool = field(
-        default=True,
-        metadata={
-            "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
-        },
-    )
-    tp_async_allreduce: bool = field(
-        default=False, metadata={"help": "Whether to use asynchronous allreduce for tensor parallelism (TP)."}
-    )
-    sp_async_reduce_scatter: bool = field(
-        default=False, metadata={"help": "Whether to use asynchronous reduce-scatter for sharding parallelism (SP)."}
-    )
-    overlap_p2p_comm: bool = field(
-        default=True,
-        metadata={"help": "Whether to overlap point-to-point (P2P) communication with computation. Defaults to True."},
-    )
-    batch_p2p_comm: bool = field(
-        default=True, metadata={"help": "Whether to batch point-to-point (P2P) communication requests."}
-    )
-    dynamic_shape: bool = field(
-        default=True,
-        metadata={
-            "help": "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines)."
-        },
-    )
-    mtp_loss_scaling_factor: float = field(
-        default=1.0,
-        metadata={
-            "help": "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues)."
-        },
-    )
-    dp_allreduce_avg_in_gradinent_scale: bool = field(
-        default=False,
-        metadata={
-            "help": "Replace `allreduce_sum + scale` pattern with `allreduce_avg` when scaling gradient in data_parallel/sequence_parallel, which improves performance. ONLY supported for auto mode now."
-        },
-    )
-    sp_allreduce_avg_in_gradinent_scale: bool = field(
-        default=False,
-        metadata={
-            "help": "Replace `allreduce_sum + scale` pattern with `allreduce_avg` when scaling gradient in data_parallel/sequence_parallel, which improves performance. ONLY supported for auto mode now."
-        },
-    )
-    gradient_sync_after_accumulate: bool = field(
-        default=False,
-        metadata={
-            "help": "Move gradient sync operations from backward into optimizer step when gradient accumulate is enabled, which reduces sync times to improve performance but increases memory usage. ONLY supported for auto mode now."
-        },
-    )
-    mp_async_allreduce: bool = field(
-        default=False,
-        metadata={
-            "help": "Support all_reduce(dx) overlap with matmul(dw) in ColumnParallelLinear backward when set to True, which can accelerate model parallel performance."
-        },
-    )
-    mp_skip_c_identity: bool = field(
-        default=False,
-        metadata={
-            "help": "Support skipping c_identity in ColumnParallelLinear and RowParallelLinear. Only works when mp_async_allreduce is True. Can accelerate model parallel further."
-        },
-    )
-    mp_fused_linear_param_grad_add: bool = field(
-        default=False,
-        metadata={
-            "help": "Support fused_linear_param_grad_add in ColumnParallelLinear (requires cuda >= 11.6). Only works when mp_async_allreduce is True. Can accelerate model parallel further."
-        },
-    )
-    tp_delay_scale_loss: bool = field(
-        default=False,
-        metadata={
-            "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
-        },
-    )
-    pp_delay_scale_loss: bool = field(
-        default=False,
-        metadata={
-            "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
-        },
-    )
-    pp_sync_param: bool = field(
-        default=False,
-        metadata={
-            "help": "In optimizer step, use broadcast to sync parameters whose attribute 'is_distributed' is False."
-        },
-    )
-    tp_sync_param: bool = field(
-        default=False,
-        metadata={
-            "help": "In optimizer step, use broadcast to sync parameters whose attribute 'is_distributed' is False."
-        },
-    )
-    sync_grad: bool = field(
-        default=False,
-        metadata={
-            "help": "In optimizer step, use broadcast to sync gradients whose attribute 'is_distributed' is False."
-        },
-    )
-    tp_sync_moment: bool = field(
-        default=False,
-        metadata={
-            "help": "In optimizer step, use broadcast to sync momentums whose attribute 'is_distributed' is False."
-        },
-    )
-    pp_sync_moment: bool = field(
-        default=False,
-        metadata={
-            "help": "In optimizer step, use broadcast to sync momentums whose attribute 'is_distributed' is False."
-        },
-    )
-    replace_with_c_embedding: bool = field(
-        default=False,
-        metadata={
-            "help": "Support replacing col-sliced embedding with row-sliced c_embedding when set to True, which is used in PIR auto_parallel."
-        },
-    )
-    replace_with_parallel_cross_entropy: bool = field(
-        default=False,
-        metadata={
-            "help": "Replace 'cross_entropy_with_softmax' OP with 'c_softmax_with_cross_entropy' OP in PIR static graph, which can improve model parallel performance."
-        },
-    )
-    p2p_cache_shape: bool = field(
-        default=False,
-        metadata={"help": "Set this when maximum sequence length is varying (disables p2p cache shape)."},
-    )
-    partial_send_recv: bool = field(
-        default=False, metadata={"help": "Optimize send speed for tensor parallel (disables partial send/recv)."}
-    )
-    release_grads: bool = field(
-        default=False,
-        metadata={
-            "help": "Reduce peak memory usage by releasing gradients after each iteration. The creation of gradients will be postponed until backward propagation of the next iteration."
-        },
-    )
-    clear_every_step_cache: bool = field(
-        default=False, metadata={"help": "Clear every step cache for pipeline parallel."}
-    )
-    non_batch_p2p_comm: bool = field(
-        default=False, metadata={"help": "Disable batched send/recv in pipeline parallel mode."}
-    )
-    auto_parallel_sync_shared_params: bool = field(
-        default=False,
-        metadata={"help": "Optimize parameter sharing between two stages in a pipeline parallel scenario."},
-    )
-    stage1_tensor_fusion: bool = field(
-        default=False,
-        metadata={
-            "help": "Fuse small tensors into big tensor chunks to accelerate communications. May increase memory occupation."
-        },
-    )
-    tensor_fusion: bool = field(
-        default=False,
-        metadata={
-            "help": "Fuse small tensors into big tensor chunks to accelerate communications. May increase memory occupation. Only used for semi auto mode."
-        },
-    )
-    stage1_overlap: bool = field(
-        default=False,
-        metadata={
-            "help": "Fuse small tensors into big tensor chunks to accelerate communications and overlap communication with backward computation. May harm backward speed."
-        },
-    )
-    overlap: bool = field(
-        default=False,
-        metadata={
-            "help": "Fuse small tensors into big tensor chunks to accelerate communications and overlap communication with backward computation. May harm backward speed. Only used for semi auto mode."
-        },
-    )
-    stage2_overlap: bool = field(
-        default=False,
-        metadata={
-            "help": "Overlap stage2 NCCL communication with computation. Constraints: logging_step should be bigger than 1 for broadcast overlap, and no other sync should be called during training for broadcast overlap."
-        },
-    )
-    stage1_broadcast_overlap: bool = field(
-        default=False,
-        metadata={
-            "help": "Overlap stage1 V1 broadcast with next step forward computation. Constraints: logging_step should be bigger than 1 for broadcast overlap forward compute, and no other sync should be called during training for broadcast overlap."
-        },
-    )
-    stage1_allgather_overlap: bool = field(
-        default=False,
-        metadata={
-            "help": "Overlap stage1 V2 allgather with next step forward computation. Constraints: logging_step should be bigger than 1 for allgather overlap forward compute, and no other sync should be called during training for allgather overlap."
-        },
-    )
-    stage1_reduce_avg: bool = field(
-        default=False,
-        metadata={
-            "help": "Replace reduce_avg with original reduce_sum+scale in stage1, which can be used for accuracy verification (disables stage1 reduce_avg)."
-        },
-    )
-    fuse_optimizer_states: bool = field(default=False, metadata={"help": "Fuse optimizer states to a single storage."})
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
@@ -1452,10 +1231,6 @@ class TrainingArguments:
             os.environ["FLAGS_max_inplace_grad_add"] = "65536"
             os.environ["FLAGS_embedding_deterministic"] = "1"
             os.environ["FLAGS_cudnn_deterministic"] = "1"
-
-        if self.deterministic_mode:
-            os.environ["FLAGS_cudnn_deterministic"] = "1"
-            os.environ["FLAGS_embedding_deterministic"] = "1"
 
         env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", -1))
         if env_local_rank != -1 and env_local_rank != self.local_rank and paddle.distributed.get_world_size() > 1:
@@ -1548,13 +1323,6 @@ class TrainingArguments:
             raise ValueError("AdamW Mini currently doesn't support tensor parallelism.")
 
         self._post_init_parallel_degree()
-
-        # check recompute
-        if not isinstance(self.recompute_modules, list) and not not isinstance(self.recompute_modules, dict):
-            raise ValueError("recompute_modules must be list or dict")
-        # check recompute:
-        if not isinstance(self.recompute_mtp_modules, list) and not not isinstance(self.recompute_mtp_modules, dict):
-            raise ValueError("recompute_mtp_modules must be list or dict")
 
         self._post_init_save_checkpoint_format()
         self._post_init_load_checkpoint_format()
@@ -2303,6 +2071,43 @@ class TrainingArguments:
             raise ValueError(
                 f"The local_ran: {self.local_rank} should be consistent with the world size: {paddle.distributed.get_world_size()}."
             )
+
+        # arse_refined_recompute string to dict
+        if self.refined_recompute in [None, ""]:
+            self.refined_recompute = dict()
+        else:
+            refined_recompute_dict = {
+                "mlp_row_ln": 0,
+                "attention_row_ln": 0,
+                "attention_column_ln": 0,
+                "mlp_column_ln": 0,
+                "flash_attn": 0,
+            }
+            ops = self.refined_recompute.split(",")
+            enable_rr = False
+            for op in ops:
+                op = op.strip()
+                if ":" not in op:
+                    raise ValueError("Illegal refined_recompute input, please check.")
+                op_name, skip_num = op.split(":")[0], int(op.split(":")[1])
+                if op_name not in refined_recompute_dict:
+                    raise ValueError(f"Refined recompute do not support {op_name}, please check.")
+                if (
+                    op_name in ["mlp_row_ln", "attention_row_ln", "attention_column_ln", "mlp_column_ln"]
+                    and self.tensor_model_parallel_size <= 1
+                ):
+                    logger.warning(
+                        f"Refined recompute is only supported for the `{op_name}` operation when `tensor_model_parallel_size` is greater than 1. \
+                            This refined recompute operation will be ignored."
+                    )
+                    continue
+
+                refined_recompute_dict[op_name] = skip_num
+                if skip_num != 0:
+                    enable_rr = True
+            if not enable_rr:
+                refined_recompute_dict = dict()
+            self.refined_recompute = refined_recompute_dict
 
         # process fault tolerance settings
         pdc_zcc_init_step = os.getenv("PDC_FC_INIT_STEP")

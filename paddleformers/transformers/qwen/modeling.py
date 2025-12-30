@@ -162,12 +162,7 @@ class QWenAttention(nn.Layer):
             RowParallelLinear = linear_utils.RowSequenceParallelLinear
 
             # NOTE: refined_recompute is only supported when `recompute_use_reentrant=False`
-            if (
-                config.recompute_granularity == "full"
-                and config.recompute_method == "uniform"
-                and config.recompute_num_layers == 1
-                and not config.recompute_use_reentrant
-            ):
+            if config.recompute and not config.recompute_use_reentrant:
                 if skip_recompute_ops.get("attention_column_ln", False):
                     ColumnParallelLinear = RRColumnSequenceParallelLinear
                 if skip_recompute_ops.get("attention_row_ln", False):
@@ -176,12 +171,7 @@ class QWenAttention(nn.Layer):
             ColumnParallelLinear = linear_utils.ColumnParallelLinear
             RowParallelLinear = linear_utils.RowParallelLinear
             # NOTE: refined_recompute is only supported when `recompute_use_reentrant=False`
-            if (
-                config.recompute_granularity == "full"
-                and config.recompute_method == "uniform"
-                and config.recompute_num_layers == 1
-                and not config.recompute_use_reentrant
-            ):
+            if config.recompute and not config.recompute_use_reentrant:
                 if skip_recompute_ops.get("attention_column_ln", False):
                     ColumnParallelLinear = RRColumnParallelLinear
                 if skip_recompute_ops.get("attention_row_ln", False):
@@ -256,8 +246,10 @@ class QWenAttention(nn.Layer):
                     return_softmax=self.config.attn_dropout_prob > 0.0,
                 )
             else:
-                skip_recompute = not self.config.recompute_use_reentrant and self.skip_recompute_ops.get(
-                    "flash_attn", False
+                skip_recompute = (
+                    self.config.recompute
+                    and not self.config.recompute_use_reentrant
+                    and self.skip_recompute_ops.get("flash_attn", False)
                 )
                 attn_output = no_recompute(
                     F.scaled_dot_product_attention,
@@ -436,12 +428,7 @@ class QWenMLP(nn.Layer):
             RowParallelLinear = linear_utils.RowSequenceParallelLinear
 
             # NOTE: refined_recompute is only supported when `recompute_use_reentrant=False`
-            if (
-                config.recompute_granularity == "full"
-                and config.recompute_method == "uniform"
-                and config.recompute_num_layers == 1
-                and not config.recompute_use_reentrant
-            ):
+            if config.recompute and not config.recompute_use_reentrant:
                 if skip_recompute_ops.get("mlp_column_ln", False):
                     ColumnParallelLinear = RRColumnSequenceParallelLinear
                 if skip_recompute_ops.get("mlp_row_ln", False):
@@ -450,12 +437,7 @@ class QWenMLP(nn.Layer):
             ColumnParallelLinear = linear_utils.ColumnParallelLinear
             RowParallelLinear = linear_utils.RowParallelLinear
             # NOTE: refined_recompute is only supported when `recompute_use_reentrant=False`
-            if (
-                config.recompute_granularity == "full"
-                and config.recompute_method == "uniform"
-                and config.recompute_num_layers == 1
-                and not config.recompute_use_reentrant
-            ):
+            if config.recompute and not config.recompute_use_reentrant:
                 if skip_recompute_ops.get("mlp_column_ln", False):
                     ColumnParallelLinear = RRColumnParallelLinear
                 if skip_recompute_ops.get("mlp_row_ln", False):
@@ -602,7 +584,7 @@ class QWenPretrainedModel(PretrainedModel):
             layer_num=self.config.num_hidden_layers,
             vocab_size=self.config.vocab_size,
             seq_length=seq_length,
-            recompute=self.config.recompute_granularity is not None,
+            recompute=self.config.recompute,
             recompute_granularity=self.config.recompute_granularity,
         )
 

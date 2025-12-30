@@ -39,6 +39,8 @@ class Ernie4_5Config(PretrainedConfig):
         initializer_range=0.02,
         rms_norm_eps=1e-6,
         use_cache=False,
+        recompute=False,
+        recompute_granularity="core_attn",
         recompute_use_reentrant=False,
         tie_word_embeddings=True,
         pad_token_id=0,
@@ -59,13 +61,6 @@ class Ernie4_5Config(PretrainedConfig):
         pp_seg_method="layer:Ernie4_5DecoderLayer|EmptyLayer",
         dpo_config=None,
         kto_config=None,
-        recompute_granularity=None,
-        recompute_method=None,
-        recompute_modules=None,
-        recompute_num_layers=None,
-        recompute_mtp_granularity=None,
-        recompute_mtp_method=None,
-        recompute_mtp_modules=None,
         **kwargs,
     ):
         """
@@ -80,6 +75,8 @@ class Ernie4_5Config(PretrainedConfig):
             num_attention_heads (int): Number of attention heads for each attention layer
             rms_norm_eps (float): The epsilon used by the RMS normalization layers
             use_cache (bool): Whether to use caching for faster generation (decoding)
+            recompute (bool): Whether to use gradient checkpointing to save memory
+            recompute_granularity (str): Granularity of recomputation ("core_attn", "full", etc.)
             recompute_use_reentrant (bool): Whether to use reentrant checkpointing
             tie_word_embeddings (bool):  Whether the input and output word embeddings should be tied
             Whether the model's input and output word embeddings should be tied. Note that this is only relevant if the
@@ -121,6 +118,8 @@ class Ernie4_5Config(PretrainedConfig):
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
+        self.recompute = recompute
+        self.recompute_granularity = recompute_granularity
         self.recompute_use_reentrant = recompute_use_reentrant
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
@@ -142,34 +141,21 @@ class Ernie4_5Config(PretrainedConfig):
         self.pp_seg_method = pp_seg_method
         self.dpo_config = dpo_config
         self.kto_config = kto_config
-        self.recompute_granularity = None
-        self.recompute_granularity = None
-        self.recompute_method = None
-        self.recompute_modules = None
-        self.recompute_num_layers = None
-        self.recompute_mtp_granularity = None
-        self.recompute_mtp_method = None
-        self.recompute_mtp_modules = None
         self.register_unsavable_keys(
             [
                 "attention_dropout_prob",
                 "hidden_dropout_prob",
                 "ignored_index",
                 "scale_qk_coeff",
+                "recompute",
                 "recompute_use_reentrant",
+                "recompute_granularity",
                 "pp_seg_method",
                 "micro_batch_size",
                 "fuse_softmax_mask",
                 "max_sequence_length",
                 "dpo_config",
                 "kto_config",
-                "recompute_granularity",
-                "recompute_method",
-                "recompute_modules",
-                "recompute_num_layers",
-                "recompute_mtp_granularity",
-                "recompute_mtp_method",
-                "recompute_mtp_modules",
             ]
         )
 
