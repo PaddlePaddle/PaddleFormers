@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import copy
+import sys
 import tempfile
 import unittest
 
@@ -61,6 +62,9 @@ class Qwen3VLMoeVisionText2TextModelTester:
         num_attention_heads=4,
         num_hidden_layers=2,
         num_key_value_heads=2,
+        num_experts=4,
+        num_experts_per_tok=2,
+        moe_intermediate_size=16,
         rope_theta=10000,
         tie_word_embeddings=True,
         is_training=True,
@@ -131,6 +135,11 @@ class Qwen3VLMoeVisionText2TextModelTester:
             "vocab_size": vocab_size,
             "rope_parameters": {"mrope_section": mrope_section, "rope_type": "default", "type": "mrope"},
             "rope_scaling": {"mrope_section": mrope_section, "type": "mrope"},
+            "num_experts": num_experts,
+            "num_experts_per_tok": num_experts_per_tok,
+            "moe_intermediate_size": moe_intermediate_size,
+            "decoder_sparse_step": 1,
+            "norm_topk_prob": True,
         }
 
     def get_config(self):
@@ -183,7 +192,7 @@ class Qwen3VLMoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
 
     base_model_class = Qwen3VLMoeModel
     all_model_classes = (Qwen3VLMoeModel, Qwen3VLMoeForConditionalGeneration)
-    all_generative_model_classes = {Qwen3VLMoeForConditionalGeneration: {Qwen3VLMoeModel, "qwen3_vl"}}
+    all_generative_model_classes = {Qwen3VLMoeForConditionalGeneration: {Qwen3VLMoeModel, "qwen3_vl_moe"}}
     max_new_tokens = 3
 
     def setUp(self):
@@ -366,13 +375,13 @@ class Qwen3VLMoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
         # Test for making sure config save and load preserves correct model type
         config, _ = self.model_tester.prepare_config_and_inputs_for_common()
 
-        self.assertEqual(config.model_type, "qwen3_vl")
+        self.assertEqual(config.model_type, "qwen3_vl_moe")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             config.save_pretrained(tmp_dir)
 
             loaded_config = Qwen3VLMoeConfig.from_pretrained(tmp_dir)
-            self.assertEqual(loaded_config.model_type, "qwen3_vl")
+            self.assertEqual(loaded_config.model_type, "qwen3_vl_moe")
 
     def test_mismatching_num_image_tokens(self):
         """
@@ -516,18 +525,33 @@ class Qwen3VLMoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
         for model_class in self.all_model_classes:
             with tempfile.TemporaryDirectory() as tmpdirname:
                 tiny_vision_config = {
-                    "depth": 4,
+                    "depth": 2,
                     "intermediate_size": 64,
                     "hidden_size": 64,
                     "out_hidden_size": 128,
                     "fullatt_block_indexes": [1],
+                    "patch_size": 16,
+                    "spatial_merge_size": 2,
+                    "temporal_patch_size": 2,
+                    "deepstack_visual_indexes": [1],
+                }
+                tiny_text_config = {
+                    "num_hidden_layers": 4,
+                    "hidden_size": 128,
+                    "intermediate_size": 256,
+                    "num_attention_heads": 4,
+                    "vocab_size": 1000,
+                    "num_experts": 4,
+                    "num_experts_per_tok": 2,
+                    "moe_intermediate_size": 64,
+                    "shared_expert_intermediate_size": 64,
+                    "norm_topk_prob": True,
                 }
                 config = Qwen3VLMoeConfig(
-                    num_hidden_layers=4,
-                    intermediate_size=256,
+                    vision_config=tiny_vision_config,
+                    text_config=tiny_text_config,
                     hidden_size=128,
                     tie_word_embedding=False,
-                    vision_config=tiny_vision_config,
                 )
                 model = model_class(config)
                 model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
@@ -548,12 +572,10 @@ class Qwen3VLMoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
 class Qwen3VLMoeIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
-            "/root/paddlejob/workspace/env_run/wangyuhao/PaddleFormers/tiny-random-qwen3vlmoe", convert_from_hf=True
+            "PaddleFormers/tiny-random-qwen3vlmoe", convert_from_hf=True
         )
 
-        self.processor = AutoProcessor.from_pretrained(
-            "/root/paddlejob/workspace/env_run/wangyuhao/PaddleFormers/tiny-random-qwen3vlmoe"
-        )
+        self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen3vlmoe")
         self.messages = [
             {
                 "role": "user",
@@ -613,36 +635,36 @@ class Qwen3VLMoeIntegrationTest(unittest.TestCase):
         output = self.model(**inputs)["logits"].astype(paddle.float32)
         EXPECTED_SLICE = paddle.to_tensor(
             [
-                0.06287927,
-                -0.07886235,
-                0.04489285,
-                0.05893322,
-                0.01931595,
-                -0.01385389,
-                0.08200872,
-                -0.03711491,
-                -0.01657203,
-                -0.02351522,
-                0.07860593,
-                0.04915768,
-                0.01571728,
-                -0.03793694,
-                -0.01400310,
-                0.01007790,
-                -0.00566701,
-                0.00890818,
-                0.07228708,
-                -0.00890865,
-                0.00333119,
-                -0.01285517,
-                -0.05833242,
-                0.03265308,
-                -0.03928559,
-                -0.02193596,
-                -0.00813984,
-                0.00105143,
-                0.04259191,
-                -0.02120323,
+                0.36712956,
+                -0.29408550,
+                -1.23974037,
+                0.31108063,
+                -0.86928952,
+                0.51680845,
+                1.57957196,
+                1.98345864,
+                0.87915307,
+                3.40707850,
+                -0.12340344,
+                -0.69996423,
+                -1.81468117,
+                0.76945889,
+                -0.15847050,
+                0.36468375,
+                2.60268474,
+                0.12924203,
+                -1.63403773,
+                0.77175796,
+                0.69657117,
+                0.05439692,
+                -1.46411920,
+                -0.67389530,
+                0.50467390,
+                1.79877388,
+                -1.57729912,
+                0.05407050,
+                1.76717579,
+                -0.72585726,
             ]
         )
         self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=5e-4, rtol=1e-5))
@@ -655,36 +677,36 @@ class Qwen3VLMoeIntegrationTest(unittest.TestCase):
         output = self.model(**inputs)["logits"].astype(paddle.float32)
         EXPECTED_SLICE = paddle.to_tensor(
             [
-                0.06287927,
-                -0.07886235,
-                0.04489284,
-                0.05893321,
-                0.01931595,
-                -0.01385389,
-                0.08200871,
-                -0.03711491,
-                -0.01657202,
-                -0.02351523,
-                0.07860593,
-                0.04915767,
-                0.01571729,
-                -0.03793694,
-                -0.01400308,
-                0.01007790,
-                -0.00566702,
-                0.00890818,
-                0.07228709,
-                -0.00890865,
-                0.00333118,
-                -0.01285518,
-                -0.05833241,
-                0.03265308,
-                -0.03928559,
-                -0.02193597,
-                -0.00813984,
-                0.00105143,
-                0.04259191,
-                -0.02120323,
+                0.36712956,
+                -0.29408538,
+                -1.23974061,
+                0.31108060,
+                -0.86928940,
+                0.51680881,
+                1.57957184,
+                1.98345864,
+                0.87915307,
+                3.40707898,
+                -0.12340339,
+                -0.69996434,
+                -1.81468070,
+                0.76945865,
+                -0.15847051,
+                0.36468381,
+                2.60268474,
+                0.12924218,
+                -1.63403773,
+                0.77175772,
+                0.69657129,
+                0.05439735,
+                -1.46411896,
+                -0.67389506,
+                0.50467414,
+                1.79877388,
+                -1.57729900,
+                0.05407051,
+                1.76717579,
+                -0.72585714,
             ]
         )
         self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
@@ -702,70 +724,70 @@ class Qwen3VLMoeIntegrationTest(unittest.TestCase):
         output = self.model(**inputs)["logits"].astype(paddle.float32)
         EXPECTED_SLICE_1 = paddle.to_tensor(
             [
-                0.06151218,
-                0.00532189,
-                -0.05761895,
-                0.07479347,
-                0.06888264,
-                0.02232255,
-                -0.06411978,
-                -0.01477717,
-                0.04112658,
-                -0.05835423,
-                0.02469395,
-                -0.00162770,
-                0.04324941,
-                -0.01549096,
-                0.00544463,
-                0.06252432,
-                0.02844745,
-                -0.02490177,
-                0.03157872,
-                0.06601687,
-                -0.05104667,
-                0.02189707,
-                0.01236542,
-                0.00669959,
-                -0.00893665,
-                0.01544655,
-                0.02715737,
-                0.04560648,
-                0.03158531,
-                0.08054685,
+                0.79992008,
+                1.49869478,
+                0.30166659,
+                -0.07198890,
+                1.76197731,
+                -2.25160956,
+                -2.09550071,
+                -0.53395838,
+                -2.28875995,
+                0.03225701,
+                -1.99320662,
+                2.66614747,
+                0.84452391,
+                -0.44623059,
+                -0.26190218,
+                -2.49582243,
+                -4.04714060,
+                -0.95805454,
+                -0.70773560,
+                -1.53806853,
+                1.24281561,
+                0.44866917,
+                -2.53060341,
+                1.14611471,
+                -1.70403790,
+                1.57436168,
+                0.80342126,
+                -0.65594870,
+                -0.74968976,
+                2.25493336,
             ]
         )
         EXPECTED_SLICE_2 = paddle.to_tensor(
             [
-                -0.02678839,
-                -0.06032243,
-                0.09271197,
-                -0.03679991,
-                -0.07756358,
-                0.03194709,
-                -0.01896855,
-                -0.03938061,
-                -0.04942168,
-                0.00092257,
-                0.04337022,
-                -0.01150735,
-                0.01435745,
-                -0.01442396,
-                -0.07720464,
-                0.02855911,
-                0.00578095,
-                0.01799584,
-                0.02166999,
-                0.02798031,
-                0.04452861,
-                -0.02033626,
-                -0.02675069,
-                -0.02170403,
-                -0.10043185,
-                -0.01969300,
-                -0.07768991,
-                0.06378867,
-                -0.01454932,
-                0.01830968,
+                0.12476382,
+                -0.74737877,
+                -0.13552140,
+                -1.07427096,
+                0.17605980,
+                -1.72575986,
+                2.13079286,
+                3.22157621,
+                -0.67696279,
+                -1.22228324,
+                -2.29349756,
+                -1.07092345,
+                -2.38682246,
+                2.04810882,
+                0.71565074,
+                1.75214350,
+                1.69901133,
+                2.62996125,
+                -0.31438798,
+                -1.07916725,
+                0.18575002,
+                -0.26933125,
+                2.42203403,
+                0.75782561,
+                1.65162790,
+                0.55366701,
+                0.74869704,
+                0.97792858,
+                2.78293419,
+                -0.40350780,
             ]
         )
         self.assertTrue(paddle.allclose(output[0, 500, 10000:10030], EXPECTED_SLICE_1, atol=1e-3, rtol=1e-3))
@@ -796,36 +818,36 @@ class Qwen3VLMoeIntegrationTest(unittest.TestCase):
         output = self.model(**inputs)["logits"].astype(paddle.float32)
         EXPECTED_SLICE = paddle.to_tensor(
             [
-                -0.02045318,
-                -0.04022632,
-                -0.01657582,
-                0.07310390,
-                0.00904242,
-                0.02370857,
-                -0.00559058,
-                -0.02451767,
-                -0.02466779,
-                -0.06793922,
-                0.03019258,
-                -0.02364468,
-                0.05183839,
-                -0.04949479,
-                0.01868923,
-                -0.01514020,
-                0.01283368,
-                -0.01150737,
-                -0.03414747,
-                0.07286531,
-                -0.04584872,
-                0.07216100,
-                0.03212114,
-                0.01431694,
-                0.01104466,
-                -0.01020053,
-                0.04788769,
-                -0.04972041,
-                0.03181622,
-                0.02927705,
+                1.08751750,
+                0.75049871,
+                0.92989129,
+                0.63981396,
+                0.52018905,
+                -1.85245895,
+                -0.45466858,
+                -0.06041524,
+                -0.24281505,
+                0.67164791,
+                -0.27764153,
+                2.95323443,
+                -0.21945433,
+                -2.16065145,
+                -1.35787714,
+                -1.69473195,
+                -2.25439239,
+                -0.71343589,
+                -0.06027732,
+                -1.51727831,
+                1.12702703,
+                -0.66254300,
+                -1.63148212,
+                1.56089854,
+                -1.48519158,
+                2.25448012,
+                -0.06214133,
+                1.66215539,
+                -2.28668571,
+                2.42848778,
             ]
         )
         self.assertTrue(paddle.allclose(output[0, 150, 10000:10030], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
@@ -835,6 +857,8 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
+        for m in list(sys.modules):
+            (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
         from transformers import Qwen3VLMoeConfig, Qwen3VLMoeForConditionalGeneration
 
         # when python application is done, `TemporaryDirectory` will be free
@@ -847,7 +871,7 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
             "in_channels": 3,
             "initializer_range": 0.02,
             "intermediate_size": 256,
-            "model_type": "qwen3_vl",
+            "model_type": "qwen3_vl_moe",
             "num_heads": 4,
             "num_position_embeddings": 2304,
             "out_hidden_size": 128,
@@ -869,10 +893,13 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
             "intermediate_size": 256,
             "layer_types": ["full_attention"],
             "max_position_embeddings": 262144,
-            "model_type": "qwen3_vl_text",
+            "model_type": "qwen3_vl_moe_text",
             "num_attention_heads": 4,
             "num_hidden_layers": 1,
             "num_key_value_heads": 1,
+            "num_experts": 4,
+            "num_experts_per_tok": 2,
+            "moe_intermediate_size": 128,
             "rms_norm_eps": 1e-06,
             "vocab_size": 151936,
             "rope_scaling": tiny_rope_scaling,
@@ -917,6 +944,8 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
         paddle_logit = paddle_model(**paddle_inputs)["logits"]
 
         # 2. forward the torch  model
+        for m in list(sys.modules):
+            (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
         import torch
         from transformers import Qwen3VLMoeForConditionalGeneration
 
@@ -941,6 +970,8 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tempdir:
 
             # 1. forward the torch  model
+            for m in list(sys.modules):
+                (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
             import torch
             from transformers import Qwen3VLMoeForConditionalGeneration
 
@@ -979,6 +1010,8 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tempdir:
 
             # 1. forward the torch model
+            for m in list(sys.modules):
+                (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
             import torch
             import transformers
 

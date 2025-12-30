@@ -84,7 +84,7 @@ class Qwen3VLMoeTextExperts(nn.Layer):
             # One-hot encoding for experts
             expert_mask = paddle.nn.functional.one_hot(router_indices, num_classes=self.num_experts)
             expert_mask = expert_mask.transpose([2, 1, 0])  # [num_experts, top_k, batch*seq]
-            expert_hit = paddle.greater(expert_mask.sum(dim=(-1, -2)), 0).nonzero()
+            expert_hit = paddle.greater(expert_mask.sum(dim=(-1, -2)), paddle.to_tensor(0, dtype="int32")).nonzero()
             for expert_idx in expert_hit[:]:
                 with paddle.no_grad():
                     _, token_idx = paddle.where(expert_mask[expert_idx[0]])
@@ -329,7 +329,6 @@ class Qwen3VLMoePretrainedModel(PretrainedModel):
         "o_proj",
         "qkv",
         "proj",
-        "down_proj",
         "linear_fc\d+",
         "gate",
     ]
@@ -378,7 +377,7 @@ class Qwen3VLMoePretrainedModel(PretrainedModel):
         MLP_LAYER_COLWISE = [
             "mlp.up_proj.weight",
             "mlp.gate_proj.weight",
-            "mlp.linear_fc1.weight",  # todo check rationality
+            "mlp.linear_fc1.weight",
         ]
         FUSE_MLP_LAYER_COLWISE = [
             "up_gate_proj.weight",
@@ -388,7 +387,7 @@ class Qwen3VLMoePretrainedModel(PretrainedModel):
             "self_attn.o_proj.weight",
             "mlp.down_proj.weight",
             "mlp.linear_fc2.weight",
-        ]  # todo check rationality
+        ]
 
         BIAS_KEYS = [
             "self_attn.q_proj.bias",
@@ -462,8 +461,8 @@ class Qwen3VLMoePretrainedModel(PretrainedModel):
                 f"model.language_model.layers.$LAYER_ID.post_attention_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"model.language_model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
                 f"model.language_model.layers.$LAYER_ID.mlp.gate.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.gate.weight",
-                f"model.language_model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight -> {llm_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
-                f"model.language_model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_up_proj.weight -> {llm_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_up_proj.weight",
+                f"model.language_model.layers.$LAYER_ID.mlp.experts.down_proj -> {llm_prefix}layers.$LAYER_ID.mlp.experts.down_proj",
+                f"model.language_model.layers.$LAYER_ID.mlp.experts.gate_up_proj -> {llm_prefix}layers.$LAYER_ID.mlp.experts.gate_up_proj",
                 f"model.language_model.layers.$LAYER_ID.self_attn.q_norm.weight -> {llm_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
                 f"model.language_model.layers.$LAYER_ID.self_attn.k_norm.weight -> {llm_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
             ]
@@ -555,8 +554,8 @@ class Qwen3VLMoePretrainedModel(PretrainedModel):
                 f"{llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.language_model.layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"{llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.language_model.layers.$LAYER_ID.self_attn.o_proj.weight",
                 f"{llm_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.language_model.layers.$LAYER_ID.mlp.gate.weight",
-                f"{llm_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight -> model.language_model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
-                f"{llm_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_up_proj.weight -> model.language_model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_up_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.experts.down_proj -> model.language_model.layers.$LAYER_ID.mlp.experts.down_proj",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.experts.gate_up_proj -> model.language_model.layers.$LAYER_ID.mlp.experts.gate_up_proj",
                 f"{llm_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.language_model.layers.$LAYER_ID.self_attn.q_norm.weight",
                 f"{llm_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.language_model.layers.$LAYER_ID.self_attn.k_norm.weight",
             ]
@@ -1459,7 +1458,7 @@ class Qwen3VLMoeTextModel(Qwen3VLMoePretrainedModel):
 
         hidden_states = hidden_states.clone()
         local_this = hidden_states[visual_pos_masks, :] + visual_embeds
-        hidden_states[visual_pos_masks, :] = local_this  # 这个操作可能会导致paddle转静态图或推理时出问题，建议使用 scatter
+        hidden_states[visual_pos_masks, :] = local_this
 
         # [Supplement 3] Restore original shape [B*S, D] -> [B, S, D] if necessary
         if len(original_shape) > 2:
