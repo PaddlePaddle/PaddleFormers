@@ -25,6 +25,7 @@ class Qwen3VLTextProvider2B(Qwen3VLTextProvider):
     hidden_size: int = 2048
     num_attention_heads: int = 16
     intermediate_size: int = 6144
+    num_key_value_heads: int = 8
 
 
 @dataclass
@@ -116,5 +117,31 @@ class Qwen3VLProvider32B(Qwen3VLProvider):
         default_factory=lambda: Qwen3VLVisionProvider(
             num_attention_heads=16, intermediate_size=4304, hidden_size=1152, num_hidden_layers=27,
             out_hidden_size=5120
+        )
+    )
+
+
+@dataclass
+class Qwen3VLProvider30B_A3B(Qwen3VLProvider):
+    language_transformer_config: TransformerConfig = field(
+        default_factory=lambda: Qwen3VLTextProvider30BA3B()
+    )
+    vision_transformer_config: TransformerConfig | PretrainedConfig = field(
+        default_factory=lambda: Qwen3VLVisionProvider(
+            num_attention_heads=16, intermediate_size=4304, hidden_size=1152, num_hidden_layers=27,
+            out_hidden_size=2048
+        )
+    )
+
+
+@dataclass
+class Qwen3VLProvider235B_A22B(Qwen3VLProvider):
+    language_transformer_config: TransformerConfig = field(
+        default_factory=lambda: Qwen3VLTextProvider235BA22B()
+    )
+    vision_transformer_config: TransformerConfig | PretrainedConfig = field(
+        default_factory=lambda: Qwen3VLVisionProvider(
+            num_attention_heads=16, intermediate_size=4304, hidden_size=1152, num_hidden_layers=27,
+            out_hidden_size=4096
         )
     )
