@@ -284,10 +284,10 @@ class LlmMetaConfig:
             None,
             "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in each uniformly divided recompute unit.",
         ),
-        ("recompute_modules", Optional[List[str]], None, "List of module names to apply recomputation."),
+        ("recompute_modules", Optional[Any], None, "List of module names to apply recomputation."),
         ("recompute_mtp_granularity", str, None, "Recomputation granularity for MTP layers."),
         ("recompute_mtp_method", str, None, "Recomputation method for MTP layers."),
-        ("recompute_mtp_modules", str, None, "List of MTP module names to apply recomputation."),
+        ("recompute_mtp_modules", Optional[Any], None, "List of MTP module names to apply recomputation."),
         ("recompute_use_reentrant", bool, True, "recompute_use_reentrant"),
         ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
     ]

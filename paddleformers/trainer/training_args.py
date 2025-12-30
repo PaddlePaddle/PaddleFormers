@@ -1560,6 +1560,11 @@ class TrainingArguments:
         },
     )
 
+    moe_subbatch_token_num_before_dispatch: int = field(
+        default=0,
+        metadata={"help": "The number of tokens in each subbatch for MoE model processing. Defaults to 0."},
+    )
+
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
         if in_auto_parallel_align_mode():
@@ -1671,12 +1676,24 @@ class TrainingArguments:
         self._post_init_parallel_degree()
 
         # check recompute
-        if not isinstance(self.recompute_modules, list) and not not isinstance(self.recompute_modules, dict):
-            raise ValueError("recompute_modules must be list or dict")
+        if (
+            self.recompute_modules is not None
+            and not isinstance(self.recompute_modules, list)
+            and not isinstance(self.recompute_modules, dict)
+        ):
+            raise ValueError("recompute_modules must be list, dict or None")
         # check recompute:
-        if not isinstance(self.recompute_mtp_modules, list) and not not isinstance(self.recompute_mtp_modules, dict):
-            raise ValueError("recompute_mtp_modules must be list or dict")
+        if (
+            self.recompute_mtp_modules is not None
+            and not isinstance(self.recompute_mtp_modules, list)
+            and not isinstance(self.recompute_mtp_modules, dict)
+        ):
+            raise ValueError("recompute_mtp_modules must be list, dict or None")
 
+        if self.moe_subbatch_token_num_before_dispatch > 0 and self.recompute_granularity == "full":
+            raise ValueError(
+                "When moe_subbatch_token_num_before_dispatch > 0, please set recompute_granularity='selective and add corresponding module name to recompute_modules"
+            )
         self._post_init_save_checkpoint_format()
         self._post_init_load_checkpoint_format()
         if self.tensorwise_offload_optimizer and self.data_parallel_size > 1:

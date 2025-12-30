@@ -650,7 +650,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
         if (
             self.config.recompute_granularity is not None
             and self.config.recompute_modules is not None
-            and "full_attn" not in self.config.recompute_modules
+            and "core_attn" in self.config.recompute_modules
             and has_gradient
         ):
             attn_outputs = recompute(
@@ -704,7 +704,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
             if (
                 self.config.recompute_granularity is not None
                 and self.config.recompute_modules is not None
-                and "full_attn" not in self.config.recompute_modules
+                and "mlp" in self.config.recompute_modules
                 and has_gradient
             ):
                 out = recompute(
