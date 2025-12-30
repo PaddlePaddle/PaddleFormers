@@ -55,7 +55,7 @@ yq eval '.train_dataset_path = strenv(cur_dir) + "/data/pre-training/train.jsonl
     | .eval_dataset_path = strenv(cur_dir) + "/data/pre-training/eval.jsonl"
     | .model_name_or_path = strenv(cur_dir) + "/GLM-4.5-Air"
     | .logging_dir = strenv(cur_dir) + "/vdl_log"
-    | .output_dir = strenv(cur_dir) + "/checkpoints"' \
+    | .output_dir = strenv(cur_dir) + "/checkpoints/pretrain"' \
    $config_yaml > ${config_yaml}.tmp
 mv ${config_yaml}.tmp $config_yaml
 
@@ -77,7 +77,7 @@ NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformer
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
    echo "GLM4.5 multi-cards training failed, try to check the log file"
-   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_pt.log
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_pt.log "***** train metrics *****"
    check_exit_code=$?
    if [ $check_exit_code -ne 0 ]; then
      echo "Failed to find 'Training completed' in log file."

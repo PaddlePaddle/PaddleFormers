@@ -80,7 +80,7 @@ exit_code=$?
 
 if [ $exit_code -ne 0 ]; then
     echo "Test failed with exit code $exit_code, check the log: ./glm45_pt_a100.log"
-    python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_pt_a100.log
+    python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_pt_a100.log "***** train metrics *****"
     check_log_exit_code=$?
     if [ $check_log_exit_code -ne 0 ]; then
         echo "Failed to find 'Training completed' in log file."

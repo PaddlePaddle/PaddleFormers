@@ -23,15 +23,15 @@ export cur_dir=$(pwd)
 config_sft_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_sft.yaml
 config_lora_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_lora.yaml
 
-config_json=$CACHE_DIR/glm45/GLM-4.5-Air/config.json
 
 yq '.train_dataset_path = strenv(cur_dir) + "/data/sft/train.jsonl"
     | .eval_dataset_path = strenv(cur_dir) + "/data/sft/dev.jsonl"
-    | .model_name_or_path = strenv(CACHE_DIR) + "/glm45/GLM-4.5-Air"
+    | .model_name_or_path = strenv(cur_dir) + "/checkpoints/pretrain"
     | .logging_dir = strenv(cur_dir) + "/glm_full_pp_vdl_log"
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"' \
    $config_sft_yaml > ${config_sft_yaml}.tmp
 mv ${config_sft_yaml}.tmp $config_sft_yaml
+
 
 yq '.train_dataset_path = strenv(cur_dir) + "/data/sft/train.jsonl"
     | .eval_dataset_path = strenv(cur_dir) + "/data/sft/dev.jsonl"
@@ -60,7 +60,7 @@ NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformer
 sft_exit_code=$?
 if [ $sft_exit_code -ne 0 ]; then
    echo "GLM4.5 multi-cards training failed, try to check the log file"
-   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_sft.log
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_sft.log "***** train metrics *****"
    sft_check_exit_code=$?
    if [ $sft_check_exit_code -ne 0 ]; then
      echo "Failed to find 'Training completed' in log file."
@@ -72,7 +72,7 @@ fi
 
 set -e
 echo "
-10 7.93576813
+10 9.22490883
 " > ./glm45_sft_multi_card_gt_loss.txt
 
 python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
@@ -88,7 +88,7 @@ NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformer
 lora_exit_code=$?
 if [ $lora_exit_code -ne 0 ]; then
    echo "GLM4.5 multi-cards training failed, try to check the log file"
-   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_lora.log
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_lora.log "***** train metrics *****"
    lora_check_exit_code=$?
    if [ $lora_check_exit_code -ne 0 ]; then
      echo "Failed to find 'Training completed' in log file."
