@@ -14,27 +14,13 @@
 
 import paddle
 import paddle.nn as nn
+from paddle.distributed.fleet.utils.sequence_parallel_utils import (
+    mark_as_sequence_parallel_parameter,
+)
+from paddle.incubate.nn.functional import fused_rms_norm_ext
 
 from ..generation.configuration_utils import PretrainedConfig
-from ..utils.log import logger
 from .general import GeneralInterface
-
-try:
-    from paddle.distributed.fleet.utils.sequence_parallel_utils import (
-        mark_as_sequence_parallel_parameter,
-    )
-except ImportError:
-    logger.warning_once("Fail to import mark_as_sequence_parallel_parameter!")
-
-    def mark_as_sequence_parallel_parameter(parameter):
-        return parameter
-
-
-try:
-    from paddle.incubate.nn.functional import fused_rms_norm_ext
-except ImportError:
-    logger.warning_once("Fail to import fused_rms_norm_ext!")
-    fused_rms_norm_ext = None
 
 __all__ = ["Norm"]
 

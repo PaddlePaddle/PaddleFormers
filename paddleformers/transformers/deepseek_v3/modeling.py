@@ -92,8 +92,7 @@ def scaled_dot_product_attention(
 
     # Attention Interface input [bz, nhead, seqlen, headdim]
 
-    fa_version = paddle.base.framework.get_flags(["FLAGS_flash_attn_version"])["FLAGS_flash_attn_version"]
-    if fa_version == 2 and config._attn_implementation == "flashmask":
+    if config._attn_implementation == "flashmask":
         q_head_dim = query_states.shape[-1]
         softmax_scale = softmax_scale * (q_head_dim**0.5)
         query_states = query_states * softmax_scale
@@ -117,7 +116,7 @@ def scaled_dot_product_attention(
         scaling=softmax_scale,
     )
 
-    if fa_version == 2 and config._attn_implementation == "flashmask":
+    if config._attn_implementation == "flashmask":
         attn_output = attn_output.reshape([bsz, q_len, v_num_heads, head_dim])
         attn_output = attn_output[..., :v_head_dim]
         attn_output = attn_output.reshape([bsz, q_len, -1])
@@ -462,7 +461,6 @@ class DeepseekV3MoEFlexToken(MoEFlexTokenLayer):
             topk_group=config.topk_group,
             norm_topk_prob=config.norm_topk_prob,
             routed_scaling_factor=config.routed_scaling_factor,
-            drop_tokens=False,
         )
 
         hcg = fleet.get_hybrid_communicate_group()
@@ -543,7 +541,6 @@ class DeepseekV3Attention(nn.Layer):
 
         # Enable_recompute defaults to False and is controlled by Trainer
         self.enable_recompute = False
-        self.recompute_granularity = config.recompute_granularity
 
         # Note (@DrownFish19): For tensor parallel we consider that q_a_proj and kv_a_proj_with_mqa
         # are the small weight and cannot achieve performance gain. So we use the original
@@ -710,7 +707,12 @@ class DeepseekV3Attention(nn.Layer):
         value_states = value_states.transpose(1, 2)
 
         has_gradient = not (query_states.stop_gradient and key_states.stop_gradient and value_states.stop_gradient)
-        if self.enable_recompute and has_gradient and self.recompute_granularity == "core_attn":
+        if (
+            self.config.recompute_granularity == "selective"
+            and self.config.recompute_modules is not None
+            and "core_attn" in self.config.recompute_modules
+            and has_gradient
+        ):
             outputs = recompute(
                 self.attn_func,
                 query_states,
@@ -772,7 +774,6 @@ class DeepseekV3DecoderLayer(nn.Layer):
         self.config = config
         self.layer_idx = layer_idx
         self.enable_recompute = False
-        self.recompute_granularity = config.recompute_granularity
         self.tensor_parallel = config.tensor_model_parallel_size > 1
         self.sequence_parallel = config.sequence_parallel
         self.hidden_size = config.hidden_size
@@ -821,7 +822,7 @@ class DeepseekV3DecoderLayer(nn.Layer):
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         offload_kwargs = {}
         offload_kwargs["offload_indices"] = [0]
-        assert self.recompute_granularity != "full_attn"
+        assert self.config.recompute_modules is not None and "full_attn" not in self.config.recompute_modules
         attn_outputs = recompute(
             self.attn,
             hidden_states,
@@ -885,7 +886,12 @@ class DeepseekV3DecoderLayer(nn.Layer):
 
         # Self Attention
         has_gradient = not hidden_states.stop_gradient
-        if self.enable_recompute and has_gradient and self.recompute_granularity == "full_attn":
+        if (
+            self.config.recompute_granularity == "selective"
+            and self.config.recompute_modules is not None
+            and "full_attn" in self.config.recompute_modules
+            and has_gradient
+        ):
             outputs = recompute(
                 self.self_attn,
                 hidden_states=hidden_states,
@@ -1247,7 +1253,7 @@ class DeepseekV3PretrainedModel(PretrainedModel):
                 f"model.norm.weight -> {model_prefix}norm.weight",
                 f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
-                f"model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> {model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias",
+                f"model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> {model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias, dtype='float32'",
                 f"model.layers.$LAYER_ID.mlp.gate.weight -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
                 f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
@@ -1393,7 +1399,6 @@ class DeepseekV3Model(DeepseekV3PretrainedModel):
 
         # Recompute defaults to False and is controlled by Trainer
         self.enable_recompute = False
-        self.recompute_granularity = config.recompute_granularity
 
         self.embed_tokens = GeneralEmbedding.create(
             config=config, num_embeddings=config.vocab_size, embedding_dim=config.hidden_size
@@ -1616,7 +1621,12 @@ class DeepseekV3Model(DeepseekV3PretrainedModel):
                     attn_mask_startend_row_indices,
                     position_embeddings,
                 )
-            elif self.enable_recompute and has_gradient and self.recompute_granularity == "full":
+            elif (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
@@ -1764,6 +1774,7 @@ class DeepseekV3PretrainingCriterion(nn.Layer):
 
         def compute_loss(preds, labels):
             with paddle.amp.auto_cast(False):
+                labels = labels.reshape(preds.shape[:2]).contiguous()
                 masked_lm_loss = self.loss_func(preds.astype("float32"), labels.unsqueeze(2))
                 binary_sequence = paddle.where(
                     masked_lm_loss > 0, paddle.ones_like(masked_lm_loss), paddle.zeros_like(masked_lm_loss)
@@ -2137,6 +2148,16 @@ class DeepseekV3MTPLayerPipe(DeepseekV3MTPLayer):
 
         output_list = [hidden_states_main_model]
         hidden_states = hidden_states_main_model
+
+        decoder_recompute_config = [False for _ in range(self.config.num_nextn_predict_layers)]
+        if self.config.recompute_mtp_granularity == "selective":
+            if "decoder" in self.config.recompute_mtp_modules:
+                decoder_recompute_config = [True for _ in range(self.config.num_nextn_predict_layers)]
+        elif self.config.recompute_mtp_granularity is not None:
+            raise ValueError(
+                f"recompute_mtp_granularity = {self.config.recompute_mtp_granularity} is not supported currently"
+            )
+
         for depth in range(self.config.num_nextn_predict_layers):
             inputs_embeds_cur_depth = inputs_embeds_cur_depth_list[depth]
 
@@ -2150,7 +2171,7 @@ class DeepseekV3MTPLayerPipe(DeepseekV3MTPLayer):
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     position_embeddings=position_embeddings,
                 )
-            elif self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
+            elif decoder_recompute_config[depth] and has_gradient:
                 if attn_mask is not None or attn_mask_startend_row_indices is not None:
                     hidden_states = recompute(
                         super().forward,
@@ -2311,7 +2332,12 @@ class DeepseekV3DecoderLayerPipe(DeepseekV3DecoderLayer):
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 position_embeddings=position_embeddings,
             )
-        elif self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
+        elif (
+            self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+            and has_gradient
+        ):
             hidden_states = recompute(
                 super().forward,
                 hidden_states,

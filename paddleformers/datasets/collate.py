@@ -20,6 +20,8 @@ import numpy as np
 import paddle
 from scipy.linalg import block_diag
 
+from paddleformers.peft.lora import LoRAModel
+
 from .SFTDataset import Sequence
 
 
@@ -197,10 +199,13 @@ def collate_fn(
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
     for batch_sequence in batch:
-        original_token_ids = [seq.token_ids for seq in batch_sequence]
-        token_ids = [sum(original_token_ids, [])]
+        if len(batch_sequence) == 1 and isinstance(batch_sequence[0].position_ids[0], List):
+            original_position_ids = batch_sequence[0].position_ids
+        else:
+            original_position_ids = [seq.position_ids for seq in batch_sequence]
+        token_ids = [sum([seq.token_ids for seq in batch_sequence], [])]
         labels = [sum([seq.labels for seq in batch_sequence], [])]
-        position_ids = [sum([seq.position_ids for seq in batch_sequence], [])]
+        position_ids = [sum(original_position_ids, [])]
         # padding
         padded_token_ids = pad_batch_data(token_ids, pad_idx=tokenizer.pad_token_id, max_seq_len=max_seq_len)
         padded_labels = pad_batch_data(labels, pad_idx=-100, max_seq_len=max_seq_len)
@@ -215,7 +220,7 @@ def collate_fn(
 
         if training_args.num_nextn_predict_layers > 0:
             # each sequence end index
-            batch_sequence_len = [len(sequence) for sequence in original_token_ids]
+            batch_sequence_len = [len(sequence) for sequence in original_position_ids]
             nbatch_pack_offset = [0] * sum(batch_sequence_len)
             prefix_sum = 0
             for sequence_len in batch_sequence_len[:-1]:
@@ -226,11 +231,13 @@ def collate_fn(
 
         if model_args.use_attn_mask_startend_row_indices:
             return_list[-1].append(
-                gen_attn_mask_startend_row_indices(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
+                gen_attn_mask_startend_row_indices(
+                    original_position_ids, max_seq_len, model_args.use_global_causal_attn
+                )
             )
         else:
             return_list[-1].append(
-                gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
+                gen_self_attn_mask(original_position_ids, max_seq_len, model_args.use_global_causal_attn)
             )
 
     return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
@@ -265,8 +272,11 @@ def mm_collate_fn(
             - loss_mask: Mask for computing loss
     """
 
+    if isinstance(model, LoRAModel):
+        model = model.model.base_model
+
     if model is not None and hasattr(model, "get_rope_index"):
-        get_rope_func = model.get_rope_index  # transformers < 4.52.0
+        get_rope_func = model.get_rope_index  # transformers < 4.52.0 or lora
     elif model is not None and hasattr(model, "model") and hasattr(model.model, "get_rope_index"):
         get_rope_func = model.model.get_rope_index  # transformers >= 4.52.0
     else:
@@ -279,9 +289,7 @@ def mm_collate_fn(
     else:
         get_token_type_func = None
 
-    input_keys = ["input_ids", "labels"]
-    if get_rope_func is not None:
-        input_keys.append("position_ids")
+    input_keys = ["input_ids", "labels", "position_ids"]
     if get_token_type_func is not None:
         input_keys.append("token_type_ids")
         input_keys.append("images")
@@ -351,6 +359,10 @@ def mm_collate_fn(
             )
         else:
             padded_position_ids = []
+        if len(pixel_values) > 0:
+            pixel_values = paddle.concat(pixel_values, axis=0)
+        if len(pixel_values_videos) > 0:
+            pixel_values_videos = paddle.concat(pixel_values_videos, axis=0)
         if get_token_type_func is not None:  # ernie45vl
             padded_position_ids = padded_position_ids.transpose([1, 2, 0])
             padded_token_type_ids, images, grid_thw = get_token_type_func(
@@ -365,10 +377,6 @@ def mm_collate_fn(
                 ]
             )
         else:
-            if len(pixel_values) > 0:
-                pixel_values = paddle.concat(pixel_values, axis=0)
-            if len(pixel_values_videos) > 0:
-                pixel_values_videos = paddle.concat(pixel_values_videos, axis=0)
             return_list[-1].extend(
                 [
                     padded_position_ids,
@@ -390,17 +398,14 @@ def mm_collate_fn(
             padded_nbatch_pack_offset = pad_batch_data([nbatch_pack_offset], pad_idx=0, max_seq_len=max_seq_len)
             return_list[-1].append(padded_nbatch_pack_offset)
 
-        if not model_args.stage.lower() == "pt":
-            if model_args.use_attn_mask_startend_row_indices:
-                return_list[-1].append(
-                    gen_attn_mask_startend_row_indices(
-                        original_token_ids, max_seq_len, model_args.use_global_causal_attn
-                    )
-                )
-            else:
-                return_list[-1].append(
-                    gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
-                )
+        if model_args.use_attn_mask_startend_row_indices:
+            return_list[-1].append(
+                gen_attn_mask_startend_row_indices(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
+            )
+        else:
+            return_list[-1].append(
+                gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
+            )
 
     transposed_list = list(zip(*return_list))
     return_list = []

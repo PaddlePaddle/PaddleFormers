@@ -15,9 +15,11 @@
 """Useful data utility."""
 
 import json
+from itertools import islice
 from typing import List, Tuple
 
 import numpy as np
+import paddle
 
 from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 
@@ -246,8 +248,8 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
         global_batch_size = (
             training_args.per_device_train_batch_size
             * training_args.gradient_accumulation_steps
-            * max(training_args.data_parallel_degree, 1)
-            * max(training_args.sharding_parallel_degree, 1)
+            * max(training_args.data_parallel_size, 1)
+            * max(training_args.sharding_parallel_size, 1)
         )
         max_steps = train_batches / global_batch_size
 
@@ -269,7 +271,7 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
             "per_device_train_batch_size": int(training_args.per_device_train_batch_size),
             "tensor_model_parallel_size": int(training_args.tensor_model_parallel_size),
             "pipeline_model_parallel_size": int(training_args.pipeline_model_parallel_size),
-            "sharding_parallel_degree": int(training_args.sharding_parallel_degree),
+            "sharding_parallel_size": int(training_args.sharding_parallel_size),
             "seed": training_args.seed,
             "num_samples_each_epoch": data_args.num_samples_each_epoch,
             "max_seq_len": int(training_args.max_seq_len),
@@ -300,7 +302,7 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
             "per_device_train_batch_size": int(training_args.per_device_train_batch_size),
             "tensor_model_parallel_size": int(training_args.tensor_model_parallel_size),
             "pipeline_model_parallel_size": int(training_args.pipeline_model_parallel_size),
-            "sharding_parallel_degree": int(training_args.sharding_parallel_degree),
+            "sharding_parallel_size": int(training_args.sharding_parallel_size),
             "num_samples_each_epoch": data_args.num_samples_each_epoch,
             "max_seq_len": int(data_args.max_seq_len),
             "seed": training_args.seed,
@@ -316,3 +318,35 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
 
         logger.error("No valid data found, please check your dataset format.")
         return 0
+
+
+def get_worker_sliced_iterator(dataset):
+    """
+    Splits the dataset iterator based on the current Paddle worker information.
+
+    This function is designed to distribute data across multiple processes
+    (when dataloader_num_workers > 0) for an IterableDataset.
+
+    Args:
+        dataset: An iterable dataset object.
+
+    Returns:
+        Iterator: An iterator yielding data specific to the current worker.
+    """
+    # 1. Get the full original iterator
+    # Ensure the input is converted to an iterator so islice works correctly
+    dataset_iterator = iter(dataset)
+
+    # 2. Retrieve Paddle worker information
+    worker_info = paddle.io.get_worker_info()
+
+    # 3. Apply strided slicing (sharding) if running in multi-worker mode
+    if worker_info is not None:
+        dataset_iterator = islice(
+            dataset_iterator,
+            worker_info.id,  # Start: Offset by the current Worker ID
+            None,  # Stop: None means iterate until the end
+            worker_info.num_workers,  # Step: Jump by the total number of workers
+        )
+
+    return dataset_iterator

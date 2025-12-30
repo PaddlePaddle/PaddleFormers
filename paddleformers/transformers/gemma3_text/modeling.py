@@ -18,7 +18,10 @@ from typing import Optional, Tuple, Union
 import paddle
 import paddle.nn as nn
 from paddle.distributed.fleet.recompute.recompute import recompute
-from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
+from paddle.distributed.fleet.utils.sequence_parallel_utils import (
+    ScatterOp,
+    mark_as_sequence_parallel_parameter,
+)
 
 from ...generation import GenerationMixin
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
@@ -38,16 +41,6 @@ from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import Gemma3Config, Gemma3TextConfig
-
-try:
-    from paddle.distributed.fleet.utils.sequence_parallel_utils import (
-        mark_as_sequence_parallel_parameter,
-    )
-except ImportError:
-    logger.warning_once("Fail to import mark_as_sequence_parallel_parameter!")
-
-    def mark_as_sequence_parallel_parameter(parameter):
-        return parameter
 
 
 class Gemma3TextScaledWordEmbedding(nn.Embedding):
@@ -761,7 +754,12 @@ class Gemma3TextModel(Gemma3PreTrainedModel):
                 all_hidden_states += (hidden_states,)
 
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 layer_outputs = self.recompute_training(
                     decoder_layer,
                     hidden_states,

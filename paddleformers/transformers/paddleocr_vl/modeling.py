@@ -32,6 +32,7 @@ from paddle.incubate.nn.functional import fused_rotary_position_embedding as fus
 from ...generation import GenerationMixin
 from ...nn.activation import ACT2FN
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
+from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
@@ -640,7 +641,12 @@ class PaddleOCREncoder(nn.Layer):
                     (hidden_states[:, reversed_window_indices, :],) if use_window_attn else (hidden_states,)
                 )
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 layer_outputs = self.recompute_training(
                     encoder_layer,
                     hidden_states,
@@ -1254,7 +1260,6 @@ class Ernie4_5PretrainedModel(PretrainedModel):
         "k_proj",
         "v_proj",
         "o_proj",
-        "in_proj",
         "out_proj",
         "gate_proj",
         "up_proj",
@@ -1599,7 +1604,12 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
                 all_hidden_states += (hidden_states,)
 
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 layer_outputs = self.recompute_training(
                     decoder_layer,
                     hidden_states,
@@ -1692,6 +1702,7 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         self.model = Ernie4_5Model(config)
         self.vocab_size = config.vocab_size
         self.lm_head = GeneralLMHead(config)
+        self.criterion = CriterionLayer(config)
         self.rope_deltas_var = ContextVar("rope_deltas", default=None)
 
     def get_input_embeddings(self):
@@ -2081,19 +2092,8 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
 
         loss = None
         if labels is not None:
-            # Upcast to float if we need to compute the loss to avoid potential precision issues
-            logits = logits.astype("float32")
-            # Shift so that tokens < n predict n
-            # Labels have beed shifted in dataflow so we don't shift again
-            shift_logits = logits[..., :, :].contiguous()
-            shift_labels = labels[..., :].contiguous()
-            # Flatten the tokens
-            loss_fct = paddle.nn.CrossEntropyLoss(reduction="none")
-            shift_logits = shift_logits.reshape((-1, shift_logits.shape[-1]))
-            shift_labels = shift_labels.reshape((-1,))
-            labels_mask = shift_labels != -100
-            loss = loss_fct(shift_logits, shift_labels)
-            loss = paddle.mean(loss[labels_mask], axis=-1)
+            loss_mask = labels != -100
+            loss, _ = self.criterion(logits, labels, loss_mask)
 
         if not return_dict:
             output = (logits,) + outputs[1:]

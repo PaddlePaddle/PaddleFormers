@@ -48,7 +48,9 @@ expert_model_parallel_size: 4
 use_expert_parallel: true
 sequence_parallel: true
 sharding: stage1
-recompute: true
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
 amp_master_grad: true

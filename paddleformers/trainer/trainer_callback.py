@@ -35,7 +35,15 @@ from paddle.distributed.fleet.utils.hybrid_parallel_util import (
 from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     is_sequence_parallel_parameter,
 )
-from paddlefleet.models.gpt import GPTModel
+
+from ..utils.import_utils import is_paddlefleet_available
+
+# Conditionally import paddlefleet modules
+if is_paddlefleet_available():
+    from paddlefleet.models.gpt import GPTModel
+else:
+    GPTModel = None  # Define a mock or None when not available
+
 from tqdm.auto import tqdm
 
 from ..transformers.moe_gate import PretrainedMoEGate
@@ -59,6 +67,7 @@ __all__ = [
     "MoeExpertsGradScaleCallback",
     "MoEGateSpGradSyncCallBack",
     "SPGradSyncCallback",
+    "EMAStateAssemblerCallback",
 ]
 
 
@@ -691,7 +700,7 @@ class FP8QuantWeightCallback(TrainerCallback):
         if (not g_shard_bypass_dygraph_optimizer or skip_count == 0) and hasattr(model, "fp8_quant_weight"):
             self.moe_weights_name = []
             self.use_fp8 = True
-            if isinstance(model, GPTModel):
+            if GPTModel is not None and isinstance(model, GPTModel):
                 self.use_fp8 = model.use_fp8()
             if not self.use_fp8:
                 return
@@ -868,3 +877,14 @@ class SPGradSyncCallback(TrainerCallback):
             fused_allreduce_gradients_with_group(self._sp_params, group=mp_group, scale=1.0)  # sum not mean
             another_time = time.time()
             logger.info(f"sync gradients takes {another_time - now} time")
+
+
+class EMAStateAssemblerCallback(TrainerCallback):
+    def __init__(self, ema_state_assembler):
+        self.ema_state_assembler = ema_state_assembler
+
+    def on_step_end(self, args, state, control, **kwargs):
+        start = time.time()
+        self.ema_state_assembler.run()
+        duration = time.time() - start
+        logger.info(f"[EMAStateAssembler] Assembling EMA state took {duration:.3f} seconds.")

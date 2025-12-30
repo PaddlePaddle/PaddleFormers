@@ -28,7 +28,7 @@
   "use_expert_parallel": true,
   "expert_model_parallel_size": 16,
   "sequence_parallel": true,
-  "sharding_parallel_config": "split_param",
+  "split_param": true,
   "amp_master_grad": true,
   "sharding": "stage1",
   "recompute": false,
