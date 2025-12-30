@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import sys
 import unittest
 from tempfile import TemporaryDirectory
 
@@ -118,6 +119,8 @@ class TestMergeModel(unittest.TestCase):
 
     @require_package("transformers", "torch")
     def test_fuse_qkv_lora_merge_torch(self):
+        for m in list(sys.modules):
+            (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
         with TemporaryDirectory() as tempdir:
             # create torch model
             from transformers import Qwen3Config, Qwen3ForCausalLM
