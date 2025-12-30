@@ -993,7 +993,7 @@ class LlamaModelAuto(LlamaPretrainedModelAuto):
             inputs_embeds = paddle.transpose(inputs_embeds, [1, 0, 2])
 
         global_mesh = global_mesh_starts_with_pp()
-        if position_ids is None and self.config.sep_parallel_size > 1:
+        if position_ids is None and self.config.sep_parallel_degree > 1:
             position_ids = paddle.arange(seq_length, dtype="int64").expand((batch_size, seq_length))
         if position_ids is not None:
             position_ids = dist.shard_tensor(

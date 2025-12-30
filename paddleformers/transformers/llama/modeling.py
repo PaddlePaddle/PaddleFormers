@@ -308,8 +308,8 @@ def scaled_dot_product_attention(
                 split_axis=1,
                 concat_axis=2,
             )
-            q_len = q_len // config.sep_parallel_size
-            num_heads = num_heads * config.sep_parallel_size
+            q_len = q_len // config.sep_parallel_degree
+            num_heads = num_heads * config.sep_parallel_degree
 
         if sequence_parallel:
             attn_output = attn_output.reshape([bsz * q_len, head_dim * num_heads])
@@ -873,9 +873,9 @@ class LlamaAttention(nn.Layer):
                 self._init_rope()
 
         self.reshard_layer = None
-        if config.sep_parallel_size > 1:
-            assert self.num_key_value_heads % config.sep_parallel_size == 0
-            assert self.num_heads % config.sep_parallel_size == 0
+        if config.sep_parallel_degree > 1:
+            assert self.num_key_value_heads % config.sep_parallel_degree == 0
+            assert self.num_heads % config.sep_parallel_degree == 0
             self.reshard_layer = ReshardLayer()
 
         self.config = config
@@ -961,12 +961,12 @@ class LlamaAttention(nn.Layer):
             # But for the GQA or MQA, q should be reshaped into [b, s, num_q_heads, head_dim].
             if self.reshard_layer is not None:
                 if self.sequence_parallel:
-                    assert self.seq_length % self.config.sep_parallel_size == 0
+                    assert self.seq_length % self.config.sep_parallel_degree == 0
                     mix_layer = paddle.reshape_(
                         mix_layer,
                         [
                             -1,
-                            self.seq_length // self.config.sep_parallel_size,
+                            self.seq_length // self.config.sep_parallel_degree,
                             self.num_heads * self.head_dim + 2 * self.num_key_value_heads * self.head_dim,
                         ],
                     )
@@ -1004,16 +1004,16 @@ class LlamaAttention(nn.Layer):
 
             if self.reshard_layer is not None:
                 if self.sequence_parallel:
-                    assert self.seq_length % self.config.sep_parallel_size == 0
+                    assert self.seq_length % self.config.sep_parallel_degree == 0
                     query_states = paddle.reshape(
                         query_states,
-                        [-1, self.seq_length // self.config.sep_parallel_size, self.num_heads * self.head_dim],
+                        [-1, self.seq_length // self.config.sep_parallel_degree, self.num_heads * self.head_dim],
                     )
                     key_states = paddle.reshape(
                         key_states,
                         [
                             -1,
-                            self.seq_length // self.config.sep_parallel_size,
+                            self.seq_length // self.config.sep_parallel_degree,
                             self.num_key_value_heads * self.head_dim,
                         ],
                     )
@@ -1021,7 +1021,7 @@ class LlamaAttention(nn.Layer):
                         value_states,
                         [
                             -1,
-                            self.seq_length // self.config.sep_parallel_size,
+                            self.seq_length // self.config.sep_parallel_degree,
                             self.num_key_value_heads * self.head_dim,
                         ],
                     )
@@ -1895,7 +1895,7 @@ class LlamaPretrainingCriterion(paddle.nn.Layer):
         with paddle.amp.auto_cast(False):
             masked_lm_loss = self.loss_func(prediction_scores.astype("float32"), masked_lm_labels.unsqueeze(2))
 
-            if self.config.sep_parallel_size > 1 or self.config.context_parallel_size > 1:
+            if self.config.sep_parallel_degree > 1 or self.config.context_parallel_size > 1:
                 _hcg = fleet.get_hybrid_communicate_group()
                 masked_lm_loss = ConcatMaskedLoss.apply(masked_lm_loss, axis=1, group=_hcg.get_sep_parallel_group())
             # skip ignore_index which loss == 0
@@ -1983,9 +1983,9 @@ class LlamaLMHead(nn.Layer):
         if self.config.sequence_parallel:
             hidden_states = GatherOp.apply(hidden_states)
             seq_length = self.config.seq_length
-            if self.config.sep_parallel_size > 1:
-                assert seq_length % self.config.sep_parallel_size == 0
-                seq_length = seq_length // self.config.sep_parallel_size
+            if self.config.sep_parallel_degree > 1:
+                assert seq_length % self.config.sep_parallel_degree == 0
+                seq_length = seq_length // self.config.sep_parallel_degree
             if self.config.context_parallel_size > 1:
                 assert seq_length % self.config.context_parallel_size == 0
                 seq_length = seq_length // self.config.context_parallel_size

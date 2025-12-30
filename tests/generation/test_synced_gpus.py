@@ -43,7 +43,7 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tempdir:
         args_dict = {
             "sharding": "stage3",
-            "sharding_parallel_size": world_size,
+            "sharding_parallel_degree": world_size,
             "fp16": True,
             "fp16_opt_level": "O2",
             "output_dir": os.path.join(tempdir, "output"),

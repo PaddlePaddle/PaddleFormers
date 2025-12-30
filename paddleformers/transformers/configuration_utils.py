@@ -263,7 +263,7 @@ class LlmMetaConfig:
         ),
         ("add_tail_layers", int, 0, "Additional layers to append at the end"),
         # sep_parallel
-        ("sep_parallel_size", int, 1, "sep_parallel_size"),
+        ("sep_parallel_degree", int, 1, "sep_parallel_degree"),
         ("context_parallel_size", int, 1, "context_parallel_size"),
         ("sequence_parallel", bool, False, "Whether to use sequence parallel"),
         ("fuse_sequence_parallel_allreduce", bool, False, "Whether to use fuse sequence parallel allreduce"),

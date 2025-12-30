@@ -572,10 +572,10 @@ def get_sharded_file_name(args, file_name, is_optimizer=False):
     Get safetensors file name for saving.
     """
     if not is_optimizer:
-        sd_degree = args.sharding_parallel_size if args.sharding_parallel_size > 1 else 1
+        sd_degree = args.sharding_parallel_degree if args.sharding_parallel_degree > 1 else 1
         if args.use_expert_parallel:
             if args.expert_model_parallel_size > 1:
-                size = dist.get_world_size() // args.moe_sharding_parallel_size
+                size = dist.get_world_size() // args.moe_sharding_parallel_degree
             else:
                 size = args.world_size // sd_degree
         else:
@@ -719,7 +719,7 @@ def rename_shard_file(args, shard_file, file_name):
         shard_file_list = flatten_list(data_shard_file_list)
 
     new_index = shard_file_list.index(shard_file)
-    sd_degree = args.sharding_parallel_size if args.sharding_parallel_size > 1 else 1
+    sd_degree = args.sharding_parallel_degree if args.sharding_parallel_degree > 1 else 1
     shard_file = file_name.replace(
         ".pdparams",
         f"-{new_index + 1:05d}-of-{args.world_size//sd_degree:05d}.pdparams",
@@ -750,7 +750,11 @@ def save_prefix_past_key_value(model_to_save, save_directory):
 
 
 def is_sharding_split_param_mode(args):
-    return args.sharding_parallel_size > 1 and ShardingOption.SHARD_OP in args.sharding and args.split_param
+    return (
+        args.sharding_parallel_degree > 1
+        and ShardingOption.SHARD_OP in args.sharding
+        and "split_param" in args.sharding_parallel_config
+    )
 
 
 def save_model_config(model_to_save, save_directory, save_to_hf=False):
