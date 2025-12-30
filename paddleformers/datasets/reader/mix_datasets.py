@@ -141,13 +141,9 @@ class ConcatDataset(BaseMixDataset):
         """
         Returns an iterator that can loop over the dataset indefinitely.
         """
-        worker_info = get_worker_info()
-
         while True:
             if self.random_shuffle:
                 self.epoch_np_rng.shuffle(self.indices)
-            if worker_info is not None:
-                self.indices = self.indices[worker_info.id :: worker_info.num_workers]
 
             for i in self.indices:
                 yield self.data[i]
@@ -245,13 +241,9 @@ class InterLeaveDataset(BaseMixDataset):
         """
         Returns an iterator over the pre-built dataset.
         """
-        worker_info = get_worker_info()
-
         while True:
             if self.random_shuffle:
                 self.epoch_np_rng.shuffle(self.indices)
-            if worker_info is not None:
-                self.indices = self.indices[worker_info.id :: worker_info.num_workers]
 
             for i in self.indices:
                 yield self.data[i]
