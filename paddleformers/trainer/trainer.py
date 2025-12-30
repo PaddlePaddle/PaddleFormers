@@ -3613,7 +3613,7 @@ class Trainer:
             signal_dir = self.args.output_signal_dir
 
         if ShardingOption.FULL_SHARD in self.args.sharding:
-            self.model_wrapped.get_all_parameters(convert2cpu=False, with_freeze_param=True)
+            self.model_wrapped.get_all_parameters(convert2cpu=True, with_freeze_param=True)
 
         if self.args.should_save_model_state:
             self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel, last_fc_to_hf=last_fc_to_hf)

@@ -1,11 +1,11 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-#
+# 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-#
+# 
 #     http://www.apache.org/licenses/LICENSE-2.0
-#
+# 
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -13,14 +13,22 @@
 # limitations under the License.
 
 set -exo pipefail
-
-source PaddleFleet/.venv/bin/activate
-
 export root_dir=$(pwd)
 
+step=$1
 
+if [[ ! -d $CACHE_DIR/Qwen3-30B-A3B ]]; then
+    pushd $CACHE_DIR
+    wget -q --tries=5 --no-proxy https://xly-devops.cdn.bcebos.com/PaddleFleet/Qwen/Qwen3-30B-A3B.tar.gz --no-check-certificate
+    tar xf Qwen3-30B-A3B.tar.gz
+    popd
+fi
 
-python -c "
+if [[ "$step" == "pt" ]]; then
+    pushd $root_dir/PaddleFormers
+    git reset --hard HEAD
+    popd
+    python <<EOF
 infile = '$root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py'
 print(infile)
 outfile = infile + '.new'
@@ -43,64 +51,69 @@ with open(outfile, 'w') as fout:
         else:
             fout.write(line)
         i += 1
-"
-mv $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py
+EOF
+    mv $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py
+fi
 
+source PaddleFleet/.venv/bin/activate
 
-config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_pt.yaml
+if [[ "$step" == "pt" ]]; then
+    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_multicard_pt.yaml
+    export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
+    export model_name_or_path=$CACHE_DIR/Qwen3-30B-A3B
+    export output_dir=$root_dir/checkpoints/qwen-pt
+elif [[ "$step" == "sft" ]]; then
+    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_multicard_sft.yaml
+    export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
+    export model_name_or_path=$root_dir/checkpoints/qwen-pt
+    export output_dir=$root_dir/checkpoints/qwen-sft
+else
+    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_multicard_lora.yaml
+    export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
+    export model_name_or_path=$root_dir/checkpoints/qwen-sft
+    export output_dir=$root_dir/checkpoints/qwen-lora
+fi
 
-yq eval '
-  .save_steps = 100 |
-  .input_dir = "1.0 '"${CACHE_DIR}"'/glm45/data/pre-training/llama_openwebtext_100k" |
-  .model_name_or_path = "'"${CACHE_DIR}"'/qwen/Qwen3-30B-A3B-Base"
-' "$config_yaml" -i
+yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+    | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
+    | .model_name_or_path = strenv(model_name_or_path)
+    | .output_dir = strenv(output_dir)' \
+   $config_yaml > ${config_yaml}.tmp
+mv ${config_yaml}.tmp $config_yaml
 
-cat $config_yaml
-rm -rf checkpoint/
-rm -rf outputs/
+rm -rf ./outputs
+rm -rf paddleformers_dist_log
 master=$(hostname -i)
 port=36677
 
 export FLAGS_embedding_deterministic=1
 export FLAGS_cudnn_deterministic=1
 export FLAGS_use_stride_compute_kernel=False
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 
 unset http_proxy https_proxy
 
 set +e
-# coverage run run_pretrain.py $config_json 2>&1 | tee ./qwen3_single_card.log
-NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./qwen3_single_card.log
+NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./qwen_$step.log
 
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
-      echo "Qwen3-30B-A3B single card training failed, try to check the log ./qwen3_single_card.log"
-      python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./qwen3_single_card.log "***** train metrics *****"
-      check_exit_code=$?
-      if [ $check_exit_code -ne 0 ]; then
-         echo "Log check failed."
-         exit 1
-      else
-         echo "Log check passed."
-      fi
+   echo "qwen multi-cards training failed, try to check the log file"
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./qwen_${step}.log "***** train metrics *****"
+   check_exit_code=$?
+   if [ $check_exit_code -ne 0 ]; then
+     echo "Failed to find 'Training completed' in log file."
+     exit 1
+   else
+     echo "Log check passed."
+   fi
 else
-      echo "Test passed."
+    echo "Test passed."
 fi
 
-
 set -e
-echo "
-1 12.28671932
-2 12.26999569
-3 12.29613113
-4 12.30189323
-5 12.12231159
-6 12.26899815
-7 12.25399399
-8 12.03514481
-9 11.77854824
-10 11.82082653
-" > ./qwen3_single_card_gt_loss.txt
 
 python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
-   --log_file ./qwen3_single_card.log \
-   --gt_file ./qwen3_single_card_gt_loss.txt
+   --compare_step 10 \
+   --log_file ./qwen_${step}.log \
+   --gt_file $root_dir/PaddleFormers/tests/integration_test/precision/qwen_${step}_multi_card_gt_loss.txt

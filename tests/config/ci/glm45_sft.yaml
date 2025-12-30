@@ -47,7 +47,7 @@ fuse_attention_ffn: true
 moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
 tensor_model_parallel_size: 4
-pipeline_model_parallel_size: 2
+pipeline_model_parallel_size: 1
 expert_model_parallel_size: 4
 use_expert_parallel: true
 sequence_parallel: true
@@ -64,4 +64,4 @@ load_checkpoint_format: flex_checkpoint
 save_checkpoint_format: flex_checkpoint
 
 moe_router_force_load_balancing: true
-num_hidden_layers: 4
+split_param: true

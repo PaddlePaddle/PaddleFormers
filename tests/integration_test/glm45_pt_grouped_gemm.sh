@@ -18,7 +18,7 @@ source PaddleFleet/.venv/bin/activate
 
 export root_dir=$(pwd)
 
-export config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_pt_fp8.yaml
+export config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_pt_grouped_gemm.yaml
 export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
 
 yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
@@ -44,12 +44,12 @@ rm -rf checkpoint/
 rm -rf outputs/
 
 set +e
-NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./glm45_pt_fp8.log
+NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./glm45_pt_grouped_gemm.log
 
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
-   echo "Training failed with exit code $exit_cod, see ./glm45_pt_fp8.log for details."
-   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_pt_fp8.log "***** train metrics *****"
+   echo "Training failed with exit code $exit_cod, see ./glm45_pt_grouped_gemm.log for details."
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_pt_grouped_gemm.log
    check_result=$?
    if [ $check_result -ne 0 ]; then
        echo "Failed to find 'Training completed' in log file."
@@ -63,10 +63,10 @@ fi
 
 set -e
 echo "
-10 12.14463234
-" > ./glm45_multi_cards_fp8_gt_loss.txt
+10 12.13314247
+" > ./glm45_multi_cards_grouped_gemm_gt_loss.txt
 
 python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --compare_step 10 \
-   --log_file ./glm45_pt_fp8.log \
-   --gt_file ./glm45_multi_cards_fp8_gt_loss.txt
+   --log_file ./glm45_pt_grouped_gemm.log \
+   --gt_file ./glm45_multi_cards_grouped_gemm_gt_loss.txt
