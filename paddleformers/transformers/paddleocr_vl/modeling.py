@@ -129,7 +129,6 @@ class PaddleOCRAttention(nn.Layer):
         self.scale = self.head_dim**-0.5
         self.dropout = getattr(config, "attention_dropout", 0.0)
         self.is_causal = False
-        self.attn_implementation = config._attn_implementation
 
         self.q_proj = GeneralLinear.create(
             self.embed_dim,
@@ -175,7 +174,7 @@ class PaddleOCRAttention(nn.Layer):
         q = self.q_proj(hidden_states)
         k = self.k_proj(hidden_states)
         v = self.v_proj(hidden_states)
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
+        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         # [B, L, H, Dh]
         q = q.reshape([B, L, self.num_heads, self.head_dim])
@@ -219,7 +218,7 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
         self.image_size = config.image_size  # 384
         self.patch_size = config.patch_size  # 14
 
-        # 注意：Paddle 要用 "VALID" 或 0
+        # Note：Paddle should use "VALID" or 0
         self.patch_embedding = nn.Conv2D(
             in_channels=config.num_channels,
             out_channels=self.embed_dim,
@@ -632,7 +631,7 @@ class PaddleOCREncoder(nn.Layer):
         else:
             attn_cu_seqlens = cu_seqlens
 
-        if self.config._attn_implementation == "sdpa" or attention_mask is None:
+        if cu_seqlens is not None and attention_mask is None:
             cu_seqlens_rm_first = cu_seqlens[1:]
             cu_seqlens_rm_last = cu_seqlens[:-1]
             repeats = cu_seqlens_rm_first - cu_seqlens_rm_last
@@ -1074,7 +1073,6 @@ class Ernie4_5Attention(nn.Layer):
 
         self.config = config
         self.scaling = self.head_dim**-0.5
-        self.attn_implementation = config._attn_implementation
 
     def forward(
         self,
@@ -1113,7 +1111,7 @@ class Ernie4_5Attention(nn.Layer):
         query_states = self.q_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(2, 1)
         key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(2, 1)
         value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(2, 1)
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
+        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         if self.config.apply_rope_fusion:
             query_states, key_states = apply_fused_rope(query_states, key_states, self.config.rope_theta)
