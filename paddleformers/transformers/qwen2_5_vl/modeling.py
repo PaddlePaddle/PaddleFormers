@@ -109,9 +109,7 @@ class Qwen2_5_VLPatchMerger(nn.Layer):
         )
 
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
-        ln_q = self.ln_q(x)
-        ln_q = ln_q.reshape([-1, self.hidden_size])
-        x = self.mlp(ln_q)
+        x = self.mlp(self.ln_q(x).reshape([-1, self.hidden_size]))
         return x
 
 
