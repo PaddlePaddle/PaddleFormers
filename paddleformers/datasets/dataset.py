@@ -15,7 +15,8 @@
 import atexit
 import inspect
 import os
-import sys
+
+# import sys
 import time
 import warnings
 from collections import namedtuple
@@ -55,24 +56,24 @@ def load_from_ppnlp(path, *args, **kwargs):
     new_path = os.path.split(path)[-1]
     new_path = os.path.join(ppnlp_path, "hf_datasets", new_path + ".py")
     if os.path.exists(new_path):
-        try:
-            torch_s = sys.modules["torch"]
-            del sys.modules["torch"]
-        except:
-            torch_s = None
+        # try:
+        #     torch_s = sys.modules["torch"]
+        #     del sys.modules["torch"]
+        # except:
+        #     torch_s = None
         res = origin_load_dataset(new_path, trust_remote_code=True, *args, **kwargs)
-        sys.modules["torch"] = torch_s
+        # sys.modules["torch"] = torch_s
         return res
     else:
-        try:
-
-            torch_s = sys.modules["torch"]
-            del sys.modules["torch"]
-        except:
-            torch_s = None
+        # try:
+        #
+        #     torch_s = sys.modules["torch"]
+        #     del sys.modules["torch"]
+        # except:
+        #     torch_s = None
 
         res = origin_load_dataset(path, trust_remote_code=True, *args, **kwargs)
-        sys.modules["torch"] = torch_s
+        # sys.modules["torch"] = torch_s
         return res
 
 
@@ -454,14 +455,14 @@ class IterDataset(IterableDataset):
         else:
             if inspect.isgenerator(self.data):
                 warnings.warn("Receiving generator as data source, data can only be iterated once")
-            sys.modules["torch"] = sys.modules["torch_save"]
+            # sys.modules["torch"] = sys.modules["torch_save"]
             for example in self.data:
                 if (not self._filter_pipline or self._filter(self._filter_pipline)) and self._shard_filter(
                     num_samples=num_samples
                 ):
                     yield self._transform(example) if self._transform_pipline else example
                 num_samples += 1
-            sys.modules["torch"] = None
+            # sys.modules["torch"] = None
 
     def skip(self, n):
         if inspect.isfunction(self.data):
