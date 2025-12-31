@@ -603,9 +603,7 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPretrainedModel):
                 grid_h // self.spatial_merge_size,
                 grid_w // self.spatial_merge_size,
             )
-            total = (grid_t * llm_grid_h * llm_grid_w)._local_value()
-            index = paddle.arange(end=total)
-            index = index.reshape([grid_t, llm_grid_h, llm_grid_w])
+            index = paddle.arange(end=(grid_t * llm_grid_h * llm_grid_w)._local_value()).reshape([grid_t, llm_grid_h, llm_grid_w])
             pad_h = vit_merger_window_size - llm_grid_h % vit_merger_window_size
             pad_w = vit_merger_window_size - llm_grid_w % vit_merger_window_size
             num_windows_h = (llm_grid_h + pad_h) // vit_merger_window_size
@@ -688,10 +686,9 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPretrainedModel):
         emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), axis=-1)
         position_embeddings = (emb.cos(), emb.sin())
 
-        grid_thw_local = grid_thw._local_value()
-        cu_seqlens = paddle.repeat_interleave(
-            grid_thw_local[:, 1] * grid_thw_local[:, 2], grid_thw_local[:, 0]
-        ).cumsum(axis=0, dtype="int32")
+        cu_seqlens = paddle.repeat_interleave((grid_thw[:, 1] * grid_thw[:, 2])._local_value(), grid_thw[:, 0]._local_value()).cumsum(
+            axis=0, dtype="int32"
+        )
         cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
 
         for layer_num, blk in enumerate(self.blocks):
