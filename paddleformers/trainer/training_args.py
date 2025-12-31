@@ -1685,7 +1685,7 @@ class TrainingArguments:
         ):
             raise ValueError("recompute_mtp_modules must be list, dict or None")
 
-        if get_attr(self.moe_subbatch_token_num_before_dispatch, 0) > 0 and self.recompute_granularity == "full":
+        if getattr(self.moe_subbatch_token_num_before_dispatch, 0) > 0 and self.recompute_granularity == "full":
             raise ValueError(
                 "When moe_subbatch_token_num_before_dispatch > 0, please set recompute_granularity='selective and add corresponding module name to recompute_modules"
             )
