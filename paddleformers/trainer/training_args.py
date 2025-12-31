@@ -1560,11 +1560,6 @@ class TrainingArguments:
         },
     )
 
-    moe_subbatch_token_num_before_dispatch: int = field(
-        default=0,
-        metadata={"help": "The number of tokens in each subbatch for MoE model processing. Defaults to 0."},
-    )
-
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
         if in_auto_parallel_align_mode():
@@ -1690,7 +1685,7 @@ class TrainingArguments:
         ):
             raise ValueError("recompute_mtp_modules must be list, dict or None")
 
-        if self.moe_subbatch_token_num_before_dispatch > 0 and self.recompute_granularity == "full":
+        if get_attr(self.moe_subbatch_token_num_before_dispatch, 0) > 0 and self.recompute_granularity == "full":
             raise ValueError(
                 "When moe_subbatch_token_num_before_dispatch > 0, please set recompute_granularity='selective and add corresponding module name to recompute_modules"
             )
