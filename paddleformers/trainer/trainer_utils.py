@@ -1843,14 +1843,14 @@ class EMAStateAssembler:
         self.num_splits = moe_sharding_group.nranks
         self.shard_idx = moe_sharding_rank
         self.expert_id_offset = (n_routed_experts // moe_group.nranks) * moe_group.rank
-        self.latest_processed_checkpoint_step = -1
+        self._set_latest_processed_checkpoint_step()
 
     def run(self):
         if self.save_hf_steps < 0:
             logger.info("[EMAStateAssembler] save_hf_steps is negative. Skipping.")
             return
 
-        next_step, next_ckpt_dir = self._find_next_checkpoint()
+        next_step, next_ckpt_dir = self._find_checkpoint(mode="next")
         if next_step is None:
             next_step = -1
         next_steps = []
@@ -1914,25 +1914,46 @@ class EMAStateAssembler:
         else:
             self._handle_naive_checkpoint(next_step, next_ckpt_dir)
 
-    def _find_next_checkpoint(self) -> Tuple[Optional[int], Optional[Path]]:
-        pattern = re.compile(_re_checkpoint)
-        min_step = None
-        min_ckpt_path = None
+    def _set_latest_processed_checkpoint_step(self):
+        max_step, _ = self._find_checkpoint(mode="max")
+        if max_step is None:
+            max_step = -1
 
+        steps = []
+        dist.all_gather_object(steps, max_step)
+
+        if len(set(steps)) != 1:
+            raise AssertionError(
+                f"[EMAStateAssembler] Detected inconsistent maximum checkpoint step across ranks. "
+                f"Please check each trainer's checkpoints. The gathered maximum steps are: {set(steps)}"
+            )
+
+        self.latest_processed_checkpoint_step = steps[0]
+        logger.info(f"[EMAStateAssembler] Start working from checkpoint step {self.latest_processed_checkpoint_step}!")
+
+    def _find_checkpoint(self, mode: str = "next") -> Tuple[Optional[int], Optional[Path]]:
+        pattern = re.compile(_re_checkpoint)
+        target_step = None
+        target_ckpt_path = None
         if not self.output_dir.is_dir():
             return None, None
-
         for item in self.output_dir.iterdir():
             if item.is_dir():
                 match = pattern.match(item.name)
                 if match:
                     step = int(match.group(1))
-                    if step > self.latest_processed_checkpoint_step:
-                        if min_step is None or step < min_step:
-                            min_step = step
-                            min_ckpt_path = item
-
-        return min_step, min_ckpt_path
+                    if mode == "max":
+                        if (target_step is None) or (step > target_step):
+                            target_step = step
+                            target_ckpt_path = item
+                    elif mode == "next":
+                        if step > self.latest_processed_checkpoint_step:
+                            if (target_step is None) or (step < target_step):
+                                target_step = step
+                                target_ckpt_path = item
+                    else:
+                        raise ValueError("mode must be 'max' or 'next'")
+        return target_step, target_ckpt_path
 
     def _is_already_handled(self, checkpoint_dir: Path) -> bool:
         final_signal_file = checkpoint_dir / f"saved_signal_{self.rank}"
