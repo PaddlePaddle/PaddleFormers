@@ -17,11 +17,6 @@
 import numpy as np
 import paddle
 
-try:
-    import TokenDispatcherUtils as TDU
-except ImportError:
-    TDU = None
-
 from paddleformers.transformers.fp8_utils import FP8LinearFunctionBase
 
 if not hasattr(paddle.Tensor, "_clear_to_zero_allocation"):

@@ -79,6 +79,6 @@
     "use_ds_gemm": false,
     "dsv3_use_fp8_dispatch": true,
     "fa_version": 3,
-    "recompute_fa3": true,
+    "recompute_fa3": false,
     "stepped_recompute_fwd_gate_up": true
   }

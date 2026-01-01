@@ -115,7 +115,6 @@ if TYPE_CHECKING:
 from paddle.framework.recall_error import LOSS_INF_ERROR, LOSS_NAN_ERROR
 
 from ..transformers.context_parallel_utils import auto_split_sequence_dim_load_balance
-from ..transformers.image_processing_utils import ImageProcessingMixin
 from ..transformers.model_utils import (
     PretrainedModel,
     _add_variant,

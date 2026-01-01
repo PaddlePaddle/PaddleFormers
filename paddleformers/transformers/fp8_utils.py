@@ -21,7 +21,7 @@ import paddle.nn.functional as F
 
 try:
     import fused_ln
-    from paddle.incubate.nn.functional import swiglu
+    from paddle.nn.functional import swiglu
 except ImportError:
 
     def swiglu(x, y=None):
