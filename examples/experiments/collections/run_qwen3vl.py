@@ -19,6 +19,7 @@ formars_config = AutoConfig.from_pretrained(model_path)
 formars_config.fuse_attention_qkv = True
 formers_model = Qwen3VLForConditionalGeneration.from_pretrained(
     model_path, fuse_attention_qkv=True, fuse_attention_ffn=True, load_checkpoint_format="flex_checkpoint",
+    _attn_implementation="sdpa"
 ).eval()
 
 
@@ -106,6 +107,13 @@ for name, param in formers_model.named_parameters():
     if not paddle.equal_all(param.cast('float32'),fleet_state_dict[fleet_name].cast('float32')):
         print(f"name {name} correspond {fleet_name} not equal")
 
+
+for name, param in fleet_model.named_parameters():
+    if "vision_model.decoder.layers.0.mlp.up_gate_proj.weight" in name:
+        print(name,param._md5sum(),fleet_model.vision_model.decoder.layers[0].mlp.up_gate_proj.weight._md5sum())    
+        break
+
+
 processor = AutoProcessor.from_pretrained(model_path)
 messages = [
     {
@@ -113,7 +121,7 @@ messages = [
         "content": [
             {
                 "type": "image",
-                "image": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
+                "image": "./demo.jpeg",
             },
             {"type": "text", "text": "Describe this image."},
         ],
@@ -132,12 +140,10 @@ inputs = processor(
 )
 # print(inputs)
 
-# paddle.seed(42)
-# with paddle.no_grad():
-#     formers_output = formers_model(**inputs)
-# print(formers_output)
+paddle.seed(42)
+with paddle.no_grad():
+    formers_output = formers_model(**inputs)
 
 paddle.seed(42)
 with paddle.no_grad():
     fleet_output = fleet_model(**inputs)
-print(fleet_output)

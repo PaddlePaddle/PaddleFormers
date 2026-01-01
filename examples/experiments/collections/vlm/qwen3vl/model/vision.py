@@ -196,17 +196,17 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                 deepstack_feature_lists = []
                 for l_no, layer in enumerate(self.layers):
                     packed_seq_params_now = packed_seq_params
-                    output = layer(
-                        hidden_states=hidden_states,
-                        attention_mask=attention_mask,
-                        context=context,
-                        context_mask=context_mask,
-                        rotary_pos_emb=rotary_pos_emb,
-                        rotary_pos_cos=rotary_pos_cos,
-                        rotary_pos_sin=rotary_pos_sin,
-                        attention_bias=attention_bias,
-                        packed_seq_params=packed_seq_params_now,
-                    )
+                    input_dict = {
+                        "hidden_states": hidden_states,
+                        "attention_mask": attention_mask,
+                        "context": context,
+                        "rotary_pos_emb": rotary_pos_emb,
+                        "rotary_pos_cos": rotary_pos_cos,
+                        "rotary_pos_sin": rotary_pos_sin,
+                        "attention_bias": attention_bias,
+                        "packed_seq_params": packed_seq_params_now,
+                    }
+                    output = layer(input_dict)
                     hidden_states, context = output["hidden_states"], output["context"]
                     if (
                         paddle.is_grad_enabled()
@@ -243,17 +243,16 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                 for index in range(start, end):
                     packed_seq_params_now = packed_seq_params
                     layer = self._get_layer(index)
-                    
-                    hidden_states, context = layer(
-                        hidden_states=hidden_states,
-                        attention_mask=attention_mask,
-                        context=context,
-                        context_mask=context_mask,
-                        rotary_pos_emb=rotary_pos_emb,
-                        attention_bias=attention_bias,
-                        inference_context=None,
-                        packed_seq_params=packed_seq_params_now,
-                    )
+                    input_dict = {
+                        "hidden_states": hidden_states,
+                        "attention_mask": attention_mask,
+                        "context": context,
+                        "rotary_pos_emb": rotary_pos_emb,
+                        "attention_bias": attention_bias,
+                        "inference_context": None,
+                        "packed_seq_params": packed_seq_params_now,
+                    }
+                    output = layer(input_dict)
                     if index in self.deepstack_visual_indexes:
                         deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(index)](hidden_states)
                         deepstack_feature_lists.append(deepstack_feature)

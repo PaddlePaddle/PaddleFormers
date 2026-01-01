@@ -252,6 +252,7 @@ class Qwen3VLVisionProvider(TransformerConfig):
     img_w: int = 336
     add_class_token: bool = False
     class_token_len: int = 1
+    high_precision_rope: bool = True
     deepstack_visual_indexes: list[int] = field(
         default_factory=lambda: [8, 16, 24]
     )
