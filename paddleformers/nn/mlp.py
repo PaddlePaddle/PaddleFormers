@@ -56,7 +56,6 @@ class MLP(nn.Layer):
                     self.intermediate_size * 2,
                     has_bias=self.has_bias,
                     config=config,
-                    fuse_matmul_bias=config.fuse_linear,
                     tp_plan="colwise",
                 ),
             )
@@ -70,7 +69,6 @@ class MLP(nn.Layer):
                     self.intermediate_size,
                     has_bias=self.has_bias,
                     config=config,
-                    fuse_matmul_bias=config.fuse_linear,
                     tp_plan="colwise",
                 ),
             )
@@ -85,7 +83,6 @@ class MLP(nn.Layer):
                     self.intermediate_size,
                     has_bias=self.has_bias,
                     config=config,
-                    fuse_matmul_bias=config.fuse_linear,
                     tp_plan="colwise",
                 ),
             )
@@ -100,7 +97,6 @@ class MLP(nn.Layer):
                 self.hidden_size,
                 has_bias=self.has_bias,
                 config=config,
-                fuse_matmul_bias=config.fuse_linear,
                 tp_plan="rowwise",
             ),
         )
