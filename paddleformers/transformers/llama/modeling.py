@@ -119,7 +119,6 @@ class LLamaAttention(nn.Layer):
             q_hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            fuse_matmul_bias=config.fuse_linear,
             tp_plan="colwise",
         )
         self.k_proj = GeneralLinear.create(
@@ -127,7 +126,6 @@ class LLamaAttention(nn.Layer):
             kv_hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            fuse_matmul_bias=config.fuse_linear,
             tp_plan="colwise",
         )
         self.v_proj = GeneralLinear.create(
@@ -135,7 +133,6 @@ class LLamaAttention(nn.Layer):
             kv_hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            fuse_matmul_bias=config.fuse_linear,
             tp_plan="colwise",
         )
 
@@ -144,7 +141,6 @@ class LLamaAttention(nn.Layer):
             config.hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            fuse_matmul_bias=config.fuse_linear,
             tp_plan="rowwise",
         )
 
@@ -307,14 +303,14 @@ class LlamaRotaryEmbedding(nn.Layer):
 
             position_ids_expanded = position_ids[:, None, :].float()
 
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose([0, 2, 1])
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
 
             emb = paddle.concat((freqs, freqs), axis=-1)
 
             cos = emb.cos() * self.attention_scaling
             sin = emb.sin() * self.attention_scaling
 
-            return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 class LlamaPretrainedModel(PretrainedModel):

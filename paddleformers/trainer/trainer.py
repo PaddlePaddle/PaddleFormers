@@ -2559,6 +2559,10 @@ class Trainer:
                     self.model.save_pretrained(
                         ckpt_path, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
                     )
+                if self.tokenizer is not None and self.args.save_tokenizer:
+                    self.tokenizer.save_pretrained(ckpt_path)
+                if self.processing_class is not None:
+                    self.processing_class.save_pretrained(ckpt_path)
                 self.control = self.callback_handler.on_save_hf(self.args, self.state, self.control)
 
     def log_trained_tokens(self):

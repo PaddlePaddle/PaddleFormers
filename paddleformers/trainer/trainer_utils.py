@@ -1543,8 +1543,6 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
         for p in local_params:
             param_name = p.name
             struct_name = static_to_struct_mapping[param_name]
-            print(struct_name)
-            print(p)
 
         param_list = []
         for param in local_params:
