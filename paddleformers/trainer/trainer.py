@@ -1010,7 +1010,7 @@ class Trainer:
 
         logger.info("Zero cost checkpoint manager created successfully.")
 
-    def add_non_zcc_ema_callback(self, resume_from_checkpoint):
+    def add_non_zcc_ema_callback(self, resume_from_checkpoint, ema_state_assembler=None):
 
         non_zcc_ema_callback = NonZCCEMACallback.create_nonzcc_callback(
             args=self.args,
@@ -1019,6 +1019,7 @@ class Trainer:
             model=self.model,
             optimizer=self.optimizer,
             hcg=self.hcg,
+            ema_state_assembler=ema_state_assembler,
         )
 
         self.add_callback(non_zcc_ema_callback)
