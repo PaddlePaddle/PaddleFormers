@@ -18,7 +18,10 @@ from typing import Optional, Tuple, Union
 import paddle
 import paddle.nn as nn
 from paddle.distributed.fleet.recompute.recompute import recompute
-from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
+from paddle.distributed.fleet.utils.sequence_parallel_utils import (
+    ScatterOp,
+    mark_as_sequence_parallel_parameter,
+)
 
 from ...generation import GenerationMixin
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
@@ -38,16 +41,6 @@ from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import Gemma3Config, Gemma3TextConfig
-
-try:
-    from paddle.distributed.fleet.utils.sequence_parallel_utils import (
-        mark_as_sequence_parallel_parameter,
-    )
-except ImportError:
-    logger.warning_once("Fail to import mark_as_sequence_parallel_parameter!")
-
-    def mark_as_sequence_parallel_parameter(parameter):
-        return parameter
 
 
 class Gemma3TextScaledWordEmbedding(nn.Embedding):
@@ -165,26 +158,19 @@ class Gemma3RotaryEmbedding(nn.Layer):
 
     @dynamic_rope_update
     def forward(self, x, position_ids):
-        # NOTE: Paddle's Automatic Mixed Precision (AMP) has a default op whitelist that may automatically cast
-        # certain operations (like matmul) to FP16/BF16 for performance optimization. However, in scenarios where
-        # numerical stability is critical (e.g., RoPE init/compute), this conversion can lead to precision loss.
-        # Disabling auto_cast here ensures the matmul operation runs in the original precision (FP32) as intended.
-        with paddle.amp.auto_cast(False):
-            inv_freq_expanded = (
-                self.inv_freq.unsqueeze(0)
-                .unsqueeze(-1)
-                .cast(paddle.float32)
-                .expand([position_ids.shape[0], -1, 1])
-                .to(x.place)
-            )
-            position_ids_expanded = position_ids.unsqueeze(1).cast(paddle.float32)
+        with paddle.amp.auto_cast(enable=False):
+            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
-            freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 2, 1])
-            emb = paddle.cat((freqs, freqs), axis=-1)
-            cos = paddle.cos(emb) * self.attention_scaling
-            sin = paddle.sin(emb) * self.attention_scaling
+            position_ids_expanded = position_ids[:, None, :].float()
 
-        return cos.cast(dtype=x.dtype), sin.cast(dtype=x.dtype)
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+
+            emb = paddle.concat((freqs, freqs), axis=-1)
+
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 def rotate_half(x):

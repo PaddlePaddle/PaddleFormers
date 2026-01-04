@@ -156,7 +156,7 @@ class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
             cos = emb.cos() * self.attention_scaling
             sin = emb.sin() * self.attention_scaling
 
-            return cos.astype(dtype=x.dtype), sin.astype(dtype=x.dtype)
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 class Ernie4_5_MoeMLP(Ernie4_5MLP):
@@ -260,6 +260,7 @@ class FakeMoERouterLoss(PyLayer):
 class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
     def __init__(self, config, layer_idx):
         # correction bias (yes it seems to be a typo with statics <> statistics)
+        self.config = config
         moe_num_experts = config.moe_num_experts
         config.moe_world_size = dist.get_world_size(config.moe_group)
         self.use_multimodel_experts = False

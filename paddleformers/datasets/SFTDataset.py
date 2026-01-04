@@ -19,7 +19,11 @@ from typing import Dict, List
 import numpy as np
 from paddle.io import IterableDataset
 
-from paddleformers.datasets.data_utils import postprocess_fc_sequence, print_debug_info
+from paddleformers.datasets.data_utils import (
+    get_worker_sliced_iterator,
+    postprocess_fc_sequence,
+    print_debug_info,
+)
 from paddleformers.datasets.reader.mix_datasets import create_dataset_instance
 from paddleformers.datasets.reader.multi_source_datasets import MultiSourceDataset
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
@@ -111,7 +115,7 @@ class SFTDataSet(IterableDataset):
 
         # prepare epoch data
         batch_sequence, cur_len = [], 0
-        dataset_iterator = iter(self.mix_datasets)
+        dataset_iterator = get_worker_sliced_iterator(self.mix_datasets)
         actual_example_num = 1
 
         # pre-training:

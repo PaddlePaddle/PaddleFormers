@@ -67,7 +67,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         sinkhorn_temp=3e-2,
         global_aux_loss=False,
         moe_dropout_prob=0.0,
-        moe_group="dummy",
+        moe_group="mp",
         moe_intermediate_size: Union[int, list] = 0,
         moe_num_shared_experts: int = 2,
         moe_layer_start_index=1,

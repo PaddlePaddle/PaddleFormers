@@ -273,21 +273,19 @@ class GptOssRotaryEmbedding(nn.Layer):
     @paddle.no_grad()
     @dynamic_rope_update
     def forward(self, x, position_ids):
-        inv_freq_expanded = (
-            self.inv_freq.unsqueeze(0)
-            .unsqueeze(-1)
-            .cast(paddle.float32)
-            .expand([position_ids.shape[0], -1, 1])
-            .to(x.place)
-        )
-        position_ids_expanded = position_ids.unsqueeze(1).cast(paddle.float32)
+        with paddle.amp.auto_cast(enable=False):
+            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
-        freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 2, 1])
+            position_ids_expanded = position_ids[:, None, :].float()
 
-        emb = freqs
-        cos = paddle.cos(emb) * self.attention_scaling
-        sin = paddle.sin(emb) * self.attention_scaling
-        return cos.cast(x.dtype), sin.cast(x.dtype)
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+
+            emb = freqs
+
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 def _apply_rotary_emb(

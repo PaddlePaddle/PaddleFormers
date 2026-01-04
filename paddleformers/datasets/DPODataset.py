@@ -20,7 +20,11 @@ from typing import List, Optional
 import numpy as np
 from paddle.io import IterableDataset
 
-from paddleformers.datasets.data_utils import postprocess_fc_sequence, print_debug_info
+from paddleformers.datasets.data_utils import (
+    get_worker_sliced_iterator,
+    postprocess_fc_sequence,
+    print_debug_info,
+)
 from paddleformers.datasets.reader.mix_datasets import create_dataset_instance
 from paddleformers.datasets.reader.multi_source_datasets import MultiSourceDataset
 from paddleformers.utils.env import NONE_CHAT_TEMPLATE
@@ -85,7 +89,7 @@ class DPODataSet(IterableDataset):
 
         # prepare epoch data
         batch_sequence, cur_len = [], 0
-        dataset_iterator = iter(self.mix_datasets)
+        dataset_iterator = get_worker_sliced_iterator(self.mix_datasets)
 
         if not self.packing:
             for _ in range(len(self.mix_datasets)):

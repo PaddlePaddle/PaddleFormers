@@ -46,20 +46,16 @@ from huggingface_hub import (
 )
 from huggingface_hub.utils import EntryNotFoundError
 from paddle import Tensor
+from paddle.distributed.fleet.meta_parallel import LocalSharedLayerDesc
 from paddle.distributed.fleet.meta_parallel.parallel_layers import (
     PipelineLayer,
     SharedLayerDesc,
 )
-from safetensors.paddle import save_file
-
-try:
-    from paddle.distributed.fleet.meta_parallel import LocalSharedLayerDesc
-except:
-    LocalSharedLayerDesc = None
 from paddle.nn import Embedding, Layer
 
 # TODO(fangzeyang) Temporary fix and replace by paddle framework downloader later
 from paddle.utils.download import is_url as is_remote_url
+from safetensors.paddle import save_file
 from tqdm.auto import tqdm
 
 from ..generation import GenerationConfig, GenerationMixin
