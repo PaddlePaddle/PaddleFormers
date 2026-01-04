@@ -515,6 +515,7 @@ def run_sft(
         if training_args.benchmark:
             total_tokens = (
                 data_args.max_seq_len
+                * training_args.per_device_train_batch_size
                 * training_args.dataset_world_size
                 * training_args.gradient_accumulation_steps
                 * training_args.max_steps
