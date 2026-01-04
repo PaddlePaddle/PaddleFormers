@@ -14,7 +14,9 @@
 
 set -exo pipefail
 
-source PaddleFleet/.venv/bin/activate
+if [ -f 'PaddleFleet/.venv/bin/activate' ]; then
+   source PaddleFleet/.venv/bin/activate
+fi
 
 export root_dir=$(pwd)
 

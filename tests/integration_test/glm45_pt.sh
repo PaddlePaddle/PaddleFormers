@@ -41,8 +41,9 @@ with open(outfile, 'w') as fout:
 "
 mv $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
 
-
-source PaddleFleet/.venv/bin/activate
+if [ -f 'PaddleFleet/.venv/bin/activate' ]; then
+   source PaddleFleet/.venv/bin/activate
+fi
 
 wget -q --tries=5 --no-proxy https://xly-devops.cdn.bcebos.com/PaddleFleet/glm45/glm45_fleet.12-18.tar --no-check-certificate
 tar -xf glm45_fleet.12-18.tar # glm45_fleet
