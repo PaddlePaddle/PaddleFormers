@@ -16,10 +16,7 @@ import copy
 import json
 from dataclasses import dataclass
 
-try:
-    from paddle.nn.quant.quantized_linear import _get_arch_info
-except:
-    _get_arch_info = None
+from paddle.nn.quant.quantized_linear import _get_arch_info
 
 quant_inference_mapping = {"avg": "abs_max", "abs_max_channel_wise": "abs_max_channel_wise", "abs_max": "abs_max"}
 fp8_format_mapping = {

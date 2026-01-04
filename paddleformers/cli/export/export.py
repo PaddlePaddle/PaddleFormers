@@ -138,6 +138,7 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
                 "tokenizer_config.json",
                 "special_tokens_map.json",
                 "tokenizer.json",
+                "chat_template.jinja"
                 # "config.json",
             ]
 

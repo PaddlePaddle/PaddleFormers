@@ -119,7 +119,6 @@ class LLamaAttention(nn.Layer):
             q_hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            fuse_matmul_bias=config.fuse_linear,
             tp_plan="colwise",
         )
         self.k_proj = GeneralLinear.create(
@@ -127,7 +126,6 @@ class LLamaAttention(nn.Layer):
             kv_hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            fuse_matmul_bias=config.fuse_linear,
             tp_plan="colwise",
         )
         self.v_proj = GeneralLinear.create(
@@ -135,7 +133,6 @@ class LLamaAttention(nn.Layer):
             kv_hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            fuse_matmul_bias=config.fuse_linear,
             tp_plan="colwise",
         )
 
@@ -144,7 +141,6 @@ class LLamaAttention(nn.Layer):
             config.hidden_size,
             has_bias=config.attention_bias,
             config=config,
-            fuse_matmul_bias=config.fuse_linear,
             tp_plan="rowwise",
         )
 
@@ -163,8 +159,8 @@ class LLamaAttention(nn.Layer):
         else:
             batch_size, seq_len = hidden_states.shape[:2]
 
-        q_shape = (batch_size, seq_len, self.num_heads, self.head_dim)
-        kv_shape = (batch_size, seq_len, self.num_key_value_heads, self.head_dim)
+        q_shape = (batch_size, seq_len, -1, self.head_dim)
+        kv_shape = (batch_size, seq_len, -1, self.head_dim)
 
         query_states = self.q_proj(hidden_states).reshape(q_shape).transpose(1, 2)
         key_states = self.k_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
@@ -307,14 +303,14 @@ class LlamaRotaryEmbedding(nn.Layer):
 
             position_ids_expanded = position_ids[:, None, :].float()
 
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose([0, 2, 1])
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
 
             emb = paddle.concat((freqs, freqs), axis=-1)
 
             cos = emb.cos() * self.attention_scaling
             sin = emb.sin() * self.attention_scaling
 
-            return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 class LlamaPretrainedModel(PretrainedModel):
@@ -584,7 +580,12 @@ class LlamaModel(LlamaPretrainedModel):
             if output_hidden_states:
                 all_hidden_states.append(hidden_states)
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 layer_outputs = self.recompute_training(
                     decoder_layer,
                     hidden_states,
@@ -641,13 +642,19 @@ class LlamaModel(LlamaPretrainedModel):
         past_key_values: Cache | None,
         use_cache: bool,
     ):
+        cos, sin = position_embeddings
+        cos = cos.clone()
+        sin = sin.clone()
+
+        position_embeddings_safe = (cos, sin)
+
         hidden_states = recompute(
             layer_module,
             hidden_states,
             attention_mask,
             attn_mask_startend_row_indices,
             position_ids,
-            position_embeddings,
+            position_embeddings_safe,
             past_key_values,
             use_cache,
         )

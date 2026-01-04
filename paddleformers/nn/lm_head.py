@@ -14,13 +14,9 @@
 
 import paddle
 import paddle.nn as nn
-
-try:
-    from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
-        build_sharded_state_dict,
-    )
-except:
-    build_sharded_state_dict = None
+from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+    build_sharded_state_dict,
+)
 
 from ..generation.configuration_utils import PretrainedConfig
 from .criterion.loss_utils import calc_lm_head_logits
@@ -84,7 +80,7 @@ class LMHead(nn.Layer):
         Returns:
             Union[
                 Tuple[paddle.Tensor, paddle.Tensor, Optional[paddle.Tensor]]:
-                    # When use_recompute_loss_fn or use_sparse_head_and_loss_fn
+                    # When recompute loss_fn or use_sparse_head_and_loss_fn
                     - hidden_states: Original input
                     - weight: Projection weights
                     - bias: Optional bias term

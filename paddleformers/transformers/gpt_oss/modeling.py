@@ -273,21 +273,19 @@ class GptOssRotaryEmbedding(nn.Layer):
     @paddle.no_grad()
     @dynamic_rope_update
     def forward(self, x, position_ids):
-        inv_freq_expanded = (
-            self.inv_freq.unsqueeze(0)
-            .unsqueeze(-1)
-            .cast(paddle.float32)
-            .expand([position_ids.shape[0], -1, 1])
-            .to(x.place)
-        )
-        position_ids_expanded = position_ids.unsqueeze(1).cast(paddle.float32)
+        with paddle.amp.auto_cast(enable=False):
+            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
-        freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 2, 1])
+            position_ids_expanded = position_ids[:, None, :].float()
 
-        emb = freqs
-        cos = paddle.cos(emb) * self.attention_scaling
-        sin = paddle.sin(emb) * self.attention_scaling
-        return cos.cast(x.dtype), sin.cast(x.dtype)
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+
+            emb = freqs
+
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 def _apply_rotary_emb(
@@ -770,7 +768,6 @@ class GptOssModel(GptOssPreTrainedModel):
         self.vocab_size = config.vocab_size
         self.hidden_size = config.hidden_size
         self.sequence_parallel = config.sequence_parallel
-        self.recompute_granularity = config.recompute_granularity
         self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
 
@@ -928,7 +925,12 @@ class GptOssModel(GptOssPreTrainedModel):
                 all_hidden_states += (hidden_states,)
 
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 layer_outputs = self.recompute_training_full(
                     layer_module=decoder_layer,
                     hidden_states=hidden_states,

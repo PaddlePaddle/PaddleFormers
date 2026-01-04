@@ -19,7 +19,7 @@ import json
 import os
 from collections import OrderedDict
 
-from transformers import AutoConfig, PretrainedConfig
+from transformers import PretrainedConfig
 from transformers.dynamic_module_utils import (
     get_class_from_dynamic_module,
     resolve_trust_remote_code,
@@ -35,6 +35,8 @@ from transformers.utils import (
     VIDEO_PROCESSOR_NAME,
 )
 
+from paddleformers.transformers import AutoConfig
+
 from ...utils.download import resolve_file_path
 from ..image_processing_utils import ImageProcessingMixin
 from ..processing_utils import ProcessorMixin
@@ -47,6 +49,7 @@ from .tokenizer import AutoTokenizer
 PROCESSOR_MAPPING_NAMES = OrderedDict(
     [
         ("qwen2_5_vl", "Qwen2_5_VLProcessor"),
+        ("qwen3_vl", "Qwen3VLProcessor"),
         ("qwen2_vl", "Qwen2VLProcessor"),
         ("paddleocr_vl", "PaddleOCRVLProcessor"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLProcessor"),
@@ -172,6 +175,7 @@ class AutoProcessor:
         if processor_class is None:
             # Otherwise, load config, if it can be loaded.
             if not isinstance(config, PretrainedConfig):
+                # NOTE: Use local AutoConfig to decouple transformers version dependency (Processor only).
                 config = AutoConfig.from_pretrained(
                     pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
                 )

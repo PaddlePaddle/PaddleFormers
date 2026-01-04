@@ -21,6 +21,7 @@ import multiprocessing
 import os
 import random
 import time
+from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from dataclasses import replace
 from enum import Enum
@@ -32,6 +33,12 @@ import paddle.distributed as dist
 from paddle.base import core
 from paddle.distributed.communication.group import is_initialized
 from paddle.distributed.fleet import fleet
+from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer import (
+    DygraphShardingOptimizer,
+)
+from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
+    DygraphShardingOptimizerV2,
+)
 from paddle.distributed.fleet.meta_parallel import PipelineLayer
 from paddle.distributed.flex_checkpoint.dcp.metadata import (
     LocalTensorIndex,
@@ -54,30 +61,12 @@ from paddleformers.trainer.trainer_callback import TrainerCallback
 from paddleformers.trainer.utils.sharding_io import GroupGetter
 from paddleformers.utils.tools import paddle_device
 
-from ...transformers.model_utils import unwrap_optimizer
-from . import reshard as reshard_util
-from .reshard import (
-    SHARDING_STRATEGY_V1,
-    merge_model_state,
-    split_model_state,
-    split_opt_state,
-)
-
-try:
-    from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
-        DygraphShardingOptimizerV2,
-    )
-except:
-    DygraphShardingOptimizerV2 = None
-from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer import (
-    DygraphShardingOptimizer,
-)
-
 from ...transformers.model_utils import (
     _add_variant,
     clean_model_class_name,
     get_parameter_dtype,
     unwrap_model,
+    unwrap_optimizer,
 )
 from ...transformers.utils import device_guard
 from ...utils.env import (
@@ -97,6 +86,13 @@ from ...utils.env import (
 from ...utils.fault_tolerance import FC_DUMP_ERROR, PC_DUMP_ERROR
 from ...utils.log import logger
 from ...utils.pdc_sdk import FLASH_DEVICE
+from . import reshard as reshard_util
+from .reshard import (
+    SHARDING_STRATEGY_V1,
+    merge_model_state,
+    split_model_state,
+    split_opt_state,
+)
 
 
 def md5(tensor):
@@ -615,6 +611,7 @@ class ZeroCostCheckpointManager:
         use_expert_parallel,
         ema_coef=None,
         zcc_worker_class=None,
+        save_hf_steps=-1,
     ):
         assert worker_num > 0, "worker_num must be greater than 0"
         assert capacity_usage <= 1.0, "capacity_usage must be less than or equal to 1.0"
@@ -656,6 +653,7 @@ class ZeroCostCheckpointManager:
                 fleet.get_hybrid_communicate_group()._get_pipe_parallel_id(),
                 fleet.get_hybrid_communicate_group().get_sharding_parallel_rank(),
                 ema_coef,
+                save_hf_steps,
             )
             p = ctx.Process(target=worker_loop, args=(worker,))
             p.start()
@@ -802,6 +800,7 @@ class ZeroCostCheckpointWorker:
         pp_rank,
         sd_rank,
         ema_coef=None,
+        save_hf_steps=-1,
     ):
         super().__init__()
         self.worker_id = worker_id
@@ -818,6 +817,7 @@ class ZeroCostCheckpointWorker:
         self.mp_rank = mp_rank
         self.pp_rank = pp_rank
         self.sd_rank = sd_rank
+        self.save_hf_steps = save_hf_steps
 
         # for dynamic objects saving
         self.optimizer_fusion_storage_helper = None
@@ -1055,8 +1055,13 @@ class ZeroCostCheckpointWorker:
 
         self._dump_args_and_state(output_dir)
 
+        if self.save_hf_steps > 0 and self.ema_coef is not None:
+            saved_signal_prefix = "saved_signal_TMP"
+        else:
+            saved_signal_prefix = "saved_signal"
+
         # Step3: dump save signals
-        saved_signal_path = os.path.join(output_dir, f"saved_signal_{self.global_rank}")
+        saved_signal_path = os.path.join(output_dir, f"{saved_signal_prefix}_{self.global_rank}")
         with open(saved_signal_path, mode="w+") as f:
             f.write("1")
         logger.info("[ZCC worker] dump save signal done.")
@@ -1151,28 +1156,21 @@ class ZeroCostCheckpointWorker:
         )
 
 
-class EMABuffer:
-    def __init__(self, resume_from_checkpoint, args, sharding_io, offload=True):
-        assert sharding_io is not None, "EMA should be only enabled when save_sharded_model is True"
+class EMABuffer(ABC):
+    def __init__(self, resume_from_checkpoint, args, offload=True):
         self.master_weights = {}
         self.model_params = {}
         self.args = args
-        self.sharding_io = sharding_io
         self.offload = offload
         if resume_from_checkpoint is not None:
             self._load(resume_from_checkpoint)
-
-    def _ema_path(self, base_path):
-        path = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
-        path = path.replace("optimizer", "ema")
-        return os.path.join(base_path, path)
 
     def _load(self, resume_from_checkpoint):
         ema_path = self._ema_path(resume_from_checkpoint)
         if not os.path.exists(ema_path):
             return
 
-        success, err_msg = self.sharding_io.check_same_strategy(resume_from_checkpoint)
+        success, err_msg = self._check_consistent_dist_strategy(resume_from_checkpoint)
         if not success:
             logger.info(f"Cannot load EMA because: {err_msg}")
             return
@@ -1199,14 +1197,11 @@ class EMABuffer:
         if ema_loss_threshold is None or loss < ema_loss_threshold:
             logger.info(f"EMA accumulating for step {global_step} ...")
             self._ema_impl(
-                state_dict=self.sharding_io.optimizer.state_dict()["master_weights"],
+                state_dict=self._get_master_weight(),
                 ema_state_dict=self.master_weights,
             )
             self._ema_impl(
-                state_dict=self.sharding_io.manipulate_state_dict_and_config(
-                    unwrap_model(self.sharding_io.model),
-                    merge_tensor_parallel=False,
-                )[0],
+                state_dict=self._get_model_state(),
                 ema_state_dict=self.model_params,
             )
             logger.info(f"EMA accumulate done for step {global_step}")
@@ -1227,10 +1222,99 @@ class EMABuffer:
                 v = v_pin
             ema_state_dict[k] = v
 
+    @abstractmethod
+    def _get_master_weight(self):
+        pass
+
+    @abstractmethod
+    def _get_model_state(self):
+        pass
+
+    @abstractmethod
+    def _check_consistent_dist_strategy(self, resume_from_checkpoint):
+        pass
+
+
+class EMABufferShardingIOBased(EMABuffer):
+    def __init__(self, resume_from_checkpoint, args, sharding_io, offload=True):
+        assert sharding_io is not None, "EMA should be only enabled when save_sharded_model is True"
+        self.sharding_io = sharding_io
+        super().__init__(resume_from_checkpoint, args, offload)
+
+    def _ema_path(self, base_path):
+        path = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
+        path = path.replace("optimizer", "ema")
+        return os.path.join(base_path, path)
+
+    def _get_model_state(self):
+        return self.sharding_io.manipulate_state_dict_and_config(
+            unwrap_model(self.sharding_io.model),
+            merge_tensor_parallel=False,
+        )[0]
+
+    def _get_master_weight(self):
+        return self.sharding_io.optimizer.state_dict()["master_weights"]
+
+    def _check_consistent_dist_strategy(self, resume_from_checkpoint):
+        return self.sharding_io.check_same_strategy(resume_from_checkpoint)
+
+
+class EMABufferFcBased(EMABuffer):
+    def __init__(self, resume_from_checkpoint, args, offload=True, hcg=None, model=None, optimizer=None):
+        self.hcg = hcg
+        self.model = model
+        self.optimizer = optimizer
+        self.dist_info_collector_and_validator = DistInfoCollectorValidator(args, hcg)
+        self.device_id = int(os.getenv("FLAGS_selected_gpus"))
+
+        super().__init__(resume_from_checkpoint, args, offload)
+
+    def _get_model_meta(self):
+        return self.dist_info_collector_and_validator.gather_distributed_model_meta(self.model, self.optimizer)
+
+    def _ema_path(self, base_path):
+        return os.path.join(base_path, "ema_state", f"{dist.get_rank()}_0.distcp")
+
+    def _check_consistent_dist_strategy(self, resume_from_checkpoint):
+        return self.dist_info_collector_and_validator.check_same_strategy(resume_from_checkpoint)
+
+    def _get_model_state(self):
+        assert self.model is not None, "expected model is not None"
+        return self.model.state_dict()
+
+    def _get_master_weight(self):
+        assert self.optimizer is not None, "expected optimizer is not None"
+        return self.optimizer.state_dict()["master_weights"]
+
+    def save(self, global_step):
+        model_meta_content = self._get_model_meta()
+        base_path = os.path.join(self.args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{global_step}")
+        os.makedirs(base_path, exist_ok=True)
+        model_meta_path = os.path.join(base_path, MODEL_META_NAME)
+        if self.device_id == 0:
+            with open(model_meta_path, "w") as f:
+                json.dump(model_meta_content, f)
+
+        super().save(global_step)
+
 
 class NonZCCEMACallback(TrainerCallback):
-    def __init__(self, resume_from_checkpoint, args, sharding_io, offload=True):
-        self.buffer = EMABuffer(resume_from_checkpoint, args, sharding_io, offload)
+    def __init__(self, ema_buffer: EMABuffer):
+        self.buffer = ema_buffer
+
+    @staticmethod
+    def create_nonzcc_callback(
+        args, resume_from_checkpoint, sharding_io=None, model=None, optimizer=None, hcg=None, offload=True
+    ):
+        if args.save_checkpoint_format == "flex_checkpoint":
+            ema_buffer = EMABufferFcBased(
+                resume_from_checkpoint, args, offload=offload, hcg=hcg, model=model, optimizer=optimizer
+            )
+        else:
+            assert sharding_io is not None, "EMA should be only enabled when save_sharded_model is True"
+            ema_buffer = EMABufferShardingIOBased(resume_from_checkpoint, args, sharding_io, offload=offload)
+
+        return NonZCCEMACallback(ema_buffer)
 
     def on_step_end(self, args, state, control, **kwargs):
         if state.global_step % args.zcc_ema_interval == 0:
@@ -1520,31 +1604,12 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
         gids = group_getter.get_group_ids()
         from paddleformers.trainer.utils.sharding_io import (
             exclude_parameters_in_state_dict,
-            filter_sharded_params,
         )
 
-        # filter_sharded_params = sharded_state_dict_compatibility(filter_sharded_params, return_sharded_state_dict=True)
-        # exclude_parameters_in_state_dict = sharded_state_dict_compatibility(
-        #     exclude_parameters_in_state_dict, return_sharded_state_dict=True
-        # )
-
         state_dict = model_to_save.state_dict()
-        # tmp wa should_save_sharding_stage1_model
-        if self.args.should_save_sharding_stage1_model or self.args.save_checkpoint_format == "flex_checkpoint":
-            state_dict = split_model_state(state_dict, group_getter)
-            for gid in gids:
-                state_dict[gid] = filter_sharded_params(
-                    state_dict.get(gid, {}),
-                    optimizer,
-                    self.sharding_group,
-                    self.args.save_sharding_stage1_model_include_freeze_params,
-                )
-            state_dict = merge_model_state(state_dict)
 
         # tmp wa should_save_sharding_stage1_model
-        if self.args.bf16 and (
-            self.args.should_save_sharding_stage1_model or self.args.save_checkpoint_format == "flex_checkpoint"
-        ):
+        if self.args.bf16:
             param_names_in_master_weights = []
             optimzier_state_dict = optimizer.state_dict()
             optimzier_state_dict = split_opt_state(optimzier_state_dict, group_getter)

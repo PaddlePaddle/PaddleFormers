@@ -101,6 +101,7 @@ class MultiSourceDataset(IterableDataset):
                     file_type=each_sub_dataset_type,
                     shuffle_file=dataset_config["random_shuffle"],
                     split_multi_turn=dataset_config.get("split_multi_turn", False),
+                    template_backend=dataset_config.get("template_backend", "jinja"),
                 )
             if os.path.isdir(task["filepath"]):
                 task["dataset"] = FileListReader(
@@ -108,6 +109,7 @@ class MultiSourceDataset(IterableDataset):
                     file_type=each_sub_dataset_type,
                     shuffle_file=dataset_config["random_shuffle"],
                     split_multi_turn=dataset_config.get("split_multi_turn", False),
+                    template_backend=dataset_config.get("template_backend", "jinja"),
                 )
             elif each_sub_dataset_type in supported_type:
                 task["dataset"] = FileReader(
@@ -115,6 +117,7 @@ class MultiSourceDataset(IterableDataset):
                     file_type=each_sub_dataset_type,
                     shuffle_file=dataset_config["random_shuffle"],
                     split_multi_turn=dataset_config.get("split_multi_turn", False),
+                    template_backend=dataset_config.get("template_backend", "jinja"),
                 )
             else:
                 raise NotImplementedError(f"Cannot support {each_sub_dataset_type} now.")

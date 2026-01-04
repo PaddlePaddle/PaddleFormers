@@ -38,7 +38,7 @@ class TestModeling(unittest.TestCase):
 
     @slow
     def test_from_pretrained_cache_dir_community_model(self):
-        model_name = "Paddleformers/tiny-random-qwen3"
+        model_name = "PaddleFormers/tiny-random-qwen3"
         with TemporaryDirectory() as tempdir:
             Qwen3ForCausalLM.from_pretrained(model_name, cache_dir=tempdir, convert_from_hf=True)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, CONFIG_NAME)))

@@ -28,6 +28,9 @@ from paddle.distributed.fleet.meta_parallel import (
     get_rng_state_tracker,
 )
 from paddle.distributed.fleet.utils import recompute
+from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+    build_sharded_state_dict,
+)
 
 from paddleformers.utils.log import logger
 
@@ -53,13 +56,6 @@ from .fusion_ops import (
 )
 from .refined_recompute.utils import RefinedRecomputeFunction
 from .sequence_parallel_utils import ScatterOp
-
-try:
-    from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
-        build_sharded_state_dict,
-    )
-except:
-    build_sharded_state_dict = None
 
 
 def calc_lm_head_logits(config, hidden_states, weight, bias, tensor_parallel_output=None, training=True):
@@ -531,7 +527,7 @@ class Ernie4_5_MLP(nn.Layer):
 
             column_ln_configs = {}
             if (
-                config.recompute
+                config.recompute_granularity is not None
                 and config.sequence_parallel
                 and config.skip_recompute_ops[layer_idx].get("mlp_column_ln", False)
             ):
@@ -561,7 +557,7 @@ class Ernie4_5_MLP(nn.Layer):
         if config.tensor_model_parallel_size > 1:
             row_ln_configs = {}
             if (
-                config.recompute
+                config.recompute_granularity is not None
                 and config.sequence_parallel
                 and config.skip_recompute_ops[layer_idx].get("mlp_row_ln", False)
             ):
@@ -666,7 +662,7 @@ class Ernie4_5_Attention(nn.Layer):
             ColumnLN = ColumnSequenceParallelLinear if config.sequence_parallel else ColumnParallelLinear
             RowLN = RowSequenceParallelLinear if config.sequence_parallel else RowParallelLinear
             if (
-                config.recompute
+                config.recompute_granularity is not None
                 and config.sequence_parallel
                 and config.skip_recompute_ops[layer_idx].get("attention_column_ln", False)
             ):
@@ -718,7 +714,7 @@ class Ernie4_5_Attention(nn.Layer):
         if config.tensor_model_parallel_size > 1:
             row_ln_configs = {}
             if (
-                config.recompute
+                config.recompute_granularity is not None
                 and config.sequence_parallel
                 and config.skip_recompute_ops[layer_idx].get("attention_row_ln", False)
             ):
@@ -749,7 +745,7 @@ class Ernie4_5_Attention(nn.Layer):
         self.config = config
 
         self._rr_flash_attn = None
-        if config.recompute and config.skip_recompute_ops[layer_idx].get("flash_attn", False):
+        if config.recompute_granularity is not None and config.skip_recompute_ops[layer_idx].get("flash_attn", False):
             self._rr_flash_attn = RefinedRecomputeFunction()
 
         self.set_attn_func()
@@ -818,7 +814,12 @@ class Ernie4_5_Attention(nn.Layer):
             has_gradient = not mix_layer.stop_gradient
         else:
             has_gradient = not (query_states.stop_gradient and key_states.stop_gradient and value_states.stop_gradient)
-        if self.config.recompute and self.config.recompute_granularity == "core_attn" and has_gradient:
+        if (
+            self.config.recompute_granularity == "selective"
+            and self.config.recompute_modules is not None
+            and "core_attn" in self.config.recompute_modules
+            and has_gradient
+        ):
             assert past_key_value is None, "do not use kv cache in recompute"
             assert not use_cache
             attn_output, attn_weights, past_key_value = recompute(
@@ -930,7 +931,7 @@ class Ernie4_5_Attention(nn.Layer):
         k = paddle.repeat_interleave(k, replicate, axis=1)
         v = paddle.repeat_interleave(v, replicate, axis=1)
 
-        scale_qk_coeff = self.config.scale_qk_coeff * self.head_dim**0.5
+        scale_qk_coeff = self.config.get("scale_qk_coeff", 1.0) * self.head_dim**0.5
         attention_mask = paddle.where(
             attention_mask,
             paddle.to_tensor(0.0, dtype=q.dtype),
@@ -1388,7 +1389,7 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
             # `loss_mask` must be reset to None and re-calculate it in ErnieBotPretrainingCriterion
             # when use use_sparse_head_and_loss_fn.
             loss_mask = None
-            if self.config.use_recompute_loss_fn:
+            if self.config.recompute_modules is not None and "loss_fn" in self.config.recompute_modules:
                 offload_kwargs = {}
                 if self.config.get("offload_lm_head", False):
                     offload_kwargs["offload_indices"] = [1]
@@ -1410,7 +1411,7 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
                     training=self.training,
                 )
                 res = self.forward_impl(logits, masked_lm_labels, loss_mask)
-        elif self.config.use_recompute_loss_fn:
+        elif self.config.recompute_modules is not None and "loss_fn" in self.config.recompute_modules:
             if self.config.use_fused_head_and_loss_fn:
                 res = self.forward_impl_with_fused_head_loss_fn(masked_lm_labels, loss_mask, *prediction_scores)
             else:
@@ -1606,7 +1607,6 @@ class Ernie4_5_LMHead(nn.Layer):
                 - tie_word_embeddings: Whether to tie input/output embeddings
                 - weight_share_add_bias: Whether to add bias when weight sharing
                 - use_bias: Whether to use bias term
-                - use_recompute_loss_fn: Whether to defer logits computation to loss function
                 - use_sparse_head_and_loss_fn: Whether to use sparse head computation
         """
 
@@ -1643,9 +1643,9 @@ class Ernie4_5_LMHead(nn.Layer):
         if config.weight_share_add_bias and config.use_bias and self.bias.is_distributed:
             self.bias.split_axis = 0
 
-        if self.config.use_recompute_loss_fn:
+        if self.config.recompute_modules is not None and "loss_fn" in self.config.recompute_modules:
             logger.info(
-                "Using recompute_loss_fn, the calculation of logits will be moved into "
+                "When recompute loss_fn, the calculation of logits will be moved into "
                 "loss_fn for memory optimization"
             )
 
@@ -1659,7 +1659,7 @@ class Ernie4_5_LMHead(nn.Layer):
         Returns:
             Union[
                 Tuple[paddle.Tensor, paddle.Tensor, Optional[paddle.Tensor]]:
-                    # When use_recompute_loss_fn or use_sparse_head_and_loss_fn
+                    # When recompute loss_fn or use_sparse_head_and_loss_fn
                     - hidden_states: Original input
                     - weight: Projection weights
                     - bias: Optional bias term
@@ -1670,9 +1670,13 @@ class Ernie4_5_LMHead(nn.Layer):
             ]
         """
         #  will enter this branch when:
-        # 1. use_recompute_loss_fn or use_sparse_head_and_loss_fn
+        # 1. recompute loss_fn or use_sparse_head_and_loss_fn
         # 2. dpo training
-        if self.config.use_recompute_loss_fn or self.config.use_sparse_head_and_loss_fn:
+        if (
+            self.config.recompute_modules is not None
+            and "loss_fn" in self.config.recompute_modules
+            or self.config.use_sparse_head_and_loss_fn
+        ):
             return (
                 hidden_states,
                 self.weight,

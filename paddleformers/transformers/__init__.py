@@ -34,9 +34,10 @@ import_structure = {
     ],
     "model_utils": ["PretrainedModel", "register_base_model"],
     "tokenizer_utils": [
-        "PreTrainedTokenizer",
         "PretrainedTokenizer",
+        "PreTrainedTokenizer",
         "PreTrainedTokenizerBase",
+        "PreTrainedTokenizerFast",
         "BPETokenizer",
         "tokenize_chinese_chars",
         "is_chinese_char",
@@ -48,7 +49,6 @@ import_structure = {
     "attention_utils": ["create_bigbird_rand_mask_idx_list"],
     "tensor_parallel_utils": [],
     "configuration_utils": ["PretrainedConfig"],
-    "tokenizer_utils_fast": ["PretrainedTokenizerFast"],
     "processing_utils": ["ProcessorMixin"],
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
     "image_processing_utils": ["PaddleImageProcessingMixin", "ImageProcessingMixin", "BaseImageProcessor"],
@@ -184,34 +184,6 @@ import_structure = {
         "CosineAnnealingWithWarmupDecay",
         "LinearAnnealingWithWarmupDecay",
     ],
-    "qwen.configuration": ["QWenConfig"],
-    "qwen.modeling": [
-        "QWenBlock",
-        "QWenForCausalLM",
-        "QWenLMHeadModel",
-        "QWenPretrainedModel",
-        "QWenModel",
-        "QWenLMHead",
-        "QWenPretrainingCriterion",
-    ],
-    "qwen.modeling_auto": [
-        "QWenBlockAuto",
-        "QWenForCausalLM3DAuto",
-        "QWenPretrainedModelAuto",
-        "QWenModelAuto",
-        "QWenLMHeadAuto",
-        "QWenPretrainingCriterionAuto",
-    ],
-    "qwen.modeling_network": [
-        "QWenBlockNet",
-        "QWenForCausalLMNet",
-        "QWenPretrainedModelNet",
-        "QWenModelNet",
-        "QWenLMHeadNet",
-        "QWenPretrainingCriterionNet",
-    ],
-    "qwen.modeling_pp": ["QWenForCausalLMPipe"],
-    "qwen.tokenizer": ["QWenTokenizer"],
     "qwen2.configuration": ["Qwen2Config"],
     "qwen2.modeling": [
         "Qwen2Model",
@@ -233,6 +205,22 @@ import_structure = {
         "Qwen2_5_VLTextModel",
     ],
     "qwen2_5_vl.processor": ["Qwen2_5_VLProcessor"],
+    "qwen3_vl.configuration": ["Qwen3VLConfig", "Qwen3VLTextConfig"],
+    "qwen3_vl.modeling": [
+        "Qwen3VLForConditionalGeneration",
+        "Qwen3VLModel",
+        "Qwen3VLPretrainedModel",
+        "Qwen3VLTextModel",
+    ],
+    "qwen3_vl.processor": ["Qwen3VLProcessor"],
+    "qwen3_vl.video_processor": ["Qwen3VLVideoProcessor"],
+    "qwen3_vl_moe.configuration": ["Qwen3VLMoeConfig", "Qwen3VLMoeTextConfig"],
+    "qwen3_vl_moe.modeling": [
+        "Qwen3VLMoeForConditionalGeneration",
+        "Qwen3VLMoeModel",
+        "Qwen3VLMoePretrainedModel",
+        "Qwen3VLMoeTextModel",
+    ],
     "qwen2_moe.configuration": ["Qwen2MoeConfig"],
     "qwen2_moe.modeling": [
         "Qwen2MoeModel",
@@ -275,13 +263,14 @@ import_structure = {
     "llama": [],
     "qwen2": [],
     "qwen3": [],
-    "qwen": [],
     "deepseek_v3": [],
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
     "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
     "ernie4_5_moe_vl": [],
     "paddleocr_vl": [],
     "qwen2_5_vl": [],
+    "qwen3_vl": [],
+    "qwen3_vl_moe": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
@@ -301,7 +290,9 @@ if TYPE_CHECKING:
     from .model_utils import PretrainedModel, register_base_model
     from .tokenizer_utils import (
         PretrainedTokenizer,
+        PreTrainedTokenizer,
         PreTrainedTokenizerBase,
+        PreTrainedTokenizerFast,
         BPETokenizer,
         tokenize_chinese_chars,
         is_chinese_char,
@@ -310,7 +301,6 @@ if TYPE_CHECKING:
         tokenize_special_chars,
         convert_to_unicode,
     )
-    from .tokenizer_utils_fast import PretrainedTokenizerFast
     from .processing_utils import ProcessorMixin
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
     from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
@@ -347,7 +337,6 @@ if TYPE_CHECKING:
     from .paddleocr_vl import *
     from .llama import *
     from .optimization import *
-    from .qwen import *
     from .qwen2 import *
     from .qwen2_5_vl import *
     from .qwen2_moe import *
@@ -355,6 +344,8 @@ if TYPE_CHECKING:
     from .qwen3 import *
     from .qwen3_moe import *
     from .qwen3_next import *
+    from .qwen3_vl import *
+    from .qwen3_vl_moe import *
     from .glm4_moe import *
     from .gpt_oss import *
     from .phi3 import *

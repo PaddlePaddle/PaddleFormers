@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass
 from functools import partial
 from typing import Optional, Tuple, Union
 
@@ -38,15 +39,57 @@ from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
+from ..gpt_provider import GPTModelProvider
 from ..masking_utils import (
     create_causal_mask_and_row_indices,
     create_sliding_window_causal_mask_and_row_indices,
 )
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
-from ..model_utils import PretrainedModel, register_base_model
+from ..model_utils import PretrainedModel, dtype_guard, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from .configuration import Qwen3MoeConfig
+
+
+@dataclass
+class Qwen3MoEModelProvider(GPTModelProvider):
+    """Base provider for Qwen3 MoE Models."""
+
+    moe_router_load_balancing_type: str = "aux_loss"
+
+    gated_linear_unit: bool = True
+
+    bias_activation_fusion: bool = True
+
+    transform_rules = {
+        "tensor_parallel_degree": "tensor_model_parallel_size",
+        "pipeline_parallel_degree": "pipeline_model_parallel_size",
+        "context_parallel_degree": "context_parallel_size",
+        "expert_parallel_degree": "expert_model_parallel_size",
+        "dtype": "params_dtype",
+    }
+
+    rotary_base: float = 1000000.0
+    moe_router_pre_softmax: bool = False
+    moe_permute_fusion: bool = True
+    moe_router_dtype: str = "fp32"
+    moe_router_enable_expert_bias: bool = False
+    moe_router_bias_update_rate: float = 0
+    persist_layer_norm: bool = True
+    moe_router_force_load_balancing: bool = False
+    share_embeddings_and_output_weights: bool = False
+
+    apply_rope_fusion: bool = True
+    recompute_granularity: str = None
+    virtual_pipeline_model_parallel_size: int = None
+
+    rope_scaling: float = 1.0
+    bias_dropout_fusion: bool = True
+    router_aux_loss_coef: float = 0.001
+    moe_grouped_gemm: bool = True
+
+    n_routed_experts: int = 128
+    n_shared_experts: int = 0
 
 
 def rotate_half(x):
@@ -289,7 +332,10 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
             config.sequence_parallel = False
 
         # gating
-        self.gate = GeneralLinear.create(config.hidden_size, config.num_experts, has_bias=False, linear_type="default")
+        with dtype_guard("float32"):
+            self.gate = GeneralLinear.create(
+                config.hidden_size, config.num_experts, has_bias=False, linear_type="default"
+            )
         self.experts = nn.LayerList(
             [
                 Qwen3MoeMLP(
@@ -380,7 +426,6 @@ class Qwen3MoeDecoderLayer(nn.Layer):
                     expert_activation="silu",
                     train_topk_method="greedy",
                     inference_topk_method="greedy",
-                    drop_tokens=False,
                     transpose_gate_weight=False,
                 )
                 if expert_model_parallel_size > 1
@@ -409,17 +454,187 @@ class Qwen3MoeDecoderLayer(nn.Layer):
             if not hasattr(config, "disable_ffn_model_parallel"):
                 self.input_layernorm.enable_sequence_parallel()
 
+    def subbatch_recompute_forward(
+        self,
+        hidden_states: paddle.Tensor,
+        position_ids: Optional[paddle.Tensor] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
+        past_key_values: Optional[Cache] = None,
+        use_cache: Optional[bool] = False,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+    ) -> paddle.Tensor:
+        offload_kwargs = {}
+        offload_kwargs["offload_indices"] = [0]
+
+        has_gradient = not hidden_states.stop_gradient
+        if (
+            self.config.recompute_granularity is not None
+            and self.config.recompute_modules is not None
+            and "full_attn" not in self.config.recompute_modules
+            and has_gradient
+        ):
+            attn_outputs = recompute(
+                self.attn,
+                hidden_states,
+                past_key_values=past_key_values,
+                attention_mask=attention_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_ids=position_ids,
+                use_cache=use_cache,
+                position_embeddings=position_embeddings,
+                **offload_kwargs,
+            )
+        else:
+            attn_outputs = self.attn(
+                hidden_states,
+                past_key_values=past_key_values,
+                attention_mask=attention_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_ids=position_ids,
+                use_cache=use_cache,
+                position_embeddings=position_embeddings,
+            )
+
+        hidden_states = attn_outputs[0]
+        residual = attn_outputs[1]
+        present_key_value = attn_outputs[2] if use_cache else None
+
+        hidden_size = hidden_states.shape[-1]
+        if self.config.sequence_parallel:
+            # hidden_states shape:[b*s,h]
+            seq_len = self.config.max_sequence_length // self.config.tensor_model_parallel_size
+            batch_size = hidden_states.shape[0] // seq_len
+            assert (
+                batch_size > 0
+            ), f"batch_size must larger than 0, but calulate batch_size:{batch_size}, hidden_states shape:{hidden_states.shape}"
+            hidden_states = hidden_states.reshape([-1, batch_size, hidden_size])
+        sub_seq_len = self.config.moe_subbatch_token_num_before_dispatch
+        seq_axis = 0 if self.config.sequence_parallel else 1
+        seq_len = hidden_states.shape[seq_axis]
+        assert seq_len % sub_seq_len == 0
+        num_chunks = seq_len // sub_seq_len
+        split_list = [sub_seq_len] * num_chunks
+        input_list = paddle.split(hidden_states, split_list, axis=seq_axis)
+        output_list = []
+
+        for chunk in input_list:
+            if self.config.sequence_parallel:
+                chunk = chunk.reshape([-1, hidden_size])
+            has_gradient = not chunk.stop_gradient
+            if (
+                self.config.recompute_granularity is not None
+                and self.config.recompute_modules is not None
+                and "full_attn" not in self.config.recompute_modules
+                and has_gradient
+            ):
+                out = recompute(
+                    self.mlp.forward,
+                    chunk,
+                    **offload_kwargs,
+                )
+            else:
+                out = self.mlp.forward(chunk)
+            if isinstance(out, tuple):
+                out = out[0]
+            output_list.append(out)
+        hidden_states = paddle.concat(output_list, axis=seq_axis)
+        outputs = recompute(
+            self.post_process,
+            hidden_states,
+            residual,
+            use_cache,
+            present_key_value,
+            **offload_kwargs,
+        )
+        return outputs
+
+    def attn(
+        self,
+        hidden_states: paddle.Tensor,
+        position_ids: Optional[paddle.Tensor] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
+        past_key_values: Optional[Cache] = None,
+        use_cache: Optional[bool] = False,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
+        **kwargs,
+    ):
+        residual = hidden_states
+
+        hidden_states = self.input_layernorm(hidden_states)
+
+        # Self Attention
+        has_gradient = not hidden_states.stop_gradient
+        if (
+            self.config.recompute_granularity == "selective"
+            and self.config.recompute_modules is not None
+            and "full_attn" in self.config.recompute_modules
+            and has_gradient
+        ):
+            outputs = recompute(
+                self.self_attn,
+                hidden_states=hidden_states,
+                position_ids=position_ids,
+                attention_mask=attention_mask,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+        else:
+            outputs = self.self_attn(
+                hidden_states=hidden_states,
+                position_ids=position_ids,
+                attention_mask=attention_mask,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+        if type(outputs) is tuple:
+            hidden_states = outputs[0]
+        else:
+            hidden_states = outputs
+
+        hidden_states = residual + hidden_states
+
+        # Fully Connected
+        residual = hidden_states
+        hidden_states = self.post_attention_layernorm(hidden_states)
+        attn_outputs = (hidden_states, residual)
+
+        if use_cache:
+            present_key_value = outputs[1]
+            attn_outputs += (present_key_value,)
+
+        return attn_outputs
+
+    def post_process(
+        self,
+        hidden_states,
+        residual,
+        use_cache=False,
+    ):
+        hidden_states = residual + hidden_states
+        outputs = (hidden_states,)
+        if type(outputs) is tuple and len(outputs) == 1:
+            outputs = outputs[0]
+        return outputs
+
     def forward(
         self,
         hidden_states: paddle.Tensor,
+        position_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
-        batch_size: Optional[int] = None,
         **kwargs,
-    ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
+    ) -> paddle.Tensor:
         """
         Args:
             hidden_states (`paddle.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
@@ -435,34 +650,24 @@ class Qwen3MoeDecoderLayer(nn.Layer):
                 Arbitrary kwargs to be ignored, used for FSDP and other methods that injects code
                 into the model
         """
-        # [bs * seq_len, embed_dim] -> [seq_len * bs / n, embed_dim] (sequence_parallel)
-        residual = hidden_states
-
-        hidden_states = self.input_layernorm(hidden_states)
-
-        # Self Attention
-        hidden_states, _ = self.self_attn(
-            hidden_states=hidden_states,
-            position_embeddings=position_embeddings,
-            attention_mask=attention_mask,
+        attn_outputs = self.attn(
+            hidden_states,
             past_key_values=past_key_values,
-            use_cache=use_cache,
+            attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            batch_size=batch_size,
+            position_ids=position_ids,
+            use_cache=use_cache,
+            position_embeddings=position_embeddings,
             **kwargs,
         )
+        hidden_states = attn_outputs[0]
+        residual = attn_outputs[1]
 
-        hidden_states = residual + hidden_states
-
-        # Fully Connected
-        residual = hidden_states
-        hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         if isinstance(hidden_states, tuple):
-            hidden_states, _ = hidden_states
-        hidden_states = residual + hidden_states
-
-        return hidden_states
+            hidden_states = hidden_states[0]
+        outputs = self.post_process(hidden_states, residual, use_cache)
+        return outputs
 
 
 class Qwen3MoeRotaryEmbedding(nn.Layer):
@@ -508,26 +713,19 @@ class Qwen3MoeRotaryEmbedding(nn.Layer):
 
     @dynamic_rope_update
     def forward(self, x, position_ids):
-        # NOTE: Paddle's Automatic Mixed Precision (AMP) has a default op whitelist that may automatically cast
-        # certain operations (like matmul) to FP16/BF16 for performance optimization. However, in scenarios where
-        # numerical stability is critical (e.g., RoPE init/compute), this conversion can lead to precision loss.
-        # Disabling auto_cast here ensures the matmul operation runs in the original precision (FP32) as intended.
-        with paddle.amp.auto_cast(False):
-            inv_freq_expanded = (
-                self.inv_freq.unsqueeze(0)
-                .unsqueeze(-1)
-                .cast(paddle.float32)
-                .expand([position_ids.shape[0], -1, 1])
-                .to(x.place)
-            )
-            position_ids_expanded = position_ids.unsqueeze(1).cast(paddle.float32)
+        with paddle.amp.auto_cast(enable=False):
+            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
-            freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 2, 1])
-            emb = paddle.cat((freqs, freqs), axis=-1)
-            cos = paddle.cos(emb) * self.attention_scaling
-            sin = paddle.sin(emb) * self.attention_scaling
+            position_ids_expanded = position_ids[:, None, :].float()
 
-        return cos.cast(dtype=x.dtype), sin.cast(dtype=x.dtype)
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+
+            emb = paddle.concat((freqs, freqs), axis=-1)
+
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 class Qwen3MoePretrainedModel(PretrainedModel):
@@ -654,17 +852,28 @@ class Qwen3MoePretrainedModel(PretrainedModel):
         model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_config = {
             "aoa_statements": [
-                f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
                 f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
-                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
                 f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"model.norm.weight -> {model_prefix}norm.weight",
+            ]
+        }
+        if getattr(cls, "is_fleet", False):
+            aoa_config["aoa_statements"] += [
+                f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
+                f"model.layers.$LAYER_ID.mlp.gate.weight -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
+                f"model.layers.$LAYER_ID.self_attn.q_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_layernorm.weight",
+                f"model.layers.$LAYER_ID.self_attn.k_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_layernorm.weight",
+                f"lm_head.weight -> {model_prefix}lm_head.weight",
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
+                f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
                 f"model.layers.$LAYER_ID.self_attn.q_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
                 f"model.layers.$LAYER_ID.self_attn.k_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
             ]
-        }
 
         # attention qkv
         if not config.fuse_attention_qkv:
@@ -702,16 +911,28 @@ class Qwen3MoePretrainedModel(PretrainedModel):
     def _gen_inv_aoa_config(cls, config: Qwen3MoeConfig):
         model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_statements = [
-            f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
-            f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
             f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
             f"{model_prefix}norm.weight -> model.norm.weight",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.layers.$LAYER_ID.self_attn.q_norm.weight",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.layers.$LAYER_ID.self_attn.k_norm.weight",
         ]
+
+        if getattr(cls, "is_fleet", False):
+            aoa_statements += [
+                f"{model_prefix}embedding.embed_tokens.weight -> model.embed_tokens.weight",
+                f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.q_layernorm.weight -> model.layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.k_layernorm.weight -> model.layers.$LAYER_ID.self_attn.k_norm.weight",
+                f"{model_prefix}lm_head.weight -> lm_head.weight",
+            ]
+        else:
+            aoa_statements += [
+                f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+                f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.layers.$LAYER_ID.self_attn.k_norm.weight",
+            ]
 
         if not config.fuse_attention_qkv:
             aoa_statements += [
@@ -787,12 +1008,12 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         self,
         layer_module: nn.Layer,
         hidden_states: Tensor,
+        position_ids: Tensor,
         attention_mask: Tensor,
         past_key_values: Tensor,
         use_cache: bool,
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         attn_mask_startend_row_indices=None,
-        batch_size: int = None,
     ):
         def create_custom_forward(module):
             def custom_forward(*inputs):
@@ -803,12 +1024,12 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         hidden_states = recompute(
             create_custom_forward(layer_module),
             hidden_states,
+            position_ids,
             attention_mask,
             past_key_values,
             use_cache,
             position_embeddings,
             attn_mask_startend_row_indices,
-            batch_size,
         )
 
         return hidden_states
@@ -880,28 +1101,49 @@ class Qwen3MoeModel(Qwen3MoePretrainedModel):
         # create position embeddings to be shared across the decoder layers
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
+        moelayer_use_subbatch_recompute = (
+            self.config.moe_subbatch_token_num_before_dispatch > 0
+            if hasattr(self.config, "moe_subbatch_token_num_before_dispatch")
+            else False
+        )
+
         for idx, (decoder_layer) in enumerate(self.layers):
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
-                hidden_states = self.recompute_training_full(
-                    decoder_layer,
+            if moelayer_use_subbatch_recompute:
+                hidden_states = decoder_layer.subbatch_recompute_forward(
                     hidden_states,
+                    position_ids,
                     causal_mask,
                     past_key_values,
                     use_cache,
+                    attn_mask_startend_row_indices,
                     position_embeddings,
+                )
+            elif (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
+                hidden_states = self.recompute_training_full(
+                    layer_module=decoder_layer,
+                    hidden_states=hidden_states,
+                    attention_mask=causal_mask,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                    batch_size=batch_size,
+                    position_ids=position_ids,
+                    past_key_values=past_key_values,
+                    use_cache=use_cache,
+                    position_embeddings=position_embeddings,
                 )
             else:
                 hidden_states = decoder_layer(
-                    hidden_states,
-                    causal_mask,
-                    past_key_values,
-                    use_cache,
-                    position_embeddings,
+                    hidden_states=hidden_states,
+                    attention_mask=causal_mask,
                     attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                    batch_size=batch_size,
+                    position_ids=position_ids,
+                    past_key_values=past_key_values,
+                    use_cache=use_cache,
+                    position_embeddings=position_embeddings,
                 )
 
         hidden_states = self.norm(hidden_states)
@@ -986,6 +1228,27 @@ def load_balancing_loss_func(gate_logits, num_experts, top_k=2, attention_mask=N
 
     overall_loss = paddle.sum(tokens_per_expert * router_prob_per_expert.unsqueeze(0))
     return overall_loss * num_experts
+
+
+class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel):
+    is_fleet = True
+
+    def __new__(cls, config):
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+
+        model_provider_class = Qwen3MoEModelProvider
+        model_provider = model_provider_class.from_config(config)
+        gpt_model = model_provider.provide()
+        gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
+        gpt_model.config_to_save = config
+
+        return gpt_model
 
 
 class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
@@ -1116,6 +1379,20 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
         )
 
 
+class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel, GeneralModelForCausalLMPipe):
+    is_fleet = True
+
+    def __new__(cls, config):
+        model_provider_class = Qwen3MoEModelProvider
+        model_provider = model_provider_class.from_config(config)
+        gpt_model = model_provider.provide()
+        gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
+        gpt_model.config_to_save = config
+        return gpt_model
+
+
 class Qwen3MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = Qwen3MoeConfig
     _decoder_layer_cls = Qwen3MoeDecoderLayer
@@ -1133,5 +1410,7 @@ __all__ = [
     "Qwen3MoeModel",
     "Qwen3MoePretrainedModel",
     "Qwen3MoeForCausalLM",
+    "Qwen3MoeForCausalLMFleet",
     "Qwen3MoeForCausalLMPipe",
+    "Qwen3MoeForCausalLMPipeFleet",
 ]

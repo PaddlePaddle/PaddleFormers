@@ -20,11 +20,7 @@ import paddle.distributed.fleet as fleet
 import paddle.nn.functional as F
 from paddle.autograd import PyLayer
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
-
-try:
-    from paddle.nn.layer.layers import in_declarative_mode
-except:
-    from paddle.fluid.dygraph.base import in_declarative_mode
+from paddle.nn.layer.layers import in_declarative_mode
 
 from ..utils.tools import get_env_device
 

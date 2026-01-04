@@ -40,7 +40,7 @@ from ..masking_utils import (
     create_sliding_window_causal_mask_and_row_indices,
 )
 from ..model_outputs import MoECausalLMOutputWithPast, MoEModelOutputWithPast
-from ..model_utils import PretrainedModel, register_base_model
+from ..model_utils import PretrainedModel, dtype_guard, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from .configuration import Qwen2MoeConfig
@@ -268,7 +268,10 @@ class Qwen2MoeSparseMoeBlock(nn.Layer):
             config.sequence_parallel = False
 
         # gating
-        self.gate = GeneralLinear.create(config.hidden_size, config.num_experts, has_bias=False, linear_type="default")
+        with dtype_guard("float32"):
+            self.gate = GeneralLinear.create(
+                config.hidden_size, config.num_experts, has_bias=False, linear_type="default"
+            )
         self.experts = nn.LayerList(
             [
                 Qwen2MoeMLP(
@@ -331,6 +334,7 @@ class Qwen2MoeSparseMoeBlock(nn.Layer):
                 final_hidden_states.index_add_(
                     index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
                 )
+
         final_hidden_states = paddle.reshape(final_hidden_states, orig_shape)
 
         shared_expert_output = self.shared_expert(residuals)
@@ -476,26 +480,19 @@ class Qwen2MoeRotaryEmbedding(nn.Layer):
 
     @dynamic_rope_update
     def forward(self, x, position_ids):
-        # NOTE: Paddle's Automatic Mixed Precision (AMP) has a default op whitelist that may automatically cast
-        # certain operations (like matmul) to FP16/BF16 for performance optimization. However, in scenarios where
-        # numerical stability is critical (e.g., RoPE init/compute), this conversion can lead to precision loss.
-        # Disabling auto_cast here ensures the matmul operation runs in the original precision (FP32) as intended.
-        with paddle.amp.auto_cast(False):
-            inv_freq_expanded = (
-                self.inv_freq.unsqueeze(0)
-                .unsqueeze(-1)
-                .cast(paddle.float32)
-                .expand([position_ids.shape[0], -1, 1])
-                .to(x.place)
-            )
-            position_ids_expanded = position_ids.unsqueeze(1).cast(paddle.float32)
+        with paddle.amp.auto_cast(enable=False):
+            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
-            freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 2, 1])
-            emb = paddle.cat((freqs, freqs), axis=-1)
-            cos = paddle.cos(emb) * self.attention_scaling
-            sin = paddle.sin(emb) * self.attention_scaling
+            position_ids_expanded = position_ids[:, None, :].float()
 
-        return cos.cast(dtype=x.dtype), sin.cast(dtype=x.dtype)
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+
+            emb = paddle.concat((freqs, freqs), axis=-1)
+
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 class Qwen2MoePretrainedModel(PretrainedModel):
@@ -861,7 +858,12 @@ class Qwen2MoeModel(Qwen2MoePretrainedModel):
 
         for idx, (decoder_layer) in enumerate(self.layers):
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 hidden_states = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,

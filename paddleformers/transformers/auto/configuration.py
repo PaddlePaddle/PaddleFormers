@@ -39,7 +39,6 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
         ("paddleocr_vl", "PaddleOCRVLConfig"),
         ("llama", "LlamaConfig"),
-        ("qwen", "QWenConfig"),
         ("qwen2", "Qwen2Config"),
         ("qwen2_5_vl", "Qwen2_5_VLConfig"),
         ("qwen2_5_vl_text", "Qwen2_5_VLTextConfig"),
@@ -47,6 +46,10 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("qwen3", "Qwen3Config"),
         ("qwen3_moe", "Qwen3MoeConfig"),
         ("qwen3_next", "Qwen3NextConfig"),
+        ("qwen3_vl", "Qwen3VLConfig"),
+        ("qwen3_vl_text", "Qwen3VLTextConfig"),
+        ("qwen3_vl_moe", "Qwen3VLMoeConfig"),
+        ("qwen3_vl_moe_text", "Qwen3VLMoeTextConfig"),
         ("glm4_moe", "Glm4MoeConfig"),
         ("gpt_oss", "GptOssConfig"),
         ("phi3", "Phi3Config"),
@@ -65,7 +68,6 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("paddleocr_vl", "PaddleOCRVLForConditionalGeneration"),
         ("llama", "Llama"),
-        ("qwen", "QWen"),
         ("qwen2", "Qwen2"),
         ("qwen2_5_vl", "Qwen2_5_VL"),
         ("qwen2_5_vl_text", "Qwen2_5_VL"),
@@ -73,6 +75,10 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3", "Qwen3"),
         ("qwen3_moe", "Qwen3Moe"),
         ("qwen3_next", "Qwen3Next"),
+        ("qwen3_vl", "Qwen3VL"),
+        ("qwen3_vl_text", "Qwen3VL"),
+        ("qwen3_vl_moe", "Qwen3VLMoe"),
+        ("qwen3_vl_moe_text", "Qwen3VLMoeText"),
     ]
 )
 
@@ -84,6 +90,8 @@ MULTI_MODELS_MAPPING = OrderedDict(
 SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
     [
         ("qwen2_5_vl_text", "qwen2_5_vl"),
+        ("qwen3_vl_text", "qwen3_vl"),
+        ("qwen3_vl_moe_text", "qwen3_vl_moe"),
     ]
 )
 
