@@ -48,7 +48,7 @@ function run_tools_test() {
 }
 
 
-PRECISION_APPROVERS="tianlef"
+PRECISION_APPROVERS="SigureMo"
 echo_line="You must be approved by all of ${PRECISION_APPROVERS} for changing precision.\n"
 APPROVER_LIST=(${PRECISION_APPROVERS})
 check_approval 1 "${APPROVER_LIST[@]}"

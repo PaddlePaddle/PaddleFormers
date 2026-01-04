@@ -83,7 +83,9 @@ python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --gt_file ./${gt_loss_file}
 
 if [ $? -ne 0 ]; then
+  pushd $root_dir/PaddleFormers
   bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
+  popd
   if [ $? -ne 0 ]; then
     echo "The precision has been changed and requires approvals."
     exit 1
