@@ -448,7 +448,8 @@ class SFTDataSet(IterableDataset):
 
         if self.use_template:
             # add dynamic eos
-            self._add_dynamic_eos(tokens, labels, [self.tokenizer.eos_token_id])
+            stop_words_ids = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
+            self._add_dynamic_eos(tokens, labels, stop_words_ids)
             # Maybe left truncated, so need to add begin_token
             if self.auto_add_bos and self.begin_token_id:
                 if tokens[0] != self.begin_token_id:
@@ -458,8 +459,8 @@ class SFTDataSet(IterableDataset):
                         raise RuntimeError(f"token_ids is too long: {len(tokens)}")
             # Add EOS token at the end
             if self.efficient_eos:
-                tokens = tokens + [self.tokenizer.eos_token_id]
-                labels = labels + [self.tokenizer.eos_token_id]
+                tokens = tokens + stop_words_ids
+                labels = labels + stop_words_ids
                 if len(tokens) > self.max_seq_len:
                     raise RuntimeError(f"token_ids is too long: {len(tokens)}")
             # label shift
@@ -484,11 +485,13 @@ class SFTDataSet(IterableDataset):
             logger.info("[dataset debug] Debug mode enabled")
             if hasattr(self, "tokenizer"):
                 print("========================================")
+                print("tokens: ", [tokens])
                 print_debug_info(self.tokenizer, tokens, "input")
                 print("========================================\n")
 
                 filtered_labels = [x for x in labels if x != -100]  # remove -100
                 print("========================================")
+                print("labels: ", [labels])
                 print_debug_info(self.tokenizer, filtered_labels, "labels")
                 print("========================================\n")
             else:
@@ -561,7 +564,7 @@ class SFTDataSet(IterableDataset):
         # https://github.com/modelscope/ms-swift
         # Original author: modelscope
         # License: Apache-2.0
-        suffix_len = 1
+        suffix_len = len(suffix_tokens_id)
         start = 0
         for i in range(1, len(labels) + 1):
             if labels[i - 1] >= 0 and i < len(labels) and labels[i] == -100:
