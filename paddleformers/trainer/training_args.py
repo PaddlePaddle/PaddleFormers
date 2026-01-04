@@ -1578,8 +1578,11 @@ class TrainingArguments:
             )
             if is_sm90:
                 paddle.set_flags({"FLAGS_flash_attn_version": 3})
+                self.fa_version = 3
+                warnings.warn("sm90 automatic set fa_version to fa3")
             else:
                 paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
+                logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
         else:
             raise ValueError(f"--fa_version should be 2 or 3, but got {self.fa_version}")
 
