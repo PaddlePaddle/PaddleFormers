@@ -45,6 +45,7 @@ from paddlefleet.transformer.transformer_config import TransformerConfig
 from paddlefleet.transformer.transformer_layer import TransformerLayer, TransformerLayerSublayersSpec
 from paddlefleet.utils import WrappedTensor, deprecate_inference_params
 
+from .configuration import Qwen3VLConfig
 from .modeling import (
     Qwen3VLVisionPatchEmbed,
     Qwen3VLVisionPatchMerger,
@@ -52,6 +53,7 @@ from .modeling import (
     Qwen3VLVisionRotaryEmbedding
 )
 from ..gpt_provider import GPTModelProvider
+from ...nn.pp_model import GeneralModelForCausalLMPipe, CriterionLayer
 
 
 def get_layer_spec(is_vit, normalization) -> LayerSpec:
@@ -810,7 +812,7 @@ class Qwen3VLProvider(TransformerConfig):
     forward_step_fn: Callable = qwen3vl_forward_step
     data_step_fn: Callable = qwen3vl_data_step
     
-    def provide(self, tokenizer=None, vp_stage: int | None = None) -> "MCoreQwen3VLModel":
+    def provide(self, tokenizer=None, vp_stage: int | None = None) -> "Qwen3VLModelPipe":
         self.text_config.scatter_embedding_sequence_parallel = False
         self.text_config.tensor_model_parallel_size = self.tensor_model_parallel_size
         self.text_config.sequence_parallel = self.sequence_parallel
@@ -856,7 +858,7 @@ class Qwen3VLProvider(TransformerConfig):
         
         vp_stage = vp_stage or 0
         
-        model = MCoreQwen3VLModel(
+        model = Qwen3VLModelPipe(
             config=self,
             tokenizer=tokenizer,
             pre_process=parallel_state.is_pipeline_first_stage(ignore_virtual=False, vp_stage=vp_stage)
@@ -886,7 +888,7 @@ class Qwen3VLProvider(TransformerConfig):
         return super().from_config(config)
 
 
-class MCoreQwen3VLModel(MCoreLLaVAModel):
+class Qwen3VLModelPipe(MCoreLLaVAModel):
     """Qwen3VL Model Base Model Class."""
     
     def __init__(
@@ -1191,3 +1193,22 @@ class MCoreQwen3VLModel(MCoreLLaVAModel):
         else:
             self.language_model.set_input_tensor(input_tensor[0])
 
+
+class Qwen3VLForConditionalGenerationPipe(Qwen3VLPretrainedModel, GeneralModelForCausalLMPipe):
+    _checkpoint_conversion_mapping = {
+        "^visual": "model.visual",
+        r"^model(?!\.(language_model|visual))": "model.language_model",
+    }
+    _tied_weights_keys = {"lm_head.weight": "model.language_model.embed_tokens.weight"}
+    config_class = Qwen3VLConfig
+    
+    def __init__(self, config):
+        model_provider = Qwen3VLProvider.from_config(config)
+        model = Qwen3VLModelPipe(model_provider, model_version=config.model_type)
+        model.provide()
+        self.model = model.module
+        self.criterion = CriterionLayer(config.text_config)
+        self.tie_weights()
+
+
+__all__ = ["Qwen3VLForConditionalGenerationPipe"]

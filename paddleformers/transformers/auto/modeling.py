@@ -48,6 +48,7 @@ __all__ = [
     "AutoGenerator",
     "AutoDiscriminator",
     "AutoModelForConditionalGeneration",
+    "AutoModelForConditionalGenerationPipe",
 ]
 
 MAPPING_NAMES = OrderedDict(
@@ -98,6 +99,7 @@ MAPPING_TASKS = OrderedDict(
         ("Generator", "AutoGenerator"),
         ("Discriminator", "AutoDiscriminator"),
         ("ForConditionalGeneration", "AutoModelForConditionalGeneration"),
+        ("ForConditionalGenerationPipe", "AutoModelForConditionalGenerationPipe"),
     ]
 )
 
@@ -1010,4 +1012,9 @@ class AutoModelForConditionalGeneration(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.bart.modeling.BartForConditionalGeneration'>
         """
+        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+
+
+class AutoModelForConditionalGenerationPipe(_BaseAutoModelClass):
+    def from_pretrained(self, pretrained_model_name_or_path, *model_args, **kwargs):
         return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)

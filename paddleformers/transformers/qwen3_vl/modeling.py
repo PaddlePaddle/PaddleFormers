@@ -190,15 +190,15 @@ class Qwen3VLVisionAttention(nn.Layer):
         **kwargs,
     ) -> paddle.Tensor:
         seq_length = hidden_states.shape[0]
-        query_states, key_states, value_states = (
-            self.qkv(hidden_states).reshape(seq_length, 3, self.num_heads, -1).permute(1, 0, 2, 3).unbind(0)
-        )
+        qkv_output = self.qkv(hidden_states).reshape(seq_length, self.num_heads, -1)
+        query_states, key_states, value_states = paddle.split(qkv_output, [self.head_dim, self.head_dim, self.head_dim] , axis=2)
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb_vision(query_states, key_states, cos, sin)
-
+        
         query_states = query_states.transpose(0, 1).unsqueeze(0)
         key_states = key_states.transpose(0, 1).unsqueeze(0)
         value_states = value_states.transpose(0, 1).unsqueeze(0)
+
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
@@ -222,6 +222,7 @@ class Qwen3VLVisionAttention(nn.Layer):
             for q, k, v in zip(*splits)
         ]
         attn_output = paddle.cat(attn_outputs, axis=-2)
+
 
         attn_output = attn_output.reshape([seq_length, -1]).contiguous()
         attn_output = self.proj(attn_output)
@@ -766,6 +767,8 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
         )
         cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
         deepstack_feature_lists = []
+        print("formers vision 0 hidden_states", hidden_states._md5sum())
+
         for layer_num, blk in enumerate(self.blocks):
             cu_seqlens_now = cu_seqlens
 
@@ -793,6 +796,7 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
                     hidden_states
                 )
                 deepstack_feature_lists.append(deepstack_feature)
+            print(f"formers vision {layer_num} hidden_states", hidden_states._md5sum())
 
         hidden_states = self.merger(hidden_states)
 
@@ -889,21 +893,27 @@ class Qwen3VLTextRotaryEmbedding(nn.Layer):
         return freqs_t
 
     def forward(self, x, position_ids):
+        # NOTE: Paddle's Automatic Mixed Precision (AMP) has a default op whitelist that may automatically cast
+        # certain operations (like matmul) to FP16/BF16 for performance optimization. However, in scenarios where
+        # numerical stability is critical (e.g., RoPE init/compute), this conversion can lead to precision loss.
+        # Disabling auto_cast here ensures the matmul operation runs in the original precision (FP32) as intended.
         with paddle.amp.auto_cast(False):
-            inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand([3, position_ids.shape[1], -1, 1])
+            inv_freq_expanded = (
+                self.inv_freq.unsqueeze(0)
+                .unsqueeze(-1)
+                .cast(paddle.float32)
+                .expand([3, position_ids.shape[1], -1, 1])
+                .to(x.place)
+            )
+            position_ids_expanded = position_ids.unsqueeze(2).cast(paddle.float32)
 
-            position_ids_expanded = position_ids[:, :, None, :].float()
-
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(2, 3)
-
+            freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 1, 3, 2])
             freqs = self.apply_interleaved_mrope(freqs, self.mrope_section)
+            emb = paddle.cat((freqs, freqs), axis=-1)
+            cos = paddle.cos(emb) * self.attention_scaling
+            sin = paddle.sin(emb) * self.attention_scaling
 
-            emb = paddle.concat((freqs, freqs), axis=-1)
-
-            cos = emb.cos() * self.attention_scaling
-            sin = emb.sin() * self.attention_scaling
-
-        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+        return cos.cast(dtype=x.dtype), sin.cast(dtype=x.dtype)
 
 
 class Qwen3VLTextMLP(MLP):
