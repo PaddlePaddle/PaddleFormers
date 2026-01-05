@@ -3149,6 +3149,8 @@ class Trainer:
                 assert self.optimizer is not None, "optimizer is empty!"
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
 
+        if isinstance(model, LoRAModel):
+            model = model.model
         if (
             is_paddlefleet_available()
             and PaddleFleetPipelineLayer is not None
@@ -3194,8 +3196,7 @@ class Trainer:
             prepare_pipeline_inputs_func = (
                 model._prepare_pipeline_inputs_func if hasattr(model, "_prepare_pipeline_inputs_func") else None
             )
-            if isinstance(model, LoRAModel):
-                model = model.model
+
             if (
                 is_paddlefleet_available()
                 and paddlefleet_dist_model is not None
