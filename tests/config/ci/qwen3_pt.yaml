@@ -62,4 +62,3 @@ use_qk_norm: true
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
 moe_router_fusion: false
-num_empty_layers_add_in_head: 1
