@@ -72,4 +72,3 @@ fuse_attention_ffn: true
 # grouped gemm
 moe_grouped_gemm: true
 use_deep_gemm: false
-num_empty_layers_add_in_head: 1
