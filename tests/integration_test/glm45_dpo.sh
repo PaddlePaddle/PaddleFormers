@@ -85,11 +85,11 @@ python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
 if [ $? -ne 0 ]; then
   pushd $root_dir/PaddleFormers
   bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
-  popd
   if [ $? -ne 0 ]; then
     echo "The precision has been changed and requires approvals."
     exit 1
   fi
+  popd
   rm ${gt_loss_file} && mv ${log_loss_file} ${gt_loss_file}
   repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
   wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${repo_name}_${PR_ID}/precision_list.txt
@@ -98,4 +98,5 @@ if [ $? -ne 0 ]; then
     python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${repo_name}_${PR_ID}
   fi
   python $root_dir/bos/BosClient.py ${gt_loss_file} paddle-github-action/PaddleFleet/precision/${repo_name}_${PR_ID}
+  cat ${gt_loss_file}
 fi
