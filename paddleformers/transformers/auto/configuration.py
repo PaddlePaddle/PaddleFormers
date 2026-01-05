@@ -351,6 +351,7 @@ class AutoConfig(PretrainedConfig):
             return config_class.from_dict(config_dict, **unused_kwargs)
         elif "model_type" not in config_dict and config_file is not None and os.path.exists(config_file):
             config_class = cls._get_config_class_from_config(pretrained_model_name_or_path, config_file)
+            print("why use config_class ",config_class)
             logger.info("We are using %s to load '%s'." % (config_class, pretrained_model_name_or_path))
             if config_class is cls:
                 return cls.from_file(config_file)

@@ -51,7 +51,7 @@ from ..utils import logger
 from .configuration import Qwen3VLConfig, Qwen3VLTextConfig, Qwen3VLVisionConfig
 
 if TYPE_CHECKING:
-    from .modeling_fleet import Qwen3VLModelFleet, Qwen3VLForConditionalGenerationFleet
+    from .modeling_fleet import Qwen3VLModelFleet, Qwen3VLForConditionalGenerationFleet, Qwen3VLModelPipe, Qwen3VLForCausalLMPipe
 
 
 def __getattr__(name):
@@ -61,6 +61,13 @@ def __getattr__(name):
     elif name == "Qwen3VLForConditionalGenerationFleet":
         from .modeling_fleet import Qwen3VLForConditionalGenerationFleet
         return Qwen3VLForConditionalGenerationFleet
+    elif name=="Qwen3VLForCausalLMPipe":
+        from .modeling_fleet import Qwen3VLForCausalLMPipe
+        return Qwen3VLForCausalLMPipe
+    elif name=="Qwen3VLModelPipe":
+        from .modeling_fleet import Qwen3VLModelPipe
+        return Qwen3VLModelPipe
+
     raise AttributeError(f"module {__name__} has no attribute {name}")
 
 
@@ -2273,6 +2280,8 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModel):
 __all__ = [
     "Qwen3VLForConditionalGeneration",
     "Qwen3VLModel",
+    "Qwen3VLModelPipe",
+    "Qwen3VLForCausalLMPipe",
     "Qwen3VLPretrainedModel",
     "Qwen3VLTextModel",
     "Qwen3VLModelFleet",

@@ -281,7 +281,7 @@ def run_sft(
             if data_args.eval_with_do_generation and training_args.do_eval:
                 raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
             model_class = AutoModelForCausalLMPipe
-
+    logger.info(f"model_class : {model_class}")
     if model_args.continue_training and not training_args.autotuner_benchmark:
         model = model_class.from_pretrained(
             model_args.model_name_or_path,
