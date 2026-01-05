@@ -54,16 +54,16 @@ except:
 
 
 try:
-    import torchvison
+    import torchvision
 
     logger.warning(
-        """Due to potential compatibility issues between 'PaddlePaddle' and 'PyTorch' in 'PaddleFormers', 'torchvison' is disabled by default in 'PaddleFormers'. If you need to use the 'torchvison' library, please add "del sys.modules['torchvison']" before using them."""
+        """Due to potential compatibility issues between 'PaddlePaddle' and 'PyTorch' in 'PaddleFormers', 'torchvision' is disabled by default in 'PaddleFormers'. If you need to use the 'torchvision' library, please add "del sys.modules['torchvision']" before using them."""
     )
 except:
     pass
 sys.modules["torch_save"] = sys.modules["torch"]
 sys.modules["torch"] = None
-sys.modules["torchvison"] = None
+sys.modules["torchvision"] = None
 
 if "datasets" in sys.modules.keys():
 
