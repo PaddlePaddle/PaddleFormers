@@ -601,7 +601,7 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPretrainedModel):
                 grid_h // self.spatial_merge_size,
                 grid_w // self.spatial_merge_size,
             )
-            index = paddle.arange(end=(grid_t * llm_grid_h * llm_grid_w)._local_value()).reshape([grid_t, llm_grid_h, llm_grid_w])
+            index = paddle.arange(end=(grid_t * llm_grid_h * llm_grid_w).item()).reshape([grid_t, llm_grid_h, llm_grid_w])
             pad_h = vit_merger_window_size - llm_grid_h % vit_merger_window_size
             pad_w = vit_merger_window_size - llm_grid_w % vit_merger_window_size
             num_windows_h = (llm_grid_h + pad_h) // vit_merger_window_size
@@ -684,7 +684,7 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPretrainedModel):
         emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), axis=-1)
         position_embeddings = (emb.cos(), emb.sin())
 
-        cu_seqlens = paddle.repeat_interleave((grid_thw[:, 1] * grid_thw[:, 2])._local_value(), grid_thw[:, 0]._local_value()).cumsum(
+        cu_seqlens = (grid_thw[:, 1] * grid_thw[:, 2]).cumsum(
             axis=0, dtype="int32"
         )
         cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
