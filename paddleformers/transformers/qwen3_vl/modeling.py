@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING, Any, Optional, Tuple, Union
 import paddle
 import paddle.nn.functional as F
 from paddle import Tensor, nn
-from paddle.distributed.fleet import get_hybrid_communicate_group
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
@@ -1337,6 +1336,8 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
         # This block handles Sequence Parallelism (Row Slicing)
         if visual_pos_masks.shape[0] > hidden_states.shape[0]:
             try:
+                from paddle.distributed.fleet import get_hybrid_communicate_group
+
                 hcg = get_hybrid_communicate_group()
                 mp_rank = hcg.get_model_parallel_rank()
                 mp_size = hcg.get_model_parallel_world_size()
@@ -2287,3 +2288,4 @@ __all__ = [
     "Qwen3VLTextModel",
     "Qwen3VLModelFleet",
     "Qwen3VLForConditionalGenerationFleet",
+]
