@@ -74,39 +74,15 @@ jobs:
             -e GITHUB_RUN_ID="${{ github.run_id }}" \
             -w /workspace --network host ${docker_image}
 
-      - name: Install PaddleFleet
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          nvidia-smi
-          rm -rf * .[^.]*
-          source /root/proxy
-          git clone https://github.com/PaddlePaddle/PaddleFleet.git
-          cd PaddleFleet
-          git config --global --add safe.directory /workspace/PaddleFleet
-          git config user.name "PaddleCI"
-          git config user.email "paddle_ci@example.com"
-          git config pull.rebase false
-          mkdir -p /home/.cache/pip
-          pip cache dir
-          pip install --upgrade pip
-          echo "Install uv"
-          pip install uv
-          echo "uv sync"
-          git submodule update --init --recursive
-          git log -1
-          export UV_LOCK_TIMEOUT=1200
-          uv sync --group ci -v > /dev/null
-          export UV_SKIP_WHEEL_FILENAME_CHECK=1
-          uv pip -n install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall
-          source .venv/bin/activate
-          python -c "import paddle; print(paddle.version.commit)"
-          '
-
       - name: Install PaddleFormers
         id: formers_install
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          rm -rf * .[^.]*
           source /root/proxy
+          mkdir -p /home/.cache/pip
+          pip cache dir
+          pip install --upgrade pip
           git clone https://github.com/PaddlePaddle/PaddleFormers.git
           cd PaddleFormers
           git config --global --add safe.directory /workspace/PaddleFormers
@@ -116,9 +92,16 @@ jobs:
           git pull --no-edit origin pull/${PR_ID}/head
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
-          source ../PaddleFleet/.venv/bin/activate
-          pip install -e .
+          pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
           python -c "import paddle; print(paddle.version.commit)"
+          cd /workspace
+          wget -q --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
+          mkdir bos
+          tar xf bos_new.tar.gz -C bos
+          python -m pip install bce-python-sdk==0.8.74
+          pip install coverage==7.6.1
+          pip install librosa==0.11.0
           '
 
       - name: Proprocess for integration test
@@ -171,7 +154,7 @@ jobs:
         if: ${{ always() }}
         run: |
           set +e
-          docker exec -t ${{ env.container_name }} /bin/bash -c 'uv cache prune; bash ci/clean_uv_cache.sh; rm -rf * .[^.]*'
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'rm -rf * .[^.]*'
           docker rm -f ${{ env.container_name }}
 
 
@@ -214,49 +197,32 @@ jobs:
             -e GITHUB_RUN_ID="${{ github.run_id }}" \
             -w /workspace --network host ${docker_image}
 
-      - name: Install PaddleFleet
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          rm -rf * .[^.]*
-          source /root/proxy
-          git clone https://github.com/PaddlePaddle/PaddleFleet.git
-          cd PaddleFleet
-          git config --global --add safe.directory /workspace/PaddleFleet
-          git config user.name "PaddleCI"
-          git config user.email "paddle_ci@example.com"
-          git config pull.rebase false
-          mkdir -p /home/.cache/pip
-          pip cache dir
-          pip install --upgrade pip
-          echo "Install uv"
-          pip install uv
-          echo "uv sync"
-          git submodule update --init --recursive
-          git log -1
-          export UV_LOCK_TIMEOUT=1200
-          uv sync --group ci -v > /dev/null
-          export UV_SKIP_WHEEL_FILENAME_CHECK=1
-          uv pip -n install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall
-          source .venv/bin/activate
-          python -c "import paddle; print(paddle.version.commit)"
-          '
-
       - name: Install PaddleFormers
         id: formers_install
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          rm -rf * .[^.]*
           source /root/proxy
+          mkdir -p /home/.cache/pip
+          pip cache dir
+          pip install --upgrade pip
           git clone https://github.com/PaddlePaddle/PaddleFormers.git
           cd PaddleFormers
-          cp examples/experiments/paddlefleet/glm45.json examples/experiments/paddlefleet/glm45_fp8.json
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
           git pull --no-edit origin pull/${PR_ID}/head
-          source ../PaddleFleet/.venv/bin/activate
-          pip install -e .
+          pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
           python -c "import paddle; print(paddle.version.commit)"
+          cd /workspace
+          wget -q --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
+          mkdir bos
+          tar xf bos_new.tar.gz -C bos
+          python -m pip install bce-python-sdk==0.8.74
+          pip install coverage==7.6.1
+          pip install librosa==0.11.0
           '
       
       - name: GLM4.5 pre-train
@@ -273,7 +239,7 @@ jobs:
             echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
           fi
           '
-      - name: GLM4.5 sft+lora
+      - name: GLM4.5 sft
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
@@ -281,10 +247,25 @@ jobs:
           bash -x PaddleFormers/tests/integration_test/glm45_sft.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 sft+lora.\033[0m"
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 sft.\033[0m"
             exit 1
           else
-            echo -e "\033[32mIntegration test succeeded: GLM4.5 sft+lora.\033[0m"
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 sft.\033[0m"
+          fi
+          '
+      
+      - name: GLM4.5 lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          bash -x PaddleFormers/tests/integration_test/glm45_lora.sh
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 lora.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 lora.\033[0m"
           fi
           '
       
@@ -361,7 +342,7 @@ jobs:
         if: ${{ always() }}
         run: |
           set +e
-          docker exec -t ${{ env.container_name }} /bin/bash -c 'uv cache prune; bash ci/clean_uv_cache.sh; rm -rf * .[^.]*'
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'rm -rf * .[^.]*'
           docker rm -f ${{ env.container_name }}
 
   integration-test-a100:
@@ -403,37 +384,15 @@ jobs:
             -e GITHUB_RUN_ID="${{ github.run_id }}" \
             -w /workspace --network host ${docker_image}
 
-      - name: Install PaddleFleet
+      - name: Install PaddleFormers
+        id: formers_install
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           rm -rf * .[^.]*
           source /root/proxy
-          git clone https://github.com/PaddlePaddle/PaddleFleet.git
-          cd PaddleFleet
-          git config --global --add safe.directory /workspace/PaddleFleet
-          git config user.name "PaddleCI"
-          git config user.email "paddle_ci@example.com"
-          git config pull.rebase false
           mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
-          echo "Install uv"
-          pip install uv
-          echo "uv sync"
-          git submodule update --init --recursive
-          git log -1
-          export UV_LOCK_TIMEOUT=1200
-          uv sync --group ci > /dev/null
-          export UV_SKIP_WHEEL_FILENAME_CHECK=1
-          uv pip -n install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall
-          source .venv/bin/activate
-          python -c "import paddle; print(paddle.version.commit)"
-          '
-
-      - name: Install PaddleFormers
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
           git clone https://github.com/PaddlePaddle/PaddleFormers.git
           cd PaddleFormers
           git config --global --add safe.directory /workspace/PaddleFormers
@@ -441,9 +400,18 @@ jobs:
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
           git pull --no-edit origin pull/${PR_ID}/head
-          source ../PaddleFleet/.venv/bin/activate
-          pip install -e .
+          sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
+          sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
+          pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
           python -c "import paddle; print(paddle.version.commit)"
+          cd /workspace
+          wget -q --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
+          mkdir bos
+          tar xf bos_new.tar.gz -C bos
+          python -m pip install bce-python-sdk==0.8.74
+          pip install coverage==7.6.1
+          pip install librosa==0.11.0
           '
 
       - name: GLM4.5 pre-train
@@ -465,5 +433,5 @@ jobs:
         if: ${{ always() }}
         run: |
           set +e
-          docker exec -t ${{ env.container_name }} /bin/bash -c 'uv cache prune; rm -rf * .[^.]*'
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'rm -rf * .[^.]*'
           docker rm -f ${{ env.container_name }}

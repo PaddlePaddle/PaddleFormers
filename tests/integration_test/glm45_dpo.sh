@@ -15,7 +15,9 @@
 set -exo pipefail
 export root_dir=$(pwd)
 
-source PaddleFleet/.venv/bin/activate
+if [ -f 'PaddleFleet/.venv/bin/activate' ]; then
+   source PaddleFleet/.venv/bin/activate
+fi
 
 cd $root_dir/glm45_fleet
 export cur_dir=$(pwd)
@@ -49,12 +51,15 @@ unset http_proxy https_proxy
 export FLAGS_embedding_deterministic=1
 export FLAGS_cudnn_deterministic=1
 
+log_file=glm45_dpo.txt
+gt_loss_file=glm45_dpo_multi_card_gt_loss.txt
+
 set +e
-NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_dpo_yaml 2>&1 | tee ./glm45_dpo.log
+NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_dpo_yaml 2>&1 | tee ./${log_file}
 sft_exit_code=$?
 if [ $sft_exit_code -ne 0 ]; then
    echo "GLM4.5 multi-cards training failed, try to check the log file"
-   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_dpo.log "***** eval metrics *****"
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./${log_file} "***** eval metrics *****"
    sft_check_exit_code=$?
    if [ $sft_check_exit_code -ne 0 ]; then
      echo "Failed to find 'Training completed' in log file."
@@ -64,14 +69,36 @@ if [ $sft_exit_code -ne 0 ]; then
    fi
 fi
 
-set -e
-echo "
-10 0.46693826
-" > ./glm45_dpo_multi_card_gt_loss.txt
+wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/latest/${gt_loss_file}
+if [ $? -ne 0 ]; then
+  echo "To request precision checks for new models, please contact swgu98."
+  exit 1
+fi
 
+log_loss_file=${log_file%.*}_loss.${log_file##*.}
 python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --compare_step 10 \
-   --log_file ./glm45_dpo.log \
-   --gt_file ./glm45_dpo_multi_card_gt_loss.txt
+   --log_file ./${log_file} \
+   --log_loss_file ./${log_loss_file} \
+   --gt_file ./${gt_loss_file}
 
-echo -e "\033[34mdpo is over, lora is about to start\033[0m"
+if [ $? -ne 0 ]; then
+  export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
+  pushd $root_dir/PaddleFormers
+  bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
+  if [ $? -ne 0 ]; then
+    echo -e "\033[31mThe precision has been changed and requires approvals.\033[0m"
+    exit 1
+  fi
+  popd
+  rm ${gt_loss_file} && mv ${log_loss_file} ${gt_loss_file}
+  if [ ! -f precision_list.txt ]; then
+    wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${repo_name}_${PR_ID}/precision_list.txt
+  fi
+  if [ $? -ne 0 ]; then
+    wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/latest/precision_list.txt
+    python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${repo_name}_${PR_ID}
+  fi
+  python $root_dir/bos/BosClient.py ${gt_loss_file} paddle-github-action/PaddleFleet/precision/${repo_name}_${PR_ID}
+  cat ${gt_loss_file}
+fi

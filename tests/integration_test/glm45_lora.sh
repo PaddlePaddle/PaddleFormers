@@ -13,57 +13,57 @@
 # limitations under the License.
 
 set -exo pipefail
+export root_dir=$(pwd)
 
 if [ -f 'PaddleFleet/.venv/bin/activate' ]; then
    source PaddleFleet/.venv/bin/activate
 fi
 
-export root_dir=$(pwd)
+cd $root_dir/glm45_fleet
+export cur_dir=$(pwd)
 
-export config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_pt_fp8.yaml
-export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
+config_lora_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_lora.yaml
 
-yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
-    | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
+yq '.train_dataset_path = strenv(cur_dir) + "/data/sft/train.jsonl"
+    | .eval_dataset_path = strenv(cur_dir) + "/data/sft/dev.jsonl"
     | .model_name_or_path = strenv(CACHE_DIR) + "/glm45/GLM-4.5-Air"
-    | .logging_dir = strenv(data_dir) + "/vdl_log"
-    | .output_dir = strenv(data_dir) + "/checkpoints"' \
-   $config_yaml > ${config_yaml}.tmp
-mv ${config_yaml}.tmp $config_yaml
+    | .logging_dir = strenv(cur_dir) + "/glm_full_single_lora_log"
+    | .output_dir = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"' \
+   $config_lora_yaml > ${config_lora_yaml}.tmp
+mv ${config_lora_yaml}.tmp $config_lora_yaml
 
-rm -rf checkpoint/
-rm -rf outputs/
+rm -rf ./outputs
+rm -rf paddleformers_dist_log
 master=$(hostname -i)
 port=36677
 
-export FLAGS_embedding_deterministic=1
-export FLAGS_cudnn_deterministic=1
 export FLAGS_use_stride_compute_kernel=False
 export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 
 unset http_proxy https_proxy
-rm -rf checkpoint/
-rm -rf outputs/
 
-log_file=glm45_pt_fp8.txt
-gt_loss_file=glm45_multi_cards_fp8_gt_loss.txt
+export FLAGS_embedding_deterministic=1
+export FLAGS_cudnn_deterministic=1
+
+log_file=glm45_lora.txt
+gt_loss_file=glm45_lora_multi_card_gt_loss.txt
 
 set +e
-NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./${log_file}
+NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_lora_yaml 2>&1 | tee ./${log_file}
 
-exit_code=$?
-if [ $exit_code -ne 0 ]; then
-   echo "Training failed with exit code $exit_cod, see ./${log_file} for details."
+lora_exit_code=$?
+if [ $lora_exit_code -ne 0 ]; then
+   echo "GLM4.5 multi-cards training failed, try to check the log file"
    python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./${log_file} "***** train metrics *****"
-   check_result=$?
-   if [ $check_result -ne 0 ]; then
-       echo "Failed to find 'Training completed' in log file."
-       exit 1
+   lora_check_exit_code=$?
+   if [ $lora_check_exit_code -ne 0 ]; then
+     echo "Failed to find 'Training completed' in log file."
+     exit 1
    else
-       echo "Log check passed."
+     echo "Log check passed."
    fi
 else
-   echo "Test passed."
+    echo "LORA Test passed."
 fi
 
 
@@ -75,7 +75,7 @@ fi
 
 log_loss_file=${log_file%.*}_loss.${log_file##*.}
 python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
-   --compare_step 10 \
+   --compare_step 100 \
    --log_file ./${log_file} \
    --log_loss_file ./${log_loss_file} \
    --gt_file ./${gt_loss_file}
