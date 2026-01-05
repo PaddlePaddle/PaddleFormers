@@ -26,7 +26,7 @@ config_lora_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_lora.yaml
 
 yq '.train_dataset_path = strenv(cur_dir) + "/data/sft/train.jsonl"
     | .eval_dataset_path = strenv(cur_dir) + "/data/sft/dev.jsonl"
-    | .model_name_or_path = strenv(CACHE_DIR) + "/glm45/GLM-4.5-Air"
+    | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
     | .logging_dir = strenv(cur_dir) + "/glm_full_single_lora_log"
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"' \
    $config_lora_yaml > ${config_lora_yaml}.tmp
