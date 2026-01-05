@@ -68,3 +68,4 @@ moe_router_fusion: true
 router_aux_loss_coef: 0.001
 fuse_attention_qkv: true
 fuse_attention_ffn: true
+num_empty_layers_add_in_head: 1

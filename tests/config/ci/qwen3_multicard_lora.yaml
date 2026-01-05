@@ -77,3 +77,4 @@ use_paddlefleet: true
 # unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
+num_empty_layers_add_in_head: 1
