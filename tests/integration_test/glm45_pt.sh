@@ -108,6 +108,7 @@ python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --gt_file ./${gt_loss_file}
 
 if [ $? -ne 0 ]; then
+  export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
   pushd $root_dir/PaddleFormers
   bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
   if [ $? -ne 0 ]; then
@@ -116,7 +117,6 @@ if [ $? -ne 0 ]; then
   fi
   popd
   rm ${gt_loss_file} && mv ${log_loss_file} ${gt_loss_file}
-  repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
   if [ ! -f precision_list.txt ]; then
     wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${repo_name}_${PR_ID}/precision_list.txt
   fi
