@@ -941,10 +941,12 @@ class Qwen3VLMoeTextRotaryEmbedding(nn.Layer):
         return freqs_t
 
     def forward(self, x, position_ids):
-        with paddle.amp.auto_cast(enable=False):
-            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
-            position_ids_expanded = position_ids[:, None, :].float()
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+        with paddle.amp.auto_cast(False):
+            inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand([3, position_ids.shape[1], -1, 1])
+            position_ids_expanded = position_ids[:, :, None, :].float()
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(2, 3)
+
+            freqs = self.apply_interleaved_mrope(freqs, self.mrope_section)
             emb = paddle.concat((freqs, freqs), axis=-1)
 
             cos = emb.cos() * self.attention_scaling
