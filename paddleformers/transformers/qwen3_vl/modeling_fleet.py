@@ -330,11 +330,11 @@ class Qwen3VLVisionProvider(TransformerConfig):
         "depth": "num_hidden_layers"
     })
     
-    def provide(self) -> "Qwen3VLVisionModelPipe":
+    def provide(self) -> "Qwen3VLVisionModelFleet":
         transformer_layer_spec = self.transformer_layer_spec
         if not isinstance(transformer_layer_spec, LayerSpec):
             transformer_layer_spec = get_layer_spec(is_vit=True, normalization=self.normalization)
-        model = Qwen3VLVisionModelPipe(
+        model = Qwen3VLVisionModelFleet(
             config=self,
             transformer_layer_spec=transformer_layer_spec,
         )
@@ -607,7 +607,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         return hidden_states[0], deepstack_feature_lists
 
 
-class Qwen3VLVisionModelPipe(Qwen3VLPretrainedModel, VisionLayer):
+class Qwen3VLVisionModelFleet(Qwen3VLPretrainedModel, VisionLayer):
     is_fleet = True
     def __init__(
         self,
@@ -812,7 +812,7 @@ class Qwen3VLProvider(TransformerConfig):
     forward_step_fn: Callable = qwen3vl_forward_step
     data_step_fn: Callable = qwen3vl_data_step
     
-    def provide(self, tokenizer=None, vp_stage: int | None = None) -> "Qwen3VLModelPipe":
+    def provide(self, tokenizer=None, vp_stage: int | None = None) -> "Qwen3VLModelFleet":
         self.text_config.scatter_embedding_sequence_parallel = False
         self.text_config.tensor_model_parallel_size = self.tensor_model_parallel_size
         self.text_config.sequence_parallel = self.sequence_parallel
@@ -858,7 +858,7 @@ class Qwen3VLProvider(TransformerConfig):
         
         vp_stage = vp_stage or 0
         
-        model = Qwen3VLModelPipe(
+        model = Qwen3VLModelFleet(
             config=self,
             tokenizer=tokenizer,
             pre_process=parallel_state.is_pipeline_first_stage(ignore_virtual=False, vp_stage=vp_stage)
@@ -888,7 +888,7 @@ class Qwen3VLProvider(TransformerConfig):
         return super().from_config(config)
 
 
-class Qwen3VLModelPipe(MCoreLLaVAModel):
+class Qwen3VLModelFleet(MCoreLLaVAModel):
     """Qwen3VL Model Base Model Class."""
     
     def __init__(
@@ -1194,7 +1194,7 @@ class Qwen3VLModelPipe(MCoreLLaVAModel):
             self.language_model.set_input_tensor(input_tensor[0])
 
 
-class Qwen3VLForConditionalGenerationPipe(Qwen3VLPretrainedModel, GeneralModelForCausalLMPipe):
+class Qwen3VLForConditionalGenerationFleet(Qwen3VLPretrainedModel, GeneralModelForCausalLMPipe):
     _checkpoint_conversion_mapping = {
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
@@ -1204,11 +1204,14 @@ class Qwen3VLForConditionalGenerationPipe(Qwen3VLPretrainedModel, GeneralModelFo
     
     def __init__(self, config):
         model_provider = Qwen3VLProvider.from_config(config)
-        model = Qwen3VLModelPipe(model_provider, model_version=config.model_type)
+        model = Qwen3VLModelFleet(model_provider, model_version=config.model_type)
         model.provide()
         self.model = model.module
         self.criterion = CriterionLayer(config.text_config)
         self.tie_weights()
 
 
-__all__ = ["Qwen3VLForConditionalGenerationPipe"]
+__all__ = [
+    "Qwen3VLModelFleet",
+    "Qwen3VLForConditionalGenerationFleet",
+]

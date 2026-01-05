@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Optional, Tuple, Union
 
 import paddle
 import paddle.nn.functional as F
@@ -49,6 +49,19 @@ from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS
 from ..utils import logger
 from .configuration import Qwen3VLConfig, Qwen3VLTextConfig, Qwen3VLVisionConfig
+
+if TYPE_CHECKING:
+    from .modeling_fleet import Qwen3VLModelFleet, Qwen3VLForConditionalGenerationFleet
+
+
+def __getattr__(name):
+    if name == "Qwen3VLModelFleet":
+        from .modeling_fleet import Qwen3VLModelFleet
+        return Qwen3VLModelFleet
+    elif name == "Qwen3VLForConditionalGenerationFleet":
+        from .modeling_fleet import Qwen3VLForConditionalGenerationFleet
+        return Qwen3VLForConditionalGenerationFleet
+    raise AttributeError(f"module {__name__} has no attribute {name}")
 
 
 class Qwen3VLVisionMLP(nn.Layer):
@@ -2257,4 +2270,11 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModel):
         return input_ids, model_kwargs
 
 
-__all__ = ["Qwen3VLForConditionalGeneration", "Qwen3VLModel", "Qwen3VLPretrainedModel", "Qwen3VLTextModel"]
+__all__ = [
+    "Qwen3VLForConditionalGeneration",
+    "Qwen3VLModel",
+    "Qwen3VLPretrainedModel",
+    "Qwen3VLTextModel",
+    "Qwen3VLModelFleet",
+    "Qwen3VLForConditionalGenerationFleet",
+]

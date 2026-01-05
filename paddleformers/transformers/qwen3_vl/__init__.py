@@ -25,9 +25,8 @@ import_structure = {
         "Qwen3VLModel",
         "Qwen3VLPretrainedModel",
         "Qwen3VLTextModel",
-    ],
-    "modeling_fleet": [
-        "Qwen3VLForConditionalGenerationPipe",
+        "Qwen3VLModelFleet",
+        "Qwen3VLForConditionalGenerationFleet"
     ],
     "processor": ["Qwen3VLProcessor"],
     "video_processor": ["Qwen3VLVideoProcessor"],
@@ -36,7 +35,6 @@ import_structure = {
 if TYPE_CHECKING:
     from .configuration import *
     from .modeling import *
-    from .modeling_fleet import *
     from .processor import *
 
 else:

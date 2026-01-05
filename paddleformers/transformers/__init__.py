@@ -211,10 +211,8 @@ import_structure = {
         "Qwen3VLModel",
         "Qwen3VLPretrainedModel",
         "Qwen3VLTextModel",
-        "Qwen3VLModelPipe",
-    ],
-    "qwen3_vl.modeling_fleet": [
-        "Qwen3VLForConditionalGenerationPipe"
+        "Qwen3VLModelFleet",
+        "Qwen3VLForConditionalGenerationFleet",
     ],
     "qwen3_vl.processor": ["Qwen3VLProcessor"],
     "qwen3_vl.video_processor": ["Qwen3VLVideoProcessor"],
