@@ -586,7 +586,7 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPretrainedModel):
             pos_ids.append(paddle.stack(x=[hpos_ids, wpos_ids], axis=-1).tile(repeat_times=[t, 1]))
         pos_ids = paddle.cat(x=pos_ids, axis=0)
         max_grid_size = grid_thw[:, 1:].max()
-        rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
+        rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size.item())
         rotary_pos_emb = rotary_pos_emb_full[pos_ids].flatten(start_axis=1)
         return rotary_pos_emb
 
