@@ -450,7 +450,10 @@ class SFTDataSet(IterableDataset):
 
         if self.use_template:
             # add dynamic eos
-            suffix_ids = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
+            if self.template_backend == "custom":
+                suffix_ids = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
+            else:
+                suffix_ids = [self.tokenizer.eos_token_id]
             self._add_dynamic_eos(tokens, labels, suffix_ids)
             # Maybe left truncated, so need to add begin_token
             if self.auto_add_bos and self.begin_token_id:
