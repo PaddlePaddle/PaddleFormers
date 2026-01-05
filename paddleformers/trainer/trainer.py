@@ -228,7 +228,13 @@ DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
 
 if is_datasets_available():
-    import datasets
+    if "torch" not in sys.modules:
+        sys.modules["torch"] = None
+        import datasets
+
+        del sys.modules["torch"]
+    else:
+        import datasets
 
 
 try:
