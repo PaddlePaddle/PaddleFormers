@@ -18,18 +18,19 @@ response=$(curl -L \
 -H "X-GitHub-Api-Version: 2022-11-28" \
 https://api.github.com/repos/PaddlePaddle/PaddleFleet/commits/${COMMIT_ID}/pulls)
 pr_number=$(echo $response | jq -r '.[0].url' | awk -F'/' '{print $NF}')
-wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/latest-test/precision_list.txt
-pr_precision_url_base="https://paddle-github-action.cdn.bcebos.com/precision/PaddleFleet_${pr_number}"
+repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
+wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/latest/precision_list.txt
+pr_precision_url_base="https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${repo_name}_${pr_number}"
 while read -r fname; do
     [ -z "$fname" ] && continue
-    url="${pr_precision_url_base}${fname}"
-    echo "try: $url"
-    wget --no-proxy --no-check-certificate "$url" -O "$fname"
+    url="${pr_precision_url_base}/${fname}"
+    echo "try update: $url"
+    wget -q --no-proxy --no-check-certificate "$url" -O "$fname"
     if [ $? -ne 0 ]; then
-        echo "not found: $fname"
+        echo "No update is needed: $fname"
     else
-        echo "found: $fname"
-        python /workspace/bos/BosClient.py $fname xly-devops/PaddleFleet/precision/latest-test
+        echo "Update required: $fname"
+        python /workspace/bos/BosClient.py $fname xly-devops/PaddleFleet/precision/latest
     fi
+    echo -e "\n"
 done < precision_list.txt
-curl https://www.paddlepaddle.org.cn/inner/whl/update/path/new

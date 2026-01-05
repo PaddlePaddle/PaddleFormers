@@ -94,7 +94,7 @@ else
 fi
 
 
-wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/latest-test/${gt_loss_file}
+wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/latest/${gt_loss_file}
 if [ $? -ne 0 ]; then
   echo "To request precision checks for new models, please contact swgu98."
   exit 1
@@ -111,15 +111,17 @@ if [ $? -ne 0 ]; then
   pushd $root_dir/PaddleFormers
   bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
   if [ $? -ne 0 ]; then
-    echo "The precision has been changed and requires approvals."
+    echo -e "\033[31mThe precision has been changed and requires approvals.\033[0m"
     exit 1
   fi
   popd
   rm ${gt_loss_file} && mv ${log_loss_file} ${gt_loss_file}
   repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
-  wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${repo_name}_${PR_ID}/precision_list.txt
+  if [ ! -f precision_list.txt ]; then
+    wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${repo_name}_${PR_ID}/precision_list.txt
+  fi
   if [ $? -ne 0 ]; then
-    wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/latest-test/precision_list.txt
+    wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/latest/precision_list.txt
     python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${repo_name}_${PR_ID}
   fi
   python $root_dir/bos/BosClient.py ${gt_loss_file} paddle-github-action/PaddleFleet/precision/${repo_name}_${PR_ID}
