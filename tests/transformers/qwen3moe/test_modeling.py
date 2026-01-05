@@ -14,7 +14,6 @@
 # limitations under the License.
 from __future__ import annotations
 
-import sys
 import tempfile
 import unittest
 
@@ -406,14 +405,7 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         # 3. forward the torch  model
-        try:
-            sys.modules["torch"] = sys.modules["torch_save"]
-        except:
-            pass
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
+
         import torch
         from transformers import Qwen3MoeModel
 
@@ -429,11 +421,6 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
                 rtol=1e-2,
             )
         )
-        sys.modules["torch"] = None
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
 
     @require_package("transformers", "torch")
     def test_Qwen3Moe_converter_from_local_dir(self):
@@ -443,14 +430,7 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch  model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+
             import torch
             from transformers import Qwen3MoeForCausalLM
 
@@ -499,11 +479,6 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
 
     @parameterized.expand([("Qwen3MoeModel",), ("Qwen3MoeForCausalLM",)])
     @require_package("transformers", "torch")
@@ -515,16 +490,10 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
             import torch
             import transformers
+
+            transformers.utils.import_utils.is_torch_available = lambda: True
 
             torch_model_class = getattr(transformers, pytorch_class_name)
             torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
@@ -553,9 +522,4 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
-
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            transformers.utils.import_utils.is_torch_available = lambda: False
