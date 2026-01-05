@@ -161,7 +161,7 @@ jobs:
   integration-test-H20-multi-card:
     name: Integration test (H20, multi-card)
     runs-on:
-      group: fleet-multi-test
+      group: Fleet-H-single-card
     env:
       PIP_CACHE_DIR: /home/.cache/pip
       CACHE_DIR: /home/.cache
@@ -239,7 +239,7 @@ jobs:
             echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
           fi
           '
-      - name: GLM4.5 sft+lora
+      - name: GLM4.5 sft
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
@@ -247,10 +247,25 @@ jobs:
           bash -x PaddleFormers/tests/integration_test/glm45_sft.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 sft+lora.\033[0m"
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 sft.\033[0m"
             exit 1
           else
-            echo -e "\033[32mIntegration test succeeded: GLM4.5 sft+lora.\033[0m"
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 sft.\033[0m"
+          fi
+          '
+      
+      - name: GLM4.5 lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          bash -x PaddleFormers/tests/integration_test/glm45_lora.sh
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 lora.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 lora.\033[0m"
           fi
           '
       
