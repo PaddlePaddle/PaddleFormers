@@ -316,6 +316,8 @@ class SFTDataSet(IterableDataset):
 
     def _postprocess_pretraining_sequence(self, example, actual_example_num):
         tokens = self._encode_pretraining_example(example, actual_example_num)
+        if len(tokens) > self.max_seq_len + 1:
+            tokens = tokens[: self.max_seq_len + 1]
         res_tokens = tokens[:-1]
         res_labels = tokens[1:]
         pos_ids = list(range(len(res_tokens)))
@@ -448,8 +450,8 @@ class SFTDataSet(IterableDataset):
 
         if self.use_template:
             # add dynamic eos
-            stop_words_ids = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
-            self._add_dynamic_eos(tokens, labels, stop_words_ids)
+            suffix_ids = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
+            self._add_dynamic_eos(tokens, labels, suffix_ids)
             # Maybe left truncated, so need to add begin_token
             if self.auto_add_bos and self.begin_token_id:
                 if tokens[0] != self.begin_token_id:
@@ -459,8 +461,8 @@ class SFTDataSet(IterableDataset):
                         raise RuntimeError(f"token_ids is too long: {len(tokens)}")
             # Add EOS token at the end
             if self.efficient_eos:
-                tokens = tokens + stop_words_ids
-                labels = labels + stop_words_ids
+                tokens = tokens + suffix_ids
+                labels = labels + suffix_ids
                 if len(tokens) > self.max_seq_len:
                     raise RuntimeError(f"token_ids is too long: {len(tokens)}")
             # label shift
