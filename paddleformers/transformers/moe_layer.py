@@ -124,7 +124,7 @@ class _AllToAll(paddle.autograd.PyLayer):
         if dist.get_world_size(group) <= 1:
             return input
 
-        output = paddle.empty(output_shape, dtype=input.dtype)
+        output = paddle.empty(output_shape, dtype=input.dtype, requires_grad=True)
         task = dist.alltoall_single(
             output,
             input,
@@ -389,6 +389,8 @@ class MoEFlexTokenLayer(nn.Layer):
             chunk = chunk.contiguous()
             expert = self.experts[i + self.moe_rank * self.moe_num_experts_per_device]
             outputs += [expert(chunk)]
+        if not outputs:
+            return dispatched_input
 
         return paddle.cat(outputs, axis=0)
 
