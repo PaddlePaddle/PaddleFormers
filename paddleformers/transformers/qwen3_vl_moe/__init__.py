@@ -1,4 +1,5 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright 2025 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,26 +13,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import sys
 from typing import TYPE_CHECKING
 
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "auto_lora_model": ["LoRAAutoModel"],
-    "lora_config": ["LoRAAutoConfig", "LoRAConfig"],
-    "lora_layers": ["ColumnParallelLoRALinear", "LoRALinear", "RowParallelLoRALinear"],
-    "lora_model": ["LoRAModel"],
-    "lora_quantization_layers": ["QuantizationLoRABaseLinear"],
+    "configuration": ["Qwen3VLMoeConfig", "Qwen3VLMoeTextConfig"],
+    "modeling": [
+        "Qwen3VLMoeForConditionalGeneration",
+        "Qwen3VLMoeModel",
+        "Qwen3VLMoePretrainedModel",
+        "Qwen3VLMoeTextModel",
+    ],
+    "processor": ["Qwen3VLProcessor"],
+    "video_processor": ["Qwen3VLVideoProcessor"],
 }
 
 if TYPE_CHECKING:
-    from .auto_lora_model import LoRAAutoModel
-    from .lora_config import LoRAAutoConfig, LoRAConfig
-    from .lora_layers import ColumnParallelLoRALinear, LoRALinear, RowParallelLoRALinear
-    from .lora_model import LoRAModel
-    from .lora_quantization_layers import QuantizationLoRABaseLinear
+    from .configuration import *
+    from .modeling import *
+
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

@@ -33,7 +33,7 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     def setUpClass(cls):
         cls.tmpdir = tempfile.mkdtemp()
         processor = PaddleOCRVLProcessor.from_pretrained(
-            "PaddleFormers/tiny-random-paddleocr_vl", patch_size=4, max_pixels=56 * 56, min_pixels=28 * 28
+            "PaddleFormers/tiny-random-paddleocr-vl-bf16", patch_size=4, max_pixels=56 * 56, min_pixels=28 * 28
         )
         processor.save_pretrained(cls.tmpdir)
         cls.image_token = processor.image_token

@@ -17,14 +17,16 @@ from __future__ import annotations
 import copy
 import tempfile
 import unittest
+from io import BytesIO
 
 import paddle
+import requests
+from PIL import Image
 
 from paddleformers.transformers import (
     AutoProcessor,
     PaddleOCRVLConfig,
     PaddleOCRVLForConditionalGeneration,
-    process_vision_info,
 )
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -451,28 +453,31 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
 class PaddleOCRVLIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.model = PaddleOCRVLForConditionalGeneration.from_pretrained(
-            "PaddleFormers/tiny-random-paddleocr_vl", convert_from_hf=True
+            "PaddleFormers/tiny-random-paddleocr-vl-bf16", dtype="float32", convert_from_hf=True
         )
 
-        self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-paddleocr_vl")
+        self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-paddleocr-vl-bf16")
+        image_path = (
+            "https://paddle-model-ecology.bj.bcebos.com/PPOCRVL/dataset/exam_paper_0829/part_0000/img_000040676.png"
+        )
+        image = Image.open(BytesIO(requests.get(image_path).content)).convert("RGB")
         self.messages = [
             {
                 "role": "user",
                 "content": [
                     {
                         "type": "image",
-                        "image": "https://paddle-model-ecology.bj.bcebos.com/PPOCRVL/dataset/exam_paper_0829/part_0000/img_000040676.png",
+                        "image": image,
                     },
                     {"type": "text", "text": "OCR:"},
                 ],
             }
         ]
-        self.image, _ = process_vision_info(self.messages)
 
     def test_model_tiny_logits(self):
-        text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
-
-        inputs = self.processor(text=[text], images=self.image, return_tensors="pd")
+        inputs = self.processor.apply_chat_template(
+            self.messages, tokenize=True, add_generation_prompt=True, return_dict=True, return_tensors="pd"
+        )
 
         EXPECTED_INPUT_IDS = paddle.to_tensor(
             [
@@ -501,29 +506,29 @@ class PaddleOCRVLIntegrationTest(unittest.TestCase):
             [
                 1.0,
                 1.0,
+                0.99215686,
+                0.96862745,
                 1.0,
                 1.0,
-                0.87450981,
-                0.97647059,
+                0.98431373,
+                0.82745099,
                 1.0,
                 1.0,
-                0.89803922,
+                1.0,
+                1.0,
+                1.0,
+                0.96862745,
                 1.0,
                 1.0,
                 0.99215686,
                 0.98431373,
                 1.0,
                 1.0,
-                0.89019608,
+                1.0,
+                0.98431373,
                 1.0,
                 1.0,
-                0.99215686,
-                1.0,
-                1.0,
-                1.0,
-                0.30196083,
-                1.0,
-                1.0,
+                0.97647059,
             ]
         )
 
@@ -539,36 +544,36 @@ class PaddleOCRVLIntegrationTest(unittest.TestCase):
         output = self.model(**inputs, return_dict=True)["logits"].astype(paddle.float32)
         EXPECTED_SLICE = paddle.to_tensor(
             [
-                -2.65924811,
-                0.93177426,
-                0.90873861,
-                -1.67099512,
-                2.99823189,
-                -0.04230958,
-                -0.82311976,
-                0.77245933,
-                -0.46831226,
-                -0.78922427,
-                0.46570098,
-                -0.82739896,
-                -0.69225186,
-                0.07854506,
-                -0.53833205,
-                0.54315037,
-                0.27870116,
-                0.37676102,
-                0.24596645,
-                -3.58607650,
-                -0.14288600,
-                0.55182666,
-                -2.34458137,
-                -0.21277292,
-                1.54486978,
-                -0.21412303,
-                0.33006832,
-                -0.22059122,
-                2.62879276,
-                -1.91293812,
+                -1.33352613,
+                0.75701588,
+                2.13876581,
+                0.96507418,
+                1.44392681,
+                -0.25195584,
+                -0.78855759,
+                -0.72871935,
+                -0.40182495,
+                1.30361509,
+                1.37958324,
+                2.72390699,
+                -0.98425049,
+                -1.13070810,
+                1.62200963,
+                1.53091741,
+                -0.16910096,
+                -3.02286720,
+                -0.54723328,
+                0.26272354,
+                -0.48064074,
+                2.56522560,
+                -0.56610370,
+                1.64531112,
+                0.64056832,
+                -2.33065510,
+                0.93232709,
+                0.57917541,
+                2.06145167,
+                -1.49998081,
             ]
         )
-        self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=5e-4, rtol=1e-5))
+        self.assertTrue(paddle.allclose(EXPECTED_SLICE, output[0, 0, :30], atol=5e-4, rtol=1e-5))
