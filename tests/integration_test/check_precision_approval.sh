@@ -48,10 +48,10 @@ function run_tools_test() {
 }
 
 
-PRECISION_APPROVERS="ooooo-create"
+PRECISION_APPROVERS="XieYunshen From00 risemeup1 tianlef lugimzzz zjjlivein"
 echo_line="You must be approved by all of ${PRECISION_APPROVERS} for changing precision.\n"
 APPROVER_LIST=(${PRECISION_APPROVERS})
-check_approval 1 "${APPROVER_LIST[@]}"
+check_approval 6 "${APPROVER_LIST[@]}"
 
 
 if [ -n "${echo_list}" ];then

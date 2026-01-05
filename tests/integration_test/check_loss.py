@@ -138,6 +138,7 @@ def main():
         target_losses = [gt_dict[s] for s in common_steps]
 
         if args.log_loss_file is not None:
+            log_loss_file = args.log_loss_file
             with open(log_loss_file, "w") as f:
                 for s in common_steps:
                     f.write(f"{s} {log_dict[s]}\n")
