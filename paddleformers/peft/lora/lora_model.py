@@ -1162,7 +1162,7 @@ class LoRAModel(nn.Layer):
 
         model_key_list = list(base_state_dict.keys())
         for k in model_key_list:
-            if "lora" not in k:
+            if "weight" in k:
                 tensor = base_state_dict.pop(k)
                 lora_A_key, lora_B_key = k.replace("weight", "lora_A"), k.replace("weight", "lora_B")
                 lora_A_tensor = None

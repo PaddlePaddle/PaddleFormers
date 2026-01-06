@@ -186,7 +186,7 @@ class TestLoraModel(unittest.TestCase):
         model.eval()
         lora_model = LoRAModel(model, lora_config)
 
-        original_state_dict = {k: v.clone() for k, v in model.state_dict().items() if "lora" not in k}
+        original_state_dict = {k: v.clone() for k, v in model.state_dict().items() if "weight" in k}
 
         merge_state_dict = lora_model.get_merge_state_dict(offload=False)
 
@@ -268,3 +268,7 @@ class TestLoRAConfig(unittest.TestCase):
             lora_config.save_pretrained(tempdir)
             loaded_lora_config = LoRAConfig.from_pretrained(tempdir)
             self.assertEqual(lora_config, loaded_lora_config)
+
+
+if __name__ == "__main__":
+    unittest.main()
