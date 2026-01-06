@@ -288,8 +288,8 @@ class FinetuningArguments(
         self.max_gradient_accumulation_steps = self.gradient_accumulation_steps
 
         if self.pipeline_model_parallel_size > 1:
-            self.per_device_eval_batch_size = self.per_device_train_batch_size * self.gradient_accumulation_steps
-            logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size} in Pipeline Parallel!")
+            # self.per_device_eval_batch_size = self.per_device_train_batch_size * self.gradient_accumulation_steps
+            # logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size} in Pipeline Parallel!")
             user_defined_strategy = fleet.fleet._user_defined_strategy
             user_defined_strategy.strategy.pipeline_configs.accumulate_steps = self.gradient_accumulation_steps
             if self.pp_need_data and not self.pp_need_data_degree:
@@ -306,9 +306,9 @@ class FinetuningArguments(
                 )
             self.max_gradient_accumulation_steps = self.gradient_accumulation_steps
             logger.info(f"fixing pp configs: {user_defined_strategy.pipeline_configs}")
-        else:
-            self.per_device_eval_batch_size = self.per_device_train_batch_size
-            logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size}")
+        # else:
+        #     self.per_device_eval_batch_size = self.per_device_train_batch_size
+        #     logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size}")
 
         if self.sharding_parallel_size > 1:
             sharding_comm_overlap_non_pp = (

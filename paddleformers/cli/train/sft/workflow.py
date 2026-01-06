@@ -370,19 +370,21 @@ def run_sft(
             training_args, data_args, model_args
         )
     else:
-        train_dataset = create_dataset_sft(
-            task_group=data_args.train_dataset_path,
-            task_group_prob=data_args.train_dataset_prob,
-            sub_dataset_type=data_args.train_dataset_type,
-            **dataset_config,
-        )
-        eval_dataset = create_dataset_sft(
-            task_group=data_args.eval_dataset_path,
-            task_group_prob=data_args.eval_dataset_prob,
-            sub_dataset_type=data_args.eval_dataset_type,
-            is_valid=True,
-            **dataset_config,
-        )
+        if training_args.should_load_dataset:
+            train_dataset = create_dataset_sft(
+                task_group=data_args.train_dataset_path,
+                task_group_prob=data_args.train_dataset_prob,
+                sub_dataset_type=data_args.train_dataset_type,
+                **dataset_config,
+            )
+        if training_args.do_eval and training_args.should_load_dataset:
+            eval_dataset = create_dataset_sft(
+                task_group=data_args.eval_dataset_path,
+                task_group_prob=data_args.eval_dataset_prob,
+                sub_dataset_type=data_args.eval_dataset_type,
+                is_valid=True,
+                **dataset_config,
+            )
 
     # Freeze model based on training args (Supports for MLLM Full training)
     if not model_args.lora and getattr(training_args, "freeze_config", ""):
@@ -432,23 +434,24 @@ def run_sft(
                 "When using 'random' mix_strategy, max_steps must be explicitly set (cannot be -1). "
                 "Random mixing requires a fixed number of training steps to properly sample data."
             )
-        if data_args.dataset_type != "pretrain":
-            training_args.max_steps = estimate_training(train_dataset, data_args, training_args, model_args)
-            del train_dataset
-            gc.collect()
-            train_dataset = create_dataset_sft(
-                task_group=data_args.train_dataset_path,
-                task_group_prob=data_args.train_dataset_prob,
-                sub_dataset_type=data_args.train_dataset_type,
-                **dataset_config,
-            )
-        else:
-            global_batch_size = (
-                training_args.per_device_train_batch_size
-                * training_args.gradient_accumulation_steps
-                * training_args.dataset_world_size
-            )
-            training_args.max_steps = math.ceil(len(train_dataset) / global_batch_size)
+        if training_args.should_load_dataset and paddle.distributed.get_rank() == 0:
+            if data_args.dataset_type != "pretrain":
+                training_args.max_steps = estimate_training(train_dataset, data_args, training_args, model_args)
+                del train_dataset
+                gc.collect()
+                train_dataset = create_dataset_sft(
+                    task_group=data_args.train_dataset_path,
+                    task_group_prob=data_args.train_dataset_prob,
+                    sub_dataset_type=data_args.train_dataset_type,
+                    **dataset_config,
+                )
+            else:
+                global_batch_size = (
+                    training_args.per_device_train_batch_size
+                    * training_args.gradient_accumulation_steps
+                    * training_args.dataset_world_size
+                )
+                training_args.max_steps = math.ceil(len(train_dataset) / global_batch_size)
 
         if paddle.distributed.get_world_size() > 1:
             paddle.distributed.barrier()
@@ -487,8 +490,8 @@ def run_sft(
     trainer = SFTTrainer(
         model=model,
         args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
+        train_dataset=(train_dataset if training_args.do_train and training_args.should_load_dataset else None),
+        eval_dataset=(eval_dataset if training_args.do_eval and training_args.should_load_dataset else None),
         tokenizer=tokenizer,
         processing_class=processor,
         compute_metrics=metrics,
