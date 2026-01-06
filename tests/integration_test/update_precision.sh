@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
+export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
 
 response=$(curl -L \
 -H "Accept: application/vnd.github+json" \

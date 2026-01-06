@@ -117,7 +117,6 @@ python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --log_loss_file ./${log_loss_file} \
    --gt_file ./${gt_loss_file}
 
-cat ${log_loss_file}
 if [ $? -ne 0 ]; then
   pushd $root_dir/PaddleFormers
   bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
@@ -129,10 +128,10 @@ if [ $? -ne 0 ]; then
   rm ${gt_loss_file} && mv ${log_loss_file} ${gt_loss_file}
   if [ ! -f precision_list.txt ]; then
     wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}/precision_list.txt
-  fi
-  if [ $? -ne 0 ]; then
-    wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}_latest/precision_list.txt
-    python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}
+    if [ $? -ne 0 ]; then
+      wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}_latest/precision_list.txt
+      python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}
+    fi
   fi
   python $root_dir/bos/BosClient.py ${gt_loss_file} paddle-github-action/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}
 fi
