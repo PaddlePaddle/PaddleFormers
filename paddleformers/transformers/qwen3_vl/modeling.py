@@ -51,7 +51,7 @@ from ..utils import logger
 from .configuration import Qwen3VLConfig, Qwen3VLTextConfig, Qwen3VLVisionConfig
 
 if TYPE_CHECKING:
-    from .modeling_fleet import Qwen3VLModelFleet, Qwen3VLForConditionalGenerationFleet, Qwen3VLModelPipe, Qwen3VLForCausalLMPipe
+    from .modeling_fleet import Qwen3VLModelFleet, Qwen3VLForConditionalGenerationFleet,Qwen3VLModelPipe,Qwen3VLForCausalLMPipe
 
 
 def __getattr__(name):
@@ -787,7 +787,7 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
         )
         cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
         deepstack_feature_lists = []
-        print("formers vision 0 hidden_states", hidden_states._md5sum())
+        print("formers vision 0 hidden_states", hidden_states.shape)
 
         for layer_num, blk in enumerate(self.blocks):
             cu_seqlens_now = cu_seqlens
@@ -816,10 +816,10 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
                     hidden_states
                 )
                 deepstack_feature_lists.append(deepstack_feature)
-            print(f"formers vision {layer_num} hidden_states", hidden_states._md5sum())
+            print(f"formers vision {layer_num} hidden_states", hidden_states.shape)
 
         hidden_states = self.merger(hidden_states)
-
+        print("vision merger output ",hidden_states.shape)
         return hidden_states, deepstack_feature_lists
 
 
@@ -986,7 +986,7 @@ class Qwen3VLTextAttention(nn.Layer):
 
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
-        self.head_dim = self.hidden_size // self.num_heads
+        self.head_dim = config.head_dim #self.hidden_size // self.num_heads
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.is_causal = True
@@ -1007,11 +1007,11 @@ class Qwen3VLTextAttention(nn.Layer):
             has_bias=False,
         )
 
-        if (self.head_dim * self.num_heads) != self.hidden_size:
-            raise ValueError(
-                f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
-                f" and `num_heads`: {self.num_heads})."
-            )
+        # if (self.head_dim * self.num_heads) != self.hidden_size:
+        #     raise ValueError(
+        #         f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
+        #         f" and `num_heads`: {self.num_heads})."
+        #     )
 
         self.sequence_parallel = config.sequence_parallel
         self.fuse_attention_qkv = config.fuse_attention_qkv
@@ -1532,6 +1532,7 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
 
             hidden_states = layer_outputs[0]
             if deepstack_visual_embeds is not None and idx < len(deepstack_visual_embeds):
+                print("process _deepstack_process ",hidden_states.shape,visual_pos_masks.shape,deepstack_visual_embeds[idx].shape)
                 hidden_states = self._deepstack_process(
                     hidden_states,
                     visual_pos_masks,
@@ -2286,4 +2287,3 @@ __all__ = [
     "Qwen3VLTextModel",
     "Qwen3VLModelFleet",
     "Qwen3VLForConditionalGenerationFleet",
-]

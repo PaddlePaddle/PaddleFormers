@@ -19,12 +19,15 @@
 # limitations under the License.
 from collections.abc import Callable
 from contextlib import nullcontext
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional, Tuple, Union
 
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
+from paddle.distributed.fleet.utils import recompute
+
 from paddlefleet import parallel_state, tensor_parallel
 from paddlefleet.fusions.fused_bias_dropout import get_bias_dropout_add
 from paddlefleet.fusions.fused_layer_norm import FusedLayerNorm
@@ -151,7 +154,69 @@ def get_image_sequence_length(img_h, img_w, patch_dim, add_class_token, class_to
 
 class Qwen3VLTextTransformerLayer(TransformerLayer):
     """Qwen3VL text model for adapt deepstack process"""
-    
+
+    def forward(
+        self,
+        dict_args: dict,
+    ):
+        """
+        Perform a forward pass through the transformer layer.
+
+        This method calls the core computation of a transformer layer, including
+        self-attention, cross-attention (if applicable), and feed-forward operations.
+        """
+        # Remove 'dynamic_inference_decode_only' from kwargs if present
+        # this is only used to uniquely identify decode and non-decode cuda graph
+        # runners in the cuda graph manager
+        dict_args.pop("dynamic_inference_decode_only", None)
+        keys = tuple(dict_args.keys())
+        values = tuple(dict_args.values())
+
+        if self.full_recompute:
+            hidden_states = dict_args["hidden_states"]
+            attention_mask = dict_args.get("attention_mask", None)
+            attn_mask_startend_row_indices = dict_args.get(
+                "attn_mask_startend_row_indices", None
+            )
+            context = dict_args.get("context", None)
+            context_mask = dict_args.get("context_mask", None)
+            rotary_pos_emb = dict_args.get("rotary_pos_emb", None)
+            attention_bias = dict_args.get("attention_bias", None)
+            packed_seq_params = dict_args.get("packed_seq_params", None)
+            deepstack_visual_emb = dict_args.get("deepstack_visual_emb", None)
+            visual_pos_masks = dict_args.get("visual_pos_masks", None)
+            outputs = recompute(
+                self._forward_impl,
+                hidden_states=hidden_states,
+                attention_mask=attention_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices.clone()  # Clone is necessary!
+                if attn_mask_startend_row_indices is not None
+                else None,
+                context=context,
+                context_mask=context_mask,
+                rotary_pos_emb=rotary_pos_emb.clone()  # Clone is necessary!
+                if rotary_pos_emb is not None
+                else None,
+                attention_bias=attention_bias,
+                packed_seq_params=packed_seq_params,
+                deepstack_visual_emb=deepstack_visual_emb,
+                visual_pos_masks=visual_pos_masks,
+            )
+        else:
+            outputs = self._forward_impl(**dict_args)
+
+        if isinstance(outputs, tuple):
+            output, context = outputs[0], outputs[1]
+        else:
+            output, context = outputs, None
+
+        rst = OrderedDict()
+        rst = {"hidden_states": output}
+        if context is not None:
+            rst["context"] = context
+        rst = {**dict_args, **rst}
+        return rst
+
     def _forward_impl(
         self,
         hidden_states: paddle.Tensor,
@@ -181,6 +246,7 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
         )
         hidden_states = self._forward_mlp(hidden_states)
         if self.layer_number in range(len(deepstack_visual_emb)):
+            print("process _deepstack_process ",hidden_states.shape,visual_pos_masks.shape,deepstack_visual_emb[self.layer_number].shape)
             hidden_states = self._deepstack_process(
                 hidden_states=hidden_states,
                 visual_embeds=deepstack_visual_emb[self.layer_number],
@@ -198,7 +264,6 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
         if hidden_states.ndim > 2:
             hidden_states = hidden_states.flatten(start_axis=0, stop_axis=1)
 
-        visual_pos_masks = visual_pos_masks.to(hidden_states.device)
         visual_embeds = visual_embeds.to(hidden_states.device, hidden_states.dtype)
 
         # complicated logic for squential parallelism
@@ -289,7 +354,6 @@ class Qwen3VLTextProvider(GPTModelProvider):
     
     def __post_init__(self):
         super().__post_init__()
-        print("rope_scaling ",self.rope_scaling)
         self.mrope_section = self.rope_scaling.get("mrope_section", [24, 20, 20])
 
 
@@ -436,24 +500,6 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         if not self.pre_process:
             hidden_states = self.input_tensor
         
-        # Viewless tensor.
-        # - We only need to create a viewless tensor in the case of micro batch
-        #   size (mbs) == 1, since in this case, 'hidden_states.transpose()'
-        #   above creates a view tensor, and '.contiguous()' is a pass-through.
-        #   For mbs >= 2, '.contiguous()' creates a new tensor, eliminating
-        #   the need to make it viewless.
-        #
-        #   However, we don't explicitly check mbs == 1 here because
-        #   make_viewless_tensor() has negligible overhead when its input
-        #   is already viewless.
-        #
-        # - For the 'else' case above, calling make_viewless_tensor() here is
-        #   likely redundant, since p2p_communication.py (likely originator)
-        #   already creates viewless tensors. That said, make_viewless_tensor()
-        #   is called here to be future-proof and corner-case-proof.
-    
-        # hidden_states = make_viewless_tensor(inp=hidden_states, requires_grad=True, keep_graph=True)
-        
         if self.config.sequence_parallel:
             rng_context = tensor_parallel.get_cuda_rng_tracker().fork()
         else:
@@ -463,7 +509,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         # if we are using other fp8 recipes, then the context manager enter&exit are free
         # we can wrap fp8_context within the for loop over layers, so that we can fine-grained
         # control which layer will be fp8 or bf16
-        print("fleet vision 0 hidden_states", hidden_states._md5sum())
+        print("fleet vision 0 hidden_states", hidden_states.shape)
         
         with rng_context:
             if self.config.recompute_granularity == "full" and self.training:
@@ -503,13 +549,13 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                     if l_no in self.deepstack_visual_indexes:
                         deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(l_no)](hidden_states.squeeze(0))
                         deepstack_feature_lists.append(deepstack_feature)
-                    print(f"fleet vision {l_no} hidden_states", hidden_states._md5sum())
+                    print(f"fleet vision {l_no} hidden_states", hidden_states.shape)
         
         if self.norm is not None:
             hidden_states = self.norm(hidden_states)
         
         hidden_states = self.merger(hidden_states.squeeze(0))
-        
+        print("vision merger output ",hidden_states.shape)
         return hidden_states, deepstack_feature_lists
     
     def _checkpointed_forward(
@@ -790,7 +836,7 @@ class Qwen3VLVisionModel(VisionLayer):
             rotary_pos_sin=rotary_pos_sin,
             packed_seq_params=packed_seq_params,
         )
-        # hidden_states = hidden_states.sequeeze(1).view(-1, self.merge_hidden_size)
+
         return hidden_states
 
 class Qwen3VLVisionModelFleet(Qwen3VLPretrainedModel):
@@ -829,7 +875,7 @@ class Qwen3VLProvider(TransformerConfig):
     vision_model_from_pretrained: str | None = None
     
     freeze_langurage_model: bool = False
-    freeze_vision_model: bool = False
+    freeze_vision_model: bool = True
     freeze_vision_projection: bool = False
     
     forward_step_fn: Callable = qwen3vl_forward_step
@@ -903,14 +949,15 @@ class Qwen3VLProvider(TransformerConfig):
     #         self.text_config.position_embedding_type = "mrope"
     #         self.text_config.mrope_section = [24, 20, 20]
     #         self.text_config.multimodal_embedding = True
-    
+
     @classmethod
     def from_config(cls, config):
-        print("vision_config ",config.vision_config,flush=True)
         config.vision_config = Qwen3VLVisionProvider.from_config(config.vision_config)
-        print("text_config ",config.text_config,flush=True)
-        text_config = Qwen3VLTextProvider.from_config(config.text_config)
-        config.text_config = text_config
+        config.text_config = Qwen3VLTextProvider.from_config(config.text_config)
+        config.text_config.multimodal_embedding = True
+        config.text_config.position_embedding_type = "mrope"
+        config.text_config.image_token_id = config.image_token_id
+        config.text_config.video_token_id = config.video_token_id
         return super().from_config(config)
 
 
@@ -928,6 +975,7 @@ class Qwen3VLModel(MCoreLLaVAModel):
         drop_vision_class_token: bool = False,
         vp_stage: int | None = None,
         model_version: str | None = None,
+        criterion=False,
     ) -> None:
         super(MCoreLLaVAModel, self).__init__(config=config)
         
@@ -986,6 +1034,7 @@ class Qwen3VLModel(MCoreLLaVAModel):
             add_class_token=not drop_vision_class_token,
             class_token_len=vision_transformer_config.class_token_len,
         )
+        self.criterion=criterion
     
     def get_rope_index(
         self,
@@ -1107,45 +1156,13 @@ class Qwen3VLModel(MCoreLLaVAModel):
     ):
         pixel_values = pixel_values.to(self.vision_model._dtype)
         image_embeds, deepstack_image_embeds = self.vision_model(pixel_values, grid_thw=image_grid_thw)
+        print("vision_model output ",image_embeds.shape)
+        print(f"image_grid_thw {image_grid_thw.prod(-1)} spatial_merge_size {self.vision_model.spatial_merge_size ** 2}")
         split_sizes = (image_grid_thw.prod(-1) // self.vision_model.spatial_merge_size ** 2).tolist()
         image_embeds = paddle.split(image_embeds, split_sizes)
+        print(f"after split {split_sizes} image_embeds {image_embeds}")
         return image_embeds, deepstack_image_embeds
     
-    def get_placehodler_mask(
-        self,
-        input_ids: paddle.LongTensor,
-        inputs_embeds: paddle.FloatTensor,
-        image_features: paddle.FloatTensor | None = None,
-        video_features: paddle.FloatTensor | None = None,
-    ):
-        if input_ids is None:
-            special_image_mask = inputs_embeds == self.get_input_embeddings()(
-                paddle.to_tensor(self.image_token_index, dtype="long")
-            )
-            special_image_mask = special_image_mask.all(-1)
-            special_video_mask = inputs_embeds == self.get_input_embeddings()(
-                paddle.to_tensor(self.video_token_index, dtype="long")
-            )
-            special_video_mask = special_video_mask.all(-1)
-        else:
-            special_image_mask = input_ids == self.image_token_index
-            special_video_mask = input_ids == self.video_token_index
-        
-        n_image_tokens = special_image_mask.sum()
-        special_image_mask = special_image_mask.unsqueeze(-1).expand_as(inputs_embeds)
-        if image_features is not None and inputs_embeds[special_image_mask].numel() != image_features.numel():
-            raise ValueError(
-                f"Image features and image tokens do not match: tokens: {n_image_tokens}, features: {image_features.shape[0]}"
-            )
-        
-        n_video_tokens = special_video_mask.sum()
-        if video_features is not None and inputs_embeds[special_video_mask].numel() != video_features.numel():
-            raise ValueError(
-                f"Videos features and video tokens do not match: tokens: {n_video_tokens}, features {video_features.shape[0]}"
-            )
-
-        return special_image_mask, special_video_mask
-
     def forward(
         self,
         input_ids: paddle.LongTensor = None,
@@ -1162,6 +1179,7 @@ class Qwen3VLModel(MCoreLLaVAModel):
         cache_position: paddle.Tensor | None = None,
         attn_mask_startend_row_indices: paddle.Tensor | None = None,
     ) -> paddle.Tensor:
+        assert loss_mask is None, "loss_mask is not supported yet"
         image_embeds, video_embeds, deepstack_image_embeds, deepstack_video_embeds = (None for _ in range(4))
         if self.add_encoder and pixel_values is not None:
             pixel_values.to(self.vision_model.parameters()[0].dtype)
@@ -1170,7 +1188,7 @@ class Qwen3VLModel(MCoreLLaVAModel):
                     image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
             else:
                 image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
-            image_embeds = image_embeds[0]
+            image_embeds = paddle.cat(image_embeds, dim=0)
         
         if self.add_encoder and pixel_values_videos is not None:
             pixel_values_videos.to(next(self.vision_model.parameters()).dtype)
@@ -1179,7 +1197,7 @@ class Qwen3VLModel(MCoreLLaVAModel):
                     video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
             else:
                 video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
-            video_embeds = video_embeds[0]
+            video_embeds = paddle.cat(video_embeds, axis=0)
         
         if position_ids is None and input_ids is not None:
             position_ids, _ = self.get_rope_index(
@@ -1200,10 +1218,14 @@ class Qwen3VLModel(MCoreLLaVAModel):
             "runtime_gather_output": runtime_gather_output
         }
         output = self.language_model(input_dict)
-        if labels is None or loss_mask is None:
+        print("qwenvl criterion ",self.criterion)
+        if labels is None:
             return output
+        elif self.criterion is not None:
+            print("qwenvl output loss  ",self.criterion(output, labels))
+            return self.criterion(output, labels)
         else:
-            output, loss_mask.contiguous()
+            output
     
     def set_input_tensor(self, input_tensor) -> None:
         """Set model chunk input tensor."""
@@ -1223,16 +1245,18 @@ class Qwen3VLModel(MCoreLLaVAModel):
             self.language_model.set_input_tensor(input_tensor[0])
 
 class Qwen3VLModelFleet(Qwen3VLPretrainedModel):
-    def __new__(cls, config):
+    def __new__(cls, config,have_criterion=True):
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
-
+        criterion=None
+        if have_criterion:
+            criterion=CriterionLayer(config.text_config)
         model_provider_class = Qwen3VLProvider
         model_provider = model_provider_class.from_config(config)
-        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type)
+        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type,criterion=criterion)
         qwen3vl_model._gen_aoa_config = cls._gen_aoa_config
         qwen3vl_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         qwen3vl_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
@@ -1251,7 +1275,7 @@ class Qwen3VLForConditionalGenerationFleet(Qwen3VLPretrainedModel):
     def __init__(self, config):
         super().__init__(config)
         # model_provider = Qwen3VLProvider.from_config(config)
-        self.model = Qwen3VLModelFleet(config) #Qwen3VLModelFleet(model_provider, model_version=config.model_type)
+        self.model = Qwen3VLModelFleet(config,have_criterion=False) #Qwen3VLModelFleet(model_provider, model_version=config.model_type)
         self.criterion = CriterionLayer(config.text_config)
         self.tie_weights()
 
@@ -1349,7 +1373,7 @@ class Qwen3VLForConditionalGenerationFleet(Qwen3VLPretrainedModel):
             **kwargs,
         )
 
-        logits = outputs[0]
+        logits = outputs
 
         loss = None
         if labels is not None:
@@ -1367,16 +1391,18 @@ class Qwen3VLForConditionalGenerationFleet(Qwen3VLPretrainedModel):
 class Qwen3VLForCausalLMPipe(Qwen3VLPretrainedModel, GeneralModelForCausalLMPipe):
     is_fleet = True
 
-    def __new__(cls, config):
+    def __new__(cls, config,have_criterion=True):
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
-
+        criterion=None
+        if have_criterion:
+            criterion=CriterionLayer(config.text_config)
         model_provider_class = Qwen3VLProvider
         model_provider = model_provider_class.from_config(config)
-        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type)
+        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type,criterion=criterion)
         qwen3vl_model._gen_aoa_config = cls._gen_aoa_config
         qwen3vl_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         qwen3vl_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
@@ -1387,16 +1413,18 @@ class Qwen3VLForCausalLMPipe(Qwen3VLPretrainedModel, GeneralModelForCausalLMPipe
 class Qwen3VLModelPipe(Qwen3VLPretrainedModel, GeneralModelForCausalLMPipe):
     is_fleet = True
 
-    def __new__(cls, config):
+    def __new__(cls, config,have_criterion=True):
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
-
+        criterion=None
+        if have_criterion:
+            criterion=CriterionLayer(config.text_config)
         model_provider_class = Qwen3VLProvider
         model_provider = model_provider_class.from_config(config)
-        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type)
+        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type,criterion=criterion)
         qwen3vl_model._gen_aoa_config = cls._gen_aoa_config
         qwen3vl_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         qwen3vl_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
