@@ -36,7 +36,7 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 128
 logging_dir: ./vdl_log
-output_dir: /root/paddlejob/tmpspace/GLM-4.5-Air-PT/outputs/checkpoint
+output_dir: ./checkpoints/qwen3_hf_0p6b_sft_ckpts
 disable_tqdm: true
 eval_accumulation_steps: 16
 
@@ -85,7 +85,7 @@ bf16: true
 fp16_opt_level: O2
 unified_checkpoint: false
 load_via_cpu: true
-# resume_from_checkpoint: false
+# resume_from_checkpoint: true
 save_checkpoint_format : "flex_checkpoint"
 load_checkpoint_format : "flex_checkpoint"
 save_to_hf: true
