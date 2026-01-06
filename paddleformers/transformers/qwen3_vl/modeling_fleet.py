@@ -59,6 +59,7 @@ from .modeling import (
 )
 from ..cache_utils import Cache, DynamicCache
 from ..gpt_provider import GPTModelProvider
+from ..model_utils import PretrainedModel
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...nn.criterion.interface import CriterionLayer
 
@@ -1244,7 +1245,221 @@ class Qwen3VLModel(MCoreLLaVAModel):
         else:
             self.language_model.set_input_tensor(input_tensor[0])
 
-class Qwen3VLModelFleet(Qwen3VLPretrainedModel):
+
+class Qwen3VLPretrainedModelFleet(PretrainedModel):
+    config_class = Qwen3VLConfig
+    base_model_prefix = "model"
+    input_modalities = ["image", "video", "text"]
+    _no_split_modules = ["Qwen3VLTextTransformerLayer", "Qwen3VLVisionTransformerBlock"]
+    _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
+    transpose_weight_keys = [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "qkv",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+        "proj",
+        "linear_fc\d+",
+        "up_gate_proj",
+        "qkv_proj",
+    ]
+    
+    @classmethod
+    def _gen_aoa_config(cls, config: Qwen3VLConfig):
+        mapping = cls._checkpoint_conversion_mapping
+        llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
+        visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
+        llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
+        visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
+        
+        # language model
+        aoa_config = {
+            "aoa_statements": [
+                f"model.language_model.embed_tokens.weight -> {llm_prefix}0.embedding.embed_tokens.weight",
+                f"model.language_model.norm.weight -> {llm_prefix}{config.text_config.num_hidden_layers + 1}.norm.weight",
+            ]
+        }
+        aoa_config["aoa_statements"] += [
+            lm_state for layer_id in range(config.text_config.num_hidden_layers) for lm_state in (
+                f"model.language_model.layers.{layer_id}.input_layernorm.weight -> {llm_prefix}{layer_id + 1}.input_layernorm.weight",
+                f"model.language_model.layers.{layer_id}.post_attention_layernorm.weight -> {llm_prefix}{layer_id + 1}.post_attention_layernorm.weight",
+                f"model.language_model.layers.{layer_id}.self_attn.o_proj.weight^T -> {llm_prefix}{layer_id + 1}.self_attn.o_proj.weight",
+                f"model.language_model.layers.{layer_id}.mlp.down_proj.weight^T -> {llm_prefix}{layer_id + 1}.mlp.down_proj.weight",
+                f"model.language_model.layers.{layer_id}.self_attn.q_norm.weight -> {llm_prefix}{layer_id + 1}.self_attn.q_norm.weight",
+                f"model.language_model.layers.{layer_id}.self_attn.k_norm.weight -> {llm_prefix}{layer_id + 1}.self_attn.k_norm.weight",
+            )
+        ]
+        
+        # visual model
+        aoa_config["aoa_statements"] += (
+            [
+                f"model.visual.blocks.$LAYER_ID.attn.{x}.weight^T -> {visual_prefix}decoder.layers.$LAYER_ID.self_attn.{y}.weight"
+                for x, y in (("qkv", "qkv_proj"), ("proj", "o_proj"))
+            ]
+            + [
+                f"model.visual.blocks.$LAYER_ID.attn.{x}.bias -> {visual_prefix}decoder.layers.$LAYER_ID.self_attn.{y}.bias"
+                for x, y in (("qkv", "qkv_proj"), ("proj", "o_proj"))
+            ]
+            + [
+                f"model.visual.blocks.$LAYER_ID.mlp.{x}.weight^T -> {visual_prefix}decoder.layers.$LAYER_ID.mlp.{y}.weight"
+                for x, y in (("linear_fc1", "up_gate_proj"), ("linear_fc2", "down_proj"))
+            ]
+            + [
+                f"model.visual.blocks.$LAYER_ID.mlp.{x}.bias -> {visual_prefix}decoder.layers.$LAYER_ID.mlp.{y}.bias"
+                for x, y in (("linear_fc1", "up_gate_proj"), ("linear_fc2", "down_proj"))
+            ]
+        )
+        aoa_config["aoa_statements"] += [
+            f"model.visual.patch_embed.proj.weight -> {visual_prefix}patch_embed.proj.weight",
+            f"model.visual.patch_embed.proj.bias -> {visual_prefix}patch_embed.proj.bias",
+            f"model.visual.pos_embed.weight -> {visual_prefix}pos_embed.weight",
+            f"model.visual.merger.norm.weight -> {visual_prefix}decoder.merger.norm.weight",
+            f"model.visual.merger.norm.bias -> {visual_prefix}decoder.merger.norm.bias",
+            f"model.visual.blocks.$LAYER_ID.norm1.weight -> {visual_prefix}decoer.layers.$LAYER_ID.input_layernorm.weight",
+            f"model.visual.blocks.$LAYER_ID.norm1.bias -> {visual_prefix}decoer.layers.$LAYER_ID.input_layernorm.bias",
+            f"model.visual.blocks.$LAYER_ID.norm2.weight -> {visual_prefix}decoer.layers.$LAYER_ID.post_attention_layernorm.weight",
+            f"model.visual.blocks.$LAYER_ID.norm2.bias -> {visual_prefix}decoer.layers.$LAYER_ID.post_attention_layernorm.bias",
+        ]
+        aoa_config["aoa_statements"] += [
+            f"model.visual.merger.linear_fc1.weight^T -> {visual_prefix}decoder.merger.linear_fc1.weight",
+            f"model.visual.merger.linear_fc1.bias -> {visual_prefix}decoder.merger.linear_fc1.bias",
+            f"model.visual.merger.linear_fc2.weight^T -> {visual_prefix}decoder.merger.linear_fc2.weight",
+            f"model.visual.merger.linear_fc2.bias -> {visual_prefix}decoder.merger.linear_fc2.bias",
+        ]
+        aoa_config["aoa_statements"] += [
+            f"model.visual.deepstack_merger_list.$LAYER_ID.linear_fc1.weight^T -> {visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.linear_fc1.weight",
+            f"model.visual.deepstack_merger_list.$LAYER_ID.linear_fc1.bias -> {visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.linear_fc1.bias",
+            f"model.visual.deepstack_merger_list.$LAYER_ID.linear_fc2.weight^T -> {visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.linear_fc2.weight",
+            f"model.visual.deepstack_merger_list.$LAYER_ID.linear_fc2.bias -> {visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.linear_fc2.bias",
+            f"model.visual.deepstack_merger_list.$LAYER_ID.norm.weight -> {visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.norm.weight",
+            f"model.visual.deepstack_merger_list.$LAYER_ID.norm.bias -> {visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.norm.bias",
+        ]
+        
+        # attention qkv
+        aoa_config["aoa_statements"] += [
+            f"model.language_model.layers.{layer_id}.self_attn.q_proj.weight^T, model.language_model.layers.{layer_id}.self_attn.k_proj.weight^T, model.language_model.layers.{layer_id}.self_attn.v_proj.weight^T -> {llm_prefix}{layer_id + 1}.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups={config.text_config.num_key_value_heads}"
+            for layer_id in range(config.text_config.num_hidden_layers)
+        ]
+
+        # FFN
+        aoa_config["aoa_statements"] += [
+            f"model.language_model.layers.{layer_id}.mlp.gate_proj.weight^T, model.language_model.layers.{layer_id}.mlp.up_proj.weight^T -> {llm_prefix}{layer_id + 1}.mlp.up_gate_proj.weight, fused_ffn"
+            for layer_id in range(config.text_config.num_hidden_layers)
+        ]
+
+        # Qwen3_VLModel without lm_head
+        if cls._tied_weights_keys:
+            aoa_config["aoa_statements"] += [
+                f"{'model.language_model.embed_tokens.weight' if config.tie_word_embeddings else 'lm_head.weight'} -> {llm_prefix}{config.text_config.num_hidden_layers + 2}.weight",
+            ]
+
+        return aoa_config
+    
+    def _gen_inv_aoa_config(cls, config: Qwen3VLConfig):
+        mapping = cls._checkpoint_conversion_mapping
+        llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
+        visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
+        llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
+        visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
+        
+        # language model
+        aoa_config = {
+            "aoa_statements": [
+                f"{llm_prefix}0.embedding.embed_tokens.weight -> model.language_model.embed_tokens.weight",
+                f"{llm_prefix}{config.text_config.num_hidden_layers + 1}.norm.weight -> model.language_model.norm.weight",
+            ]
+        }
+        aoa_config["aoa_statements"] += [
+            state for layer_id in range(config.text_config.num_hidden_layers) for state in (
+                f"{llm_prefix}{layer_id + 1}.input_layernorm.weight -> model.language_model.layers.{layer_id}.input_layernorm.weight",
+                f"{llm_prefix}{layer_id + 1}post_attention_layernorm.weight -> model.language_model.layers.{layer_id}.post_attention_layernorm.weight",
+                f"{llm_prefix}{layer_id + 1}.self_attn.o_proj.weight^T -> model.language_model.layers.{layer_id}.self_attn.o_proj.weight",
+                f"{llm_prefix}{layer_id + 1}.mlp.down_proj.weight^T -> model.language_model.layers.{layer_id}.mlp.down_proj.weight",
+                f"{llm_prefix}{layer_id + 1}.self_attn.q_norm.weight -> model.language_model.layers.{layer_id}.self_attn.q_norm.weight",
+                f"{llm_prefix}{layer_id + 1}.self_attn.k_norm.weight -> model.language_model.layers.{layer_id}.self_attn.k_norm.weight",
+            )
+        ]
+
+        # visual model
+        aoa_config["aoa_statements"] += (
+            [
+                f"{visual_prefix}decoder.layers.$LAYER_ID.self_attn.{y}.weight^T -> model.visual.blocks.$LAYER_ID.attn.{x}.weight"
+                for x, y in (("qkv", "qkv_proj"), ("proj", "o_proj"))
+            ]
+            + [
+                f"{visual_prefix}decoder.layers.$LAYER_ID.self_attn.{y}.bias -> model.visual.blocks.$LAYER_ID.attn.{x}.bias"
+                for x, y in (("qkv", "qkv_proj"), ("proj", "o_proj"))
+            ]
+            + [
+                f"{visual_prefix}decoder.layers.$LAYER_ID.mlp.{y}.weight^T -> model.visual.blocks.$LAYER_ID.mlp.linear_fc{x}.weight"
+                for x, y in (("linear_fc1", "up_gate_proj"), ("linear_fc2", "down_proj"))
+            ]
+            + [
+                f"{visual_prefix}decoder.layers.$LAYER_ID.mlp.{y}.bias -> model.visual.blocks.$LAYER_ID.mlp.linear_fc{x}.bias"
+                for x, y in (("linear_fc1", "up_gate_proj"), ("linear_fc2", "down_proj"))
+            ]
+        )
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}patch_embed.proj.weight -> model.visual.patch_embed.proj.weight",
+            f"{visual_prefix}patch_embed.proj.bias -> model.visual.patch_embed.proj.bias",
+            f"{visual_prefix}pos_embed.weight -> model.visual.pos_embed.weight",
+            f"{visual_prefix}decoder.merger.norm.weight -> model.visual.merger.norm.weight",
+            f"{visual_prefix}decoder.merger.norm.bias -> model.visual.merger.norm.bias",
+            f"{visual_prefix}decoer.layers.$LAYER_ID.input_layernorm.weight -> model.visual.blocks.$LAYER_ID.norm1.weight",
+            f"{visual_prefix}decoer.layers.$LAYER_ID.input_layernorm.bias -> model.visual.blocks.$LAYER_ID.norm1.bias",
+            f"{visual_prefix}decoer.layers.$LAYER_ID.post_attention_layernorm.weight -> model.visual.blocks.$LAYER_ID.norm2.weight",
+            f"{visual_prefix}decoer.layers.$LAYER_ID.post_attention_layernorm.bias -> model.visual.blocks.$LAYER_ID.norm2.bias",
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}merger.linear_fc1.weight^T -> model.visual.merger.linear_fc1.weight",
+            f"{visual_prefix}merger.linear_fc1.bias -> model.visual.merger.linear_fc1.bias",
+            f"{visual_prefix}merger.linear_fc2.weight^T -> model.visual.merger.linear_fc2.weight",
+            f"{visual_prefix}merger.linear_fc2.bias -> model.visual.merger.linear_fc2.bias",
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.linear_fc1.weight^T -> model.visual.deepstack_merger_list.$LAYER_ID.linear_fc1.weight",
+            f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.linear_fc1.bias -> model.visual.deepstack_merger_list.$LAYER_ID.linear_fc1.bias",
+            f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.linear_fc2.weight^T -> model.visual.deepstack_merger_list.$LAYER_ID.linear_fc2.weight",
+            f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.linear_fc2.bias -> model.visual.deepstack_merger_list.$LAYER_ID.linear_fc2.bias",
+            f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.norm.weight -> model.visual.deepstack_merger_list.$LAYER_ID.norm.weight",
+            f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.norm.bias -> model.visual.deepstack_merger_list.$LAYER_ID.norm.bias",
+        ]
+        
+        # attention qkv
+        aoa_config["aoa_statements"] += [
+            f"{llm_prefix}{layer_id + 1}.self_attn.qkv_proj.weight  -> model.language_model.layers.{layer_id}.self_attn.q_proj.weight, model.language_model.layers.{layer_id}.self_attn.k_proj.weight, model.language_model.layers.{layer_id}.self_attn.v_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups = {config.text_config.num_key_value_heads}"
+            for layer_id in range(config.text_config.num_hidden_layers)
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{llm_prefix}layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.self_attn.{x}_proj.weight"
+            for layer_id in range(config.text_config.num_hidden_layers)
+            for x in ("q", "k", "v")
+        ]
+        
+        # FFN
+        aoa_config["aoa_statements"] += [
+            f"{llm_prefix}{layer_id + 1}.mlp.up_gate_proj.weight -> model.language_model.layers.{layer_id}.mlp.gate_proj.weight, model.language_model.layers.{layer_id}.mlp.up_proj.weight, fused_ffn"
+            for layer_id in range(config.text_config.num_hidden_layers)
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{llm_prefix}layers.{layer_id}.mlp.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.mlp.{x}_proj.weight"
+            for layer_id in range(config.text_config.num_hidden_layers)
+            for x in ("gate", "up")
+        ]
+        
+        # Qwen3VLModel without lm_head
+        if cls._tied_weights_keys:
+            aoa_config["aoa_statements"] += [
+                f"{llm_prefix}{config.text_config.num_hidden_layers + 2}.weight -> {'_' if config.tie_word_embeddings else 'lm_head.weight'}",
+            ]
+        
+        return aoa_config
+
+
+class Qwen3VLModelFleet(Qwen3VLPretrainedModelFleet):
     def __new__(cls, config,have_criterion=True):
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
@@ -1264,7 +1479,7 @@ class Qwen3VLModelFleet(Qwen3VLPretrainedModel):
 
         return qwen3vl_model
 
-class Qwen3VLForConditionalGenerationFleet(Qwen3VLPretrainedModel):
+class Qwen3VLForConditionalGenerationFleet(Qwen3VLPretrainedModelFleet):
     _checkpoint_conversion_mapping = {
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
@@ -1388,7 +1603,7 @@ class Qwen3VLForConditionalGenerationFleet(Qwen3VLPretrainedModel):
             rope_deltas=outputs.rope_deltas,
         )
 
-class Qwen3VLForCausalLMPipe(Qwen3VLPretrainedModel, GeneralModelForCausalLMPipe):
+class Qwen3VLForCausalLMPipe(Qwen3VLPretrainedModelFleet, GeneralModelForCausalLMPipe):
     is_fleet = True
 
     def __new__(cls, config,have_criterion=True):
@@ -1410,7 +1625,7 @@ class Qwen3VLForCausalLMPipe(Qwen3VLPretrainedModel, GeneralModelForCausalLMPipe
 
         return qwen3vl_model
 
-class Qwen3VLModelPipe(Qwen3VLPretrainedModel, GeneralModelForCausalLMPipe):
+class Qwen3VLModelPipe(Qwen3VLPretrainedModelFleet, GeneralModelForCausalLMPipe):
     is_fleet = True
 
     def __new__(cls, config,have_criterion=True):
