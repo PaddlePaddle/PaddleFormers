@@ -46,6 +46,7 @@ from paddleformers.transformers import (
     AutoModelForCausalLM,
     AutoModelForCausalLMPipe,
     AutoModelForConditionalGeneration,
+    AutoModelForConditionalGenerationPipe,
     AutoProcessor,
     AutoTokenizer,
     Llama3Tokenizer,
@@ -275,6 +276,10 @@ def run_sft(
 
     if model_args.stage == "VL-SFT":
         model_class = AutoModelForConditionalGeneration
+        if training_args.pipeline_model_parallel_size > 1:
+            if data_args.eval_with_do_generation and training_args.do_eval:
+                raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
+            model_class = AutoModelForConditionalGenerationPipe
     else:
         model_class = AutoModelForCausalLM
         if training_args.pipeline_model_parallel_size > 1:
