@@ -1344,7 +1344,8 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 aoa_statements += [
                     f"{prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.gate_proj.weight"
                     for expert_id in range(config.n_routed_experts)
-                ] + [
+                ]
+                aoa_statements += [
                     f"{prefix_offset}.mlp.experts.{expert_id}.up_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.up_proj.weight"
                     for expert_id in range(config.n_routed_experts)
                 ]
