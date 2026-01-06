@@ -80,6 +80,7 @@ import_structure = {
         "AutoGenerator",
         "AutoDiscriminator",
         "AutoModelForConditionalGeneration",
+        "AutoModelForConditionalGenerationPipe",
     ],
     "tokenizer_utils_base": [
         "PaddingStrategy",
@@ -157,6 +158,7 @@ import_structure = {
     "ernie4_5_moe_vl.configuration": ["Ernie4_5_VLConfig"],
     "ernie4_5_moe_vl.modeling": [
         "Ernie4_5_VLMoeForConditionalGenerationModel",
+        "Ernie4_5_VLMoeForConditionalGeneration",
         "Ernie4_5_VLMoeForConditionalGenerationPipe",
     ],
     "ernie4_5_moe_vl.tokenizer": ["Ernie4_5_VLTokenizer"],

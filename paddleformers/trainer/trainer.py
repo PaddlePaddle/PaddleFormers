@@ -1010,7 +1010,7 @@ class Trainer:
 
         logger.info("Zero cost checkpoint manager created successfully.")
 
-    def add_non_zcc_ema_callback(self, resume_from_checkpoint):
+    def add_non_zcc_ema_callback(self, resume_from_checkpoint, ema_state_assembler=None):
 
         non_zcc_ema_callback = NonZCCEMACallback.create_nonzcc_callback(
             args=self.args,
@@ -1019,6 +1019,7 @@ class Trainer:
             model=self.model,
             optimizer=self.optimizer,
             hcg=self.hcg,
+            ema_state_assembler=ema_state_assembler,
         )
 
         self.add_callback(non_zcc_ema_callback)
@@ -3148,6 +3149,8 @@ class Trainer:
                 assert self.optimizer is not None, "optimizer is empty!"
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
 
+        if isinstance(model, LoRAModel):
+            model = model.model
         if (
             is_paddlefleet_available()
             and PaddleFleetPipelineLayer is not None
@@ -3193,8 +3196,7 @@ class Trainer:
             prepare_pipeline_inputs_func = (
                 model._prepare_pipeline_inputs_func if hasattr(model, "_prepare_pipeline_inputs_func") else None
             )
-            if isinstance(model, LoRAModel):
-                model = model.model
+
             if (
                 is_paddlefleet_available()
                 and paddlefleet_dist_model is not None
