@@ -91,7 +91,7 @@ else
       echo "Test passed."
 fi
 
-
+export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
 wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}_latest/${gt_loss_file}
 if [ $? -ne 0 ]; then
   echo "To request precision checks for new models, please contact swgu98."
@@ -108,7 +108,6 @@ cat ${log_loss_file}
 
 cat ${gt_loss_file}
 if [ $? -ne 0 ]; then
-  export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
   pushd $root_dir/PaddleFormers
   bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
   if [ $? -ne 0 ]; then
