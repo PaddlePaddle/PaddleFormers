@@ -41,7 +41,9 @@ with open(outfile, 'w') as fout:
 "
 mv $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
 
-source PaddleFleet/.venv/bin/activate
+if [ -f 'PaddleFleet/.venv/bin/activate' ]; then
+   source PaddleFleet/.venv/bin/activate
+fi
 
 wget -q --tries=5 --no-proxy https://xly-devops.cdn.bcebos.com/PaddleFleet/glm45/glm45_fleet.12-18.tar --no-check-certificate
 tar -xf glm45_fleet.12-18.tar # glm45_fleet
@@ -72,15 +74,18 @@ unset http_proxy https_proxy
 export FLAGS_embedding_deterministic=1
 export FLAGS_cudnn_deterministic=1
 
+log_file=glm45_pt_a100.txt
+gt_loss_file=glm45_pt_multi_card_a100_gt_loss.txt
+
 set +e
-FLAGS_use_stride_compute_kernel=False NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./glm45_pt_a100.log
+FLAGS_use_stride_compute_kernel=False NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./${log_file}
 
 
 exit_code=$?
 
 if [ $exit_code -ne 0 ]; then
-    echo "Test failed with exit code $exit_code, check the log: ./glm45_pt_a100.log"
-    python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./glm45_pt_a100.log "***** train metrics *****"
+    echo "Test failed with exit code $exit_code, check the log: ./${log_file}"
+    python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./${log_file} "***** train metrics *****"
     check_log_exit_code=$?
     if [ $check_log_exit_code -ne 0 ]; then
         echo "Failed to find 'Training completed' in log file."
@@ -92,13 +97,36 @@ else
     echo "Test passed."
 fi
 
-set -e
+wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/latest/${gt_loss_file}
+if [ $? -ne 0 ]; then
+  echo "To request precision checks for new models, please contact swgu98."
+  exit 1
+fi
 
-echo "
-10 12.69648075
-" > ./glm45_pt_multi_card_gt_loss.txt
-
+log_loss_file=${log_file%.*}_loss.${log_file##*.}
 python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --compare_step 10 \
-   --log_file ./glm45_pt_a100.log \
-   --gt_file ./glm45_pt_multi_card_gt_loss.txt
+   --log_file ./${log_file} \
+   --log_loss_file ./${log_loss_file} \
+   --gt_file ./${gt_loss_file}
+
+if [ $? -ne 0 ]; then
+  export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
+  pushd $root_dir/PaddleFormers
+  bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
+  if [ $? -ne 0 ]; then
+    echo -e "\033[31mThe precision has been changed and requires approvals.\033[0m"
+    exit 1
+  fi
+  popd
+  rm ${gt_loss_file} && mv ${log_loss_file} ${gt_loss_file}
+  if [ ! -f precision_list.txt ]; then
+    wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${repo_name}_${PR_ID}/precision_list.txt
+  fi
+  if [ $? -ne 0 ]; then
+    wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/latest/precision_list.txt
+    python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${repo_name}_${PR_ID}
+  fi
+  python $root_dir/bos/BosClient.py ${gt_loss_file} paddle-github-action/PaddleFleet/precision/${repo_name}_${PR_ID}
+  cat ${gt_loss_file}
+fi

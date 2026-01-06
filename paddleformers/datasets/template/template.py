@@ -58,11 +58,11 @@ class Template:
     format_tools: "Formatter"
     format_prefix: "Formatter"
     default_system: str
+    chat_sep: str
+    suffix: list[str]
     stop_words: list[str]
     thought_words: tuple[str, str]
     efficient_eos: bool
-    chat_sep: str
-    replace_eos: bool
     auto_add_bos: bool
     enable_thinking: Optional[bool]
     mm_plugin: "BasePlugin"
@@ -208,12 +208,6 @@ class Template:
     def fix_special_tokens(self, tokenizer: "PreTrainedTokenizer") -> None:
         r"""Add eos token and pad token to the tokenizer."""
         stop_words = self.stop_words
-        if self.replace_eos:
-            if not stop_words:
-                raise ValueError("Stop words are required to replace the EOS token.")
-
-            self._add_or_replace_eos_token(tokenizer, eos_token=stop_words[0])
-            stop_words = stop_words[1:]
 
         if tokenizer.eos_token_id is None:
             self._add_or_replace_eos_token(tokenizer, eos_token="<|endoftext|>")
@@ -350,11 +344,11 @@ def register_template(
     format_tools: Optional["Formatter"] = None,
     format_prefix: Optional["Formatter"] = None,
     default_system: str = "",
+    suffix: Optional[list[str]] = None,
     stop_words: Optional[list[str]] = None,
     thought_words: Optional[tuple[str, str]] = None,
     efficient_eos: bool = True,
     chat_sep: str = "",
-    replace_eos: bool = False,
     auto_add_bos: bool = False,
     enable_thinking: Optional[bool] = True,
     mm_plugin: "BasePlugin" = get_mm_plugin(name="base"),
@@ -403,11 +397,11 @@ def register_template(
         format_tools=format_tools or default_tool_formatter,
         format_prefix=format_prefix or default_prefix_formatter,
         default_system=default_system,
+        suffix=suffix or [],
         stop_words=stop_words or [],
         thought_words=thought_words or ("<think>\n", "\n</think>\n\n"),
         efficient_eos=efficient_eos,
         chat_sep=chat_sep,
-        replace_eos=replace_eos,
         auto_add_bos=auto_add_bos,
         enable_thinking=enable_thinking,
         mm_plugin=mm_plugin,
@@ -466,11 +460,11 @@ def parse_template(tokenizer: "PreTrainedTokenizer") -> "Template":
         format_tools=ToolFormatter(tool_format="default"),
         format_prefix=EmptyFormatter(slots=[prefix]) if prefix else EmptyFormatter(),
         default_system=default_system,
+        suffix=[],
         stop_words=[],
         thought_words=("<think>\n", "\n</think>\n\n"),
         efficient_eos=True,
         chat_sep="",
-        replace_eos=False,
         auto_add_bos=False,
         enable_thinking=True,
         mm_plugin=get_mm_plugin(name="base"),
@@ -483,10 +477,10 @@ def get_template_and_fix_tokenizer(dataset_config) -> "Template":
     tokenizer = dataset_config["tokenizer"]
     if dataset_config["template"] is None:
         if isinstance(tokenizer.chat_template, str):
-            # logger.warning_rank0("`template` was not specified, try parsing the chat template from the tokenizer.")
+            logger.warning("`template` was not specified, try parsing the chat template from the tokenizer.")
             template = parse_template(tokenizer)
         else:
-            # logger.warning_rank0("`template` was not specified, use `empty` template.")
+            logger.warning("`template` was not specified, use `empty` template.")
             template = TEMPLATES["empty"]  # placeholder
     else:
         if dataset_config["template"] not in TEMPLATES:
@@ -503,6 +497,10 @@ def get_template_and_fix_tokenizer(dataset_config) -> "Template":
         template.default_system = dataset_config["default_system"]
 
     template.fix_special_tokens(tokenizer)
+
+    if not template.suffix:
+        template.suffix = [tokenizer.eos_token]
+        logger.warning("suffix is not specified, using eos token as suffix.")
     return template
 
 
@@ -531,8 +529,7 @@ register_template(
     format_observation=StringFormatter(slots=["<|im_start|>tool\n{{content}}<|im_end|>\n\n<|im_start|>assistant\n"]),
     default_system="<global_setting>\nthink_mode=True\n</global_setting>",
     chat_sep="<|im_end|>\n\n",
-    stop_words=["<|im_end|>"],
-    replace_eos=True,
+    suffix=["<|im_end|>"],
 )
 
 register_template(
@@ -542,7 +539,7 @@ register_template(
     format_system=StringFormatter(slots=["{{content}}\n"]),
     format_prefix=EmptyFormatter(slots=["<|begin_of_sentence|>"]),
     chat_sep="<|end_of_sentence|>",
-    stop_words=["<|end_of_sentence|>"],
+    suffix=["</s>"],
 )
 
 register_template(
@@ -555,8 +552,7 @@ register_template(
     format_tools=ToolFormatter(tool_format="ernie"),
     format_prefix=EmptyFormatter(slots=["<|begin_of_sentence|>"]),
     chat_sep="<|end_of_sentence|>",
-    stop_words=["<|end_of_sentence|>"],
-    replace_eos=True,
+    suffix=["<|end_of_sentence|>"],
     mm_plugin=get_mm_plugin(name="ernie_vl", image_token="<|IMAGE_PLACEHOLDER|>", video_token="<|IMAGE_PLACEHOLDER|>"),
     template_class=ReasoningTemplate,
     thought_words=("\n<think>\n", "\n</think>\n\n"),
@@ -569,8 +565,7 @@ register_template(
     format_system=StringFormatter(slots=["{{content}}\n"]),
     format_prefix=EmptyFormatter(slots=["<|begin_of_sentence|>"]),
     chat_sep="<|end_of_sentence|>",
-    stop_words=["<|end_of_sentence|>"],
-    replace_eos=True,
+    suffix=["<|end_of_sentence|>"],
     mm_plugin=get_mm_plugin(name="ernie_vl", image_token="<|IMAGE_PLACEHOLDER|>", video_token="<|IMAGE_PLACEHOLDER|>"),
     template_class=ReasoningTemplate,
     thought_words=("<think>\n", "\n</think>\n\n"),
@@ -599,8 +594,7 @@ register_template(
     format_tools=ToolFormatter(tool_format="qwen"),
     default_system="You are Qwen, created by Alibaba Cloud. You are a helpful assistant.",
     chat_sep="<|im_end|>\n",
-    stop_words=["<|im_end|>"],
-    replace_eos=True,
+    suffix=["<|im_end|>\n"],
 )
 
 
@@ -615,8 +609,7 @@ register_template(
         slots=["<|im_start|>user\n<tool_response>\n{{content}}\n</tool_response><|im_end|>\n<|im_start|>assistant\n"]
     ),
     format_tools=ToolFormatter(tool_format="qwen"),
-    stop_words=["<|im_end|>"],
-    replace_eos=True,
+    suffix=["<|im_end|>\n"],
     chat_sep="<|im_end|>\n",
     template_class=ReasoningTemplate,
 )
@@ -633,8 +626,7 @@ register_template(
         slots=["<|im_start|>user\n<tool_response>\n{{content}}\n</tool_response><|im_end|>\n<|im_start|>assistant\n"]
     ),
     format_tools=ToolFormatter(tool_format="qwen"),
-    stop_words=["<|im_end|>"],
-    replace_eos=True,
+    suffix=["<|im_end|>\n"],
     chat_sep="<|im_end|>\n",
 )
 
@@ -651,9 +643,8 @@ register_template(
     ),
     format_tools=ToolFormatter(tool_format="qwen"),
     default_system="You are a helpful assistant.",
-    stop_words=["<|im_end|>"],
+    suffix=["<|im_end|>\n"],
     chat_sep="<|im_end|>\n",
-    replace_eos=True,
     mm_plugin=get_mm_plugin(name="qwen2_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
 )
 
@@ -670,8 +661,7 @@ register_template(
     ),
     format_tools=ToolFormatter(tool_format="qwen"),
     chat_sep="<|im_end|>\n",
-    stop_words=["<|im_end|>"],
-    replace_eos=True,
+    suffix=["<|im_end|>\n"],
     mm_plugin=get_mm_plugin(name="qwen3_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
     template_class=ReasoningTemplate,
 )
@@ -689,8 +679,7 @@ register_template(
     ),
     format_tools=ToolFormatter(tool_format="qwen"),
     chat_sep="<|im_end|>\n",
-    stop_words=["<|im_end|>"],
-    replace_eos=True,
+    suffix=["<|im_end|>\n"],
     mm_plugin=get_mm_plugin(name="qwen3_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
 )
 
@@ -705,9 +694,8 @@ register_template(
     format_observation=StringFormatter(slots=["<|observation|>\n{{content}}<|assistant|>"]),
     format_tools=ToolFormatter(tool_format="glm4_moe"),
     format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
-    stop_words=["<|user|>", "<|observation|>"],
+    suffix=["<|user|>"],
     thought_words=("<think>", "</think>"),
-    replace_eos=True,
     template_class=ReasoningTemplate,
 )
 
@@ -722,7 +710,7 @@ register_template(
     format_observation=StringFormatter(slots=["<|observation|>\n{{content}}<|assistant|>"]),
     format_tools=ToolFormatter(tool_format="glm4"),
     format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
-    stop_words=["<|user|>", "<|observation|>", "</answer>"],
+    suffix=["<|user|>"],
     mm_plugin=get_mm_plugin(name="glm4v", image_token="<|image|>", video_token="<|video|>"),
     template_class=ReasoningTemplate,
 )
@@ -738,7 +726,7 @@ register_template(
     format_observation=StringFormatter(slots=["<|observation|>\n{{content}}<|assistant|>"]),
     format_tools=ToolFormatter(tool_format="glm4_moe"),
     format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
-    stop_words=["<|user|>", "<|observation|>", "</answer>"],
+    suffix=["<|user|>"],
     mm_plugin=get_mm_plugin(name="glm4v", image_token="<|image|>", video_token="<|video|>"),
     template_class=ReasoningTemplate,
 )
@@ -797,9 +785,8 @@ register_template(
     ),
     format_tools=ToolFormatter(tool_format="llama3"),
     format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
-    stop_words=["<|eot_id|>", "<|eom_id|>"],
+    suffix=["<|eot_id|>"],
     chat_sep="<|eot_id|>",
-    replace_eos=True,
 )
 
 
@@ -814,8 +801,7 @@ register_template(
     ),
     format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
     chat_sep="<end_of_turn>\n",
-    stop_words=["<end_of_turn>"],
-    replace_eos=True,
+    suffix=["<end_of_turn>"],
     template_class=Llama2Template,
 )
 
@@ -827,7 +813,6 @@ register_template(
     ),
     format_assistant=StringFormatter(slots=["{{content}}"]),
     format_system=StringFormatter(slots=["<|im_start|>system<|im_sep|>{{content}}<|im_end|>"]),
-    stop_words=["<|im_end|>"],
+    suffix=["<|im_end|>"],
     chat_sep="<|im_end|>",
-    replace_eos=True,
 )
