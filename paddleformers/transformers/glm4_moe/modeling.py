@@ -1217,19 +1217,6 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     f"{group_gemm2} -> {prefix_offset}.mlp.grouped_gemm_experts.weight2, axis=0"
                 ]
 
-            if is_fleet and config.moe_grouped_gemm:
-                ep_weight1 = []
-                ep_weight2 = []
-                for expert_id in range(config.n_routed_experts):
-                    ep_weight1.append(f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight")
-                    ep_weight2.append(f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight")
-                group_gemm1 = ",".join(ep_weight1)
-                group_gemm2 = ",".join(ep_weight2)
-                aoa_config["aoa_statements"] += [
-                    f"{group_gemm1} -> {prefix_offset}.mlp.grouped_gemm_experts.weight1, axis=0"
-                    f"{group_gemm2} -> {prefix_offset}.mlp.grouped_gemm_experts.weight2, axis=0"
-                ]
-
         return aoa_config
 
     # NOTE: These aoa_config items will be removed later. The subsequent AOA parsing module will automatically generate the reverse AOA based on the forward (from_pretrained) AOA.
