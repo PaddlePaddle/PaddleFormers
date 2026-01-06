@@ -83,9 +83,9 @@ tp_delay_scale_loss: true
 amp_master_grad: true
 bf16: true
 fp16_opt_level: O2
-unified_checkpoint: false
+# unified_checkpoint: true
 load_via_cpu: true
-# resume_from_checkpoint: true
+# resume_from_checkpoint: false
 save_checkpoint_format : "flex_checkpoint"
 load_checkpoint_format : "flex_checkpoint"
 save_to_hf: true
