@@ -72,6 +72,7 @@ jobs:
             -e GITHUB_EVENT_PULL_REQUEST_NUMBER="${{ github.event.pull_request.number }}" \
             -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
             -e GITHUB_RUN_ID="${{ github.run_id }}" \
+            -e PR_USER="${{ github.event.pull_request.user.login }}" \
             -w /workspace --network host ${docker_image}
 
       - name: Install PaddleFormers
@@ -79,6 +80,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           rm -rf * .[^.]*
+          echo $PR_USER
           source /root/proxy
           mkdir -p /home/.cache/pip
           pip cache dir
@@ -195,6 +197,7 @@ jobs:
             -e GITHUB_EVENT_PULL_REQUEST_NUMBER="${{ github.event.pull_request.number }}" \
             -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
             -e GITHUB_RUN_ID="${{ github.run_id }}" \
+            -e PR_USER="${{ github.event.pull_request.user.login }}" \
             -w /workspace --network host ${docker_image}
 
       - name: Install PaddleFormers
@@ -382,6 +385,7 @@ jobs:
             -e GITHUB_EVENT_PULL_REQUEST_NUMBER="${{ github.event.pull_request.number }}" \
             -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
             -e GITHUB_RUN_ID="${{ github.run_id }}" \
+            -e PR_USER="${{ github.event.pull_request.user.login }}" \
             -w /workspace --network host ${docker_image}
 
       - name: Install PaddleFormers
