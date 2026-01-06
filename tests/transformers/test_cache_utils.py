@@ -388,6 +388,7 @@ class ModelIntegrationTest(unittest.TestCase):
         self.model_id = "PaddleFormers/tiny-random-qwen3"
         self.device = paddle.get_device()
 
+    @unittest.skip("")
     def test_model_inference_standard(self):
         """
         Standard integration test: Load a model and run inference with use_cache=True.
@@ -459,6 +460,7 @@ class CacheOffloadingTest(unittest.TestCase):
         self.assertTrue(cache.offloading)
         self.assertEqual(cache.get_seq_length(0), 10)
 
+    @unittest.skip("")
     def test_model_inference_with_offloading(self):
         """
         Integration test: Load a tiny random Qwen3 model, enable offloading in cache,

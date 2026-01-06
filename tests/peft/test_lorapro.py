@@ -26,7 +26,9 @@ import paddle
 from parameterized import parameterized
 
 from paddleformers.peft.lora import LoRAConfig, LoRALinear, LoRAModel
-from paddleformers.transformers import AutoModelForCausalLM, Qwen3ForCausalLM
+from paddleformers.transformers import AutoModelForCausalLM
+
+# from paddleformers.transformers import Qwen3ForCausalLM
 from paddleformers.utils.optimizer import AdamWLoRAPro
 
 
@@ -110,7 +112,7 @@ class TestLoRAProModel(unittest.TestCase):
         original_results_2 = restored_model(input_ids)
         self.assertIsNotNone(original_results_1)
         self.assertIsNotNone(original_results_2)
-        self.assertIsInstance(restored_model, Qwen3ForCausalLM)
+        self.assertEqual(restored_model.__class__.__name__, "Qwen3ForCausalLM")
         self.assertTrue(paddle.allclose(original_results_1[0], original_results_2[0]))
 
     @parameterized.expand([(None,), ("all",), ("lora",)])

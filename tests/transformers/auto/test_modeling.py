@@ -50,7 +50,7 @@ class AutoModelTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             self.model.save_pretrained(tmp_dir)
             model = AutoModel.from_pretrained(tmp_dir)
-            self.assertIsInstance(model, LlamaModel)
+            self.assertEqual(model.__class__.__name__, "LlamaModel")
 
     def test_from_pretrained_no_init_class_with_model_name(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -63,7 +63,7 @@ class AutoModelTest(unittest.TestCase):
             with open(os.path.join(model_save_path, "config.json"), "w", encoding="utf-8") as writer:
                 writer.write(json.dumps(config, indent=2, sort_keys=True) + "\n")
             reloaded_model = AutoModel.from_pretrained(model_save_path)
-            self.assertIsInstance(reloaded_model, LlamaModel)
+            self.assertEqual(reloaded_model.__class__.__name__, "LlamaModel")
 
     @slow
     def test_model_from_pretrained_cache_dir(self):
@@ -79,15 +79,15 @@ class AutoModelTest(unittest.TestCase):
         model = AutoModel.from_pretrained(
             "dfargveazd/tiny-random-llama-paddle-safe", download_hub="huggingface", convert_from_hf=False
         )
-        self.assertIsInstance(model, LlamaModel)
+        self.assertEqual(model.__class__.__name__, "LlamaModel")
 
     def test_from_aistudio(self):
         model = AutoModel.from_pretrained("Paddleformers/tiny-random-llama", download_hub="aistudio")
-        self.assertIsInstance(model, LlamaModel)
+        self.assertEqual(model.__class__.__name__, "LlamaModel")
 
     def test_from_modelscope(self):
         model = AutoModel.from_pretrained("sqlhuman/tiny-random-llama", download_hub="modelscope")
-        self.assertIsInstance(model, LlamaModel)
+        self.assertEqual(model.__class__.__name__, "LlamaModel")
 
     def test_new_model_registration(self):
         AutoConfig.register("custom", CustomConfig)

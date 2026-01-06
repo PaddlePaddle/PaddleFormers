@@ -15,7 +15,8 @@
 from __future__ import annotations
 
 import copy
-import sys
+
+# import sys
 import tempfile
 import unittest
 
@@ -857,8 +858,8 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
-        for m in list(sys.modules):
-            (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
+        # for m in list(sys.modules):
+        #     (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
         from transformers import Qwen3VLMoeConfig, Qwen3VLMoeForConditionalGeneration
 
         # when python application is done, `TemporaryDirectory` will be free
@@ -944,8 +945,8 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
         paddle_logit = paddle_model(**paddle_inputs)["logits"]
 
         # 2. forward the torch  model
-        for m in list(sys.modules):
-            (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
+        # for m in list(sys.modules):
+        #     (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
         import torch
         from transformers import Qwen3VLMoeForConditionalGeneration
 
@@ -970,8 +971,8 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tempdir:
 
             # 1. forward the torch  model
-            for m in list(sys.modules):
-                (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
+            # for m in list(sys.modules):
+            #     (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
             import torch
             from transformers import Qwen3VLMoeForConditionalGeneration
 
@@ -1010,8 +1011,8 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tempdir:
 
             # 1. forward the torch model
-            for m in list(sys.modules):
-                (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
+            # for m in list(sys.modules):
+            #     (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
             import torch
             import transformers
 

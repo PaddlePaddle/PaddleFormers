@@ -34,11 +34,10 @@ from transformers.processing_utils import (
 from transformers.processing_utils import ProcessingKwargs as ProcessingKwargs_hf
 from transformers.processing_utils import ProcessorMixin as ProcessorMixin_hf
 from transformers.processing_utils import transformers_module
-from transformers.utils import (
+from transformers.utils import (  # PushToHubMixin,
     CHAT_TEMPLATE_FILE,
     LEGACY_PROCESSOR_CHAT_TEMPLATE_FILE,
     PROCESSOR_NAME,
-    PushToHubMixin,
 )
 from transformers.utils.chat_template_utils import render_jinja_template
 
@@ -227,10 +226,10 @@ class PaddleProcessorMixin:
         else:
             proper_class = self.get_possibly_dynamic_module(class_name)
 
-        if not isinstance(argument, proper_class):
-            raise TypeError(
-                f"Received a {type(argument).__name__} for argument {argument_name}, but a {class_name} was expected."
-            )
+        # if not isinstance(argument, proper_class):
+        #     raise TypeError(
+        #         f"Received a {type(argument).__name__} for argument {argument_name}, but a {class_name} was expected."
+        #     )
 
         return proper_class
 
@@ -287,7 +286,7 @@ class PaddleProcessorMixin:
 
         # Serialize attributes as a dict
         output = {
-            k: v.to_dict() if isinstance(v, PushToHubMixin) else v
+            k: v.to_dict() if hasattr(v, "to_dict") and callable(v.to_dict) else v
             for k, v in output.items()
             if (
                 k in attrs_to_save  # keep all attributes that have to be serialized

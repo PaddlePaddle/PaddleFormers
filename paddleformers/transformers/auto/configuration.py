@@ -25,7 +25,8 @@ from ...utils.download import resolve_file_path
 from ...utils.import_utils import import_module
 from ...utils.log import logger
 from ..configuration_utils import PretrainedConfig
-from ..model_utils import PretrainedModel
+
+# from ..model_utils import PretrainedModel
 
 __all__ = [
     "AutoConfig",
@@ -256,9 +257,9 @@ class AutoConfig(PretrainedConfig):
                     model_config_class = config_class
                     return model_config_class
 
-        assert inspect.isclass(model_class) and issubclass(
-            model_class, PretrainedModel
-        ), f"<{model_class}> should be a PretarinedModel class, but <{type(model_class)}>"
+        assert hasattr(model_class, "__mro__") and any(
+            getattr(base, "__name__", None) == "PretrainedModel" for base in model_class.__mro__
+        ), f"<{model_class}> should inherit from PretrainedModel, but it doesn't. MRO: {model_class.__mro__}"
 
         return cls if model_class.config_class is None else model_class.config_class
 
