@@ -67,6 +67,14 @@ check_approval 1 "${APPROVER_LIST2[@]}"
 #     fi
 # done
 # check_approval $NEED_APPROVALS "${APPROVER_LIST[@]}"
+if [[ "${PP}" == "rel" ]]; then
+  echo_line="You must be approved by swgu98 for changing precision with Paddle release branch.\n"
+  check_approval 1 "swgu98"
+fi
+if [[ "${PF}" == rel* ]]; then
+  echo_line="You must be approved by swgu98 for changing precision with PaddleFleet release branch.\n"
+  check_approval 1 "swgu98"
+fi
 
 if [ -n "${echo_list}" ];then
   echo "****************"
