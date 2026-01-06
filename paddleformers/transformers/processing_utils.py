@@ -588,9 +588,12 @@ class PaddleProcessorMixin:
         return_unused_kwargs = kwargs.pop("return_unused_kwargs", False)
 
         # We have to pop up some unused (but specific) kwargs and then validate that it doesn't contain unused kwargs
-        # If we don't pop, some specific kwargs will raise a warning or error
-        for unused_kwarg in cls.attributes + ["auto_map", "processor_class"]:
-            processor_dict.pop(unused_kwarg, None)
+        # If we don't pop, some specific kwargs will raise a warning
+        if "processor_class" in processor_dict:
+            del processor_dict["processor_class"]
+
+        if "auto_map" in processor_dict:
+            del processor_dict["auto_map"]
 
         # override processor_dict with given kwargs
         processor_dict.update(kwargs)
@@ -629,6 +632,26 @@ class PaddleProcessorMixin:
         processor_dict, kwargs = cls.get_processor_dict(pretrained_model_name_or_path, **kwargs)
         args = cls._get_arguments_from_pretrained(pretrained_model_name_or_path, **kwargs)
         return cls.from_args_and_dict(args, processor_dict, **kwargs)
+
+    @classmethod
+    def register_for_auto_class(cls, auto_class="AutoProcessor"):
+        """
+        Register this class with a given auto class. This should only be used for custom feature extractors as the ones
+        in the library are already mapped with `AutoProcessor`.
+
+        Args:
+            auto_class (`str` or `type`, *optional*, defaults to `"AutoProcessor"`):
+                The auto class to register this new feature extractor with.
+        """
+        if not isinstance(auto_class, str):
+            auto_class = auto_class.__name__
+
+        import paddleformers.transformers.auto as auto_module
+
+        if not hasattr(auto_module, auto_class):
+            raise ValueError(f"{auto_class} is not a valid auto class.")
+
+        cls._auto_class = auto_class
 
     @classmethod
     def _get_arguments_from_pretrained(cls, pretrained_model_name_or_path, **kwargs):

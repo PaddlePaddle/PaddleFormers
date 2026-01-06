@@ -199,6 +199,7 @@ class AutoProcessor:
             trust_remote_code = resolve_trust_remote_code(
                 trust_remote_code, pretrained_model_name_or_path, has_local_code, has_remote_code, upstream_repo
             )
+            processor_class.register_for_auto_class()
 
         if has_remote_code and trust_remote_code:
             processor_class = get_class_from_dynamic_module(
