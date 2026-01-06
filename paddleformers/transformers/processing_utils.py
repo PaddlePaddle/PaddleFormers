@@ -38,7 +38,6 @@ from transformers.utils import (
     CHAT_TEMPLATE_FILE,
     LEGACY_PROCESSOR_CHAT_TEMPLATE_FILE,
     PROCESSOR_NAME,
-    PushToHubMixin,
 )
 from transformers.utils.chat_template_utils import render_jinja_template
 
@@ -287,7 +286,7 @@ class PaddleProcessorMixin:
 
         # Serialize attributes as a dict
         output = {
-            k: v.to_dict() if isinstance(v, PushToHubMixin) else v
+            k: v.to_dict() if hasattr(v, "to_dict") and callable(v.to_dict) else v
             for k, v in output.items()
             if (
                 k in attrs_to_save  # keep all attributes that have to be serialized

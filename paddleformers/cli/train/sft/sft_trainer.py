@@ -13,10 +13,18 @@
 # limitations under the License.
 from __future__ import annotations
 
+import sys
 import warnings
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Union
 
-import datasets
+if "torch" not in sys.modules:
+    sys.modules["torch"] = None
+    import datasets
+
+    del sys.modules["torch"]
+else:
+    import datasets
+
 import numpy as np
 import paddle
 import paddle.distributed as dist

@@ -16,21 +16,27 @@ from __future__ import annotations
 
 import inspect
 import shutil
+import sys
 import tempfile
 import unittest
 
 import numpy as np
 import paddle
 
-from paddleformers.transformers import AutoProcessor, PaddleOCRVLProcessor
 from tests.transformers.test_processing_common import ProcessorTesterMixin
+
+sys.modules["torch_save"] = sys.modules["torch"]
+sys.modules["torch"] = None
+from paddleformers.transformers import AutoProcessor, PaddleOCRVLProcessor
 
 
 class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
+
     processor_class = PaddleOCRVLProcessor
 
     @classmethod
     def setUpClass(cls):
+        sys.modules["torch"] = None
         cls.tmpdir = tempfile.mkdtemp()
         processor = PaddleOCRVLProcessor.from_pretrained(
             "PaddleFormers/tiny-random-paddleocr-vl-bf16", patch_size=4, max_pixels=56 * 56, min_pixels=28 * 28
@@ -39,6 +45,7 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         cls.image_token = processor.image_token
 
         cls.maxDiff = None
+        sys.modules["torch"] = sys.modules["torch_save"]
 
     def get_tokenizer(self, **kwargs):
         return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).tokenizer
@@ -54,6 +61,7 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         shutil.rmtree(cls.tmpdir, ignore_errors=True)
 
     def test_model_input_names(self):
+        sys.modules["torch"] = None
 
         processor = self.get_processor()
 
@@ -69,8 +77,10 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         inputs = processor(**inputs_dict, return_tensors="pd")
 
         self.assertSetEqual(set(inputs.keys()), set(processor.model_input_names))
+        sys.modules["torch"] = sys.modules["torch_save"]
 
     def test_save_load_pretrained_default(self):
+        sys.modules["torch"] = None
         tokenizer = self.get_tokenizer()
         image_processor = self.get_image_processor()
 
@@ -82,8 +92,10 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         self.assertEqual(processor.image_processor.to_json_string(), image_processor.to_json_string())
         self.assertEqual(processor.tokenizer.__class__.__name__, "LlamaTokenizerFast")
         self.assertEqual(processor.image_processor.__class__.__name__, "PaddleOCRVLImageProcessor")
+        sys.modules["torch"] = sys.modules["torch_save"]
 
     def test_image_processor(self):
+        sys.modules["torch"] = None
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
 
@@ -96,8 +108,10 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
 
         for key in input_image_proc:
             self.assertAlmostEqual(input_image_proc[key].sum(), input_processor[key].sum(), delta=1e-2)
+        sys.modules["torch"] = sys.modules["torch_save"]
 
     def test_processor(self):
+        sys.modules["torch"] = None
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
 
@@ -116,6 +130,7 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         # test if it raises when no text is passed
         with self.assertRaises(TypeError):
             processor(images=image_input, return_tensors="pd")
+        sys.modules["torch"] = sys.modules["torch_save"]
 
     def _test_apply_chat_template(
         self,
@@ -126,6 +141,7 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         processor_name: str,
         input_data: list[str],
     ):
+        sys.modules["torch"] = None
         processor = self.get_processor()
         if processor.chat_template is None:
             self.skipTest("Processor has no chat template")
@@ -213,12 +229,14 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         return_tensor_to_type = {"pd": paddle.Tensor, "np": np.ndarray, None: list}
         for k in out_dict:
             self.assertIsInstance(out_dict[k], return_tensor_to_type[return_tensors])
+        sys.modules["torch"] = sys.modules["torch_save"]
 
     @unittest.skip("PaddleOCR-VL do not support video input")
     def test_apply_chat_template_video_frame_sampling(self):
         pass
 
     def test_kwargs_overrides_custom_image_processor_kwargs(self):
+        sys.modules["torch"] = None
         processor = self.get_processor()
         # self.skip_processor_without_typed_kwargs(processor)
 
@@ -228,3 +246,4 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         self.assertEqual(inputs[self.images_input_name].shape[0], 100)
         inputs = processor(text=input_str, images=image_input, max_pixels=56 * 56 * 4, return_tensors="pd")
         self.assertEqual(inputs[self.images_input_name].shape[0], 100)
+        sys.modules["torch"] = sys.modules["torch_save"]
