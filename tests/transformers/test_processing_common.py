@@ -173,7 +173,7 @@ class ProcessorTesterMixin:
         processor_first = self.get_processor()
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            saved_files = processor_first.save_pretrained(tmpdir)
+            saved_files = processor_first.save_pretrained(tmpdir, legacy_serialization=False)
             check_json_file_has_correct_format(saved_files[0])
 
             # Load it back and check if loaded correctly
