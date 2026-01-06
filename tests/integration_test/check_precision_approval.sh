@@ -47,10 +47,10 @@ function run_tools_test() {
 }
 
 
-PRECISION_APPROVERS="XieYunshen From00 risemeup1 tianlef lugimzzz zjjlivein"
+PRECISION_APPROVERS="XieYunshen From00 risemeup1 tianlef zjjlivein"
 echo_line="You must be approved by all of ${PRECISION_APPROVERS} for changing precision.\n"
 APPROVER_LIST=(${PRECISION_APPROVERS})
-NEED_APPROVALS=6
+NEED_APPROVALS=5
 for user in "${APPROVER_LIST[@]}"; do
     if [[ "$user" == "$PR_USER" ]]; then
         NEED_APPROVALS=$((NEED_APPROVALS - 1))
