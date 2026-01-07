@@ -91,3 +91,6 @@ save_to_hf: true
 
 benchmark: true
 continue_training: true
+
+fuse_attention_qkv: true
+fuse_attention_ffn: true
