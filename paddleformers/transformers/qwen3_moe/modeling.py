@@ -1230,7 +1230,7 @@ def load_balancing_loss_func(gate_logits, num_experts, top_k=2, attention_mask=N
     return overall_loss * num_experts
 
 
-class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
+class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
