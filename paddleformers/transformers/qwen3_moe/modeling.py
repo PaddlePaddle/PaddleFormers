@@ -1379,7 +1379,7 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
         )
 
 
-class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel, GeneralModelForCausalLMPipe):
+class Qwen3MoeForCausalLMPipe(Qwen3MoePretrainedModel, GeneralModelForCausalLMPipe):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1393,7 +1393,7 @@ class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel, GeneralModelForCausa
         return gpt_model
 
 
-class Qwen3MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
+class Qwen3MoeForCausalLMPipeFleet(GeneralModelForCausalLMPipe):
     config_class = Qwen3MoeConfig
     _decoder_layer_cls = Qwen3MoeDecoderLayer
     _get_tensor_parallel_mappings = Qwen3MoeModel._get_tensor_parallel_mappings
