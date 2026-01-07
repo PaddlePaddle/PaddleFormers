@@ -48,6 +48,7 @@ __all__ = [
     "AutoGenerator",
     "AutoDiscriminator",
     "AutoModelForConditionalGeneration",
+    "AutoModelForConditionalGenerationPipe",
 ]
 
 MAPPING_NAMES = OrderedDict(
@@ -55,7 +56,7 @@ MAPPING_NAMES = OrderedDict(
         ("DeepseekV3", "deepseek_v3"),
         ("Ernie4_5", "ernie4_5"),
         ("Ernie4_5_Moe", "ernie4_5_moe"),
-        ("Ernie4_5_VLMoeForConditionalGeneration", "ernie4_5_moe_vl"),
+        ("Ernie4_5_VLMoe", "ernie4_5_moe_vl"),
         ("PaddleOCRVL", "paddleocr_vl"),
         ("Llama", "llama"),
         ("Qwen2", "qwen2"),
@@ -74,9 +75,7 @@ MAPPING_NAMES = OrderedDict(
 )
 
 MAPPING_SPACIAL_KEY = OrderedDict(
-    [
-        ("Gemma3", "Gemma3Text"),
-    ]
+    [("Gemma3", "Gemma3Text"), ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration")]
 )
 
 
@@ -97,6 +96,7 @@ MAPPING_TASKS = OrderedDict(
         ("Generator", "AutoGenerator"),
         ("Discriminator", "AutoDiscriminator"),
         ("ForConditionalGeneration", "AutoModelForConditionalGeneration"),
+        ("ForConditionalGenerationPipe", "AutoModelForConditionalGenerationPipe"),
     ]
 )
 
@@ -1009,4 +1009,18 @@ class AutoModelForConditionalGeneration(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.bart.modeling.BartForConditionalGeneration'>
         """
+        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+
+
+class AutoModelForConditionalGenerationPipe(_BaseAutoModelClass):
+    """
+    Pipeline model for AutoModelForCausalLM.
+    """
+
+    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
+    _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
+    _name_mapping = get_name_mapping("ForConditionalGenerationPipe")
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
         return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)

@@ -985,11 +985,16 @@ class LoRAModel(nn.Layer):
         for _, layer in self.model.named_sublayers():
             if (
                 isinstance(layer, LoRALinear)
+                or isinstance(layer, FleetLoRALinear)
                 or isinstance(layer, LoRAConv2D)
                 or isinstance(layer, ColumnParallelLoRALinear)
+                or isinstance(layer, FleetColumnParallelLoRALinear)
                 or isinstance(layer, RowParallelLoRALinear)
+                or isinstance(layer, FleetRowParallelLoRALinear)
                 or isinstance(layer, ColumnSequenceParallelLoRALinear)
+                or isinstance(layer, FleetColumnSequenceParallelLoRALinear)
                 or isinstance(layer, RowSequenceParallelLoRALinear)
+                or isinstance(layer, FleetRowSequenceParallelLoRALinear)
                 or (QuantizationLoRALinear is not None and isinstance(layer, QuantizationLoRALinear))
                 or (
                     ColumnParallelQuantizationLoRALinear is not None
