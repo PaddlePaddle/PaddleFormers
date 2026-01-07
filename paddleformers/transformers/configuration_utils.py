@@ -387,6 +387,12 @@ class LlmMetaConfig:
             "Whether to dequantize inputs to MoE experts (only applicable if inputs are quantized). Defaults to False (enable only for quantized inference/training pipelines).",
         ),
         (
+            "moe_expert_fusion",
+            bool,
+            True,
+            "Whether to fuse experts. Default to True.",
+        ),
+        (
             "moe_router_fusion",
             bool,
             True,
