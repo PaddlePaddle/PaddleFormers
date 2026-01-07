@@ -631,26 +631,6 @@ class PaddleProcessorMixin:
         return cls.from_args_and_dict(args, processor_dict, **kwargs)
 
     @classmethod
-    def register_for_auto_class(cls, auto_class="AutoProcessor"):
-        """
-        Register this class with a given auto class. This should only be used for custom feature extractors as the ones
-        in the library are already mapped with `AutoProcessor`.
-
-        Args:
-            auto_class (`str` or `type`, *optional*, defaults to `"AutoProcessor"`):
-                The auto class to register this new feature extractor with.
-        """
-        if not isinstance(auto_class, str):
-            auto_class = auto_class.__name__
-
-        import paddleformers.transformers.auto as auto_module
-
-        if not hasattr(auto_module, auto_class):
-            raise ValueError(f"{auto_class} is not a valid auto class.")
-
-        cls._auto_class = auto_class
-
-    @classmethod
     def _get_arguments_from_pretrained(cls, pretrained_model_name_or_path, **kwargs):
         """
         Identify and instantiate the subcomponents of Processor classes, like image processors and
