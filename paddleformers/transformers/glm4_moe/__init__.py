@@ -11,6 +11,30 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import sys
+from typing import TYPE_CHECKING
 
-from .configuration import *
-from .modeling import *
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "configuration": ["Glm4MoeConfig"],
+    "modeling": [
+        "Glm4MoeForCausalLMPipeFleet",
+        "Glm4MoeModelFleet",
+        "Glm4MoeForCausalLMFleet",
+        "Glm4MoeForCausalLMPipe",
+        "Glm4MoeModel",
+        "Glm4MoeForCausalLM",
+    ],
+}
+
+if TYPE_CHECKING:
+    from .configuration import *
+    from .modeling import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

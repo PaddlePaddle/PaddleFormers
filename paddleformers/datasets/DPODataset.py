@@ -326,8 +326,6 @@ class DPODataSet(IterableDataset):
         )
 
     def _postprocess_sequence(self, example):
-        if self.template_backend == "jinja" and example.get("system", None):
-            example["messages"].insert(0, {"role": "system", "content": example["system"]})
         example = self._preprocess_dpo_example(example)
         # sequence: system + knowledge_tokens + prompt + chosen + reject
         (
