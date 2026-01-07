@@ -17,16 +17,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from collections import OrderedDict
 from collections.abc import Callable
 from contextlib import nullcontext
-from dataclasses import dataclass
-from typing import Optional, Union
+from collections import OrderedDict
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Optional, Tuple, Union
 
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
 from paddle.distributed.fleet.utils import recompute
+
 from paddlefleet import parallel_state, tensor_parallel
 from paddlefleet.fusions.fused_bias_dropout import get_bias_dropout_add
 from paddlefleet.fusions.fused_layer_norm import FusedLayerNorm
@@ -36,37 +37,32 @@ from paddlefleet.packed_seq_params import PackedSeqParams
 from paddlefleet.process_groups_config import ProcessGroupCollection
 from paddlefleet.spec_utils import LayerSpec
 from paddlefleet.tensor_parallel.layers import ColumnParallelLinear, RowParallelLinear
+from paddlefleet.transformer import TransformerConfig
 from paddlefleet.transformer.attention import SelfAttention, SelfAttentionSublayersSpec
 from paddlefleet.transformer.dot_product_attention import DotProductAttention
 from paddlefleet.transformer.enums import AttnMaskType, ModelType
 from paddlefleet.transformer.identity_op import IdentityOp
 from paddlefleet.transformer.mlp import MLP, MLPSublayersSpec
 from paddlefleet.transformer.paddle_norm import FusedRMSNorm
-from paddlefleet.transformer.transformer_block import (
-    TransformerBlock,
-    TransformerBlockSublayersSpec,
-)
+from paddlefleet.transformer.transformer_block import TransformerBlock, TransformerBlockSublayersSpec
 from paddlefleet.transformer.transformer_config import TransformerConfig
-from paddlefleet.transformer.transformer_layer import (
-    TransformerLayer,
-    TransformerLayerSublayersSpec,
-)
+from paddlefleet.transformer.transformer_layer import TransformerLayer, TransformerLayerSublayersSpec
 from paddlefleet.utils import WrappedTensor, deprecate_inference_params
 
-from ...nn.criterion.interface import CriterionLayer
-from ...nn.pp_model import GeneralModelForCausalLMPipe
-from ..cache_utils import Cache
-from ..gpt_provider import GPTModelProvider
-from ..model_utils import PretrainedModel
 from .configuration import Qwen3VLConfig
 from .modeling import (
-    Qwen3VLCausalLMOutputWithPast,
-    Qwen3VLPretrainedModel,
     Qwen3VLVisionPatchEmbed,
     Qwen3VLVisionPatchMerger,
+    Qwen3VLPretrainedModel,
     Qwen3VLVisionRotaryEmbedding,
+    Qwen3VLCausalLMOutputWithPast
 )
-
+from ..model_utils import PretrainedModel
+from ..configuration_utils import PretrainedConfig
+from ..cache_utils import Cache, DynamicCache
+from ..gpt_provider import GPTModelProvider
+from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...nn.criterion.interface import CriterionLayer
 
 def get_layer_spec(is_vit, normalization) -> LayerSpec:
     """Transformer Layer Spec."""
@@ -77,9 +73,9 @@ def get_layer_spec(is_vit, normalization) -> LayerSpec:
         norm = FusedRMSNorm
     else:
         raise RuntimeError(f"Unknown normalization: {normalization}")
-
+    
     mlp = get_mlp_module_spec(use_te=False)
-
+    
     return LayerSpec(
         layer=TransformerLayer,
         sublayers_spec=TransformerLayerSublayersSpec(
@@ -115,25 +111,26 @@ def get_mlp_module_spec(use_te: bool = True) -> LayerSpec:
 
 def qwen3vl_data_step(dataloader_iter) -> dict[str, paddle.Tensor]:
     from paddlefleet import parallel_state
-
+    
     batch = next(dataloader_iter)
     _batch: dict
     if isinstance(batch, tuple) and len(batch) == 1:
         _batch = batch[0]
     else:
         _batch = batch
-
+    
     required_keys = {"input_ids", "pixel_values", "image_grid_thw", "pixel_values_videos", "video_grid_thw"}
-
+    
     if parallel_state.is_pipeline_first_stage():
         required_keys.add("position_ids")
     if parallel_state.is_pipeline_last_stage():
         required_keys.update(("labels", "loss_mask"))
-
+    
     _batch = {
         key: val.cuda(non_blocking=True) if key in required_keys and val is not None else None
         for key, val in _batch.items()
     }
+    output = _batch
     return _batch
 
 
@@ -174,10 +171,15 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
         # this is only used to uniquely identify decode and non-decode cuda graph
         # runners in the cuda graph manager
         dict_args.pop("dynamic_inference_decode_only", None)
+        keys = tuple(dict_args.keys())
+        values = tuple(dict_args.values())
+
         if self.full_recompute:
             hidden_states = dict_args["hidden_states"]
             attention_mask = dict_args.get("attention_mask", None)
-            attn_mask_startend_row_indices = dict_args.get("attn_mask_startend_row_indices", None)
+            attn_mask_startend_row_indices = dict_args.get(
+                "attn_mask_startend_row_indices", None
+            )
             context = dict_args.get("context", None)
             context_mask = dict_args.get("context_mask", None)
             rotary_pos_emb = dict_args.get("rotary_pos_emb", None)
@@ -194,7 +196,9 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
                 else None,
                 context=context,
                 context_mask=context_mask,
-                rotary_pos_emb=rotary_pos_emb.clone() if rotary_pos_emb is not None else None,  # Clone is necessary!
+                rotary_pos_emb=rotary_pos_emb.clone()  # Clone is necessary!
+                if rotary_pos_emb is not None
+                else None,
                 attention_bias=attention_bias,
                 packed_seq_params=packed_seq_params,
                 deepstack_visual_emb=deepstack_visual_emb,
@@ -244,15 +248,16 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
         )
         hidden_states = self._forward_mlp(hidden_states)
         if self.layer_number in range(len(deepstack_visual_emb)):
+            # print("process _deepstack_process ",hidden_states.shape,visual_pos_masks.shape,deepstack_visual_emb[self.layer_number].shape)
             hidden_states = self._deepstack_process(
                 hidden_states=hidden_states,
                 visual_embeds=deepstack_visual_emb[self.layer_number],
-                visual_pos_masks=visual_pos_masks,
+                visual_pos_masks=visual_pos_masks
             )
         if context is not None:
             return hidden_states, context
         return hidden_states
-
+    
     def _deepstack_process(
         self, hidden_states: paddle.Tensor, visual_pos_masks: paddle.Tensor, visual_embeds: paddle.Tensor
     ):
@@ -271,7 +276,7 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
         if visual_pos_masks.shape[0] > hidden_states.shape[0]:
             try:
                 from paddle.distributed.fleet import get_hybrid_communicate_group
-
+                
                 hcg = get_hybrid_communicate_group()
                 mp_rank = hcg.get_model_parallel_rank()
                 mp_size = hcg.get_model_parallel_world_size()
@@ -330,7 +335,6 @@ class Qwen3VLTextProvider(GPTModelProvider):
     """
     Base config for Qwen3 Models.
     """
-
     normalization: str = "RMSNorm"
     activation_func: Callable = F.silu
     gated_linear_unit: bool = True
@@ -349,7 +353,10 @@ class Qwen3VLTextProvider(GPTModelProvider):
     specific_layer: type = Qwen3VLTextTransformerLayer
     max_sequence_length: int = 262144
     multimodal_embedding: bool = False
-
+    _save_to_hf: bool = False
+    use_flash_attention: bool = True
+    use_fused_linear_cross_entropy: bool = True
+    
     def __post_init__(self):
         super().__post_init__()
         self.mrope_section = self.rope_scaling.get("mrope_section", [24, 20, 20])
@@ -358,12 +365,11 @@ class Qwen3VLTextProvider(GPTModelProvider):
 @dataclass
 class Qwen3VLVisionProvider(TransformerConfig):
     """Qwen3VL Vidion Model Configuration."""
-
     patch_size: int = 16
     use_bias: bool = True
     add_qkv_bias: bool = True
     num_position_embeddings: int = 2304
-    embed_dim: int = (1152,)
+    embed_dim: int = 1152,
     hidden_size: int = 1152
     out_hidden_size: int = 4096
     in_channels: int = 3
@@ -383,7 +389,7 @@ class Qwen3VLVisionProvider(TransformerConfig):
     bias_activation_fusion: bool = False
     bias_dropout_fusion: bool = False
     attention_softmax_in_fp32: bool = True
-    normalization: str = "LayerNorm"
+    normalization: str = 'LayerNorm'
     apply_rope_fusion: bool = True
     rms_norm_eps: float = 1e-6
     transformer_layer_spec: LayerSpec = None
@@ -393,11 +399,15 @@ class Qwen3VLVisionProvider(TransformerConfig):
     add_class_token: bool = False
     class_token_len: int = 1
     high_precision_rope: bool = True
+    # _save_to_hf: bool = False
+    # use_flash_attention: bool = True
+    # use_fused_linear_cross_entropy: bool = True
+    # fuse_linear: bool = True
     # transform_rules: dict = field(default_factory=lambda: {
     #     "num_heads": "num_attention_heads",
     #     "depth": "num_hidden_layers"
     # })
-
+    
     def provide(self) -> "Qwen3VLVisionModel":
         transformer_layer_spec = self.transformer_layer_spec
         if not isinstance(transformer_layer_spec, LayerSpec):
@@ -406,7 +416,7 @@ class Qwen3VLVisionProvider(TransformerConfig):
             config=self,
             transformer_layer_spec=transformer_layer_spec,
         )
-
+        
         return model
 
 
@@ -414,7 +424,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
     """
     Qwen3-VL Vision Transformer Block.
     """
-
+    
     def __init__(
         self,
         config: TransformerConfig,
@@ -434,21 +444,16 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
             pg_collection=pg_collection,
             vp_stage=vp_stage,
         )
-
+        # print("vision_model transformer_layer ",config.num_hidden_layers)
         self.deepstack_visual_indexes = config.deepstack_visual_indexes
-        self.deepstack_merger_list = nn.ModuleList(
-            [
-                Qwen3VLVisionPatchMerger(config, use_postshuffle_norm=True)
-                for _ in range(len(self.deepstack_visual_indexes))
-            ]
-        )
+        self.deepstack_merger_list = nn.ModuleList([
+            Qwen3VLVisionPatchMerger(config, use_postshuffle_norm=True)
+            for _ in range(len(self.deepstack_visual_indexes))
+        ])
         self.merger = Qwen3VLVisionPatchMerger(
-            config,
-            dim=config.out_hidden_size,
-            context_dim=config.hidden_size,
-            spatial_merge_size=config.spatial_merge_size,
+            config, dim=config.out_hidden_size, context_dim=config.hidden_size, spatial_merge_size=config.spatial_merge_size
         )
-
+    
     def forward(
         self,
         hidden_states: paddle.Tensor | WrappedTensor,
@@ -459,11 +464,11 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         rotary_pos_cos: paddle.Tensor | None = None,
         rotary_pos_sin: paddle.Tensor | None = None,
         attention_bias: paddle.Tensor | None = None,
-        inference_context=None,
+        inference_context = None,
         packed_seq_params: PackedSeqParams | None = None,
         sequence_len_offset: paddle.Tensor | None = None,
         *,
-        inference_params=None,
+        inference_params = None,
     ):
         """
         Perform the forward pass through the transformer block.
@@ -496,14 +501,14 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
             [s, b, h], and optionally the updated context tensor if cross-attention is used.
         """
         inference_context = deprecate_inference_params(inference_context, inference_params)
-
+        
         # Delete the obsolete reference to the initial input tensor if necessary.
         if isinstance(hidden_states, WrappedTensor):
             hidden_states = hidden_states.unwrap()
-
+        
         if not self.pre_process:
             hidden_states = self.input_tensor
-
+        
         if self.config.sequence_parallel:
             rng_context = tensor_parallel.get_cuda_rng_tracker().fork()
         else:
@@ -513,81 +518,194 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         # if we are using other fp8 recipes, then the context manager enter&exit are free
         # we can wrap fp8_context within the for loop over layers, so that we can fine-grained
         # control which layer will be fp8 or bf16
+        # print("fleet vision 0 hidden_states", hidden_states.shape)
+        
         with rng_context:
-            deepstack_feature_lists = []
-            for l_no, layer in enumerate(self.layers):
-                packed_seq_params_now = packed_seq_params
-                input_dict = {
-                    "hidden_states": hidden_states,
-                    "attention_mask": attention_mask,
-                    "context": context,
-                    "rotary_pos_emb": rotary_pos_emb,
-                    "rotary_pos_cos": rotary_pos_cos,
-                    "rotary_pos_sin": rotary_pos_sin,
-                    "attention_bias": attention_bias,
-                    "packed_seq_params": packed_seq_params_now,
-                }
-                output = layer(input_dict)
-                hidden_states, context = output["hidden_states"], output["context"]
-                if (
-                    paddle.is_grad_enabled()
-                    and self.config.cpu_offloading
-                    and self.group_prefetch_offload_commit_async is not None
-                ):
-                    hidden_states = self.group_prefetch_offload_commit_async(hidden_states)
-
-                if l_no in self.deepstack_visual_indexes:
-                    deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(l_no)](
-                        hidden_states.squeeze(0)
-                    )
-                    deepstack_feature_lists.append(deepstack_feature)
-
+            if self.config.recompute_granularity == "full" and self.training:
+                hidden_states = self._checkpointed_forward(
+                    hidden_states=hidden_states,
+                    attention_mask=attention_mask,
+                    context=context,
+                    context_mask=context_mask,
+                    rotary_pos_emb=rotary_pos_emb,
+                    attention_bias=attention_bias,
+                    packed_seq_params=packed_seq_params,
+                )
+                hidden_states, deepstack_feature_lists = hidden_states
+            else:
+                deepstack_feature_lists = []
+                for l_no, layer in enumerate(self.layers):
+                    packed_seq_params_now = packed_seq_params
+                    input_dict = {
+                        "hidden_states": hidden_states,
+                        "attention_mask": attention_mask,
+                        "context": context,
+                        "rotary_pos_emb": rotary_pos_emb,
+                        "rotary_pos_cos": rotary_pos_cos,
+                        "rotary_pos_sin": rotary_pos_sin,
+                        "attention_bias": attention_bias,
+                        "packed_seq_params": packed_seq_params_now,
+                    }
+                    output = layer(input_dict)
+                    hidden_states, context = output["hidden_states"], output["context"]
+                    if (
+                        paddle.is_grad_enabled()
+                        and self.config.cpu_offloading
+                        and self.group_prefetch_offload_commit_async is not None
+                    ):
+                        hidden_states = self.group_prefetch_offload_commit_async(hidden_states)
+                    
+                    if l_no in self.deepstack_visual_indexes:
+                        deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(l_no)](hidden_states.squeeze(0))
+                        deepstack_feature_lists.append(deepstack_feature)
+                    # print(f"fleet vision {l_no} hidden_states", hidden_states.shape)
+        
         if self.norm is not None:
             hidden_states = self.norm(hidden_states)
-
+        
         hidden_states = self.merger(hidden_states.squeeze(0))
+        # print("vision merger output ",hidden_states.shape)
         return hidden_states, deepstack_feature_lists
+    
+    def _checkpointed_forward(
+        self,
+        hidden_states: paddle.Tensor,
+        attention_mask: paddle.Tensor,
+        context: paddle.Tensor,
+        context_mask: paddle.Tensor,
+        rotary_pos_emb: paddle.Tensor,
+        attention_bias: paddle.Tensor,
+        packed_seq_params: PackedSeqParams,
+    ):
+        def custom(start: int, end: int):
+            def custom_forwrad(hidden_states, attention_mask, context, context_mask, rotary_pos_emb):
+                deepstack_feature_lists = []
+                for index in range(start, end):
+                    packed_seq_params_now = packed_seq_params
+                    layer = self._get_layer(index)
+                    input_dict = {
+                        "hidden_states": hidden_states,
+                        "attention_mask": attention_mask,
+                        "context": context,
+                        "rotary_pos_emb": rotary_pos_emb,
+                        "attention_bias": attention_bias,
+                        "inference_context": None,
+                        "packed_seq_params": packed_seq_params_now,
+                    }
+                    output = layer(input_dict)
+                    if index in self.deepstack_visual_indexes:
+                        deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(index)](hidden_states)
+                        deepstack_feature_lists.append(deepstack_feature)
+                return (hidden_states, deepstack_feature_lists), context
+            
+            return custom_forwrad
+        
+        def checkpoint_handler(forward_func):
+            """Determine whether to use the `te_checkpoint` or `tensor_parallel.checkpoint`."""
+            if self.config.fp8:
+                return te_checkpoint(
+                    forward_func,
+                    self.config.distribute_saved_activations,
+                    tensor_parallel.random.get_cuda_rng_tracker,
+                    parallel_state.get_tensor_model_parallel_group(),
+                    hidden_states,
+                    attention_mask,
+                    context,
+                    context_mask,
+                    rotary_pos_emb,
+                )
+            else:
+                return tensor_parallel.checkpoint(
+                    forward_func,
+                    self.config.distribute_saved_activations,
+                    hidden_states,
+                    attention_mask,
+                    context,
+                    context_mask,
+                    rotary_pos_emb,
+                )
+
+        deepstack_feature_lists = []
+        if self.config.recompute_method == "uniform":
+            # Uniformly divide the total number of Transformer layers and checkpoint
+            # the input activation of each divided chunk.
+            # A method to further reduce memory usage reducing checkpoints.
+            layer_index = 0
+            while layer_index < self.num_layers_per_pipeline_rank:
+                hidden_states, context = checkpoint_handler(
+                    custom(layer_index, layer_index + self.config.recompute_num_layers)
+                )
+                deepstack_feature_lists.extend(hidden_states[1])
+                layer_index += self.config.recompute_num_layers
+        
+        elif self.config.recompute_method == "block":
+            # Checkpoint the input activation of only a set number of individual
+            # Transformer layers and skip the rest.
+            # A method fully use the device memory removing redundant re-computation.
+            recompute_skip_num_layers = 0
+            for layer_index in range(self.num_layers_per_pipeline_rank):
+                # Skip recomputation when input grad computation is not needed.
+                # Need to have at least one input tensor with gradient computation
+                # for re-enterant autograd engine.
+                if self.config.fp8 and not hidden_states.requires_grad:
+                    recompute_skip_num_layers += 1
+                if (
+                    layer_index >= recompute_skip_num_layers
+                    and layer_index < self.config.recompute_num_layers + recompute_skip_num_layers
+                ):
+                    hidden_states, context = checkpoint_handler(custom(layer_index, layer_index + 1))
+                    deepstack_feature_lists.extend(hidden_states[1])
+                else:
+                    hidden_states, context = custom(layer_index, layer_index + 1)(
+                        hidden_states, attention_mask, context, context_mask, rotary_pos_emb
+                    )
+                    deepstack_feature_lists.extend(hidden_states[1])
+        
+        else:
+            raise ValueError(f"Invalid activation recompute method: {self.config.recompute_method}.")
+        
+        return hidden_states[0], deepstack_feature_lists
 
 
 class Qwen3VLVisionModel(VisionLayer):
     is_fleet = True
-
     def __init__(
         self,
         config: TransformerConfig,
         transformer_layer_spec: LayerSpec,
     ):
         super().__init__(config=config)
+        # print("Qwen3VLVisionModel transformer_layer nums ",config.num_hidden_layers)
         self.spatial_merge_size = config.spatial_merge_size
         self.spatial_merge_unit = self.spatial_merge_size * self.spatial_merge_size
         self.patch_size = config.patch_size
         self.temporal_patch_size = config.temporal_patch_size
         self.in_channels = config.in_channels
         self.embed_dim = config.hidden_size
-        self.merge_hidden_size = self.embed_dim * (config.spatial_merge_size**2)
-
+        self.merge_hidden_size = self.embed_dim * (config.spatial_merge_size ** 2)
+        
         self.patch_embed = Qwen3VLVisionPatchEmbed(
             patch_size=config.patch_size,
             temporal_patch_size=config.temporal_patch_size,
             in_channels=config.in_channels,
             embed_dim=config.hidden_size,
         )
-
+        
         self.pos_embed = nn.Embedding(config.num_position_embeddings, config.hidden_size)
-        self.num_grid_per_side = int(config.num_position_embeddings**0.5)
-
+        self.num_grid_per_side = int(config.num_position_embeddings ** 0.5)
+        
         head_dim = config.hidden_size // config.num_attention_heads
         self.rotary_pos_emb = Qwen3VLVisionRotaryEmbedding(head_dim // 2)
-
+        
         self.model_type = ModelType.encoder_or_decoder
-
+        
         self.decoder = Qwen3VLVisionTransformerBlock(
             config=config,
             spec=transformer_layer_spec,
             pre_process=True,
             post_process=True,
         )
-
+    
     def rot_pos_emb(self, grid_thw):
         pos_ids = []
         for t, h, w in grid_thw:
@@ -620,7 +738,7 @@ class Qwen3VLVisionModel(VisionLayer):
         rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
         rotary_pos_emb = rotary_pos_emb_full[pos_ids].flatten(start_axis=1)
         return rotary_pos_emb
-
+    
     def fast_pos_embed_interpolate(self, grid_thw):
         grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
         device = paddle.get_device()
@@ -680,7 +798,7 @@ class Qwen3VLVisionModel(VisionLayer):
             patch_pos_embeds_permute.append(pos_embed)
         patch_pos_embeds = paddle.cat(patch_pos_embeds_permute)
         return patch_pos_embeds
-
+    
     def get_packed_seq_params(
         self,
         grid_thw: paddle.Tensor,
@@ -689,9 +807,9 @@ class Qwen3VLVisionModel(VisionLayer):
         cu_seqlens = seqlens.cumsum(dim=0, dtype=paddle.int32)
         cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0).contiguous()
         cu_seqlens = cu_seqlens.squeeze().contiguous()
-
+        
         max_seqlen = seqlens.max().item()
-
+        
         return PackedSeqParams(
             cu_seqlens_q=cu_seqlens,
             cu_seqlens_kv=cu_seqlens,
@@ -699,19 +817,13 @@ class Qwen3VLVisionModel(VisionLayer):
             max_seqlen_kv=max_seqlen,
             qkv_format="thd",
         )
-
-    def forward(
-        self,
-        hidden_states: paddle.Tensor,
-        grid_thw: paddle.Tensor,
-        attention_mask: paddle.Tensor | None = None,
-        **kwargs
-    ) -> paddle.Tensor:
+    
+    def forward(self, hidden_states: paddle.Tensor, grid_thw: paddle.Tensor, attention_mask: paddle.Tensor | None = None, **kwargs) -> paddle.Tensor:
         # Pathed embedding
         hidden_states = self.patch_embed(hidden_states).view(-1, self.embed_dim)
         pos_embeds = self.fast_pos_embed_interpolate(grid_thw)
         hidden_states = hidden_states + pos_embeds
-
+        
         seq_len, _ = hidden_states.size()
         hidden_states = hidden_states.reshape([seq_len, -1])
         hidden_states = hidden_states.unsqueeze(0)
@@ -723,9 +835,9 @@ class Qwen3VLVisionModel(VisionLayer):
         rotary_pos_sin = rotary_pos_emb.sin()
         rotary_pos_emb = rotary_pos_emb[:, None, None, :]
         rotary_pos_emb = rotary_pos_emb.transpose([1, 0])
-
+        
         packed_seq_params = self.get_packed_seq_params(grid_thw)
-
+        
         hidden_states = self.decoder(
             hidden_states,
             attention_mask,
@@ -737,8 +849,8 @@ class Qwen3VLVisionModel(VisionLayer):
 
         return hidden_states
 
-
 class Qwen3VLVisionModelFleet(Qwen3VLPretrainedModel):
+
     def __new__(cls, config):
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
@@ -756,30 +868,29 @@ class Qwen3VLVisionModelFleet(Qwen3VLPretrainedModel):
 
         return vision_model
 
-
 @dataclass
 class Qwen3VLProvider(TransformerConfig):
     text_config: Qwen3VLTextProvider | None = None
     vision_config: Qwen3VLVisionProvider | None = None
-
+    
     drop_vision_class_token: bool = False
     vision_feature_layer: int = -2
-
+    
     encoder_pipeline_model_parallel_size: int = 0
     encoder_tensor_model_parallel_size: int = 1
-
+    
     seq_length: int = 1024
-
+    
     language_model_from_pretrained: str | None = None
     vision_model_from_pretrained: str | None = None
-
+    
     freeze_langurage_model: bool = False
     freeze_vision_model: bool = True
     freeze_vision_projection: bool = False
-
+    
     forward_step_fn: Callable = qwen3vl_forward_step
     data_step_fn: Callable = qwen3vl_data_step
-
+    
     def provide(self, tokenizer=None, vp_stage: int | None = None) -> "Qwen3VLModel":
         self.text_config.scatter_embedding_sequence_parallel = False
         self.text_config.tensor_model_parallel_size = self.tensor_model_parallel_size
@@ -788,16 +899,18 @@ class Qwen3VLProvider(TransformerConfig):
         self.vision_config.tensor_model_parallel_size = self.tensor_model_parallel_size
         # self.vision_projection_config.tensor_model_parallel_size = self.tensor_model_parallel_size
         self.text_config.pipeline_model_parallel_size = self.pipeline_model_parallel_size
-
+        
         if self.encoder_pipeline_model_parallel_size > 0:
             assert self.encoder_pipeline_model_parallel_size == 1, "ViT can only live on 1 pipeline stage."
             self.vision_config.pipeline_model_parallel_size = self.encoder_pipeline_model_parallel_size
             # self.vision_projection_config.pipeline_model_parallel_size = self.encoder_pipeline_model_parallel_size
-            self.text_config.encoder_pipeline_model_parallel_size = self.encoder_pipeline_model_parallel_size
+            self.text_config.encoder_pipeline_model_parallel_size = (
+                self.encoder_pipeline_model_parallel_size
+            )
             if self.encoder_tensor_model_parallel_size > 0:
                 self.vision_config.tensor_model_parallel_size = self.encoder_tensor_model_parallel_size
                 # self.vision_projection_config.tensor_model_parallel_size = self.encoder_tensor_model_parallel_size
-
+        
         config_attrs = [
             "cross_entropy_loss_fusion",
             "gradient_accumulation_fusion",
@@ -809,7 +922,7 @@ class Qwen3VLProvider(TransformerConfig):
             "overlap_p2p_comm",
             "batch_p2p_comm",
         ]
-
+        
         for config in [
             self.text_config,
             self.vision_config,
@@ -817,13 +930,13 @@ class Qwen3VLProvider(TransformerConfig):
         ]:
             for attr in config_attrs:
                 setattr(config, attr, getattr(self, attr))
-
+        
         self.text_config.tp_comm_overlap = self.tp_comm_overlap
         self.vision_config.tp_comm_overlap = False
         # self.vision_projection_config.tp_comm_overlap = False
-
+        
         vp_stage = vp_stage or 0
-
+        
         model = Qwen3VLModel(
             config=self,
             tokenizer=tokenizer,
@@ -836,9 +949,9 @@ class Qwen3VLProvider(TransformerConfig):
             drop_vision_class_token=self.drop_vision_class_token,
             vp_stage=vp_stage,
         )
-
+        
         return model
-
+    
     # def __post_init__(self):
     #     if self.text_config is not None:
     #         for attr in MODEL_CONFIG_ATTR:
@@ -860,7 +973,7 @@ class Qwen3VLProvider(TransformerConfig):
 
 class Qwen3VLModel(MCoreLLaVAModel):
     """Qwen3VL Model Base Model Class."""
-
+    
     def __init__(
         self,
         config: Qwen3VLProvider,
@@ -875,7 +988,7 @@ class Qwen3VLModel(MCoreLLaVAModel):
         criterion=False,
     ) -> None:
         super(MCoreLLaVAModel, self).__init__(config=config)
-
+        
         language_transformer_config = config.text_config
         vision_transformer_config = config.vision_config
         self.model_version = vision_transformer_config.model_version if model_version is None else model_version
@@ -888,23 +1001,22 @@ class Qwen3VLModel(MCoreLLaVAModel):
         self.add_encoder = add_encoder
         self.add_decoder = add_decoder
         self.vp_stage = vp_stage
-
+        
         self.encoder_hidden_state = None
         self.vision_model = None
         self.language_model = None
         self.image_token_index = config.image_token_id
         self.video_token_index = config.video_token_id
-
+        
         self.sequence_parallel_lm = language_transformer_config.sequence_parallel
         self.tp_comm_overlap_lm = language_transformer_config.tp_comm_overlap
         self.context_parallel_lm = language_transformer_config.context_parallel_size
-        assert not (self.sequence_parallel_lm or self.context_parallel_lm > 1), (
-            f"qwenvl donnot support sequence parallel {self.sequence_parallel_lm} "
+        assert not (self.sequence_parallel_lm or self.context_parallel_lm > 1), \
+            f"qwenvl donnot support sequence parallel {self.sequence_parallel_lm} "\
             f"or context parallel {self.context_parallel_lm}"
-        )
         self.share_embeddings_and_output_weights = False
         self.rope_deltas = None
-
+        
         if self.add_decoder:
             self.language_model = language_transformer_config.provide(
                 pre_process=pre_process,
@@ -912,19 +1024,19 @@ class Qwen3VLModel(MCoreLLaVAModel):
                 vp_stage=vp_stage,
             )
             self._language_is_pipeline_parallel = language_transformer_config.pipeline_model_parallel_size > 1
-
+        
         if add_encoder:
             self.vision_model = Qwen3VLVisionModelFleet(vision_transformer_config)
             self._drop_vision_class_token = drop_vision_class_token
-
+        
         self.freeze(
             freeze_language_model=config.freeze_langurage_model,
             freeze_vision_model=config.freeze_vision_model,
             freeze_vision_projection=config.freeze_vision_projection,
         )
-
+        
         self.model_type = ModelType.encoder_or_decoder
-
+        
         self._img_seq_len = get_image_sequence_length(
             img_h=vision_transformer_config.img_h,
             img_w=vision_transformer_config.img_w,
@@ -932,11 +1044,8 @@ class Qwen3VLModel(MCoreLLaVAModel):
             add_class_token=not drop_vision_class_token,
             class_token_len=vision_transformer_config.class_token_len,
         )
-        self.criterion = criterion
-
-    def get_input_embeddings(self):
-        return self.language_model[0].embedding.embed_tokens.weight
-
+        self.criterion=criterion
+    
     def get_rope_index(
         self,
         input_ids: paddle.LongTensor | None = None,
@@ -949,7 +1058,7 @@ class Qwen3VLModel(MCoreLLaVAModel):
             video_grid_thw[:, 0] = 1
 
         spatial_merge_size = self.config.vision_config.spatial_merge_size
-
+        
         # TODO when implemented data file.
         image_token_id = self.image_token_index
         video_token_id = self.video_token_index
@@ -959,7 +1068,9 @@ class Qwen3VLModel(MCoreLLaVAModel):
             total_input_ids = input_ids
             if attention_mask is None:
                 attention_mask = paddle.ones_like(total_input_ids)
-            position_ids = paddle.ones([3, input_ids.shape[0], input_ids.shape[1]], dtype=input_ids.dtype)
+            position_ids = paddle.ones(
+                [3, input_ids.shape[0], input_ids.shape[1]], dtype=input_ids.dtype
+            )
             image_index, video_index = 0, 0
             for i, input_ids in enumerate(total_input_ids):
                 input_ids = input_ids[attention_mask[i] == 1]
@@ -1006,16 +1117,16 @@ class Qwen3VLModel(MCoreLLaVAModel):
                         w.item() // spatial_merge_size,
                     )
                     text_len = ed - st
-
+                    
                     st_idx = llm_pos_ids_list[-1].max() + 1 if llm_pos_ids_list else 0
                     llm_pos_ids_list.append(paddle.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
-
+                    
                     t_index = paddle.arange(llm_grid_t).view(-1, 1).expand(-1, llm_grid_h * llm_grid_w).flatten()
                     h_index = paddle.arange(llm_grid_h).view(1, -1, 1).expand(llm_grid_t, -1, llm_grid_w).flatten()
                     w_index = paddle.arange(llm_grid_w).view(1, 1, -1).expand(llm_grid_t, llm_grid_h, -1).flatten()
                     llm_pos_ids_list.append(paddle.stack([t_index, h_index, w_index]) + text_len + st_idx)
                     st = ed + llm_grid_t * llm_grid_h * llm_grid_w
-
+                
                 if st < len(input_tokens):
                     st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
                     text_len = len(input_tokens) - st
@@ -1034,27 +1145,34 @@ class Qwen3VLModel(MCoreLLaVAModel):
                 max_position_ids = position_ids.max(0, keepdim=False)[0].max(-1, keepdim=True)[0]
                 mrope_position_deltas = max_position_ids + 1 - attention_mask.shape[-1]
             else:
-                position_ids = paddle.arange(input_ids.shape[1]).view(1, 1, -1).expand(3, input_ids.shape[0], -1)
+                position_ids = (
+                    paddle.arange(input_ids.shape[1])
+                    .view(1, 1, -1)
+                    .expand(3, input_ids.shape[0], -1)
+                )
                 mrope_position_deltas = paddle.zeros(
                     [input_ids.shape[0], 1],
                     dtype=input_ids.dtype,
                 )
             return position_ids, mrope_position_deltas
-
+    
     def get_video_features(
-        self,
-        pixel_values_videos: paddle.FloatTensor,
-        video_grid_thw: paddle.LongTensor | None = None,
+        self, pixel_values_videos: paddle.FloatTensor, video_grid_thw: paddle.LongTensor | None = None,
     ):
         return self.get_image_features(pixel_values_videos, video_grid_thw)
-
-    def get_image_features(self, pixel_values: paddle.FloatTensor, image_grid_thw: paddle.LongTensor | None = None):
+    
+    def get_image_features(
+        self, pixel_values: paddle.FloatTensor, image_grid_thw: paddle.LongTensor | None = None
+    ):
         pixel_values = pixel_values.to(self.vision_model._dtype)
         image_embeds, deepstack_image_embeds = self.vision_model(pixel_values, grid_thw=image_grid_thw)
-        split_sizes = (image_grid_thw.prod(-1) // self.vision_model.spatial_merge_size**2).tolist()
+        # print("vision_model output ",image_embeds.shape)
+        # print(f"image_grid_thw {image_grid_thw.prod(-1)} spatial_merge_size {self.vision_model.spatial_merge_size ** 2}")
+        split_sizes = (image_grid_thw.prod(-1) // self.vision_model.spatial_merge_size ** 2).tolist()
         image_embeds = paddle.split(image_embeds, split_sizes)
+        # print(f"after split {split_sizes} image_embeds {image_embeds}")
         return image_embeds, deepstack_image_embeds
-
+    
     def forward(
         self,
         input_ids: paddle.LongTensor = None,
@@ -1062,7 +1180,7 @@ class Qwen3VLModel(MCoreLLaVAModel):
         position_ids: paddle.LongTensor | None = None,
         loss_mask: paddle.Tensor | None = None,
         labels: paddle.Tensor | None = None,
-        inference_params=None,
+        inference_params = None,
         pixel_values: paddle.Tensor | None = None,
         pixel_values_videos=None,
         image_grid_thw=None,
@@ -1070,6 +1188,7 @@ class Qwen3VLModel(MCoreLLaVAModel):
         runtime_gather_output: bool | None = None,
         cache_position: paddle.Tensor | None = None,
         attn_mask_startend_row_indices: paddle.Tensor | None = None,
+        **kwargs,
     ) -> paddle.Tensor:
         assert loss_mask is None, "loss_mask is not supported yet"
         image_embeds, video_embeds, deepstack_image_embeds, deepstack_video_embeds = (None for _ in range(4))
@@ -1081,7 +1200,7 @@ class Qwen3VLModel(MCoreLLaVAModel):
             else:
                 image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
             image_embeds = paddle.cat(image_embeds, dim=0)
-
+        
         if self.add_encoder and pixel_values_videos is not None:
             pixel_values_videos.to(next(self.vision_model.parameters()).dtype)
             if self.config.freeze_vision_model:
@@ -1090,10 +1209,12 @@ class Qwen3VLModel(MCoreLLaVAModel):
             else:
                 video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
             video_embeds = paddle.cat(video_embeds, axis=0)
-
+        
         if position_ids is None and input_ids is not None:
-            position_ids, _ = self.get_rope_index(input_ids, image_grid_thw, video_grid_thw, attention_mask)
-
+            position_ids, _ = self.get_rope_index(
+                input_ids, image_grid_thw, video_grid_thw, attention_mask
+            )
+        
         input_dict = {
             "input_ids": input_ids,
             "position_ids": position_ids,
@@ -1105,23 +1226,25 @@ class Qwen3VLModel(MCoreLLaVAModel):
             "labels": labels,
             "deepstack_image_embeds": deepstack_image_embeds,
             "deepstack_video_embeds": deepstack_video_embeds,
-            "runtime_gather_output": runtime_gather_output,
+            "runtime_gather_output": runtime_gather_output
         }
         output = self.language_model(input_dict)
+        # print("qwenvl criterion ",self.criterion)
         if labels is None:
             return output
         elif self.criterion is not None:
+            # print("qwenvl output loss  ",self.criterion(output, labels))
             return self.criterion(output, labels)
         else:
             output
-
+    
     def set_input_tensor(self, input_tensor) -> None:
         """Set model chunk input tensor."""
         # This is usually handled in schedules.py but some inference code still
         # gives us non-lists or None
         if not isinstance(input_tensor, list):
             input_tensor = [input_tensor]
-        assert len(input_tensor) == 1, "input_tensor should only be length 1 for llava"
+        assert len(input_tensor) == 1, 'input_tensor should only be length 1 for llava'
 
         if self.add_encoder and self.add_decoder:
             self.vision_model.set_input_tensor(input_tensor[0])
@@ -1132,6 +1255,8 @@ class Qwen3VLModel(MCoreLLaVAModel):
         else:
             self.language_model.set_input_tensor(input_tensor[0])
 
+    # def get_input_embeddings(self):
+    #     return self.language_model.get_input_embeddings()
 
 class Qwen3VLPretrainedModelFleet(PretrainedModel):
     config_class = Qwen3VLConfig
@@ -1153,15 +1278,16 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
         "up_gate_proj",
         "qkv_proj",
     ]
-
+    
     @classmethod
     def _gen_aoa_config(cls, config: Qwen3VLConfig):
         mapping = cls._checkpoint_conversion_mapping
         llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
-        visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
+        # visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
+        visual_target = "model.vision_model"
         llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
         visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
-
+        
         # language model
         aoa_config = {
             "aoa_statements": [
@@ -1170,22 +1296,20 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             ]
         }
         aoa_config["aoa_statements"] += [
-            lm_state
-            for layer_id in range(config.text_config.num_hidden_layers)
-            for lm_state in (
+            lm_state for layer_id in range(config.text_config.num_hidden_layers) for lm_state in (
                 f"model.language_model.layers.{layer_id}.input_layernorm.weight -> {llm_prefix}{layer_id + 1}.input_layernorm.weight",
                 f"model.language_model.layers.{layer_id}.post_attention_layernorm.weight -> {llm_prefix}{layer_id + 1}.post_attention_layernorm.weight",
                 f"model.language_model.layers.{layer_id}.self_attn.o_proj.weight^T -> {llm_prefix}{layer_id + 1}.self_attn.o_proj.weight",
                 f"model.language_model.layers.{layer_id}.mlp.down_proj.weight^T -> {llm_prefix}{layer_id + 1}.mlp.down_proj.weight",
-                f"model.language_model.layers.{layer_id}.self_attn.q_norm.weight -> {llm_prefix}{layer_id + 1}.self_attn.q_norm.weight",
-                f"model.language_model.layers.{layer_id}.self_attn.k_norm.weight -> {llm_prefix}{layer_id + 1}.self_attn.k_norm.weight",
+                f"model.language_model.layers.{layer_id}.self_attn.q_norm.weight -> {llm_prefix}{layer_id + 1}.self_attn.q_layernorm.weight",
+                f"model.language_model.layers.{layer_id}.self_attn.k_norm.weight -> {llm_prefix}{layer_id + 1}.self_attn.k_layernorm.weight",
             )
         ]
-
+        
         # visual model
         aoa_config["aoa_statements"] += (
             [
-                f"model.visual.blocks.$LAYER_ID.attn.{x}.weight^T -> {visual_prefix}decoder.layers.$LAYER_ID.self_attn.{y}.weight"
+                f"model.visual.blocks.$LAYER_ID.attn.{x}.weight^T -> {visual_prefix}decoder.layers.$LAYER_ID.self_attn.{y}.weight",
                 for x, y in (("qkv", "qkv_proj"), ("proj", "o_proj"))
             ]
             + [
@@ -1207,10 +1331,10 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             f"model.visual.pos_embed.weight -> {visual_prefix}pos_embed.weight",
             f"model.visual.merger.norm.weight -> {visual_prefix}decoder.merger.norm.weight",
             f"model.visual.merger.norm.bias -> {visual_prefix}decoder.merger.norm.bias",
-            f"model.visual.blocks.$LAYER_ID.norm1.weight -> {visual_prefix}decoer.layers.$LAYER_ID.input_layernorm.weight",
-            f"model.visual.blocks.$LAYER_ID.norm1.bias -> {visual_prefix}decoer.layers.$LAYER_ID.input_layernorm.bias",
-            f"model.visual.blocks.$LAYER_ID.norm2.weight -> {visual_prefix}decoer.layers.$LAYER_ID.post_attention_layernorm.weight",
-            f"model.visual.blocks.$LAYER_ID.norm2.bias -> {visual_prefix}decoer.layers.$LAYER_ID.post_attention_layernorm.bias",
+            f"model.visual.blocks.$LAYER_ID.norm1.weight -> {visual_prefix}decoder.layers.$LAYER_ID.input_layernorm.weight",
+            f"model.visual.blocks.$LAYER_ID.norm1.bias -> {visual_prefix}decoder.layers.$LAYER_ID.input_layernorm.bias",
+            f"model.visual.blocks.$LAYER_ID.norm2.weight -> {visual_prefix}decoder.layers.$LAYER_ID.post_attention_layernorm.weight",
+            f"model.visual.blocks.$LAYER_ID.norm2.bias -> {visual_prefix}decoder.layers.$LAYER_ID.post_attention_layernorm.bias",
         ]
         aoa_config["aoa_statements"] += [
             f"model.visual.merger.linear_fc1.weight^T -> {visual_prefix}decoder.merger.linear_fc1.weight",
@@ -1226,7 +1350,7 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             f"model.visual.deepstack_merger_list.$LAYER_ID.norm.weight -> {visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.norm.weight",
             f"model.visual.deepstack_merger_list.$LAYER_ID.norm.bias -> {visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.norm.bias",
         ]
-
+        
         # attention qkv
         aoa_config["aoa_statements"] += [
             f"model.language_model.layers.{layer_id}.self_attn.q_proj.weight^T, model.language_model.layers.{layer_id}.self_attn.k_proj.weight^T, model.language_model.layers.{layer_id}.self_attn.v_proj.weight^T -> {llm_prefix}{layer_id + 1}.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups={config.text_config.num_key_value_heads}"
@@ -1244,16 +1368,18 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             aoa_config["aoa_statements"] += [
                 f"{'model.language_model.embed_tokens.weight' if config.tie_word_embeddings else 'lm_head.weight'} -> {llm_prefix}{config.text_config.num_hidden_layers + 2}.weight",
             ]
-
+        
         return aoa_config
-
+    
+    @classmethod
     def _gen_inv_aoa_config(cls, config: Qwen3VLConfig):
         mapping = cls._checkpoint_conversion_mapping
         llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
-        visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
+        # visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
+        visual_target = "model.vision_model"
         llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
         visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
-
+        
         # language model
         aoa_config = {
             "aoa_statements": [
@@ -1262,9 +1388,7 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             ]
         }
         aoa_config["aoa_statements"] += [
-            state
-            for layer_id in range(config.text_config.num_hidden_layers)
-            for state in (
+            state for layer_id in range(config.text_config.num_hidden_layers) for state in (
                 f"{llm_prefix}{layer_id + 1}.input_layernorm.weight -> model.language_model.layers.{layer_id}.input_layernorm.weight",
                 f"{llm_prefix}{layer_id + 1}post_attention_layernorm.weight -> model.language_model.layers.{layer_id}.post_attention_layernorm.weight",
                 f"{llm_prefix}{layer_id + 1}.self_attn.o_proj.weight^T -> model.language_model.layers.{layer_id}.self_attn.o_proj.weight",
@@ -1299,10 +1423,10 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             f"{visual_prefix}pos_embed.weight -> model.visual.pos_embed.weight",
             f"{visual_prefix}decoder.merger.norm.weight -> model.visual.merger.norm.weight",
             f"{visual_prefix}decoder.merger.norm.bias -> model.visual.merger.norm.bias",
-            f"{visual_prefix}decoer.layers.$LAYER_ID.input_layernorm.weight -> model.visual.blocks.$LAYER_ID.norm1.weight",
-            f"{visual_prefix}decoer.layers.$LAYER_ID.input_layernorm.bias -> model.visual.blocks.$LAYER_ID.norm1.bias",
-            f"{visual_prefix}decoer.layers.$LAYER_ID.post_attention_layernorm.weight -> model.visual.blocks.$LAYER_ID.norm2.weight",
-            f"{visual_prefix}decoer.layers.$LAYER_ID.post_attention_layernorm.bias -> model.visual.blocks.$LAYER_ID.norm2.bias",
+            f"{visual_prefix}decoder.layers.$LAYER_ID.input_layernorm.weight -> model.visual.blocks.$LAYER_ID.norm1.weight",
+            f"{visual_prefix}decoder.layers.$LAYER_ID.input_layernorm.bias -> model.visual.blocks.$LAYER_ID.norm1.bias",
+            f"{visual_prefix}decoder.layers.$LAYER_ID.post_attention_layernorm.weight -> model.visual.blocks.$LAYER_ID.norm2.weight",
+            f"{visual_prefix}decoder.layers.$LAYER_ID.post_attention_layernorm.bias -> model.visual.blocks.$LAYER_ID.norm2.bias",
         ]
         aoa_config["aoa_statements"] += [
             f"{visual_prefix}merger.linear_fc1.weight^T -> model.visual.merger.linear_fc1.weight",
@@ -1318,7 +1442,7 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.norm.weight -> model.visual.deepstack_merger_list.$LAYER_ID.norm.weight",
             f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.norm.bias -> model.visual.deepstack_merger_list.$LAYER_ID.norm.bias",
         ]
-
+        
         # attention qkv
         aoa_config["aoa_statements"] += [
             f"{llm_prefix}{layer_id + 1}.self_attn.qkv_proj.weight  -> model.language_model.layers.{layer_id}.self_attn.q_proj.weight, model.language_model.layers.{layer_id}.self_attn.k_proj.weight, model.language_model.layers.{layer_id}.self_attn.v_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups = {config.text_config.num_key_value_heads}"
@@ -1329,7 +1453,7 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             for layer_id in range(config.text_config.num_hidden_layers)
             for x in ("q", "k", "v")
         ]
-
+        
         # FFN
         aoa_config["aoa_statements"] += [
             f"{llm_prefix}{layer_id + 1}.mlp.up_gate_proj.weight -> model.language_model.layers.{layer_id}.mlp.gate_proj.weight, model.language_model.layers.{layer_id}.mlp.up_proj.weight, fused_ffn"
@@ -1340,36 +1464,35 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             for layer_id in range(config.text_config.num_hidden_layers)
             for x in ("gate", "up")
         ]
-
+        
         # Qwen3VLModel without lm_head
         if cls._tied_weights_keys:
             aoa_config["aoa_statements"] += [
                 f"{llm_prefix}{config.text_config.num_hidden_layers + 2}.weight -> {'_' if config.tie_word_embeddings else 'lm_head.weight'}",
             ]
-
+        
         return aoa_config
 
 
 class Qwen3VLModelFleet(Qwen3VLPretrainedModelFleet):
-    def __new__(cls, config, have_criterion=True):
+    def __new__(cls, config,have_criterion=True):
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
-        criterion = None
+        criterion=None
         if have_criterion:
-            criterion = CriterionLayer(config.text_config)
+            criterion=CriterionLayer(config.text_config)
         model_provider_class = Qwen3VLProvider
         model_provider = model_provider_class.from_config(config)
-        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type, criterion=criterion)
+        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type,criterion=criterion)
         qwen3vl_model._gen_aoa_config = cls._gen_aoa_config
         qwen3vl_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         qwen3vl_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
         qwen3vl_model.config_to_save = config
 
         return qwen3vl_model
-
 
 class Qwen3VLForConditionalGenerationFleet(Qwen3VLPretrainedModelFleet):
     _checkpoint_conversion_mapping = {
@@ -1378,19 +1501,16 @@ class Qwen3VLForConditionalGenerationFleet(Qwen3VLPretrainedModelFleet):
     }
     _tied_weights_keys = {"lm_head.weight": "model.language_model.embed_tokens.weight"}
     config_class = Qwen3VLConfig
-
+    
     def __init__(self, config):
         super().__init__(config)
         # model_provider = Qwen3VLProvider.from_config(config)
-        self.model = Qwen3VLModelFleet(
-            config, have_criterion=False
-        )  # Qwen3VLModelFleet(model_provider, model_version=config.model_type)
+        self.model = Qwen3VLModelFleet(config,have_criterion=False) #Qwen3VLModelFleet(model_provider, model_version=config.model_type)
         self.criterion = CriterionLayer(config.text_config)
-        self.tie_weights()
+        # self.tie_weights()
 
-    def get_input_embeddings(self):
-        return self.model.get_input_embeddings()
-
+    # def get_input_embeddings(self):
+    #     return self.model.get_input_embeddings()
     def forward(
         self,
         input_ids: Optional[paddle.Tensor] = None,
@@ -1494,58 +1614,55 @@ class Qwen3VLForConditionalGenerationFleet(Qwen3VLPretrainedModelFleet):
         return Qwen3VLCausalLMOutputWithPast(
             loss=loss,
             logits=logits,
-            past_key_values=outputs.past_key_values,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-            rope_deltas=outputs.rope_deltas,
+            past_key_values=None,
+            hidden_states=None,
+            attentions=None,
+            rope_deltas=None,
         )
-
 
 class Qwen3VLForCausalLMPipe(Qwen3VLPretrainedModelFleet, GeneralModelForCausalLMPipe):
     is_fleet = True
 
-    def __new__(cls, config, have_criterion=True):
+    def __new__(cls, config,have_criterion=True):
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
-        criterion = None
+        criterion=None
         if have_criterion:
-            criterion = CriterionLayer(config.text_config)
+            criterion=CriterionLayer(config.text_config)
         model_provider_class = Qwen3VLProvider
         model_provider = model_provider_class.from_config(config)
-        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type, criterion=criterion)
+        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type,criterion=criterion)
         qwen3vl_model._gen_aoa_config = cls._gen_aoa_config
         qwen3vl_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         qwen3vl_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
         qwen3vl_model.config_to_save = config
 
         return qwen3vl_model
-
 
 class Qwen3VLModelPipe(Qwen3VLPretrainedModelFleet, GeneralModelForCausalLMPipe):
     is_fleet = True
 
-    def __new__(cls, config, have_criterion=True):
+    def __new__(cls, config,have_criterion=True):
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
-        criterion = None
+        criterion=None
         if have_criterion:
-            criterion = CriterionLayer(config.text_config)
+            criterion=CriterionLayer(config.text_config)
         model_provider_class = Qwen3VLProvider
         model_provider = model_provider_class.from_config(config)
-        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type, criterion=criterion)
+        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type,criterion=criterion)
         qwen3vl_model._gen_aoa_config = cls._gen_aoa_config
         qwen3vl_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         qwen3vl_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
         qwen3vl_model.config_to_save = config
 
         return qwen3vl_model
-
 
 __all__ = [
     "Qwen3VLModelFleet",
