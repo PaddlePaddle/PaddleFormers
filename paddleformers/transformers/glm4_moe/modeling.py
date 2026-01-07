@@ -1317,13 +1317,19 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             ]
 
             if not config.fuse_attention_ffn:
-                aoa_statements += [
-                    f"{prefix_offset}.mlp.shared_experts.{y}_proj.weight^T -> {prefix}.mlp.shared_experts.{y}_proj.weight"
-                    for y in ("gate", "up")
-                ] + [
-                    f"{prefix_offset}.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.{y}_proj.weight"
-                    for y in ("gate", "up")
-                ]
+                aoa_statements += (
+                    [
+                        f"{prefix_offset}.mlp.shared_experts.{y}_proj.weight^T -> {prefix}.mlp.shared_experts.{y}_proj.weight"
+                        for y in ("gate", "up")
+                    ]
+                    + [
+                        f"{prefix_offset}.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.{y}_proj.weight"
+                        for y in ("gate", "up")
+                    ]
+                    + [
+                        f"{prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.down_proj.weight"
+                    ]
+                )
             else:
                 aoa_statements += [
                     f"{prefix_offset}.mlp.shared_experts.up_gate_proj.weight -> {prefix_offset}.mlp.shared_experts.gate_proj.weight, {prefix_offset}.mlp.shared_experts.up_proj.weight, fused_ffn",
