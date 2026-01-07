@@ -588,12 +588,9 @@ class PaddleProcessorMixin:
         return_unused_kwargs = kwargs.pop("return_unused_kwargs", False)
 
         # We have to pop up some unused (but specific) kwargs and then validate that it doesn't contain unused kwargs
-        # If we don't pop, some specific kwargs will raise a warning
-        if "processor_class" in processor_dict:
-            del processor_dict["processor_class"]
-
-        if "auto_map" in processor_dict:
-            del processor_dict["auto_map"]
+        # If we don't pop, some specific kwargs will raise a warning or error
+        for unused_kwarg in cls.attributes + ["auto_map", "processor_class"]:
+            processor_dict.pop(unused_kwarg, None)
 
         # override processor_dict with given kwargs
         processor_dict.update(kwargs)
