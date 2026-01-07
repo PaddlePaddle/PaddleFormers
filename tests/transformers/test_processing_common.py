@@ -158,6 +158,8 @@ class ProcessorTesterMixin:
             if len(saved_files) > 0:
                 check_json_file_has_correct_format(saved_files[0])
                 processor_second = self.processor_class.from_pretrained(tmpdir)
+                # NOTE: save_pretrained method populates the `auto_map`
+                processor_second.save_pretrained(tmpdir)
 
                 self.assertEqual(processor_second.to_dict(), processor_first.to_dict())
 
@@ -178,6 +180,9 @@ class ProcessorTesterMixin:
 
             # Load it back and check if loaded correctly
             processor_second = self.processor_class.from_pretrained(tmpdir)
+            # NOTE: save_pretrained method populates the `auto_map`
+            processor_second.save_pretrained(tmpdir)
+
             self.assertEqual(processor_second.to_dict(), processor_first.to_dict())
 
             # Try to load each attribute separately from saved directory
