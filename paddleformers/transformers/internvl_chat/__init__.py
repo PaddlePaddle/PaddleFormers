@@ -21,10 +21,7 @@ from ...utils.lazy_import import _LazyModule
 import_structure = {
     "configuration": ["InternVisionConfig", "InternVLChatConfig"],
     "processor": ["InternVLProcessor"],
-    "modeling": [
-        "InternVisionModel",
-        "InternVLChatModel"
-    ],
+    "modeling": ["InternVisionModel", "InternVLChatModel"],
 }
 
 if TYPE_CHECKING:

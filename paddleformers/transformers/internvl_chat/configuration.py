@@ -13,12 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 import os
+
+from ...utils import logger
 from ..configuration_utils import PretrainedConfig
 from ..llama import LlamaConfig
 from ..qwen2 import Qwen2Config
-from ...utils import logger
 
 
 class InternVisionConfig(PretrainedConfig):
@@ -67,29 +67,29 @@ class InternVisionConfig(PretrainedConfig):
             A factor for layer scale.
     """
 
-    model_type = 'intern_vit_6b'
+    model_type = "intern_vit_6b"
 
     def __init__(
-            self,
-            num_channels=3,
-            patch_size=14,
-            image_size=224,
-            qkv_bias=False,
-            hidden_size=3200,
-            num_attention_heads=25,
-            intermediate_size=12800,
-            qk_normalization=True,
-            num_hidden_layers=48,
-            use_flash_attn=True,
-            hidden_act='gelu',
-            norm_type='rms_norm',
-            layer_norm_eps=1e-6,
-            dropout=0.0,
-            drop_path_rate=0.0,
-            attention_dropout=0.0,
-            initializer_range=0.02,
-            initializer_factor=0.1,
-            **kwargs,
+        self,
+        num_channels=3,
+        patch_size=14,
+        image_size=224,
+        qkv_bias=False,
+        hidden_size=3200,
+        num_attention_heads=25,
+        intermediate_size=12800,
+        qk_normalization=True,
+        num_hidden_layers=48,
+        use_flash_attn=True,
+        hidden_act="gelu",
+        norm_type="rms_norm",
+        layer_norm_eps=1e-6,
+        dropout=0.0,
+        drop_path_rate=0.0,
+        attention_dropout=0.0,
+        initializer_range=0.02,
+        initializer_factor=0.1,
+        **kwargs,
     ):
         super().__init__(**kwargs)
 
@@ -112,58 +112,59 @@ class InternVisionConfig(PretrainedConfig):
         self.qkv_normalization = qk_normalization
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path: str | os.PathLike, **kwargs) -> 'PretrainedConfig':
+    def from_pretrained(cls, pretrained_model_name_or_path: str | os.PathLike, **kwargs) -> "PretrainedConfig":
         config_dict, kwargs = cls.get_config_dict(pretrained_model_name_or_path, **kwargs)
 
-        if 'vision_config' in config_dict:
-            config_dict = config_dict['vision_config']
+        if "vision_config" in config_dict:
+            config_dict = config_dict["vision_config"]
 
-        if 'model_type' in config_dict and hasattr(cls, 'model_type') and config_dict['model_type'] != cls.model_type:
+        if "model_type" in config_dict and hasattr(cls, "model_type") and config_dict["model_type"] != cls.model_type:
             logger.warning(
                 f"You are using a model of type {config_dict['model_type']} to instantiate a model of type "
-                f'{cls.model_type}. This is not supported for all configurations of models and can yield errors.'
+                f"{cls.model_type}. This is not supported for all configurations of models and can yield errors."
             )
 
         return cls.from_dict(config_dict, **kwargs)
 
 
 class InternVLChatConfig(PretrainedConfig):
-    model_type = 'internvl_chat'
+    model_type = "internvl_chat"
     is_composition = True
 
     def __init__(
-            self,
-            vision_config=None,
-            llm_config=None,
-            use_backbone_lora=0,
-            use_llm_lora=0,
-            select_layer=-1,
-            force_image_size=None,
-            downsample_ratio=0.5,
-            template=None,
-            dynamic_image_size=False,
-            use_thumbnail=False,
-            ps_version='v1',
-            min_dynamic_patch=1,
-            max_dynamic_patch=6,
-            **kwargs):
+        self,
+        vision_config=None,
+        llm_config=None,
+        use_backbone_lora=0,
+        use_llm_lora=0,
+        select_layer=-1,
+        force_image_size=None,
+        downsample_ratio=0.5,
+        template=None,
+        dynamic_image_size=False,
+        use_thumbnail=False,
+        ps_version="v1",
+        min_dynamic_patch=1,
+        max_dynamic_patch=6,
+        **kwargs
+    ):
         super().__init__(**kwargs)
 
         if vision_config is None:
-            vision_config = {'architectures': ['InternVisionModel']}
-            logger.info('vision_config is None. Initializing the InternVisionConfig with default values.')
+            vision_config = {"architectures": ["InternVisionModel"]}
+            logger.info("vision_config is None. Initializing the InternVisionConfig with default values.")
 
         if llm_config is None:
-            llm_config = {'architectures': ['Qwen2ForCausalLM']}
-            logger.info('llm_config is None. Initializing the LlamaConfig config with default values (`LlamaConfig`).')
+            llm_config = {"architectures": ["Qwen2ForCausalLM"]}
+            logger.info("llm_config is None. Initializing the LlamaConfig config with default values (`LlamaConfig`).")
 
         self.vision_config = InternVisionConfig(**vision_config)
-        if llm_config.get('architectures')[0] == 'LlamaForCausalLM':
+        if llm_config.get("architectures")[0] == "LlamaForCausalLM":
             self.llm_config = LlamaConfig(**llm_config)
-        elif llm_config.get('architectures')[0] == 'Qwen2ForCausalLM':
+        elif llm_config.get("architectures")[0] == "Qwen2ForCausalLM":
             self.llm_config = Qwen2Config(**llm_config)
         else:
-            raise ValueError('Unsupported architecture: {}'.format(llm_config.get('architectures')[0]))
+            raise ValueError("Unsupported architecture: {}".format(llm_config.get("architectures")[0]))
         self.use_backbone_lora = use_backbone_lora
         self.use_llm_lora = use_llm_lora
         self.select_layer = select_layer
@@ -178,10 +179,10 @@ class InternVLChatConfig(PretrainedConfig):
         # By default, we use tie_word_embeddings=False for models of all sizes.
         self.tie_word_embeddings = self.llm_config.tie_word_embeddings
 
-        logger.info(f'vision_select_layer: {self.select_layer}')
-        logger.info(f'ps_version: {self.ps_version}')
-        logger.info(f'min_dynamic_patch: {self.min_dynamic_patch}')
-        logger.info(f'max_dynamic_patch: {self.max_dynamic_patch}')
+        logger.info(f"vision_select_layer: {self.select_layer}")
+        logger.info(f"ps_version: {self.ps_version}")
+        logger.info(f"min_dynamic_patch: {self.min_dynamic_patch}")
+        logger.info(f"max_dynamic_patch: {self.max_dynamic_patch}")
 
 
 __all__ = [

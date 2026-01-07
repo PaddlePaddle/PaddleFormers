@@ -50,21 +50,30 @@ from ..utils import logger
 from .configuration import Qwen3VLConfig, Qwen3VLTextConfig, Qwen3VLVisionConfig
 
 if TYPE_CHECKING:
-    from .modeling_fleet import Qwen3VLModelFleet, Qwen3VLForConditionalGenerationFleet,Qwen3VLModelPipe,Qwen3VLForCausalLMPipe
+    from .modeling_fleet import (
+        Qwen3VLForCausalLMPipe,
+        Qwen3VLForConditionalGenerationFleet,
+        Qwen3VLModelFleet,
+        Qwen3VLModelPipe,
+    )
 
 
 def __getattr__(name):
     if name == "Qwen3VLModelFleet":
         from .modeling_fleet import Qwen3VLModelFleet
+
         return Qwen3VLModelFleet
     elif name == "Qwen3VLForConditionalGenerationFleet":
         from .modeling_fleet import Qwen3VLForConditionalGenerationFleet
+
         return Qwen3VLForConditionalGenerationFleet
-    elif name=="Qwen3VLForCausalLMPipe":
+    elif name == "Qwen3VLForCausalLMPipe":
         from .modeling_fleet import Qwen3VLForCausalLMPipe
+
         return Qwen3VLForCausalLMPipe
-    elif name=="Qwen3VLModelPipe":
+    elif name == "Qwen3VLModelPipe":
         from .modeling_fleet import Qwen3VLModelPipe
+
         return Qwen3VLModelPipe
 
     raise AttributeError(f"module {__name__} has no attribute {name}")
@@ -210,14 +219,15 @@ class Qwen3VLVisionAttention(nn.Layer):
     ) -> paddle.Tensor:
         seq_length = hidden_states.shape[0]
         qkv_output = self.qkv(hidden_states).reshape(seq_length, self.num_heads, -1)
-        query_states, key_states, value_states = paddle.split(qkv_output, [self.head_dim, self.head_dim, self.head_dim] , axis=2)
+        query_states, key_states, value_states = paddle.split(
+            qkv_output, [self.head_dim, self.head_dim, self.head_dim], axis=2
+        )
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb_vision(query_states, key_states, cos, sin)
-        
+
         query_states = query_states.transpose(0, 1).unsqueeze(0)
         key_states = key_states.transpose(0, 1).unsqueeze(0)
         value_states = value_states.transpose(0, 1).unsqueeze(0)
-
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
@@ -241,7 +251,6 @@ class Qwen3VLVisionAttention(nn.Layer):
             for q, k, v in zip(*splits)
         ]
         attn_output = paddle.cat(attn_outputs, axis=-2)
-
 
         attn_output = attn_output.reshape([seq_length, -1]).contiguous()
         attn_output = self.proj(attn_output)
@@ -804,7 +813,7 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
             print(f"formers vision {layer_num} hidden_states", hidden_states.shape)
 
         hidden_states = self.merger(hidden_states)
-        print("vision merger output ",hidden_states.shape)
+        print("vision merger output ", hidden_states.shape)
         return hidden_states, deepstack_feature_lists
 
 
@@ -971,7 +980,7 @@ class Qwen3VLTextAttention(nn.Layer):
 
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
-        self.head_dim = config.head_dim #self.hidden_size // self.num_heads
+        self.head_dim = config.head_dim  # self.hidden_size // self.num_heads
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.is_causal = True
@@ -1519,7 +1528,12 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
 
             hidden_states = layer_outputs[0]
             if deepstack_visual_embeds is not None and idx < len(deepstack_visual_embeds):
-                print("process _deepstack_process ",hidden_states.shape,visual_pos_masks.shape,deepstack_visual_embeds[idx].shape)
+                print(
+                    "process _deepstack_process ",
+                    hidden_states.shape,
+                    visual_pos_masks.shape,
+                    deepstack_visual_embeds[idx].shape,
+                )
                 hidden_states = self._deepstack_process(
                     hidden_states,
                     visual_pos_masks,

@@ -24,8 +24,8 @@ from paddle.distributed.fleet.recompute import recompute
 
 from ...generation.configuration_utils import GenerationConfig
 from ...nn.linear import Linear as GeneralLinear
-from ...utils import logger
 from ...nn.norm import Norm as GeneralNorm
+from ...utils import logger
 from .. import LlamaForCausalLM, Qwen2ForCausalLM
 from ..activations import ACT2FN
 from ..model_outputs import (
@@ -324,16 +324,18 @@ class InternVisionEncoderLayer(nn.Module):
         self.attn = InternAttention(config)
         self.mlp = InternMLP(config)
         self.norm1 = GeneralNorm.create(
-            config, hidden_size=self.embed_dim,
+            config,
+            hidden_size=self.embed_dim,
             has_bias=False,
             norm_eps=config.layer_norm_eps,
-            norm_type=self.norm_type
+            norm_type=self.norm_type,
         )
         self.norm2 = GeneralNorm.create(
-            config, hidden_size=self.embed_dim,
+            config,
+            hidden_size=self.embed_dim,
             has_bias=False,
             norm_eps=config.layer_norm_eps,
-            norm_type=self.norm_type
+            norm_type=self.norm_type,
         )
 
         self.ls1 = nn.Parameter(config.initializer_factor * paddle.ones(self.embed_dim))
@@ -394,6 +396,7 @@ class InternVisionEncoder(nn.Module):
         hidden_states = recompute(
             create_custorm_forward(layer_module),
         )
+        return hidden_states
 
     def forward(
         self,

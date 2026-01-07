@@ -52,10 +52,10 @@ def _training_function(config: dict[str, Any]) -> None:
     if model_args.stage == "SFT" or model_args.stage == "PT" or model_args.stage == "VL-SFT":
         with paddle.amp.auto_cast(enable=False):
             print("Starting SFT Training")
-            print("model_args ",model_args)
-            print("data_args ",data_args)
-            print("generating_args",generating_args)
-            print("finetuning_args",finetuning_args)
+            print("model_args ", model_args)
+            print("data_args ", data_args)
+            print("generating_args", generating_args)
+            print("finetuning_args", finetuning_args)
             run_sft(model_args, data_args, generating_args, finetuning_args)
     elif model_args.stage == "DPO":
         with paddle.amp.auto_cast(enable=False):

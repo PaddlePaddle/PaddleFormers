@@ -47,10 +47,7 @@ from ..masking_utils import (
 from ..model_outputs import BaseModelOutputWithPast, ModelOutput
 from ..model_utils import PretrainedModel
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS
-from ..qwen3_vl.modeling_fleet import (
-    Qwen3VLModel,
-    Qwen3VLProvider,
-)
+from ..qwen3_vl.modeling_fleet import Qwen3VLModel, Qwen3VLProvider
 from ..utils import logger
 from .configuration import (
     Qwen3VLMoeConfig,
@@ -2443,21 +2440,22 @@ class Qwen3VLMoeForConditionalGeneration(Qwen3VLMoePretrainedModel):
 
         return input_ids, model_kwargs
 
+
 class Qwen3VLMoeFleet(Qwen3VLMoePretrainedModel):
     is_fleet = True
 
-    def __new__(cls, config,have_criterion=True):
+    def __new__(cls, config, have_criterion=True):
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
-        criterion=None
+        criterion = None
         if have_criterion:
-            criterion=CriterionLayer(config.text_config)
+            criterion = CriterionLayer(config.text_config)
         model_provider_class = Qwen3VLProvider
         model_provider = model_provider_class.from_config(config)
-        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type,criterion=criterion)
+        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type, criterion=criterion)
         qwen3vl_model._gen_aoa_config = cls._gen_aoa_config
         qwen3vl_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         qwen3vl_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
@@ -2465,4 +2463,11 @@ class Qwen3VLMoeFleet(Qwen3VLMoePretrainedModel):
 
         return qwen3vl_model
 
-__all__ = ["Qwen3VLMoeFleet","Qwen3VLMoeForConditionalGeneration", "Qwen3VLMoeModel", "Qwen3VLMoePretrainedModel", "Qwen3VLMoeTextModel"]
+
+__all__ = [
+    "Qwen3VLMoeFleet",
+    "Qwen3VLMoeForConditionalGeneration",
+    "Qwen3VLMoeModel",
+    "Qwen3VLMoePretrainedModel",
+    "Qwen3VLMoeTextModel",
+]
