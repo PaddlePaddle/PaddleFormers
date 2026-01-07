@@ -359,8 +359,6 @@ class SFTDataSet(IterableDataset):
             if self.template_backend == "jinja":
                 if not self.tokenizer.chat_template:
                     self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
-                if system:
-                    example["messages"].insert(0, {"role": "system", "content": system})
                 if self.split_multi_turn:
                     encoded_pairs = postprocess_fc_sequence(self.tokenizer, example)
                 else:
