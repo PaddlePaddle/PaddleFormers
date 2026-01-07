@@ -97,6 +97,7 @@ jobs:
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
           uv cache clean paddlefleet
           uv pip install --system --prerelease=allow -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --index-strategy unsafe-best-match
+          export UV_SKIP_WHEEL_FILENAME_CHECK=1
           uv pip install --system https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
           python -c "import paddle; print(paddle.version.commit)"
           cd /workspace
@@ -221,6 +222,7 @@ jobs:
           git pull --no-edit origin pull/${PR_ID}/head
           uv cache clean paddlefleet
           uv pip install --system --prerelease=allow -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --index-strategy unsafe-best-match
+          export UV_SKIP_WHEEL_FILENAME_CHECK=1
           uv pip install --system https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
           python -c "import paddle; print(paddle.version.commit)"
           cd /workspace
@@ -413,6 +415,7 @@ jobs:
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
           uv cache clean paddlefleet
           uv pip install --system --prerelease=allow -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --index-strategy unsafe-best-match
+          export UV_SKIP_WHEEL_FILENAME_CHECK=1
           uv pip install --system https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
           python -c "import paddle; print(paddle.version.commit)"
           cd /workspace
