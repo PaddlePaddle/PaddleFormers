@@ -2554,11 +2554,15 @@ class Trainer:
                         ckpt_path,
                         merge_tensor_parallel=True,
                         variant=self.args.weight_name_suffix,
+                        save_to_hf=self.args.save_to_hf,
                         save_checkpoint_format=self.args.save_checkpoint_format,
                     )
                 else:
                     self.model.save_pretrained(
-                        ckpt_path, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
+                        ckpt_path,
+                        is_main_process,
+                        save_to_hf=self.args.save_to_hf,
+                        save_checkpoint_format=self.args.save_checkpoint_format,
                     )
                 if self.tokenizer is not None and self.args.save_tokenizer:
                     self.tokenizer.save_pretrained(ckpt_path)
@@ -4094,11 +4098,15 @@ class Trainer:
                             output_dir,
                             merge_tensor_parallel=merge_tensor_parallel,
                             variant=self.args.weight_name_suffix,
+                            save_to_hf=self.args.save_to_hf,
                             save_checkpoint_format=self.args.save_checkpoint_format,
                         )
                     else:
                         self.model.save_pretrained(
-                            output_dir, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
+                            output_dir,
+                            is_main_process,
+                            save_to_hf=self.args.save_to_hf,
+                            save_checkpoint_format=self.args.save_checkpoint_format,
                         )
                 else:
                     self._save_flex_model_state(output_dir)

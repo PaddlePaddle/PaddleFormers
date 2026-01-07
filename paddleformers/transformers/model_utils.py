@@ -3166,7 +3166,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
             # Save the config
             if is_main_process:
-                config_to_save.save_pretrained(save_directory)
+                config_to_save.save_pretrained(save_directory, save_to_hf=save_to_hf)
                 if self.can_generate():
                     model_to_save.generation_config.save_pretrained(save_directory)
             return
@@ -3204,7 +3204,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
         # Save the config
         if is_main_process:
-            config_to_save.save_pretrained(save_directory)
+            config_to_save.save_pretrained(save_directory, save_to_hf=save_to_hf)
             if self.can_generate():
                 model_to_save.generation_config.save_pretrained(save_directory)
 
