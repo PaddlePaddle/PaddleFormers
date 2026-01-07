@@ -933,7 +933,6 @@ class Qwen3MoePretrainedModel(PretrainedModel):
         model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_statements = [
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
-            f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
             f"{model_prefix}norm.weight -> model.norm.weight",
@@ -979,6 +978,9 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                 f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight"
                 for y in ("gate", "up")
             ]
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+            ]
         else:
             if getattr(cls, "is_fleet", False) and config.moe_grouped_gemm:
                 for layer_id in range(config.num_hidden_layers):
@@ -1009,6 +1011,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                     aoa_statements += [
                         f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight",
                         f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight",
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight",
                     ]
 
         if config.tie_word_embeddings:
@@ -1272,7 +1275,7 @@ def load_balancing_loss_func(gate_logits, num_experts, top_k=2, attention_mask=N
     return overall_loss * num_experts
 
 
-class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel):
+class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1293,7 +1296,7 @@ class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel):
         return gpt_model
 
 
-class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
+class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel):
     enable_to_static_method = True
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -1421,7 +1424,7 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
         )
 
 
-class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel, GeneralModelForCausalLMPipe):
+class Qwen3MoeForCausalLMPipe(Qwen3MoePretrainedModel, GeneralModelForCausalLMPipe):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1435,7 +1438,7 @@ class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel, GeneralModelForCausa
         return gpt_model
 
 
-class Qwen3MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
+class Qwen3MoeForCausalLMPipeFleet(GeneralModelForCausalLMPipe):
     config_class = Qwen3MoeConfig
     _decoder_layer_cls = Qwen3MoeDecoderLayer
     _get_tensor_parallel_mappings = Qwen3MoeModel._get_tensor_parallel_mappings
