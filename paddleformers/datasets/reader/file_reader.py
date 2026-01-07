@@ -146,7 +146,8 @@ class FileReader(BaseReader):
             ]
 
         system = ""
-        if "system" in data["messages"][0]["role"]:
+        if self._template_backend != "jinja" and "system" in data["messages"][0]["role"]:
+            # extract system message when template_backend is not jinja
             system = data["messages"][0]["content"]
             if not isinstance(system, str):
                 raise ValueError("System field must be a string.")

@@ -200,7 +200,7 @@ try:
         package_data={
             "paddleformers": ["datasets/reader/data_info.json"],
         },
-        setup_requires=["cython", "numpy"],
+        setup_requires=["numpy"],
         install_requires=REQUIRED_PACKAGES,
         entry_points={"console_scripts": get_console_scripts()},
         extras_require=extras,

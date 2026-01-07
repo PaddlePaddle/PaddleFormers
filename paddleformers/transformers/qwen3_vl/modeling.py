@@ -27,7 +27,6 @@ from typing import Any, Optional, Tuple, Union
 import paddle
 import paddle.nn.functional as F
 from paddle import Tensor, nn
-from paddle.distributed.fleet import get_hybrid_communicate_group
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
@@ -302,7 +301,6 @@ class Qwen3VLPretrainedModel(PretrainedModel):
         MLP_LAYER_COLWISE = [
             "mlp.up_proj.weight",
             "mlp.gate_proj.weight",
-            "mlp.linear_fc1.weight",  # todo check rationality
         ]
         FUSE_MLP_LAYER_COLWISE = [
             "up_gate_proj.weight",
@@ -311,15 +309,6 @@ class Qwen3VLPretrainedModel(PretrainedModel):
         LAYER_ROWWISE = [
             "self_attn.o_proj.weight",
             "mlp.down_proj.weight",
-            "mlp.linear_fc2.weight",
-        ]  # todo check rationality
-
-        BIAS_KEYS = [
-            "self_attn.q_proj.bias",
-            "self_attn.k_proj.bias",
-            "self_attn.v_proj.bias",
-            "mlp.linear_fc1.bias",
-            # todo check fc2's bias needs not to be split
         ]
 
         def make_base_actions():
@@ -358,10 +347,6 @@ class Qwen3VLPretrainedModel(PretrainedModel):
                     )
                 actions.update(
                     {f"{llm_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False) for k in LAYER_ROWWISE}
-                )
-                # bias
-                actions.update(
-                    {f"{llm_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True) for b in BIAS_KEYS}
                 )
 
             return actions
@@ -889,27 +874,21 @@ class Qwen3VLTextRotaryEmbedding(nn.Layer):
         return freqs_t
 
     def forward(self, x, position_ids):
-        # NOTE: Paddle's Automatic Mixed Precision (AMP) has a default op whitelist that may automatically cast
-        # certain operations (like matmul) to FP16/BF16 for performance optimization. However, in scenarios where
-        # numerical stability is critical (e.g., RoPE init/compute), this conversion can lead to precision loss.
-        # Disabling auto_cast here ensures the matmul operation runs in the original precision (FP32) as intended.
         with paddle.amp.auto_cast(False):
-            inv_freq_expanded = (
-                self.inv_freq.unsqueeze(0)
-                .unsqueeze(-1)
-                .cast(paddle.float32)
-                .expand([3, position_ids.shape[1], -1, 1])
-                .to(x.place)
-            )
-            position_ids_expanded = position_ids.unsqueeze(2).cast(paddle.float32)
+            inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand([3, position_ids.shape[1], -1, 1])
 
-            freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 1, 3, 2])
+            position_ids_expanded = position_ids[:, :, None, :].float()
+
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(2, 3)
+
             freqs = self.apply_interleaved_mrope(freqs, self.mrope_section)
-            emb = paddle.cat((freqs, freqs), axis=-1)
-            cos = paddle.cos(emb) * self.attention_scaling
-            sin = paddle.sin(emb) * self.attention_scaling
 
-        return cos.cast(dtype=x.dtype), sin.cast(dtype=x.dtype)
+            emb = paddle.concat((freqs, freqs), axis=-1)
+
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 class Qwen3VLTextMLP(MLP):
@@ -962,7 +941,7 @@ class Qwen3VLTextAttention(nn.Layer):
 
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
-        self.head_dim = self.hidden_size // self.num_heads
+        self.head_dim = config.head_dim
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.is_causal = True
@@ -982,12 +961,6 @@ class Qwen3VLTextAttention(nn.Layer):
             norm_eps=config.rms_norm_eps,
             has_bias=False,
         )
-
-        if (self.head_dim * self.num_heads) != self.hidden_size:
-            raise ValueError(
-                f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
-                f" and `num_heads`: {self.num_heads})."
-            )
 
         self.sequence_parallel = config.sequence_parallel
         self.fuse_attention_qkv = config.fuse_attention_qkv
@@ -1313,6 +1286,8 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
         # This block handles Sequence Parallelism (Row Slicing)
         if visual_pos_masks.shape[0] > hidden_states.shape[0]:
             try:
+                from paddle.distributed.fleet import get_hybrid_communicate_group
+
                 hcg = get_hybrid_communicate_group()
                 mp_rank = hcg.get_model_parallel_rank()
                 mp_size = hcg.get_model_parallel_world_size()
