@@ -897,9 +897,14 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                 for p in ("gate", "up")
             ]
         else:
-            aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
-            ]
+            if getattr(cls, "is_fleet", False):
+                aoa_config["aoa_statements"] += [
+                    f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
+                ]
+            else:
+                aoa_config["aoa_statements"] += [
+                    f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
+                ]
 
         if getattr(cls, "is_fleet", False) and config.moe_grouped_gemm:
             for layer_idx in range(0, config.num_hidden_layers):
@@ -993,9 +998,14 @@ class Qwen3MoePretrainedModel(PretrainedModel):
 
             for layer_id in range(config.num_hidden_layers):
                 for expert_id in range(config.num_experts):
-                    aoa_statements += [
-                        f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight, axis=1",
-                    ]
+                    if getattr(cls, "is_fleet", False):
+                        aoa_statements += [
+                            f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight, axis=1",
+                        ]
+                    else:
+                        aoa_statements += [
+                            f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight, fused_ffn",
+                        ]
                     aoa_statements += [
                         f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight",
                         f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight",
