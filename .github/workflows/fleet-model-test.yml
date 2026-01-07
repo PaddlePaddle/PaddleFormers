@@ -163,7 +163,7 @@ jobs:
   integration-test-H20-multi-card:
     name: Integration test (H20, multi-card)
     runs-on:
-      group: fleet-multi-test
+      group: Fleet-H-multi-card
     env:
       PIP_CACHE_DIR: /home/.cache/pip
       CACHE_DIR: /home/.cache
