@@ -163,7 +163,7 @@ jobs:
   integration-test-H20-multi-card:
     name: Integration test (H20, multi-card)
     runs-on:
-      group: Fleet-H-multi-card
+      group: fleet-multi-test
     env:
       PIP_CACHE_DIR: /home/.cache/pip
       CACHE_DIR: /home/.cache
@@ -217,6 +217,8 @@ jobs:
           git config pull.rebase false
           git pull --no-edit origin pull/${PR_ID}/head
           pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          pip uninstall paddlefleet -y --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          pip install https://paddle-whl.bj.bcebos.com/nightly/cu129/paddlefleet/paddlefleet-0.0.1.dev20260106-cp310-cp310-linux_x86_64.whl
           pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
           python -c "import paddle; print(paddle.version.commit)"
           cd /workspace
