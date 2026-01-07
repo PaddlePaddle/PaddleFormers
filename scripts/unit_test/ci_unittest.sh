@@ -33,8 +33,22 @@ dir_name=$(dirname "${PYTEST_EXECUTE_FLAG_FILE}")
 mkdir -p "${dir_name}"
 AGILE_COMPILE_BRANCH=$4
 
+# kill the stuck process
+pkill -f paddleformers/cli/launcher.py
+fuser -v /dev/nvidia* 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i ~ /^[0-9]+$/) print $i}' | xargs kill -9 2>/dev/null
 
 install_requirements() {
+    
+    # install ffmpeg
+    INSTALL_DIR=/opt/ffmpeg
+    mkdir -p ${INSTALL_DIR}
+    cp  /home/models/ffmpeg-*-static/ffmpeg ${INSTALL_DIR}/
+    cp  /home/models/ffmpeg-*-static/ffprobe ${INSTALL_DIR}/
+    chmod +x ${INSTALL_DIR}/ffmpeg ${INSTALL_DIR}/ffprobe
+    ln -sf ${INSTALL_DIR}/ffmpeg /usr/local/bin/ffmpeg
+    ln -sf ${INSTALL_DIR}/ffprobe /usr/local/bin/ffprobe
+    ffmpeg -version
+
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y

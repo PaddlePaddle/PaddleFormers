@@ -24,6 +24,10 @@ cd $nlp_dir
 mkdir -p $log_path
 AGILE_COMPILE_BRANCH=$3
 
+# kill the stuck process
+pkill -f paddleformers/cli/launcher.py
+fuser -v /dev/nvidia* 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i ~ /^[0-9]+$/) print $i}' | xargs kill -9 2>/dev/null
+
 install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
