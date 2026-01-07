@@ -25,9 +25,11 @@ mkdir -p $log_path
 AGILE_COMPILE_BRANCH=$3
 
 # kill the stuck process
+set +e
 pkill -f pytest || true
 pkill -f "python -u -c import sys;exec" || true
 pkill -f paddleformers || true
+set -e 
 
 install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
