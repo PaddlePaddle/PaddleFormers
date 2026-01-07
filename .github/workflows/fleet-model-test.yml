@@ -94,16 +94,17 @@ jobs:
           git pull --no-edit origin pull/${PR_ID}/head
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
-          pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-          pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
+          uv cache clean paddlefleet
+          uv pip install --system -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          uv pip install --system https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
           python -c "import paddle; print(paddle.version.commit)"
           cd /workspace
           wget -q --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
           mkdir bos
           tar xf bos_new.tar.gz -C bos
-          python -m pip install bce-python-sdk==0.8.74
-          pip install coverage==7.6.1
-          pip install librosa==0.11.0
+          uv pip install --system bce-python-sdk==0.8.74
+          uv pip install --system coverage==7.6.1
+          uv pip install --system librosa==0.11.0
           '
 
       - name: Proprocess for integration test
@@ -216,18 +217,17 @@ jobs:
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
           git pull --no-edit origin pull/${PR_ID}/head
-          pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-          pip uninstall paddlefleet -y 
-          pip install https://paddle-whl.bj.bcebos.com/nightly/cu129/paddlefleet/paddlefleet-0.0.1.dev20260106-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall
-          pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
+          uv cache clean paddlefleet
+          uv pip install --system -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          uv pip install --system https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
           python -c "import paddle; print(paddle.version.commit)"
           cd /workspace
           wget -q --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
           mkdir bos
           tar xf bos_new.tar.gz -C bos
-          python -m pip install bce-python-sdk==0.8.74
-          pip install coverage==7.6.1
-          pip install librosa==0.11.0
+          uv pip install --system bce-python-sdk==0.8.74
+          uv pip install --system coverage==7.6.1
+          uv pip install --system librosa==0.11.0
           '
       
       - name: GLM4.5 pre-train
@@ -408,16 +408,17 @@ jobs:
           git pull --no-edit origin pull/${PR_ID}/head
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
-          pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-          pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
+          uv cache clean paddlefleet
+          uv pip install --system -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          uv pip install --system https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
           python -c "import paddle; print(paddle.version.commit)"
           cd /workspace
           wget -q --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
           mkdir bos
           tar xf bos_new.tar.gz -C bos
-          python -m pip install bce-python-sdk==0.8.74
-          pip install coverage==7.6.1
-          pip install librosa==0.11.0
+          uv pip install --system bce-python-sdk==0.8.74
+          uv pip install --system coverage==7.6.1
+          uv pip install --system librosa==0.11.0
           '
 
       - name: GLM4.5 pre-train
