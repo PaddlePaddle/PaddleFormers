@@ -221,6 +221,7 @@ import_structure = {
     "qwen3_vl_moe.configuration": ["Qwen3VLMoeConfig", "Qwen3VLMoeTextConfig"],
     "qwen3_vl_moe.modeling": [
         "Qwen3VLMoeForConditionalGeneration",
+        "Qwen3VLMoeFleet",
         "Qwen3VLMoeModel",
         "Qwen3VLMoePretrainedModel",
         "Qwen3VLMoeTextModel",

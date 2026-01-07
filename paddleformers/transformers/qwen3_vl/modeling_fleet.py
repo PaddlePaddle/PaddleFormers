@@ -1036,6 +1036,8 @@ class Qwen3VLModel(MCoreLLaVAModel):
             class_token_len=vision_transformer_config.class_token_len,
         )
         self.criterion=criterion
+    def get_input_embeddings(self):
+        return self.language_model.0.embedding.embed_tokens.weight
     
     def get_rope_index(
         self,
@@ -1494,6 +1496,8 @@ class Qwen3VLForConditionalGenerationFleet(Qwen3VLPretrainedModelFleet):
         self.criterion = CriterionLayer(config.text_config)
         self.tie_weights()
 
+    def get_input_embeddings(self):
+        return self.model.get_input_embeddings()
     def forward(
         self,
         input_ids: Optional[paddle.Tensor] = None,
