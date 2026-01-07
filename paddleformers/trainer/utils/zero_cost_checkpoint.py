@@ -1056,7 +1056,7 @@ class ZeroCostCheckpointWorker:
         self._dump_args_and_state(output_dir)
 
         if self.save_hf_steps > 0 and self.ema_coef is not None:
-            saved_signal_prefix = "saved_signal_TMP"
+            saved_signal_prefix = "_save_done_tmp"
         else:
             saved_signal_prefix = "saved_signal"
 
@@ -1183,6 +1183,11 @@ class EMABuffer(ABC):
         self.master_weights = ema_state_dict.pop("master_weights")
         self.model_params = ema_state_dict
 
+    def get_ema_state_dict(self):
+        ema_state_dict = {"master_weights": self.master_weights}
+        ema_state_dict.update(self.model_params)
+        return ema_state_dict
+
     def save(self, global_step):
         base_path = os.path.join(self.args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{global_step}")
         ema_path = self._ema_path(base_path)
@@ -1299,12 +1304,20 @@ class EMABufferFcBased(EMABuffer):
 
 
 class NonZCCEMACallback(TrainerCallback):
-    def __init__(self, ema_buffer: EMABuffer):
+    def __init__(self, ema_buffer: EMABuffer, ema_state_assembler=None):
         self.buffer = ema_buffer
+        self.ema_state_assembler = ema_state_assembler
 
     @staticmethod
     def create_nonzcc_callback(
-        args, resume_from_checkpoint, sharding_io=None, model=None, optimizer=None, hcg=None, offload=True
+        args,
+        resume_from_checkpoint,
+        sharding_io=None,
+        model=None,
+        optimizer=None,
+        hcg=None,
+        offload=True,
+        ema_state_assembler=None,
     ):
         if args.save_checkpoint_format == "flex_checkpoint":
             ema_buffer = EMABufferFcBased(
@@ -1314,13 +1327,34 @@ class NonZCCEMACallback(TrainerCallback):
             assert sharding_io is not None, "EMA should be only enabled when save_sharded_model is True"
             ema_buffer = EMABufferShardingIOBased(resume_from_checkpoint, args, sharding_io, offload=offload)
 
-        return NonZCCEMACallback(ema_buffer)
+        return NonZCCEMACallback(ema_buffer, ema_state_assembler)
 
     def on_step_end(self, args, state, control, **kwargs):
         if state.global_step % args.zcc_ema_interval == 0:
             self.buffer.ema_accumulate(state.global_step, state.loss, args.zcc_ema_loss_threshold)
         if control.should_save:
             self.buffer.save(state.global_step)
+        if control.should_save_hf:
+            assert (
+                self.ema_state_assembler is not None
+            ), "When save_hf_steps is enabled, if ZCC is not used, ema_state_assembler must be initialized."
+            logger.info("Starting to save unsplit EMA states!")
+            start_time = time.time()
+            ema_state_dict = self.buffer.get_ema_state_dict()
+            ema_state_dict_cuda = {}
+            ema_state_dict_cuda["master_weights"] = {}
+            master_weights = ema_state_dict.pop("master_weights")
+            for k, v in master_weights.items():
+                ema_state_dict_cuda["master_weights"][k] = v.cuda()
+            for k, v in ema_state_dict.items():
+                if v.dtype != paddle.bfloat16:
+                    ema_state_dict_cuda[k] = v.cuda()
+            ema_sharded_state_dict = self.ema_state_assembler._build_ema_sharded_state_dict(ema_state_dict_cuda)
+            self.ema_state_assembler._save_full_ema_states(state.global_step, ema_sharded_state_dict)
+            del ema_sharded_state_dict
+            del ema_state_dict_cuda
+            end_time = time.time()
+            logger.info(f"Unsplit EMA states saved successfully, time taken: {end_time - start_time} s")
 
 
 class DistInfoCollectorValidator:

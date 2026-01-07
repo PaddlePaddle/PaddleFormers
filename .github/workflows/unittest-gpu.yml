@@ -136,7 +136,10 @@ jobs:
           source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
           pip install uv
           echo "work_dir = ${work_dir}"
-          timeout 50m bash -x scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
+          cp -r ${work_dir}/../../../models ./models
+          echo "Check whether the local model file exists:"
+          ls -l ./models
+          timeout 20m bash -x scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
           '
           
       - name: Upload Products
