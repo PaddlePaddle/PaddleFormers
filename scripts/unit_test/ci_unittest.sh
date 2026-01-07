@@ -35,9 +35,9 @@ AGILE_COMPILE_BRANCH=$4
 
 # kill the stuck process
 set +e
-pkill -f pytest || true
-pkill -f "python -u -c import sys;exec" || true
-pkill -f paddleformers || true
+pkill -f pytest
+pkill -f "python -u -c import sys;exec"
+pkill -f paddleformers
 set -e 
 
 install_requirements() {
