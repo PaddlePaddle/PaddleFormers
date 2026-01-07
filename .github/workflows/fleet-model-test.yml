@@ -107,6 +107,7 @@ jobs:
           uv pip install --system bce-python-sdk==0.8.74
           uv pip install --system coverage==7.6.1
           uv pip install --system librosa==0.11.0
+          uv pip install --system torchcodec
           '
 
       - name: Proprocess for integration test
@@ -232,6 +233,7 @@ jobs:
           uv pip install --system bce-python-sdk==0.8.74
           uv pip install --system coverage==7.6.1
           uv pip install --system librosa==0.11.0
+          uv pip install --system torchcodec
           '
       
       - name: GLM4.5 pre-train
@@ -425,6 +427,7 @@ jobs:
           uv pip install --system bce-python-sdk==0.8.74
           uv pip install --system coverage==7.6.1
           uv pip install --system librosa==0.11.0
+          uv pip install --system torchcodec
           '
 
       - name: GLM4.5 pre-train
