@@ -114,6 +114,8 @@ class FileReader(BaseReader):
                 "tool_response": "observation",
                 "tool_call": "function",
                 "tool_calls": "function",
+                "function_call": "function",
+                "function_calls": "function",
             }
 
             key_list = ["messages", "chosen_response", "rejected_response"]

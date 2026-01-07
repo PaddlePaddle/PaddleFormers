@@ -425,6 +425,9 @@ class SFTDataSet(IterableDataset):
                     labels_target = tokens_target[: len(tokens_target) - sep_token_len] + [-100] * sep_token_len
                 else:
                     labels_target = tokens_target
+
+            if not example["label"][turn_index]:
+                labels_target = [-100] * len(labels_target)
             tokens = tokens_src + tokens_target + tokens
             labels = labels_src + labels_target + labels
 
