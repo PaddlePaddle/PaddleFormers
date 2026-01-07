@@ -141,7 +141,7 @@ class DPOTrainTest(unittest.TestCase):
             "train",
             updated_config_path,
         ]
-        
+
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_full cmd is : {cmd}")
         print(training_p.stdout)

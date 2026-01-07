@@ -23,13 +23,6 @@ cd $nlp_dir
 mkdir -p $log_path
 AGILE_COMPILE_BRANCH=$3
 
-# kill the stuck process
-set +e
-pkill -f pytest
-pkill -f "python -u -c import sys;exec"
-pkill -f paddleformers
-set -e 
-
 install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn

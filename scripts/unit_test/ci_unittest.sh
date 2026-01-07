@@ -32,13 +32,6 @@ dir_name=$(dirname "${PYTEST_EXECUTE_FLAG_FILE}")
 mkdir -p "${dir_name}"
 AGILE_COMPILE_BRANCH=$4
 
-# kill the stuck process
-set +e
-pkill -f pytest
-pkill -f "python -u -c import sys;exec"
-pkill -f paddleformers
-set -e 
-
 install_requirements() {
     
     # install ffmpeg
