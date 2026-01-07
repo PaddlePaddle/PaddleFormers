@@ -101,7 +101,7 @@ jobs:
           wget -q --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
           mkdir bos
           tar xf bos_new.tar.gz -C bos
-          python -m pip install bce-python-sdk==0.8.74
+          pip install bce-python-sdk==0.8.74
           pip install coverage==7.6.1
           pip install librosa==0.11.0
           '
@@ -217,13 +217,14 @@ jobs:
           git config pull.rebase false
           git pull --no-edit origin pull/${PR_ID}/head
           pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          export UV_SKIP_WHEEL_FILENAME_CHECK=1
           pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
           python -c "import paddle; print(paddle.version.commit)"
           cd /workspace
           wget -q --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
           mkdir bos
           tar xf bos_new.tar.gz -C bos
-          python -m pip install bce-python-sdk==0.8.74
+          pip install bce-python-sdk==0.8.74
           pip install coverage==7.6.1
           pip install librosa==0.11.0
           '
@@ -413,7 +414,7 @@ jobs:
           wget -q --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
           mkdir bos
           tar xf bos_new.tar.gz -C bos
-          python -m pip install bce-python-sdk==0.8.74
+          pip install bce-python-sdk==0.8.74
           pip install coverage==7.6.1
           pip install librosa==0.11.0
           '

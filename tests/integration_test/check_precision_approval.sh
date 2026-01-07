@@ -15,7 +15,7 @@
 if [ -z ${BRANCH} ]; then
     BRANCH="develop"
 fi
-
+set -x
 PADDLE_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}")/../../" && pwd )"
 
 approval_line=`curl -H "Authorization: token ${GITHUB_TOKEN}" https://api.github.com/repos/PaddlePaddle/${repo_name}/pulls/${PR_ID}/reviews?per_page=10000`
@@ -47,18 +47,34 @@ function run_tools_test() {
 }
 
 
-PRECISION_APPROVERS="XieYunshen From00 risemeup1 tianlef zjjlivein"
-echo_line="You must be approved by all of ${PRECISION_APPROVERS} for changing precision.\n"
-APPROVER_LIST=(${PRECISION_APPROVERS})
-NEED_APPROVALS=5
-for user in "${APPROVER_LIST[@]}"; do
-    if [[ "$user" == "$PR_USER" ]]; then
-        NEED_APPROVALS=$((NEED_APPROVALS - 1))
-        break
-    fi
-done
-check_approval $NEED_APPROVALS "${APPROVER_LIST[@]}"
+PRECISION_APPROVERS1="XieYunshen From00 risemeup1 tianlef"
+echo_line="You must be approved by one of ${PRECISION_APPROVERS1} for changing precision.\n"
+APPROVER_LIST1=(${PRECISION_APPROVERS1})
+check_approval 1 "${APPROVER_LIST1[@]}"
 
+PRECISION_APPROVERS2="lugimzzz zjjlivein"
+echo_line="You must be approved by one of ${PRECISION_APPROVERS2} for changing precision.\n"
+APPROVER_LIST2=(${PRECISION_APPROVERS2})
+check_approval 1 "${APPROVER_LIST2[@]}"
+# PRECISION_APPROVERS="XieYunshen From00 risemeup1 tianlef zjjlivein"
+# echo_line="You must be approved by all of ${PRECISION_APPROVERS} for changing precision.\n"
+# APPROVER_LIST=(${PRECISION_APPROVERS})
+# NEED_APPROVALS=5
+# for user in "${APPROVER_LIST[@]}"; do
+#     if [[ "$user" == "tianlef" ]]; then
+#         NEED_APPROVALS=$((NEED_APPROVALS - 1))
+#         break
+#     fi
+# done
+# check_approval $NEED_APPROVALS "${APPROVER_LIST[@]}"
+if [[ "${PP}" == "rel" ]]; then
+  echo_line="You must be approved by swgu98 for changing precision with Paddle release branch.\n"
+  check_approval 1 "swgu98"
+fi
+if [[ "${PF}" == rel* ]]; then
+  echo_line="You must be approved by swgu98 for changing precision with PaddleFleet release branch.\n"
+  check_approval 1 "swgu98"
+fi
 
 if [ -n "${echo_list}" ];then
   echo "****************"
