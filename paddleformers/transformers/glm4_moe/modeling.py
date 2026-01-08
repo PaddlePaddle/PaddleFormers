@@ -650,7 +650,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
         if (
             self.config.recompute_granularity is not None
             and self.config.recompute_modules is not None
-            and "full_attn" not in self.config.recompute_modules
+            and "core_attn" in self.config.recompute_modules
             and has_gradient
         ):
             attn_outputs = recompute(
@@ -704,7 +704,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
             if (
                 self.config.recompute_granularity is not None
                 and self.config.recompute_modules is not None
-                and "full_attn" not in self.config.recompute_modules
+                and "mlp" in self.config.recompute_modules
                 and has_gradient
             ):
                 out = recompute(
@@ -1194,8 +1194,15 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             else:
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.mlp.shared_experts.gate_proj.weight^T, {prefix}.mlp.shared_experts.up_proj.weight^T -> {prefix_offset}.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
-                    f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
                 ]
+                if is_fleet:
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
+                    ]
+                else:
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
+                    ]
 
             if is_fleet and config.moe_grouped_gemm:
                 ep_weight1 = []
@@ -1306,28 +1313,42 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.mlp.gate.weight -> {prefix}.mlp.gate.weight, dtype='bfloat16'",
                 # do transpose
                 f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.mlp.gate.e_score_correction_bias",
-                f"{prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.down_proj.weight",
                 f"{prefix_offset}.mlp.shared_experts.down_proj.weight^T -> {prefix}.mlp.shared_experts.down_proj.weight",
             ]
 
             if not config.fuse_attention_ffn:
-                aoa_statements += [
-                    f"{prefix_offset}.mlp.shared_experts.{y}_proj.weight^T -> {prefix}.mlp.shared_experts.{y}_proj.weight"
-                    for y in ("gate", "up")
-                ] + [
-                    f"{prefix_offset}.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.{y}_proj.weight"
-                    for y in ("gate", "up")
-                ]
+                aoa_statements += (
+                    [
+                        f"{prefix_offset}.mlp.shared_experts.{y}_proj.weight^T -> {prefix}.mlp.shared_experts.{y}_proj.weight"
+                        for y in ("gate", "up")
+                    ]
+                    + [
+                        f"{prefix_offset}.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.{y}_proj.weight"
+                        for y in ("gate", "up")
+                    ]
+                    + [
+                        f"{prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.down_proj.weight"
+                    ]
+                )
             else:
                 aoa_statements += [
                     f"{prefix_offset}.mlp.shared_experts.up_gate_proj.weight -> {prefix_offset}.mlp.shared_experts.gate_proj.weight, {prefix_offset}.mlp.shared_experts.up_proj.weight, fused_ffn",
                     f"{prefix_offset}.mlp.shared_experts.gate_proj.weight^T -> {prefix}.mlp.shared_experts.gate_proj.weight",
                     f"{prefix_offset}.mlp.shared_experts.up_proj.weight^T -> {prefix}.mlp.shared_experts.up_proj.weight",
                 ]
-
+                if is_fleet:
+                    aoa_statements += [
+                        f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, axis=1"
+                        for expert_id in range(config.n_routed_experts)
+                    ]
+                else:
+                    aoa_statements += [
+                        f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, fused_ffn"
+                        for expert_id in range(config.n_routed_experts)
+                    ]
                 aoa_statements += (
                     [
-                        f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, axis=1"
+                        f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.down_proj.weight"
                         for expert_id in range(config.n_routed_experts)
                     ]
                     + [
