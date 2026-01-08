@@ -464,7 +464,7 @@ class TrainingArguments:
     do_predict: bool = field(default=False, metadata={"help": "Whether to run predictions on the test set."})
     do_export: bool = field(default=False, metadata={"help": "Whether to export infernece model."})
     evaluation_strategy: IntervalStrategy = field(
-        default="no",
+        default=IntervalStrategy.NO,
         metadata={"help": "The evaluation strategy to use."},
     )
     prediction_loss_only: bool = field(
@@ -520,14 +520,14 @@ class TrainingArguments:
     logging_dir: Optional[str] = field(default=None, metadata={"help": "VisualDL log dir."})
     output_signal_dir: Optional[str] = field(default=None, metadata={"help": "Asynchronous saving signal dir."})
     logging_strategy: IntervalStrategy = field(
-        default="steps",
+        default=IntervalStrategy.STEPS,
         metadata={"help": "The logging strategy to use."},
     )
     logging_first_step: bool = field(default=False, metadata={"help": "Log the first global_step"})
     logging_steps: int = field(default=500, metadata={"help": "Log every X updates steps."})
 
     save_strategy: IntervalStrategy = field(
-        default="steps",
+        default=IntervalStrategy.STEPS,
         metadata={"help": "The checkpoint save strategy to use."},
     )
     save_steps: int = field(default=500, metadata={"help": "Save checkpoint every X updates steps."})
