@@ -1313,18 +1313,23 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.mlp.gate.weight -> {prefix}.mlp.gate.weight, dtype='bfloat16'",
                 # do transpose
                 f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.mlp.gate.e_score_correction_bias",
-                f"{prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.down_proj.weight",
                 f"{prefix_offset}.mlp.shared_experts.down_proj.weight^T -> {prefix}.mlp.shared_experts.down_proj.weight",
             ]
 
             if not config.fuse_attention_ffn:
-                aoa_statements += [
-                    f"{prefix_offset}.mlp.shared_experts.{y}_proj.weight^T -> {prefix}.mlp.shared_experts.{y}_proj.weight"
-                    for y in ("gate", "up")
-                ] + [
-                    f"{prefix_offset}.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.{y}_proj.weight"
-                    for y in ("gate", "up")
-                ]
+                aoa_statements += (
+                    [
+                        f"{prefix_offset}.mlp.shared_experts.{y}_proj.weight^T -> {prefix}.mlp.shared_experts.{y}_proj.weight"
+                        for y in ("gate", "up")
+                    ]
+                    + [
+                        f"{prefix_offset}.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.{y}_proj.weight"
+                        for y in ("gate", "up")
+                    ]
+                    + [
+                        f"{prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.down_proj.weight"
+                    ]
+                )
             else:
                 aoa_statements += [
                     f"{prefix_offset}.mlp.shared_experts.up_gate_proj.weight -> {prefix_offset}.mlp.shared_experts.gate_proj.weight, {prefix_offset}.mlp.shared_experts.up_proj.weight, fused_ffn",
@@ -1341,14 +1346,20 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                         f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, fused_ffn"
                         for expert_id in range(config.n_routed_experts)
                     ]
-                aoa_statements += [
-                    f"{prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.gate_proj.weight"
-                    for expert_id in range(config.n_routed_experts)
-                ]
-                aoa_statements += [
-                    f"{prefix_offset}.mlp.experts.{expert_id}.up_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.up_proj.weight"
-                    for expert_id in range(config.n_routed_experts)
-                ]
+                aoa_statements += (
+                    [
+                        f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.down_proj.weight"
+                        for expert_id in range(config.n_routed_experts)
+                    ]
+                    + [
+                        f"{prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.gate_proj.weight"
+                        for expert_id in range(config.n_routed_experts)
+                    ]
+                    + [
+                        f"{prefix_offset}.mlp.experts.{expert_id}.up_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.up_proj.weight"
+                        for expert_id in range(config.n_routed_experts)
+                    ]
+                )
 
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config
