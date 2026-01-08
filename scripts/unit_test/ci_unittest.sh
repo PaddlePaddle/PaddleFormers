@@ -41,7 +41,7 @@ install_requirements() {
     python -m pip install -U --no-cache-dir transformers
     # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
     python setup.py bdist_wheel > /dev/null
-    uv pip install dist/p****.whl --system --prerelease=allow -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match
+    uv pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" --system --prerelease=allow -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
     uv pip install -r tests/requirements.txt --system -i https://pypi.tuna.tsinghua.edu.cn/simple --index-strategy unsafe-best-match
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
