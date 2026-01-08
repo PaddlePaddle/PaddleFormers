@@ -68,3 +68,4 @@ partial_send_recv: false
 #use_cpu_initialization: true
 fuse_attention_qkv: true
 fuse_attention_ffn: true
+num_empty_layers_add_in_head: 1

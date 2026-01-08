@@ -3166,6 +3166,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
             # Save the config
             if is_main_process:
+                if config_to_save.tensor_model_parallel_size > 1:
+                    config_to_save.tensor_model_parallel_size = 1
                 config_to_save.save_pretrained(save_directory)
                 if self.can_generate():
                     model_to_save.generation_config.save_pretrained(save_directory)

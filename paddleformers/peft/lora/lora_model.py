@@ -1159,3 +1159,26 @@ class LoRAModel(nn.Layer):
         for _, layer in self.model.named_sublayers():
             if any(isinstance(layer, lora_layer) for lora_layer in AVAILABLE_LAYERS):
                 layer.unmerge()
+
+    def get_merge_state_dict(self, offload: bool = True):
+        merge_state_dict = {}
+        base_state_dict = self.model.state_dict()
+        scaling = self.lora_config.lora_alpha / self.lora_config.r
+
+        model_key_list = list(base_state_dict.keys())
+        for k in model_key_list:
+            if "lora" in k:
+                continue
+            tensor = base_state_dict.pop(k)
+            if "weight" in k:
+                lora_A_key, lora_B_key = k.replace("weight", "lora_A"), k.replace("weight", "lora_B")
+                if lora_A_key in base_state_dict.keys():
+                    lora_A_tensor, lora_B_tensor = base_state_dict.pop(lora_A_key), base_state_dict.pop(lora_B_key)
+                    tensor += lora_A_tensor @ lora_B_tensor * scaling
+
+            if offload:
+                tensor = tensor.pin_memory()
+
+            merge_state_dict[k] = tensor
+
+        return merge_state_dict
