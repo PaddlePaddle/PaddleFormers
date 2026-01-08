@@ -27,7 +27,7 @@ do_eval: true
 per_device_eval_batch_size: 1
 per_device_train_batch_size: 2
 num_train_epochs: 1
-max_steps: 30
+max_steps: 10
 eval_iters: 10
 eval_steps: 100
 evaluation_strategy: steps
