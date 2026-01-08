@@ -186,7 +186,7 @@ class TestLoraModel(unittest.TestCase):
         model.eval()
         lora_model = LoRAModel(model, lora_config)
 
-        original_state_dict = {k: v.clone() for k, v in model.state_dict().items() if "weight" in k}
+        original_state_dict = {k: v.clone() for k, v in model.state_dict().items() if "lora" not in k}
 
         merge_state_dict = lora_model.get_merge_state_dict(offload=False)
 
@@ -206,16 +206,7 @@ class TestLoraModel(unittest.TestCase):
 
                 lora_A_tensor = lora_model.model.state_dict()[lora_A_key]
                 lora_B_tensor = lora_model.model.state_dict()[lora_B_key]
-
-                orig_dtype = orig_weight.dtype
-                if str(orig_dtype) in ["uint16", "bfloat16"]:
-                    orig_weight = orig_weight.astype("float32")
-                    lora_A_tensor = lora_A_tensor.astype("float32")
-                    lora_B_tensor = lora_B_tensor.astype("float32")
-                    expected_merged = orig_weight + lora_A_tensor @ lora_B_tensor * scaling
-                    expected_merged = expected_merged.astype(orig_dtype)
-                else:
-                    expected_merged = orig_weight + lora_A_tensor @ lora_B_tensor * scaling
+                expected_merged = orig_weight + lora_A_tensor @ lora_B_tensor * scaling
 
                 self.assertTrue(
                     paddle.allclose(merged_weight, expected_merged, atol=1e-5), f"Merged weight mismatch in {k}"

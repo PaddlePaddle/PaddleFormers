@@ -1162,29 +1162,18 @@ class LoRAModel(nn.Layer):
 
         model_key_list = list(base_state_dict.keys())
         for k in model_key_list:
+            if "lora" in k:
+                continue
+            tensor = base_state_dict.pop(k)
             if "weight" in k:
-                tensor = base_state_dict.pop(k)
                 lora_A_key, lora_B_key = k.replace("weight", "lora_A"), k.replace("weight", "lora_B")
-                lora_A_tensor = None
                 if lora_A_key in base_state_dict.keys():
                     lora_A_tensor, lora_B_tensor = base_state_dict.pop(lora_A_key), base_state_dict.pop(lora_B_key)
-                    orig_dtype = tensor.dtype
+                    tensor += lora_A_tensor @ lora_B_tensor * scaling
 
-                    tensor = paddle.to_tensor(tensor)
-                    lora_A_tensor = paddle.to_tensor(lora_A_tensor)
-                    lora_B_tensor = paddle.to_tensor(lora_B_tensor)
-                    if str(orig_dtype) in ["uint16", "bfloat16"]:
-                        tensor = tensor.astype("float32")
-                        lora_A_tensor = lora_A_tensor.astype("float32")
-                        lora_B_tensor = lora_B_tensor.astype("float32")
-                        tensor += lora_A_tensor @ lora_B_tensor * scaling
-                        tensor = tensor.astype(orig_dtype)
-                    else:
-                        tensor += lora_A_tensor @ lora_B_tensor * scaling
+            if offload:
+                tensor = tensor.pin_memory()
 
-                if offload:
-                    tensor = tensor.pin_memory()
-
-                merge_state_dict[k] = tensor
+            merge_state_dict[k] = tensor
 
         return merge_state_dict
