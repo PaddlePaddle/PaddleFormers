@@ -650,7 +650,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
         if (
             self.config.recompute_granularity is not None
             and self.config.recompute_modules is not None
-            and "full_attn" not in self.config.recompute_modules
+            and "core_attn" in self.config.recompute_modules
             and has_gradient
         ):
             attn_outputs = recompute(
@@ -704,7 +704,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
             if (
                 self.config.recompute_granularity is not None
                 and self.config.recompute_modules is not None
-                and "full_attn" not in self.config.recompute_modules
+                and "mlp" in self.config.recompute_modules
                 and has_gradient
             ):
                 out = recompute(
@@ -1194,7 +1194,27 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             else:
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.mlp.shared_experts.gate_proj.weight^T, {prefix}.mlp.shared_experts.up_proj.weight^T -> {prefix_offset}.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
-                    f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
+                ]
+                if is_fleet:
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
+                    ]
+                else:
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
+                    ]
+
+            if is_fleet and config.moe_grouped_gemm:
+                ep_weight1 = []
+                ep_weight2 = []
+                for expert_id in range(config.n_routed_experts):
+                    ep_weight1.append(f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight")
+                    ep_weight2.append(f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight")
+                group_gemm1 = ",".join(ep_weight1)
+                group_gemm2 = ",".join(ep_weight2)
+                aoa_config["aoa_statements"] += [
+                    f"{group_gemm1} -> {prefix_offset}.mlp.grouped_gemm_experts.weight1, axis=0"
+                    f"{group_gemm2} -> {prefix_offset}.mlp.grouped_gemm_experts.weight2, axis=0"
                 ]
 
         return aoa_config
@@ -1275,33 +1295,60 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
             prefix = f"model.layers.{layer_idx}"
 
+            if is_fleet and config.moe_grouped_gemm:
+                ep_weight1 = []
+                ep_weight2 = []
+                for expert_id in range(config.n_routed_experts):
+                    ep_weight1.append(f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight")
+                    ep_weight2.append(f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight")
+                group_gemm1 = ",".join(ep_weight1)
+                group_gemm2 = ",".join(ep_weight2)
+                aoa_statements += [
+                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight1 -> {group_gemm1}, axis=0"
+                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight2 -> {group_gemm2}, axis=0"
+                ]
+
             aoa_statements += [
                 # do cast
                 f"{prefix_offset}.mlp.gate.weight -> {prefix}.mlp.gate.weight, dtype='bfloat16'",
                 # do transpose
                 f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.mlp.gate.e_score_correction_bias",
-                f"{prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.down_proj.weight",
                 f"{prefix_offset}.mlp.shared_experts.down_proj.weight^T -> {prefix}.mlp.shared_experts.down_proj.weight",
             ]
 
             if not config.fuse_attention_ffn:
-                aoa_statements += [
-                    f"{prefix_offset}.mlp.shared_experts.{y}_proj.weight^T -> {prefix}.mlp.shared_experts.{y}_proj.weight"
-                    for y in ("gate", "up")
-                ] + [
-                    f"{prefix_offset}.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.{y}_proj.weight"
-                    for y in ("gate", "up")
-                ]
+                aoa_statements += (
+                    [
+                        f"{prefix_offset}.mlp.shared_experts.{y}_proj.weight^T -> {prefix}.mlp.shared_experts.{y}_proj.weight"
+                        for y in ("gate", "up")
+                    ]
+                    + [
+                        f"{prefix_offset}.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.{y}_proj.weight"
+                        for y in ("gate", "up")
+                    ]
+                    + [
+                        f"{prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.down_proj.weight"
+                    ]
+                )
             else:
                 aoa_statements += [
                     f"{prefix_offset}.mlp.shared_experts.up_gate_proj.weight -> {prefix_offset}.mlp.shared_experts.gate_proj.weight, {prefix_offset}.mlp.shared_experts.up_proj.weight, fused_ffn",
                     f"{prefix_offset}.mlp.shared_experts.gate_proj.weight^T -> {prefix}.mlp.shared_experts.gate_proj.weight",
                     f"{prefix_offset}.mlp.shared_experts.up_proj.weight^T -> {prefix}.mlp.shared_experts.up_proj.weight",
                 ]
-
+                if is_fleet:
+                    aoa_statements += [
+                        f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, axis=1"
+                        for expert_id in range(config.n_routed_experts)
+                    ]
+                else:
+                    aoa_statements += [
+                        f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, fused_ffn"
+                        for expert_id in range(config.n_routed_experts)
+                    ]
                 aoa_statements += (
                     [
-                        f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, fused_ffn"
+                        f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.down_proj.weight"
                         for expert_id in range(config.n_routed_experts)
                     ]
                     + [
@@ -1352,7 +1399,7 @@ class Glm4MoeRotaryEmbedding(nn.Layer):
             post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
         """
         base = config.rope_parameters["rope_theta"]
-        partial_rotary_factor = config.rope_parameters.get("partial_rotary_factor", 1.0)
+        partial_rotary_factor = config.get("partial_rotary_factor", 1.0)
         head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
         dim = int(head_dim * partial_rotary_factor)
 
@@ -1365,26 +1412,19 @@ class Glm4MoeRotaryEmbedding(nn.Layer):
     @paddle.no_grad()
     @dynamic_rope_update
     def forward(self, x, position_ids):
-        # NOTE: Paddle's Automatic Mixed Precision (AMP) has a default op whitelist that may automatically cast
-        # certain operations (like matmul) to FP16/BF16 for performance optimization. However, in scenarios where
-        # numerical stability is critical (e.g., RoPE init/compute), this conversion can lead to precision loss.
-        # Disabling auto_cast here ensures the matmul operation runs in the original precision (FP32) as intended.
-        with paddle.amp.auto_cast(False):
-            inv_freq_expanded = (
-                self.inv_freq.unsqueeze(0)
-                .unsqueeze(-1)
-                .cast(paddle.float32)
-                .expand([position_ids.shape[0], -1, 1])
-                .to(x.place)
-            )
-            position_ids_expanded = position_ids.unsqueeze(1).cast(paddle.float32)
+        with paddle.amp.auto_cast(enable=False):
+            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
-            freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 2, 1])
-            emb = paddle.cat((freqs, freqs), axis=-1)
-            cos = paddle.cos(emb) * self.attention_scaling
-            sin = paddle.sin(emb) * self.attention_scaling
+            position_ids_expanded = position_ids[:, None, :].float()
 
-        return cos.cast(dtype=x.dtype), sin.cast(dtype=x.dtype)
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+
+            emb = paddle.concat((freqs, freqs), axis=-1)
+
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 @register_base_model

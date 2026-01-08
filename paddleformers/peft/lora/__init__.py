@@ -12,8 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .auto_lora_model import LoRAAutoModel
-from .lora_config import LoRAAutoConfig, LoRAConfig
-from .lora_layers import ColumnParallelLoRALinear, LoRALinear, RowParallelLoRALinear
-from .lora_model import LoRAModel
-from .lora_quantization_layers import QuantizationLoRABaseLinear
+
+import sys
+from typing import TYPE_CHECKING
+
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "auto_lora_model": ["LoRAAutoModel"],
+    "lora_config": ["LoRAAutoConfig", "LoRAConfig"],
+    "lora_layers": ["ColumnParallelLoRALinear", "LoRALinear", "RowParallelLoRALinear"],
+    "lora_model": ["LoRAModel"],
+    "lora_quantization_layers": ["QuantizationLoRABaseLinear"],
+}
+
+if TYPE_CHECKING:
+    from .auto_lora_model import LoRAAutoModel
+    from .lora_config import LoRAAutoConfig, LoRAConfig
+    from .lora_layers import ColumnParallelLoRALinear, LoRALinear, RowParallelLoRALinear
+    from .lora_model import LoRAModel
+    from .lora_quantization_layers import QuantizationLoRABaseLinear
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

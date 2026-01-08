@@ -125,6 +125,7 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         combined_key = expert_indices * seq_len + token_indices
         sort_indices = paddle.argsort(combined_key)
         sorted_token_indices = token_indices[sort_indices]
+        sorted_expert_indices = expert_indices[sort_indices]
         sorted_tokens = reshaped_input[
             sorted_token_indices
         ]  # Tokens that sorted by expert id. First `tokens_per_expert[0]` tokens belong to expert 0, next `tokens_per_expert[1]` tokens belong to expert 1, etc. Shape: [batch_size * seq_len * num_experts_per_token, d_model]
@@ -135,6 +136,11 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         tokens_per_ep_rank = tokens_per_expert.reshape([expert_model_parallel_size, -1]).sum(axis=1)
         # First All-to-All: Exchange expert token counts across ranks
         tokens_per_expert_group = _AllToAll.apply([tokens_per_expert.shape[0]], tokens_per_expert, group=moe_group)
+
+        if tokens_per_expert_group.sum().item() == 0:
+            self.is_empty_tokens = True
+        else:
+            self.is_empty_tokens = False
 
         tokens_per_expert_group_sum = tokens_per_expert_group.reshape([expert_model_parallel_size, -1])
         output_splits = tokens_per_expert_group_sum.sum(axis=1).cpu().tolist()
@@ -173,11 +179,17 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
             expert_out = expert(tokens_for_this_expert)
             outputs.append(expert_out)
             start_idx = end_idx
-        outs = paddle.concat(outputs, axis=0) if len(outputs) > 0 else paddle.to_tensor(0, dtype=sorted_tokens.dtype)
+        if not outputs:
+            outs = sorted_tokens
+        else:
+            outs = paddle.concat(outputs, axis=0)
 
         # Third All-to-All: Exchange expert outputs back to original rank. `gathered_tokens` are the tokens that originally belong to current rank
-        new_x = paddle.empty_like(outs)
-        new_x[gatherd_idxs] = outs
+        if self.is_empty_tokens:
+            new_x = outs
+        else:
+            new_x = paddle.empty_like(outs)
+            new_x[gatherd_idxs] = outs
 
         gathered_tokens = _AllToAll.apply(
             sorted_tokens_shape,
@@ -188,21 +200,21 @@ class AllToAllMoECommunication(nn.Layer, MoECommunicationInterface):
         )
 
         # For every processed token, need to multiply the expert weight.
-        num_all_tokens = tokens_per_expert.sum().item()  # i.e. batch_size * seq_len * num_experts_per_token
-        boundaries = paddle.cumsum(tokens_per_expert, dim=0)
-        token_indices = paddle.arange(num_all_tokens)
-        expert_ids = paddle.searchsorted(boundaries, token_indices, right=False)  # shape [num_all_tokens]
-        expert_major_weights = gates_masked[sorted_token_indices, expert_ids]  # shape [num_all_tokens]
+        expert_major_weights = gates_masked[
+            sorted_token_indices, sorted_expert_indices
+        ]  # shape [batch_size * seq_len * num_experts_per_token]
         weighted_gathered_tokens = gathered_tokens * expert_major_weights.unsqueeze(-1).to(
             gathered_tokens.dtype
-        )  # shape [num_all_tokens, d_model]
+        )  # shape [batch_size * seq_len * num_experts_per_token, d_model]
 
         final_output_empty = paddle.zeros(reshaped_input.shape, dtype=gathered_tokens.dtype)
         token_indices_for_scatter = sorted_token_indices.unsqueeze(-1).expand(
             -1, d_model
-        )  # shape [num_all_tokens, d_model]
+        )  # shape [batch_size * seq_len * num_experts_per_token, d_model]
 
-        token_indices_for_scatter_single = token_indices_for_scatter[:, 0:1].squeeze()  # shape [num_all_tokens, 1]
+        token_indices_for_scatter_single = token_indices_for_scatter[
+            :, 0:1
+        ].squeeze()  # shape [batch_size * seq_len * num_experts_per_token, 1]
 
         final_output = paddle.index_add(
             final_output_empty, index=token_indices_for_scatter_single, axis=0, value=weighted_gathered_tokens
@@ -227,6 +239,9 @@ class DeepEPMoECommunication(nn.Layer, MoECommunicationInterface):
             current_expert_idx = i + moe_rank * num_experts_per_device
             expert = experts[current_expert_idx]
             outputs += [expert(chunk)]
+
+        if not outputs:
+            return dispatched_input
 
         return paddle.concat(outputs, axis=0)
 

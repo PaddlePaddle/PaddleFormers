@@ -7,6 +7,11 @@ eval_dataset_path: ./data/pt/eval.jsonl
 eval_dataset_prob: '1.0'
 max_seq_len: 8192
 mix_strategy: concat
+packing: true
+truncate_packing: true
+dataloader_shuffle: false
+dataloader_num_workers: 24
+prefetch_factor: 24
 
 ### model
 model_name_or_path: /root/paddlejob/gpfs/efficient_benchmark/huggingface/GLM-4.5-Air
@@ -20,7 +25,7 @@ seed: 23
 do_train: true
 do_eval: true
 per_device_eval_batch_size: 1
-per_device_train_batch_size: 1
+per_device_train_batch_size: 2
 num_train_epochs: 1
 max_steps: 30
 eval_iters: 10
@@ -29,7 +34,7 @@ evaluation_strategy: steps
 save_steps: 100
 save_strategy: steps
 logging_steps: 1
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 128
 logging_dir: ./vdl_log
 output_dir: /root/paddlejob/tmpspace/GLM-4.5-Air-PT/outputs/checkpoint
 disable_tqdm: true
@@ -41,20 +46,41 @@ learning_rate: 1.0e-05
 random_shuffle: false
 
 # performance
-tensor_model_parallel_size: 4
+tensor_model_parallel_size: 1
 pipeline_model_parallel_size: 4
 use_expert_parallel: true
 expert_model_parallel_size: 8
-sequence_parallel: true
+sequence_parallel: false
+num_empty_layers_add_in_head: 0
+num_empty_layers_add_in_tail: 2
+recompute_granularity: full
+recompute_method: first_n
+recompute_num_layers: 10
 
-# sharding_parallel_config
+
+router_aux_loss_coef: 0.001
+moe_grouped_gemm: true
+moe_deep_gemm: true
+apply_rope_fusion: true
+fuse_rms_norm: true
+
+# sharding
 split_param: true
+sharding: stage1
+stage1_overlap: true
+# fuse_optimizer_states: true
+
+# pp
+pp_delay_scale_loss: true
+overlap_p2p_comm: true
+variable_seq_lengths: true
+best_unbalanced_scheduler: true
+pp_release_grads: true
+
+# tp
+tp_delay_scale_loss: true
 
 amp_master_grad: true
-sharding: stage1
-recompute_granularity: full
-recompute_method: uniform
-recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
 unified_checkpoint: false
@@ -64,6 +90,4 @@ load_checkpoint_format: flex_checkpoint
 save_to_hf: true
 
 benchmark: true
-num_empty_layers_add_in_head: 1
-num_empty_layers_add_in_tail: 1
-continue_training: false
+continue_training: true

@@ -14,6 +14,7 @@
 
 """Paddle Ernie4_5_VL model"""
 
+from .model.modeling_moe_vl import Ernie4_5_VLMoeForConditionalGeneration
 from .model.modeling_moe_vl import (
     Ernie4_5_VLMoeForConditionalGeneration as Ernie4_5_VLMoeForConditionalGenerationModel,
 )
@@ -21,5 +22,6 @@ from .model.modeling_moe_vl_pp import Ernie4_5_VLMoeForConditionalGenerationPipe
 
 __all__ = [
     "Ernie4_5_VLMoeForConditionalGenerationModel",
+    "Ernie4_5_VLMoeForConditionalGeneration",
     "Ernie4_5_VLMoeForConditionalGenerationPipe",
 ]

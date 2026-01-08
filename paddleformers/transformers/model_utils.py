@@ -3166,6 +3166,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
             # Save the config
             if is_main_process:
+                if config_to_save.tensor_model_parallel_size > 1:
+                    config_to_save.tensor_model_parallel_size = 1
                 config_to_save.save_pretrained(save_directory)
                 if self.can_generate():
                     model_to_save.generation_config.save_pretrained(save_directory)
@@ -3884,10 +3886,6 @@ def replace_name_and_gen_index(path, total_size):
     for mapping in index_mapping_list:
         index_mapping.update(mapping)
 
-    saved_signal_path = os.path.join(path, f"saved_signal_{dist.get_rank()}")
-    with open(saved_signal_path, mode="w+") as f:
-        f.write("1")
-
     if env_local_rank == 0:
         index_file_name = "model.safetensors.index.json"
         index_infos = {}
@@ -3902,6 +3900,10 @@ def replace_name_and_gen_index(path, total_size):
             for i in range(paddle.distributed.get_world_size()):
                 saved_signal_path = os.path.join(path, f".model_weights.done.{i}")
                 paddle.save(i, saved_signal_path)
+
+    saved_signal_path = os.path.join(path, f"saved_signal_{dist.get_rank()}")
+    with open(saved_signal_path, mode="w+") as f:
+        f.write("1")
 
 
 class HFFormatFullParamSaver:

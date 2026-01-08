@@ -34,6 +34,7 @@ from paddle.distributed.fleet.meta_parallel import (
     RowParallelLinear,
 )
 
+from ...transformers.model_utils import VLMS
 from ...utils.import_utils import is_paddlefleet_available
 
 # Conditionally import paddlefleet modules
@@ -579,6 +580,27 @@ class LoRAModel(nn.Layer):
 
         # save lora weight
         total_size = 0
+
+        # Map the key names that the model expects from the serialized keys in VLMs (Supports for MLLM LoRA training)
+        if any(
+            allowed_name in class_name.__name__.lower()
+            for class_name in self.model.__class__.__mro__[:-1]
+            for allowed_name in VLMS
+        ):
+            reverse_key_mapping = {v: k for k, v in self.model._checkpoint_conversion_mapping.items()}
+
+            original_state_dict = {}
+            for key, value in trainable_state_dict.items():
+                for pattern, replacement in reverse_key_mapping.items():
+                    replacement = replacement.lstrip("^")  # strip off un-needed chars and patterns
+                    replacement = re.sub(r"\(.*\)", "", replacement)
+                    key, n_replace = re.subn(pattern, replacement, key)
+                    # Early exit of the loop
+                    if n_replace > 0:
+                        break
+                original_state_dict[key] = value
+            trainable_state_dict = original_state_dict
+
         if safetensors:
             clean_unrelated_safetensors(save_directory)
             lora_weight_name = _add_variant(LORA_WEIGHTS_NAME, variant)
@@ -963,11 +985,16 @@ class LoRAModel(nn.Layer):
         for _, layer in self.model.named_sublayers():
             if (
                 isinstance(layer, LoRALinear)
+                or isinstance(layer, FleetLoRALinear)
                 or isinstance(layer, LoRAConv2D)
                 or isinstance(layer, ColumnParallelLoRALinear)
+                or isinstance(layer, FleetColumnParallelLoRALinear)
                 or isinstance(layer, RowParallelLoRALinear)
+                or isinstance(layer, FleetRowParallelLoRALinear)
                 or isinstance(layer, ColumnSequenceParallelLoRALinear)
+                or isinstance(layer, FleetColumnSequenceParallelLoRALinear)
                 or isinstance(layer, RowSequenceParallelLoRALinear)
+                or isinstance(layer, FleetRowSequenceParallelLoRALinear)
                 or (QuantizationLoRALinear is not None and isinstance(layer, QuantizationLoRALinear))
                 or (
                     ColumnParallelQuantizationLoRALinear is not None
@@ -1132,3 +1159,26 @@ class LoRAModel(nn.Layer):
         for _, layer in self.model.named_sublayers():
             if any(isinstance(layer, lora_layer) for lora_layer in AVAILABLE_LAYERS):
                 layer.unmerge()
+
+    def get_merge_state_dict(self, offload: bool = True):
+        merge_state_dict = {}
+        base_state_dict = self.model.state_dict()
+        scaling = self.lora_config.lora_alpha / self.lora_config.r
+
+        model_key_list = list(base_state_dict.keys())
+        for k in model_key_list:
+            if "lora" in k:
+                continue
+            tensor = base_state_dict.pop(k)
+            if "weight" in k:
+                lora_A_key, lora_B_key = k.replace("weight", "lora_A"), k.replace("weight", "lora_B")
+                if lora_A_key in base_state_dict.keys():
+                    lora_A_tensor, lora_B_tensor = base_state_dict.pop(lora_A_key), base_state_dict.pop(lora_B_key)
+                    tensor += lora_A_tensor @ lora_B_tensor * scaling
+
+            if offload:
+                tensor = tensor.pin_memory()
+
+            merge_state_dict[k] = tensor
+
+        return merge_state_dict

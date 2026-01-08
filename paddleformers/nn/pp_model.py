@@ -671,13 +671,11 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         )
 
     def get_loss_fn(self, config):
-        CriterionPipeCls = self._criterion_pipe_cls if self._criterion_pipe_cls is not None else CriterionLayerPipe
-
         if config.get("dpo_config", None) is not None:
-            loss_fn = CriterionPipeCls(config, use_infohub=True)
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
         else:
+            CriterionPipeCls = self._criterion_pipe_cls if self._criterion_pipe_cls is not None else CriterionLayerPipe
             loss_fn = CriterionPipeCls(config)
-
         return loss_fn
 
     @classmethod
