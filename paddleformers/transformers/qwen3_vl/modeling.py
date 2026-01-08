@@ -301,7 +301,6 @@ class Qwen3VLPretrainedModel(PretrainedModel):
         MLP_LAYER_COLWISE = [
             "mlp.up_proj.weight",
             "mlp.gate_proj.weight",
-            "mlp.linear_fc1.weight",  # todo check rationality
         ]
         FUSE_MLP_LAYER_COLWISE = [
             "up_gate_proj.weight",
@@ -310,15 +309,6 @@ class Qwen3VLPretrainedModel(PretrainedModel):
         LAYER_ROWWISE = [
             "self_attn.o_proj.weight",
             "mlp.down_proj.weight",
-            "mlp.linear_fc2.weight",
-        ]  # todo check rationality
-
-        BIAS_KEYS = [
-            "self_attn.q_proj.bias",
-            "self_attn.k_proj.bias",
-            "self_attn.v_proj.bias",
-            "mlp.linear_fc1.bias",
-            # todo check fc2's bias needs not to be split
         ]
 
         def make_base_actions():
@@ -357,10 +347,6 @@ class Qwen3VLPretrainedModel(PretrainedModel):
                     )
                 actions.update(
                     {f"{llm_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False) for k in LAYER_ROWWISE}
-                )
-                # bias
-                actions.update(
-                    {f"{llm_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True) for b in BIAS_KEYS}
                 )
 
             return actions
