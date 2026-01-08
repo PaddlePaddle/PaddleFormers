@@ -52,7 +52,6 @@ SFT_FC_RESUME_EXCEPTED_LOSS = 12.738942
 SFT_FC_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 133362, 30625, 95331, 4198]]
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
-os.environ["NCCL_ALGO"] = "Tree"
 os.environ["FLAGS_embedding_deterministic"] = "1"
 os.environ["FLAGS_cudnn_deterministic"] = "0"
 
