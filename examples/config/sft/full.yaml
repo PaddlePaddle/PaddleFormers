@@ -48,4 +48,6 @@ recompute_method: uniform
 recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
-unified_checkpoint: true
+unified_checkpoint: false
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint
