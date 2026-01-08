@@ -3171,7 +3171,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 if config_to_save.get("model_type", "").startswith(
                     "ernie4_5"
                 ):  # hacking for FastDeploy to deploy ernie 4.5 series model
-                    config_to_save.save_pretrained(save_directory, save_to_hf=save_to_hf)
+                    config_to_save.save_pretrained(save_directory, save_to_hf=True)
                 else:
                     config_to_save.save_pretrained(save_directory)
                 if self.can_generate():
