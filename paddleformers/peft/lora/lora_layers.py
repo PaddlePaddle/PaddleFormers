@@ -229,15 +229,24 @@ class RowParallelLoRALinear(RowParallelLinear):
         state_dict = self.state_dict(structured_name_prefix="")
         return build_sharded_state_dict(state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix)
 
+    def get_delta_weight(self, lora_A=None, lora_B=None):
+        lora_A = lora_A if lora_A is not None else self.lora_A
+        lora_B = lora_B if lora_B is not None else self.lora_B
+        delta_weight = lora_A @ lora_B * self.scaling
+
+        return delta_weight
+
     def unmerge(self):
         if self.merged:
-            new_weight = self.weight - self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight - delta_weight
             self.weight.set_value(new_weight)
             self.merged = False
 
     def merge(self):
         if not self.merged:
-            new_weight = self.weight + self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight + delta_weight
             self.weight.set_value(new_weight)
             self.merged = True
 
@@ -373,15 +382,24 @@ class RowSequenceParallelLoRALinear(RowSequenceParallelLinear):
         state_dict = self.state_dict(structured_name_prefix="")
         return build_sharded_state_dict(state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix)
 
+    def get_delta_weight(self, lora_A=None, lora_B=None):
+        lora_A = lora_A if lora_A is not None else self.lora_A
+        lora_B = lora_B if lora_B is not None else self.lora_B
+        delta_weight = lora_A @ lora_B * self.scaling
+
+        return delta_weight
+
     def unmerge(self):
         if self.merged:
-            new_weight = self.weight - self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight - delta_weight
             self.weight.set_value(new_weight)
             self.merged = False
 
     def merge(self):
         if not self.merged:
-            new_weight = self.weight + self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight + delta_weight
             self.weight.set_value(new_weight)
             self.merged = True
 
@@ -496,17 +514,26 @@ class ColumnParallelLoRALinear(ColumnParallelLinear):
         state_dict = self.state_dict(structured_name_prefix="")
         return build_sharded_state_dict(state_dict, {"weight": 1, "bias": 0, "lora_B": 1}, structured_name_prefix)
 
+    def get_delta_weight(self, lora_A=None, lora_B=None):
+        lora_A = lora_A if lora_A is not None else self.lora_A
+        lora_B = lora_B if lora_B is not None else self.lora_B
+        delta_weight = lora_A @ lora_B * self.scaling
+
+        return delta_weight
+
     def unmerge(self):
         if self.merged:
             # Make sure that the weights are not merged
-            new_weight = self.weight - self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight - delta_weight
             self.weight.set_value(new_weight)
             self.merged = False
 
     def merge(self):
         if not self.merged:
             # Merge the weights and mark it
-            new_weight = self.weight + self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight + delta_weight
             self.weight.set_value(new_weight)
             self.merged = True
 
@@ -627,15 +654,24 @@ class ColumnSequenceParallelLoRALinear(ColumnSequenceParallelLinear):
         state_dict = self.state_dict(structured_name_prefix="")
         return build_sharded_state_dict(state_dict, {"weight": 1, "bias": 0, "lora_B": 1}, structured_name_prefix)
 
+    def get_delta_weight(self, lora_A=None, lora_B=None):
+        lora_A = lora_A if lora_A is not None else self.lora_A
+        lora_B = lora_B if lora_B is not None else self.lora_B
+        delta_weight = lora_A @ lora_B * self.scaling
+
+        return delta_weight
+
     def unmerge(self):
         if self.merged:
-            new_weight = self.weight - self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight - delta_weight
             self.weight.set_value(new_weight)
             self.merged = False
 
     def merge(self):
         if not self.merged:
-            new_weight = self.weight + self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight + delta_weight
             self.weight.set_value(new_weight)
             self.merged = True
 
@@ -741,24 +777,30 @@ class LoRAConv2D(nn.Conv2D):
             self.bias.stop_gradient = True
         self.disable_lora = False
 
+    def get_delta_weight(self, lora_A=None, lora_B=None):
+        weight_A = (lora_A if lora_A else self.lora_A).cast(dtype=self.weight.dtype)
+        weight_B = (lora_B if lora_B else self.lora_B).cast(dtype=self.weight.dtype)
+
+        if self.weight.shape[2:4] == [1, 1]:
+            # conv2d 1x1
+            delta_weight = (weight_B.squeeze(3).squeeze(2) @ weight_A.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(
+                3
+            ) * self.scaling
+        else:
+            # conv2d 3x3
+            delta_weight = (
+                F.conv2d(
+                    weight_A.transpose([1, 0, 2, 3]),
+                    weight_B,
+                ).transpose([1, 0, 2, 3])
+                * self.scaling
+            )
+
+        return delta_weight
+
     def unmerge(self):
         if self.merged:
-            weight_A = self.lora_A.cast(dtype=self.weight.dtype)
-            weight_B = self.lora_B.cast(dtype=self.weight.dtype)
-            if self.weight.shape[2:4] == [1, 1]:
-                # conv2d 1x1
-                delta_weight = (weight_B.squeeze(3).squeeze(2) @ weight_A.squeeze(3).squeeze(2)).unsqueeze(
-                    2
-                ).unsqueeze(3) * self.scaling
-            else:
-                # conv2d 3x3
-                delta_weight = (
-                    F.conv2d(
-                        weight_A.transpose([1, 0, 2, 3]),
-                        weight_B,
-                    ).transpose([1, 0, 2, 3])
-                    * self.scaling
-                )
+            delta_weight = self.get_delta_weight()
             # Make sure that the weights are not merged
             new_weight = self.weight - delta_weight
             self.weight.set_value(new_weight)
@@ -766,22 +808,7 @@ class LoRAConv2D(nn.Conv2D):
 
     def merge(self):
         if not self.merged:
-            weight_A = self.lora_A.cast(dtype=self.weight.dtype)
-            weight_B = self.lora_B.cast(dtype=self.weight.dtype)
-            if self.weight.shape[2:4] == [1, 1]:
-                # conv2d 1x1
-                delta_weight = (weight_B.squeeze(3).squeeze(2) @ weight_A.squeeze(3).squeeze(2)).unsqueeze(
-                    2
-                ).unsqueeze(3) * self.scaling
-            else:
-                # conv2d 3x3
-                delta_weight = (
-                    F.conv2d(
-                        weight_A.transpose([1, 0, 2, 3]),
-                        weight_B,
-                    ).transpose([1, 0, 2, 3])
-                    * self.scaling
-                )
+            delta_weight = self.get_delta_weight()
             # Merge the weights and mark it
             new_weight = self.weight + delta_weight
             self.weight.set_value(new_weight)
