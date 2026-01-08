@@ -3,11 +3,12 @@ name: Check Requirements Changes
 on:
   pull_request:
     paths:
-      - 'requirements.txt'
+      - requirements.txt
 
 jobs:
   review_request:
     runs-on: ubuntu-latest
+
     permissions:
       pull-requests: write
       contents: read
@@ -15,19 +16,23 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 保证 base/head 都能 diff
 
       - name: Detect changes in requirements.txt
         id: check_diff
         run: |
-          git fetch origin ${{ github.base_ref }} --depth=1
-          git diff origin/${{ github.base_ref }} -- requirements.txt > diff.txt
-          if [ -s diff.txt ]; then
+          echo "Checking diff between base and head..."
+          git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt
+          cat changed_files.txt
+
+          if grep -q "^requirements.txt$" changed_files.txt; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Check for approved reviews and add reviewers if needed
+      - name: Request reviewers if needed
         if: steps.check_diff.outputs.changed == 'true'
         uses: actions/github-script@v7
         with:
@@ -35,50 +40,68 @@ jobs:
             const reviewers = [
               'nepeplwu',
               'lugimzzz',
-              'zjjlivein'
+              'zjjlivein',
+              'huanghengheng'
             ];
-            
+
+            const { owner, repo } = context.repo;
+            const pull_number = context.issue.number;
+
             try {
-              // Get all reviews for the PR
-              const { data: reviews } = await github.rest.pulls.listReviews({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.issue.number,
+              // Get PR info
+              const { data: pr } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number,
               });
-              
-              // Check if there's at least one approved review
-              const hasApproved = reviews.some(review => review.state === 'APPROVED');
-              
-              if (hasApproved) {
-                console.log('PR already has at least one approved review. Skipping reviewer request.');
+
+              // Skip draft PRs
+              if (pr.draft) {
+                console.log('PR is draft, skip requesting reviewers.');
                 return;
               }
-              
-              // Get existing review requests
-              const { data: reviewRequests } = await github.rest.pulls.listRequestedReviewers({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.issue.number,
-              });
-              
-              // Filter out reviewers that are already requested
-              const existingReviewers = reviewRequests.users.map(user => user.login);
-              const newReviewers = reviewers.filter(reviewer => !existingReviewers.includes(reviewer));
-              
-              if (newReviewers.length > 0) {
-                await github.rest.pulls.requestReviewers({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: context.issue.number,
-                  reviewers: newReviewers,
-                });
-                console.log(`Requested review from: ${newReviewers.join(', ')}`);
-              } else {
-                console.log('All reviewers have already been requested');
-              }
-            } catch (error) {
-              console.error('Error checking reviews or requesting reviewers:', error);
-              // Don't fail the workflow if reviewers can't be added
-              // This allows rerun to succeed even if reviewers are already added
-            }
 
+              // Get all reviews
+              const { data: reviews } = await github.rest.pulls.listReviews({
+                owner,
+                repo,
+                pull_number,
+              });
+
+              const hasApproved = reviews.some(
+                r => r.state === 'APPROVED'
+              );
+
+              if (hasApproved) {
+                console.log('PR already approved, skip requesting reviewers.');
+                return;
+              }
+
+              // Get existing review requests
+              const { data: reviewRequests } =
+                await github.rest.pulls.listRequestedReviewers({
+                  owner,
+                  repo,
+                  pull_number,
+                });
+
+              const existing = reviewRequests.users.map(u => u.login);
+              const toRequest = reviewers.filter(r => !existing.includes(r));
+
+              if (toRequest.length === 0) {
+                console.log('All reviewers already requested.');
+                return;
+              }
+
+              await github.rest.pulls.requestReviewers({
+                owner,
+                repo,
+                pull_number,
+                reviewers: toRequest,
+              });
+
+              console.log(`Requested reviewers: ${toRequest.join(', ')}`);
+            } catch (err) {
+              console.error('Reviewer request failed:', err.message);
+              // 不让 workflow 失败
+            }
