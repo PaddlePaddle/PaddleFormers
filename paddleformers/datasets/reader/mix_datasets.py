@@ -16,7 +16,7 @@ import random
 from abc import abstractmethod
 
 import numpy as np
-from paddle.io import IterableDataset, get_worker_info
+from paddle.io import IterableDataset
 
 from .multi_source_datasets import InfiniteDataset
 
@@ -87,18 +87,14 @@ class RandomDataset(BaseMixDataset):
         Define the iterator behavior for the dataset.
         This will be called when iterating over the dataset.
         """
-        worker_info = get_worker_info()
-
         while True:
             examples_all = []
-            target_nums = [int(prob * self.num_samples_each_epoch) for prob in self.datasets_prob]
+            target_nums: list[int] = [int(prob * self.num_samples_each_epoch) for prob in self.datasets_prob]
 
             for i, task in enumerate(self.tasks):
                 examples = [next(task["iterator"]) for _ in range(target_nums[i])]
                 if self.random_shuffle:
                     self.epoch_np_rng.shuffle(examples)
-                if worker_info is not None:
-                    examples = examples[worker_info.id :: worker_info.num_workers]
                 examples_all.extend(examples)
 
             if self.random_shuffle:
