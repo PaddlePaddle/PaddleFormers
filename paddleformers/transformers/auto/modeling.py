@@ -71,7 +71,6 @@ MAPPING_NAMES = OrderedDict(
         ("GptOss", "gpt_oss"),
         ("Phi3", "phi3"),
         ("Gemma3", "gemma3_text"),
-        ("InternVLChat", "internvl_chat"),
     ]
 )
 

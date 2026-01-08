@@ -288,8 +288,6 @@ import_structure = {
     "phi3.configuration": ["Phi3Config"],
     "phi3.tokenizer": ["Phi3Tokenizer"],
     "phi3.modeling": ["Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
-    "internvl_chat.configuration": ["InternVLChatConfig", "InternVisionConfig"],
-    "internvl_chat.modeling": ["InternVisionModel", "InternVLChatModel"],
 }
 
 if TYPE_CHECKING:
@@ -357,7 +355,6 @@ if TYPE_CHECKING:
     from .gpt_oss import *
     from .phi3 import *
     from .gemma3_text import *
-    from .internvl_chat import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
