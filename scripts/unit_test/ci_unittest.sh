@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -e
 export paddle=$1
 export FLAGS_enable_CE=${2-false}
 export nlp_dir=/workspace/PaddleFormers
@@ -33,8 +32,18 @@ dir_name=$(dirname "${PYTEST_EXECUTE_FLAG_FILE}")
 mkdir -p "${dir_name}"
 AGILE_COMPILE_BRANCH=$4
 
-
 install_requirements() {
+    
+    # install ffmpeg
+    INSTALL_DIR=/opt/ffmpeg
+    mkdir -p ${INSTALL_DIR}
+    cp  /home/models/ffmpeg-*-static/ffmpeg ${INSTALL_DIR}/
+    cp  /home/models/ffmpeg-*-static/ffprobe ${INSTALL_DIR}/
+    chmod +x ${INSTALL_DIR}/ffmpeg ${INSTALL_DIR}/ffprobe
+    ln -sf ${INSTALL_DIR}/ffmpeg /usr/local/bin/ffmpeg
+    ln -sf ${INSTALL_DIR}/ffprobe /usr/local/bin/ffprobe
+    ffmpeg -version
+
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
