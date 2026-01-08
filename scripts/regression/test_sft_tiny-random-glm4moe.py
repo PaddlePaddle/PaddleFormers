@@ -28,6 +28,7 @@ CONFIG_PATH = "./examples/config/sft"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
 MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
+TEMPLATE = "glm4_moe"
 MAX_STEPS = 6
 SAVE_STEPS = 4
 
@@ -131,6 +132,7 @@ class SFTTrainTest(unittest.TestCase):
             "sharding": "stage1",
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -182,6 +184,7 @@ class SFTTrainTest(unittest.TestCase):
             "sharding": "stage1",
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -241,6 +244,7 @@ class SFTTrainTest(unittest.TestCase):
             "save_steps": SAVE_STEPS,
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -292,6 +296,7 @@ class SFTTrainTest(unittest.TestCase):
             "save_steps": SAVE_STEPS,
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -353,6 +358,7 @@ class SFTTrainTest(unittest.TestCase):
             "sharding": "stage1",
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "full_function_call.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)

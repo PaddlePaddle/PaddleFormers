@@ -46,7 +46,7 @@ class BaseMixDataset(IterableDataset):
         self.rng = random.Random(self.seed)
         self.np_rng = np.random.default_rng(self.seed)
         self.epoch_index = 0
-        self.epoch_np_rng = np.random.RandomState(self.epoch_index)
+        self.epoch_np_rng = np.random.RandomState(self.epoch_index + self.seed)
         self.random_shuffle = dataset_config["random_shuffle"]
         self.num_samples_each_epoch = dataset_config["num_samples_each_epoch"]
         self.reverse = dataset_config.get("reverse", False)
@@ -107,7 +107,7 @@ class RandomDataset(BaseMixDataset):
                 yield example
 
             self.epoch_index += 1
-            self.epoch_np_rng = np.random.RandomState(self.epoch_index)
+            self.epoch_np_rng = np.random.RandomState(self.epoch_index + self.seed)
 
     def __len__(self):
         return self.num_samples_each_epoch
@@ -145,7 +145,7 @@ class ConcatDataset(BaseMixDataset):
                 yield self.data[i]
 
             self.epoch_index += 1
-            self.epoch_np_rng = np.random.RandomState(self.epoch_index)
+            self.epoch_np_rng = np.random.RandomState(self.epoch_index + self.seed)
 
     def __len__(self):
         """Returns the total size of the dataset."""
@@ -245,7 +245,7 @@ class InterLeaveDataset(BaseMixDataset):
                 yield self.data[i]
 
             self.epoch_index += 1
-            self.epoch_np_rng = np.random.RandomState(self.epoch_index)
+            self.epoch_np_rng = np.random.RandomState(self.epoch_index + self.seed)
 
     def __len__(self):
         """Returns the exact size of the pre-built dataset."""
