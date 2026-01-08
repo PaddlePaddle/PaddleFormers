@@ -228,7 +228,7 @@ class MMPluginMixin:
 
             regularized_frames = []
             for frame in frames:
-                regularized_frames.append(self._preprocess_image(frame, **kwargs))
+                regularized_frames.append(self._preprocess_image(Image.fromarray(frame), **kwargs))
             results.append(regularized_frames)
 
         return {"videos": results}
@@ -742,7 +742,7 @@ class Qwen2VLPlugin(BasePlugin):
 
             regularized_frames = []
             for frame in frames:
-                regularized_frames.append(self._preprocess_image(frame, **kwargs))
+                regularized_frames.append(self._preprocess_image(Image.fromarray(frame), **kwargs))
             results.append(regularized_frames)
 
         return {"videos": results, "fps_per_video": fps_per_video}
