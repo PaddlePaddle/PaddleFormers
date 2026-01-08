@@ -355,8 +355,8 @@ def run_dpo(
         ref_model=ref_model,
         dpo_config=dpo_config,
         args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
+        train_dataset=(train_dataset if training_args.do_train and training_args.should_load_dataset else None),
+        eval_dataset=(eval_dataset if training_args.do_eval and training_args.should_load_dataset else None),
         tokenizer=tokenizer,
         data_collator=partial(
             collate_fn,
