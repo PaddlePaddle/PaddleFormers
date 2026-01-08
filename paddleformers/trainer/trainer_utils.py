@@ -46,6 +46,9 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding
     DygraphShardingOptimizerV2,
 )
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
+from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_stage2 import (
+    GroupShardedOptimizerStage2,
+)
 from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
     create_sharded_weight_with_new_local,
 )
@@ -1474,19 +1477,18 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
     optimizer_state_names = [".moment1_0", ".moment2_0", ".beta1_pow_acc_0", ".beta2_pow_acc_0", ".w_0"]
     inner_opt = getattr(optimizer, "_inner_opt", None)
     static_to_struct_mapping = {}
+    model_sharded_state_dict = dict(sorted(model_sharded_state_dict.items()))
     for k, v in model_sharded_state_dict.items():
         if v.local_tensor.name not in static_to_struct_mapping:
             static_to_struct_mapping[v.local_tensor.name] = k
 
-    def should_restore(struct_name: str) -> bool:
-        return any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names)
-
-    if DygraphShardingOptimizer is not None and isinstance(inner_opt, DygraphShardingOptimizer):
+    if isinstance(inner_opt, DygraphShardingOptimizer):
+        local_params = optimizer._rank2params[optimizer._sharding_rank]
         param_list = []
-        for param in optimizer._parameter_list:
+        for param in local_params:
             param_name = param.name
             struct_name = static_to_struct_mapping[param_name]
-            if not should_restore(struct_name):
+            if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
                 continue
             param_list.append(param)
         optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), param_list)
@@ -1497,7 +1499,7 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
         for buffer in optimizer._comm_buffer_list:
             for param_name, grad_view in buffer._sharding_param_grad_view.items():
                 struct_name = static_to_struct_mapping[param_name]
-                if not should_restore(struct_name):
+                if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
                     continue
                 param_buffer = grad_view._param_buffer
                 param_begin = grad_view._param_begin
@@ -1510,11 +1512,28 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
 
         optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), parameter_list)
         return
+
+    elif isinstance(optimizer, GroupShardedOptimizerStage2):
+        local_params = optimizer._segment_params()[optimizer._rank]
+        for p in local_params:
+            param_name = p.name
+            struct_name = static_to_struct_mapping[param_name]
+
+        param_list = []
+        for param in local_params:
+            param_name = param.name
+            struct_name = static_to_struct_mapping[param_name]
+            if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+                continue
+            param_list.append(param)
+        optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), param_list)
+        return
+
     param_list = []
     for param in optimizer._parameter_list:
         param_name = param.name
         struct_name = static_to_struct_mapping[param_name]
-        if not should_restore(struct_name):
+        if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
             continue
         param_list.append(param)
     optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), param_list)
