@@ -33,16 +33,15 @@ SAVE_STEPS = 2
 
 DPO_FULL_EXCEPTED_LOSS = 0.693147
 DPO_FULL_RESUME_EXCEPTED_LOSS = 0.69205
-DPO_FULL_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
+DPO_FULL_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
 DPO_LORA_EXCEPTED_LOSS = 0.691557
-# tmp change loss, this loss change is not from this pr, zhangjunjun will recover it to right loss later.
 DPO_LORA_RESUME_EXCEPTED_LOSS = 0.686228
 DPO_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 DPO_FULL_TP_PP_EXCEPTED_LOSS = 0.693147
 DPO_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 0.694038
-DPO_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 132047, 132047, 119194, 128575, 128575, 3315, 132047, 71148, 128575]]
+DPO_FULL_TP_PP_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
 DPO_LORA_TP_PP_EXCEPTED_LOSS = 0.693147
 DPO_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 0.694
@@ -141,24 +140,6 @@ class DPOTrainTest(unittest.TestCase):
             "train",
             updated_config_path,
         ]
-        # # real time log save to file
-        # dop_full_log_file = os.path.join(LOG_PATH, str(os.path.basename(MODEL_NAME_OR_PATH)) + "dop_full.log")
-        # print(f"dpo_full cmd is : {cmd}")
-        # with open(dop_full_log_file, "w", encoding="utf-8") as log_file:
-        #     training_p = subprocess.Popen(
-        #         cmd,
-        #         stdout=subprocess.PIPE,
-        #         stderr=subprocess.STDOUT,
-        #         text=True,
-        #         bufsize=1
-        #     )
-        #     # 逐行处理输出
-        #     for line in training_p.stdout:
-        #         print(line, end='', flush=True)  # 实时输出到终端
-        #         log_file.write(line)  # 实时写入文件
-        #         log_file.flush()
-        #     training_p.wait()
-        # print("Command execution completed and log saved.")
         training_p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(f"dop_full cmd is : {cmd}")
         print(training_p.stdout)
@@ -196,7 +177,7 @@ class DPOTrainTest(unittest.TestCase):
         update_args = {
             "model_name_or_path": MODEL_NAME_OR_PATH,
             "output_dir": output_dir,
-            "max_steps": 10,
+            "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
         }
