@@ -5,12 +5,13 @@ on:
     paths:
       - 'requirements.txt'
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   review_request:
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -32,31 +33,29 @@ jobs:
           script: |
             const reviewers = ['nepeplwu', 'lugimzzz', 'zjjlivein'];
 
-            // 1. 已有 review？
             const { data: reviews } = await github.rest.pulls.listReviews({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: context.issue.number,
             });
 
-            const hasApproved = reviews.some(r => r.state === 'APPROVED');
-            if (hasApproved) {
-              console.log('Already approved, skip requesting reviewers.');
+            if (reviews.some(r => r.state === 'APPROVED')) {
+              console.log('Already approved, skip.');
               return;
             }
 
-            // 2. 已 request 的 reviewer
-            const { data: requested } = await github.rest.pulls.listRequestedReviewers({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number,
-            });
+            const { data: requested } =
+              await github.rest.pulls.listRequestedReviewers({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+              });
 
             const existing = requested.users.map(u => u.login);
             const toAdd = reviewers.filter(r => !existing.includes(r));
 
             if (toAdd.length === 0) {
-              console.log('All reviewers already requested.');
+              console.log('No new reviewers to add.');
               return;
             }
 
