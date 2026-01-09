@@ -27,29 +27,31 @@ TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config/sft"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
+
 MODEL_NAME_OR_PATH = "/home/models/PaddleFormers/tiny-random-glm4moe-bf16"
+TEMPLATE = "glm4_moe"
 MAX_STEPS = 2
 SAVE_STEPS = 2
 
-SFT_FULL_EXCEPTED_LOSS = 13.022592
-SFT_FULL_RESUME_EXCEPTED_LOSS = 13.029205
+SFT_FULL_EXCEPTED_LOSS = 12.725744
+SFT_FULL_RESUME_EXCEPTED_LOSS = 12.722351
 SFT_FULL_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
-SFT_LORA_EXCEPTED_LOSS = 13.022592
-SFT_LORA_RESUME_EXCEPTED_LOSS = 13.029125
+SFT_LORA_EXCEPTED_LOSS = 12.725744
+SFT_LORA_RESUME_EXCEPTED_LOSS = 12.725442
 SFT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
-SFT_FULL_TP_PP_EXCEPTED_LOSS = 12.969655
-SFT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 12.96945
+SFT_FULL_TP_PP_EXCEPTED_LOSS = 12.794643
+SFT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 12.796001
 SFT_FULL_TP_PP_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
-SFT_LORA_TP_PP_EXCEPTED_LOSS = 12.969655
-SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 12.969343
+SFT_LORA_TP_PP_EXCEPTED_LOSS = 12.794643
+SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 12.794622
 SFT_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
-SFT_FC_EXCEPTED_LOSS = 13.017624
-SFT_FC_RESUME_EXCEPTED_LOSS = 13.023825
-SFT_FC_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
+SFT_FC_EXCEPTED_LOSS = 12.940278
+SFT_FC_RESUME_EXCEPTED_LOSS = 12.941307
+SFT_FC_EXCEPTED_RESULT = [[10564, 10564, 10564, 138932, 102954, 47231, 47231, 47231, 47231, 47231]]
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
@@ -131,6 +133,7 @@ class SFTTrainTest(unittest.TestCase):
             "sharding": "stage1",
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -182,6 +185,7 @@ class SFTTrainTest(unittest.TestCase):
             "sharding": "stage1",
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -241,6 +245,7 @@ class SFTTrainTest(unittest.TestCase):
             "save_steps": SAVE_STEPS,
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -292,6 +297,7 @@ class SFTTrainTest(unittest.TestCase):
             "save_steps": SAVE_STEPS,
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -353,6 +359,7 @@ class SFTTrainTest(unittest.TestCase):
             "sharding": "stage1",
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "full_function_call.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)

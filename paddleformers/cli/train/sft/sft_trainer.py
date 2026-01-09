@@ -13,10 +13,20 @@
 # limitations under the License.
 from __future__ import annotations
 
+import os
+import sys
 import warnings
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Union
 
-import datasets
+PADDLEFORMERS_TESTING = os.environ.get("PADDLEFORMERS_TESTING", False)
+if "torch" not in sys.modules and not PADDLEFORMERS_TESTING:
+    sys.modules["torch"] = None
+    import datasets
+
+    del sys.modules["torch"]
+else:
+    import datasets
+
 import numpy as np
 import paddle
 import paddle.distributed as dist
