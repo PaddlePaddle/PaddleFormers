@@ -20,12 +20,11 @@ jobs:
         id: diff
         run: |
           git fetch origin ${{ github.base_ref }} --depth=1
-          if git diff --name-only origin/${{ github.base_ref }} | grep -q '^requirements.txt$'; then
+          if git diff --name-only origin/develop -- requirements.txt | grep -q .; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
-
       - name: Request reviewers if needed
         if: |
           steps.diff.outputs.changed == 'true' &&
