@@ -25,3 +25,4 @@ use_triton_in_paddle
 GPUtil
 paddlefleet >= 0.0.1.dev ; platform_system == 'Linux' and platform_machine == 'x86_64'
 h5py
+pytest
