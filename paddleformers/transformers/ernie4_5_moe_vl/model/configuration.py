@@ -225,7 +225,7 @@ class Ernie4_5_Config(PretrainedConfig):
                 "cachekv_quant",
                 "use_fused_head_and_loss_fn",
                 "max_sequence_length",
-                # "head_dim",
+                "head_dim",
             ]
         )
 
