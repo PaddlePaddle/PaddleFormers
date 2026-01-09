@@ -130,10 +130,13 @@ class TestMergeModel(unittest.TestCase):
                 sys.modules["torch"] = sys.modules["torch_save"]
             except:
                 pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            # Clear transformers and its submodules to force re-import
+            modules_to_clear = [key for key in sys.modules.keys() if key.startswith("transformers")]
+            for module_name in modules_to_clear:
+                try:
+                    del sys.modules[module_name]
+                except:
+                    pass
             from transformers import Qwen3Config, Qwen3ForCausalLM
 
             torch_model_path = os.path.join(tempdir, "torch_model")
