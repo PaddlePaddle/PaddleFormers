@@ -46,12 +46,7 @@ git clone https://github.com/PaddlePaddle/PaddleFormers.git
 cd PaddleFormers
 
 # If you don’t need to train models, you can install only the lightweight basic version of paddleformers.
-# cuda12.6
-pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
-# cuda12.9
-pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-# cuda13.0
-pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
+pip install -e .
 
 # If you need to train models, you should install paddleformers with paddlefleet
 # cuda12.6
