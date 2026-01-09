@@ -127,7 +127,13 @@ class SFTDataSet(IterableDataset):
             buffer = []
             for _ in range(len(self.mix_datasets)):
                 example = next(dataset_iterator)
-                tokens = self._encode_pretraining_example(example, actual_example_num)
+                try:
+                    tokens = self._encode_pretraining_example(example, actual_example_num)
+                except Exception as e:
+                    print(f"Warning: Error processing example, skipping. Error: {str(e)}")
+                    if self.estimate:
+                        self.unused_samples += actual_example_num
+                    continue
                 if tokens is None:
                     if self.estimate:
                         self.unused_samples += actual_example_num
@@ -202,10 +208,16 @@ class SFTDataSet(IterableDataset):
             if not self.packing:
                 for _ in range(len(self.mix_datasets)):
                     example = next(dataset_iterator)
-                    if self.is_pretraining:
-                        sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
-                    else:
-                        sequence = self._postprocess_sequence(example, actual_example_num)
+                    try:
+                        if self.is_pretraining:
+                            sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
+                        else:
+                            sequence = self._postprocess_sequence(example, actual_example_num)
+                    except Exception as e:
+                        print(f"Warning: Error processing example, skipping. Error: {str(e)}")
+                        if self.estimate:
+                            self.unused_samples += actual_example_num
+                        continue
                     # unused_samples and used_samples are used to calculate skip_samples and actual_train_samples
                     if sequence is None:
                         if self.estimate:
@@ -231,10 +243,16 @@ class SFTDataSet(IterableDataset):
                     # base
                     for _ in range(len(self.mix_datasets)):
                         example = next(dataset_iterator)
-                        if self.is_pretraining:
-                            sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
-                        else:
-                            sequence = self._postprocess_sequence(example, actual_example_num)
+                        try:
+                            if self.is_pretraining:
+                                sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
+                            else:
+                                sequence = self._postprocess_sequence(example, actual_example_num)
+                        except Exception as e:
+                            print(f"Warning: Error processing example, skipping. Error: {str(e)}")
+                            if self.estimate:
+                                self.unused_samples += actual_example_num
+                            continue
                         if sequence is None:
                             if self.estimate:
                                 self.unused_samples += actual_example_num
@@ -317,6 +335,7 @@ class SFTDataSet(IterableDataset):
     def _postprocess_pretraining_sequence(self, example, actual_example_num):
         tokens = self._encode_pretraining_example(example, actual_example_num)
         if len(tokens) > self.max_seq_len + 1:
+            # Truncate the sequence to the maximum length
             tokens = tokens[: self.max_seq_len + 1]
         res_tokens = tokens[:-1]
         res_labels = tokens[1:]
@@ -423,6 +442,9 @@ class SFTDataSet(IterableDataset):
                     labels_target = tokens_target[: len(tokens_target) - sep_token_len] + [-100] * sep_token_len
                 else:
                     labels_target = tokens_target
+
+            if not example["label"][turn_index]:
+                labels_target = [-100] * len(labels_target)
             tokens = tokens_src + tokens_target + tokens
             labels = labels_src + labels_target + labels
 
@@ -530,10 +552,17 @@ class SFTDataSet(IterableDataset):
         left_index = 0
 
         while index < len(examples):
-            if self.is_pretraining:
-                sequence = self._postprocess_pretraining_sequence(examples[index], actual_example_num_list[index])
-            else:
-                sequence = self._postprocess_sequence(examples[index], actual_example_num_list[index])
+            try:
+                if self.is_pretraining:
+                    sequence = self._postprocess_pretraining_sequence(examples[index], actual_example_num_list[index])
+                else:
+                    sequence = self._postprocess_sequence(examples[index], actual_example_num_list[index])
+            except Exception as e:
+                print(f"Warning: Error processing example, skipping. Error: {str(e)}")
+                if self.estimate:
+                    self.unused_samples += actual_example_num_list[index]
+                index += 1
+                continue
             if sequence is None:
                 if self.estimate:
                     self.unused_samples += actual_example_num_list[index]
