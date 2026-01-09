@@ -28,6 +28,8 @@ import_structure = {
         "convert_to_unicode",
     ],
     "tokenizer_utils_base": [
+        "PreTokenizedInput",
+        "TextInput",
         "import_protobuf_decode_error",
         "ExplicitEnum",
         "PaddingStrategy",
