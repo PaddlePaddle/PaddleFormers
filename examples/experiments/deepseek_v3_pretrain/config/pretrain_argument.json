@@ -53,5 +53,6 @@
     "offload_optim": true,
     "reorder_pipeline_priority": true,
     "num_nextn_predict_layers":1,
-    "using_fake_gate": false
+    "using_fake_gate": false,
+    "fa_version": 3
   }

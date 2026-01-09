@@ -336,7 +336,11 @@ def set_random_seed(
                 seed = seed + (10 * paddlefleet.parallel_state.get_data_parallel_rank())
             random.seed(seed)
             np.random.seed(seed)
-            paddle.manual_seed(seed)
+            try:
+                paddle.manual_seed(seed)
+            except:
+                paddle.seed(seed)
+
             if paddle.cuda.device_count() > 0:
                 paddlefleet.tensor_parallel.model_parallel_cuda_manual_seed(
                     seed, te_rng_tracker, inference_rng_tracker, use_cudagraphable_rng
@@ -345,7 +349,10 @@ def set_random_seed(
             # Fallback for when paddlefleet is not available
             random.seed(seed_)
             np.random.seed(seed_)
-            paddle.manual_seed(seed_)
+            try:
+                paddle.manual_seed(seed_)
+            except:
+                paddle.seed(seed_)
     else:
         raise ValueError("Seed ({}) should be a positive integer.".format(seed_))
 
@@ -1494,48 +1501,23 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
         optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), param_list)
         return
 
-    elif isinstance(inner_opt, DygraphShardingOptimizerV2):
+    elif DygraphShardingOptimizerV2 is not None and isinstance(inner_opt, DygraphShardingOptimizerV2):
+        parameter_list = []
+        for buffer in optimizer._comm_buffer_list:
+            for param_name, grad_view in buffer._sharding_param_grad_view.items():
+                struct_name = static_to_struct_mapping[param_name]
+                if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+                    continue
+                param_buffer = grad_view._param_buffer
+                param_begin = grad_view._param_begin
+                param_end = grad_view._param_end
+                if param_begin >= 0 and param_end > 0 and param_end > param_begin:
+                    slice_param = paddle.slice(param_buffer, axes=[0], starts=[param_begin], ends=[param_end])
+                    assert slice_param.numel().item() > 0
+                    slice_param.name = param_name
+                    parameter_list.append(slice_param)
 
-        def init_param_optimizer_states(param_iter):
-            master_weights = {}
-            state_dict = {}
-            moments = ("moment1_0", "moment2_0")
-            betas = ("beta1_pow_acc_0", "beta2_pow_acc_0")
-            for static_name, shape, no_need_master_weights in param_iter:
-                if not no_need_master_weights:
-                    master_weights[static_name] = paddle.zeros(shape, dtype="float32")
-                    prefix = f"{static_name}_fp32_master_0_"
-                else:
-                    prefix = f"{static_name}_"
-
-                for moment in moments:
-                    key = f"{prefix}{moment}"
-                    state_dict[key] = paddle.zeros(shape, dtype="float32")
-                for beta in betas:
-                    key = f"{prefix}{beta}"
-                    state_dict[key] = paddle.zeros((1,), dtype="float32")
-            return master_weights, state_dict
-
-        def buffer_params():
-            for buffer in optimizer._comm_buffer_list:
-                for param_name, grad_view in buffer._sharding_param_grad_view.items():
-                    struct_name = static_to_struct_mapping[param_name]
-                    if not any(
-                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
-                    ):
-                        continue
-                    param_begin = grad_view._param_begin
-                    param_end = grad_view._param_end
-                    shape = (param_end - param_begin,)
-                    no_need_master_weights = grad_view._param.dtype == paddle.float32
-
-                    if shape[0] > 0:
-                        yield param_name, shape, no_need_master_weights
-
-        master_weights, state_dict = init_param_optimizer_states(buffer_params())
-        state_dict["master_weights"] = master_weights
-        state_dict["LR_Scheduler"] = {"last_epoch": 1, "last_lr": 5e-06}
-        optimizer.set_state_dict(state_dict)
+        optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), parameter_list)
         return
 
     elif isinstance(optimizer, GroupShardedOptimizerStage2):
@@ -1543,8 +1525,6 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
         for p in local_params:
             param_name = p.name
             struct_name = static_to_struct_mapping[param_name]
-            print(struct_name)
-            print(p)
 
         param_list = []
         for param in local_params:
@@ -1843,14 +1823,14 @@ class EMAStateAssembler:
         self.num_splits = moe_sharding_group.nranks
         self.shard_idx = moe_sharding_rank
         self.expert_id_offset = (n_routed_experts // moe_group.nranks) * moe_group.rank
-        self.latest_processed_checkpoint_step = -1
+        self._set_latest_processed_checkpoint_step()
 
     def run(self):
         if self.save_hf_steps < 0:
             logger.info("[EMAStateAssembler] save_hf_steps is negative. Skipping.")
             return
 
-        next_step, next_ckpt_dir = self._find_next_checkpoint()
+        next_step, next_ckpt_dir = self._find_checkpoint(mode="next")
         if next_step is None:
             next_step = -1
         next_steps = []
@@ -1914,32 +1894,53 @@ class EMAStateAssembler:
         else:
             self._handle_naive_checkpoint(next_step, next_ckpt_dir)
 
-    def _find_next_checkpoint(self) -> Tuple[Optional[int], Optional[Path]]:
-        pattern = re.compile(_re_checkpoint)
-        min_step = None
-        min_ckpt_path = None
+    def _set_latest_processed_checkpoint_step(self):
+        max_step, _ = self._find_checkpoint(mode="max")
+        if max_step is None:
+            max_step = -1
 
+        steps = []
+        dist.all_gather_object(steps, max_step)
+
+        if len(set(steps)) != 1:
+            raise AssertionError(
+                f"[EMAStateAssembler] Detected inconsistent maximum checkpoint step across ranks. "
+                f"Please check each trainer's checkpoints. The gathered maximum steps are: {set(steps)}"
+            )
+
+        self.latest_processed_checkpoint_step = steps[0]
+        logger.info(f"[EMAStateAssembler] Start working from checkpoint step {self.latest_processed_checkpoint_step}!")
+
+    def _find_checkpoint(self, mode: str = "next") -> Tuple[Optional[int], Optional[Path]]:
+        pattern = re.compile(_re_checkpoint)
+        target_step = None
+        target_ckpt_path = None
         if not self.output_dir.is_dir():
             return None, None
-
         for item in self.output_dir.iterdir():
             if item.is_dir():
                 match = pattern.match(item.name)
                 if match:
                     step = int(match.group(1))
-                    if step > self.latest_processed_checkpoint_step:
-                        if min_step is None or step < min_step:
-                            min_step = step
-                            min_ckpt_path = item
-
-        return min_step, min_ckpt_path
+                    if mode == "max":
+                        if (target_step is None) or (step > target_step):
+                            target_step = step
+                            target_ckpt_path = item
+                    elif mode == "next":
+                        if step > self.latest_processed_checkpoint_step:
+                            if (target_step is None) or (step < target_step):
+                                target_step = step
+                                target_ckpt_path = item
+                    else:
+                        raise ValueError("mode must be 'max' or 'next'")
+        return target_step, target_ckpt_path
 
     def _is_already_handled(self, checkpoint_dir: Path) -> bool:
         final_signal_file = checkpoint_dir / f"saved_signal_{self.rank}"
         return final_signal_file.exists()
 
     def _check_all_ranks_saved(self, checkpoint_dir: Path) -> bool:
-        temp_signal_file = checkpoint_dir / f"saved_signal_TMP_{self.rank}"
+        temp_signal_file = checkpoint_dir / f"_save_done_tmp_{self.rank}"
 
         local_rank_is_saved = temp_signal_file.exists()
 
@@ -1954,7 +1955,7 @@ class EMAStateAssembler:
         with open(final_signal_file, "w") as f:
             f.write("1")
 
-        temp_signal_file = checkpoint_dir / f"saved_signal_TMP_{self.rank}"
+        temp_signal_file = checkpoint_dir / f"_save_done_tmp_{self.rank}"
         if temp_signal_file.exists():
             try:
                 temp_signal_file.unlink()
@@ -1974,7 +1975,7 @@ class EMAStateAssembler:
                     f"[EMAStateAssembler] [Rank {self.rank}] EMA state file not found at {ema_state_path}, skipping and updating signal. "
                 )
                 return
-            ema_sharded_state_dict = self._build_ema_sharded_state_dict(ema_state_path)
+            ema_sharded_state_dict = self._build_ema_sharded_state_dict(self._load_ema_state_dict(ema_state_path))
             self._mark_as_handled(checkpoint_dir, step)
             self._save_full_ema_states(step, ema_sharded_state_dict)
             del ema_sharded_state_dict
@@ -1986,7 +1987,7 @@ class EMAStateAssembler:
 
     def _handle_naive_checkpoint(self, step: int, checkpoint_dir: Path):
         logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Processing a no need merge EMA checkpoint.")
-        temp_signal_file = checkpoint_dir / f"saved_signal_TMP_{self.rank}"
+        temp_signal_file = checkpoint_dir / f"_save_done_tmp_{self.rank}"
 
         if not temp_signal_file.exists():
             logger.warning(
@@ -2005,13 +2006,15 @@ class EMAStateAssembler:
             ema_file_name = optimizer_name.replace("optimizer", "ema")
             return checkpoint_dir / ema_file_name
 
-    def _build_ema_sharded_state_dict(self, ema_state_path: Path):
+    def _load_ema_state_dict(self, ema_state_path: Path):
         if not ema_state_path.exists():
             raise FileNotFoundError(f"[EMAStateAssembler] EMA state file not found at {ema_state_path}.")
 
         logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Loading EMA state from {ema_state_path}.")
         ema_state_dict = paddle.load(str(ema_state_path))
+        return ema_state_dict
 
+    def _build_ema_sharded_state_dict(self, ema_state_dict):
         group_getter = GroupGetter(self.model)
         ema_state_dict_grouped = split_opt_state(ema_state_dict, group_getter)
         ema_params_recovered = {}

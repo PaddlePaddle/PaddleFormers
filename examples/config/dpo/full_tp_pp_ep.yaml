@@ -9,6 +9,8 @@ max_seq_len: 8192
 num_samples_each_epoch: 6000000
 packing: true
 mix_strategy: concat
+template_backend: custom
+template: qwen3
 
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B-Base

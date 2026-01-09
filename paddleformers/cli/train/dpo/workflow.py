@@ -19,13 +19,6 @@ from functools import partial
 
 import paddle
 
-is_sm90 = (
-    paddle.base.core.is_compiled_with_cuda()
-    and paddle.device.cuda.get_device_capability()[0] == 9
-    and paddle.device.cuda.get_device_capability()[1] == 0
-)
-if is_sm90:
-    os.environ["FLAGS_flash_attn_version"] = "3"
 from paddleformers.datasets.collate import dpo_collate_fn as collate_fn
 from paddleformers.datasets.loader import create_dataset
 from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
@@ -250,7 +243,11 @@ def run_dpo(
             )
             model = LoRAModel(model, lora_config)
         else:
-            model = LoRAModel.from_pretrained(model=model, lora_path=model_args.lora_path)
+            model = LoRAModel.from_pretrained(
+                model=model,
+                lora_path=model_args.lora_path,
+                load_checkpoint_format=training_args.load_checkpoint_format,
+            )
 
         model.print_trainable_parameters()
 
@@ -362,8 +359,8 @@ def run_dpo(
         ref_model=ref_model,
         dpo_config=dpo_config,
         args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
+        train_dataset=(train_dataset if training_args.do_train and training_args.should_load_dataset else None),
+        eval_dataset=(eval_dataset if training_args.do_eval and training_args.should_load_dataset else None),
         tokenizer=tokenizer,
         data_collator=partial(
             collate_fn,

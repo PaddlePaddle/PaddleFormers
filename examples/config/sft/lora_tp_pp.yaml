@@ -8,6 +8,8 @@ eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: true
 mix_strategy: concat
+template_backend: custom
+template: qwen3
 
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B-Base
@@ -51,4 +53,6 @@ recompute_method: uniform
 recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
-unified_checkpoint: true
+unified_checkpoint: false
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint

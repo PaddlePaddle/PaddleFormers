@@ -35,6 +35,7 @@ from ..utils.env import PREFIX_CHECKPOINT_DIR
 from ..utils.import_utils import is_paddlefleet_available
 from ..utils.log import logger
 from ..utils.pdc_sdk import FLASH_DEVICE
+from ..utils.tools import paddle_device
 from .trainer_utils import (
     IntervalStrategy,
     OptimizerNames,
@@ -1547,6 +1548,9 @@ class TrainingArguments:
             "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
         },
     )
+    fa_version: int = field(
+        default=2, metadata={"help": "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."}
+    )
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
@@ -1565,6 +1569,22 @@ class TrainingArguments:
         if self.deterministic_mode:
             os.environ["FLAGS_cudnn_deterministic"] = "1"
             os.environ["FLAGS_embedding_deterministic"] = "1"
+
+        if self.fa_version == 2 or self.fa_version == 3:
+            is_sm90 = (
+                paddle.base.core.is_compiled_with_cuda()
+                and paddle_device.get_device_capability()[0] == 9
+                and paddle_device.get_device_capability()[1] == 0
+            )
+            if is_sm90:
+                paddle.set_flags({"FLAGS_flash_attn_version": 3})
+                self.fa_version = 3
+                warnings.warn("sm90 automatic set fa_version to fa3")
+            else:
+                paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
+                logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
+        else:
+            raise ValueError(f"--fa_version should be 2 or 3, but got {self.fa_version}")
 
         env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", -1))
         if env_local_rank != -1 and env_local_rank != self.local_rank and paddle.distributed.get_world_size() > 1:
@@ -1659,17 +1679,29 @@ class TrainingArguments:
         self._post_init_parallel_degree()
 
         # check recompute
-        if not isinstance(self.recompute_modules, list) and not not isinstance(self.recompute_modules, dict):
-            raise ValueError("recompute_modules must be list or dict")
+        if (
+            self.recompute_modules is not None
+            and not isinstance(self.recompute_modules, list)
+            and not isinstance(self.recompute_modules, dict)
+        ):
+            raise ValueError("recompute_modules must be list, dict or None")
         # check recompute:
-        if not isinstance(self.recompute_mtp_modules, list) and not not isinstance(self.recompute_mtp_modules, dict):
-            raise ValueError("recompute_mtp_modules must be list or dict")
+        if (
+            self.recompute_mtp_modules is not None
+            and not isinstance(self.recompute_mtp_modules, list)
+            and not isinstance(self.recompute_mtp_modules, dict)
+        ):
+            raise ValueError("recompute_mtp_modules must be list, dict or None")
 
+        if getattr(self, "moe_subbatch_token_num_before_dispatch", 0) > 0 and self.recompute_granularity == "full":
+            raise ValueError(
+                "When moe_subbatch_token_num_before_dispatch > 0, please set recompute_granularity='selective and add corresponding module name to recompute_modules"
+            )
         self._post_init_save_checkpoint_format()
         self._post_init_load_checkpoint_format()
         if self.tensorwise_offload_optimizer and self.data_parallel_size > 1:
             raise NotImplementedError(
-                f"Optimizer offload is not supported under data parallel. Please use sharding by setting --sharding stage1 --sharding_parallel_size {self.sharding_parallel_size*self.data_parallel_size}."
+                f"Optimizer offload is not supported under data parallel. Please use sharding by setting --sharding stage1 --sharding_parallel_size {self.sharding_parallel_size * self.data_parallel_size}."
             )
 
         if self.to_static:

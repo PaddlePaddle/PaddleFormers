@@ -46,10 +46,12 @@ from packaging import version
 from paddle import framework
 from paddle.base import core
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
-from paddle.distributed.fleet.meta_parallel import (
-    PipelineDatasetPreprocessor,
-    PipelineLayer,
-)
+from paddle.distributed.fleet.meta_parallel import PipelineLayer
+
+try:
+    from paddle.distributed.fleet.meta_parallel import PipelineDatasetPreprocessor
+except:
+    PipelineDatasetPreprocessor = None
 
 from ..utils.import_utils import is_paddlefleet_available
 
@@ -230,7 +232,14 @@ DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
 
 if is_datasets_available():
-    import datasets
+    PADDLEFORMERS_TESTING = os.environ.get("PADDLEFORMERS_TESTING", False)
+    if "torch" not in sys.modules and not PADDLEFORMERS_TESTING:
+        sys.modules["torch"] = None
+        import datasets
+
+        del sys.modules["torch"]
+    else:
+        import datasets
 
 from paddle.distributed import in_auto_parallel_align_mode
 from paddle.distributed.fleet.utils import mix_precision_utils
@@ -334,10 +343,11 @@ class Trainer:
         self._memory_tracker.start()
 
         # Seed must be set before instantiating the model when using model
-        if not self.args.enable_auto_parallel:
-            set_random_seed(seed_=self.args.seed)
-        else:
-            logger.warning("set_seed not support yet in auto_parallel mode")
+        if is_paddlefleet_available():
+            if not self.args.enable_auto_parallel:
+                set_random_seed(seed_=self.args.seed)
+            else:
+                logger.warning("set_seed not support yet in auto_parallel mode")
 
         set_seed(seed=self.args.seed)
 
@@ -1010,7 +1020,7 @@ class Trainer:
 
         logger.info("Zero cost checkpoint manager created successfully.")
 
-    def add_non_zcc_ema_callback(self, resume_from_checkpoint):
+    def add_non_zcc_ema_callback(self, resume_from_checkpoint, ema_state_assembler=None):
 
         non_zcc_ema_callback = NonZCCEMACallback.create_nonzcc_callback(
             args=self.args,
@@ -1019,6 +1029,7 @@ class Trainer:
             model=self.model,
             optimizer=self.optimizer,
             hcg=self.hcg,
+            ema_state_assembler=ema_state_assembler,
         )
 
         self.add_callback(non_zcc_ema_callback)
@@ -1196,6 +1207,9 @@ class Trainer:
                 )
 
             self._load_scheduler(resume_from_checkpoint)
+            if self.args.tensorwise_offload_optimizer:
+                logger.info("Offloading optimizer state for FC...")
+                self._offload_optimizer()
 
         enable_bf16_opt = (
             not isinstance(self.model, LoRAModel) and self.args.enable_zero_cost_checkpoint and self.args.bf16
@@ -2559,6 +2573,10 @@ class Trainer:
                     self.model.save_pretrained(
                         ckpt_path, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
                     )
+                if self.tokenizer is not None and self.args.save_tokenizer:
+                    self.tokenizer.save_pretrained(ckpt_path)
+                if self.processing_class is not None:
+                    self.processing_class.save_pretrained(ckpt_path)
                 self.control = self.callback_handler.on_save_hf(self.args, self.state, self.control)
 
     def log_trained_tokens(self):
@@ -3144,6 +3162,8 @@ class Trainer:
                 assert self.optimizer is not None, "optimizer is empty!"
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
 
+        if isinstance(model, LoRAModel):
+            model = model.model
         if (
             is_paddlefleet_available()
             and PaddleFleetPipelineLayer is not None
@@ -3189,8 +3209,7 @@ class Trainer:
             prepare_pipeline_inputs_func = (
                 model._prepare_pipeline_inputs_func if hasattr(model, "_prepare_pipeline_inputs_func") else None
             )
-            if isinstance(model, LoRAModel):
-                model = model.model
+
             if (
                 is_paddlefleet_available()
                 and paddlefleet_dist_model is not None
@@ -3613,7 +3632,7 @@ class Trainer:
             signal_dir = self.args.output_signal_dir
 
         if ShardingOption.FULL_SHARD in self.args.sharding:
-            self.model_wrapped.get_all_parameters(convert2cpu=False, with_freeze_param=True)
+            self.model_wrapped.get_all_parameters(convert2cpu=True, with_freeze_param=True)
 
         if self.args.should_save_model_state:
             self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel, last_fc_to_hf=last_fc_to_hf)

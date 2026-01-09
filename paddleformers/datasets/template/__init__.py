@@ -26,6 +26,11 @@ import_structure = {
         "FunctionFormatter",
         "ToolFormatter",
     ],
+    "grounding_plugin": [
+        "BaseGroundingPlugin",
+        "register_grounding_plugin",
+        "get_grounding_plugin",
+    ],
     "mm_plugin": [
         "_make_batched_images",
         "_check_video_is_nested_images",
@@ -35,6 +40,8 @@ import_structure = {
         "PaddleOCRVLPlugin",
         "Qwen2VLPlugin",
         "Qwen3VLPlugin",
+        "GLM4VPlugin",
+        "Gemma3Plugin",
         "register_mm_plugin",
         "get_mm_plugin",
     ],
@@ -42,6 +49,7 @@ import_structure = {
         "Role",
         "Template",
         "ReasoningTemplate",
+        "Llama2Template",
         "register_template",
         "parse_template",
         "get_template_and_fix_tokenizer",
@@ -51,6 +59,10 @@ import_structure = {
         "ToolUtils",
         "DefaultToolUtils",
         "QwenToolUtils",
+        "GLM4ToolUtils",
+        "GLM4MOEToolUtils",
+        "Llama3ToolUtils",
+        "ERNIEToolUtils",
         "get_tool_utils",
     ],
     "augment_utils": [
@@ -65,6 +77,7 @@ import_structure = {
 if TYPE_CHECKING:
     from .augment_utils import *
     from .formatter import *
+    from .grounding_plugin import *
     from .mm_plugin import *
     from .template import *
     from .tool_utils import *
