@@ -587,7 +587,11 @@ class LoRAModel(nn.Layer):
 
         trainable_state_dict = self.get_trainable_state_dict(concat_init_lora=lora_config_to_save.loraga)
 
-        if merge_tensor_parallel and lora_config_to_save.tensor_model_parallel_size > 1:
+        if (
+            merge_tensor_parallel
+            and lora_config_to_save.tensor_model_parallel_size > 1
+            and save_checkpoint_format != "flex_checkpoint"
+        ):
             trainable_state_dict = self._merge_trainable_tensor_parallel(trainable_state_dict, offload=not safetensors)
             if not is_main_process and not safetensors:
                 logger.info("Saving with merge_tensor_parallel, tensor_parallel_rank > 0 don't need save")
