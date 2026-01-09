@@ -35,6 +35,7 @@ from ..utils.env import PREFIX_CHECKPOINT_DIR
 from ..utils.import_utils import is_paddlefleet_available
 from ..utils.log import logger
 from ..utils.pdc_sdk import FLASH_DEVICE
+from ..utils.tools import paddle_device
 from .trainer_utils import (
     IntervalStrategy,
     OptimizerNames,
@@ -1561,6 +1562,9 @@ class TrainingArguments:
             "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
         },
     )
+    fa_version: int = field(
+        default=2, metadata={"help": "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."}
+    )
 
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
@@ -1579,6 +1583,22 @@ class TrainingArguments:
         if self.deterministic_mode:
             os.environ["FLAGS_cudnn_deterministic"] = "1"
             os.environ["FLAGS_embedding_deterministic"] = "1"
+
+        if self.fa_version == 2 or self.fa_version == 3:
+            is_sm90 = (
+                paddle.base.core.is_compiled_with_cuda()
+                and paddle_device.get_device_capability()[0] == 9
+                and paddle_device.get_device_capability()[1] == 0
+            )
+            if is_sm90:
+                paddle.set_flags({"FLAGS_flash_attn_version": 3})
+                self.fa_version = 3
+                warnings.warn("sm90 automatic set fa_version to fa3")
+            else:
+                paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
+                logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
+        else:
+            raise ValueError(f"--fa_version should be 2 or 3, but got {self.fa_version}")
 
         env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", -1))
         if env_local_rank != -1 and env_local_rank != self.local_rank and paddle.distributed.get_world_size() > 1:
@@ -1683,7 +1703,7 @@ class TrainingArguments:
         self._post_init_load_checkpoint_format()
         if self.tensorwise_offload_optimizer and self.data_parallel_size > 1:
             raise NotImplementedError(
-                f"Optimizer offload is not supported under data parallel. Please use sharding by setting --sharding stage1 --sharding_parallel_size {self.sharding_parallel_size*self.data_parallel_size}."
+                f"Optimizer offload is not supported under data parallel. Please use sharding by setting --sharding stage1 --sharding_parallel_size {self.sharding_parallel_size * self.data_parallel_size}."
             )
 
         if self.to_static:
@@ -2516,6 +2536,8 @@ class TrainingArguments:
             logger.info(f"Auto set hybrid_parallel_expert_grad_scale = {self.hybrid_parallel_expert_grad_scale}")
         else:
             logger.info(f"Set hybrid_parallel_expert_grad_scale = {self.hybrid_parallel_expert_grad_scale}")
+        # print("self.sharding_parallel_size",self.sharding_parallel_size)
+        # raise
 
     def _post_init_parallel_degree(self):
         self.use_hybrid_parallel = False
@@ -2740,6 +2762,8 @@ class TrainingArguments:
         if hasattr(fleet.fleet, "_hcg"):
             hcg = fleet.fleet.get_hybrid_communicate_group()
         if hasattr(hcg, "get_context_parallel_world_size"):
+            print(f"<01> {hcg.get_sharding_parallel_world_size(with_context_parallel=True)}")
+            # raise
             return hcg.get_sharding_parallel_world_size(with_context_parallel=True)
         else:
             if self.context_parallel_size < 0:
@@ -2778,22 +2802,39 @@ class TrainingArguments:
         else:
             return paddle.distributed.get_rank()
 
-    @property
+    @property  # dev
     def dataset_world_size(self):
         if self.use_hybrid_parallel:
-            if self.context_parallel_size > 1:
+            if self.context_parallel_size > 1:  # context_parallel_size=2
                 assert self.use_hybrid_parallel, "context parallel only support with use_hybrid_parallel"
                 assert (
-                    self.data_parallel_size == 1
+                    self.data_parallel_size == 1  # data_parallel_size = 1
                 ), f"context parallel can not coexist with data parallel, but got self.data_parallel_size == {self.data_parallel_size}"
                 sharding_parallel_size = self.cp_sharding_degree
+                # print("<1>")<-
+                # raise
             else:
                 sharding_parallel_size = self.sharding_parallel_size
+                # print(f"<2> {sharding_parallel_size} , {self.data_parallel_size}")
+                # raise
             return max(sharding_parallel_size, 1) * max(self.data_parallel_size, 1)
         elif self.enable_auto_parallel:
+            # print(f"<3>{(self.sharding_parallel_size) }, { (self.data_parallel_size)}")
+            # raise
             return max(self.sharding_parallel_size, 1) * max(self.data_parallel_size, 1)
         else:
+            # print("<4>")
+            # raise
             return paddle.distributed.get_world_size()
+
+    # @property # v0.4
+    # def dataset_world_size(self):
+    #     if self.use_hybrid_parallel:
+    #         return max(self.sharding_parallel_size, 1) * max(self.data_parallel_size, 1)
+    #     elif self.enable_auto_parallel:
+    #         return max(self.sharding_parallel_size, 1) * max(self.data_parallel_size, 1)
+    #     else:
+    #         return paddle.distributed.get_world_size()
 
     @property
     def sharding_parallel_rank(self):

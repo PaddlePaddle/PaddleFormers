@@ -27,7 +27,7 @@ _ALL_MODULES = ["vision", "aligner", "llm"]
 class MLLMModelMapping:
     qwen2_5_vl = "qwen2_5_vl"
     qwen3_vl = "qwen3_vl"
-
+    paddleocr_vl = "paddleocr_vl"
     ernie4_5_moe_vl = "ernie4_5_moe_vl"
 
 
@@ -197,6 +197,15 @@ register_multimodel_keys(
         aligner=["model.visual.merger", "model.visual.deepstack_merger_list"],
         llm=["model.language_model", "lm_head"],
         vision="model.visual",
+    )
+)
+
+register_multimodel_keys(
+    MultiModelKeys(
+        model_dtype=MLLMModelMapping.paddleocr_vl,
+        aligner=["mlp_AR"],
+        llm=["model", "lm_head"],
+        vision="visual",
     )
 )
 

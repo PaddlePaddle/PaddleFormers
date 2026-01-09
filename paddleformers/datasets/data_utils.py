@@ -31,24 +31,6 @@ def round_up_to_multiple_of_8(n):
     return (n + 7) & ~7
 
 
-def fix_start_with_zero(lst):
-    if not lst:
-        return lst
-
-    try:
-        first_zero = lst.index(0)
-    except ValueError:
-        # zero is not existing in lst
-        return list(range(len(lst)))
-
-    if lst[0] == 0:
-        return lst
-
-    first_segment_len = first_zero
-    new_first_segment = list(range(first_segment_len))
-    return new_first_segment + lst[first_zero:]
-
-
 def print_debug_info(tokenizer, data, label):
     """Helper function to print tokenized data debug info"""
     try:
@@ -215,14 +197,6 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
     """
     train_dataset.estimate = True
     logger.info("Start to estimate max training steps...")
-
-    train_dataset_path_list = [path for path in str(data_args.train_dataset_path).replace(" ", "").split(",")]
-    if len(train_dataset_path_list) > 1:
-        logger.warning("Suggest to use max_steps instead of num_train_epochs for multi source dataset.")
-        logger.info(
-            "Multi source dataset detected, number of samples will be estimated by following rule. "
-            "num_samples = (source1_num_samples * prob1 + source2_num_samples * prob2 + ...) * epochs"
-        )
 
     max_samples = train_dataset.max_estimate_samples
 
