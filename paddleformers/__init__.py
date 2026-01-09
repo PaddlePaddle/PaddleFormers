@@ -41,29 +41,23 @@ else:
 # the next line will be replaced by setup.py for release version.
 # [VERSION_INFO]
 
+import os
+
 from paddleformers.utils.log import logger
 
-try:
-    import torch
-
-    logger.warning(
-        """Due to potential compatibility issues between 'PaddlePaddle' and 'PyTorch' in 'PaddleFormers', 'PyTorch' is disabled by default in 'PaddleFormers'. If you need to use the 'PyTorch' or 'Transformers' library, please add "del sys.modules['torch']" before using them."""
-    )
-except:
+PADDLEFORMERS_TESTING = os.environ.get("PADDLEFORMERS_TESTING", False)
+if "torch" not in sys.modules and not PADDLEFORMERS_TESTING:
     sys.modules["torch"] = None
+    sys.modules["torchvision"] = None
+    import transformers  # qa
 
+    del sys.modules["torch"]
+else:
+    import transformers  # qa
 
-try:
-    import torchvision
-
-    logger.warning(
-        """Due to potential compatibility issues between 'PaddlePaddle' and 'PyTorch' in 'PaddleFormers', 'torchvision' is disabled by default in 'PaddleFormers'. If you need to use the 'torchvision' library, please add "del sys.modules['torchvision']" before using them."""
-    )
-except:
-    pass
-sys.modules["torch_save"] = sys.modules["torch"]
-sys.modules["torch"] = None
-sys.modules["torchvision"] = None
+logger.warning(
+    """Due to potential compatibility issues between PaddlePaddle and PyTorch in PaddleFormers, PaddleFormers defaults `transformers.utils.import_utils.is_torch_available` and `transformers.utils.import_utils.is_torchvision_available` to False. If you need to use PyTorch in transformers or torchvision, please add `del sys.modules['transformers']` before using them."""
+)
 
 if "datasets" in sys.modules.keys():
 
@@ -95,10 +89,11 @@ import_structure = {module: [] for module in modules}
 import_structure["transformers.tokenizer_utils"] = ["PreTrainedTokenizer"]
 
 if TYPE_CHECKING:
+    from . import datasets  # noqa
+    from . import transformers  # noqa
     from . import (
         cli,
         data,
-        datasets,
         generation,
         mergekit,
         nn,
@@ -106,7 +101,6 @@ if TYPE_CHECKING:
         peft,
         quantization,
         trainer,
-        transformers,
         trl,
         utils,
         version,
