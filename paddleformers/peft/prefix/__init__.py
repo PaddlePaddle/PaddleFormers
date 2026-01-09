@@ -12,24 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-import sys
-from typing import TYPE_CHECKING
-
-from ..utils.lazy_import import _LazyModule
-
-import_structure = {
-    "lora": ["LoRAAutoConfig", "LoRAAutoModel", "LoRAConfig", "LoRAModel"],
-    "prefix": ["PrefixConfig", "PrefixModelForCausalLM"],
-}
-
-if TYPE_CHECKING:
-    from .lora import LoRAAutoConfig, LoRAAutoModel, LoRAConfig, LoRAModel
-    from .prefix import PrefixConfig, PrefixModelForCausalLM
-else:
-    sys.modules[__name__] = _LazyModule(
-        __name__,
-        globals()["__file__"],
-        import_structure,
-        module_spec=__spec__,
-    )
+from .prefix_config import PrefixConfig
+from .prefix_model import PrefixModelForCausalLM
+from .utils import (
+    bloom_postprocess_past_key_value,
+    chatglm_postprocess_past_key_value,
+    llama_postprocess_past_key_value,
+    mistral_postprocess_past_key_value,
+    qwen_postprocess_past_key_value,
+)

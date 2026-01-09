@@ -336,7 +336,11 @@ def set_random_seed(
                 seed = seed + (10 * paddlefleet.parallel_state.get_data_parallel_rank())
             random.seed(seed)
             np.random.seed(seed)
-            paddle.manual_seed(seed)
+            try:
+                paddle.manual_seed(seed)
+            except:
+                paddle.seed(seed)
+
             if paddle.cuda.device_count() > 0:
                 paddlefleet.tensor_parallel.model_parallel_cuda_manual_seed(
                     seed, te_rng_tracker, inference_rng_tracker, use_cudagraphable_rng
@@ -345,7 +349,10 @@ def set_random_seed(
             # Fallback for when paddlefleet is not available
             random.seed(seed_)
             np.random.seed(seed_)
-            paddle.manual_seed(seed_)
+            try:
+                paddle.manual_seed(seed_)
+            except:
+                paddle.seed(seed_)
     else:
         raise ValueError("Seed ({}) should be a positive integer.".format(seed_))
 
