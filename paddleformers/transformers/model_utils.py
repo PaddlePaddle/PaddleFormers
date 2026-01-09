@@ -3168,7 +3168,12 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             if is_main_process:
                 if config_to_save.tensor_model_parallel_size > 1:
                     config_to_save.tensor_model_parallel_size = 1
-                config_to_save.save_pretrained(save_directory)
+                if config_to_save.get("model_type", "").startswith(
+                    "ernie4_5"
+                ):  # hacking for FastDeploy to deploy ernie 4.5 series model
+                    config_to_save.save_pretrained(save_directory, save_to_hf=True)
+                else:
+                    config_to_save.save_pretrained(save_directory)
                 if self.can_generate():
                     model_to_save.generation_config.save_pretrained(save_directory)
             return
