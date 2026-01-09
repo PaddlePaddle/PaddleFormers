@@ -1501,48 +1501,23 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
         optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), param_list)
         return
 
-    elif isinstance(inner_opt, DygraphShardingOptimizerV2):
+    elif DygraphShardingOptimizerV2 is not None and isinstance(inner_opt, DygraphShardingOptimizerV2):
+        parameter_list = []
+        for buffer in optimizer._comm_buffer_list:
+            for param_name, grad_view in buffer._sharding_param_grad_view.items():
+                struct_name = static_to_struct_mapping[param_name]
+                if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+                    continue
+                param_buffer = grad_view._param_buffer
+                param_begin = grad_view._param_begin
+                param_end = grad_view._param_end
+                if param_begin >= 0 and param_end > 0 and param_end > param_begin:
+                    slice_param = paddle.slice(param_buffer, axes=[0], starts=[param_begin], ends=[param_end])
+                    assert slice_param.numel().item() > 0
+                    slice_param.name = param_name
+                    parameter_list.append(slice_param)
 
-        def init_param_optimizer_states(param_iter):
-            master_weights = {}
-            state_dict = {}
-            moments = ("moment1_0", "moment2_0")
-            betas = ("beta1_pow_acc_0", "beta2_pow_acc_0")
-            for static_name, shape, no_need_master_weights in param_iter:
-                if not no_need_master_weights:
-                    master_weights[static_name] = paddle.zeros(shape, dtype="float32")
-                    prefix = f"{static_name}_fp32_master_0_"
-                else:
-                    prefix = f"{static_name}_"
-
-                for moment in moments:
-                    key = f"{prefix}{moment}"
-                    state_dict[key] = paddle.zeros(shape, dtype="float32")
-                for beta in betas:
-                    key = f"{prefix}{beta}"
-                    state_dict[key] = paddle.zeros((1,), dtype="float32")
-            return master_weights, state_dict
-
-        def buffer_params():
-            for buffer in optimizer._comm_buffer_list:
-                for param_name, grad_view in buffer._sharding_param_grad_view.items():
-                    struct_name = static_to_struct_mapping[param_name]
-                    if not any(
-                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
-                    ):
-                        continue
-                    param_begin = grad_view._param_begin
-                    param_end = grad_view._param_end
-                    shape = (param_end - param_begin,)
-                    no_need_master_weights = grad_view._param.dtype == paddle.float32
-
-                    if shape[0] > 0:
-                        yield param_name, shape, no_need_master_weights
-
-        master_weights, state_dict = init_param_optimizer_states(buffer_params())
-        state_dict["master_weights"] = master_weights
-        state_dict["LR_Scheduler"] = {"last_epoch": 1, "last_lr": 5e-06}
-        optimizer.set_state_dict(state_dict)
+        optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), parameter_list)
         return
 
     elif isinstance(optimizer, GroupShardedOptimizerStage2):
