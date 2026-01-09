@@ -513,7 +513,11 @@ register_template(
             "<|im_start|>system\n<system_setting>\n{{content}}\n</system_setting>\n\n<global_setting>\nthink_mode=True\n</global_setting><|im_end|>\n\n"
         ]
     ),
-    format_observation=StringFormatter(slots=["<|im_start|>tool\n{{content}}<|im_end|>\n\n<|im_start|>assistant\n"]),
+    format_function=FunctionFormatter(slots=["\n{{content}}"], tool_format="ernie"),
+    format_observation=StringFormatter(
+        slots=["<|im_start|>user\n<tool_response>\n{{content}}\n</tool_response><|im_end|>\n\n<|im_start|>assistant\n"]
+    ),
+    format_tools=ToolFormatter(tool_format="ernie"),
     default_system="<global_setting>\nthink_mode=True\n</global_setting>",
     chat_sep="<|im_end|>\n\n",
     suffix=["<|im_end|>"],
