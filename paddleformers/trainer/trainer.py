@@ -230,7 +230,13 @@ DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
 
 if is_datasets_available():
-    import datasets
+    if "torch" not in sys.modules:
+        sys.modules["torch"] = None
+        import datasets
+
+        del sys.modules["torch"]
+    else:
+        import datasets
 
 from paddle.distributed import in_auto_parallel_align_mode
 from paddle.distributed.fleet.utils import mix_precision_utils

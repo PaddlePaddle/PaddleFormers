@@ -292,6 +292,13 @@ def require_package(*package_names):
         for package_name in package_names:
             if not is_package_available(package_name):
                 return unittest.skip(f"package<{package_name}> not found, so to skip this test")(func)
+            if package_name == "transformers":
+                for m in list(sys.modules):
+                    (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
+                import transformers.utils.import_utils as import_utils_hf
+
+                if hasattr(import_utils_hf, "_torchcodec_available"):
+                    import_utils_hf._torchcodec_available = False
         return func
 
     return decorator

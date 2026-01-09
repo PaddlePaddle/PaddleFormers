@@ -14,7 +14,7 @@
 # limitations under the License.
 from __future__ import annotations
 
-import sys
+# import sys
 import tempfile
 import unittest
 
@@ -407,6 +407,8 @@ class Qwen3CompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
+        # for m in list(sys.modules):
+        #     (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
         from transformers import Qwen3Config, Qwen3ForCausalLM
 
         # when python application is done, `TemporaryDirectory` will be free
@@ -419,6 +421,8 @@ class Qwen3CompatibilityTest(unittest.TestCase):
 
     @require_package("transformers", "torch")
     def test_Qwen3_converter(self):
+        # for m in list(sys.modules):
+        #     (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
         # 1. create common input
         input_ids = np.random.randint(100, 200, [1, 20])
 
@@ -430,14 +434,14 @@ class Qwen3CompatibilityTest(unittest.TestCase):
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         # 3. forward the torch  model
-        try:
-            sys.modules["torch"] = sys.modules["torch_save"]
-        except:
-            pass
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
+        # try:
+        #     sys.modules["torch"] = sys.modules["torch_save"]
+        # except:
+        #     pass
+        # try:
+        #     del sys.modules["transformers"]
+        # except:
+        #     pass
         import torch
         from transformers import Qwen3Model
 
@@ -453,28 +457,30 @@ class Qwen3CompatibilityTest(unittest.TestCase):
                 rtol=1e-2,
             )
         )
-        sys.modules["torch"] = None
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
+        # sys.modules["torch"] = None
+        # try:
+        #     del sys.modules["transformers"]
+        # except:
+        #     pass
 
     @require_package("transformers", "torch")
     def test_Qwen3_converter_from_local_dir(self):
+        # for m in list(sys.modules):
+        #     (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
         with tempfile.TemporaryDirectory() as tempdir:
 
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch  model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            # try:
+            #     sys.modules["torch"] = sys.modules["torch_save"]
+            # except:
+            #     pass
+            # try:
+            #     del sys.modules["transformers"]
+            # except:
+            #     pass
             import torch
             from transformers import Qwen3ForCausalLM
 
@@ -500,11 +506,11 @@ class Qwen3CompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            # sys.modules["torch"] = None
+            # try:
+            #     del sys.modules["transformers"]
+            # except:
+            #     pass
 
             # 3. fuse qkv/ffn with fc
             model_config = Qwen3Config.from_pretrained(tempdir)
@@ -532,6 +538,8 @@ class Qwen3CompatibilityTest(unittest.TestCase):
     @parameterized.expand([("Qwen3Model",), ("Qwen3ForCausalLM",)])
     @require_package("transformers", "torch")
     def test_Qwen3_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
+        # for m in list(sys.modules):
+        #     (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
         pytorch_class_name = pytorch_class_name or class_name
         with tempfile.TemporaryDirectory() as tempdir:
 
@@ -539,14 +547,14 @@ class Qwen3CompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            # try:
+            #     sys.modules["torch"] = sys.modules["torch_save"]
+            # except:
+            #     pass
+            # try:
+            #     del sys.modules["transformers"]
+            # except:
+            #     pass
             import torch
             import transformers
 
@@ -577,8 +585,8 @@ class Qwen3CompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            # sys.modules["torch"] = None
+            # try:
+            #     del sys.modules["transformers"]
+            # except:
+            #     pass
