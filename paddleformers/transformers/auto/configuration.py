@@ -75,7 +75,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3", "Qwen3"),
         ("qwen3_moe", "Qwen3Moe"),
         ("qwen3_next", "Qwen3Next"),
-        ("qwen3_vl", "Qwen3VL"),
+        ("qwen3_vl", "Qwen3VLModelPipe"),
         ("qwen3_vl_text", "Qwen3VL"),
         ("qwen3_vl_moe", "Qwen3VLMoe"),
         ("qwen3_vl_moe_text", "Qwen3VLMoeText"),

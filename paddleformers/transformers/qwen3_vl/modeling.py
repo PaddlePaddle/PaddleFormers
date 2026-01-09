@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Optional, Tuple, Union
 
 import paddle
 import paddle.nn.functional as F
@@ -48,6 +48,35 @@ from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS
 from ..utils import logger
 from .configuration import Qwen3VLConfig, Qwen3VLTextConfig, Qwen3VLVisionConfig
+
+if TYPE_CHECKING:
+    from .modeling_fleet import (
+        Qwen3VLForCausalLMPipe,
+        Qwen3VLForConditionalGenerationFleet,
+        Qwen3VLModelFleet,
+        Qwen3VLModelPipe,
+    )
+
+
+def __getattr__(name):
+    if name == "Qwen3VLModelFleet":
+        from .modeling_fleet import Qwen3VLModelFleet
+
+        return Qwen3VLModelFleet
+    elif name == "Qwen3VLForConditionalGenerationFleet":
+        from .modeling_fleet import Qwen3VLForConditionalGenerationFleet
+
+        return Qwen3VLForConditionalGenerationFleet
+    elif name == "Qwen3VLForCausalLMPipe":
+        from .modeling_fleet import Qwen3VLForCausalLMPipe
+
+        return Qwen3VLForCausalLMPipe
+    elif name == "Qwen3VLModelPipe":
+        from .modeling_fleet import Qwen3VLModelPipe
+
+        return Qwen3VLModelPipe
+
+    raise AttributeError(f"module {__name__} has no attribute {name}")
 
 
 class Qwen3VLVisionMLP(nn.Layer):
@@ -189,8 +218,9 @@ class Qwen3VLVisionAttention(nn.Layer):
         **kwargs,
     ) -> paddle.Tensor:
         seq_length = hidden_states.shape[0]
-        query_states, key_states, value_states = (
-            self.qkv(hidden_states).reshape(seq_length, 3, self.num_heads, -1).permute(1, 0, 2, 3).unbind(0)
+        qkv_output = self.qkv(hidden_states).reshape(seq_length, self.num_heads, -1)
+        query_states, key_states, value_states = paddle.split(
+            qkv_output, [self.head_dim, self.head_dim, self.head_dim], axis=2
         )
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb_vision(query_states, key_states, cos, sin)
@@ -751,6 +781,7 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
         )
         cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
         deepstack_feature_lists = []
+
         for layer_num, blk in enumerate(self.blocks):
             cu_seqlens_now = cu_seqlens
 
@@ -780,7 +811,6 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
                 deepstack_feature_lists.append(deepstack_feature)
 
         hidden_states = self.merger(hidden_states)
-
         return hidden_states, deepstack_feature_lists
 
 
@@ -874,21 +904,27 @@ class Qwen3VLTextRotaryEmbedding(nn.Layer):
         return freqs_t
 
     def forward(self, x, position_ids):
+        # NOTE: Paddle's Automatic Mixed Precision (AMP) has a default op whitelist that may automatically cast
+        # certain operations (like matmul) to FP16/BF16 for performance optimization. However, in scenarios where
+        # numerical stability is critical (e.g., RoPE init/compute), this conversion can lead to precision loss.
+        # Disabling auto_cast here ensures the matmul operation runs in the original precision (FP32) as intended.
         with paddle.amp.auto_cast(False):
-            inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand([3, position_ids.shape[1], -1, 1])
+            inv_freq_expanded = (
+                self.inv_freq.unsqueeze(0)
+                .unsqueeze(-1)
+                .cast(paddle.float32)
+                .expand([3, position_ids.shape[1], -1, 1])
+                .to(x.place)
+            )
+            position_ids_expanded = position_ids.unsqueeze(2).cast(paddle.float32)
 
-            position_ids_expanded = position_ids[:, :, None, :].float()
-
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(2, 3)
-
+            freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 1, 3, 2])
             freqs = self.apply_interleaved_mrope(freqs, self.mrope_section)
+            emb = paddle.cat((freqs, freqs), axis=-1)
+            cos = paddle.cos(emb) * self.attention_scaling
+            sin = paddle.sin(emb) * self.attention_scaling
 
-            emb = paddle.concat((freqs, freqs), axis=-1)
-
-            cos = emb.cos() * self.attention_scaling
-            sin = emb.sin() * self.attention_scaling
-
-        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+        return cos.cast(dtype=x.dtype), sin.cast(dtype=x.dtype)
 
 
 class Qwen3VLTextMLP(MLP):
@@ -941,7 +977,7 @@ class Qwen3VLTextAttention(nn.Layer):
 
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
-        self.head_dim = config.head_dim
+        self.head_dim = config.head_dim  # self.hidden_size // self.num_heads
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.is_causal = True
@@ -961,6 +997,12 @@ class Qwen3VLTextAttention(nn.Layer):
             norm_eps=config.rms_norm_eps,
             has_bias=False,
         )
+
+        # if (self.head_dim * self.num_heads) != self.hidden_size:
+        #     raise ValueError(
+        #         f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
+        #         f" and `num_heads`: {self.num_heads})."
+        #     )
 
         self.sequence_parallel = config.sequence_parallel
         self.fuse_attention_qkv = config.fuse_attention_qkv
@@ -2228,4 +2270,13 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModel):
         return input_ids, model_kwargs
 
 
-__all__ = ["Qwen3VLForConditionalGeneration", "Qwen3VLModel", "Qwen3VLPretrainedModel", "Qwen3VLTextModel"]
+__all__ = [
+    "Qwen3VLForConditionalGeneration",
+    "Qwen3VLModel",
+    "Qwen3VLModelPipe",
+    "Qwen3VLForCausalLMPipe",
+    "Qwen3VLPretrainedModel",
+    "Qwen3VLTextModel",
+    "Qwen3VLModelFleet",
+    "Qwen3VLForConditionalGenerationFleet",
+]
