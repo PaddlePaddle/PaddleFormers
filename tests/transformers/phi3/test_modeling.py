@@ -472,15 +472,22 @@ class Phi3CompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
+        import transformers
+
+        transformers.utils.import_utils.is_torch_available = lambda: True
         from transformers import Phi3Config, Phi3ForCausalLM
 
         cls.torch_model_path = tempfile.TemporaryDirectory().name
         config = Phi3Config(hidden_size=16, num_hidden_layers=8, num_attention_heads=8)
         model = Phi3ForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
+        transformers.utils.import_utils.is_torch_available = lambda: False
 
     @require_package("transformers", "torch")
     def test_Phi3_converter(self):
+        import transformers
+
+        transformers.utils.import_utils.is_torch_available = lambda: True
         input_ids = np.random.randint(100, 200, [1, 20])
 
         from paddleformers.transformers import Phi3Model
@@ -503,10 +510,14 @@ class Phi3CompatibilityTest(unittest.TestCase):
                 rtol=1e2,
             )
         )
+        transformers.utils.import_utils.is_torch_available = lambda: False
 
     @require_package("transformers", "torch")
     def test_Phi3_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
+            import transformers
+
+            transformers.utils.import_utils.is_torch_available = lambda: True
             input_ids = np.random.randint(100, 200, [1, 20])
 
             import torch
@@ -530,6 +541,7 @@ class Phi3CompatibilityTest(unittest.TestCase):
                     rtol=1e2,
                 )
             )
+            transformers.utils.import_utils.is_torch_available = lambda: False
 
     @parameterized.expand([("Phi3Model",), ("Phi3ForCausalLM",)])
     @require_package("transformers", "torch")
@@ -540,6 +552,8 @@ class Phi3CompatibilityTest(unittest.TestCase):
 
             import torch
             import transformers
+
+            transformers.utils.import_utils.is_torch_available = lambda: True
 
             torch_model_class = getattr(transformers, pytorch_class_name)
             torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
@@ -566,6 +580,7 @@ class Phi3CompatibilityTest(unittest.TestCase):
                     atol=1e2,
                 )
             )
+            transformers.utils.import_utils.is_torch_available = lambda: False
 
 
 if __name__ == "__main__":

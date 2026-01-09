@@ -431,6 +431,16 @@ class GptOssCompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
+        try:
+            for m in sys.modules.keys():
+                if m.startswith("transformers"):
+                    del sys.modules[m]
+            # del sys.modules["transformers"]
+        except:
+            pass
+        import transformers
+
+        transformers.utils.import_utils.is_torch_available = lambda: True
         from transformers import GptOssConfig, GptOssForCausalLM
 
         # when python application is done, `TemporaryDirectory` will be free
@@ -438,9 +448,13 @@ class GptOssCompatibilityTest(unittest.TestCase):
         config = GptOssConfig(hidden_size=16, num_hidden_layers=8, num_attention_heads=8)
         model = GptOssForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
+        transformers.utils.import_utils.is_torch_available = lambda: False
 
     @require_package("transformers", "torch")
     def test_GptOss_converter(self):
+        import transformers
+
+        transformers.utils.import_utils.is_torch_available = lambda: True
         # 1. create common input
         input_ids = np.random.randint(100, 200, [1, 20])
 
@@ -452,14 +466,6 @@ class GptOssCompatibilityTest(unittest.TestCase):
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         # 3. forward the torch  model
-        try:
-            sys.modules["torch"] = sys.modules["torch_save"]
-        except:
-            pass
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
         import torch
         from transformers import GptOssModel
 
@@ -474,28 +480,19 @@ class GptOssCompatibilityTest(unittest.TestCase):
                 rtol=1e2,
             )
         )
-        sys.modules["torch"] = None
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
+        transformers.utils.import_utils.is_torch_available = lambda: False
 
     @require_package("transformers", "torch")
     def test_GptOss_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
+            import transformers
+
+            transformers.utils.import_utils.is_torch_available = lambda: True
 
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch  model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
             import torch
             from transformers import GptOssModel
 
@@ -518,11 +515,7 @@ class GptOssCompatibilityTest(unittest.TestCase):
                     rtol=1e2,
                 )
             )
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            transformers.utils.import_utils.is_torch_available = lambda: False
 
     @parameterized.expand([("GptOssModel",), ("GptOssForCausalLM",)])
     @require_package("transformers", "torch")
@@ -534,16 +527,10 @@ class GptOssCompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
             import torch
             import transformers
+
+            transformers.utils.import_utils.is_torch_available = lambda: True
 
             torch_model_class = getattr(transformers, pytorch_class_name)
             torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
@@ -571,11 +558,7 @@ class GptOssCompatibilityTest(unittest.TestCase):
                     atol=1e2,
                 )
             )
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            transformers.utils.import_utils.is_torch_available = lambda: False
 
 
 if __name__ == "__main__":

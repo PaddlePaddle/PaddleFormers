@@ -122,7 +122,11 @@ class TestMergeModel(unittest.TestCase):
 
     @require_package("transformers", "torch")
     def test_fuse_qkv_lora_merge_torch(self):
+
         with TemporaryDirectory() as tempdir:
+            import transformers
+
+            transformers.utils.import_utils.is_torch_available = lambda: True
             # create torch model
             from transformers import Qwen3Config, Qwen3ForCausalLM
 
@@ -178,3 +182,4 @@ class TestMergeModel(unittest.TestCase):
             )
             mergekit = MergeModel(merge_config)
             mergekit.merge_model()
+            transformers.utils.import_utils.is_torch_available = lambda: False

@@ -833,6 +833,9 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
+        import transformers
+
+        transformers.utils.import_utils.is_torch_available = lambda: True
         from transformers import Qwen3VLConfig, Qwen3VLForConditionalGeneration
 
         # when python application is done, `TemporaryDirectory` will be free
@@ -901,6 +904,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
         }
         model = Qwen3VLForConditionalGeneration(config)
         model.save_pretrained(cls.torch_model_path)
+        transformers.utils.import_utils.is_torch_available = lambda: False
 
     @require_package("transformers", "torch")
     def test_Qwen3VL_converter(self):
@@ -915,6 +919,9 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
         paddle_logit = paddle_model(**paddle_inputs)["logits"]
 
         # 2. forward the torch  model
+        import transformers
+
+        transformers.utils.import_utils.is_torch_available = lambda: True
         import torch
         from transformers import Qwen3VLForConditionalGeneration
 
@@ -933,10 +940,14 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
                 rtol=1e-2,
             )
         )
+        transformers.utils.import_utils.is_torch_available = lambda: False
 
     @require_package("transformers", "torch")
     def test_Qwen3VL_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
+            import transformers
+
+            transformers.utils.import_utils.is_torch_available = lambda: True
 
             # 1. forward the torch  model
             import torch
@@ -969,6 +980,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
+            transformers.utils.import_utils.is_torch_available = lambda: True
 
     @parameterized.expand([("Qwen3VLForConditionalGeneration")])
     @require_package("transformers", "torch")
@@ -979,6 +991,8 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
             # 1. forward the torch model
             import torch
             import transformers
+
+            transformers.utils.import_utils.is_torch_available = lambda: True
 
             torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
             torch_model_class = getattr(transformers, pytorch_class_name)
@@ -1026,3 +1040,4 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
+            transformers.utils.import_utils.is_torch_available = lambda: False

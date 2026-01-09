@@ -14,7 +14,6 @@
 # limitations under the License.
 from __future__ import annotations
 
-import sys
 import tempfile
 import unittest
 
@@ -464,6 +463,9 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
+        import transformers
+
+        transformers.utils.import_utils.is_torch_available = lambda: True
         from transformers import Glm4MoeConfig, Glm4MoeForCausalLM
 
         # when python application is done, `TemporaryDirectory` will be free
@@ -471,9 +473,13 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
         config = Glm4MoeConfig(hidden_size=16, num_hidden_layers=8, num_attention_heads=8)
         model = Glm4MoeForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
+        transformers.utils.import_utils.is_torch_available = lambda: False
 
     @require_package("transformers", "torch")
     def test_Glm4Moe_converter(self):
+        import transformers
+
+        transformers.utils.import_utils.is_torch_available = lambda: True
         # 1. create common input
         input_ids = np.random.randint(100, 200, [1, 20])
 
@@ -484,15 +490,6 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
-        # 3. forward the torch  model
-        try:
-            sys.modules["torch"] = sys.modules["torch_save"]
-        except:
-            pass
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
         import torch
         from transformers import Glm4MoeModel
 
@@ -507,28 +504,19 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
                 rtol=1e2,
             )
         )
-        sys.modules["torch"] = None
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
+        transformers.utils.import_utils.is_torch_available = lambda: False
 
     @require_package("transformers", "torch")
     def test_Glm4Moe_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
+            import transformers
+
+            transformers.utils.import_utils.is_torch_available = lambda: True
 
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch  model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
             import torch
             from transformers import Glm4MoeModel
 
@@ -551,12 +539,7 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
                     rtol=1e2,
                 )
             )
-
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            transformers.utils.import_utils.is_torch_available = lambda: False
 
     @parameterized.expand([("Glm4MoeModel",), ("Glm4MoeForCausalLM",)])
     @require_package("transformers", "torch")
@@ -568,16 +551,10 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
             import torch
             import transformers
+
+            transformers.utils.import_utils.is_torch_available = lambda: True
 
             torch_model_class = getattr(transformers, pytorch_class_name)
             torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
@@ -605,11 +582,7 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
                     atol=1e2,
                 )
             )
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            transformers.utils.import_utils.is_torch_available = lambda: False
 
 
 if __name__ == "__main__":

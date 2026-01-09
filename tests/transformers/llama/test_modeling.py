@@ -505,6 +505,9 @@ class LlamaCompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
+        import transformers
+
+        transformers.utils.import_utils.is_torch_available = lambda: True
         from transformers import LlamaConfig, LlamaForCausalLM
 
         # when python application is done, `TemporaryDirectory` will be free
@@ -512,9 +515,13 @@ class LlamaCompatibilityTest(unittest.TestCase):
         config = LlamaConfig(hidden_size=16, num_hidden_layers=1, num_attention_heads=2)
         model = LlamaForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
+        transformers.utils.import_utils.is_torch_available = lambda: False
 
     @require_package("transformers", "torch")
     def test_llama_converter(self):
+        import transformers
+
+        transformers.utils.import_utils.is_torch_available = lambda: True
         # 1. create common input
         input_ids = np.random.randint(100, 200, [1, 20])
 
@@ -540,10 +547,14 @@ class LlamaCompatibilityTest(unittest.TestCase):
                 rtol=1e-2,
             )
         )
+        transformers.utils.import_utils.is_torch_available = lambda: False
 
     @require_package("transformers", "torch")
     def test_llama_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
+            import transformers
+
+            transformers.utils.import_utils.is_torch_available = lambda: True
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
@@ -570,6 +581,7 @@ class LlamaCompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
+            transformers.utils.import_utils.is_torch_available = lambda: False
 
     @parameterized.expand([("LlamaModel",), ("LlamaForCausalLM",)])
     @require_package("transformers", "torch")
@@ -582,6 +594,8 @@ class LlamaCompatibilityTest(unittest.TestCase):
             # 2. forward the torch model
             import torch
             import transformers
+
+            transformers.utils.import_utils.is_torch_available = lambda: True
 
             torch_model_class = getattr(transformers, pytorch_class_name)
             torch_model = torch_model_class.from_pretrained(self.torch_model_path)
@@ -606,6 +620,7 @@ class LlamaCompatibilityTest(unittest.TestCase):
                     atol=1e-3,
                 )
             )
+            transformers.utils.import_utils.is_torch_available = lambda: False
 
 
 if __name__ == "__main__":
