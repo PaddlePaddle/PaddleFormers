@@ -8,6 +8,8 @@ eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: false
 mix_strategy: concat
+template_backend: custom
+template: qwen3
 
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B-Base

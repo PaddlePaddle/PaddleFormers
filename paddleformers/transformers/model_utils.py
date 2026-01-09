@@ -1150,11 +1150,11 @@ def clean_unrelated_safetensors(save_dir):
     to_delete = []
     for filename in os.listdir(save_dir):
         filepath = os.path.join(save_dir, filename)
-        if filename.endswith(".safetensors") and filename != "model.safetensors" and os.path.isfile(filepath):
+        if filename.endswith(".safetensors") and filename != SAFE_WEIGHTS_NAME and os.path.isfile(filepath):
             to_delete.append(filepath)
-        elif filename == "model.safetensors.index.json" and os.path.isfile(filepath):
+        elif filename == SAFE_WEIGHTS_INDEX_NAME and os.path.isfile(filepath):
             to_delete.append(filepath)
-        elif filename == "peft_model.safetensors.index.json" and os.path.isfile(filepath):
+        elif filename == SAFE_PEFT_WEIGHTS_INDEX_NAME and os.path.isfile(filepath):
             to_delete.append(filepath)
 
     if to_delete:
@@ -2142,7 +2142,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     raise EnvironmentError(
                         f"Error no files {filenames} found in repo {pretrained_model_name_or_path}."
                     )
-                elif "pytorch_model.bin" in str(resolved_archive_file):
+                elif PYTORCH_WEIGHTS_NAME in str(resolved_archive_file):
 
                     if download_hub == DownloadSource.AISTUDIO and not convert_from_hf:
                         raise ValueError(
@@ -2914,9 +2914,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         if not is_sharded and state_dict is None:
             # 4. loading non-sharded ckpt from the state dict
-            if config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith("model_state.pdparams"):
+            if config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith(PADDLE_WEIGHTS_NAME):
                 state_dict = cls.convert_tensor_parallel(resolved_archive_file, config)
-            elif config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith("model.safetensors"):
+            elif config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith(SAFE_WEIGHTS_NAME):
                 with safe_open(resolved_archive_file, framework="np", device="cpu") as f:
                     loaded_keys = f.keys()
                 tp_actions = cls.get_tensor_parallel_convert_actions(config, loaded_keys)
@@ -3609,9 +3609,9 @@ def load_sharded_checkpoint_as_one(folder, variant=None, return_numpy=False):
 
     """
     # Load the index
-    pdparams_file = os.path.join(folder, _add_variant("model_state.pdparams", variant))
+    pdparams_file = os.path.join(folder, _add_variant(PADDLE_WEIGHTS_NAME, variant))
     lora_pdparams_file = os.path.join(folder, _add_variant("lora_model_state.pdparams", variant))
-    safetensors_file = os.path.join(folder, _add_variant("model.safetensors", variant))
+    safetensors_file = os.path.join(folder, _add_variant(SAFE_WEIGHTS_NAME, variant))
     if os.path.isfile(pdparams_file):
         return paddle.load(pdparams_file, return_numpy=return_numpy)
     if os.path.isfile(lora_pdparams_file):
@@ -3686,8 +3686,8 @@ def load_tp_checkpoint(folder, cls, config, return_numpy=False, convert_from_hf=
         return load_sharded_checkpoint_as_one(folder, return_numpy=return_numpy)
     else:
         rank_model_path = os.path.join(folder, f"model_state.tp0{config.tensor_parallel_rank}.pdparams")
-        model_path = os.path.join(folder, "model_state.pdparams")
-        safe_model_path = os.path.join(folder, "model.safetensors")
+        model_path = os.path.join(folder, PADDLE_WEIGHTS_NAME)
+        safe_model_path = os.path.join(folder, SAFE_WEIGHTS_NAME)
         if os.path.exists(rank_model_path):
             return paddle.load(rank_model_path, return_numpy=return_numpy)
         elif os.path.exists(model_path):
@@ -3840,7 +3840,7 @@ def save_full_param(
     return total_size
 
 
-def replace_name_and_gen_index(path, total_size):
+def replace_name_and_gen_index(path, total_size, save_peft=False):
     index_mapping = {}
     cur_rank = paddle.distributed.get_rank()
     safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".safetensors")]
@@ -3871,6 +3871,8 @@ def replace_name_and_gen_index(path, total_size):
             cur_file_index += 1
             file_path = os.path.join(path, file)
             new_file_name = f"model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
+            if save_peft:
+                new_file_name = f"peft_model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
             with safe_open(file_path, framework="np") as f:
                 for key in f.keys():
                     index_mapping[key] = new_file_name
@@ -3887,7 +3889,9 @@ def replace_name_and_gen_index(path, total_size):
         index_mapping.update(mapping)
 
     if env_local_rank == 0:
-        index_file_name = "model.safetensors.index.json"
+        index_file_name = SAFE_WEIGHTS_INDEX_NAME
+        if save_peft:
+            index_file_name = SAFE_PEFT_WEIGHTS_INDEX_NAME
         index_infos = {}
         index_infos["metadata"] = {}
         index_infos["metadata"]["total_size"] = total_size
@@ -3962,7 +3966,7 @@ class HFFormatFullParamSaver:
             local_world_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
             self.num_saver_ranks = min(local_world_size, self.num_saver_ranks)
 
-    def save_checkpoint(self, path, max_shard_size="16GB"):
+    def save_checkpoint(self, path, max_shard_size="16GB", save_peft=False):
         total_saved_size = save_full_param(
             itr=self.get_full_param_iter(),
             save_dir=path,
@@ -3981,7 +3985,7 @@ class HFFormatFullParamSaver:
         else:
             all_sizes.append(total_saved_size)
         total_size = sum(all_sizes)
-        replace_name_and_gen_index(path, total_size)
+        replace_name_and_gen_index(path, total_size, save_peft)
         return total_saved_size
 
 

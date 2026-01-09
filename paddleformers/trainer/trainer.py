@@ -1207,6 +1207,9 @@ class Trainer:
                 )
 
             self._load_scheduler(resume_from_checkpoint)
+            if self.args.tensorwise_offload_optimizer:
+                logger.info("Offloading optimizer state for FC...")
+                self._offload_optimizer()
 
         enable_bf16_opt = (
             not isinstance(self.model, LoRAModel) and self.args.enable_zero_cost_checkpoint and self.args.bf16
