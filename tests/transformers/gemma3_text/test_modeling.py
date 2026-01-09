@@ -600,7 +600,12 @@ class Gemma3TextCompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch model
+            import sys
+
             import torch
+
+            for m in list(sys.modules):
+                (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
             import transformers
 
             if pytorch_class_name == "Gemma3TextModel":

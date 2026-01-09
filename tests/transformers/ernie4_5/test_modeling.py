@@ -471,14 +471,14 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         # 3. forward the torch  model
-        try:
-            sys.modules["torch"] = sys.modules["torch_save"]
-        except:
-            pass
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
+        # try:
+        #     sys.modules["torch"] = sys.modules["torch_save"]
+        # except:
+        #     pass
+        # try:
+        #     del sys.modules["transformers"]
+        # except:
+        #     pass
         import torch
         from transformers import Ernie4_5Model
 
@@ -493,11 +493,11 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                 rtol=1e2,
             )
         )
-        sys.modules["torch"] = None
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
+        # sys.modules["torch"] = None
+        # try:
+        #     del sys.modules["transformers"]
+        # except:
+        #     pass
 
     @require_package("transformers", "torch")
     def test_ernie4_5_converter_from_local_dir(self):
@@ -507,14 +507,14 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch  model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            # try:
+            #     sys.modules["torch"] = sys.modules["torch_save"]
+            # except:
+            #     pass
+            # try:
+            #     del sys.modules["transformers"]
+            # except:
+            #     pass
             import torch
             from transformers import Ernie4_5Model
 
@@ -537,11 +537,11 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                     rtol=1e2,
                 )
             )
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            # sys.modules["torch"] = None
+            # try:
+            #     del sys.modules["transformers"]
+            # except:
+            #     pass
 
             # 3. forward with fc
             from paddleformers.transformers import Ernie4_5Config, Ernie4_5ForCausalLM
@@ -599,15 +599,18 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            # try:
+            #     sys.modules["torch"] = sys.modules["torch_save"]
+            # except:
+            #     pass
+            # try:
+            #     del sys.modules["transformers"]
+            # except:
+            #     pass
             import torch
+
+            for m in list(sys.modules):
+                (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
             import transformers
 
             torch_model_class = getattr(transformers, pytorch_class_name)
@@ -636,11 +639,11 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                     atol=1e2,
                 )
             )
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            # sys.modules["torch"] = None
+            # try:
+            #     del sys.modules["transformers"]
+            # except:
+            #     pass
 
 
 if __name__ == "__main__":

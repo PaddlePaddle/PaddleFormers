@@ -932,7 +932,12 @@ class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tempdir:
 
             # 1. forward the torch model
+            import sys
+
             import torch
+
+            for m in list(sys.modules):
+                (m == "transformers" or m.startswith("transformers.")) and sys.modules.pop(m, None)
             import transformers
 
             torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
