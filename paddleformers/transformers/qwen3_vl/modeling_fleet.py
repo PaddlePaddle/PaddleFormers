@@ -17,6 +17,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import types
 from collections.abc import Callable
 from contextlib import nullcontext
 from collections import OrderedDict
@@ -182,24 +183,24 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
             context = dict_args.get("context", None)
             context_mask = dict_args.get("context_mask", None)
             rotary_pos_emb = dict_args.get("rotary_pos_emb", None)
-            rotary_pos_cos = dict_args.get("rotary_pos_cos", None)
-            rotary_pos_sin = dict_args.get("rotary_pos_sin", None)
+            cos = dict_args.get("rotary_pos_cos", None)
+            sin = dict_args.get("rotary_pos_sin", None)
             attention_bias = dict_args.get("attention_bias", None)
             packed_seq_params = dict_args.get("packed_seq_params", None)
             deepstack_visual_emb = dict_args.get("deepstack_visual_emb", None)
             visual_pos_masks = dict_args.get("visual_pos_masks", None)
+            
+            assert (sin is None) == (cos is None)
 
-            rotary_pos_cos, rotary_pos_sin = None, None
-            if "rotary_pos_cos" in dict_args:
-                rotary_pos_cos = dict_args["rotary_pos_cos"].clone()
-                if rotary_pos_cos.ndim == 3 and self.config.apply_rope_fusion:
-                    # for the case [b, s, h]
-                    rotary_pos_cos = rotary_pos_cos.unsqueeze(-2)
-            if "rotary_pos_sin" in dict_args:
-                rotary_pos_sin = dict_args["rotary_pos_sin"].clone()
-                if rotary_pos_sin.ndim == 3 and self.config.apply_rope_fusion:
-                    # for the case [b, s, h]
-                    rotary_pos_sin = rotary_pos_sin.unsqueeze(-2)
+            if cos is not None and sin is not None:
+                rotary_pos_cos = cos.clone()
+                rotary_pos_sin = sin.clone()
+                if self.config.apply_rope_fusion:
+                    rotary_pos_cos = rotary_pos_cos[0, ...]
+                    rotary_pos_sin = rotary_pos_sin[0, ...]
+                    if rotary_pos_cos.ndim == 2:
+                        rotary_pos_cos = rotary_pos_cos.reshape([1, rotary_pos_cos.shape[0], 1, rotary_pos_cos.shape[1]])
+                        rotary_pos_sin = rotary_pos_sin.reshape([1, rotary_pos_sin.shape[0], 1, rotary_pos_sin.shape[1]])
 
             outputs = recompute(
                 self._forward_impl,
@@ -1675,7 +1676,7 @@ class Qwen3VLModelPipe(Qwen3VLPretrainedModelFleet, GeneralModelForCausalLMPipe)
         qwen3vl_model._gen_aoa_config = cls._gen_aoa_config
         qwen3vl_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         qwen3vl_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
-        qwen3vl_model.get_hardware_flops = cls.get_hardware_flops
+        qwen3vl_model.get_hardware_flops = types.MethodType(cls.get_hardware_flops, qwen3vl_model)
         qwen3vl_model.config_to_save = config
 
         return qwen3vl_model
