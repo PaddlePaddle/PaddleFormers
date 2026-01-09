@@ -27,7 +27,9 @@ jobs:
           fi
 
       - name: Request reviewers if needed
-        if: steps.diff.outputs.changed == 'true'
+        if: |
+          steps.diff.outputs.changed == 'true' &&
+          github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v7
         with:
           script: |
