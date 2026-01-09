@@ -433,6 +433,15 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
+        # Restore torch before importing transformers
+        try:
+            sys.modules["torch"] = sys.modules["torch_save"]
+        except:
+            pass
+        try:
+            del sys.modules["transformers"]
+        except:
+            pass
         from transformers import DeepseekV3Config, DeepseekV3ForCausalLM
 
         # when python application is done, `TemporaryDirectory` will be free
