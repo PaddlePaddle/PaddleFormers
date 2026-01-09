@@ -566,7 +566,11 @@ def create_peft_model(model_args, training_args, dtype, model):
             )
             model = LoRAModel(model, lora_config)
         else:
-            model = LoRAModel.from_pretrained(model=model, lora_path=model_args.lora_path)
+            model = LoRAModel.from_pretrained(
+                model=model,
+                lora_path=model_args.lora_path,
+                load_checkpoint_format=training_args.load_checkpoint_format,
+            )
         if hasattr(model, "_set_pipeline_name_mapping"):
             model._set_pipeline_name_mapping()
         model.print_trainable_parameters()
