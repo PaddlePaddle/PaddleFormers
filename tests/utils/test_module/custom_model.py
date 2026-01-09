@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-import sys
+import torch
 
 from paddleformers.transformers import PretrainedModel
 
@@ -25,14 +25,7 @@ class CustomModel(PretrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        try:
-            sys.modules["torch"] = sys.modules["torch_save"]
-        except:
-            pass
-        import torch
-
         self.linear = torch.nn.Linear(config.hidden_size, config.hidden_size)
-        sys.modules["torch"] = None
 
     def forward(self, x):
         return self.linear(x)
@@ -46,14 +39,7 @@ class NoSuperInitModel(PretrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        try:
-            sys.modules["torch"] = sys.modules["torch_save"]
-        except:
-            pass
-        import torch
-
         self.linear = torch.nn.Linear(config.attribute, config.attribute)
-        sys.modules["torch"] = None
 
     def forward(self, x):
         return self.linear(x)
