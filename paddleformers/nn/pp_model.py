@@ -319,7 +319,18 @@ class EmbeddingPipe(nn.Layer):
 
             ret = (emb,)
 
-        ret[0].stop_gradient = False  # 开启lora 防止recompute pylayer因base weight输入没有gradient而报错
+        # NOTE: LoRA + PP
+        # In LoRA scenarios, base weights are typically frozen, causing embedding outputs to have stop_gradient=True.
+        # When recompute (PyLayer) is enabled, inputs must be differentiable, otherwise it will cause errors or
+        # fail to trigger recompute.
+        if (
+            getattr(self.config, "_paddleformers_peft_type", None) == "lora"
+            and self.training
+            and getattr(self.config, "recompute_granularity", None) == "full"
+            and getattr(self.config, "recompute_method", None) == "uniform"
+            and getattr(self.config, "recompute_num_layers", None) == 1
+        ):
+            ret[0].stop_gradient = False
         if attention_mask is not None:
             if attention_mask.dtype != paddle.int32:
                 if len(attention_mask.shape) == 2:
