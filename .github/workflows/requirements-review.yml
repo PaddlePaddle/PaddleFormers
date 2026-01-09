@@ -3,105 +3,68 @@ name: Check Requirements Changes
 on:
   pull_request:
     paths:
-      - requirements.txt
+      - 'requirements.txt'
 
 jobs:
   review_request:
     runs-on: ubuntu-latest
-
     permissions:
       pull-requests: write
       contents: read
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # 保证 base/head 都能 diff
+      - uses: actions/checkout@v4
 
-      - name: Detect changes in requirements.txt
-        id: check_diff
+      - name: Check if requirements.txt changed
+        id: diff
         run: |
-          echo "Checking diff between base and head..."
-          git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt
-          cat changed_files.txt
-
-          if grep -q "^requirements.txt$" changed_files.txt; then
+          git fetch origin ${{ github.base_ref }} --depth=1
+          if git diff --name-only origin/${{ github.base_ref }} | grep -q '^requirements.txt$'; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Request reviewers if needed
-        if: steps.check_diff.outputs.changed == 'true'
+        if: steps.diff.outputs.changed == 'true'
         uses: actions/github-script@v7
         with:
           script: |
-            const reviewers = [
-              'nepeplwu',
-              'lugimzzz',
-              'zjjlivein',
-              'huanghengheng'
-            ];
+            const reviewers = ['nepeplwu', 'lugimzzz', 'zjjlivein'];
 
-            const { owner, repo } = context.repo;
-            const pull_number = context.issue.number;
+            // 1. 已有 review？
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
 
-            try {
-              // Get PR info
-              const { data: pr } = await github.rest.pulls.get({
-                owner,
-                repo,
-                pull_number,
-              });
-
-              // Skip draft PRs
-              if (pr.draft) {
-                console.log('PR is draft, skip requesting reviewers.');
-                return;
-              }
-
-              // Get all reviews
-              const { data: reviews } = await github.rest.pulls.listReviews({
-                owner,
-                repo,
-                pull_number,
-              });
-
-              const hasApproved = reviews.some(
-                r => r.state === 'APPROVED'
-              );
-
-              if (hasApproved) {
-                console.log('PR already approved, skip requesting reviewers.');
-                return;
-              }
-
-              // Get existing review requests
-              const { data: reviewRequests } =
-                await github.rest.pulls.listRequestedReviewers({
-                  owner,
-                  repo,
-                  pull_number,
-                });
-
-              const existing = reviewRequests.users.map(u => u.login);
-              const toRequest = reviewers.filter(r => !existing.includes(r));
-
-              if (toRequest.length === 0) {
-                console.log('All reviewers already requested.');
-                return;
-              }
-
-              await github.rest.pulls.requestReviewers({
-                owner,
-                repo,
-                pull_number,
-                reviewers: toRequest,
-              });
-
-              console.log(`Requested reviewers: ${toRequest.join(', ')}`);
-            } catch (err) {
-              console.error('Reviewer request failed:', err.message);
-              // 不让 workflow 失败
+            const hasApproved = reviews.some(r => r.state === 'APPROVED');
+            if (hasApproved) {
+              console.log('Already approved, skip requesting reviewers.');
+              return;
             }
+
+            // 2. 已 request 的 reviewer
+            const { data: requested } = await github.rest.pulls.listRequestedReviewers({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+
+            const existing = requested.users.map(u => u.login);
+            const toAdd = reviewers.filter(r => !existing.includes(r));
+
+            if (toAdd.length === 0) {
+              console.log('All reviewers already requested.');
+              return;
+            }
+
+            await github.rest.pulls.requestReviewers({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              reviewers: toAdd,
+            });
+
+            console.log('Requested reviewers:', toAdd);
