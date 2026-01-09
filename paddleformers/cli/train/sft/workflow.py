@@ -67,7 +67,6 @@ from paddleformers.cli.hparams import (
     ModelArguments,
 )
 from paddleformers.cli.utils import (
-    compute_metrics,
     freeze_model_parameters,
     get_lora_target_modules,
     get_multimodel_lora_target_modules,
@@ -399,11 +398,6 @@ def run_sft(
 
     # Create trainer
 
-    if training_args.pipeline_model_parallel_size > 1:
-        metrics = None
-    else:
-        metrics = compute_metrics
-
     # padding to the maximum seq length in batch data when max_seq_len is None
     max_seq_len = (
         data_args.max_seq_len + model_config.num_nextn_predict_layers
@@ -499,7 +493,6 @@ def run_sft(
         eval_dataset=(eval_dataset if training_args.do_eval and training_args.should_load_dataset else None),
         tokenizer=tokenizer,
         processing_class=processor,
-        compute_metrics=metrics,
         data_collator=data_collator,
         do_generation=data_args.eval_with_do_generation,
         data_args=data_args,
