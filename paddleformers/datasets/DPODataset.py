@@ -63,6 +63,7 @@ class DPODataSet(IterableDataset):
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
         self.buffer_size = dataset_config.get("buffer_size", 500)
+        self.efficient_eos = True if not self.template else getattr(self.template, "efficient_eos", True)
 
         # data loader + multisource dataset mix
         if self.is_valid:
@@ -247,6 +248,16 @@ class DPODataSet(IterableDataset):
             rejected_encoded_messages = self.template.encode_multiturn(
                 self.tokenizer, rejected_messages, system, tools
             )
+
+        if self.template_backend == "custom":
+            suffix_ids = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
+        else:
+            suffix_ids = [self.tokenizer.eos_token_id]
+        if self.efficient_eos:
+            if len(chosen_encoded_messages) > 0 and len(chosen_encoded_messages[-1]) > 1:
+                chosen_encoded_messages[-1][1].extend(suffix_ids)
+            if len(rejected_encoded_messages) > 0 and len(rejected_encoded_messages[-1]) > 1:
+                rejected_encoded_messages[-1][1].extend(suffix_ids)
 
         # chosen/rejected response
         response_token_ids_list = []

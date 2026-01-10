@@ -187,12 +187,18 @@ def resolve_file_path(
                     raise FileNotFoundError(f"please make sure one of the {filenames} under the dir {repo_id}")
 
     # check cache
+    existing_files = []
+    file_counter = 0
     for filename in filenames:
         cache_file_name = hf_try_to_load_from_cache(repo_id, filename, cache_dir, subfolder, revision, repo_type)
         if download_hub == DownloadSource.HUGGINGFACE and cache_file_name is _CACHED_NO_EXIST:
             cache_file_name = None
         if cache_file_name is not None and os.path.exists(str(cache_file_name)):
-            return cache_file_name
+            existing_files.append(cache_file_name)
+            file_counter += 1
+
+    if file_counter == len(filenames) and len(existing_files) > 0:
+        return existing_files[0]
 
     # download file from different origins
     os.environ["https_proxy"] = os.environ.get("HTTPS_PROXY", "")

@@ -68,7 +68,6 @@ from paddleformers.cli.hparams import (
     ModelArguments,
 )
 from paddleformers.cli.utils import (
-    compute_metrics,
     freeze_model_parameters,
     get_lora_target_modules,
     get_multimodel_lora_target_modules,
@@ -403,15 +402,10 @@ def run_sft(
 
     # Create trainer
 
-    if training_args.pipeline_model_parallel_size > 1:
-        metrics = None
-    else:
-        metrics = compute_metrics
-
     # padding to the maximum seq length in batch data when max_seq_len is None
     max_seq_len = (
         data_args.max_seq_len + model_config.num_nextn_predict_layers
-        if (data_args.packing or training_args.sequence_parallel)
+        if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
         else None
     )
     if data_args.dataset_type != "pretrain":
@@ -503,7 +497,6 @@ def run_sft(
         eval_dataset=(eval_dataset if training_args.do_eval and training_args.should_load_dataset else None),
         tokenizer=tokenizer,
         processing_class=processor,
-        compute_metrics=metrics,
         data_collator=data_collator,
         do_generation=data_args.eval_with_do_generation,
         data_args=data_args,
@@ -577,7 +570,11 @@ def create_peft_model(model_args, training_args, dtype, model):
             )
             model = LoRAModel(model, lora_config)
         else:
-            model = LoRAModel.from_pretrained(model=model, lora_path=model_args.lora_path)
+            model = LoRAModel.from_pretrained(
+                model=model,
+                lora_path=model_args.lora_path,
+                load_checkpoint_format=training_args.load_checkpoint_format,
+            )
         if hasattr(model, "_set_pipeline_name_mapping"):
             model._set_pipeline_name_mapping()
         model.print_trainable_parameters()
