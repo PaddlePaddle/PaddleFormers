@@ -23,7 +23,7 @@ from scipy.linalg import block_diag
 from paddleformers.peft.lora import LoRAModel
 
 from .SFTDataset import Sequence
-
+from ..utils.log import logger
 
 def dpo_collate_fn(
     batch,
@@ -61,9 +61,13 @@ def dpo_collate_fn(
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
-        cp_size = training_args.sequence_parallel
-        if cp_size > 1:
-            max_seq_len = math.ceil(max_seq_len / (cp_size * 2)) * (cp_size * 2)
+        cp_size = training_args.context_parallel_size
+        sp_size = training_args.tensor_model_parallel_size if training_args.sequence_parallel else 1
+
+        padding_to_size = cp_size*sp_size*2
+        max_seq_len = math.ceil(max_seq_len / padding_to_size) * (padding_to_size)
+        #logger.info(f"In padding_free mode: Padding to {max_seq_len}")
+
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
 
@@ -193,9 +197,12 @@ def collate_fn(
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
-        cp_size = training_args.sequence_parallel
-        if cp_size > 1:
-            max_seq_len = math.ceil(max_seq_len / (cp_size * 2)) * (cp_size * 2)
+        cp_size = training_args.context_parallel_size
+        sp_size = training_args.tensor_model_parallel_size if training_args.sequence_parallel else 1
+
+        padding_to_size = cp_size*sp_size*2
+        max_seq_len = math.ceil(max_seq_len / padding_to_size) * (padding_to_size)
+        #logger.info(f"In padding_free mode: Padding to {max_seq_len}")
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
     for batch_sequence in batch:
@@ -311,9 +318,13 @@ def mm_collate_fn(
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
-        cp_size = training_args.sequence_parallel
-        if cp_size > 1:
-            max_seq_len = math.ceil(max_seq_len / (cp_size * 2)) * (cp_size * 2)
+        cp_size = training_args.context_parallel_size
+        sp_size = training_args.tensor_model_parallel_size if training_args.sequence_parallel else 1
+
+        padding_to_size = cp_size*sp_size*2
+        max_seq_len = math.ceil(max_seq_len / padding_to_size) * (padding_to_size)
+        #logger.info(f"In padding_free mode: Padding to {max_seq_len}")
+        
     if max_seq_len is None:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
     for batch_sequence in batch:

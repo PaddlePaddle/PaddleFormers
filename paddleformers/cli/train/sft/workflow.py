@@ -399,11 +399,14 @@ def run_sft(
     # Create trainer
 
     # padding to the maximum seq length in batch data when max_seq_len is None
-    max_seq_len = (
-        data_args.max_seq_len + model_config.num_nextn_predict_layers
-        if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
-        else None
-    )
+    if data_args.padding_free:
+        max_seq_len = None
+    else:
+        max_seq_len = (
+            data_args.max_seq_len + model_config.num_nextn_predict_layers
+            if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
+            else None
+        )
     if data_args.dataset_type != "pretrain":
         if model_args.stage == "VL-SFT":
             data_collator = partial(
