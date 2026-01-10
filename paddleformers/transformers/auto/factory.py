@@ -26,6 +26,8 @@ def getattribute_from_module(module, attr):
         return tuple(getattribute_from_module(module, a) for a in attr)
     if hasattr(module, attr):
         return getattr(module, attr)
+    elif hasattr(module, attr+"Fleet"):
+        return getattr(module, attr+"Fleet")
     # Some of the mappings have entries model_type -> object of another model type. In that case we try to grab the
     # object at the top level.
     paddleformers_module = importlib.import_module("paddleformers")

@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any, Optional, Tuple, Union
 
+import types
 import paddle
 import paddle.nn.functional as F
 from paddle import Tensor, nn
@@ -2460,6 +2461,7 @@ class Qwen3VLMoeFleet(Qwen3VLMoePretrainedModel):
         qwen3vl_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         qwen3vl_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
         qwen3vl_model.config_to_save = config
+        qwen3vl_model.get_hardware_flops = types.MethodType(cls.get_hardware_flops, qwen3vl_model)
 
         return qwen3vl_model
 

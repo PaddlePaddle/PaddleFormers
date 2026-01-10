@@ -373,6 +373,15 @@ class Qwen3VLTextProvider(GPTModelProvider):
     _save_to_hf: bool = False
     use_flash_attention: bool = True
     use_fused_linear_cross_entropy: bool = True
+
+    n_shared_experts: int = 0
+    transform_rules = {
+        "dtype": "params_dtype",
+        "num_heads": "num_attention_heads",
+        "depth": "num_hidden_layers",
+        "initializer_range": "init_method_std",
+        "num_experts": "n_routed_experts",
+    }
     
     def __post_init__(self):
         super().__post_init__()
@@ -424,6 +433,12 @@ class Qwen3VLVisionProvider(TransformerConfig):
     #     "num_heads": "num_attention_heads",
     #     "depth": "num_hidden_layers"
     # })
+    transform_rules = {
+        "dtype": "params_dtype",
+        "num_heads": "num_attention_heads",
+        "depth": "num_hidden_layers",
+        "initializer_range": "init_method_std",
+    }
     
     def provide(self) -> "Qwen3VLVisionModel":
         transformer_layer_spec = self.transformer_layer_spec
