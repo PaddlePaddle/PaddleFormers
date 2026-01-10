@@ -38,26 +38,23 @@ Features **Unified Checkpoint** storage tools for LLMs, enabling training resump
 
 ## Installation
 
-Requires Python 3.8+ and [PaddlePaddle](https://www.paddlepaddle.org.cn/install/quick) 3.1+.
+Requires Python 3.10+
 
 ```bash
-# Install via pip
-# cuda12.6
-pip install paddleformers --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
-# cuda12.9
-pip install paddleformers --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-# cuda13.0
-pip install paddleformers --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
-
-# Install development version
+# Install via source code
 git clone https://github.com/PaddlePaddle/PaddleFormers.git
 cd PaddleFormers
+
+# If you don’t need to train models, you can install only the lightweight basic version of paddleformers.
+pip install -e .
+
+# If you need to train models, you should install paddleformers with paddlefleet
 # cuda12.6
-pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+pip install -e . '.[paddlefleet]'  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
 # cuda12.9
-pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+pip install -e . '.[paddlefleet]'  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
 # cuda13.0
-pip install -e . --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
+pip install -e . '.[paddlefleet]'  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
 ```
 
 ## Quickstart
