@@ -34,6 +34,7 @@ from transformers.processing_utils import (
 from transformers.processing_utils import ProcessingKwargs as ProcessingKwargs_hf
 from transformers.processing_utils import ProcessorMixin as ProcessorMixin_hf
 from transformers.processing_utils import transformers_module
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.utils import (
     CHAT_TEMPLATE_FILE,
     LEGACY_PROCESSOR_CHAT_TEMPLATE_FILE,
@@ -251,6 +252,10 @@ class PaddleProcessorMixin:
         # extra attributes to be kept
         attrs_to_save += ["auto_map"]
 
+        if legacy_serialization:
+            # Don't save attributes like `tokenizer`, `image processor` etc. in processor config if `legacy=True`
+            attrs_to_save = [x for x in attrs_to_save if x not in self.__class__.attributes]
+
         if "tokenizer" in output:
             del output["tokenizer"]
         if "qformer_tokenizer" in output:
@@ -261,17 +266,6 @@ class PaddleProcessorMixin:
             del output["char_tokenizer"]
         if "chat_template" in output:
             del output["chat_template"]
-
-        def save_public_processor_class(dictionary):
-            # make sure private name "_processor_class" is correctly
-            # saved as "processor_class"
-            _processor_class = dictionary.pop("_processor_class", None)
-            if _processor_class is not None:
-                dictionary["processor_class"] = _processor_class
-            for value in dictionary.values():
-                if isinstance(value, dict):
-                    save_public_processor_class(value)
-            return dictionary
 
         def cast_array_to_list(dictionary):
             """
@@ -292,15 +286,17 @@ class PaddleProcessorMixin:
             if (
                 k in attrs_to_save  # keep all attributes that have to be serialized
                 and v.__class__.__name__ != "BeamSearchDecoderCTC"  # remove attributes with that are objects
+                and (
+                    (legacy_serialization and not isinstance(v, PushToHubMixin)) or not legacy_serialization
+                )  # remove `PushToHubMixin` objects
             )
         }
         output = cast_array_to_list(output)
-        output = save_public_processor_class(output)
         output["processor_class"] = self.__class__.__name__
 
         return output
 
-    def save_pretrained(self, save_directory, push_to_hub: bool = False, **kwargs):
+    def save_pretrained(self, save_directory, push_to_hub: bool = False, legacy_serialization: bool = True, **kwargs):
         """
         Saves the attributes of this processor (feature extractor, tokenizer...) in the specified directory so that it
         can be reloaded using the [`~ProcessorMixin.from_pretrained`] method.
@@ -313,24 +309,45 @@ class PaddleProcessorMixin:
                 Whether or not to push your model to the Hugging Face model hub after saving it. You can specify the
                 repository you want to push to with `repo_id` (will default to the name of `save_directory` in your
                 namespace).
+            legacy_serialization (`bool`, *optional*, defaults to `True`):
+                Whether or not to save processor attributes in separate config files (legacy) or in processor's config
+                file as a nested dict. Saving all attributes in a single dict will become the default in future versions.
+                Set to `legacy_serialization=True` until then.
             kwargs (`dict[str, Any]`, *optional*):
                 Additional key word arguments passed along to the [`~utils.PushToHubMixin.push_to_hub`] method.
         """
-        save_jinja_files = kwargs.pop("save_jinja_files", True)
-
         os.makedirs(save_directory, exist_ok=True)
 
-        for attribute_name in self.attributes:
-            attribute = getattr(self, attribute_name)
-            if hasattr(attribute, "_set_processor_class"):
-                attribute._set_processor_class(self.__class__.__name__)
+        if self._auto_class is not None:
+            attrs = [getattr(self, attribute_name) for attribute_name in self.attributes]
+            configs = [(a.init_kwargs if isinstance(a, PreTrainedTokenizerBase) else a) for a in attrs]
+            configs.append(self)
+            custom_object_save(self, save_directory, config=configs)
 
+        save_jinja_files = kwargs.get("save_jinja_files", True)
+
+        for attribute_name in self.attributes:
             # Save the tokenizer in its own vocab file. The other attributes are saved as part of `processor_config.json`
             if attribute_name == "tokenizer":
+                attribute = getattr(self, attribute_name)
+                if hasattr(attribute, "_set_processor_class"):
+                    attribute._set_processor_class(self.__class__.__name__)
+
                 # Propagate save_jinja_files to tokenizer to ensure we don't get conflicts
                 attribute.save_pretrained(save_directory, save_jinja_files=save_jinja_files)
-            elif attribute._auto_class is not None:
-                custom_object_save(attribute, save_directory, config=attribute)
+            elif legacy_serialization:
+                attribute = getattr(self, attribute_name)
+                # Include the processor class in attribute config so this processor can then be reloaded with `AutoProcessor` API.
+                if hasattr(attribute, "_set_processor_class"):
+                    attribute._set_processor_class(self.__class__.__name__)
+                attribute.save_pretrained(save_directory)
+
+        if self._auto_class is not None:
+            # We added an attribute to the init_kwargs of the tokenizers, which needs to be cleaned up.
+            for attribute_name in self.attributes:
+                attribute = getattr(self, attribute_name)
+                if isinstance(attribute, PreTrainedTokenizerBase):
+                    del attribute.init_kwargs["auto_map"]
 
         # If we save using the predefined names, we can load using `from_pretrained`
         # plus we save chat_template in its own file
@@ -371,10 +388,24 @@ class PaddleProcessorMixin:
                     "separate files using the `save_jinja_files` argument."
                 )
 
-        # Create a unified `preprocessor_config.json` and save all attributes as a composite config, except for tokenizers
-        self.to_json_file(output_processor_file)
-        logger.info(f"processor saved in {output_processor_file}")
-        return_files = [output_processor_file]
+        if legacy_serialization:
+            processor_dict = self.to_dict()
+
+            # For now, let's not save to `processor_config.json` if the processor doesn't have extra attributes and
+            # `auto_map` is not specified.
+            if set(processor_dict.keys()) != {"processor_class"}:
+                self.to_json_file(output_processor_file)
+                logger.info(f"processor saved in {output_processor_file}")
+
+            if set(processor_dict.keys()) == {"processor_class"}:
+                return_files = []
+            else:
+                return_files = [output_processor_file]
+        else:
+            # Create a unified `preprocessor_config.json` and save all attributes as a composite config, except for tokenizers
+            self.to_json_file(output_processor_file, legacy_serialization=False)
+            logger.info(f"processor saved in {output_processor_file}")
+            return_files = [output_processor_file]
 
         return return_files
 
@@ -617,7 +648,7 @@ class PaddleProcessorMixin:
                 if attribute_name == "image_processor":
                     use_fast = kwargs.get("use_fast", None)
                     if use_fast is None or use_fast:
-                        logger.warning(
+                        logger.warning_once(
                             "The model's image processor only supports the slow version (`use_fast=False`). "
                             "Detected `use_fast=True` but will fall back to the slow version."
                         )
