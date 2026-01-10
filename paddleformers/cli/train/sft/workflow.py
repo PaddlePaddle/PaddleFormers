@@ -269,6 +269,9 @@ def run_sft(
         model_config.text_config.max_sequence_length = data_args.max_seq_len
     if getattr(model_config, "vision_config", None) is not None:
         model_config.vision_config._attn_implementation = model_args.attn_impl
+        model_config.vision_config.recompute_granularity = model_config.recompute_granularity
+        model_config.vision_config.recompute_method = model_config.recompute_method
+        model_config.vision_config.recompute_num_layers = model_config.recompute_num_layers
 
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
