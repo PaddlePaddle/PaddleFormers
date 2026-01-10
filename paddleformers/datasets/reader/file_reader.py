@@ -78,8 +78,8 @@ class FileReader(BaseReader):
             try:
                 convert_data = self.convertor_map[self._file_type](item)
                 checked_data = self.data_check(convert_data)
-            except Exception:
-                logger.warning(f"preprocess data error, data : {item}")
+            except Exception as e:
+                logger.warning(f"preprocess data error: {e}, data: {str(item)[:30]}")
                 continue
             if not checked_data:
                 # ignore invalid example
@@ -114,6 +114,8 @@ class FileReader(BaseReader):
                 "tool_response": "observation",
                 "tool_call": "function",
                 "tool_calls": "function",
+                "function_call": "function",
+                "function_calls": "function",
             }
 
             key_list = ["messages", "chosen_response", "rejected_response"]
