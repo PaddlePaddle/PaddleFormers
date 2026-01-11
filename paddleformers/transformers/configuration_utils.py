@@ -416,6 +416,12 @@ class LlmMetaConfig:
             True,
             "Whether to enable deep GEMM for MoE experts. Defaults to True. Effective only after the moe_grouped_gemm is set. ",
         ),
+        (
+            "using_sonic_moe",
+            bool,
+            False,
+            "Whether to use SonicMoE as the computation backend for the moelayer.",
+        )
     ]
 
     mtp_attributes = [

@@ -1552,6 +1552,10 @@ class TrainingArguments:
         default=2, metadata={"help": "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."}
     )
 
+    using_sonic_moe: bool = field(
+        default=False, metadata={"help": "When enabled, the computation part of the moelayer will use the implementation provided by SonicMoE."}
+    )
+
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
         if in_auto_parallel_align_mode():
