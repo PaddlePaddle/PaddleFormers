@@ -77,7 +77,7 @@ MAPPING_NAMES = OrderedDict(
 MAPPING_SPACIAL_KEY = OrderedDict(
     [("Gemma3", "Gemma3Text"), ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration")]
 )
-
+CONFIGURATION_MODEL_MAPPING = OrderedDict([((), "Gemma3TextModel")])
 
 MAPPING_TASKS = OrderedDict(
     [
@@ -132,27 +132,6 @@ def get_task_name(model_class):
         if model_class.endswith(key):
             return value
     return None
-
-
-def get_init_configurations():
-    CONFIGURATION_MODEL_MAPPING = OrderedDict()
-    for key, class_name in MAPPING_NAMES.items():
-        import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
-
-        if key in MAPPING_SPACIAL_KEY:
-            model_name = getattr(import_class, MAPPING_SPACIAL_KEY[key] + "Model")
-        else:
-            model_name = getattr(import_class, key + "Model")
-        if key == "ErnieGen":
-            name = tuple(model_name.ernie_gen_pretrained_init_configuration.keys())
-        else:
-            name = tuple(model_name.pretrained_init_configuration.keys())
-        if key in MAPPING_SPACIAL_KEY:
-            CONFIGURATION_MODEL_MAPPING[name] = MAPPING_SPACIAL_KEY[key] + "Model"
-        else:
-            CONFIGURATION_MODEL_MAPPING[name] = key + "Model"
-
-    return CONFIGURATION_MODEL_MAPPING
 
 
 class _BaseAutoModelClass:
@@ -363,7 +342,6 @@ class AutoBackbone(_BaseAutoModelClass):
     AutoBackbone.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("Backbone")
 
@@ -409,7 +387,6 @@ class AutoModel(_BaseAutoModelClass):
     when created with the from_pretrained() classmethod.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("Model")
     _task_choice = True
@@ -478,7 +455,6 @@ class AutoModelForPretraining(_BaseAutoModelClass):
     AutoModelForPretraining.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForPretraining")
 
@@ -525,7 +501,6 @@ class AutoModelForSequenceClassification(_BaseAutoModelClass):
     AutoModelForSequenceClassification.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForSequenceClassification")
 
@@ -572,7 +547,6 @@ class AutoModelForTokenClassification(_BaseAutoModelClass):
     AutoModelForTokenClassification.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForTokenClassification")
 
@@ -619,7 +593,6 @@ class AutoModelForQuestionAnswering(_BaseAutoModelClass):
     AutoModelForQuestionAnswering.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForQuestionAnswering")
 
@@ -666,7 +639,6 @@ class AutoModelForMultipleChoice(_BaseAutoModelClass):
     AutoModelForMultipleChoice.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForMultipleChoice")
 
@@ -713,7 +685,6 @@ class AutoModelForMaskedLM(_BaseAutoModelClass):
     AutoModelForMaskedLM.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForMaskedLM")
 
@@ -760,7 +731,6 @@ class AutoModelForCausalLM(_BaseAutoModelClass):
     AutoModelForCausalLM.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForCausalLM")
 
@@ -807,7 +777,6 @@ class AutoModelForCausalLMPipe(_BaseAutoModelClass):
     Pipeline model for AutoModelForCausalLM.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForCausalLMPipe")
 
@@ -821,7 +790,6 @@ class AutoEncoder(_BaseAutoModelClass):
     AutoEncoder.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("Encoder")
 
@@ -863,7 +831,6 @@ class AutoDecoder(_BaseAutoModelClass):
     AutoDecoder.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("Decoder")
 
@@ -905,7 +872,6 @@ class AutoGenerator(_BaseAutoModelClass):
     AutoGenerator.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("Generator")
 
@@ -952,7 +918,6 @@ class AutoDiscriminator(_BaseAutoModelClass):
     AutoDiscriminator.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("Discriminator")
 
@@ -999,7 +964,6 @@ class AutoModelForConditionalGeneration(_BaseAutoModelClass):
     AutoModelForConditionalGeneration.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForConditionalGeneration")
 
@@ -1042,7 +1006,6 @@ class AutoModelForConditionalGenerationPipe(_BaseAutoModelClass):
     Pipeline model for AutoModelForCausalLM.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForConditionalGenerationPipe")
 
