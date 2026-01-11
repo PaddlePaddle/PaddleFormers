@@ -176,7 +176,8 @@ def run_sft(
     training_args.max_seq_len = data_args.max_seq_len
     if is_paddlefleet_available() and model_args.lora and training_args.moe_token_dispatcher_type == "deepep":
         logger.warning("For PaddleFleet, moe_token_dispatcher_type must be set to alltoall when using LoRA.")
-        training_args.moe_token_dispatcher_type = "alltoall"
+        training_args.moe_use_fusion_node = False
+
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
     training_args.print_config(training_args, "Train")
@@ -253,6 +254,7 @@ def run_sft(
     model_config.seq_length = data_args.max_seq_len
     model_config.max_sequence_length = data_args.max_seq_len
     model_config._attn_implementation = model_args.attn_impl
+    model_config.is_lora = model_args.lora
 
     def set_attr_func(config, key, value):
         if value is not None:
@@ -399,7 +401,7 @@ def run_sft(
         freeze_model_parameters(model, training_args.freeze_config)
 
     model = create_peft_model(model_args, training_args, dtype, model)
-
+    print("model structure: ", model)
     # Create trainer
 
     # padding to the maximum seq length in batch data when max_seq_len is None
