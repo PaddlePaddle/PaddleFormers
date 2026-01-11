@@ -410,6 +410,12 @@ class LlmMetaConfig:
             False,
             "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
         ),
+        (
+            "moe_ep_barrier",
+            bool,
+            True,
+            "Whether to add barrier for MoE expert parallelization communication. Defaults to True.",
+        ),
     ]
 
     mtp_attributes = [
