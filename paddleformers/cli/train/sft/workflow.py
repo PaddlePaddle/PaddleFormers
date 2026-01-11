@@ -404,7 +404,6 @@ def run_sft(
         freeze_model_parameters(model, training_args.freeze_config)
 
     model = create_peft_model(model_args, training_args, dtype, model)
-    print("model structure: ", model)
     # Create trainer
 
     # padding to the maximum seq length in batch data when max_seq_len is None
