@@ -50,11 +50,11 @@ pip install -e .
 
 # If you need to train models, you should install paddleformers with paddlefleet
 # cuda12.6
-pip install -e . '.[paddlefleet]'  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+pip install -e '.[paddlefleet]'  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
 # cuda12.9
-pip install -e . '.[paddlefleet]'  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+pip install -e '.[paddlefleet]'  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
 # cuda13.0
-pip install -e . '.[paddlefleet]'  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
+pip install -e '.[paddlefleet]'  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
 ```
 
 ## Quickstart
