@@ -304,9 +304,11 @@ class _BaseAutoModelClass:
         )
 
         if config_file is not None and os.path.exists(config_file):
-            model_class = cls._get_model_class_from_config(
-                pretrained_model_name_or_path, config_file, is_lora=kwargs.get("config").is_lora
-            )
+            if kwargs.get("config") is not None:
+                is_lora = kwargs.get("config").get("is_lora", False)
+            else:
+                is_lora = False
+            model_class = cls._get_model_class_from_config(pretrained_model_name_or_path, config_file, is_lora=is_lora)
             logger.info(f"We are using {model_class} to load '{pretrained_model_name_or_path}'.")
             return model_class.from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
         else:
