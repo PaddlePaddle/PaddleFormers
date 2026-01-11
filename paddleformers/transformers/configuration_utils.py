@@ -422,6 +422,12 @@ class LlmMetaConfig:
             True,
             "Whether to add barrier for MoE expert parallelization communication. Defaults to True.",
         ),
+        (
+            "using_sonic_moe",
+            bool,
+            False,
+            "Whether to use SonicMoE as the computation backend for the moelayer.",
+        )
     ]
 
     mtp_attributes = [

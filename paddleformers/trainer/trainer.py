@@ -1924,6 +1924,7 @@ class Trainer:
         if self.resume_from_custom_func is not None:
             self.resume_from_custom_func(model)
 
+       
         for epoch in range(epochs_trained, num_train_epochs):
             if (
                 not args.enable_auto_parallel
@@ -1937,8 +1938,9 @@ class Trainer:
 
             step = -1
 
-            for step, inputs in enumerate(epoch_iterator):
 
+            for step, inputs in enumerate(epoch_iterator):
+               
                 if self.args.profile:
                     perf_utils.switch_profile(
                         self.state.global_step,
