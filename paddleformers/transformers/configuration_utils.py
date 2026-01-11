@@ -332,6 +332,12 @@ class LlmMetaConfig:
             "Type of token dispatcher for MoE (e.g., 'round_robin', 'top_k'). Defaults to None (use default dispatcher).",
         ),
         (
+            "moe_use_fusion_node",
+            bool,
+            None,
+            "Whether to use fusion node for MoE layer. If None, will be set to True when moe_token_dispatcher_type is deepep",
+        ),
+        (
             "moe_pad_expert_input_to_capacity",
             bool,
             False,
