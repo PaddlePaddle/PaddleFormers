@@ -334,8 +334,8 @@ class LlmMetaConfig:
         (
             "moe_use_fusion_node",
             bool,
-            None,
-            "Whether to use fusion node for MoE layer. If None, will be set to True when moe_token_dispatcher_type is deepep",
+            True,
+            "Whether to use fusion node for MoE layer. Default to True.",
         ),
         (
             "moe_pad_expert_input_to_capacity",
