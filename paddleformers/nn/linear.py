@@ -62,7 +62,7 @@ class Linear(GeneralInterface):
         return linear_cls(in_features=in_features, out_features=out_features, weight_attr=weight_attr, **kwargs)
 
     @classmethod
-    def get_linear_type(self, config: PretrainedConfig, tp_plan=None, has_bias=None):
+    def get_linear_type(self, config: PretrainedConfig, tp_plan: str = None, has_bias: bool = None):
         if config.tensor_model_parallel_size <= 1:
             if config.get("fuse_linear", False) and has_bias:
                 return "fuse_linear"
