@@ -15,9 +15,9 @@
 from __future__ import annotations
 
 import copy
-import tempfile
 import gc
 import shutil
+import tempfile
 import unittest
 from io import BytesIO
 
@@ -439,23 +439,14 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 )
 
                 model = model_class(config)
-                model.save_pretrained(
-                    tmpdirname,
-                    save_checkpoint_format="flex_checkpoint"
-                )
+                model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
 
                 model = None
                 gc.collect()
 
-                model1 = model_class.from_pretrained(
-                    tmpdirname,
-                    convert_from_hf=True
-                )
+                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
 
-                model2 = model_class.from_pretrained(
-                    tmpdirname,
-                    load_checkpoint_format="flex_checkpoint"
-                )
+                model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
 
                 model_state_1 = model1.state_dict()
                 model_state_2 = model2.state_dict()
