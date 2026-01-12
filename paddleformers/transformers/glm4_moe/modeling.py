@@ -1569,6 +1569,5 @@ __all__ = [
     "Glm4MoeModel",
     "Glm4MoeForCausalLM",
     "Glm4MoeForCausalLMPipeDecapitate",
-    "Glm4MoeModel",
     "Glm4MoeForCausalLMDecapitate",
 ]
