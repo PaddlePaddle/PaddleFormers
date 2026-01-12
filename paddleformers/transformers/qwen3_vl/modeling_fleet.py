@@ -1102,8 +1102,25 @@ class Qwen3VLModel(MCoreLLaVAModel):
                 video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
             video_embeds = paddle.cat(video_embeds, axis=0)
 
-        if position_ids is None and input_ids is not None:
-            position_ids, _ = self.get_rope_index(input_ids, image_grid_thw, video_grid_thw, attention_mask)
+        if position_ids is None:
+            if self.rope_deltas is None or cache_position is None or cache_position[0] == 0:
+                position_ids, rope_deltas = self.get_rope_index(
+                    input_ids,
+                    image_grid_thw,
+                    video_grid_thw,
+                    attention_mask=attention_mask,
+                )
+                self.rope_deltas = rope_deltas
+            else:
+                batch_size, seq_length = input_ids.shape
+                position_ids = paddle.arange(seq_length)
+                position_ids = position_ids.view(1, 1, -1).expand(3, batch_size, -1)
+                if cache_position is not None:
+                    delta = cache_position[0] + self.rope_deltas
+                else:
+                    delta = paddle.zeros((batch_size, seq_length))
+                delta = delta.repeat_interleave(batch_size // delta.shape[0], axis=1)
+                position_ids = position_ids + delta
 
         input_dict = {
             "input_ids": input_ids,

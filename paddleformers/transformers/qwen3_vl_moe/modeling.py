@@ -442,10 +442,9 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
         ]
 
         # Qwen3_VLModel without lm_head
-        if cls._tied_weights_keys:
-            aoa_config["aoa_statements"] += [
-                f"{'model.language_model.embed_tokens.weight' if config.tie_word_embeddings else 'lm_head.weight'} -> {llm_prefix}{config.text_config.num_hidden_layers + 2}.weight",
-            ]
+        aoa_config["aoa_statements"] += [
+            f"{'model.language_model.embed_tokens.weight' if config.tie_word_embeddings else 'lm_head.weight'} -> {llm_prefix}{config.text_config.num_hidden_layers + 2}.weight",
+        ]
 
         return aoa_config
 
@@ -537,10 +536,9 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
             for x in ("q", "k", "v")
         ]
         # Qwen3VLMoeModel without lm_head
-        if cls._tied_weights_keys:
-            aoa_config["aoa_statements"] += [
-                f"lm_head.weight -> {'_' if config.tie_word_embeddings else 'lm_head.weight'}",
-            ]
+        aoa_config["aoa_statements"] += [
+            f"lm_head.weight -> {'_' if config.tie_word_embeddings else 'lm_head.weight'}",
+        ]
 
 
 class Qwen3VLMoePretrainedModel(PretrainedModel):
@@ -2460,7 +2458,7 @@ class Qwen3VLMoeForConditionalGeneration(Qwen3VLMoePretrainedModel):
             )
             if labels is not None:
                 loss += self.config.text_config.router_aux_loss_coef * aux_loss.to(loss.device)
-
+        print("aux_loss ", aux_loss)
         return Qwen3VLMoeCausalLMOutputWithPast(
             loss=loss,
             aux_loss=aux_loss,
@@ -2699,7 +2697,6 @@ class Qwen3VLMoeForConditionalGenerationFleet(Qwen3VLMoePretrainedModelFleet):
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
     }
-    _tied_weights_keys = {"lm_head.weight": "model.language_model.embed_tokens.weight"}
     config_class = Qwen3VLMoeConfig
 
     def __init__(self, config):
