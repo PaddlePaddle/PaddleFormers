@@ -117,7 +117,7 @@ class TestLinear(TestMultipleGpus):
         # Test fused linear type detection
         self.config.tensor_model_parallel_size = 1
         self.config.fuse_linear = True
-        linear_type = Linear.get_linear_type(self.config)
+        linear_type = Linear.get_linear_type(self.config, has_bias=True)
         self.assertEqual(linear_type, "fuse_linear")
 
     def test_get_linear_type_parallel(self):
