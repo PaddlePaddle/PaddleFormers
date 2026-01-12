@@ -337,6 +337,7 @@ class Qwen3VLTextProvider(GPTModelProvider):
     _save_to_hf: bool = False
     use_flash_attention: bool = True
     use_fused_linear_cross_entropy: bool = True
+    high_precision_rope: bool = False
 
     n_shared_experts: int = 0
     transform_rules = {
