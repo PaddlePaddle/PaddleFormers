@@ -22,6 +22,4 @@ tokenizers>=0.21,<0.22; python_version>"3.8"
 omegaconf
 modelscope
 transformers>=4.55.1
-triton >= 3.1
-use_triton_in_paddle
 GPUtil

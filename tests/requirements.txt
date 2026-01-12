@@ -25,3 +25,5 @@ pytest==8.1.1
 pytest-cov
 pytest-xdist
 pytest-timeout
+triton >= 3.1
+use_triton_in_paddle

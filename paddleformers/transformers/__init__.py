@@ -134,22 +134,7 @@ import_structure = {
         "DeepseekV2PretrainedModelAuto",
     ],
     "deepseek_v2.mfu_utils": ["DeepSeekProjection"],
-    "deepseek_v2.kernel": [
-        "act_quant",
-        "weight_dequant",
-        "fp8_gemm",
-        "weight_dequant_kernel",
-        "act_quant_kernel",
-        "fp8_gemm_kernel",
-    ],
     "deepseek_v2.tokenizer_fast": ["DeepseekTokenizerFast"],
-    "deepseek_v2.fp8_linear": [
-        "Linear",
-        "ColumnParallelLinear",
-        "RowParallelLinear",
-        "ColumnSequenceParallelLinear",
-        "RowSequenceParallelLinear",
-    ],
     "deepseek_v3.configuration": ["DeepseekV3Config"],
     "deepseek_v3.modeling": [
         "DeepseekV3ForCausalLM",
