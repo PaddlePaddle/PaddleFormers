@@ -190,3 +190,18 @@ def set_cuda_environment():
         print(f"run nvidia-smi error: {e}")
     except Exception as e:
         print(f"process cuda version error: {e}")
+
+
+def set_env_if_empty(key, value):
+    """
+    Set the environment variable to the specified value if it is not set
+
+    Args:
+        key (str): The name of the environment variable
+        value (str): The value to set for the environment variable
+
+    Returns:
+        None
+    """
+    if not os.environ.get(key):
+        os.environ[key] = value
