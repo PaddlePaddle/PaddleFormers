@@ -67,12 +67,12 @@ if [ $sft_exit_code -ne 0 ]; then
 fi
 
 export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
-if [[ "${PP}" == "rel" ]]; then
-  export pppatch="_PPrel"
-fi
-if [[ "${PF}" == rel* ]]; then
-  export pfpatch="rel"
-fi
+# if [[ "${PP}" == "rel" ]]; then
+#   export pppatch="_PPrel"
+# fi
+# if [[ "${PF}" == rel* ]]; then
+#   export pfpatch="rel"
+# fi
 wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}_latest/${gt_loss_file}
 if [ $? -ne 0 ]; then
   echo "To request precision checks for new models, please contact swgu98."

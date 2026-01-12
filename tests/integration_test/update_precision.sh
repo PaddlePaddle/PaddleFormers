@@ -34,12 +34,10 @@ while IFS= read -r fname || [ -n "$fname" ]; do
         echo "Update required: $fname"
         if [ "$step" == "fleet" ]; then
             python bos/BosClient.py $fname xly-devops/PaddleFleet/precision/PaddleFleet_latest
-            python bos/BosClient.py $fname xly-devops/PaddleFleet/precision/PaddleFleet_PPrel_latest
         elif [ "$step" == "formers" ]; then
             python bos/BosClient.py $fname xly-devops/PaddleFleet/precision/PaddleFormers_latest
         else
             python bos/BosClient.py $fname xly-devops/PaddleFleet/precision/PaddleFleet_latest
-            python bos/BosClient.py $fname xly-devops/PaddleFleet/precision/PaddleFleet_PPrel_latest
             python bos/BosClient.py $fname xly-devops/PaddleFleet/precision/PaddleFormers_latest
         fi
     fi
