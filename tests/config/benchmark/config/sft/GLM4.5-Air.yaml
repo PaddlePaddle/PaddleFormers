@@ -2,13 +2,13 @@
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
 train_dataset_path: ./data/sft/train.jsonl
-train_dataset_prob: '1.0'
+train_dataset_prob: "1.0"
 eval_dataset_path: ./data/sft/eval.jsonl
-eval_dataset_prob: '1.0'
-max_seq_len: 8192
-mix_strategy: concat
+eval_dataset_prob: "1.0"
 packing: true
 truncate_packing: true
+max_seq_len: 8192
+mix_strategy: concat
 dataloader_shuffle: false
 dataloader_num_workers: 24
 prefetch_factor: 24
@@ -27,7 +27,7 @@ do_eval: true
 per_device_eval_batch_size: 1
 per_device_train_batch_size: 2
 num_train_epochs: 1
-max_steps: 30
+max_steps: 10
 eval_iters: 10
 eval_steps: 100
 evaluation_strategy: steps
@@ -36,33 +36,37 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 128
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/qwen3_hf_0p6b_sft_ckpts
+output_dir: ./checkpoints
 disable_tqdm: true
 eval_accumulation_steps: 16
 
+# args
+router_aux_loss_coef: 0.001
+
 # train
 warmup_steps: 20
-learning_rate: 1.0e-05
-random_shuffle: false
+learning_rate: 1.0e-5
 
-# performance
+# parallel
 tensor_model_parallel_size: 1
-pipeline_model_parallel_size: 4
+sequence_parallel: false
 use_expert_parallel: true
 expert_model_parallel_size: 8
-sequence_parallel: false
+pipeline_model_parallel_size: 4
+#virtual_pipeline_model_parallel_size: 12
 num_empty_layers_add_in_head: 0
 num_empty_layers_add_in_tail: 2
+
+# performance
 recompute_granularity: full
 recompute_method: first_n
-recompute_num_layers: 10
+recompute_num_layers: 11
 
-
-router_aux_loss_coef: 0.001
 moe_grouped_gemm: true
 moe_deep_gemm: true
 apply_rope_fusion: true
 fuse_rms_norm: true
+# moe_router_force_load_balancing: true
 
 # sharding
 split_param: true
@@ -83,12 +87,15 @@ tp_delay_scale_loss: true
 amp_master_grad: true
 bf16: true
 fp16_opt_level: O2
-# unified_checkpoint: true
-load_via_cpu: true
-# resume_from_checkpoint: false
-save_checkpoint_format : "flex_checkpoint"
-load_checkpoint_format : "flex_checkpoint"
-save_to_hf: true
+
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint
+continue_training: true
+
+fuse_attention_qkv: true
+fuse_attention_ffn: true
+
+tensorwise_offload_optimizer: true
 
 benchmark: true
-continue_training: false
+skip_profile_timer: false

@@ -46,11 +46,13 @@ from packaging import version
 from paddle import framework
 from paddle.base import core
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
-from paddle.distributed.fleet.meta_parallel import (
-    PipelineDatasetPreprocessor,
-    PipelineLayer,
-)
+from paddle.distributed.fleet.meta_parallel import PipelineLayer
 from paddle.distributed.fsdp.fully_shard import fully_shard
+
+try:
+    from paddle.distributed.fleet.meta_parallel import PipelineDatasetPreprocessor
+except:
+    PipelineDatasetPreprocessor = None
 
 from ..utils.import_utils import is_paddlefleet_available
 
@@ -231,7 +233,14 @@ DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
 
 if is_datasets_available():
-    import datasets
+    PADDLEFORMERS_TESTING = os.environ.get("PADDLEFORMERS_TESTING", False)
+    if "torch" not in sys.modules and not PADDLEFORMERS_TESTING:
+        sys.modules["torch"] = None
+        import datasets
+
+        del sys.modules["torch"]
+    else:
+        import datasets
 
 from paddle.distributed import in_auto_parallel_align_mode
 from paddle.distributed.fleet.utils import mix_precision_utils
@@ -335,10 +344,11 @@ class Trainer:
         self._memory_tracker.start()
 
         # Seed must be set before instantiating the model when using model
-        if not self.args.enable_auto_parallel:
-            set_random_seed(seed_=self.args.seed)
-        else:
-            logger.warning("set_seed not support yet in auto_parallel mode")
+        if is_paddlefleet_available():
+            if not self.args.enable_auto_parallel:
+                set_random_seed(seed_=self.args.seed)
+            else:
+                logger.warning("set_seed not support yet in auto_parallel mode")
 
         set_seed(seed=self.args.seed)
 
@@ -1198,6 +1208,9 @@ class Trainer:
                 )
 
             self._load_scheduler(resume_from_checkpoint)
+            if self.args.tensorwise_offload_optimizer:
+                logger.info("Offloading optimizer state for FC...")
+                self._offload_optimizer()
 
         enable_bf16_opt = (
             not isinstance(self.model, LoRAModel) and self.args.enable_zero_cost_checkpoint and self.args.bf16

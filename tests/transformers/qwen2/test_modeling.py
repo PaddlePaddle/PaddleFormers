@@ -14,7 +14,6 @@
 # limitations under the License.
 from __future__ import annotations
 
-import sys
 import tempfile
 import unittest
 
@@ -426,14 +425,6 @@ class Qwen2CompatibilityTest(unittest.TestCase):
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         # 3. forward the torch  model
-        try:
-            sys.modules["torch"] = sys.modules["torch_save"]
-        except:
-            pass
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
         import torch
         from transformers import Qwen2Model
 
@@ -449,11 +440,6 @@ class Qwen2CompatibilityTest(unittest.TestCase):
                 rtol=1e-2,
             )
         )
-        sys.modules["torch"] = None
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
 
     @require_package("transformers", "torch")
     def test_Qwen2_converter_from_local_dir(self):
@@ -463,14 +449,6 @@ class Qwen2CompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch  model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
             import torch
             from transformers import Qwen2ForCausalLM
 
@@ -519,11 +497,6 @@ class Qwen2CompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
 
     @parameterized.expand([("Qwen2Model",), ("Qwen2ForCausalLM",)])
     @require_package("transformers", "torch")
@@ -535,14 +508,6 @@ class Qwen2CompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
             import torch
             import transformers
 
@@ -573,8 +538,3 @@ class Qwen2CompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass

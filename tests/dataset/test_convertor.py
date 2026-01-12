@@ -127,13 +127,15 @@ def make_mm_data():
         "messages": [
             {"role": "user", "content": "<image>第一轮输入"},
             {
-                "role": "function",
-                "content": '<think>\n我要好好想一想\n</think>\n\n[{"name": "image_zoom_in_tool", "arguments": "{\\"bbox_2d\\": [0, 493, 518, 786]}"}]',
+                "role": "assistant",
+                "content": "<think>\n我要好好想一想\n</think>\n\n",
+                "tool_calls": '[{"name": "image_zoom_in_tool", "arguments": "{\\"bbox_2d\\": [0, 493, 518, 786]}"}]',
             },
             {"role": "observation", "content": "工具回复"},
             {
-                "role": "function",
-                "content": '<think>\n我要好好想一想\n</think>\n\n[{"name": "image_zoom_in_tool", "arguments": "{\\"bbox_2d\\": [0, 493, 518, 786]}"}]',
+                "role": "assistant",
+                "content": "<think>\n我要好好想一想\n</think>\n\n",
+                "tool_calls": '[{"name": "image_zoom_in_tool", "arguments": "{\\"bbox_2d\\": [0, 493, 518, 786]}"}]',
             },
         ],
         "images": ["PATH/TO/IMAGE"],

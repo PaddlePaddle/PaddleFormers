@@ -203,7 +203,7 @@ def convert_mm_data(item):
                 messages.append({"role": role, "content": content})
             elif tag == "no_mask":
                 if len(tool_calls_str) > 0:
-                    messages.append({"role": "function", "content": content + tool_calls_str})
+                    messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls_str})
                 else:
                     messages.append({"role": "assistant", "content": content})
             tag = new_tag
@@ -230,7 +230,7 @@ def convert_mm_data(item):
         messages.append({"role": role, "content": content})
     elif tag == "no_mask":
         if len(tool_calls_str) > 0:
-            messages.append({"role": "function", "content": content + tool_calls_str})
+            messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls_str})
         else:
             messages.append({"role": "assistant", "content": content})
     res = {"messages": messages}
