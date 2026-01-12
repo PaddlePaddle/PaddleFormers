@@ -1571,18 +1571,17 @@ class TrainingArguments:
             os.environ["FLAGS_embedding_deterministic"] = "1"
 
         if self.fa_version == 2 or self.fa_version == 3:
-            is_sm90 = (
-                paddle.base.core.is_compiled_with_cuda()
-                and paddle_device.get_device_capability()[0] == 9
-                and paddle_device.get_device_capability()[1] == 0
-            )
-            if is_sm90:
-                paddle.set_flags({"FLAGS_flash_attn_version": 3})
-                self.fa_version = 3
-                warnings.warn("sm90 automatic set fa_version to fa3")
-            else:
-                paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
-                logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
+            if paddle.base.core.is_compiled_with_cuda():
+                is_sm90 = (
+                    paddle_device.get_device_capability()[0] == 9 and paddle_device.get_device_capability()[1] == 0
+                )
+                if is_sm90:
+                    paddle.set_flags({"FLAGS_flash_attn_version": 3})
+                    self.fa_version = 3
+                    warnings.warn("sm90 automatic set fa_version to fa3")
+                else:
+                    paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
+                    logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
         else:
             raise ValueError(f"--fa_version should be 2 or 3, but got {self.fa_version}")
 
@@ -1701,7 +1700,7 @@ class TrainingArguments:
         self._post_init_load_checkpoint_format()
         if self.tensorwise_offload_optimizer and self.data_parallel_size > 1:
             raise NotImplementedError(
-                f"Optimizer offload is not supported under data parallel. Please use sharding by setting --sharding stage1 --sharding_parallel_size {self.sharding_parallel_size*self.data_parallel_size}."
+                f"Optimizer offload is not supported under data parallel. Please use sharding by setting --sharding stage1 --sharding_parallel_size {self.sharding_parallel_size * self.data_parallel_size}."
             )
 
         if self.to_static:
