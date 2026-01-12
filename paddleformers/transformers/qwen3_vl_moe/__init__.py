@@ -22,6 +22,7 @@ import_structure = {
     "configuration": ["Qwen3VLMoeConfig", "Qwen3VLMoeTextConfig"],
     "modeling": [
         "Qwen3VLMoeForConditionalGeneration",
+        "Qwen3VLMoeFleet",
         "Qwen3VLMoeModel",
         "Qwen3VLMoePretrainedModel",
         "Qwen3VLMoeTextModel",
