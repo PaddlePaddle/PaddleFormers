@@ -48,7 +48,7 @@ from ..masking_utils import (
 from ..model_outputs import BaseModelOutputWithPast, ModelOutput
 from ..model_utils import PretrainedModel
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS
-from ..qwen3_vl.modeling_fleet import Qwen3VLModel, Qwen3VLModelFleet, Qwen3VLProvider
+from ..qwen3_vl.modeling_fleet import Qwen3VLModel, Qwen3VLProvider
 from ..utils import logger
 from .configuration import (
     Qwen3VLMoeConfig,
@@ -2705,9 +2705,7 @@ class Qwen3VLMoeForConditionalGenerationFleet(Qwen3VLMoePretrainedModelFleet):
     def __init__(self, config):
         super().__init__(config)
         # model_provider = Qwen3VLProvider.from_config(config)
-        self.model = Qwen3VLModelFleet(
-            config, have_criterion=False
-        )  # Qwen3VLModelFleet(model_provider, model_version=config.model_type)
+        self.model = Qwen3VLMoeFleet(config, have_criterion=False)
         self.criterion = CriterionLayer(config.text_config)
         # self.tie_weights()
 
