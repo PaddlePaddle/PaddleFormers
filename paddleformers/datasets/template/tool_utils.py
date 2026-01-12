@@ -49,7 +49,9 @@ QWEN_TOOL_PROMPT = (
     """"arguments": <args-json-object>}}\n</tool_call>"""
 )
 
-ERNIE_TOOL_PROMPT = "\n<tool_list>\n[{tool_text}]\n</tool_list>\n"
+ERNIE_TOOL_PROMPT = "\n\n<tool_list>\n[{tool_text}]\n</tool_list>"
+
+ERNIE_VL_TOOL_PROMPT = "\n<tool_list>\n[{tool_text}]\n</tool_list>\n"
 
 
 GLM4_TOOL_PROMPT = (
@@ -261,12 +263,37 @@ class ERNIEToolUtils(ToolUtils):
             json.dumps({"name": name, "arguments": json.loads(arguments)}, ensure_ascii=False)
             for name, arguments in functions
         ]
-        return "\n".join([f"<tool_call>{text}\n</tool_call>" for text in function_texts])
+        return "\n".join([f"<tool_call>\n{text}\n</tool_call>\n" for text in function_texts])
+
+
+class ERNIEVLToolUtils(ToolUtils):
+    r"""ERNIE VL 4.5 tool using template."""
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        tool_text_list = []
+        for tool in tools:
+            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            tool_text_list.append(json.dumps(wrapped_tool, ensure_ascii=False))
+        tool_text = ", ".join(tool_text_list)
+
+        return ERNIE_VL_TOOL_PROMPT.format(tool_text=tool_text)
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        function_texts = [
+            json.dumps({"name": name, "arguments": json.loads(arguments)}, ensure_ascii=False)
+            for name, arguments in functions
+        ]
+        return "\n".join([f"<tool_call{text}\n</tool_call>" for text in function_texts])
 
 
 TOOLS = {
     "default": DefaultToolUtils(),
     "ernie": ERNIEToolUtils(),
+    "ernie_vl": ERNIEVLToolUtils(),
     "qwen": QwenToolUtils(),
     "glm4": GLM4ToolUtils(),
     "glm4_moe": GLM4MOEToolUtils(),
