@@ -197,7 +197,7 @@ class _BaseAutoModelClass:
             model_class = getattr(import_class, init_class)
             return model_class
         except AttributeError:
-            model_class = getattr(import_class, init_class + "Fleet")
+            model_class = getattr(import_class, init_class + "Decapitate")
             return model_class
         except AttributeError as err:
             try:

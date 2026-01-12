@@ -1159,11 +1159,6 @@ class Glm4MoeRotaryEmbedding(nn.Layer):
 
 
 @register_base_model
-class Glm4MoeModelFleet(Glm4MoePreTrainedModel):
-    pass
-
-
-@register_base_model
 class Glm4MoeModel(Glm4MoePreTrainedModel):
     _keys_to_ignore_on_load_unexpected = [r"model\.layers\.92.*", r"model\.layers\.46.*"]
 
@@ -1358,7 +1353,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         )
 
 
-class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
+class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1377,13 +1372,11 @@ class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
-        if not hasattr(config, "architectures"):
-            config.architectures = [cls.__name__.replace("Fleet", "")]
         gpt_model.config_to_save = config
         return gpt_model
 
 
-class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
+class Glm4MoeForCausalLMDecapitate(Glm4MoePreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
     _tp_plan = {"lm_head": "colwise_rep"}
     _pp_plan = {"lm_head": (["hidden_states"], ["logits"])}
@@ -1533,7 +1526,7 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
         return ret
 
 
-class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe):
+class Glm4MoeForCausalLMPipe(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1553,12 +1546,12 @@ class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalL
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         if not hasattr(config, "architectures"):
-            config.architectures = [cls.__name__.replace("PipeFleet", "")]
+            config.architectures = [cls.__name__.replace("Pipe", "")]
         gpt_model.config_to_save = config
         return gpt_model
 
 
-class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
+class Glm4MoeForCausalLMPipeDecapitate(GeneralModelForCausalLMPipe):
     config_class = Glm4MoeConfig
     _decoder_layer_cls = Glm4MoeDecoderLayer
     _decoder_layer_pipe_cls = Glm4MoeDecoderLayerPipe
@@ -1567,15 +1560,15 @@ class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Glm4MoeModel.transpose_weight_keys
     _rotary_emb_cls = Glm4MoeRotaryEmbedding
-    _gen_aoa_config = Glm4MoeForCausalLM._gen_aoa_config
-    _gen_inv_aoa_config = Glm4MoeForCausalLM._gen_inv_aoa_config
+    _gen_aoa_config = Glm4MoeForCausalLMDecapitate._gen_aoa_config
+    _gen_inv_aoa_config = Glm4MoeForCausalLMDecapitate._gen_inv_aoa_config
 
 
 __all__ = [
-    "Glm4MoeForCausalLMPipeFleet",
-    "Glm4MoeModelFleet",
-    "Glm4MoeForCausalLMFleet",
     "Glm4MoeForCausalLMPipe",
     "Glm4MoeModel",
     "Glm4MoeForCausalLM",
+    "Glm4MoeForCausalLMPipeDecapitate",
+    "Glm4MoeModel",
+    "Glm4MoeForCausalLMDecapitate",
 ]
