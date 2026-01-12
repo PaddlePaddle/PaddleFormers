@@ -1227,13 +1227,22 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
                 f"model.visual.blocks.{layer_id}.attn.q.bias, model.visual.blocks.{layer_id}.attn.k.bias, model.visual.blocks.{layer_id}.attn.v.bias -> {visual_prefix}decoder.layers.{layer_id}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.vision_config.num_attention_heads}, num_key_value_groups={config.vision_config.num_attention_heads},axis=0",
             )
         ]
-        aoa_config["aoa_statements"] += [
-            f"model.visual.blocks.$LAYER_ID.mlp.{x}.weight^T -> {visual_prefix}decoder.layers.$LAYER_ID.mlp.{y}.weight"
-            for x, y in (("linear_fc1", "up_gate_proj"), ("linear_fc2", "down_proj"))
-        ] + [
-            f"model.visual.blocks.$LAYER_ID.mlp.{x}.bias -> {visual_prefix}decoder.layers.$LAYER_ID.mlp.{y}.bias"
-            for x, y in (("linear_fc1", "up_gate_proj"), ("linear_fc2", "down_proj"))
-        ]
+        aoa_config["aoa_statements"] += (
+            [
+                f"model.visual.blocks.$LAYER_ID.attn.proj.weight^T -> {visual_prefix}decoder.layers.$LAYER_ID.self_attn.o_proj.weight",
+            ]
+            + [
+                f"model.visual.blocks.$LAYER_ID.attn.proj.bias -> {visual_prefix}decoder.layers.$LAYER_ID.self_attn.o_proj.bias"
+            ]
+            + [
+                f"model.visual.blocks.$LAYER_ID.mlp.{x}.weight^T -> {visual_prefix}decoder.layers.$LAYER_ID.mlp.{y}.weight"
+                for x, y in (("linear_fc1", "up_gate_proj"), ("linear_fc2", "down_proj"))
+            ]
+            + [
+                f"model.visual.blocks.$LAYER_ID.mlp.{x}.bias -> {visual_prefix}decoder.layers.$LAYER_ID.mlp.{y}.bias"
+                for x, y in (("linear_fc1", "up_gate_proj"), ("linear_fc2", "down_proj"))
+            ]
+        )
         aoa_config["aoa_statements"] += [
             f"model.visual.patch_embed.proj.weight -> {visual_prefix}patch_embed.proj.weight",
             f"model.visual.patch_embed.proj.bias -> {visual_prefix}patch_embed.proj.bias",
@@ -1310,14 +1319,22 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
         ]
 
         # visual model
+        aoa_config["aoa_statements"] += [
+            stmt
+            for layer_id in range(config.vision_config.num_hidden_layers)
+            for stmt in (
+                f"{visual_prefix}decoder.layers.{layer_id}.self_attn.qkv_proj.weight -> model.visual.blocks.{layer_id}.attn.q.weight, model.visual.blocks.{layer_id}.attn.k.weight, model.visual.blocks.{layer_id}.attn.v.weight, fused_qkv, num_heads={config.vision_config.num_attention_heads}, num_key_value_groups={config.vision_config.num_attention_heads}",
+                f"model.visual.blocks.{layer_id}.attn.q.weight^T, model.visual.blocks.{layer_id}.attn.k.weight^T, model.visual.blocks.{layer_id}.attn.v.weight^T -> model.visual.blocks.{layer_id}.attn.qkv.weight, axis=0",
+                f"{visual_prefix}decoder.layers.{layer_id}.self_attn.qkv_proj.bias -> model.visual.blocks.{layer_id}.attn.q.bias, model.visual.blocks.{layer_id}.attn.k.bias, model.visual.blocks.{layer_id}.attn.v.bias, fused_qkv, num_heads={config.vision_config.num_attention_heads}, num_key_value_groups={config.vision_config.num_attention_heads},axis=0",
+                f"model.visual.blocks.{layer_id}.attn.q.bias, model.visual.blocks.{layer_id}.attn.k.bias, model.visual.blocks.{layer_id}.attn.v.bias -> model.visual.blocks.{layer_id}.attn.qkv.bias, axis=0",
+            )
+        ]
         aoa_config["aoa_statements"] += (
             [
-                f"{visual_prefix}decoder.layers.$LAYER_ID.self_attn.{y}.weight^T -> model.visual.blocks.$LAYER_ID.attn.{x}.weight"
-                for x, y in (("qkv", "qkv_proj"), ("proj", "o_proj"))
+                f"{visual_prefix}decoder.layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.visual.blocks.$LAYER_ID.attn.proj.weight"
             ]
             + [
-                f"{visual_prefix}decoder.layers.$LAYER_ID.self_attn.{y}.bias -> model.visual.blocks.$LAYER_ID.attn.{x}.bias"
-                for x, y in (("qkv", "qkv_proj"), ("proj", "o_proj"))
+                f"{visual_prefix}decoder.layers.$LAYER_ID.self_attn.o_proj.bias -> model.visual.blocks.$LAYER_ID.attn.proj.bias"
             ]
             + [
                 f"{visual_prefix}decoder.layers.$LAYER_ID.mlp.{y}.weight^T -> model.visual.blocks.$LAYER_ID.mlp.linear_fc{x}.weight"
