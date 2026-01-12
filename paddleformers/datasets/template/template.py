@@ -27,7 +27,13 @@ from typing_extensions import override
 
 from paddleformers.utils.log import logger
 
-from .formatter import EmptyFormatter, FunctionFormatter, StringFormatter, ToolFormatter
+from .formatter import (
+    EmptyFormatter,
+    FunctionFormatter,
+    StringFormatter,
+    ThinkingFormatter,
+    ToolFormatter,
+)
 from .grounding_plugin import get_grounding_plugin
 from .mm_plugin import get_mm_plugin
 
@@ -318,6 +324,59 @@ class Llama2Template(Template):
         return encoded_messages
 
 
+@dataclass
+class ErnieThinkingTemplate(ReasoningTemplate):
+    r"""A template that fuse the system message to first user message."""
+
+    @override
+    def _encode(
+        self,
+        tokenizer: "PreTrainedTokenizer",
+        messages: list[dict[str, str]],
+        system: str,
+        tools: str,
+    ) -> list[list[int]]:
+        system = system or self.default_system
+        encoded_messages = []
+        for i, message in enumerate(messages):
+            elements = []
+
+            if i == 0:
+                elements += self.format_prefix.apply()
+                if not system:
+                    elements += ["<|im_start|>system\n<global_setting>\nthink_mode=True\n</global_setting>"]
+                else:
+                    elements += self.format_system.apply(content=system)
+                if tools:
+                    elements += self.format_tools.apply(content=tools)[0] if tools else ""
+                elements += ["<|im_end|>\n\n"]
+
+            if message["role"] == Role.USER:
+                elements += self.format_user.apply(content=message["content"], idx=str(i // 2))
+            elif message["role"] == Role.ASSISTANT:
+                elements += self.format_assistant.apply(content=message["content"], thought_words=self.thought_words)
+                if "tool_calls" in message:
+                    elements += self.format_function.apply(
+                        content=message["tool_calls"], thought_words=self.thought_words
+                    )
+                # Add chat sep to all except the last round
+                if i < len(messages) - 1:
+                    elements += [self.chat_sep]
+            elif message["role"] == Role.OBSERVATION:
+                elements += self.format_observation.apply(content=message["content"])
+            elif message["role"] == Role.FUNCTION:
+                elements += self.format_function.apply(content=message["content"], thought_words=self.thought_words)
+                # Add chat sep to all except the last round
+                if i < len(messages) - 1:
+                    elements += [self.chat_sep]
+            else:
+                raise NotImplementedError("Unexpected role: {}".format(message["role"]))
+
+            encoded_messages.append(self._convert_elements_to_ids(tokenizer, elements))
+
+        return encoded_messages
+
+
 TEMPLATES: dict[str, "Template"] = {}
 
 
@@ -507,10 +566,10 @@ register_template(
 register_template(
     name="ernie",
     format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n\n<|im_start|>assistant\n"]),
-    format_assistant=StringFormatter(slots=["<response>\n{{content}}\n</response>\n"]),
+    format_assistant=ThinkingFormatter(slots=["<response>\n{{content}}\n</response>\n"]),
     format_system=StringFormatter(
         slots=[
-            "<|im_start|>system\n<system_setting>\n{{content}}\n</system_setting>\n\n<global_setting>\nthink_mode=True\n</global_setting><|im_end|>\n\n"
+            "<|im_start|>system\n<system_setting>\n{{content}}\n</system_setting>\n\n<global_setting>\nthink_mode=True\n</global_setting>"
         ]
     ),
     format_function=FunctionFormatter(slots=["\n{{content}}"], tool_format="ernie"),
@@ -518,9 +577,10 @@ register_template(
         slots=["<|im_start|>user\n<tool_response>\n{{content}}\n</tool_response><|im_end|>\n\n<|im_start|>assistant\n"]
     ),
     format_tools=ToolFormatter(tool_format="ernie"),
-    default_system="<global_setting>\nthink_mode=True\n</global_setting>",
     chat_sep="<|im_end|>\n\n",
     suffix=["<|im_end|>"],
+    thought_words=("<think>", "</think>"),
+    template_class=ErnieThinkingTemplate,
 )
 
 register_template(
@@ -538,9 +598,9 @@ register_template(
     format_user=StringFormatter(slots=["User: {{content}}\nAssistant: "]),
     format_assistant=StringFormatter(slots=["{{content}}"]),
     format_system=StringFormatter(slots=["{{content}}\n"]),
-    format_function=FunctionFormatter(slots=["{{content}}\n"], tool_format="ernie"),
+    format_function=FunctionFormatter(slots=["{{content}}\n"], tool_format="ernie_vl"),
     format_observation=StringFormatter(slots=["User: <tool_output>\n{{content}}\n</tool_output>\n\nAssistant: "]),
-    format_tools=ToolFormatter(tool_format="ernie"),
+    format_tools=ToolFormatter(tool_format="ernie_vl"),
     format_prefix=EmptyFormatter(slots=["<|begin_of_sentence|>"]),
     chat_sep="<|end_of_sentence|>",
     suffix=["</s>"],

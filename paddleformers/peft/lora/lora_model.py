@@ -32,6 +32,7 @@ from paddle.distributed.fleet.meta_parallel import (
     PipelineLayer,
     RowParallelLinear,
 )
+from paddle.incubate.nn import FusedLinear
 
 from ...transformers.model_utils import VLMS
 from ...utils.import_utils import is_paddlefleet_available
@@ -663,7 +664,7 @@ class LoRAModel(nn.Layer):
             parent_module = getattr(parent_module, name)
         module = getattr(parent_module, attribute_chain[-1])
         lora_module = None
-        if isinstance(module, nn.Linear):
+        if isinstance(module, nn.Linear) or isinstance(module, FusedLinear):
             lora_module = LoRALinear(
                 in_features=module.weight.shape[0],
                 out_features=module.weight.shape[1],

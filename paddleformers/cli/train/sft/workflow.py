@@ -53,6 +53,7 @@ from paddleformers.transformers import (
     LlamaTokenizer,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
+from paddleformers.utils.import_utils import is_paddlefleet_available
 from paddleformers.utils.log import logger
 
 from .sft_trainer import SFTTrainer
@@ -173,6 +174,9 @@ def run_sft(
 
     training_args = finetuning_args
     training_args.max_seq_len = data_args.max_seq_len
+    if is_paddlefleet_available() and model_args.lora and training_args.moe_token_dispatcher_type == "deepep":
+        logger.warning("For PaddleFleet, moe_use_fusion_node should False when using LoRA.")
+        training_args.moe_use_fusion_node = False
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
     training_args.print_config(training_args, "Train")
