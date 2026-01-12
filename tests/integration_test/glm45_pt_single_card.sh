@@ -20,32 +20,6 @@ fi
 
 export root_dir=$(pwd)
 
-python -c "
-infile = '$root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py'
-print(infile)
-outfile = infile + '.new'
-with open(infile) as fin:
-    lines = fin.readlines()
-with open(outfile, 'w') as fout:
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        next_line = lines[i+1] if i+1 < len(lines) else ''
-        pad = line[:len(line)-len(line.lstrip())]
-        if line.lstrip().startswith('class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel)') and next_line.strip().startswith('is_fleet'):
-            fout.write(pad + 'class Glm4MoeForCausalLM(Glm4MoePreTrainedModel)' + line.lstrip()[len('class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel)'):])
-        elif line.lstrip().startswith('class Glm4MoeForCausalLM(Glm4MoePreTrainedModel)') and next_line.strip().startswith('_tied_weights_keys'):
-            fout.write(pad + 'class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel)' + line.lstrip()[len('class Glm4MoeForCausalLM(Glm4MoePreTrainedModel)'):])
-        elif line.lstrip().startswith('class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel') and next_line.strip().startswith('is_fleet'):
-            fout.write(pad + 'class Glm4MoeForCausalLMPipe(Glm4MoePreTrainedModel' + line.lstrip()[len('class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel'):])
-        elif line.lstrip().startswith('class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe)') and next_line.strip().startswith('config_class'):
-            fout.write(pad + 'class Glm4MoeForCausalLMPipeFleet(GeneralModelForCausalLMPipe)' + line.lstrip()[len('class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe)'):])
-        else:
-            fout.write(line)
-        i += 1
-"
-mv $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
-
 config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_single_pt-test.yaml 
 
 
