@@ -218,9 +218,8 @@ class Qwen3VLVisionAttention(nn.Layer):
         **kwargs,
     ) -> paddle.Tensor:
         seq_length = hidden_states.shape[0]
-        qkv_output = self.qkv(hidden_states).reshape(seq_length, self.num_heads, -1)
-        query_states, key_states, value_states = paddle.split(
-            qkv_output, [self.head_dim, self.head_dim, self.head_dim], axis=2
+        query_states, key_states, value_states = (
+            self.qkv(hidden_states).reshape(seq_length, 3, self.num_heads, -1).permute(1, 0, 2, 3).unbind(0)
         )
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb_vision(query_states, key_states, cos, sin)

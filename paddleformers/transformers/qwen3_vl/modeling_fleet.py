@@ -31,7 +31,6 @@ from paddle.distributed.fleet.utils import recompute
 
 from paddlefleet import parallel_state, tensor_parallel
 from paddlefleet.fusions.fused_bias_dropout import get_bias_dropout_add
-from paddlefleet.fusions.fused_layer_norm import FusedLayerNorm
 from paddlefleet.models.common.vision_layer.vision_layer import VisionLayer
 from paddlefleet.models.multimodal.llava_model import LLaVAModel as MCoreLLaVAModel
 from paddlefleet.packed_seq_params import PackedSeqParams
@@ -44,7 +43,7 @@ from paddlefleet.transformer.dot_product_attention import DotProductAttention
 from paddlefleet.transformer.enums import AttnMaskType, ModelType
 from paddlefleet.transformer.identity_op import IdentityOp
 from paddlefleet.transformer.mlp import MLP, MLPSublayersSpec
-from paddlefleet.transformer.paddle_norm import FusedRMSNorm
+from paddlefleet.transformer.paddle_norm import FusedRMSNorm,LayerNorm
 from paddlefleet.transformer.transformer_block import TransformerBlock, TransformerBlockSublayersSpec
 from paddlefleet.transformer.transformer_config import TransformerConfig
 from paddlefleet.transformer.transformer_layer import TransformerLayer, TransformerLayerSublayersSpec
@@ -69,7 +68,7 @@ def get_layer_spec(is_vit, normalization) -> LayerSpec:
     """Transformer Layer Spec."""
     attn_mask_type = AttnMaskType.no_mask if is_vit else AttnMaskType.causal
     if normalization == "LayerNorm":
-        norm = FusedLayerNorm
+        norm = LayerNorm
     elif normalization == "RMSNorm":
         norm = FusedRMSNorm
     else:
@@ -183,18 +182,18 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
             context = dict_args.get("context", None)
             context_mask = dict_args.get("context_mask", None)
             rotary_pos_emb = dict_args.get("rotary_pos_emb", None)
-            cos = dict_args.get("rotary_pos_cos", None)
-            sin = dict_args.get("rotary_pos_sin", None)
+            rotary_pos_cos = dict_args.get("rotary_pos_cos", None)
+            rotary_pos_sin = dict_args.get("rotary_pos_sin", None)
             attention_bias = dict_args.get("attention_bias", None)
             packed_seq_params = dict_args.get("packed_seq_params", None)
             deepstack_visual_emb = dict_args.get("deepstack_visual_emb", None)
             visual_pos_masks = dict_args.get("visual_pos_masks", None)
             
-            assert (sin is None) == (cos is None)
+            assert (rotary_pos_sin is None) == (rotary_pos_cos is None)
 
-            if cos is not None and sin is not None:
-                rotary_pos_cos = cos.clone()
-                rotary_pos_sin = sin.clone()
+            if rotary_pos_cos is not None and rotary_pos_sin is not None:
+                rotary_pos_cos = rotary_pos_cos.clone()
+                rotary_pos_sin = rotary_pos_sin.clone()
                 if self.config.apply_rope_fusion:
                     rotary_pos_cos = rotary_pos_cos[0, ...]
                     rotary_pos_sin = rotary_pos_sin[0, ...]
@@ -553,43 +552,31 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         # print("fleet vision 0 hidden_states", hidden_states.shape)
         
         with rng_context:
-            if self.config.recompute_granularity == "full" and self.training:
-                hidden_states = self._checkpointed_forward(
-                    hidden_states=hidden_states,
-                    attention_mask=attention_mask,
-                    context=context,
-                    context_mask=context_mask,
-                    rotary_pos_emb=rotary_pos_emb,
-                    attention_bias=attention_bias,
-                    packed_seq_params=packed_seq_params,
-                )
-                hidden_states, deepstack_feature_lists = hidden_states
-            else:
-                deepstack_feature_lists = []
-                for l_no, layer in enumerate(self.layers):
-                    packed_seq_params_now = packed_seq_params
-                    input_dict = {
-                        "hidden_states": hidden_states,
-                        "attention_mask": attention_mask,
-                        "context": context,
-                        "rotary_pos_emb": rotary_pos_emb,
-                        "rotary_pos_cos": rotary_pos_cos,
-                        "rotary_pos_sin": rotary_pos_sin,
-                        "attention_bias": attention_bias,
-                        "packed_seq_params": packed_seq_params_now,
-                    }
-                    output = layer(input_dict)
-                    hidden_states, context = output["hidden_states"], output["context"]
-                    if (
-                        paddle.is_grad_enabled()
-                        and self.config.cpu_offloading
-                        and self.group_prefetch_offload_commit_async is not None
-                    ):
-                        hidden_states = self.group_prefetch_offload_commit_async(hidden_states)
-                    
-                    if l_no in self.deepstack_visual_indexes:
-                        deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(l_no)](hidden_states.squeeze(0))
-                        deepstack_feature_lists.append(deepstack_feature)
+            deepstack_feature_lists = []
+            for l_no, layer in enumerate(self.layers):
+                packed_seq_params_now = packed_seq_params
+                input_dict = {
+                    "hidden_states": hidden_states,
+                    "attention_mask": attention_mask,
+                    "context": context,
+                    "rotary_pos_emb": rotary_pos_emb,
+                    "rotary_pos_cos": rotary_pos_cos,
+                    "rotary_pos_sin": rotary_pos_sin,
+                    "attention_bias": attention_bias,
+                    "packed_seq_params": packed_seq_params_now,
+                }
+                output = layer(input_dict)
+                hidden_states, context = output["hidden_states"], output["context"]
+                if (
+                    paddle.is_grad_enabled()
+                    and self.config.cpu_offloading
+                    and self.group_prefetch_offload_commit_async is not None
+                ):
+                    hidden_states = self.group_prefetch_offload_commit_async(hidden_states)
+                
+                if l_no in self.deepstack_visual_indexes:
+                    deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(l_no)](hidden_states.squeeze(0))
+                    deepstack_feature_lists.append(deepstack_feature)
                     # print(f"fleet vision {l_no} hidden_states", hidden_states.shape)
         
         if self.norm is not None:
@@ -598,105 +585,6 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         hidden_states = self.merger(hidden_states.squeeze(0))
         # print("vision merger output ",hidden_states.shape)
         return hidden_states, deepstack_feature_lists
-    
-    def _checkpointed_forward(
-        self,
-        hidden_states: paddle.Tensor,
-        attention_mask: paddle.Tensor,
-        context: paddle.Tensor,
-        context_mask: paddle.Tensor,
-        rotary_pos_emb: paddle.Tensor,
-        attention_bias: paddle.Tensor,
-        packed_seq_params: PackedSeqParams,
-    ):
-        def custom(start: int, end: int):
-            def custom_forwrad(hidden_states, attention_mask, context, context_mask, rotary_pos_emb):
-                deepstack_feature_lists = []
-                for index in range(start, end):
-                    packed_seq_params_now = packed_seq_params
-                    layer = self._get_layer(index)
-                    input_dict = {
-                        "hidden_states": hidden_states,
-                        "attention_mask": attention_mask,
-                        "context": context,
-                        "rotary_pos_emb": rotary_pos_emb,
-                        "attention_bias": attention_bias,
-                        "inference_context": None,
-                        "packed_seq_params": packed_seq_params_now,
-                    }
-                    output = layer(input_dict)
-                    if index in self.deepstack_visual_indexes:
-                        deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(index)](hidden_states)
-                        deepstack_feature_lists.append(deepstack_feature)
-                return (hidden_states, deepstack_feature_lists), context
-            
-            return custom_forwrad
-        
-        def checkpoint_handler(forward_func):
-            """Determine whether to use the `te_checkpoint` or `tensor_parallel.checkpoint`."""
-            if self.config.fp8:
-                return te_checkpoint(
-                    forward_func,
-                    self.config.distribute_saved_activations,
-                    tensor_parallel.random.get_cuda_rng_tracker,
-                    parallel_state.get_tensor_model_parallel_group(),
-                    hidden_states,
-                    attention_mask,
-                    context,
-                    context_mask,
-                    rotary_pos_emb,
-                )
-            else:
-                return tensor_parallel.checkpoint(
-                    forward_func,
-                    self.config.distribute_saved_activations,
-                    hidden_states,
-                    attention_mask,
-                    context,
-                    context_mask,
-                    rotary_pos_emb,
-                )
-
-        deepstack_feature_lists = []
-        if self.config.recompute_method == "uniform":
-            # Uniformly divide the total number of Transformer layers and checkpoint
-            # the input activation of each divided chunk.
-            # A method to further reduce memory usage reducing checkpoints.
-            layer_index = 0
-            while layer_index < self.num_layers_per_pipeline_rank:
-                hidden_states, context = checkpoint_handler(
-                    custom(layer_index, layer_index + self.config.recompute_num_layers)
-                )
-                deepstack_feature_lists.extend(hidden_states[1])
-                layer_index += self.config.recompute_num_layers
-        
-        elif self.config.recompute_method == "block":
-            # Checkpoint the input activation of only a set number of individual
-            # Transformer layers and skip the rest.
-            # A method fully use the device memory removing redundant re-computation.
-            recompute_skip_num_layers = 0
-            for layer_index in range(self.num_layers_per_pipeline_rank):
-                # Skip recomputation when input grad computation is not needed.
-                # Need to have at least one input tensor with gradient computation
-                # for re-enterant autograd engine.
-                if self.config.fp8 and not hidden_states.requires_grad:
-                    recompute_skip_num_layers += 1
-                if (
-                    layer_index >= recompute_skip_num_layers
-                    and layer_index < self.config.recompute_num_layers + recompute_skip_num_layers
-                ):
-                    hidden_states, context = checkpoint_handler(custom(layer_index, layer_index + 1))
-                    deepstack_feature_lists.extend(hidden_states[1])
-                else:
-                    hidden_states, context = custom(layer_index, layer_index + 1)(
-                        hidden_states, attention_mask, context, context_mask, rotary_pos_emb
-                    )
-                    deepstack_feature_lists.extend(hidden_states[1])
-        
-        else:
-            raise ValueError(f"Invalid activation recompute method: {self.config.recompute_method}.")
-        
-        return hidden_states[0], deepstack_feature_lists
 
 
 class Qwen3VLVisionModel(VisionLayer):
@@ -994,6 +882,8 @@ class Qwen3VLProvider(TransformerConfig):
 
     @classmethod
     def from_config(cls, config):
+        config.vision_config.normalization = "LayerNorm"
+        config.vision_config.gated_linear_unit = False
         config.vision_config = Qwen3VLVisionProvider.from_config(config.vision_config)
         config.text_config = Qwen3VLTextProvider.from_config(config.text_config)
         config.text_config.multimodal_embedding = True
