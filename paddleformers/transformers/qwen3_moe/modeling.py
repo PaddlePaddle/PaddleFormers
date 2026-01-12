@@ -1296,7 +1296,7 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
         return gpt_model
 
 
-class Qwen3MoeForCausalLMDecapitate(Qwen3MoePretrainedModel):
+class Qwen3MoeForCausalLMDecapitated(Qwen3MoePretrainedModel):
     enable_to_static_method = True
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -1438,7 +1438,7 @@ class Qwen3MoeForCausalLMPipe(Qwen3MoePretrainedModel, GeneralModelForCausalLMPi
         return gpt_model
 
 
-class Qwen3MoeForCausalLMPipeDecapitate(GeneralModelForCausalLMPipe):
+class Qwen3MoeForCausalLMPipeDecapitated(GeneralModelForCausalLMPipe):
     config_class = Qwen3MoeConfig
     _decoder_layer_cls = Qwen3MoeDecoderLayer
     _get_tensor_parallel_mappings = Qwen3MoeModel._get_tensor_parallel_mappings
@@ -1455,7 +1455,7 @@ __all__ = [
     "Qwen3MoeModel",
     "Qwen3MoePretrainedModel",
     "Qwen3MoeForCausalLM",
-    "Qwen3MoeForCausalLMDecapitate",
+    "Qwen3MoeForCausalLMDecapitated",
     "Qwen3MoeForCausalLMPipe",
-    "Qwen3MoeForCausalLMPipeDecapitate",
+    "Qwen3MoeForCausalLMPipeDecapitated",
 ]

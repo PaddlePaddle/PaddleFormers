@@ -1376,7 +1376,7 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         return gpt_model
 
 
-class Glm4MoeForCausalLMDecapitate(Glm4MoePreTrainedModel):
+class Glm4MoeForCausalLMDecapitated(Glm4MoePreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
     _tp_plan = {"lm_head": "colwise_rep"}
     _pp_plan = {"lm_head": (["hidden_states"], ["logits"])}
@@ -1551,7 +1551,7 @@ class Glm4MoeForCausalLMPipe(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe
         return gpt_model
 
 
-class Glm4MoeForCausalLMPipeDecapitate(GeneralModelForCausalLMPipe):
+class Glm4MoeForCausalLMPipeDecapitated(GeneralModelForCausalLMPipe):
     config_class = Glm4MoeConfig
     _decoder_layer_cls = Glm4MoeDecoderLayer
     _decoder_layer_pipe_cls = Glm4MoeDecoderLayerPipe
@@ -1560,14 +1560,14 @@ class Glm4MoeForCausalLMPipeDecapitate(GeneralModelForCausalLMPipe):
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Glm4MoeModel.transpose_weight_keys
     _rotary_emb_cls = Glm4MoeRotaryEmbedding
-    _gen_aoa_config = Glm4MoeForCausalLMDecapitate._gen_aoa_config
-    _gen_inv_aoa_config = Glm4MoeForCausalLMDecapitate._gen_inv_aoa_config
+    _gen_aoa_config = Glm4MoeForCausalLMDecapitated._gen_aoa_config
+    _gen_inv_aoa_config = Glm4MoeForCausalLMDecapitated._gen_inv_aoa_config
 
 
 __all__ = [
     "Glm4MoeForCausalLMPipe",
     "Glm4MoeModel",
     "Glm4MoeForCausalLM",
-    "Glm4MoeForCausalLMPipeDecapitate",
-    "Glm4MoeForCausalLMDecapitate",
+    "Glm4MoeForCausalLMPipeDecapitated",
+    "Glm4MoeForCausalLMDecapitated",
 ]
