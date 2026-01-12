@@ -21,7 +21,6 @@ import paddle
 from scipy.linalg import block_diag
 
 from paddleformers.peft.lora import LoRAModel
-from paddleformers.utils.log import logger
 
 from .SFTDataset import Sequence
 
@@ -79,12 +78,9 @@ def dpo_collate_fn(
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
-        max_seq_len = calc_padding_size(max_seq_len, training_args)
-        logger.info(f"In padding_free mode: Padding to {max_seq_len}")
     if not max_seq_len:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
-        max_seq_len = calc_padding_size(max_seq_len, training_args)
-        logger.info(f"Not in padding_free mode: Padding to {max_seq_len}")
+    max_seq_len = calc_padding_size(max_seq_len, training_args)
 
     input_dict = {
         "input_ids": [],
@@ -212,12 +208,9 @@ def collate_fn(
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
-        max_seq_len = calc_padding_size(max_seq_len, training_args)
-        logger.info(f"In padding_free mode: Padding to {max_seq_len}")
     if not max_seq_len:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
-        max_seq_len = calc_padding_size(max_seq_len, training_args)
-        logger.info(f"Not in padding_free mode: Padding to {max_seq_len}")
+    max_seq_len = calc_padding_size(max_seq_len, training_args)
 
     for batch_sequence in batch:
         if len(batch_sequence) == 1 and isinstance(batch_sequence[0].position_ids[0], List):
@@ -332,12 +325,9 @@ def mm_collate_fn(
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
-        max_seq_len = calc_padding_size(max_seq_len, training_args)
-        logger.info(f"In padding_free mode: Padding to {max_seq_len}")
     if not max_seq_len:
         max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
-        max_seq_len = calc_padding_size(max_seq_len, training_args)
-        logger.info(f"Not in padding_free mode: Padding to {max_seq_len}")
+    max_seq_len = calc_padding_size(max_seq_len, training_args)
     for batch_sequence in batch:
         original_token_ids = []
         original_position_ids = []
