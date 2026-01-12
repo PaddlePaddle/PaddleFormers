@@ -157,7 +157,7 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "qwen2_5_vl":
         target_modules = [
-            # llm
+            # Language Model
             "model.language_model.*q_proj.*",
             "model.language_model.*k_proj.*",
             "model.language_model.*v_proj.*",
@@ -165,13 +165,13 @@ def get_lora_target_modules(model):
             "model.language_model.*gate_proj.*",
             "model.language_model.*up_proj.*",
             "model.language_model.*down_proj.*",
-            # vision
+            # Vision Encoder
             "model.visual.*attn.qkv.*",
             "model.visual.*attn.proj.*",
             "model.visual.*gate_proj.*",
             "model.visual.*up_proj.*",
             "model.visual.*down_proj.*",
-            # alinger
+            # Projector
             "model.visual.merger.mlp\.[02].*",
         ]
     elif model.config.model_type == "qwen3_vl":
@@ -184,15 +184,14 @@ def get_lora_target_modules(model):
             "model.language_model.*gate_proj.*",
             "model.language_model.*up_proj.*",
             "model.language_model.*down_proj.*",
-            # Vision
+            # Vision Encoder
             "model.visual.blocks.*attn.qkv.*",
             "model.visual.blocks.*attn.proj.*",
             "model.visual.blocks.*mlp.linear_fc1.*",
             "model.visual.blocks.*mlp.linear_fc2.*",
-            # Merger
+            # Projector
             "model.visual.merger.linear_fc1.*",
             "model.visual.merger.linear_fc2.*",
-            # DeepStack Merger
             "model.visual.deepstack_merger_list.*.linear_fc1.*",
             "model.visual.deepstack_merger_list.*.linear_fc2.*",
         ]
@@ -304,6 +303,30 @@ def get_lora_target_modules(model):
             ".*spatial_linear.2.*",
             ".*temporal_linear.0.*",
             ".*temporal_linear.2.*",
+        ]
+    elif model.config.model_type == "ernie4_5_moe_vl":
+        target_modules = [
+            # Language Model
+            ".*self_attn.*qkv_proj.*",
+            ".*self_attn.*q_proj.*",
+            ".*self_attn.*k_proj.*",
+            ".*self_attn.*v_proj.*",
+            ".*self_attn.*o_proj.*",
+            ".*mlp.*up_gate_proj.*",
+            ".*mlp.*up_proj.*",
+            ".*mlp.*gate_proj.*",
+            ".*mlp.*down_proj.*",
+            # Vision Encoder
+            "vision_model.blocks.*qkv.*",
+            "vision_model.blocks.*proj.*",
+            "vision_model.blocks.*fc1.*",
+            "vision_model.blocks.*fc2.*",
+            # Projector
+            ".*resampler_model.*mlp.*",
+            ".*resampler_model.*spatial_linear.0.*",
+            ".*resampler_model.*spatial_linear.2.*",
+            ".*resampler_model.*temporal_linear.0.*",
+            ".*resampler_model.*temporal_linear.2.*",
         ]
     elif model.config.model_type == "paddleocr_vl":
         target_modules = [

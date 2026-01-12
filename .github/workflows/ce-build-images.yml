@@ -86,7 +86,7 @@ jobs:
           RUN python -m pip install -r requirements.txt --progress-bar off
           RUN python -m pip install -r tests/requirements.txt --progress-bar off
           RUN python setup.py bdist_wheel
-          RUN python -m pip install dist/*.whl --progress-bar off
+          RUN python -m pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" --progress-bar off
           WORKDIR /
           RUN rm -rf /tmp/paddleformers
           RUN python -m pip install opt_einsum --progress-bar off  # for paddle

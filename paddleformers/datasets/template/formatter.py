@@ -147,3 +147,28 @@ class ToolFormatter(Formatter):
             return [self.tool_utils.tool_formatter(tools) if len(tools) != 0 else ""]
         except json.JSONDecodeError:
             raise RuntimeError(f"Invalid JSON format in tool description: {str([content])}.")  # flat string
+
+
+@dataclass
+class ThinkingFormatter(StringFormatter):
+    def __post_init__(self):
+        super().__post_init__()
+
+    @override
+    def apply(self, **kwargs) -> SLOTS:
+        content: str = kwargs.pop("content")
+        reasoning_result = []
+        thought_words, thought = kwargs.pop("thought_words", None), None
+        if thought_words and len(thought_words) == 2 and len(content) > 0:
+            regex = re.compile(rf"{re.escape(thought_words[0])}(.*?){re.escape(thought_words[1])}", re.DOTALL)
+            thought = re.search(regex, content)
+
+        if thought:
+            content = content.replace(thought.group(0), "")
+            reasoning_content = thought.group(0).split("</think>")[0].rstrip("\n").split("<think>")[-1].lstrip("\n")
+            reasoning_result = ["<think>\n" + reasoning_content.strip("\n") + "\n</think>\n"]
+
+        if content:
+            return reasoning_result + super().apply(content=content)
+        else:
+            return reasoning_result
