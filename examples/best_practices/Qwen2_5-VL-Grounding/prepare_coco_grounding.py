@@ -174,22 +174,33 @@ def convert_to_qwen25vl_format(bbox: List[float], orig_height: int, orig_width: 
 
 def get_data_path(dataset_repo: str) -> str:
     download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
+    try:
+        if download_hub == "huggingface":
+            logger.info(f"Checking dataset {dataset_repo} (HuggingFace)...")
+            from huggingface_hub import snapshot_download
 
-    if download_hub == "huggingface":
-        logger.info(f"Checking dataset {dataset_repo} (HuggingFace)...")
-        from huggingface_hub import snapshot_download
+            local_dir = snapshot_download(repo_id=dataset_repo, repo_type="dataset", allow_patterns="data/*.parquet")
 
-        local_dir = snapshot_download(repo_id=dataset_repo, repo_type="dataset", allow_patterns="data/*.parquet")
+        elif download_hub == "modelscope":
+            from modelscope.msdatasets import MsDataset
 
-    elif download_hub == "modelscope":
-        from modelscope.msdatasets import MsDataset
+            dataset_repo_ms = dataset_repo.replace("detection-datasets", "AI-ModelScope")
+            logger.info(f"Checking dataset {dataset_repo_ms} (ModelScope)...")
+            local_dir = MsDataset.load(dataset_repo_ms, subset_name="detection-datasets--coco", use_streaming=True)
+        else:
+            raise ValueError(f"Invalid download hub: {download_hub}")
 
-        dataset_repo_ms = dataset_repo.replace("detection-datasets", "AI-ModelScope")
-        logger.info(f"Checking dataset {dataset_repo_ms} (ModelScope)...")
-        local_dir = MsDataset.load(dataset_repo_ms, subset_name="detection-datasets--coco", use_streaming=True)
+    except Exception as e:
+        if download_hub == "huggingface":
+            download_cmd = f"hf download {dataset_repo} --repo-type dataset"
+        elif download_hub == "modelscope":
+            repo_ms_name = dataset_repo.replace("detection-datasets", "AI-ModelScope")
+            download_cmd = f"modelscope download --dataset {repo_ms_name}"
+        else:
+            download_cmd = "N/A（Unexpected download hub）"
+        logger.error(f"DOWNLOAD FAILED. Please try downloading manually using these commands: {download_cmd}")
 
-    else:
-        raise ValueError(f"Invalid download hub: {download_hub}")
+        raise RuntimeError(f"Failed to download from {download_hub}") from e
 
     data_path = os.path.join(local_dir, "data")
     if not os.path.exists(data_path) and os.path.exists(local_dir):
