@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .legacy import (
+from transformers.tokenization_utils_base import (
     PaddingStrategy,
     PreTokenizedInput,
     TensorType,

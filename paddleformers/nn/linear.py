@@ -54,7 +54,7 @@ class Linear(GeneralInterface):
             raise ValueError("linear_type or config must be specified")
 
         if linear_type is None and config is not None:
-            linear_type = self.get_linear_type(config, tp_plan)
+            linear_type = self.get_linear_type(config, tp_plan, has_bias)
 
         linear_cls = self._global_mapping[linear_type]
         fuse_matmul_bias = config.get("fuse_linear", False) if config is not None else False
@@ -62,9 +62,9 @@ class Linear(GeneralInterface):
         return linear_cls(in_features=in_features, out_features=out_features, weight_attr=weight_attr, **kwargs)
 
     @classmethod
-    def get_linear_type(self, config: PretrainedConfig, tp_plan=None):
+    def get_linear_type(self, config: PretrainedConfig, tp_plan: str = None, has_bias: bool = None):
         if config.tensor_model_parallel_size <= 1:
-            if config.get("fuse_linear", False):
+            if config.get("fuse_linear", False) and has_bias:
                 return "fuse_linear"
             else:
                 return "default"

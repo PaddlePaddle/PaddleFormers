@@ -20,12 +20,10 @@ from ..utils.lazy_import import _LazyModule
 
 import_structure = {
     "lora": ["LoRAAutoConfig", "LoRAAutoModel", "LoRAConfig", "LoRAModel"],
-    "prefix": ["PrefixConfig", "PrefixModelForCausalLM"],
 }
 
 if TYPE_CHECKING:
     from .lora import LoRAAutoConfig, LoRAAutoModel, LoRAConfig, LoRAModel
-    from .prefix import PrefixConfig, PrefixModelForCausalLM
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

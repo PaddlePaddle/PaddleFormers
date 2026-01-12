@@ -107,7 +107,7 @@ def get_multimodel_lora_target_modules(model, target_modules, freeze_config):
         remove_module = None
 
         for prefix in sorted_prefixes:
-            if tm.startswith(prefix):
+            if prefix in tm:
                 remove_module = prefix_to_module[prefix]
                 break
 
@@ -212,8 +212,8 @@ register_multimodel_keys(
 register_multimodel_keys(
     MultiModelKeys(
         model_dtype=MLLMModelMapping.ernie4_5_moe_vl,
-        aligner="model.resampler_model",
-        llm=["model", "lm_head"],
+        aligner="resampler_model",
+        llm=["model", "lm_head", "mlp", "self_attn"],
         vision="vision_model",
     )
 )
