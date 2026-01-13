@@ -617,8 +617,9 @@ class Qwen3VLMoeVisionModel(Qwen3VLMoePretrainedModel):
         self,
         layer_module: nn.Layer,
         hidden_states: paddle.Tensor,
-        cu_seqlens_now: paddle.Tensor,
-        position_embeddings: paddle.Tensor,
+        cu_seqlens: paddle.Tensor,
+        rotary_pos_emb: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
     ):
         def create_custom_forward(module):
             def custom_forward(*inputs):
@@ -629,7 +630,8 @@ class Qwen3VLMoeVisionModel(Qwen3VLMoePretrainedModel):
         hidden_states = recompute(
             create_custom_forward(layer_module),
             hidden_states,
-            cu_seqlens_now,
+            cu_seqlens,
+            rotary_pos_emb,
             position_embeddings,
         )
         return hidden_states

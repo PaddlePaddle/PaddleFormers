@@ -23,7 +23,12 @@ from pathlib import Path
 
 import paddle
 
-from .utils.process import detect_device, set_ascend_environment, terminate_process_tree
+from .utils.process import (
+    detect_device,
+    set_ascend_environment,
+    set_env_if_empty,
+    terminate_process_tree,
+)
 
 script_dir = Path(__file__).parent.resolve()
 parent_dir = script_dir.parent.parent
@@ -106,50 +111,40 @@ def main():
         if key in os.environ:
             del os.environ[key]
 
-    os.environ["FLAGS_set_to_1d"] = "False"
-    os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
-    os.environ["FLAGS_dataloader_use_file_descriptor"] = "False"
+    set_env_if_empty("FLAGS_set_to_1d", "False")
+    set_env_if_empty("NVIDIA_TF32_OVERRIDE", "0")
+    set_env_if_empty("FLAGS_dataloader_use_file_descriptor", "False")
 
     if current_device == "xpu":
-        os.environ["FLAGS_use_stride_kernel"] = "0"
-        os.environ["XPU_PADDLE_L3_SIZE"] = "0"
-        os.environ["XPUAPI_DEFAULT_SIZE"] = "2205258752"
-
-        os.environ["CUDA_DEVICE_MAX_CONNECTIONS"] = "8"
-
-        os.environ["BKCL_TREE_THRESHOLD"] = "0"
-        os.environ["BKCL_ENABLE_XDR"] = "1"
-        os.environ["BKCL_RDMA_FORCE_TREE"] = "1"
-        os.environ["BKCL_RDMA_NICS"] = "eth1,eth1,eth2,eth2,eth3,eth3,eth4,eth4"
-        os.environ["BKCL_SOCKET_IFNAME"] = "eth0"
-        os.environ["BKCL_FORCE_L3_RDMA"] = "0"
-        os.environ["BKCL_USE_AR"] = "1"
-        os.environ["BKCL_RING_OPT"] = "1"
-        os.environ["BKCL_RING_HOSTID_USE_RANK"] = "1"
-
-        os.environ["XPU_PADDLE_FC_LOCAL_INT16"] = "1"
-        os.environ["XPU_AUTO_BF16_TF32_RADIO"] = "10"
-        os.environ["XPU_AUTO_BF16_TF32"] = "1"
+        set_env_if_empty("FLAGS_use_stride_kernel", "1")
+        set_env_if_empty("XPU_PADDLE_L3_SIZE", "0")
+        set_env_if_empty("XPUAPI_DEFAULT_SIZE", "2205258752")
+        set_env_if_empty("CUDA_DEVICE_MAX_CONNECTIONS", "8")
+        set_env_if_empty("BKCL_TREE_THRESHOLD", "0")
+        set_env_if_empty("BKCL_ENABLE_XDR", "1")
+        set_env_if_empty("BKCL_RDMA_FORCE_TREE", "1")
+        set_env_if_empty("BKCL_RDMA_NICS", "eth1,eth1,eth2,eth2,eth3,eth3,eth4,eth4")
+        set_env_if_empty("BKCL_SOCKET_IFNAME", "eth0")
+        set_env_if_empty("BKCL_FORCE_L3_RDMA", "0")
+        set_env_if_empty("BKCL_USE_AR", "1")
+        set_env_if_empty("BKCL_RING_OPT", "1")
+        set_env_if_empty("BKCL_RING_HOSTID_USE_RANK", "1")
+        set_env_if_empty("XPU_PADDLE_FC_LOCAL_INT16", "1")
+        set_env_if_empty("XPU_AUTO_BF16_TF32_RADIO", "10")
+        set_env_if_empty("XPU_AUTO_BF16_TF32", "1")
     elif current_device == "npu":
-        os.environ["FLAGS_allocator_strategy_kernel"] = "auto_growth"
-        os.environ["FLAGS_npu_jit_compile"] = "0"
+        set_env_if_empty("FLAGS_allocator_strategy_kernel", "auto_growth")
+        set_env_if_empty("FLAGS_npu_jit_compile", "0")
         try:
             set_ascend_environment()
         except Exception as e:
             print("Unexpected error setting Ascend environment: %s", e)
     elif current_device == "iluvatar_gpu":
-        os.environ["PADDLE_XCCL_BACKEND"] = "iluvatar_gpu"
-        os.environ["LD_PRELOAD"] = "/usr/local/corex/lib64/libcuda.so.1"
-        os.environ["FLAGS_embedding_deterministic"] = "1"
+        set_env_if_empty("PADDLE_XCCL_BACKEND", "iluvatar_gpu")
+        set_env_if_empty("LD_PRELOAD", "/usr/local/corex/lib64/libcuda.so.1")
+        set_env_if_empty("FLAGS_embedding_deterministic", "1")
 
     if command in distributed_funcs:
-
-        # if os.path.exists(paddleformers_dist_log):
-        #     try:
-        #         shutil.rmtree(paddleformers_dist_log)
-        #         print(f"Succeed to delete {paddleformers_dist_log}.")
-        #     except Exception as e:
-        #         print(f"Error occurs while deleting {paddleformers_dist_log}: {e}")
 
         # launch distributed training
         env = deepcopy(os.environ)
