@@ -294,7 +294,7 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
                 model = None
                 gc.collect()
 
-                model1 = model_class.from_pretrained(tmpdirname)
+                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
 
                 model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
 
