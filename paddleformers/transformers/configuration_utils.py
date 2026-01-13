@@ -332,6 +332,12 @@ class LlmMetaConfig:
             "Type of token dispatcher for MoE (e.g., 'round_robin', 'top_k'). Defaults to None (use default dispatcher).",
         ),
         (
+            "moe_use_fusion_node",
+            bool,
+            True,
+            "Whether to use fusion node for MoE layer. Default to True.",
+        ),
+        (
             "moe_pad_expert_input_to_capacity",
             bool,
             False,
@@ -409,6 +415,12 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
+        ),
+        (
+            "moe_ep_barrier",
+            bool,
+            True,
+            "Whether to add barrier for MoE expert parallelization communication. Defaults to True.",
         ),
     ]
 
@@ -909,7 +921,7 @@ class PretrainedConfig:
                 "Transformers. Using `model.gradient_checkpointing_enable()` instead, or if you are using the "
                 "`Trainer` API, pass `gradient_checkpointing=True` in your `TrainingArguments`."
             )
-        self._save_to_hf = kwargs.pop("save_to_hf", False)
+        self._save_to_hf = kwargs.pop("save_to_hf", True)
         self._unsavable_keys.add("_save_to_hf")
 
         # Additional attributes without default values
@@ -1006,7 +1018,7 @@ class PretrainedConfig:
 
         os.makedirs(save_directory, exist_ok=True)
 
-        self._save_to_hf = kwargs.pop("save_to_hf", False)
+        self._save_to_hf = kwargs.pop("save_to_hf", True)
 
         # If we have a custom config, we copy the file defining it in the folder and set the attributes so it can be
         # loaded from the Hub.

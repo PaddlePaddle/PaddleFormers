@@ -59,7 +59,7 @@ def prepare_config(config):
 def common_test_load(model_class, tempdir):
     paddle.distributed.barrier()
     if model_class is not None:
-        model_class.from_pretrained(tempdir)
+        model_class.from_pretrained(tempdir, convert_from_hf=False, load_checkpoint_format="")
         paddle.distributed.barrier()
         if paddle.distributed.get_rank() == 0:
             files = glob.glob(tempdir + "/*")
@@ -76,7 +76,13 @@ def common_test_merge(model, model_class=None):
         paddle.distributed.all_gather_object(object_list, tempdir, group=mp_group)
         tempdir = object_list[0]
         # test merge one
-        model.save_pretrained(save_dir=tempdir, merge_tensor_parallel=True, is_main_process=is_main_process)
+        model.save_pretrained(
+            save_dir=tempdir,
+            merge_tensor_parallel=True,
+            is_main_process=is_main_process,
+            save_to_hf=False,
+            save_checkpoint_format="",
+        )
         common_test_load(model_class, tempdir)
         # test merge shard
         model.save_pretrained(
@@ -85,16 +91,33 @@ def common_test_merge(model, model_class=None):
             variant=f"tp{rank:0>2d}",
             max_shard_size="5MB",
             is_main_process=is_main_process,
+            save_to_hf=False,
+            save_checkpoint_format="",
         )
         common_test_load(model_class, tempdir)
         # test save tp
-        model.save_pretrained(tempdir, max_shard_size="5MB", is_main_process=is_main_process)
+        model.save_pretrained(
+            tempdir, max_shard_size="5MB", is_main_process=is_main_process, save_to_hf=False, save_checkpoint_format=""
+        )
         common_test_load(model_class, tempdir)
         # test save shard safe
-        model.save_pretrained(tempdir, max_shard_size="5MB", safe_serialization=True, is_main_process=is_main_process)
+        model.save_pretrained(
+            tempdir,
+            max_shard_size="5MB",
+            safe_serialization=True,
+            is_main_process=is_main_process,
+            save_to_hf=False,
+            save_checkpoint_format="",
+        )
         common_test_load(model_class, tempdir)
         # test save safe tensor
-        model.save_pretrained(tempdir, safe_serialization=True, is_main_process=is_main_process)
+        model.save_pretrained(
+            tempdir,
+            safe_serialization=True,
+            is_main_process=is_main_process,
+            save_to_hf=False,
+            save_checkpoint_format="",
+        )
         common_test_load(model_class, tempdir)
         paddle.distributed.barrier()
 
