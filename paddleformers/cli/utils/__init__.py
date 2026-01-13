@@ -27,6 +27,7 @@ import_structure = {
         "set_ascend_environment",
         "remove_paddle_shm_files",
         "set_cuda_environment",
+        "set_env_if_empty",
     ],
     "llm_utils": [
         "compute_metrics",

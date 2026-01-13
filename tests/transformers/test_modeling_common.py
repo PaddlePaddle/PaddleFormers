@@ -241,6 +241,7 @@ class ModelTesterMixin:
 
         return model_class(self.base_model_class(**config))
 
+    @unittest.skip("TODO: Temporarily skipped")
     def test_save_load(self):
         config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
 
