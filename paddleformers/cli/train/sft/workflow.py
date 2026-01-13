@@ -413,7 +413,6 @@ def run_sft(
         else:
             max_seq_len = None
             logger.warning("Setting max_seq_len to None for mbs = 1 using PaddleFleet Model.")
-
     else:
         max_seq_len = (
             data_args.max_seq_len + model_config.num_nextn_predict_layers
