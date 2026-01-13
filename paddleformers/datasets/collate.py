@@ -79,7 +79,7 @@ def dpo_collate_fn(
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
     if not max_seq_len:
-        max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
+        max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
     max_seq_len = calc_padding_size(max_seq_len, training_args)
 
     input_dict = {
@@ -209,7 +209,7 @@ def collate_fn(
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
     if not max_seq_len:
-        max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
+        max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
     max_seq_len = calc_padding_size(max_seq_len, training_args)
 
     for batch_sequence in batch:
@@ -326,7 +326,7 @@ def mm_collate_fn(
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
     if not max_seq_len:
-        max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
+        max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
     max_seq_len = calc_padding_size(max_seq_len, training_args)
     for batch_sequence in batch:
         original_token_ids = []
