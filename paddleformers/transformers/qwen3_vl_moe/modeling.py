@@ -2318,7 +2318,7 @@ class Qwen3VLMoeCausalLMOutputWithPast(ModelOutput):
     aux_loss: Optional[paddle.Tensor] = None
 
 
-class Qwen3VLMoeForConditionalGeneration(Qwen3VLMoePretrainedModel):
+class Qwen3VLMoeForConditionalGenerationDecapitated(Qwen3VLMoePretrainedModel):
     _checkpoint_conversion_mapping = {
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
@@ -2706,7 +2706,7 @@ class Qwen3VLMoeFleet(Qwen3VLMoePretrainedModelFleet):
         return qwen3vl_model
 
 
-class Qwen3VLMoeForConditionalGenerationFleet(Qwen3VLMoePretrainedModelFleet):
+class Qwen3VLMoeForConditionalGeneration(Qwen3VLMoePretrainedModelFleet):
     _checkpoint_conversion_mapping = {
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
@@ -2834,8 +2834,8 @@ class Qwen3VLMoeForConditionalGenerationFleet(Qwen3VLMoePretrainedModelFleet):
 
 __all__ = [
     "Qwen3VLMoeFleet",
+    "Qwen3VLMoeForConditionalGenerationDecapitated",
     "Qwen3VLMoeForConditionalGeneration",
-    "Qwen3VLMoeForConditionalGenerationFleet",
     "Qwen3VLMoeModel",
     "Qwen3VLMoePretrainedModel",
     "Qwen3VLMoeTextModel",

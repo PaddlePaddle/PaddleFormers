@@ -52,7 +52,7 @@ from .configuration import Qwen3VLConfig, Qwen3VLTextConfig, Qwen3VLVisionConfig
 if TYPE_CHECKING:
     from .modeling_fleet import (
         Qwen3VLForCausalLMPipe,
-        Qwen3VLForConditionalGenerationFleet,
+        Qwen3VLForConditionalGeneration,
         Qwen3VLModelFleet,
         Qwen3VLModelPipe,
     )
@@ -63,10 +63,10 @@ def __getattr__(name):
         from .modeling_fleet import Qwen3VLModelFleet
 
         return Qwen3VLModelFleet
-    elif name == "Qwen3VLForConditionalGenerationFleet":
-        from .modeling_fleet import Qwen3VLForConditionalGenerationFleet
+    elif name == "Qwen3VLForConditionalGeneration":
+        from .modeling_fleet import Qwen3VLForConditionalGeneration
 
-        return Qwen3VLForConditionalGenerationFleet
+        return Qwen3VLForConditionalGeneration
     elif name == "Qwen3VLForCausalLMPipe":
         from .modeling_fleet import Qwen3VLForCausalLMPipe
 
@@ -1918,7 +1918,7 @@ class Qwen3VLCausalLMOutputWithPast(ModelOutput):
     rope_deltas: Optional[paddle.Tensor] = None
 
 
-class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModel):
+class Qwen3VLForConditionalGenerationDecapitated(Qwen3VLPretrainedModel):
     _checkpoint_conversion_mapping = {
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
@@ -2272,12 +2272,12 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModel):
 
 
 __all__ = [
-    "Qwen3VLForConditionalGeneration",
+    "Qwen3VLForConditionalGenerationDecapitated",
     "Qwen3VLModel",
     "Qwen3VLModelPipe",
     "Qwen3VLForCausalLMPipe",
     "Qwen3VLPretrainedModel",
     "Qwen3VLTextModel",
     "Qwen3VLModelFleet",
-    "Qwen3VLForConditionalGenerationFleet",
+    "Qwen3VLForConditionalGeneration",
 ]

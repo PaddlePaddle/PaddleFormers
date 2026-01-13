@@ -1425,7 +1425,7 @@ class Qwen3VLModelFleet(Qwen3VLPretrainedModelFleet):
         return qwen3vl_model
 
 
-class Qwen3VLForConditionalGenerationFleet(Qwen3VLPretrainedModelFleet):
+class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModelFleet):
     _checkpoint_conversion_mapping = {
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
@@ -1605,5 +1605,5 @@ __all__ = [
     "Qwen3VLModelFleet",
     "Qwen3VLForCausalLMPipe",
     "Qwen3VLModelPipe",
-    "Qwen3VLForConditionalGenerationFleet",
+    "Qwen3VLForConditionalGeneration",
 ]
