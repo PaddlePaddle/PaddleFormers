@@ -50,19 +50,16 @@ from ..utils import logger
 from .configuration import Qwen3VLConfig, Qwen3VLTextConfig, Qwen3VLVisionConfig
 
 if TYPE_CHECKING:
-    from .modeling_fleet import (
-        Qwen3VLForCausalLMPipe,
-        Qwen3VLForConditionalGeneration,
-        Qwen3VLModelFleet,
-        Qwen3VLModelPipe,
-    )
+    from .modeling_fleet import Qwen3VLForCausalLMPipe, Qwen3VLForConditionalGeneration
+    from .modeling_fleet import Qwen3VLModelFleet as Qwen3VLModel
+    from .modeling_fleet import Qwen3VLModelPipe
 
 
 def __getattr__(name):
-    if name == "Qwen3VLModelFleet":
-        from .modeling_fleet import Qwen3VLModelFleet
+    if name == "Qwen3VLModel":
+        from .modeling_fleet import Qwen3VLModelFleet as Qwen3VLModel
 
-        return Qwen3VLModelFleet
+        return Qwen3VLModel
     elif name == "Qwen3VLForConditionalGeneration":
         from .modeling_fleet import Qwen3VLForConditionalGeneration
 
@@ -1554,7 +1551,7 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
 
 
 @register_base_model
-class Qwen3VLModel(Qwen3VLPretrainedModel):
+class Qwen3VLModelDecapitated(Qwen3VLPretrainedModel):
     base_model_prefix = "model"
     _checkpoint_conversion_mapping = {}
     config: Qwen3VLConfig
@@ -2273,11 +2270,11 @@ class Qwen3VLForConditionalGenerationDecapitated(Qwen3VLPretrainedModel):
 
 __all__ = [
     "Qwen3VLForConditionalGenerationDecapitated",
-    "Qwen3VLModel",
+    "Qwen3VLModelDecapitated",
     "Qwen3VLModelPipe",
     "Qwen3VLForCausalLMPipe",
     "Qwen3VLPretrainedModel",
     "Qwen3VLTextModel",
-    "Qwen3VLModelFleet",
+    "Qwen3VLModel",
     "Qwen3VLForConditionalGeneration",
 ]
