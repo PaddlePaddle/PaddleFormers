@@ -1404,7 +1404,7 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
         return aoa_config
 
 
-class Qwen3VLModelFleet(Qwen3VLPretrainedModelFleet):
+class Qwen3VLModelDist(Qwen3VLPretrainedModelFleet):
     def __new__(cls, config, have_criterion=True):
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
@@ -1436,9 +1436,9 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModelFleet):
     def __init__(self, config):
         super().__init__(config)
         # model_provider = Qwen3VLProvider.from_config(config)
-        self.model = Qwen3VLModelFleet(
+        self.model = Qwen3VLModelDist(
             config, have_criterion=False
-        )  # Qwen3VLModelFleet(model_provider, model_version=config.model_type)
+        )  # Qwen3VLModelDist(model_provider, model_version=config.model_type)
         self.criterion = CriterionLayer(config.text_config)
         # self.tie_weights()
 
@@ -1602,7 +1602,7 @@ class Qwen3VLModelPipe(Qwen3VLPretrainedModelFleet, GeneralModelForCausalLMPipe)
 
 
 __all__ = [
-    "Qwen3VLModelFleet",
+    "Qwen3VLModelDist",
     "Qwen3VLForCausalLMPipe",
     "Qwen3VLModelPipe",
     "Qwen3VLForConditionalGeneration",
