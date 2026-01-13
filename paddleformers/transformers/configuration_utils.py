@@ -921,7 +921,7 @@ class PretrainedConfig:
                 "Transformers. Using `model.gradient_checkpointing_enable()` instead, or if you are using the "
                 "`Trainer` API, pass `gradient_checkpointing=True` in your `TrainingArguments`."
             )
-        self._save_to_hf = kwargs.pop("save_to_hf", False)
+        self._save_to_hf = kwargs.pop("save_to_hf", True)
         self._unsavable_keys.add("_save_to_hf")
 
         # Additional attributes without default values
@@ -1018,7 +1018,7 @@ class PretrainedConfig:
 
         os.makedirs(save_directory, exist_ok=True)
 
-        self._save_to_hf = kwargs.pop("save_to_hf", False)
+        self._save_to_hf = kwargs.pop("save_to_hf", True)
 
         # If we have a custom config, we copy the file defining it in the folder and set the attributes so it can be
         # loaded from the Hub.

@@ -27,21 +27,21 @@ do_eval: true
 per_device_eval_batch_size: 1
 per_device_train_batch_size: 2
 num_train_epochs: 1
-max_steps: 10
+max_steps: 100
 eval_iters: 10
-eval_steps: 100
+eval_steps: 300
 evaluation_strategy: steps
 save_steps: 100
 save_strategy: steps
 logging_steps: 1
-gradient_accumulation_steps: 128
+gradient_accumulation_steps: 64
 logging_dir: ./vdl_log
 output_dir: ./checkpoints
 disable_tqdm: true
 eval_accumulation_steps: 16
 
 # args
-router_aux_loss_coef: 0.001
+router_aux_loss_coef: 0.0001
 
 # train
 warmup_steps: 20
@@ -59,13 +59,16 @@ num_empty_layers_add_in_tail: 2
 
 # performance
 recompute_granularity: full
-recompute_method: first_n
+recompute_method: block
 recompute_num_layers: 11
 
+recompute_modules:
+  flash_attn: 6
+
 moe_grouped_gemm: true
-moe_deep_gemm: true
 apply_rope_fusion: true
 fuse_rms_norm: true
+fp32_residual_connection: false
 # moe_router_force_load_balancing: true
 
 # sharding

@@ -384,7 +384,7 @@ def _load_part_state_dict(
     quantization_config=None,
     dtype=None,
     return_numpy=False,
-    convert_from_hf=False,
+    convert_from_hf=True,
     transpose_weight_keys=None,
 ):
     """load part state dict from checkpoint file.
@@ -517,7 +517,7 @@ def load_state_dict(
     quantization_config=None,
     dtype=None,
     return_numpy=False,
-    convert_from_hf=False,
+    convert_from_hf=True,
     transpose_weight_keys=None,
 ):
     """
@@ -618,7 +618,7 @@ def load_state_dict(
     return state_dict
 
 
-def prepare_safe_save_state_dict(state_dict, save_to_hf=False):
+def prepare_safe_save_state_dict(state_dict, save_to_hf=True):
     for k in list(state_dict.keys()):
         if isinstance(state_dict[k], paddle.Tensor):
             if state_dict[k].dtype == paddle.bfloat16:
@@ -1945,7 +1945,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         cache_dir: str | None = None,
         subfolder: Optional[str] = "",
         config: PretrainedConfig = None,
-        convert_from_hf: bool = False,
+        convert_from_hf: bool = True,
         use_safetensors: bool | None = None,
         variant=None,
     ) -> str:
@@ -2185,7 +2185,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         config=None,
         ignore_mismatched_sizes=False,
         low_cpu_mem_usage=False,
-        convert_from_hf=False,
+        convert_from_hf=True,
         dtype=None,
         keep_in_fp32_modules=None,
         quantization_linear_list=None,
@@ -2762,14 +2762,14 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         download_hub = kwargs.pop("download_hub", None)
         subfolder = kwargs.pop("subfolder", None)
         load_via_cpu = kwargs.pop("load_via_cpu", False)
-        load_checkpoint_format = kwargs.pop("load_checkpoint_format", "")
+        load_checkpoint_format = kwargs.pop("load_checkpoint_format", "flex_checkpoint")
         if subfolder is None:
             subfolder = ""
         variant = kwargs.pop("variant", None)
         use_safetensors = kwargs.pop("use_safetensors", None if is_safetensors_available() else False)
 
         low_cpu_mem_usage = kwargs.pop("low_cpu_mem_usage", False)
-        convert_from_hf = kwargs.pop("convert_from_hf", None)
+        convert_from_hf = kwargs.pop("convert_from_hf", True)
         load_state_as_np = kwargs.pop("load_state_as_np", None)
         if load_state_as_np is not None:
             logger.warning("`load_state_as_np` is deprecated,  please delete it!")
@@ -2799,7 +2799,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             convert_from_hf = True
         # convert_from_hf default is False
         if convert_from_hf is None:
-            convert_from_hf = False
+            convert_from_hf = True
 
         # 1. get the PretrainedConfig to init model
         if not isinstance(config, PretrainedConfig):
@@ -3109,9 +3109,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         shard_format = kwargs.get("shard_format", "naive")  # support naive pipeline
         # variant = kwargs.get("variant", None)
         # is_main_process = kwargs.get("is_main_process", True)
-        save_to_hf = kwargs.get("save_to_hf", False)
+        save_to_hf = kwargs.get("save_to_hf", True)
 
-        save_checkpoint_format = kwargs.get("save_checkpoint_format", "")
+        save_checkpoint_format = kwargs.get("save_checkpoint_format", "flex_checkpoint")
 
         if kwargs.get("enable_auto_parallel", ""):
             # use flex_checkpoint as the default format in auto_parallel
@@ -3676,7 +3676,7 @@ def load_sharded_checkpoint_as_one(folder, variant=None, return_numpy=False):
     return ret
 
 
-def load_tp_checkpoint(folder, cls, config, return_numpy=False, convert_from_hf=False, transpose_weight_keys=None):
+def load_tp_checkpoint(folder, cls, config, return_numpy=False, convert_from_hf=True, transpose_weight_keys=None):
     """
 
     This load is performed efficiently: Load tp checkpoint only from cpu, no need to init the model.
