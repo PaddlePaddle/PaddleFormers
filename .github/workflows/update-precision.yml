@@ -16,6 +16,7 @@ jobs:
       - name: Determine whether to update
         id: determine
         run: |
+          sleep 30
           response=$(curl -L \
           -H "Accept: application/vnd.github+json" \
           -H "Authorization: Bearer ${{ github.token }}" \
