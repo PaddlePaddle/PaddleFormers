@@ -254,7 +254,8 @@ def run_sft(
     model_config.seq_length = data_args.max_seq_len
     model_config.max_sequence_length = data_args.max_seq_len
     model_config._attn_implementation = model_args.attn_impl
-    model_config.is_lora = model_args.lora
+    model_config.lora = model_args.lora
+    model_config.stage = model_args.stage
 
     def set_attr_func(config, key, value):
         if value is not None:

@@ -150,7 +150,9 @@ class _BaseAutoModelClass:
 
     # TODO: Refactor into AutoConfig when available
     @classmethod
-    def _get_model_class_from_config(cls, pretrained_model_name_or_path, config_file_path, config=None, is_lora=False):
+    def _get_model_class_from_config(
+        cls, pretrained_model_name_or_path, config_file_path, config=None, fallback=False
+    ):
         if config is None:
             with io.open(config_file_path, encoding="utf-8") as f:
                 config = json.load(f)
@@ -192,8 +194,9 @@ class _BaseAutoModelClass:
             )
         init_class = cls._name_mapping[model_name + "_Import_Class"]
         class_name = cls._name_mapping[init_class]
+
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
-        if is_lora:
+        if fallback:
             try:
                 model_class = getattr(import_class, init_class)
                 return model_class
@@ -241,7 +244,8 @@ class _BaseAutoModelClass:
 
     @classmethod
     def from_config(cls, config, **kwargs):
-        model_class = cls._get_model_class_from_config(None, None, config, is_lora=config.get("is_lora", False))
+        fallback = config.get("lora", False) and config.get("stage", "") == "DPO"
+        model_class = cls._get_model_class_from_config(None, None, config, fallback=fallback)
         return model_class._from_config(config, **kwargs)
 
     @classmethod
@@ -305,10 +309,13 @@ class _BaseAutoModelClass:
 
         if config_file is not None and os.path.exists(config_file):
             if kwargs.get("config") is not None:
-                is_lora = kwargs.get("config").get("is_lora", False)
+                lora = kwargs.get("config").get("lora", False)
+                fallback = lora and kwargs.get("config").get("stage", "") == "DPO"
             else:
-                is_lora = False
-            model_class = cls._get_model_class_from_config(pretrained_model_name_or_path, config_file, is_lora=is_lora)
+                fallback = False
+            model_class = cls._get_model_class_from_config(
+                pretrained_model_name_or_path, config_file, fallback=fallback
+            )
             logger.info(f"We are using {model_class} to load '{pretrained_model_name_or_path}'.")
             return model_class.from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
         else:
