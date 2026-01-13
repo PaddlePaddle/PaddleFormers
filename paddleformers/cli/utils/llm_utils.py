@@ -33,9 +33,6 @@ if TYPE_CHECKING:
 from paddleformers.generation import GenerationConfig
 from paddleformers.transformers import (  # ChatGLMv2Tokenizer,
     AutoTokenizer,
-    DeepseekV3ForCausalLMPipe,
-    Glm4MoeForCausalLMPipe,
-    LlamaForCausalLMPipe,
     PretrainedConfig,
 )
 from paddleformers.utils.log import logger
@@ -77,7 +74,7 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "bloom":
         target_modules = [".*query_key_value.*", ".*dense.*", ".*dense_h_to_4h.*", ".*dense_4h_to_h.*"]
-    elif model.config.model_type in ["llama", "jamba"] or isinstance(model, LlamaForCausalLMPipe):
+    elif model.config.model_type in ["llama", "jamba"]:
         target_modules = [
             ".*q_proj.*",
             ".*v_proj.*",
@@ -230,7 +227,7 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
         ]
-    elif model.config.model_type in ["deepseek_v3"] or isinstance(model, (DeepseekV3ForCausalLMPipe)):
+    elif model.config.model_type in ["deepseek_v3"]:
         target_modules = [
             ".*q_proj.*",
             ".*q_a_proj.*",
@@ -273,7 +270,7 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
         ]
-    elif model.config.model_type == "glm4_moe" or isinstance(model, Glm4MoeForCausalLMPipe):
+    elif model.config.model_type == "glm4_moe":
         target_modules = [
             ".*qkv_proj.*",
             ".*up_gate_proj.*",
