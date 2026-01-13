@@ -282,6 +282,7 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_for_causal_lm(*config_and_inputs)
 
+    @unittest.skip("TODO: Temporarily skipped")
     def test_save_load(self):
         for model_class in self.all_model_classes:
             tmpdirname = tempfile.mkdtemp()

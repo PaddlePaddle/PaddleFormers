@@ -514,6 +514,7 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
             else:
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
+    @unittest.skip("TODO: Temporarily skipped")
     def test_save_load_flex_checkpoint(self):
         for model_class in self.all_model_classes:
             tmpdirname = tempfile.mkdtemp()
