@@ -67,6 +67,7 @@ class Qwen3MoEModelProvider(GPTModelProvider):
         "context_parallel_degree": "context_parallel_size",
         "expert_parallel_degree": "expert_model_parallel_size",
         "dtype": "params_dtype",
+        "num_experts": "n_routed_experts",
     }
 
     rotary_base: float = 1000000.0
@@ -89,7 +90,6 @@ class Qwen3MoEModelProvider(GPTModelProvider):
     moe_grouped_gemm: bool = True
 
     n_shared_experts: int = 0
-    transform_rules = {"num_experts": "n_routed_experts"}
 
 
 def rotate_half(x):
