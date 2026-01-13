@@ -332,6 +332,12 @@ class LlmMetaConfig:
             "Type of token dispatcher for MoE (e.g., 'round_robin', 'top_k'). Defaults to None (use default dispatcher).",
         ),
         (
+            "moe_use_fusion_node",
+            bool,
+            True,
+            "Whether to use fusion node for MoE layer. Default to True.",
+        ),
+        (
             "moe_pad_expert_input_to_capacity",
             bool,
             False,
@@ -409,6 +415,12 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
+        ),
+        (
+            "moe_ep_barrier",
+            bool,
+            True,
+            "Whether to add barrier for MoE expert parallelization communication. Defaults to True.",
         ),
     ]
 

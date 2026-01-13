@@ -23,7 +23,7 @@ pr_number=$(echo $response | jq -r '.[0].url' | awk -F'/' '{print $NF}')
 
 wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}_latest/precision_list.txt
 pr_precision_url_base="https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${repo_name}/${pr_number}"
-while IFS= read -r line || [ -n "$line" ]; do
+while IFS= read -r fname || [ -n "$fname" ]; do
     [ -z "$fname" ] && continue
     url="${pr_precision_url_base}/${fname}"
     echo "try update: $url"
@@ -34,12 +34,10 @@ while IFS= read -r line || [ -n "$line" ]; do
         echo "Update required: $fname"
         if [ "$step" == "fleet" ]; then
             python bos/BosClient.py $fname xly-devops/PaddleFleet/precision/PaddleFleet_latest
-            python bos/BosClient.py $fname xly-devops/PaddleFleet/precision/PaddleFleet_PPrel_latest
         elif [ "$step" == "formers" ]; then
             python bos/BosClient.py $fname xly-devops/PaddleFleet/precision/PaddleFormers_latest
         else
             python bos/BosClient.py $fname xly-devops/PaddleFleet/precision/PaddleFleet_latest
-            python bos/BosClient.py $fname xly-devops/PaddleFleet/precision/PaddleFleet_PPrel_latest
             python bos/BosClient.py $fname xly-devops/PaddleFleet/precision/PaddleFormers_latest
         fi
     fi
