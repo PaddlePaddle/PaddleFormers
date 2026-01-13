@@ -337,7 +337,7 @@ class Qwen3VLTextProvider(GPTModelProvider):
     _save_to_hf: bool = False
     use_flash_attention: bool = True
     use_fused_linear_cross_entropy: bool = True
-    high_precision_rope: bool = False
+    high_precision_rope: bool = True
 
     n_shared_experts: int = 0
     transform_rules = {
@@ -859,15 +859,16 @@ class Qwen3VLProvider(TransformerConfig):
 
     @classmethod
     def from_config(cls, config):
-        config.vision_config.normalization = "LayerNorm"
-        config.vision_config.gated_linear_unit = False
-        config.vision_config = Qwen3VLVisionProvider.from_config(config.vision_config)
-        config.text_config = Qwen3VLTextProvider.from_config(config.text_config)
-        config.text_config.multimodal_embedding = True
-        config.text_config.position_embedding_type = "mrope"
-        config.text_config.image_token_id = config.image_token_id
-        config.text_config.video_token_id = config.video_token_id
-        return super().from_config(config)
+        res = super().from_config(config)
+        res.vision_config = Qwen3VLVisionProvider.from_config(config.vision_config)
+        res.text_config = Qwen3VLTextProvider.from_config(config.text_config)
+        res.vision_config.normalization = "LayerNorm"
+        res.vision_config.gated_linear_unit = False
+        res.text_config.multimodal_embedding = True
+        res.text_config.position_embedding_type = "mrope"
+        res.text_config.image_token_id = config.image_token_id
+        res.text_config.video_token_id = config.video_token_id
+        return res
 
 
 class Qwen3VLModel(MCoreLLaVAModel):
@@ -1220,12 +1221,12 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
         # visual model
         aoa_config["aoa_statements"] += [
             stmt
-            for layer_id in range(config.vision_config.num_hidden_layers)
+            for layer_id in range(config.vision_config.depth)
             for stmt in (
                 f"model.visual.blocks.{layer_id}.attn.qkv.weight -> model.visual.blocks.{layer_id}.attn.q.weight, model.visual.blocks.{layer_id}.attn.k.weight,model.visual.blocks.{layer_id}.attn.v.weight,axis=0",
-                f"model.visual.blocks.{layer_id}.attn.q.weight^T, model.visual.blocks.{layer_id}.attn.k.weight^T, model.visual.blocks.{layer_id}.attn.v.weight^T -> {visual_prefix}decoder.layers.{layer_id}.self_attn.qkv_proj.weight,fused_qkv, num_heads={config.vision_config.num_attention_heads}, num_key_value_groups={config.vision_config.num_attention_heads}",
+                f"model.visual.blocks.{layer_id}.attn.q.weight^T, model.visual.blocks.{layer_id}.attn.k.weight^T, model.visual.blocks.{layer_id}.attn.v.weight^T -> {visual_prefix}decoder.layers.{layer_id}.self_attn.qkv_proj.weight,fused_qkv, num_heads={config.vision_config.num_heads}, num_key_value_groups={config.vision_config.num_heads}",
                 f"model.visual.blocks.{layer_id}.attn.qkv.bias -> model.visual.blocks.{layer_id}.attn.q.bias, model.visual.blocks.{layer_id}.attn.k.bias, model.visual.blocks.{layer_id}.attn.v.bias,axis=0",
-                f"model.visual.blocks.{layer_id}.attn.q.bias, model.visual.blocks.{layer_id}.attn.k.bias, model.visual.blocks.{layer_id}.attn.v.bias -> {visual_prefix}decoder.layers.{layer_id}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.vision_config.num_attention_heads}, num_key_value_groups={config.vision_config.num_attention_heads},axis=0",
+                f"model.visual.blocks.{layer_id}.attn.q.bias, model.visual.blocks.{layer_id}.attn.k.bias, model.visual.blocks.{layer_id}.attn.v.bias -> {visual_prefix}decoder.layers.{layer_id}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.vision_config.num_heads}, num_key_value_groups={config.vision_config.num_heads},axis=0",
             )
         ]
         aoa_config["aoa_statements"] += (
@@ -1314,19 +1315,19 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
                 f"{llm_prefix}{layer_id + 1}.post_attention_layernorm.weight -> model.language_model.layers.{layer_id}.post_attention_layernorm.weight",
                 f"{llm_prefix}{layer_id + 1}.self_attn.o_proj.weight^T -> model.language_model.layers.{layer_id}.self_attn.o_proj.weight",
                 f"{llm_prefix}{layer_id + 1}.mlp.down_proj.weight^T -> model.language_model.layers.{layer_id}.mlp.down_proj.weight",
-                f"{llm_prefix}{layer_id + 1}.self_attn.q_norm.weight -> model.language_model.layers.{layer_id}.self_attn.q_norm.weight",
-                f"{llm_prefix}{layer_id + 1}.self_attn.k_norm.weight -> model.language_model.layers.{layer_id}.self_attn.k_norm.weight",
+                f"{llm_prefix}{layer_id + 1}.self_attn.q_layernorm.weight -> model.language_model.layers.{layer_id}.self_attn.q_norm.weight",
+                f"{llm_prefix}{layer_id + 1}.self_attn.k_layernorm.weight -> model.language_model.layers.{layer_id}.self_attn.k_norm.weight",
             )
         ]
 
         # visual model
         aoa_config["aoa_statements"] += [
             stmt
-            for layer_id in range(config.vision_config.num_hidden_layers)
+            for layer_id in range(config.vision_config.depth)
             for stmt in (
-                f"{visual_prefix}decoder.layers.{layer_id}.self_attn.qkv_proj.weight -> model.visual.blocks.{layer_id}.attn.q.weight, model.visual.blocks.{layer_id}.attn.k.weight, model.visual.blocks.{layer_id}.attn.v.weight, fused_qkv, num_heads={config.vision_config.num_attention_heads}, num_key_value_groups={config.vision_config.num_attention_heads}",
+                f"{visual_prefix}decoder.layers.{layer_id}.self_attn.qkv_proj.weight -> model.visual.blocks.{layer_id}.attn.q.weight, model.visual.blocks.{layer_id}.attn.k.weight, model.visual.blocks.{layer_id}.attn.v.weight, fused_qkv, num_heads={config.vision_config.num_heads}, num_key_value_groups={config.vision_config.num_heads}",
                 f"model.visual.blocks.{layer_id}.attn.q.weight^T, model.visual.blocks.{layer_id}.attn.k.weight^T, model.visual.blocks.{layer_id}.attn.v.weight^T -> model.visual.blocks.{layer_id}.attn.qkv.weight, axis=0",
-                f"{visual_prefix}decoder.layers.{layer_id}.self_attn.qkv_proj.bias -> model.visual.blocks.{layer_id}.attn.q.bias, model.visual.blocks.{layer_id}.attn.k.bias, model.visual.blocks.{layer_id}.attn.v.bias, fused_qkv, num_heads={config.vision_config.num_attention_heads}, num_key_value_groups={config.vision_config.num_attention_heads},axis=0",
+                f"{visual_prefix}decoder.layers.{layer_id}.self_attn.qkv_proj.bias -> model.visual.blocks.{layer_id}.attn.q.bias, model.visual.blocks.{layer_id}.attn.k.bias, model.visual.blocks.{layer_id}.attn.v.bias, fused_qkv, num_heads={config.vision_config.num_heads}, num_key_value_groups={config.vision_config.num_heads},axis=0",
                 f"model.visual.blocks.{layer_id}.attn.q.bias, model.visual.blocks.{layer_id}.attn.k.bias, model.visual.blocks.{layer_id}.attn.v.bias -> model.visual.blocks.{layer_id}.attn.qkv.bias, axis=0",
             )
         ]
@@ -1358,10 +1359,10 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             f"{visual_prefix}decoder.layers.$LAYER_ID.post_attention_layernorm.bias -> model.visual.blocks.$LAYER_ID.norm2.bias",
         ]
         aoa_config["aoa_statements"] += [
-            f"{visual_prefix}merger.linear_fc1.weight^T -> model.visual.merger.linear_fc1.weight",
-            f"{visual_prefix}merger.linear_fc1.bias -> model.visual.merger.linear_fc1.bias",
-            f"{visual_prefix}merger.linear_fc2.weight^T -> model.visual.merger.linear_fc2.weight",
-            f"{visual_prefix}merger.linear_fc2.bias -> model.visual.merger.linear_fc2.bias",
+            f"{visual_prefix}decoder.merger.linear_fc1.weight^T -> model.visual.merger.linear_fc1.weight",
+            f"{visual_prefix}decoder.merger.linear_fc1.bias -> model.visual.merger.linear_fc1.bias",
+            f"{visual_prefix}decoder.merger.linear_fc2.weight^T -> model.visual.merger.linear_fc2.weight",
+            f"{visual_prefix}decoder.merger.linear_fc2.bias -> model.visual.merger.linear_fc2.bias",
         ]
         aoa_config["aoa_statements"] += [
             f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.linear_fc1.weight^T -> model.visual.deepstack_merger_list.$LAYER_ID.linear_fc1.weight",
