@@ -1339,11 +1339,11 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
                 f"{visual_prefix}decoder.layers.$LAYER_ID.self_attn.o_proj.bias -> model.visual.blocks.$LAYER_ID.attn.proj.bias"
             ]
             + [
-                f"{visual_prefix}decoder.layers.$LAYER_ID.mlp.{y}.weight^T -> model.visual.blocks.$LAYER_ID.mlp.linear_fc{x}.weight"
+                f"{visual_prefix}decoder.layers.$LAYER_ID.mlp.{y}.weight^T -> model.visual.blocks.$LAYER_ID.mlp.{x}.weight"
                 for x, y in (("linear_fc1", "up_gate_proj"), ("linear_fc2", "down_proj"))
             ]
             + [
-                f"{visual_prefix}decoder.layers.$LAYER_ID.mlp.{y}.bias -> model.visual.blocks.$LAYER_ID.mlp.linear_fc{x}.bias"
+                f"{visual_prefix}decoder.layers.$LAYER_ID.mlp.{y}.bias -> model.visual.blocks.$LAYER_ID.mlp.{x}.bias"
                 for x, y in (("linear_fc1", "up_gate_proj"), ("linear_fc2", "down_proj"))
             ]
         )
