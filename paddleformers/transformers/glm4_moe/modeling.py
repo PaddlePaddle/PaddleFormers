@@ -1380,6 +1380,7 @@ class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
         if not hasattr(config, "architectures"):
             config.architectures = [cls.__name__.replace("Fleet", "")]
         gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
         return gpt_model
 
 
@@ -1555,6 +1556,7 @@ class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalL
         if not hasattr(config, "architectures"):
             config.architectures = [cls.__name__.replace("PipeFleet", "")]
         gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
         return gpt_model
 
 
