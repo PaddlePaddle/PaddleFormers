@@ -450,6 +450,7 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
         return aoa_config
 
     @classmethod
+    @classmethod
     def _gen_inv_aoa_config(cls, config: Qwen3VLMoeConfig):
         mapping = cls._checkpoint_conversion_mapping
         llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
@@ -460,8 +461,8 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
         # language model
         aoa_config = {
             "aoa_statements": [
-                f"{llm_prefix}embed_tokens.weight -> model.language_model.embed_tokens.weight",
-                f"{llm_prefix}{config.text_config.num_hidden_layers + 1}norm.weight -> model.language_model.norm.weight",
+                f"{llm_prefix}0.embedding.embed_tokens.weight -> model.language_model.embed_tokens.weight",
+                f"{llm_prefix}{config.text_config.num_hidden_layers + 1}.norm.weight -> model.language_model.norm.weight",
             ]
         }
         aoa_config["aoa_statements"] += [
@@ -471,7 +472,7 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
                 f"{llm_prefix}{layer_id + 1}.input_layernorm.weight -> model.language_model.layers.{layer_id}.input_layernorm.weight",
                 f"{llm_prefix}{layer_id + 1}.post_attention_layernorm.weight -> model.language_model.layers.{layer_id}.post_attention_layernorm.weight",
                 f"{llm_prefix}{layer_id + 1}.self_attn.o_proj.weight^T -> model.language_model.layers.{layer_id}.self_attn.o_proj.weight",
-                f"{llm_prefix}{layer_id + 1}.mlp.gate.weight^T -> model.language_model.layers.{layer_id}.mlp.gate.weight",
+                f"{llm_prefix}{layer_id + 1}.mlp.gate.weight -> model.language_model.layers.{layer_id}.mlp.gate.weight",
                 f"{llm_prefix}{layer_id + 1}.mlp.grouped_gemm_experts.weight1 -> model.language_model.layers.{layer_id}.mlp.experts.gate_up_proj",
                 f"{llm_prefix}{layer_id + 1}.mlp.grouped_gemm_experts.weight2 -> model.language_model.layers.{layer_id}.mlp.experts.down_proj",
                 f"{llm_prefix}{layer_id + 1}.self_attn.q_layernorm.weight -> model.language_model.layers.{layer_id}.self_attn.q_norm.weight",
@@ -531,12 +532,9 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
             f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.norm.bias -> model.visual.deepstack_merger_list.$LAYER_ID.norm.bias",
         ]
 
+        # attention qkv
         aoa_config["aoa_statements"] += [
             f"{llm_prefix}{layer_id + 1}.self_attn.qkv_proj.weight  -> model.language_model.layers.{layer_id}.self_attn.q_proj.weight, model.language_model.layers.{layer_id}.self_attn.k_proj.weight, model.language_model.layers.{layer_id}.self_attn.v_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups = {config.text_config.num_key_value_heads}"
-            for layer_id in range(config.text_config.num_hidden_layers)
-        ]
-        aoa_config["aoa_statements"] += [
-            f"{llm_prefix}{layer_id + 1}.self_attn.qkv_proj.bias  -> model.language_model.layers.{layer_id}.self_attn.q_proj.bias, model.language_model.layers.{layer_id}.self_attn.k_proj.bias, model.language_model.layers.{layer_id}.self_attn.v_proj.bias, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups = {config.text_config.num_key_value_heads}"
             for layer_id in range(config.text_config.num_hidden_layers)
         ]
         aoa_config["aoa_statements"] += [
@@ -547,7 +545,7 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
         # Qwen3VLMoeModel without lm_head
         if cls._tied_weights_keys:
             aoa_config["aoa_statements"] += [
-                f"lm_head.weight -> {'_' if config.tie_word_embeddings else 'lm_head.weight'}",
+                f"{llm_prefix}{config.text_config.num_hidden_layers + 2}.weight -> {'_' if config.tie_word_embeddings else 'lm_head.weight'}",
             ]
 
         return aoa_config
