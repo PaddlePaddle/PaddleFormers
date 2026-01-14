@@ -192,6 +192,28 @@ def get_lora_target_modules(model):
             "model.visual.deepstack_merger_list.*.linear_fc1.*",
             "model.visual.deepstack_merger_list.*.linear_fc2.*",
         ]
+    elif model.config.model_type == "qwen3_vl_moe":
+        target_modules = [
+            # Language Model
+            "model.language_model.*q_proj.*",
+            "model.language_model.*k_proj.*",
+            "model.language_model.*v_proj.*",
+            "model.language_model.*o_proj.*",
+            "model.language_model.*gate_up_proj.*",
+            "model.language_model.*gate.*",
+            "model.language_model.*down_proj.*",
+            # Vision
+            "model.visual.blocks.*attn.qkv.*",
+            "model.visual.blocks.*attn.proj.*",
+            "model.visual.blocks.*mlp.linear_fc1.*",
+            "model.visual.blocks.*mlp.linear_fc2.*",
+            # Merger
+            "model.visual.merger.linear_fc1.*",
+            "model.visual.merger.linear_fc2.*",
+            # DeepStack Merger
+            "model.visual.deepstack_merger_list.*.linear_fc1.*",
+            "model.visual.deepstack_merger_list.*.linear_fc2.*",
+        ]
     elif model.config.model_type == "qwen2_moe":
         target_modules = [
             ".*qkv_proj.*",
