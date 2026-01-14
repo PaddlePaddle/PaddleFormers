@@ -4711,7 +4711,7 @@ class Trainer:
                 labels = None
             inputs = inputs.pop("input_ids")
         # train & eval share the same p2p_helper, so clear it before and after each step
-        if self.args.pipeline_model_parallel_size > 1:
+        if hasattr(model, "_p2p_helper"):
             model._p2p_helper.clear_meta_cache()
 
         with paddle.no_grad():
@@ -4721,6 +4721,7 @@ class Trainer:
                     def _prepare_inputs_for_fleet(inputs):
                         if isinstance(inputs, (tuple, list)) and len(inputs) > 1:
                             inputs = {"input_ids": inputs[0], "position_ids": inputs[1]}
+                        return inputs
 
                     if is_paddlefleet_available():
                         inputs = _prepare_inputs_for_fleet(inputs)
@@ -4730,7 +4731,7 @@ class Trainer:
             else:
                 raise ValueError("pipeline mode eval need label!")
         # train & eval share the same p2p_helper, so clear it before and after each step
-        if self.args.pipeline_model_parallel_size > 1:
+        if hasattr(model, "_p2p_helper"):
             model._p2p_helper.clear_meta_cache()
 
         return (loss, None, labels)
