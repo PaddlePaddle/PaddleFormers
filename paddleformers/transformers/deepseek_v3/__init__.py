@@ -57,22 +57,7 @@ import_structure = {
         "DeepseekV3PretrainedModelAuto",
     ],
     "mfu_utils": ["DeepSeekProjection"],
-    "kernel": [
-        "act_quant",
-        "weight_dequant",
-        "fp8_gemm",
-        "weight_dequant_kernel",
-        "act_quant_kernel",
-        "fp8_gemm_kernel",
-    ],
     "tokenizer_fast": ["DeepseekTokenizerFast"],
-    "fp8_linear": [
-        "Linear",
-        "ColumnParallelLinear",
-        "RowParallelLinear",
-        "ColumnSequenceParallelLinear",
-        "RowSequenceParallelLinear",
-    ],
 }
 
 if TYPE_CHECKING:
