@@ -4723,7 +4723,11 @@ class Trainer:
                             inputs = {"input_ids": inputs[0], "position_ids": inputs[1]}
                         return inputs
 
-                    if is_paddlefleet_available():
+                    if (
+                        is_paddlefleet_available()
+                        and PaddleFleetParallelBase is not None
+                        and isinstance(model, PaddleFleetParallelBase)
+                    ):
                         inputs = _prepare_inputs_for_fleet(inputs)
                     loss = model.eval_batch([inputs, labels], compute_loss=True)
                     # loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
@@ -4766,7 +4770,11 @@ class Trainer:
             Tuple[Optional[paddle.Tensor], Optional[paddle.Tensor], Optional[paddle.Tensor]]: A tuple with the loss,
             logits and labels (each being optional).
         """
-        if self.args.pipeline_model_parallel_size > 1 or is_paddlefleet_available():
+        if self.args.pipeline_model_parallel_size > 1 or (
+            is_paddlefleet_available()
+            and PaddleFleetParallelBase is not None
+            and isinstance(model, PaddleFleetParallelBase)
+        ):
             # hack for pipeline mode
             inputs = self._prepare_inputs(inputs)
             return self.prediction_pipeline_step(model, inputs, prediction_loss_only, ignore_keys)
