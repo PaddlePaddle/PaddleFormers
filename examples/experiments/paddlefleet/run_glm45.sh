@@ -71,7 +71,7 @@ if [[ $rank -ge $END_RANK ]]; then
    exit 0
 fi
 
-#bash ../../kill_process.sh 
+bash ../../kill_process.sh 
 rank=$(($rank-$START_RANK))
 nnodes=$(($END_RANK-$START_RANK))
 master=`cat /root/paddlejob/workspace/hostfile | head -n $(($START_RANK+1)) | tail -n 1 | awk '{print $1}'`
