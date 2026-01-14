@@ -297,9 +297,7 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
             )
         self.experts = nn.LayerList(
             [
-                Qwen3MoeMLP(
-                    config, intermediate_size=config.moe_intermediate_size, fuse_up_gate=True
-                )
+                Qwen3MoeMLP(config, intermediate_size=config.moe_intermediate_size, fuse_up_gate=True)
                 for _ in range(self.num_experts)
             ]
         )
@@ -927,9 +925,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(num_experts):
-                    ep_weight1.append(
-                        f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight"
-                    )
+                    ep_weight1.append(f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight")
                     ep_weight2.append(f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight")
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)

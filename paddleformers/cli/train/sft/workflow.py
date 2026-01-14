@@ -248,7 +248,9 @@ def run_sft(
 
     avaible_attn_impl = AttentionInterface._global_mapping.keys()
     if model_args._attn_implementation not in avaible_attn_impl:
-        raise ValueError(f"Invalid _attn_implementation: {model_args._attn_implementation}, available _attn_implementation: {avaible_attn_impl}")
+        raise ValueError(
+            f"Invalid _attn_implementation: {model_args._attn_implementation}, available _attn_implementation: {avaible_attn_impl}"
+        )
 
     model_config.pp_seg_method = model_args.pp_seg_method
     model_config.seq_length = data_args.max_seq_len

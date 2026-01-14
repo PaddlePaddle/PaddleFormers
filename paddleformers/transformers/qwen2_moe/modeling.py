@@ -234,9 +234,7 @@ class Qwen2MoeSparseMoeBlock(nn.Layer):
             )
         self.experts = nn.LayerList(
             [
-                Qwen2MoeMLP(
-                    config, intermediate_size=config.moe_intermediate_size, fuse_up_gate=True
-                )
+                Qwen2MoeMLP(config, intermediate_size=config.moe_intermediate_size, fuse_up_gate=True)
                 for _ in range(self.num_experts)
             ]
         )

@@ -72,7 +72,9 @@ def run_dpo(
 
     avaible_attn_impl = AttentionInterface._global_mapping.keys()
     if model_args._attn_implementation not in avaible_attn_impl:
-        raise ValueError(f"Invalid _attn_implementation: {model_args._attn_implementation}, available _attn_implementation: {avaible_attn_impl}")
+        raise ValueError(
+            f"Invalid _attn_implementation: {model_args._attn_implementation}, available _attn_implementation: {avaible_attn_impl}"
+        )
 
     if training_args.loss_type == "orpo":
         training_args.reference_free = True

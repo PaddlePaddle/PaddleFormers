@@ -1719,7 +1719,9 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
             pass
         if (
             seg_method == "layer:Ernie4_5_DecoderLayer|ErnieDecoderLayer|EmptyLayer"
-            and (config.num_hidden_layers + config.num_empty_layers_add_in_tail) % get_hcg().topology().get_dim_size("pipe") != 0
+            and (config.num_hidden_layers + config.num_empty_layers_add_in_tail)
+            % get_hcg().topology().get_dim_size("pipe")
+            != 0
         ):
             seg_method = "uniform"
         logger.info(f"using recompute_interval={recompute_interval}, seg_method={seg_method}")

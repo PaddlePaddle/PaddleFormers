@@ -19,9 +19,9 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
 )
 from paddle.incubate.nn.functional import fused_rms_norm_ext
 
+from ..cli.utils.process import detect_device
 from ..generation.configuration_utils import PretrainedConfig
 from .general import GeneralInterface
-from ..cli.utils.process import detect_device
 
 __all__ = ["Norm"]
 

@@ -17,7 +17,6 @@ import copy
 import glob
 import os
 import tempfile
-import unittest
 
 import paddle
 
@@ -236,5 +235,3 @@ def _test_fast_ffn():
     config_fast_ffn.convert_fast_ffn = True
 
     common_test_save_and_load(config_no_fast_ffn, config_fast_ffn, TestForCausalLM)
-
-

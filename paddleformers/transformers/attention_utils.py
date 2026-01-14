@@ -603,7 +603,9 @@ class MultiHeadAttention(Layer):
         else:
             q, k, v, cache = self._prepare_qkv(query, key, value, cache)
 
-        out = self._attn_implementation(q, k, v, self.head_dim, attn_mask, rand_mask_idx, query_mask, key_mask, self.dropout)
+        out = self._attn_implementation(
+            q, k, v, self.head_dim, attn_mask, rand_mask_idx, query_mask, key_mask, self.dropout
+        )
         # combine heads
         out = paddle.transpose(out, perm=[0, 2, 1, 3])
         out = paddle.reshape(x=out, shape=[0, 0, out.shape[2] * out.shape[3]])

@@ -395,9 +395,7 @@ class Glm4MoeMoE(nn.Layer):
             config.sequence_parallel = False
         self.experts = nn.LayerList(
             [
-                Glm4MoeMLP(
-                    config, intermediate_size=config.moe_intermediate_size, fuse_up_gate=True
-                )
+                Glm4MoeMLP(config, intermediate_size=config.moe_intermediate_size, fuse_up_gate=True)
                 for _ in range(config.n_routed_experts)
             ]
         )
@@ -944,8 +942,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.self_attn.qkv_proj.bias -> {prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
             ]
             aoa_statements += [
-                f"{prefix}.self_attn.{x}_proj.weight^T -> {prefix}.self_attn.{x}_proj.weight"
-                for x in ("q", "k", "v")
+                f"{prefix}.self_attn.{x}_proj.weight^T -> {prefix}.self_attn.{x}_proj.weight" for x in ("q", "k", "v")
             ]
 
         # layer 1 -> layer num_hidden_layers-1
