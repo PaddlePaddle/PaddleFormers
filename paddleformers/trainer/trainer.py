@@ -2908,7 +2908,7 @@ class Trainer:
                 for key, value in target_attr.items():
                     if get_env_device() == "gpu":
                         target_attr[key] = getattr(value, action)()
-                    elif get_env_device() == "xpu":
+                    elif get_env_device() == "xpu" and action in ["cpu", "pin_memory"]:
                         target_attr[key] = getattr(value, action)()
                     else:
                         target_attr[key] = getattr(value, "to")(action)
