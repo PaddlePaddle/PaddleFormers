@@ -56,7 +56,6 @@ DPO_FC_EXCEPTED_RESULT = [[22407, 120525, 77505, 113631, 47887, 134141, 122487, 
 
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
-os.environ["NCCL_ALGO"] = "Tree"
 os.environ["FLAGS_embedding_deterministic"] = "1"
 os.environ["FLAGS_cudnn_deterministic"] = "1"
 
