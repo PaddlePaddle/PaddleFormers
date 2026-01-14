@@ -257,7 +257,7 @@ class LlmMetaConfig:
             1,
             "The interval for the number of layers at which recomputation occurs. A value of 0 indicates no recomputation. Default is 0.",
         ),
-        ("add_tail_layers", int, 0, "Additional layers to append at the end"),
+        ("num_empty_layers_add_in_tail", int, 0, "Additional layers to append at the end"),
         # sep_parallel
         ("sep_parallel_size", int, 1, "sep_parallel_size"),
         ("context_parallel_size", int, 1, "context_parallel_size"),
@@ -312,8 +312,8 @@ class LlmMetaConfig:
             0,
             "The number of tokens in each subbatch for MoE model processing.",
         ),
-        ("using_fake_gate", bool, False, "Whether to fake gate."),
-        ("ep_communication_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
+        ("moe_router_force_load_balancing", bool, False, "Whether to fake gate."),
+        ("moe_token_dispatcher_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
         ("use_unified_moe", bool, False, "Whether to use unified moe."),
         (
             "moe_deepep_num_sms",
@@ -720,7 +720,7 @@ class PretrainedConfig:
             `"single_label_classification"` or `"multi_label_classification"`.
         moe_subbatch_token_num_before_dispatch (`int`, *optional*, defaults to 0):
             The number of tokens in a subbatch for MoE.
-        ep_communication_type (`str`, *optional*, defaults to `deepep`):
+        moe_token_dispatcher_type (`str`, *optional*, defaults to `deepep`):
             Communication type for expert parallel. Can be one of `deepep`, `alltoall`.
         use_unified_moe (`bool`, *optional*, defaults to `False`):
             Whether to use unified MoE.
@@ -874,9 +874,9 @@ class PretrainedConfig:
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
 
-        self.ep_communication_type = kwargs.pop("ep_communication_type", "deepep")
+        self.moe_token_dispatcher_type = kwargs.pop("moe_token_dispatcher_type", "deepep")
         self.use_unified_moe = kwargs.pop("use_unified_moe", False)
-        self.using_fake_gate = kwargs.pop("using_fake_gate", False)
+        self.moe_router_force_load_balancing = kwargs.pop("moe_router_force_load_balancing", False)
 
         # Tokenizer arguments TODO: eventually tokenizer and models should share the same config
         self.tokenizer_class = kwargs.pop("tokenizer_class", None)

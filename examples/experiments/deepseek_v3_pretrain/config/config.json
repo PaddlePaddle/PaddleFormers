@@ -9,8 +9,8 @@
       "AutoModel": "DeepseekV2ModelFast",
       "AutoModelForCausalLM": "DeepseekV2ForCausalLM"
     },
-    "aux_loss_alpha": 0.0001,
-    "aux_loss_free_gamma": 0.0,
+    "router_aux_loss_coef": 0.0001,
+    "moe_router_bias_update_rate": 0.0,
     "bos_token_id": 0,
     "eos_token_id": 1,
     "ep_size": 1,

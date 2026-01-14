@@ -532,8 +532,8 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
 
     def forward(self, hidden_states):
         final_hidden_states, l_aux, _ = super().forward(hidden_states)
-        if self.training and self.config.aux_loss_alpha > 0.0:
-            l_aux = l_aux * self.config.aux_loss_alpha
+        if self.training and self.config.router_aux_loss_coef > 0.0:
+            l_aux = l_aux * self.config.router_aux_loss_coef
             final_hidden_states = AddAuxiliaryLoss.apply(final_hidden_states, l_aux)
         final_hidden_states = final_hidden_states + self.shared_experts(hidden_states)
         return final_hidden_states

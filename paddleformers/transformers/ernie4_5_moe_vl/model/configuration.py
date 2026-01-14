@@ -92,7 +92,7 @@ class Ernie4_5_Config(PretrainedConfig):
         fuse_linear=False,
         max_sequence_length=None,
         ignored_index=-100,
-        add_tail_layers=False,
+        num_empty_layers_add_in_tail=False,
         attention_probs_dropout_prob=0.0,
         hidden_dropout_prob=0.0,
         compression_ratio: float = 1.0,
@@ -136,7 +136,7 @@ class Ernie4_5_Config(PretrainedConfig):
             fuse_linear (bool): Whether to fuse linear operations
             max_sequence_length (int): Maximum sequence length for positional embeddings
             ignored_index (int): Target value that is ignored during loss computation
-            add_tail_layers (int): Whether to add additional layers at the end
+            num_empty_layers_add_in_tail (int): Whether to add additional layers at the end
             attention_probs_dropout_prob (float): Dropout probability for attention weights
             hidden_dropout_prob (float): Dropout probability for hidden layers
             compression_ratio (float): Ratio for KV cache compression (1.0 = no compression)
@@ -192,7 +192,7 @@ class Ernie4_5_Config(PretrainedConfig):
 
         self.fuse_linear = fuse_linear
         self.ignored_index = ignored_index
-        self.add_tail_layers = add_tail_layers
+        self.num_empty_layers_add_in_tail = num_empty_layers_add_in_tail
 
         self.skip_recompute_ops = dict()
         self.attention_probs_dropout_prob = attention_probs_dropout_prob
