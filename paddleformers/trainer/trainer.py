@@ -162,6 +162,7 @@ from .plugins.timer import RuntimeTimer, get_timers, set_timers
 from .trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
+    InterleaveGateUpCallback,
     PrinterCallback,
     ProgressCallback,
     SPGradSyncCallback,
@@ -1551,6 +1552,10 @@ class Trainer:
         elif self.args.zcc_save_ema_coef is not None:
             self.add_non_zcc_ema_callback(resume_from_checkpoint)
 
+        if self.args.using_sonic_moe:
+            callback = InterleaveGateUpCallback(self.model, resume_from_checkpoint)
+            self.add_callback(callback)
+
         self.log_trainable_numel(model)
 
         return self._inner_training_loop(
@@ -1924,7 +1929,6 @@ class Trainer:
         if self.resume_from_custom_func is not None:
             self.resume_from_custom_func(model)
 
-       
         for epoch in range(epochs_trained, num_train_epochs):
             if (
                 not args.enable_auto_parallel
@@ -1938,9 +1942,8 @@ class Trainer:
 
             step = -1
 
-
             for step, inputs in enumerate(epoch_iterator):
-               
+
                 if self.args.profile:
                     perf_utils.switch_profile(
                         self.state.global_step,
