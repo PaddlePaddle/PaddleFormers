@@ -18,8 +18,12 @@ from contextlib import suppress
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from .utils.import_patch import TorchBlocker
 from .utils.lazy_import import _LazyModule
 
+blocker = TorchBlocker()
+sys.meta_path.insert(0, blocker)
+sys.meta_path.append(blocker.restorer)
 PADDLEFORMERS_STABLE_VERSION = "PADDLEFORMERS_STABLE_VERSION"
 
 with suppress(Exception):
@@ -31,7 +35,7 @@ with suppress(Exception):
 
 # this version is used for develop and test.
 # release version will be added fixed version by setup.py.
-__version__ = "0.4.0.post"
+__version__ = "0.4.1.post"
 if os.getenv(PADDLEFORMERS_STABLE_VERSION):
     __version__ = __version__.replace(".post", "")
 else:
