@@ -28,12 +28,14 @@ class TestMergeModel(unittest.TestCase):
     def test_merge_model_np(self, merge_method):
         with TemporaryDirectory() as tempdir:
             model = AutoModelForCausalLM.from_pretrained(
-                "PaddleFormers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16"
+                "PaddleFormers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16", load_checkpoint_format=""
             )
             pd_path = os.path.join(tempdir, "pd_model")
-            model.save_pretrained(pd_path)
+            model.save_pretrained(pd_path, save_to_hf=False, save_checkpoint_format="")
             safe_path = os.path.join(tempdir, "safe_model")
-            model.save_pretrained(safe_path, safe_serialization="safetensors")
+            model.save_pretrained(
+                safe_path, safe_serialization="safetensors", save_to_hf=False, save_checkpoint_format=""
+            )
 
             # test mix
             merge_config = MergeConfig(
@@ -74,12 +76,14 @@ class TestMergeModel(unittest.TestCase):
     def test_merge_model_pd(self, merge_method):
         with TemporaryDirectory() as tempdir:
             model = AutoModelForCausalLM.from_pretrained(
-                "PaddleFormers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16"
+                "PaddleFormers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16", load_checkpoint_format=""
             )
             pd_path = os.path.join(tempdir, "pd_model")
-            model.save_pretrained(pd_path)
+            model.save_pretrained(pd_path, save_to_hf=False, save_checkpoint_format="")
             safe_path = os.path.join(tempdir, "safe_model")
-            model.save_pretrained(safe_path, safe_serialization="safetensors")
+            model.save_pretrained(
+                safe_path, safe_serialization="safetensors", save_to_hf=False, save_checkpoint_format=""
+            )
 
             # test mix
             merge_config = MergeConfig(

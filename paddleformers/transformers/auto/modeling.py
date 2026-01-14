@@ -150,7 +150,7 @@ class _BaseAutoModelClass:
 
     # TODO: Refactor into AutoConfig when available
     @classmethod
-    def _get_model_class_from_config(cls, pretrained_model_name_or_path, config_file_path, config=None):
+    def _get_model_class_from_config(cls, pretrained_model_name_or_path, config_file_path, config=None, is_lora=False):
         if config is None:
             with io.open(config_file_path, encoding="utf-8") as f:
                 config = json.load(f)
@@ -193,33 +193,55 @@ class _BaseAutoModelClass:
         init_class = cls._name_mapping[model_name + "_Import_Class"]
         class_name = cls._name_mapping[init_class]
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
-        try:
-            model_class = getattr(import_class, init_class)
-            return model_class
-        except AttributeError:
-            model_class = getattr(import_class, init_class + "Fleet")
-            return model_class
-        except AttributeError as err:
+        if is_lora:
             try:
-                new_import_class = importlib.import_module(f"paddleformers.transformers.{class_name}")
-                model_class = getattr(new_import_class, init_class)
+                model_class = getattr(import_class, init_class)
+                return model_class
+            except AttributeError as err:
+                try:
+                    new_import_class = importlib.import_module(f"paddleformers.transformers.{class_name}")
+                    model_class = getattr(new_import_class, init_class)
+                    return model_class
+                except AttributeError:
+                    logger.error(err)
+                    all_model_classes = import_class.__all__
+                    all_tasks = {get_task_name(m) for m in all_model_classes if get_task_name(m) is not None}
+                    raise AttributeError(
+                        f"module '{import_class.__name__}' only supports the following classes: "
+                        + ", ".join(m for m in all_model_classes)
+                        + "\n"
+                        "Hint: you can use interface "
+                        + " or ".join(task + ".from_pretrained" for task in all_tasks)
+                        + f" to load '{pretrained_model_name_or_path}'\n"
+                    )
+        else:
+            try:
+                model_class = getattr(import_class, init_class)
                 return model_class
             except AttributeError:
-                logger.error(err)
-                all_model_classes = import_class.__all__
-                all_tasks = {get_task_name(m) for m in all_model_classes if get_task_name(m) is not None}
-                raise AttributeError(
-                    f"module '{import_class.__name__}' only supports the following classes: "
-                    + ", ".join(m for m in all_model_classes)
-                    + "\n"
-                    "Hint: you can use interface "
-                    + " or ".join(task + ".from_pretrained" for task in all_tasks)
-                    + f" to load '{pretrained_model_name_or_path}'\n"
-                )
+                model_class = getattr(import_class, init_class + "Fleet")
+                return model_class
+            except AttributeError as err:
+                try:
+                    new_import_class = importlib.import_module(f"paddleformers.transformers.{class_name}")
+                    model_class = getattr(new_import_class, init_class)
+                    return model_class
+                except AttributeError:
+                    logger.error(err)
+                    all_model_classes = import_class.__all__
+                    all_tasks = {get_task_name(m) for m in all_model_classes if get_task_name(m) is not None}
+                    raise AttributeError(
+                        f"module '{import_class.__name__}' only supports the following classes: "
+                        + ", ".join(m for m in all_model_classes)
+                        + "\n"
+                        "Hint: you can use interface "
+                        + " or ".join(task + ".from_pretrained" for task in all_tasks)
+                        + f" to load '{pretrained_model_name_or_path}'\n"
+                    )
 
     @classmethod
     def from_config(cls, config, **kwargs):
-        model_class = cls._get_model_class_from_config(None, None, config)
+        model_class = cls._get_model_class_from_config(None, None, config, is_lora=config.get("is_lora", False))
         return model_class._from_config(config, **kwargs)
 
     @classmethod
@@ -280,8 +302,13 @@ class _BaseAutoModelClass:
             cache_dir=cache_dir,
             download_hub=download_hub,
         )
+
         if config_file is not None and os.path.exists(config_file):
-            model_class = cls._get_model_class_from_config(pretrained_model_name_or_path, config_file)
+            if kwargs.get("config") is not None:
+                is_lora = kwargs.get("config").get("is_lora", False)
+            else:
+                is_lora = False
+            model_class = cls._get_model_class_from_config(pretrained_model_name_or_path, config_file, is_lora=is_lora)
             logger.info(f"We are using {model_class} to load '{pretrained_model_name_or_path}'.")
             return model_class.from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
         else:

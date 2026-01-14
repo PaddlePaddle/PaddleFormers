@@ -1203,7 +1203,7 @@ class TrainingArguments:
     profile_step_start: int = field(default=10, metadata={"help": "Step to start nsys profiling."})
     profile_step_end: int = field(default=12, metadata={"help": "Step to end nsys profiling."})
     save_checkpoint_format: Optional[str] = field(
-        default=None,
+        default="flex_checkpoint",
         metadata={
             "help": (
                 "Specifies the format used to save checkpoints. "
@@ -1215,7 +1215,7 @@ class TrainingArguments:
     )
 
     load_checkpoint_format: Optional[str] = field(
-        default=None,
+        default="flex_checkpoint",
         metadata={
             "help": (
                 "Specifies the format used to load checkpoints. "

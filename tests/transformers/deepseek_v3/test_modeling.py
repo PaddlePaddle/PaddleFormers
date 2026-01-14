@@ -378,6 +378,7 @@ class DeepseekV3IntegrationTest(unittest.TestCase):
             download_hub="aistudio",
             convert_from_hf=True,
             seq_length=len(input_ids),
+            load_checkpoint_format="",
         )
         model.config.seq_length = len(input_ids)
         input_ids = paddle.to_tensor([input_ids])
@@ -471,7 +472,9 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
         # 2. forward the paddle model
         from paddleformers.transformers import DeepseekV3Model
 
-        paddle_model = DeepseekV3Model.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
+        paddle_model = DeepseekV3Model.from_pretrained(
+            self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+        )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -511,7 +514,9 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
             # 2. forward the paddle model
             from paddleformers.transformers import DeepseekV3Model
 
-            paddle_model = DeepseekV3Model.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = DeepseekV3Model.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -548,7 +553,9 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = paddle_model_class.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            )
             paddle_model.eval()
 
             if class_name == "DeepseekV3Model":
