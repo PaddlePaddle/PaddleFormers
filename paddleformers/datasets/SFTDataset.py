@@ -492,7 +492,7 @@ class SFTDataSet(IterableDataset):
             labels = labels[1:] + [-100]
         else:
             # label shift
-            labels = tokens[1:] + [-100]
+            labels = labels[1:] + [-100]
             if len(tokens) > self.max_seq_len:
                 raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 

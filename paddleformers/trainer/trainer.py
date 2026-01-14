@@ -562,7 +562,7 @@ class Trainer:
                 # set do_grad_scaling, enable_autocast_context_manager
                 self._wrap_amp_model(args, model)
 
-        if args.recompute_granularity is not None:
+        if isinstance(model, nn.Layer) and args.recompute_granularity is not None:
 
             def fn(layer):
                 if hasattr(layer, "enable_recompute") and (
@@ -2908,7 +2908,7 @@ class Trainer:
                 for key, value in target_attr.items():
                     if get_env_device() == "gpu":
                         target_attr[key] = getattr(value, action)()
-                    elif get_env_device() == "xpu":
+                    elif get_env_device() == "xpu" and action in ["cpu", "pin_memory"]:
                         target_attr[key] = getattr(value, action)()
                     else:
                         target_attr[key] = getattr(value, "to")(action)

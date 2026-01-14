@@ -350,7 +350,10 @@ class Phi3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
         for model_class in self.all_model_classes:
             # test from_pretrained
             model1 = model_class.from_pretrained(
-                "PaddleFormers/tiny-random-phi4", download_hub="aistudio", convert_from_hf=True
+                "PaddleFormers/tiny-random-phi4",
+                download_hub="aistudio",
+                convert_from_hf=True,
+                load_checkpoint_format="",
             )
 
             model2 = model_class.from_pretrained(
@@ -368,7 +371,7 @@ class Phi3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
             # test save_pretrained
             with tempfile.TemporaryDirectory() as tmpdirname:
                 model2.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-                model3 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
+                model3 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
                 model_state_3 = model3.state_dict()
 
                 for k, v in model_state_3.items():
@@ -413,7 +416,11 @@ class Phi3IntegrationTest(unittest.TestCase):
         input_ids = [[1, 306, 4658, 278, 6593, 310, 2834, 338]]
 
         model = Phi3ForCausalLM.from_pretrained(
-            "PaddleFormers/tiny-random-phi4", download_hub="aistudio", dtype="float32", convert_from_hf=True
+            "PaddleFormers/tiny-random-phi4",
+            download_hub="aistudio",
+            dtype="float32",
+            convert_from_hf=True,
+            load_checkpoint_format="",
         )
 
         input_ids = paddle.to_tensor(input_ids)
@@ -485,7 +492,9 @@ class Phi3CompatibilityTest(unittest.TestCase):
 
         from paddleformers.transformers import Phi3Model
 
-        paddle_model = Phi3Model.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
+        paddle_model = Phi3Model.from_pretrained(
+            self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+        )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -519,7 +528,9 @@ class Phi3CompatibilityTest(unittest.TestCase):
 
             from paddleformers.transformers import Phi3Model
 
-            paddle_model = Phi3Model.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = Phi3Model.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -551,7 +562,9 @@ class Phi3CompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = paddle_model_class.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            )
             paddle_model.eval()
 
             if class_name == "Phi3Model":

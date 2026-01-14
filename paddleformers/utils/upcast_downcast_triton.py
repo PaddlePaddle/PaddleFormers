@@ -14,8 +14,12 @@
 
 import paddle
 import paddle.nn.functional as F
-import triton
-import triton.language as tl
+
+try:
+    import triton
+    import triton.language as tl
+except:
+    raise RuntimeError("Triton is not installed" "Please run 'python -m pip install triton>=3.1' to install Triton.")
 
 from paddleformers.utils.log import logger
 
