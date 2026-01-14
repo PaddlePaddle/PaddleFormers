@@ -38,7 +38,7 @@ unset NVSHMEM_ENABLE_NIC_PE_MAPPING
 
 export PYTHONPATH=../../../:$PYTHONPATH
 
-export CUDA_PATH=/usr/local/cuda-12.9
+# export CUDA_PATH=/usr/local/cuda-12.9
 
 # Flags for allocator
 export FLAGS_large_pool_auto_growth_chunk_size_in_mb=128

@@ -322,6 +322,7 @@ class LlamaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
                 "Paddleformers/tiny-random-llama3",
                 download_hub="aistudio",
                 convert_from_hf=True,
+                load_checkpoint_format="",
             )
             model2 = model_class.from_pretrained(
                 "Paddleformers/tiny-random-llama3",
@@ -340,10 +341,7 @@ class LlamaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
             # test save_pretrained
             with tempfile.TemporaryDirectory() as tmpdirname:
                 model2.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-                model3 = model_class.from_pretrained(
-                    tmpdirname,
-                    convert_from_hf=True,
-                )
+                model3 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
                 model_state_3 = model3.state_dict()
 
                 for k, v in model_state_3.items():
@@ -384,7 +382,9 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     @slow
     def test_inference_no_attention(self):
-        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama")
+        model = LlamaModel.from_pretrained(
+            "Paddleformers/tiny-random-llama", save_to_hf=False, save_checkpoint_format=""
+        )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -408,7 +408,9 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     @slow
     def test_inference_with_attention(self):
-        model = LlamaModel.from_pretrained("Paddleformers/tiny-random-llama", download_hub="aistudio")
+        model = LlamaModel.from_pretrained(
+            "Paddleformers/tiny-random-llama", download_hub="aistudio", save_to_hf=False, save_checkpoint_format=""
+        )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
         attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
@@ -440,6 +442,7 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
             download_hub="aistudio",
             convert_from_hf=True,
             dtype="float32",
+            load_checkpoint_format="",
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -469,6 +472,7 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
             download_hub="aistudio",
             convert_from_hf=True,
             dtype="float32",
+            load_checkpoint_format="",
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -521,7 +525,9 @@ class LlamaCompatibilityTest(unittest.TestCase):
         # 2. forward the paddle model
         from paddleformers.transformers import LlamaModel
 
-        paddle_model = LlamaModel.from_pretrained(self.torch_model_path, convert_from_hf=True)
+        paddle_model = LlamaModel.from_pretrained(
+            self.torch_model_path, convert_from_hf=True, load_checkpoint_format=""
+        )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -559,7 +565,7 @@ class LlamaCompatibilityTest(unittest.TestCase):
             # 2. forward the paddle model
             from paddleformers.transformers import LlamaModel
 
-            paddle_model = LlamaModel.from_pretrained(tempdir, convert_from_hf=True)
+            paddle_model = LlamaModel.from_pretrained(tempdir, convert_from_hf=True, load_checkpoint_format="")
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -594,7 +600,7 @@ class LlamaCompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True)
+            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, load_checkpoint_format="")
             paddle_model.eval()
 
             paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]

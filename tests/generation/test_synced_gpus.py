@@ -36,7 +36,9 @@ class ShardingStage3Tester(TestMultipleGpus):
 
 if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-llama")
-    model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-llama")
+    model = AutoModelForCausalLM.from_pretrained(
+        "Paddleformers/tiny-random-llama", convert_from_hf=False, load_checkpoint_format=""
+    )
     model.config.eos_token_id = -1
     world_size = paddle.distributed.get_world_size()
 
