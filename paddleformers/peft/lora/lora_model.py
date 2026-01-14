@@ -323,7 +323,7 @@ class LoRAModel(nn.Layer):
 
     @classmethod
     def from_pretrained(cls, model, lora_path, **kwargs):
-        load_checkpoint_format = kwargs.pop("load_checkpoint_format", None)
+        load_checkpoint_format = kwargs.pop("load_checkpoint_format", "flex_checkpoint")
         load_via_cpu = kwargs.pop("load_via_cpu", False)
         lora_config = kwargs.pop("lora_config", None)
         # init lora config & lora model
@@ -552,7 +552,7 @@ class LoRAModel(nn.Layer):
 
     def save_pretrained(self, save_directory: str, merge_tensor_parallel: bool = False, **kwargs):
         save_model_config = kwargs.get("save_model_config", True)
-        save_checkpoint_format = kwargs.get("save_checkpoint_format", None)
+        save_checkpoint_format = kwargs.get("save_checkpoint_format", "flex_checkpoint")
         max_shard_size = kwargs.get("max_shard_size", "4GB")
 
         safetensors = False
