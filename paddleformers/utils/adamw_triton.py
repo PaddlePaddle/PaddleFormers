@@ -13,8 +13,12 @@
 # limitations under the License.
 
 import paddle
-import triton
-import triton.language as tl
+
+try:
+    import triton
+    import triton.language as tl
+except:
+    raise RuntimeError("Triton is not installed" "Please run 'python -m pip install triton>=3.1' to install Triton.")
 
 try:
     import use_triton_in_paddle

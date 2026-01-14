@@ -345,7 +345,7 @@ class Qwen3MoeIntegrationTest(unittest.TestCase):
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
         model = Qwen3MoeForCausalLM.from_pretrained(
-            "PaddleFormers/tiny-random-qwen3moev2", dtype="float32", convert_from_hf=True
+            "PaddleFormers/tiny-random-qwen3moev2", dtype="float32", convert_from_hf=True, load_checkpoint_format=""
         )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
@@ -400,7 +400,9 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
         # 2. forward the paddle model
         from paddleformers.transformers import Qwen3MoeModel
 
-        paddle_model = Qwen3MoeModel.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
+        paddle_model = Qwen3MoeModel.from_pretrained(
+            self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+        )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -502,7 +504,9 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = paddle_model_class.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            )
             paddle_model.eval()
 
             if class_name == "Qwen3MoeModel":
