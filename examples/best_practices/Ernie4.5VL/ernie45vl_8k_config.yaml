@@ -26,10 +26,10 @@ do_eval: true
 per_device_eval_batch_size: 1
 per_device_train_batch_size: 1
 num_train_epochs: 3
-max_steps: 5
+max_steps: -1
 eval_steps: 10000
 evaluation_strategy: steps
-save_steps: 3
+save_steps: 10000
 save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 16
