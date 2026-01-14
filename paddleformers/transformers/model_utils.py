@@ -2899,13 +2899,13 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 logger.error(f"Failed to delete {metadata_path}: {e}")
 
             # change dtype in aoa
-            # if dtype is not None:
-            #     for key in model.state_dict().keys():
-            #         # keep fp32
-            #         if model.state_dict()[key].dtype == paddle.float32:
-            #             aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='float32'")
-            #         else:
-            #             aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='{dtype}'")
+            if dtype is not None:
+                for key in model.state_dict().keys():
+                    # keep fp32
+                    if model.state_dict()[key].dtype == paddle.float32:
+                        aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='float32'")
+                    else:
+                        aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='{dtype}'")
 
             dist.load_state_dict(
                 sharded_state_dict,
