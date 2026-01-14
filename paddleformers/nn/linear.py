@@ -55,8 +55,7 @@ class Linear(GeneralInterface):
             linear_type = self.get_linear_type(config, tp_plan)
 
         linear_cls = self._global_mapping[linear_type]
-        fuse_matmul_bias = config.get("fuse_linear", False) if config is not None else False
-        kwargs = self.get_linear_kwargs(linear_type, has_bias, gather_output, input_is_parallel, fuse_matmul_bias)
+        kwargs = self.get_linear_kwargs(linear_type, has_bias, gather_output, input_is_parallel)
         return linear_cls(in_features=in_features, out_features=out_features, weight_attr=weight_attr, **kwargs)
 
     @classmethod
@@ -70,30 +69,24 @@ class Linear(GeneralInterface):
         return linear_type
 
     @classmethod
-    def get_linear_kwargs(
-        self, linear_type, has_bias=False, gather_output=False, input_is_parallel=True, fuse_matmul_bias=False
-    ):
+    def get_linear_kwargs(self, linear_type, has_bias=False, gather_output=False, input_is_parallel=True):
         ALL_LINEAR_KWARGS = {
             "default": {"bias_attr": has_bias},
             "colwise": {
                 "has_bias": has_bias,
                 "gather_output": gather_output,
-                "fuse_matmul_bias": fuse_matmul_bias,
             },
             "rowwise": {
                 "has_bias": has_bias,
                 "input_is_parallel": input_is_parallel,
-                "fuse_matmul_bias": fuse_matmul_bias,
             },
             "sequence_colwise": {
                 "has_bias": has_bias,
                 "gather_output": gather_output,
-                "fuse_matmul_bias": fuse_matmul_bias,
             },
             "sequence_rowwise": {
                 "has_bias": has_bias,
                 "input_is_parallel": input_is_parallel,
-                "fuse_matmul_bias": fuse_matmul_bias,
             },
         }
 

@@ -95,7 +95,6 @@ def calc_lm_head_logits(config, hidden_states, weight, bias, tensor_parallel_out
         transpose_y=config.tie_word_embeddings,
         tensor_model_parallel_size=config.tensor_model_parallel_size,
         tensor_parallel_output=tensor_parallel_output,
-        fuse_linear=config.fuse_linear,
         training=training,
     )
 
@@ -538,7 +537,6 @@ class Ernie4_5_MLP(nn.Layer):
                 self.intermediate_size,
                 gather_output=False,
                 has_bias=config.use_bias,
-                fuse_matmul_bias=config.fuse_linear,
                 **column_ln_configs,
             )
             self.gate_proj = ColumnLN(
@@ -546,11 +544,10 @@ class Ernie4_5_MLP(nn.Layer):
                 self.intermediate_size,
                 gather_output=False,
                 has_bias=config.use_bias,
-                fuse_matmul_bias=config.fuse_linear,
                 **column_ln_configs,
             )
         else:
-            LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else Linear
+            LinearFN = Linear
             self.up_proj = LinearFN(self.hidden_size, self.intermediate_size, bias_attr=config.use_bias)
             self.gate_proj = LinearFN(self.hidden_size, self.intermediate_size, bias_attr=config.use_bias)
 
@@ -568,11 +565,10 @@ class Ernie4_5_MLP(nn.Layer):
                 self.hidden_size,
                 input_is_parallel=True,
                 has_bias=config.use_bias,
-                fuse_matmul_bias=config.fuse_linear,
                 **row_ln_configs,
             )
         else:
-            LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else Linear
+            LinearFN = Linear
             self.down_proj = LinearFN(self.intermediate_size, self.hidden_size, bias_attr=config.use_bias)
 
         self.fuse_swiglu = config.fuse_swiglu
