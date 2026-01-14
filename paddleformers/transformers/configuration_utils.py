@@ -405,6 +405,12 @@ class LlmMetaConfig:
             "Number of tokens per sub-batch after MoE expert dispatch. Controls memory usage for expert computations. Defaults to 4096 (balances memory efficiency and parallelism for most GPUs).",
         ),
         (
+            "moe_use_fusion_node",
+            bool,
+            True,
+            "Whether to use fusion node for MoE layer. Default to True.",
+        ),
+        (
             "moe_grouped_gemm",
             bool,
             False,
