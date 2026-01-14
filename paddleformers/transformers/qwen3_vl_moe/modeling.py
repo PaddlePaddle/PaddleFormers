@@ -366,19 +366,10 @@ class Qwen3VLMoePretrainedModel(PretrainedModel):
             num_attention_heads=config.text_config.num_attention_heads,
         )
 
-        ATTN_LAYER_COLWISE = [
-            "self_attn.q_proj.weight",
-            "self_attn.k_proj.weight",
-            "self_attn.v_proj.weight",
-        ]
         FUSE_ATTN_LAYER_COLWISE = [
             "self_attn.qkv_proj.weight",
         ]
-        MLP_LAYER_COLWISE = [
-            "mlp.up_proj.weight",
-            "mlp.gate_proj.weight",
-            "mlp.linear_fc1.weight",
-        ]
+
         FUSE_MLP_LAYER_COLWISE = [
             "up_gate_proj.weight",
         ]
