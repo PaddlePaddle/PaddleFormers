@@ -130,22 +130,7 @@ import_structure = {
         "DeepseekV3PretrainedModelAuto",
     ],
     "deepseek_v3.mfu_utils": ["DeepSeekProjection"],
-    "deepseek_v3.kernel": [
-        "act_quant",
-        "weight_dequant",
-        "fp8_gemm",
-        "weight_dequant_kernel",
-        "act_quant_kernel",
-        "fp8_gemm_kernel",
-    ],
     "deepseek_v3.tokenizer_fast": ["DeepseekTokenizerFast"],
-    "deepseek_v3.fp8_linear": [
-        "Linear",
-        "ColumnParallelLinear",
-        "RowParallelLinear",
-        "ColumnSequenceParallelLinear",
-        "RowSequenceParallelLinear",
-    ],
     "ernie4_5.configuration": ["Ernie4_5Config"],
     "ernie4_5.modeling": [
         "Ernie4_5Model",

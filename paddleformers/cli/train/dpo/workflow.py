@@ -96,6 +96,9 @@ def run_dpo(
         if training_args.tensor_model_parallel_size <= 1:
             training_args.sequence_parallel = False
             logger.info("tensor_model_parallel_size = 1. Set sequence_parallel to False.")
+    if is_paddlefleet_available() and model_args.lora and training_args.moe_token_dispatcher_type == "deepep":
+        logger.warning("For PaddleFleet, moe_use_fusion_node should False when using LoRA.")
+        training_args.moe_use_fusion_node = False
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
     training_args.print_config(training_args, "Train")
@@ -149,6 +152,7 @@ def run_dpo(
     model_config.pp_seg_method = model_args.pp_seg_method
     model_config.max_sequence_length = data_args.max_seq_len
     model_config.seq_length = data_args.max_seq_len
+    model_config.is_lora = model_args.lora
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
 
@@ -248,7 +252,8 @@ def run_dpo(
                 lora_path=model_args.lora_path,
                 load_checkpoint_format=training_args.load_checkpoint_format,
             )
-
+        if hasattr(model, "_set_pipeline_name_mapping"):
+            model._set_pipeline_name_mapping()
         model.print_trainable_parameters()
 
     logger.info("Start to create dataset")
