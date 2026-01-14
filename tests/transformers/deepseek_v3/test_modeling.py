@@ -73,7 +73,7 @@ class DeepseekV3ModelTester:
         num_labels=3,
         num_choices=4,
         pad_token_id=0,
-        aux_loss_alpha=0.001,
+        router_aux_loss_coef=0.001,
         first_k_dense_replace=1,
         hidden_act="silu",
         scope=None,
@@ -105,7 +105,7 @@ class DeepseekV3ModelTester:
         self.num_experts_per_tok = num_experts_per_tok
         self.first_k_dense_replace = first_k_dense_replace
         self.norm_topk_prob = norm_topk_prob
-        self.aux_loss_alpha = aux_loss_alpha
+        self.router_aux_loss_coef = router_aux_loss_coef
         self.hidden_act = hidden_act
         self.max_position_embeddings = max_position_embeddings
         self.initializer_range = initializer_range
@@ -167,7 +167,7 @@ class DeepseekV3ModelTester:
             num_experts_per_tok=self.num_experts_per_tok,
             first_k_dense_replace=self.first_k_dense_replace,
             norm_topk_prob=self.norm_topk_prob,
-            aux_loss_alpha=self.aux_loss_alpha,
+            router_aux_loss_coef=self.router_aux_loss_coef,
             hidden_act=self.hidden_act,
             max_position_embeddings=self.max_position_embeddings,
             initializer_range=self.initializer_range,

@@ -325,8 +325,6 @@ class Gemma3TextModelTester:
             Gemma3ForCausalLM(config)
 
     def create_and_check_fuse_attn(self, config, input_ids, input_mask, *args):
-        config.fuse_attention_qkv = True
-        config.fuse_attention_ffn = True
         model = Gemma3ForCausalLM(config)
         model.eval()
 

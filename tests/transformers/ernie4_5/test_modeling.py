@@ -546,8 +546,6 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
             )
 
             model_config = Ernie4_5Config.from_pretrained(self.torch_model_path)
-            model_config.fuse_attention_qkv = True
-            model_config.fuse_attention_ffn = True
             fc_fused_load_model = Ernie4_5ForCausalLM.from_pretrained(
                 self.torch_model_path,
                 config=model_config,

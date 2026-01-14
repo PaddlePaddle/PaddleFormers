@@ -959,8 +959,6 @@ class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
                 tempdir,
                 convert_from_hf=True,
                 dtype="float32",
-                fuse_attention_qkv=True,
-                fuse_attention_ffn=True,
                 load_checkpoint_format="flex_checkpoint",
             ).eval()
 

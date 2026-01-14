@@ -44,7 +44,6 @@ ERNIE_PRETRAINED_INIT_CONFIGURATION = {
         "pad_token_id": 0,
         "use_cache": False,
         "recompute": False,
-        "use_flash_attention": True,
         "use_pure_fp16": False,
     },
 }
@@ -75,12 +74,11 @@ class Ernie4_5_Config(PretrainedConfig):
         initializer_range=0.02,  # no use
         rms_norm_eps=1e-6,
         use_cache=False,
-        use_flash_attention=True,
         use_sparse_flash_attn=True,
         use_var_len_flash_attn=False,
         recompute_use_reentrant=False,
         use_rmsnorm=True,
-        fuse_rms_norm=False,
+        fuse_rms_norm=True,
         fuse_ln=False,
         pad_token_id=0,
         bos_token_id=1,
@@ -121,7 +119,6 @@ class Ernie4_5_Config(PretrainedConfig):
             num_attention_heads (int): Number of attention heads for each attention layer
             rms_norm_eps (float): The epsilon used by the RMS normalization layers
             use_cache (bool): Whether to use caching for faster generation (decoding)
-            use_flash_attention (bool): Whether to use FlashAttention for optimized attention computation
             use_sparse_flash_attn (bool): Whether to use sparse FlashAttention
             use_var_len_flash_attn (bool): Whether to use variable-length FlashAttention
             recompute_use_reentrant (bool): Whether to use reentrant checkpointing
@@ -174,7 +171,6 @@ class Ernie4_5_Config(PretrainedConfig):
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
-        self.use_flash_attention = use_flash_attention
         self.use_sparse_flash_attn = use_sparse_flash_attn
         self.recompute_use_reentrant = recompute_use_reentrant
         self.use_var_len_flash_attn = use_var_len_flash_attn

@@ -23,7 +23,6 @@ expert_model_parallel_size: 32
 sharding: "stage1"
 virtual_pipeline_model_parallel_size: 1
 sequence_parallel: 0
-use_flash_attention: true
 max_seq_len: 4097
 learning_rate: 2.2e-05
 min_lr: 7.333e-07
@@ -48,8 +47,6 @@ distributed_dataloader: 1
 unified_checkpoint: true
 save_total_limit: 2
 skip_profile_timer: false
-fuse_rms_norm: true
-fuse_attention_ffn: true
 apply_rope_fusion: true
 save_sharded_model: false
 load_sharded_model: false

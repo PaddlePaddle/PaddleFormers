@@ -258,7 +258,6 @@ class DeepseekV2MLP(nn.Layer):
         self.config = config
         self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
         self.intermediate_size = config.intermediate_size if intermediate_size is None else intermediate_size
-        self.fuse_attention_ffn = config.fuse_attention_ffn
         Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear_
 
         def linear_dtype_gaurd():
@@ -295,20 +294,13 @@ class DeepseekV2MLP(nn.Layer):
                     has_bias=False,
                 )
             else:
-                if config.fuse_attention_ffn:
-                    self.gate_up_fused_proj = Linear(self.hidden_size, self.intermediate_size * 2, bias_attr=False)
-                else:
-                    self.gate_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)
-                    self.up_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)
+                self.gate_up_fused_proj = Linear(self.hidden_size, self.intermediate_size * 2, bias_attr=False
                 self.down_proj = Linear(self.intermediate_size, self.hidden_size, bias_attr=False)
 
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(self, x):
-        if self.fuse_attention_ffn:
-            x = swiglu(self.gate_up_fused_proj(x))
-        else:
-            x = swiglu(self.gate_proj(x), self.up_proj(x))
+        x = swiglu(self.gate_up_fused_proj(x))
         out = self.down_proj(x)
         return out
 
@@ -1658,8 +1650,7 @@ class DeepseekV2ModelFast(DeepseekV2PretrainedModelFast):
             attention_mask = self._prepare_decoder_attention_mask(
                 attention_mask, (batch_size, seq_length), past_key_values_length, inputs_embeds.dtype
             )  # [bs, 1, seq_len, seq_len]
-            if self.config.use_flash_attention:
-                attention_mask = None if is_casual_mask(attention_mask) else attention_mask
+            attention_mask = None if is_casual_mask(attention_mask) else attention_mask
 
         if self.config.num_nextn_predict_layers > 0:
             inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]  # [B, S, D]
@@ -1982,7 +1973,7 @@ class DeepseekV2RMSNorm(nn.Layer):
             mark_as_sequence_parallel_parameter(self.weight)
 
     def forward(self, hidden_states):
-        if self.config.fuse_rms_norm:
+        if True:
             return RmsNormFunction.apply(hidden_states, self.weight, self.variance_epsilon)
 
         with paddle.amp.auto_cast(False):

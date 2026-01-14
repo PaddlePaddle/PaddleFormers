@@ -95,7 +95,6 @@ class PaddleOCRVLConfig(PretrainedConfig):
         use_cache=False,
         use_sparse_flash_attn=False,
         _attn_implementation="eager",
-        fuse_rms_norm=False,
         pad_token_id=0,
         bos_token_id=1,
         eos_token_id=2,
@@ -142,7 +141,6 @@ class PaddleOCRVLConfig(PretrainedConfig):
         self.use_cache = use_cache
         self.use_sparse_flash_attn = use_sparse_flash_attn
         self._attn_implementation = _attn_implementation
-        self.fuse_rms_norm = fuse_rms_norm
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id

@@ -61,8 +61,6 @@
     "v_head_dim": 128,
     "vocab_size": 129280,
     "using_flex_token": true,
-    "fuse_rms_norm": true,
-    "fuse_attention_ffn": true,
     "apply_rope_fusion": true,
     "token_drop_steps": 0,
     "recompute_fwd_gate_up": true,

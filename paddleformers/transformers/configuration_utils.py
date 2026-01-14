@@ -229,14 +229,10 @@ def llmmetaclass(cls):
 class LlmMetaConfig:
     op_fusion_attributes = [
         # name, type, default_value, comment
-        ("use_flash_attention", bool, False, "Only used in `ernie45_vl` and `deepseek_v3_pretrain`."),
-        ("fuse_rms_norm", bool, False, "Whether to fuse RMSNorm for efficiency"),
         ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
         ("fuse_linear", bool, False, "Use fused linear layer instead of normal linear layer."),
         ("apply_rope_fusion", bool, False, "Whether to fuse RoPE operation"),
         ("fuse_swiglu", bool, False, "Whether to fuse SwiGLU operations"),
-        ("fuse_attention_qkv", bool, False, "Whether to fuse Attention QKV operations"),
-        ("fuse_attention_ffn", bool, False, "Whether to fuse Attention FFN operations"),
     ]
 
     hybrid_parallel_attributes = [
@@ -805,8 +801,6 @@ class PretrainedConfig:
         llm_meta = LlmMetaConfig._get_defaults()
         self._unsavable_keys.update(LlmMetaConfig._get_unsavable_keys())
         self._unsavable_keys.remove("tensor_model_parallel_size")
-        self._unsavable_keys.remove("fuse_attention_qkv")
-        self._unsavable_keys.remove("fuse_attention_ffn")
         self._unsavable_keys.add("_attn_implementation")
 
         kwargs = set_expected_keys(self, llm_meta, kwargs)
@@ -831,8 +825,6 @@ class PretrainedConfig:
 
         # for transformers fuse
         self.fuse_linear = kwargs.pop("fuse_linear", False)
-        self.fuse_attention_qkv = kwargs.pop("fuse_attention_qkv", False)
-        self.fuse_attention_ffn = kwargs.pop("fuse_attention_ffn", False)
 
         # for general components
         self._attn_implementation = kwargs.pop("_attn_implementation", "eager")

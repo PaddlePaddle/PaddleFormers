@@ -12,7 +12,7 @@ mix_strategy: concat
 
 ### model
 model_name_or_path: ./Qwen3-30B-A3B-Base
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -53,8 +53,6 @@ optim: adamw
 bf16: true
 fp16_opt_level: O2
 amp_master_grad: true
-fuse_attention_qkv: true
-fuse_attention_ffn: true
 fuse_swiglu: true
 use_qk_norm: true
 
