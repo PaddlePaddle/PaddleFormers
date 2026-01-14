@@ -27,7 +27,7 @@ import sys
 import warnings
 from dataclasses import field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError
@@ -273,20 +273,20 @@ class LlmMetaConfig:
     recompute_attributes = [
         (
             "recompute_granularity",
-            str,
+            Optional[str],
             None,
             "Recompute granularity, Choose among ['full', 'core_attn', 'full_attn']",
         ),
         ("recompute_method", str, None, "Determines which transformer layers will be recomputed."),
         (
             "recompute_num_layers",
-            int,
+            Optional[int],
             None,
             "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in each uniformly divided recompute unit.",
         ),
         ("recompute_modules", Optional[Any], None, "List of module names to apply recomputation."),
-        ("recompute_mtp_granularity", str, None, "Recomputation granularity for MTP layers."),
-        ("recompute_mtp_method", str, None, "Recomputation method for MTP layers."),
+        ("recompute_mtp_granularity", Optional[str], None, "Recomputation granularity for MTP layers."),
+        ("recompute_mtp_method", Optional[str], None, "Recomputation method for MTP layers."),
         ("recompute_mtp_modules", Optional[Any], None, "List of MTP module names to apply recomputation."),
         ("recompute_use_reentrant", bool, True, "recompute_use_reentrant"),
         ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
@@ -321,7 +321,7 @@ class LlmMetaConfig:
         ("use_unified_moe", bool, False, "Whether to use unified moe."),
         (
             "moe_deepep_num_sms",
-            bool,
+            Optional[bool],
             None,
             "Whether to enable DeepEP (Deep Expert Pruning) with SMS (Sub-Model Selection) for MoE. Defaults to False.",
         ),
@@ -357,19 +357,19 @@ class LlmMetaConfig:
         ),
         (
             "router_aux_loss_coef",
-            float,
+            Optional[float],
             None,
             "Coefficient for MoE router auxiliary loss (encourages balanced expert usage). Defaults to 0.0 (disable auxiliary loss).",
         ),
         (
             "router_z_loss_coef",
-            float,
+            Optional[float],
             None,
             "Coefficient for MoE router Z-loss (regularizes router logits to avoid extreme values). Defaults to 0.0 (disable Z-loss).",
         ),
         (
             "moe_router_force_load_balancing",
-            bool,
+            Optional[bool],
             False,
             "Whether to enforce load balancing across MoE experts. Prevents overutilization of a small subset of experts. Defaults to True (critical optimization for MoE stability and efficiency).",
         ),
@@ -406,7 +406,7 @@ class LlmMetaConfig:
         ),
         (
             "moe_subbatch_token_num_after_dispatch",
-            int,
+            Optional[int],
             None,
             "Number of tokens per sub-batch after MoE expert dispatch. Controls memory usage for expert computations. Defaults to 4096 (balances memory efficiency and parallelism for most GPUs).",
         ),
@@ -437,7 +437,7 @@ class LlmMetaConfig:
     fp8_attributes = [
         (
             "fp8",
-            str,
+            Optional[str],
             None,
             "Whether to enable FP8 mixed-precision training/inference. Reduces memory usage and accelerates computation (requires hardware support). Defaults to False (enable only for Ampere+/Hopper GPUs with FP8 support).",
         ),
@@ -483,7 +483,7 @@ class LlmMetaConfig:
         ),
         (
             "softmax_scale",
-            float,
+            Optional[float],
             None,
             "Scaling factor for Softmax inputs. If None, uses automatic scaling (e.g., sqrt(d_model) for attention). Defaults to None (adapts to model dimension automatically).",
         ),
@@ -493,16 +493,16 @@ class LlmMetaConfig:
             "vanilla",
             "Applies modified softmax from https://www.evanmiller.org/attention-is-off-by-one.html. Supports both TE FusedAttention and local unfused attention. Supports both a fixed offset and learnable offset.",
         ),
-        ("init_method", Callable, None, "Method to initialize weights."),
+        ("init_method", Optional[Any], None, "Method to initialize weights."),
         (
             "output_layer_init_method",
-            Callable,
+            Optional[Any],
             None,
             "Method to initialize weights of the output layer of both attention and MLP blocks.",
         ),
         (
             "embedding_init_method",
-            Callable,
+            Optional[Any],
             None,
             "Method to initialize weights of the embedding layer. If None, will be set as described in init_method above.",
         ),
