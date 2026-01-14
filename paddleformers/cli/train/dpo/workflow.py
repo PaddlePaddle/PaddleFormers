@@ -243,7 +243,11 @@ def run_dpo(
             )
             model = LoRAModel(model, lora_config)
         else:
-            model = LoRAModel.from_pretrained(model=model, lora_path=model_args.lora_path)
+            model = LoRAModel.from_pretrained(
+                model=model,
+                lora_path=model_args.lora_path,
+                load_checkpoint_format=training_args.load_checkpoint_format,
+            )
 
         model.print_trainable_parameters()
 
@@ -355,8 +359,8 @@ def run_dpo(
         ref_model=ref_model,
         dpo_config=dpo_config,
         args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
+        train_dataset=(train_dataset if training_args.do_train and training_args.should_load_dataset else None),
+        eval_dataset=(eval_dataset if training_args.do_eval and training_args.should_load_dataset else None),
         tokenizer=tokenizer,
         data_collator=partial(
             collate_fn,

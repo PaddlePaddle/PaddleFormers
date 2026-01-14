@@ -284,10 +284,10 @@ class LlmMetaConfig:
             None,
             "When recompute_method is uniform, recompute_num_layers is the number of transformer layers in each uniformly divided recompute unit.",
         ),
-        ("recompute_modules", Optional[List[str]], None, "List of module names to apply recomputation."),
+        ("recompute_modules", Optional[Any], None, "List of module names to apply recomputation."),
         ("recompute_mtp_granularity", str, None, "Recomputation granularity for MTP layers."),
         ("recompute_mtp_method", str, None, "Recomputation method for MTP layers."),
-        ("recompute_mtp_modules", str, None, "List of MTP module names to apply recomputation."),
+        ("recompute_mtp_modules", Optional[Any], None, "List of MTP module names to apply recomputation."),
         ("recompute_use_reentrant", bool, True, "recompute_use_reentrant"),
         ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
     ]
@@ -330,6 +330,12 @@ class LlmMetaConfig:
             str,
             "deepep",
             "Type of token dispatcher for MoE (e.g., 'round_robin', 'top_k'). Defaults to None (use default dispatcher).",
+        ),
+        (
+            "moe_use_fusion_node",
+            bool,
+            True,
+            "Whether to use fusion node for MoE layer. Default to True.",
         ),
         (
             "moe_pad_expert_input_to_capacity",
@@ -411,17 +417,11 @@ class LlmMetaConfig:
             "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
         ),
         (
-            "moe_deep_gemm",
-            bool,
-            True,
-            "Whether to enable deep GEMM for MoE experts. Defaults to True. Effective only after the moe_grouped_gemm is set. ",
-        ),
-        (
             "using_sonic_moe",
             bool,
             False,
             "Whether to use SonicMoE as the computation backend for the moelayer.",
-        )
+        ),
     ]
 
     mtp_attributes = [

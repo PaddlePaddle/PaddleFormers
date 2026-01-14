@@ -27,7 +27,6 @@ from typing import Any, Optional, Tuple, Union
 import paddle
 import paddle.nn.functional as F
 from paddle import Tensor, nn
-from paddle.distributed.fleet import get_hybrid_communicate_group
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
@@ -302,7 +301,6 @@ class Qwen3VLPretrainedModel(PretrainedModel):
         MLP_LAYER_COLWISE = [
             "mlp.up_proj.weight",
             "mlp.gate_proj.weight",
-            "mlp.linear_fc1.weight",  # todo check rationality
         ]
         FUSE_MLP_LAYER_COLWISE = [
             "up_gate_proj.weight",
@@ -311,15 +309,6 @@ class Qwen3VLPretrainedModel(PretrainedModel):
         LAYER_ROWWISE = [
             "self_attn.o_proj.weight",
             "mlp.down_proj.weight",
-            "mlp.linear_fc2.weight",
-        ]  # todo check rationality
-
-        BIAS_KEYS = [
-            "self_attn.q_proj.bias",
-            "self_attn.k_proj.bias",
-            "self_attn.v_proj.bias",
-            "mlp.linear_fc1.bias",
-            # todo check fc2's bias needs not to be split
         ]
 
         def make_base_actions():
@@ -358,10 +347,6 @@ class Qwen3VLPretrainedModel(PretrainedModel):
                     )
                 actions.update(
                     {f"{llm_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False) for k in LAYER_ROWWISE}
-                )
-                # bias
-                actions.update(
-                    {f"{llm_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True) for b in BIAS_KEYS}
                 )
 
             return actions
@@ -956,7 +941,7 @@ class Qwen3VLTextAttention(nn.Layer):
 
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
-        self.head_dim = self.hidden_size // self.num_heads
+        self.head_dim = config.head_dim
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.is_causal = True
@@ -976,12 +961,6 @@ class Qwen3VLTextAttention(nn.Layer):
             norm_eps=config.rms_norm_eps,
             has_bias=False,
         )
-
-        if (self.head_dim * self.num_heads) != self.hidden_size:
-            raise ValueError(
-                f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
-                f" and `num_heads`: {self.num_heads})."
-            )
 
         self.sequence_parallel = config.sequence_parallel
         self.fuse_attention_qkv = config.fuse_attention_qkv
@@ -1307,6 +1286,8 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
         # This block handles Sequence Parallelism (Row Slicing)
         if visual_pos_masks.shape[0] > hidden_states.shape[0]:
             try:
+                from paddle.distributed.fleet import get_hybrid_communicate_group
+
                 hcg = get_hybrid_communicate_group()
                 mp_rank = hcg.get_model_parallel_rank()
                 mp_size = hcg.get_model_parallel_world_size()

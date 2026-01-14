@@ -27,4 +27,15 @@ unset PADDLE_ELASTIC_TIMEOUT
 ```
 ### 解决方案
 1. **（推荐）切换下载源查看是否能够解决问题。**
-2. 将模型下载到本地后使用本地目录执行。
+2. 配置网络代理: 若环境中有可用的代理服务器, 通过设置环境变量来转发请求, 请务必使用**大写**形式。
+
+```bash
+# 1. 设置代理（临时生效）
+export HTTP_PROXY="http://proxy_address:port"
+export HTTPS_PROXY="http://proxy_address:port"
+
+# 2. 验证代理是否成功
+curl -I https://huggingface.co
+```
+
+3. 将模型下载到本地后使用本地目录执行。

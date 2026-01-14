@@ -17,9 +17,15 @@ num_samples_each_epoch: 6000000
 packing: true
 mix_strategy: concat
 
+truncate_packing: true
+dataloader_shuffle: false
+dataloader_num_workers: 24
+prefetch_factor: 24
+
 ### model
 model_name_or_path: Qwen/Qwen3-30B-A3B-Base
 attn_impl: flashmask
+use_qk_norm: true
 
 ### finetuning
 # base
@@ -29,7 +35,7 @@ seed: 23
 do_train: true
 do_eval: false
 per_device_eval_batch_size: 1
-per_device_train_batch_size: 1
+per_device_train_batch_size: 2
 num_train_epochs: 5
 max_steps: 50
 eval_steps: 100
@@ -49,33 +55,49 @@ warmup_steps: 20
 learning_rate: 1.0e-5
 
 # performance
-recompute_granularity: ""
-apply_rope_fusion: true
-moe_router_fusion: false
-moe_router_force_load_balancing: true
-moe_grouped_gemm: true
-
-sharding: "stage1"
-split_param: true
 tensor_model_parallel_size: 1
-sequence_parallel: true
-pipeline_model_parallel_size: 2
+sequence_parallel: false
+pipeline_model_parallel_size: 1
 use_expert_parallel: true
 expert_model_parallel_size: 8
+
+# recompute
+recompute_granularity: full
+recompute_method: first_n
+recompute_num_layers: 46
+
+# sharding
+sharding: stage1
+split_param: true
+stage1_overlap: true
+
+apply_rope_fusion: true
+fuse_rms_norm: true
+moe_deep_gemm: true
+moe_grouped_gemm: false
+moe_router_fusion: true
+moe_router_force_load_balancing: false
+
+# pp
+pp_delay_scale_loss: true
+overlap_p2p_comm: true
+variable_seq_lengths: true
+best_unbalanced_scheduler: true
+pp_release_grads: true
+
+tp_delay_scale_loss: True
 
 optim: adamw
 bf16: true
 fp16_opt_level: O2
 amp_master_grad: true
+
 fuse_attention_qkv: true
 fuse_attention_ffn: true
-fuse_swiglu: true
-fuse_rms_norm: true
-fuse_linear: true
-use_paddlefleet: true
 
-# unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
+
+tensorwise_offload_optimizer: true
 
 benchmark: true

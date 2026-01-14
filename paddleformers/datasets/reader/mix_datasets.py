@@ -16,7 +16,7 @@ import random
 from abc import abstractmethod
 
 import numpy as np
-from paddle.io import IterableDataset, get_worker_info
+from paddle.io import IterableDataset
 
 from .multi_source_datasets import InfiniteDataset
 
@@ -46,7 +46,7 @@ class BaseMixDataset(IterableDataset):
         self.rng = random.Random(self.seed)
         self.np_rng = np.random.default_rng(self.seed)
         self.epoch_index = 0
-        self.epoch_np_rng = np.random.RandomState(self.epoch_index)
+        self.epoch_np_rng = np.random.RandomState(self.epoch_index + self.seed)
         self.random_shuffle = dataset_config["random_shuffle"]
         self.num_samples_each_epoch = dataset_config["num_samples_each_epoch"]
         self.reverse = dataset_config.get("reverse", False)
@@ -87,18 +87,14 @@ class RandomDataset(BaseMixDataset):
         Define the iterator behavior for the dataset.
         This will be called when iterating over the dataset.
         """
-        worker_info = get_worker_info()
-
         while True:
             examples_all = []
-            target_nums = [int(prob * self.num_samples_each_epoch) for prob in self.datasets_prob]
+            target_nums: list[int] = [int(prob * self.num_samples_each_epoch) for prob in self.datasets_prob]
 
             for i, task in enumerate(self.tasks):
                 examples = [next(task["iterator"]) for _ in range(target_nums[i])]
                 if self.random_shuffle:
                     self.epoch_np_rng.shuffle(examples)
-                if worker_info is not None:
-                    examples = examples[worker_info.id :: worker_info.num_workers]
                 examples_all.extend(examples)
 
             if self.random_shuffle:
@@ -111,7 +107,7 @@ class RandomDataset(BaseMixDataset):
                 yield example
 
             self.epoch_index += 1
-            self.epoch_np_rng = np.random.RandomState(self.epoch_index)
+            self.epoch_np_rng = np.random.RandomState(self.epoch_index + self.seed)
 
     def __len__(self):
         return self.num_samples_each_epoch
@@ -149,7 +145,7 @@ class ConcatDataset(BaseMixDataset):
                 yield self.data[i]
 
             self.epoch_index += 1
-            self.epoch_np_rng = np.random.RandomState(self.epoch_index)
+            self.epoch_np_rng = np.random.RandomState(self.epoch_index + self.seed)
 
     def __len__(self):
         """Returns the total size of the dataset."""
@@ -249,7 +245,7 @@ class InterLeaveDataset(BaseMixDataset):
                 yield self.data[i]
 
             self.epoch_index += 1
-            self.epoch_np_rng = np.random.RandomState(self.epoch_index)
+            self.epoch_np_rng = np.random.RandomState(self.epoch_index + self.seed)
 
     def __len__(self):
         """Returns the exact size of the pre-built dataset."""

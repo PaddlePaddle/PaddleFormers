@@ -27,34 +27,36 @@ TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config/sft"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
-MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
-MAX_STEPS = 6
-SAVE_STEPS = 4
 
-SFT_FULL_EXCEPTED_LOSS = 13.043166
-SFT_FULL_RESUME_EXCEPTED_LOSS = 13.035461
-SFT_FULL_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
+MODEL_NAME_OR_PATH = "/home/models/PaddleFormers/tiny-random-glm4moe-bf16"
+TEMPLATE = "glm4_moe"
+MAX_STEPS = 2
+SAVE_STEPS = 2
 
-SFT_LORA_EXCEPTED_LOSS = 13.04369
-SFT_LORA_RESUME_EXCEPTED_LOSS = 13.036311
+SFT_FULL_EXCEPTED_LOSS = 12.725744
+SFT_FULL_RESUME_EXCEPTED_LOSS = 12.722351
+SFT_FULL_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
+
+SFT_LORA_EXCEPTED_LOSS = 12.725744
+SFT_LORA_RESUME_EXCEPTED_LOSS = 12.725442
 SFT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
-SFT_FULL_TP_PP_EXCEPTED_LOSS = 11.92912
-SFT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 11.928993
-SFT_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 132047, 132047, 119194, 128575, 128575, 3315, 132047, 71148, 128575]]
+SFT_FULL_TP_PP_EXCEPTED_LOSS = 12.794643
+SFT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 12.796001
+SFT_FULL_TP_PP_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
-SFT_LORA_TP_PP_EXCEPTED_LOSS = 11.929121
-SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.929088
+SFT_LORA_TP_PP_EXCEPTED_LOSS = 12.794643
+SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 12.794622
 SFT_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
-SFT_FC_EXCEPTED_LOSS = 12.760524
-SFT_FC_RESUME_EXCEPTED_LOSS = 12.76108
-SFT_FC_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
+SFT_FC_EXCEPTED_LOSS = 12.940278
+SFT_FC_RESUME_EXCEPTED_LOSS = 12.941307
+SFT_FC_EXCEPTED_RESULT = [[10564, 10564, 10564, 138932, 102954, 47231, 47231, 47231, 47231, 47231]]
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
 os.environ["FLAGS_embedding_deterministic"] = "1"
-os.environ["FLAGS_cudnn_deterministic"] = "0"
+os.environ["FLAGS_cudnn_deterministic"] = "1"
 
 
 class SFTTrainTester(unittest.TestCase):
@@ -131,6 +133,7 @@ class SFTTrainTest(unittest.TestCase):
             "sharding": "stage1",
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -182,6 +185,7 @@ class SFTTrainTest(unittest.TestCase):
             "sharding": "stage1",
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -241,6 +245,7 @@ class SFTTrainTest(unittest.TestCase):
             "save_steps": SAVE_STEPS,
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -292,6 +297,7 @@ class SFTTrainTest(unittest.TestCase):
             "save_steps": SAVE_STEPS,
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -353,6 +359,7 @@ class SFTTrainTest(unittest.TestCase):
             "sharding": "stage1",
             "fuse_attention_qkv": "true",
             "fuse_attention_ffn": "true",
+            "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "full_function_call.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)

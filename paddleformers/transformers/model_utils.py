@@ -1150,11 +1150,11 @@ def clean_unrelated_safetensors(save_dir):
     to_delete = []
     for filename in os.listdir(save_dir):
         filepath = os.path.join(save_dir, filename)
-        if filename.endswith(".safetensors") and filename != "model.safetensors" and os.path.isfile(filepath):
+        if filename.endswith(".safetensors") and filename != SAFE_WEIGHTS_NAME and os.path.isfile(filepath):
             to_delete.append(filepath)
-        elif filename == "model.safetensors.index.json" and os.path.isfile(filepath):
+        elif filename == SAFE_WEIGHTS_INDEX_NAME and os.path.isfile(filepath):
             to_delete.append(filepath)
-        elif filename == "peft_model.safetensors.index.json" and os.path.isfile(filepath):
+        elif filename == SAFE_PEFT_WEIGHTS_INDEX_NAME and os.path.isfile(filepath):
             to_delete.append(filepath)
 
     if to_delete:
@@ -2142,7 +2142,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     raise EnvironmentError(
                         f"Error no files {filenames} found in repo {pretrained_model_name_or_path}."
                     )
-                elif "pytorch_model.bin" in str(resolved_archive_file):
+                elif PYTORCH_WEIGHTS_NAME in str(resolved_archive_file):
 
                     if download_hub == DownloadSource.AISTUDIO and not convert_from_hf:
                         raise ValueError(
@@ -2914,9 +2914,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         if not is_sharded and state_dict is None:
             # 4. loading non-sharded ckpt from the state dict
-            if config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith("model_state.pdparams"):
+            if config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith(PADDLE_WEIGHTS_NAME):
                 state_dict = cls.convert_tensor_parallel(resolved_archive_file, config)
-            elif config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith("model.safetensors"):
+            elif config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith(SAFE_WEIGHTS_NAME):
                 with safe_open(resolved_archive_file, framework="np", device="cpu") as f:
                     loaded_keys = f.keys()
                 tp_actions = cls.get_tensor_parallel_convert_actions(config, loaded_keys)
@@ -3112,6 +3112,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         save_to_hf = kwargs.get("save_to_hf", False)
 
         save_checkpoint_format = kwargs.get("save_checkpoint_format", "")
+        using_sonic_moe = kwargs.get("using_sonic_moe", False)
 
         if kwargs.get("enable_auto_parallel", ""):
             # use flex_checkpoint as the default format in auto_parallel
@@ -3151,7 +3152,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
             clean_unrelated_safetensors(save_dir)
 
-            HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
+            if using_sonic_moe:
+                SonicMoEHFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
+            else:
+                HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
 
             dtype = get_parameter_dtype(model_to_save)
             if dtype is not None:
@@ -3166,6 +3170,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
             # Save the config
             if is_main_process:
+                if config_to_save.tensor_model_parallel_size > 1:
+                    config_to_save.tensor_model_parallel_size = 1
                 config_to_save.save_pretrained(save_directory)
                 if self.can_generate():
                     model_to_save.generation_config.save_pretrained(save_directory)
@@ -3607,9 +3613,9 @@ def load_sharded_checkpoint_as_one(folder, variant=None, return_numpy=False):
 
     """
     # Load the index
-    pdparams_file = os.path.join(folder, _add_variant("model_state.pdparams", variant))
+    pdparams_file = os.path.join(folder, _add_variant(PADDLE_WEIGHTS_NAME, variant))
     lora_pdparams_file = os.path.join(folder, _add_variant("lora_model_state.pdparams", variant))
-    safetensors_file = os.path.join(folder, _add_variant("model.safetensors", variant))
+    safetensors_file = os.path.join(folder, _add_variant(SAFE_WEIGHTS_NAME, variant))
     if os.path.isfile(pdparams_file):
         return paddle.load(pdparams_file, return_numpy=return_numpy)
     if os.path.isfile(lora_pdparams_file):
@@ -3684,8 +3690,8 @@ def load_tp_checkpoint(folder, cls, config, return_numpy=False, convert_from_hf=
         return load_sharded_checkpoint_as_one(folder, return_numpy=return_numpy)
     else:
         rank_model_path = os.path.join(folder, f"model_state.tp0{config.tensor_parallel_rank}.pdparams")
-        model_path = os.path.join(folder, "model_state.pdparams")
-        safe_model_path = os.path.join(folder, "model.safetensors")
+        model_path = os.path.join(folder, PADDLE_WEIGHTS_NAME)
+        safe_model_path = os.path.join(folder, SAFE_WEIGHTS_NAME)
         if os.path.exists(rank_model_path):
             return paddle.load(rank_model_path, return_numpy=return_numpy)
         elif os.path.exists(model_path):
@@ -3838,7 +3844,7 @@ def save_full_param(
     return total_size
 
 
-def replace_name_and_gen_index(path, total_size):
+def replace_name_and_gen_index(path, total_size, save_peft=False):
     index_mapping = {}
     cur_rank = paddle.distributed.get_rank()
     safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".safetensors")]
@@ -3869,6 +3875,8 @@ def replace_name_and_gen_index(path, total_size):
             cur_file_index += 1
             file_path = os.path.join(path, file)
             new_file_name = f"model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
+            if save_peft:
+                new_file_name = f"peft_model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
             with safe_open(file_path, framework="np") as f:
                 for key in f.keys():
                     index_mapping[key] = new_file_name
@@ -3884,12 +3892,10 @@ def replace_name_and_gen_index(path, total_size):
     for mapping in index_mapping_list:
         index_mapping.update(mapping)
 
-    saved_signal_path = os.path.join(path, f"saved_signal_{dist.get_rank()}")
-    with open(saved_signal_path, mode="w+") as f:
-        f.write("1")
-
     if env_local_rank == 0:
-        index_file_name = "model.safetensors.index.json"
+        index_file_name = SAFE_WEIGHTS_INDEX_NAME
+        if save_peft:
+            index_file_name = SAFE_PEFT_WEIGHTS_INDEX_NAME
         index_infos = {}
         index_infos["metadata"] = {}
         index_infos["metadata"]["total_size"] = total_size
@@ -3902,6 +3908,10 @@ def replace_name_and_gen_index(path, total_size):
             for i in range(paddle.distributed.get_world_size()):
                 saved_signal_path = os.path.join(path, f".model_weights.done.{i}")
                 paddle.save(i, saved_signal_path)
+
+    saved_signal_path = os.path.join(path, f"saved_signal_{dist.get_rank()}")
+    with open(saved_signal_path, mode="w+") as f:
+        f.write("1")
 
 
 class HFFormatFullParamSaver:
@@ -3960,7 +3970,7 @@ class HFFormatFullParamSaver:
             local_world_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
             self.num_saver_ranks = min(local_world_size, self.num_saver_ranks)
 
-    def save_checkpoint(self, path, max_shard_size="16GB"):
+    def save_checkpoint(self, path, max_shard_size="16GB", save_peft=False):
         total_saved_size = save_full_param(
             itr=self.get_full_param_iter(),
             save_dir=path,
@@ -3979,7 +3989,7 @@ class HFFormatFullParamSaver:
         else:
             all_sizes.append(total_saved_size)
         total_size = sum(all_sizes)
-        replace_name_and_gen_index(path, total_size)
+        replace_name_and_gen_index(path, total_size, save_peft)
         return total_saved_size
 
 
@@ -4029,6 +4039,75 @@ class EMAStateHFFormatFullParamSaver(HFFormatFullParamSaver):
         else:
             param_iter = full_param(
                 self.ema_sharded_state_dict,
+                aoa_config=self.aoa_config,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+        return param_iter
+
+
+class SonicMoEHFFormatFullParamSaver(HFFormatFullParamSaver):
+    def __init__(
+        self,
+        aoa_config,
+        h_group=None,
+        v_group=None,
+        num_splits=None,
+        shard_idx=None,
+        saved_in_one_node=False,
+        memory_growth_threshold=8 * (2**30),
+    ):
+        super().__init__(
+            self,
+            aoa_config,
+            h_group,
+            v_group,
+            num_splits=num_splits,
+            shard_idx=shard_idx,
+            saved_in_one_node=saved_in_one_node,
+            memory_growth_threshold=memory_growth_threshold,
+        )
+
+    def deinterleave_gate_up_proj(self, w, moe_intermediate_size):
+        w_cloned = w.clone().detach()
+        w_cloned = w_cloned.reshape([-1, 2 * moe_intermediate_size, w_cloned.shape[-1]])
+        B, D, C = w.shape
+        I = D // 2
+        w_ = paddle.reshape(w_cloned, [B, I, 2, C])
+        first_half = w_[:, :, 0, :]
+        second_half = w_[:, :, 1, :]
+        orig_w = paddle.concat([first_half, second_half], axis=1).contiguous()
+        paddle.assign(orig_w, w)
+        return orig_w
+
+    def get_full_param_iter(self):
+        assert (self.v_group and self.h_group) or not (
+            self.v_group or self.h_group
+        ), f"both h_group and v_group are provided or none of them, but got {self.v_group} and {self.h_group}"
+        from paddle.distributed.flex_checkpoint.dcp.full_param import full_param
+
+        model_sharded_state_dict = self.model.sharded_state_dict()
+        moe_intermediate_size = self.model.config.moe_intermediate_size
+        for k, v in model_sharded_state_dict.items():
+            if "weight1" in k:
+                weight1 = self.deinterleave_gate_up_proj(v.local_tensor, moe_intermediate_size)
+                v.local_tensor = weight1
+
+        if self.v_group and self.h_group:
+            assert self.shard_idx is not None, "expected shard_idx is not None"
+            assert self.num_splits is not None, "expected num_splits is not None"
+
+            param_iter = full_param(
+                model_sharded_state_dict,
+                aoa_config=self.aoa_config,
+                h_group=self.h_group,
+                v_group=self.v_group,
+                num_splits=self.num_splits,
+                shard_idx=self.shard_idx,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+        else:
+            param_iter = full_param(
+                model_sharded_state_dict,
                 aoa_config=self.aoa_config,
                 memory_growth_threshold=self.memory_growth_threshold,
             )
