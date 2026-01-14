@@ -15,7 +15,7 @@ split_multi_turn: False
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B-Base
 attn_impl: flashmask
-use_fused_head_and_loss_fn: true
+use_fused_head_and_loss_fn: false
 loss_subbatch_sequence_length: 8192
 
 ### finetuning
