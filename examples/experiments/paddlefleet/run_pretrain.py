@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
 import math
 import os
 import random
@@ -40,12 +39,7 @@ from paddleformers.trainer import (
     speed_metrics,
 )
 from paddleformers.trainer.trainer import Trainer
-from paddleformers.transformers import (
-    AutoConfig,
-    AutoTokenizer,
-    CosineAnnealingWithWarmupDecay,
-    LinearAnnealingWithWarmupDecay,
-)
+from paddleformers.transformers import AutoConfig, AutoTokenizer
 from paddleformers.transformers.configuration_utils import LlmMetaConfig, llmmetaclass
 from paddleformers.utils.batch_sampler import DistributedBatchSampler
 from paddleformers.utils.log import logger
@@ -57,6 +51,7 @@ os.environ["USE_CASUAL_MASK"] = "True"
 
 from glm45_provider import (
     GLM45AirModelDebugProvider,
+    GLM45AirModelDebugProviderFP8,
     GLM45AirModelSingleCardDebugProvider,
 )
 from qwen_provider import Qwen3MoEModelSingleCardProvider
@@ -99,6 +94,27 @@ class PreTrainingArguments(TrainingArguments):
         metadata={"help": "name of the model provider."},
     )
 
+    recompute: bool = field(
+        default=False,
+        metadata={
+            "help": "Recompute the forward pass to calculate gradients. Used for saving memory. "
+            "Only support for networks with transformer blocks."
+        },
+    )
+    refined_recompute: str = field(
+        default="",
+        metadata={
+            "help": "The refined recompute parameter is designed to optimize the balance between GPU memory usage and computational speed.\n"
+            "An example configuration could be: `attention_column_ln:-1,attention_row_ln:-1,flash_attn:-1,mlp_column_ln:5,mlp_row_ln:-1`.\n"
+            "The supported parameters for refining recompute are `attention_column_ln`, `attention_row_ln`, `flash_attn`, `mlp_column_ln`, and `mlp_row_ln`.\n"
+            "The associated number, `skip_num`, determines how many times to bypass recomputation for the specified operation.\n"
+            "A `skip_num` of `-1` indicates no recomputation across all stages, maximizing memory usage;\n"
+            "A `skip_num` of `0` enforces recomputation at every stage, minimizing memory usage.\n"
+            "You can also set `skip_num` to a value within the range [1, ..., num_layers]. If `skip_num` exceeds `num_layers`, it will behave as if set to `-1`.\n"
+            "If a parameter is omitted, it defaults to `xxx:0`."
+        },
+    )
+
     def __post_init__(self):
         super().__post_init__()
         # NOTE(gongenlei): new add autotuner_benchmark
@@ -116,6 +132,43 @@ class PreTrainingArguments(TrainingArguments):
             self.save_strategy = IntervalStrategy.NO
             self.evaluation_strategy = IntervalStrategy.NO
             self.unified_checkpoint = False
+        # arse_refined_recompute string to dict
+        if self.refined_recompute in [None, ""]:
+            self.refined_recompute = dict()
+        else:
+            refined_recompute_dict = {
+                "mlp_row_ln": 0,
+                "attention_row_ln": 0,
+                "attention_column_ln": 0,
+                "mlp_column_ln": 0,
+                "flash_attn": 0,
+                "global": 0,
+            }
+            ops = self.refined_recompute.split(",")
+            enable_rr = False
+            for op in ops:
+                op = op.strip()
+                if ":" not in op:
+                    raise ValueError("Illegal refined_recompute input, please check.")
+                op_name, skip_num = op.split(":")[0], int(op.split(":")[1])
+                if op_name not in refined_recompute_dict:
+                    raise ValueError(f"Refined recompute do not support {op_name}, please check.")
+                if (
+                    op_name in ["mlp_row_ln", "attention_row_ln", "attention_column_ln", "mlp_column_ln"]
+                    and self.tensor_model_parallel_size <= 1
+                ):
+                    logger.warning(
+                        f"Refined recompute is only supported for the `{op_name}` operation when `tensor_model_parallel_size` is greater than 1. \
+                            This refined recompute operation will be ignored."
+                    )
+                    continue
+
+                refined_recompute_dict[op_name] = skip_num
+                if skip_num != 0:
+                    enable_rr = True
+            if not enable_rr:
+                refined_recompute_dict = dict()
+            self.refined_recompute = refined_recompute_dict
 
 
 @dataclass
@@ -132,7 +185,7 @@ class DataArguments:
     split: str = field(default="949,50,1", metadata={"help": "Train/valid/test data split."})
 
     max_seq_length: int = field(
-        default=1024,
+        default=8192,
         metadata={
             "help": "The maximum total input sequence length after tokenization. Sequences longer "
             "than this will be truncated, sequences shorter will be padded."
@@ -175,15 +228,6 @@ class ModelArguments:
     hidden_dropout_prob: float = field(default=0.1, metadata={"help": "The hidden dropout prob."})
     attention_probs_dropout_prob: float = field(default=0.1, metadata={"help": "The attention hidden dropout prob."})
 
-    fuse_attention_qkv: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse attention qkv"},
-    )
-    fuse_attention_ffn: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse first up and gate proj in mlp block"},
-    )
-
     continue_training: bool = field(
         default=False,
         metadata={
@@ -194,11 +238,15 @@ class ModelArguments:
         default=None,
         metadata={"help": "num_hidden_layers."},
     )
+    use_global_causal_attn: bool = field(
+        default=False, metadata={"help": "Whether to use global causal attention in packing data"}
+    )
 
 
 def create_pretrained_dataset(
     data_args,
     training_args,
+    model_args,
     data_file,
     tokenizer,
     need_data=True,
@@ -248,16 +296,52 @@ def create_pretrained_dataset(
 
     from paddleformers.data import Stack
 
-    def _collate_data(data, stack_fn=Stack()):
-        tokens_ = stack_fn([x["text"] for x in data])
+    def _collate_data(batch, stack_fn=Stack()):
+        # origin no mask data
+        # tokens_ = stack_fn([x["text"] for x in batch])
 
-        labels = copy.deepcopy(tokens_)[:, 1:]
-        tokens = tokens_[:, :-1]
+        # labels = copy.deepcopy(tokens_)[:, 1:]
+        # tokens = tokens_[:, :-1]
 
-        return {
-            "input_ids": tokens,
-            "labels": labels,
-        }
+        # return {
+        #     "input_ids": tokens,
+        #     "labels": labels,
+        # }
+
+        # data with attn_mask_startend_row_indices for flashmask
+        input_keys = ["input_ids", "labels", "position_ids", "attn_mask_startend_row_indices"]
+        return_list = []
+        for batch_sequence in batch:
+            # tokens
+            padded_token_ids = np.array([batch_sequence["text"][:-1]])
+            # labels
+            padded_labels = np.array([batch_sequence["text"][1:]])
+            # position_ids
+            padded_position_ids = np.array([sum(batch_sequence["position_ids"], [])[:-1]])
+            return_list.append(
+                [
+                    padded_token_ids,
+                    padded_labels,
+                    padded_position_ids,
+                ]
+            )
+            # attn mask
+            oral_position_ids = batch_sequence["position_ids"]
+            from paddleformers.datasets.collate import (
+                gen_attn_mask_startend_row_indices,
+            )
+
+            return_list[-1].append(
+                gen_attn_mask_startend_row_indices(
+                    oral_position_ids,
+                    data_args.max_seq_length + training_args.num_nextn_predict_layers,
+                    model_args.use_global_causal_attn,
+                )[:, :, :-1, :]
+            )
+
+        return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
+        input_dict = dict(zip(input_keys, return_list))
+        return input_dict
 
     if need_data:
         if training_args.do_train:
@@ -468,34 +552,28 @@ def main():
         # models are separate. Therefore, first we need to set the flag in the model config
         # to perform V-shape segmentation. Second, we need to set the flag in the training_args
         # to configure strategy.hybrid_configs to choose the DualPipeV schedule.
-        config.use_dualpipev = "use_dualpipev" in training_args.pipeline_parallel_config
+        config.use_dualpipev = training_args.use_dualpipev
     if hasattr(config, "hidden_dropout_prob"):
         config.hidden_dropout_prob = model_args.hidden_dropout_prob
     if hasattr(config, "attention_probs_dropout_prob"):
         config.attention_probs_dropout_prob = model_args.attention_probs_dropout_prob
-    if model_args.fuse_attention_qkv is not None:
-        config.fuse_attention_qkv = model_args.fuse_attention_qkv
-    if model_args.fuse_attention_ffn is not None:
-        config.fuse_attention_ffn = model_args.fuse_attention_ffn
 
     if config.sequence_parallel:
-        assert config.tensor_parallel_degree > 1, "tensor_parallel_degree must be larger than 1 for sequence parallel."
+        assert (
+            config.tensor_model_parallel_size > 1
+        ), "tensor_model_parallel_size must be larger than 1 for sequence parallel."
     assert (
-        config.num_attention_heads % config.sep_parallel_degree == 0
-    ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_degree {config.sep_parallel_degree}"
+        config.num_attention_heads % config.sep_parallel_size == 0
+    ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_size {config.sep_parallel_size}"
     assert (
-        config.seq_length % config.context_parallel_degree == 0
-    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_degree {config.context_parallel_degree}"
+        config.seq_length % config.context_parallel_size == 0
+    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_size {config.context_parallel_size}"
 
-    if training_args.sharding_parallel_config is not None:
-        # for stage1 overlap optimization
-        if (
-            "enable_stage1_allgather_overlap" in training_args.sharding_parallel_config
-            or "enable_stage1_broadcast_overlap" in training_args.sharding_parallel_config
-        ):
-            from paddle.io.reader import use_pinned_memory
+    # for stage1 overlap optimization
+    if training_args.stage1_allgather_overlap or training_args.stage1_broadcast_overlap:
+        from paddle.io.reader import use_pinned_memory
 
-            use_pinned_memory(False)
+        use_pinned_memory(False)
 
     if get_env_device() == "xpu" and training_args.gradient_accumulation_steps > 1:
         try:
@@ -521,6 +599,8 @@ def main():
         model_provider = GLM45AirModelSingleCardDebugProvider()
     elif training_args.model_provider_type == "GLM_muiti_cards":
         model_provider = GLM45AirModelDebugProvider()
+    elif training_args.model_provider_type == "GLM_muiti_cards_fp8":
+        model_provider = GLM45AirModelDebugProviderFP8()
     elif training_args.model_provider_type == "qwen_single_card":
         training_args.save_checkpoint_format = None
         model_provider = Qwen3MoEModelSingleCardProvider()
@@ -535,17 +615,13 @@ def main():
     if training_args.decay_steps is None:
         training_args.decay_steps = training_args.max_steps
 
-    if training_args.warmup_steps > 0:
-        warmup_steps = training_args.warmup_steps
-    else:
-        warmup_steps = training_args.warmup_ratio * training_args.max_steps
-
     lr_scheduler = None
 
     data_file = get_train_data_file(data_args)
     train_dataset, eval_dataset, test_dataset, data_collator = create_pretrained_dataset(
         data_args,
         training_args,
+        model_args,
         data_file,
         tokenizer,
         need_data=training_args.should_load_dataset,

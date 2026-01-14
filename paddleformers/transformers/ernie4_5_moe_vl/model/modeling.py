@@ -28,6 +28,9 @@ from paddle.distributed.fleet.meta_parallel import (
     get_rng_state_tracker,
 )
 from paddle.distributed.fleet.utils import recompute
+from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+    build_sharded_state_dict,
+)
 
 from paddleformers.utils.log import logger
 
@@ -90,7 +93,7 @@ def calc_lm_head_logits(config, hidden_states, weight, bias, tensor_parallel_out
         weight,
         bias=bias,
         transpose_y=config.tie_word_embeddings,
-        tensor_parallel_degree=config.tensor_parallel_degree,
+        tensor_model_parallel_size=config.tensor_model_parallel_size,
         tensor_parallel_output=tensor_parallel_output,
         fuse_linear=config.fuse_linear,
         training=training,
@@ -518,13 +521,13 @@ class Ernie4_5_MLP(nn.Layer):
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             ColumnLN = ColumnSequenceParallelLinear if config.sequence_parallel else ColumnParallelLinear
             RowLN = RowSequenceParallelLinear if config.sequence_parallel else RowParallelLinear
 
             column_ln_configs = {}
             if (
-                config.recompute
+                config.recompute_granularity is not None
                 and config.sequence_parallel
                 and config.skip_recompute_ops[layer_idx].get("mlp_column_ln", False)
             ):
@@ -551,10 +554,10 @@ class Ernie4_5_MLP(nn.Layer):
             self.up_proj = LinearFN(self.hidden_size, self.intermediate_size, bias_attr=config.use_bias)
             self.gate_proj = LinearFN(self.hidden_size, self.intermediate_size, bias_attr=config.use_bias)
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             row_ln_configs = {}
             if (
-                config.recompute
+                config.recompute_granularity is not None
                 and config.sequence_parallel
                 and config.skip_recompute_ops[layer_idx].get("mlp_row_ln", False)
             ):
@@ -620,26 +623,26 @@ class Ernie4_5_Attention(nn.Layer):
         else:
             self.head_dim = config.head_dim
         self.is_gqa = config.num_key_value_heads is not None and config.num_key_value_heads != self.num_heads
-        if config.fuse_rope:
+        if config.apply_rope_fusion:
             assert fused_rope is not None, "fused_rope is not supported"
-        self.fuse_rope = config.fuse_rope
+        self.apply_rope_fusion = config.apply_rope_fusion
 
         self.rope_3d = config.get("rope_3d", False)
         self.freq_allocation = config.get("freq_allocation", 0)
         if self.rope_3d:
-            assert not self.fuse_rope, "does not support fuse rope when rope_3d is on for now."
+            assert not self.apply_rope_fusion, "does not support fuse rope when rope_3d is on for now."
             assert self.freq_allocation is not None, "freq_allocation must be provided if rope_3d is on."
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             assert (
-                self.num_heads % config.tensor_parallel_degree == 0
-            ), f"num_heads: {self.num_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-            self.num_heads = self.num_heads // config.tensor_parallel_degree
+                self.num_heads % config.tensor_model_parallel_size == 0
+            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
             if self.is_gqa:
                 assert (
-                    self.num_key_value_heads % config.tensor_parallel_degree == 0
-                ), f"num_heads: {self.num_key_value_heads}, tensor_parallel_degree: {config.tensor_parallel_degree}"
-                self.num_key_value_heads = self.num_key_value_heads // config.tensor_parallel_degree
+                    self.num_key_value_heads % config.tensor_model_parallel_size == 0
+                ), f"num_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+                self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
         if self.is_gqa:
             logger.info(f"use GQA - num_heads: {self.num_heads}- num_key_value_heads: {self.num_key_value_heads}")
             assert (
@@ -654,12 +657,12 @@ class Ernie4_5_Attention(nn.Layer):
         else:
             q_hidden_size = kv_hidden_size = self.head_dim * config.num_attention_heads
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             column_ln_configs = {}
             ColumnLN = ColumnSequenceParallelLinear if config.sequence_parallel else ColumnParallelLinear
             RowLN = RowSequenceParallelLinear if config.sequence_parallel else RowParallelLinear
             if (
-                config.recompute
+                config.recompute_granularity is not None
                 and config.sequence_parallel
                 and config.skip_recompute_ops[layer_idx].get("attention_column_ln", False)
             ):
@@ -708,10 +711,10 @@ class Ernie4_5_Attention(nn.Layer):
                 bias_attr=config.use_bias,
             )
 
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             row_ln_configs = {}
             if (
-                config.recompute
+                config.recompute_granularity is not None
                 and config.sequence_parallel
                 and config.skip_recompute_ops[layer_idx].get("attention_row_ln", False)
             ):
@@ -742,7 +745,7 @@ class Ernie4_5_Attention(nn.Layer):
         self.config = config
 
         self._rr_flash_attn = None
-        if config.recompute and config.skip_recompute_ops[layer_idx].get("flash_attn", False):
+        if config.recompute_granularity is not None and config.skip_recompute_ops[layer_idx].get("flash_attn", False):
             self._rr_flash_attn = RefinedRecomputeFunction()
 
         self.set_attn_func()
@@ -799,7 +802,7 @@ class Ernie4_5_Attention(nn.Layer):
                 token_type_ids = ScatterOp.apply(token_type_ids)
                 token_type_ids.stop_gradient = True
             bsz = 1
-            q_len = hidden_states.shape[0] * self.config.tensor_parallel_degree
+            q_len = hidden_states.shape[0] * self.config.tensor_model_parallel_size
         else:
             bsz, q_len, _ = hidden_states.shape
         query_states = key_states = value_states = mix_layer = None
@@ -811,7 +814,12 @@ class Ernie4_5_Attention(nn.Layer):
             has_gradient = not mix_layer.stop_gradient
         else:
             has_gradient = not (query_states.stop_gradient and key_states.stop_gradient and value_states.stop_gradient)
-        if self.config.recompute and self.config.recompute_granularity == "core_attn" and has_gradient:
+        if (
+            self.config.recompute_granularity == "selective"
+            and self.config.recompute_modules is not None
+            and "core_attn" in self.config.recompute_modules
+            and has_gradient
+        ):
             assert past_key_value is None, "do not use kv cache in recompute"
             assert not use_cache
             attn_output, attn_weights, past_key_value = recompute(
@@ -923,7 +931,7 @@ class Ernie4_5_Attention(nn.Layer):
         k = paddle.repeat_interleave(k, replicate, axis=1)
         v = paddle.repeat_interleave(v, replicate, axis=1)
 
-        scale_qk_coeff = self.config.scale_qk_coeff * self.head_dim**0.5
+        scale_qk_coeff = self.config.get("scale_qk_coeff", 1.0) * self.head_dim**0.5
         attention_mask = paddle.where(
             attention_mask,
             paddle.to_tensor(0.0, dtype=q.dtype),
@@ -1021,7 +1029,7 @@ class Ernie4_5_Attention(nn.Layer):
                 position_ids = position_ids[:, -1:, :]
 
         # TODO(daisiming): rope这块需重新考虑
-        if offset > 0 or position_ids is not None or not self.fuse_rope:
+        if offset > 0 or position_ids is not None or not self.apply_rope_fusion:
             if not self.rope_3d:
                 # LLM
                 cos_sin = self.rotary_emb(kv_seq_len, position_ids).transpose([0, 2, 1, 3])  # [b,h,s,d]->[b,s,h,d]
@@ -1087,7 +1095,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
         weight,
         bias,
         labels,
-        tensor_parallel_degree,
+        tensor_model_parallel_size,
         mp_group=None,
         ignore_index=-100,
         seq_chunk_size=8192,
@@ -1103,7 +1111,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
             weight (paddle.Tensor): Weight matrix for projection
             bias (Optional[paddle.Tensor]): Optional bias vector
             labels (paddle.Tensor): Target labels tensor of shape [batch_size*seq_len]
-            tensor_parallel_degree (int): Degree of tensor parallelism
+            tensor_model_parallel_size (int): Degree of tensor parallelism
             mp_group (Optional[dist.Group]): Model parallel group. Defaults to None (auto-detect)
             ignore_index (int): Index to ignore in loss computation. Defaults to -100
             seq_chunk_size (int): Chunk size for processing long sequences. Defaults to 8192
@@ -1117,7 +1125,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
                 - gathered_labels: Concatenated labels from all parallel groups
         """
 
-        ctx.tensor_parallel_degree = tensor_parallel_degree
+        ctx.tensor_model_parallel_size = tensor_model_parallel_size
         ctx.ignore_index = ignore_index
         ctx.seq_chunk_size = seq_chunk_size
         ctx.transpose_y = transpose_y
@@ -1175,7 +1183,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
                         weight,
                         bias=bias,
                         transpose_y=ctx.transpose_y,
-                        tensor_parallel_degree=ctx.tensor_parallel_degree,
+                        tensor_model_parallel_size=ctx.tensor_model_parallel_size,
                         tensor_parallel_output=True,
                         fuse_linear=ctx.fuse_linear,
                         training=ctx.training,
@@ -1277,7 +1285,7 @@ class FusedHeadParallelCrossEntropy(PyLayer):
                         weight,
                         bias=bias,
                         transpose_y=ctx.transpose_y,
-                        tensor_parallel_degree=ctx.tensor_parallel_degree,
+                        tensor_model_parallel_size=ctx.tensor_model_parallel_size,
                         tensor_parallel_output=True,
                         fuse_linear=ctx.fuse_linear,
                         training=ctx.training,
@@ -1332,7 +1340,7 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
         self.ignored_index = getattr(config, "ignored_index", -100)
         self.config = config
         self.return_tuple = return_tuple
-        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
+        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
 
         if self.enable_parallel_cross_entropy:  # and False: # and lm_head is distributed
             logger.info("using parallel cross entroy, take care")
@@ -1381,7 +1389,7 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
             # `loss_mask` must be reset to None and re-calculate it in ErnieBotPretrainingCriterion
             # when use use_sparse_head_and_loss_fn.
             loss_mask = None
-            if self.config.use_recompute_loss_fn:
+            if self.config.recompute_modules is not None and "loss_fn" in self.config.recompute_modules:
                 offload_kwargs = {}
                 if self.config.get("offload_lm_head", False):
                     offload_kwargs["offload_indices"] = [1]
@@ -1403,7 +1411,7 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
                     training=self.training,
                 )
                 res = self.forward_impl(logits, masked_lm_labels, loss_mask)
-        elif self.config.use_recompute_loss_fn:
+        elif self.config.recompute_modules is not None and "loss_fn" in self.config.recompute_modules:
             if self.config.use_fused_head_and_loss_fn:
                 res = self.forward_impl_with_fused_head_loss_fn(masked_lm_labels, loss_mask, *prediction_scores)
             else:
@@ -1440,13 +1448,15 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
             Union[paddle.Tensor, Tuple[paddle.Tensor, paddle.Tensor]]:
                 Same return format as forward()
         """
-        assert self.config.tensor_parallel_degree > 0, "use_fused_head_and_loss_fn require tensor_parallel_degree > 0"
+        assert (
+            self.config.tensor_model_parallel_size > 0
+        ), "use_fused_head_and_loss_fn require tensor_model_parallel_size > 0"
         masked_lm_loss, masked_lm_labels_all = FusedHeadParallelCrossEntropy.apply(
             hidden_states,
             outlinear_weight,
             outlinear_bias,
             masked_lm_labels,
-            self.config.tensor_parallel_degree,
+            self.config.tensor_model_parallel_size,
             ignore_index=self.ignored_index,
             seq_chunk_size=self.config.get("loss_subbatch_seqlen", 32768),
             transpose_y=self.config.tie_word_embeddings,
@@ -1593,18 +1603,17 @@ class Ernie4_5_LMHead(nn.Layer):
             config (Ernie4_5_Config): Model configuration containing:
                 - vocab_size: Size of vocabulary
                 - hidden_size: Dimension of hidden states
-                - tensor_parallel_degree: Degree of tensor parallelism
+                - tensor_model_parallel_size: Degree of tensor parallelism
                 - tie_word_embeddings: Whether to tie input/output embeddings
                 - weight_share_add_bias: Whether to add bias when weight sharing
                 - use_bias: Whether to use bias term
-                - use_recompute_loss_fn: Whether to defer logits computation to loss function
                 - use_sparse_head_and_loss_fn: Whether to use sparse head computation
         """
 
         super(Ernie4_5_LMHead, self).__init__()
         self.config = config
-        if config.tensor_parallel_degree > 1:
-            vocab_size = config.vocab_size // config.tensor_parallel_degree
+        if config.tensor_model_parallel_size > 1:
+            vocab_size = config.vocab_size // config.tensor_model_parallel_size
         else:
             vocab_size = config.vocab_size
 
@@ -1634,9 +1643,9 @@ class Ernie4_5_LMHead(nn.Layer):
         if config.weight_share_add_bias and config.use_bias and self.bias.is_distributed:
             self.bias.split_axis = 0
 
-        if self.config.use_recompute_loss_fn:
+        if self.config.recompute_modules is not None and "loss_fn" in self.config.recompute_modules:
             logger.info(
-                "Using recompute_loss_fn, the calculation of logits will be moved into "
+                "When recompute loss_fn, the calculation of logits will be moved into "
                 "loss_fn for memory optimization"
             )
 
@@ -1650,7 +1659,7 @@ class Ernie4_5_LMHead(nn.Layer):
         Returns:
             Union[
                 Tuple[paddle.Tensor, paddle.Tensor, Optional[paddle.Tensor]]:
-                    # When use_recompute_loss_fn or use_sparse_head_and_loss_fn
+                    # When recompute loss_fn or use_sparse_head_and_loss_fn
                     - hidden_states: Original input
                     - weight: Projection weights
                     - bias: Optional bias term
@@ -1661,9 +1670,13 @@ class Ernie4_5_LMHead(nn.Layer):
             ]
         """
         #  will enter this branch when:
-        # 1. use_recompute_loss_fn or use_sparse_head_and_loss_fn
+        # 1. recompute loss_fn or use_sparse_head_and_loss_fn
         # 2. dpo training
-        if self.config.use_recompute_loss_fn or self.config.use_sparse_head_and_loss_fn:
+        if (
+            self.config.recompute_modules is not None
+            and "loss_fn" in self.config.recompute_modules
+            or self.config.use_sparse_head_and_loss_fn
+        ):
             return (
                 hidden_states,
                 self.weight,
@@ -1679,3 +1692,18 @@ class Ernie4_5_LMHead(nn.Layer):
             tensor_parallel_output,
             training=self.training,
         )
+
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        if build_sharded_state_dict is None:
+            raise ImportError(
+                "The current version of paddlepaddle does not support 'build_sharded_state_dict'. "
+                "Please install paddlepaddle>=3.2."
+            )
+
+        if self.config.tensor_model_parallel_size > 1:
+            state_dict = self.state_dict(structured_name_prefix="")
+            return build_sharded_state_dict(state_dict, {"weight": 0, "bias": 0}, structured_name_prefix)
+        return super().sharded_state_dict(structured_name_prefix)

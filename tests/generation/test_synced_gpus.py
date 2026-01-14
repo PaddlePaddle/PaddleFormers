@@ -36,14 +36,16 @@ class ShardingStage3Tester(TestMultipleGpus):
 
 if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-llama")
-    model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-llama")
+    model = AutoModelForCausalLM.from_pretrained(
+        "Paddleformers/tiny-random-llama", convert_from_hf=False, load_checkpoint_format=""
+    )
     model.config.eos_token_id = -1
     world_size = paddle.distributed.get_world_size()
 
     with tempfile.TemporaryDirectory() as tempdir:
         args_dict = {
             "sharding": "stage3",
-            "sharding_parallel_degree": world_size,
+            "sharding_parallel_size": world_size,
             "fp16": True,
             "fp16_opt_level": "O2",
             "output_dir": os.path.join(tempdir, "output"),

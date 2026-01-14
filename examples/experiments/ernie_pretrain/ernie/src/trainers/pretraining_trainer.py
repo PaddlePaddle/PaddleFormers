@@ -174,7 +174,7 @@ class PreTrainingArguments(TrainingArguments):
         default=0,
         metadata={},
     )
-    virtual_pp_degree: Optional[int] = field(
+    virtual_pipeline_model_parallel_size: Optional[int] = field(
         default=1,
         metadata={
             "help": "vpp",
@@ -248,6 +248,28 @@ class PreTrainingArguments(TrainingArguments):
     train_moe_only: int = field(default=None, metadata={"help": "train moe params only"})
     use_ortho_loss_callback: bool = field(default=False, metadata={"help": "Use orthogonal loss callback or not"})
 
+    recompute: bool = field(
+        default=False,
+        metadata={
+            "help": "Recompute the forward pass to calculate gradients. Used for saving memory. "
+            "Only support for networks with transformer blocks."
+        },
+    )
+
+    refined_recompute: str = field(
+        default="",
+        metadata={
+            "help": "The refined recompute parameter is designed to optimize the balance between GPU memory usage and computational speed.\n"
+            "An example configuration could be: `attention_column_ln:-1,attention_row_ln:-1,flash_attn:-1,mlp_column_ln:5,mlp_row_ln:-1`.\n"
+            "The supported parameters for refining recompute are `attention_column_ln`, `attention_row_ln`, `flash_attn`, `mlp_column_ln`, and `mlp_row_ln`.\n"
+            "The associated number, `skip_num`, determines how many times to bypass recomputation for the specified operation.\n"
+            "A `skip_num` of `-1` indicates no recomputation across all stages, maximizing memory usage;\n"
+            "A `skip_num` of `0` enforces recomputation at every stage, minimizing memory usage.\n"
+            "You can also set `skip_num` to a value within the range [1, ..., num_layers]. If `skip_num` exceeds `num_layers`, it will behave as if set to `-1`.\n"
+            "If a parameter is omitted, it defaults to `xxx:0`."
+        },
+    )
+
     @property
     def use_moe(self):  # noqa: F811
         return getattr(self, "use_expert_parallel", self._use_moe)
@@ -299,7 +321,7 @@ class PreTrainingArguments(TrainingArguments):
 
         self.max_gradient_accumulation_steps = self.gradient_accumulation_steps
 
-        if self.pipeline_parallel_degree > 1:
+        if self.pipeline_model_parallel_size > 1:
             self.per_device_eval_batch_size = self.per_device_train_batch_size * self.gradient_accumulation_steps
             logger.warn(f"eval_batch_size set to {self.per_device_eval_batch_size} in Pipeline Parallel!")
             user_defined_strategy = fleet.fleet._user_defined_strategy
@@ -310,15 +332,9 @@ class PreTrainingArguments(TrainingArguments):
             self.per_device_eval_batch_size = self.per_device_train_batch_size
             logger.warn(f"eval_batch_size set to {self.per_device_eval_batch_size}")
 
-        if self.sharding_parallel_degree > 1:
-            sharding_parallel_config = (
-                set(self.sharding_parallel_config.split(" ")) if self.sharding_parallel_config else set()
-            )
+        if self.sharding_parallel_size > 1:
             sharding_comm_overlap_non_pp = (
-                True
-                if "shardingv1_comm_overlap" in sharding_parallel_config
-                or "sharding_comm_overlap" in sharding_parallel_config
-                else False
+                True if self.sd_shardingv1_comm_overlap or self.sd_sharding_comm_overlap else False
             )
             if sharding_comm_overlap_non_pp:
                 assert hasattr(fleet.fleet, "_user_defined_strategy")
@@ -353,6 +369,44 @@ class PreTrainingArguments(TrainingArguments):
         if ShardingOption.SHARD_GRAD_OP in self.sharding:
             logger.info("disabling `sp_callback` b/c using sharding stage2")
             self.use_sp_callback = False
+
+        # arse_refined_recompute string to dict
+        if self.refined_recompute in [None, ""]:
+            self.refined_recompute = dict()
+        else:
+            refined_recompute_dict = {
+                "mlp_row_ln": 0,
+                "attention_row_ln": 0,
+                "attention_column_ln": 0,
+                "mlp_column_ln": 0,
+                "flash_attn": 0,
+                "global": 0,
+            }
+            ops = self.refined_recompute.split(",")
+            enable_rr = False
+            for op in ops:
+                op = op.strip()
+                if ":" not in op:
+                    raise ValueError("Illegal refined_recompute input, please check.")
+                op_name, skip_num = op.split(":")[0], int(op.split(":")[1])
+                if op_name not in refined_recompute_dict:
+                    raise ValueError(f"Refined recompute do not support {op_name}, please check.")
+                if (
+                    op_name in ["mlp_row_ln", "attention_row_ln", "attention_column_ln", "mlp_column_ln"]
+                    and self.tensor_model_parallel_size <= 1
+                ):
+                    logger.warning(
+                        f"Refined recompute is only supported for the `{op_name}` operation when `tensor_model_parallel_size` is greater than 1. \
+                            This refined recompute operation will be ignored."
+                    )
+                    continue
+
+                refined_recompute_dict[op_name] = skip_num
+                if skip_num != 0:
+                    enable_rr = True
+            if not enable_rr:
+                refined_recompute_dict = dict()
+            self.refined_recompute = refined_recompute_dict
 
 
 class WeightedDistributedSampler(PaddleNLPDistributedBatchSampler):
@@ -782,12 +836,12 @@ class PretrainingTrainer(Trainer):
         if self.args.world_size > 1 and not self.args.use_hybrid_parallel:
             model = paddle.DataParallel(model)
 
-        in_pipeline_parallel_mode = self.args.pipeline_parallel_degree > 1
+        in_pipeline_parallel_mode = self.args.pipeline_model_parallel_size > 1
         in_sharding_parallel_mode = self.sharding is not None
-        in_tensor_parallel_model = self.args.tensor_parallel_degree > 1
+        in_tensor_parallel_model = self.args.tensor_model_parallel_size > 1
 
         def enable_sequence_parallel(_model):
-            if self.args.tensor_parallel_degree > 1 and self.args.sequence_parallel:
+            if self.args.tensor_model_parallel_size > 1 and self.args.sequence_parallel:
                 if self.args.use_sp_callback:
                     self.add_callback(SPGradSyncCallback(_model._layers))
                 else:
@@ -848,7 +902,7 @@ class PretrainingTrainer(Trainer):
             self.optimizer = distributed_optimizer_maybe_overwrite(self.optimizer, self.args.use_moe)
 
         if not in_pipeline_parallel_mode and in_sharding_parallel_mode:
-            if self.args.tensor_parallel_degree > 1:
+            if self.args.tensor_model_parallel_size > 1:
                 hcg = fleet.get_hybrid_communicate_group()
                 assert (
                     ShardingOption.SHARD_GRAD_OP in self.args.sharding or ShardingOption.SHARD_OP in self.args.sharding
@@ -869,7 +923,7 @@ class PretrainingTrainer(Trainer):
                 self.optimizer = distributed_optimizer_maybe_overwrite(self.optimizer, self.args.use_moe)
 
             else:
-                if (self.args.use_moe) and self.args.data_parallel_degree > 1:
+                if (self.args.use_moe) and self.args.data_parallel_size > 1:
                     try:
                         from paddle.fluid.dygraph.parallel import sync_params_buffers
                     except ImportError:
@@ -1024,18 +1078,18 @@ class PretrainingTrainer(Trainer):
                 train_bin = paddle.load(train_bin_file)
                 old_data_filelist = train_bin.data_filelist
                 old_data_weights = train_bin.data_weights
-                old_sharding_degree = train_bin.sharding_parallel_degree
-                old_data_parallel_degree = train_bin.data_parallel_degree
+                old_sharding_degree = train_bin.sharding_parallel_size
+                old_data_parallel_size = train_bin.data_parallel_size
                 old_reeao_data_world_size = getattr(train_bin, "reeao_data_world_size", None)
                 new_data_filelist = self.args.data_filelist
                 new_data_weights = self.args.data_weights
-                new_sharding_degree = self.args.sharding_parallel_degree
-                new_data_parallel_degree = self.args.data_parallel_degree
+                new_sharding_degree = self.args.sharding_parallel_size
+                new_data_parallel_size = self.args.data_parallel_size
                 self.args.same_data = (
                     (old_data_filelist == new_data_filelist)
                     and (old_data_weights == new_data_weights)
                     and (old_sharding_degree == new_sharding_degree)
-                    and (old_data_parallel_degree == new_data_parallel_degree)
+                    and (old_data_parallel_size == new_data_parallel_size)
                     and (not self.args.multimodal)
                     and (
                         old_reeao_data_world_size is None

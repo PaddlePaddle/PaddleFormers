@@ -48,7 +48,7 @@ if tp_size > 1:
 def _test_create_vocab_parallel_embedding():
     # Test creating default embedding
     config = LlamaConfig()
-    config.tensor_parallel_degree = tp_size
+    config.tensor_model_parallel_size = tp_size
     embedding = Embedding.create(config=config)
     assert isinstance(embedding, mpu.VocabParallelEmbedding)
     assert embedding.weight.shape == [config.vocab_size // tp_size, config.hidden_size]

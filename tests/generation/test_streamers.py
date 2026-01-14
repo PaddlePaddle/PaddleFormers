@@ -38,7 +38,9 @@ class StreamerTester(unittest.TestCase):
 
     def test_text_streamer_matches_non_streaming(self):
         tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-llama")
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-llama")
+        model = AutoModelForCausalLM.from_pretrained(
+            "Paddleformers/tiny-random-llama", convert_from_hf=False, load_checkpoint_format=""
+        )
         model.config.eos_token_id = -1
 
         input_kwargs = self.get_inputs(model)
@@ -55,7 +57,9 @@ class StreamerTester(unittest.TestCase):
 
     def test_iterator_streamer_matches_non_streaming(self):
         tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-llama")
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-llama")
+        model = AutoModelForCausalLM.from_pretrained(
+            "Paddleformers/tiny-random-llama", convert_from_hf=False, load_checkpoint_format=""
+        )
         model.config.eos_token_id = -1
 
         input_kwargs = self.get_inputs(model)
@@ -77,8 +81,8 @@ class StreamerTester(unittest.TestCase):
         # Tests that we can pass `decode_kwargs` to the streamer to control how the tokens are decoded. Must be tested
         # with actual models -- the dummy models' tokenizers are not aligned with their models, and
         # `skip_special_tokens=True` has no effect on them
-        tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-qwen3")
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-qwen3", convert_from_hf=True)
+        tokenizer = AutoTokenizer.from_pretrained("PaddleFormers/tiny-random-qwen3")
+        model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
         model.config.eos_token_id = -1
         model.config.bos_token_id = 1
 
@@ -97,7 +101,9 @@ class StreamerTester(unittest.TestCase):
 
     def test_iterator_streamer_timeout(self):
         tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-llama")
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-llama")
+        model = AutoModelForCausalLM.from_pretrained(
+            "Paddleformers/tiny-random-llama", convert_from_hf=False, load_checkpoint_format=""
+        )
         model.config.eos_token_id = -1
 
         input_kwargs = self.get_inputs(model)

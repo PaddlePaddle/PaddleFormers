@@ -188,7 +188,6 @@ class PdArgumentParser(ArgumentParser):
                 f"removing line of `from __future__ import annotations` which opts in Postponed "
                 f"Evaluation of Annotations (PEP 563)"
             )
-
         for field in dataclasses.fields(dtype):
             if not field.init:
                 continue

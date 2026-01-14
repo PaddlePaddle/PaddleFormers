@@ -76,8 +76,6 @@ class MoEGateMixin:
         self,
         gates: paddle.Tensor,
         capacity_factor: float,
-        max_capacity: int,
-        min_capacity: int,
     ) -> paddle.Tensor:
         """Calculate the capacity for each expert based on the gates and capacity factor.
 
@@ -85,7 +83,6 @@ class MoEGateMixin:
             gates (paddle.Tensor): A tensor of shape [num_tokens, num_experts] representing the probability distribution
                 over experts for each token.
             capacity_factor (float): A scalar float value representing the capacity factor for each expert.
-            min_capacity (int): A scalar integer value representing the minimum capacity for each expert.
 
         Returns:
             int: A tensor value representing the calculated capacity for each expert.
@@ -95,10 +92,6 @@ class MoEGateMixin:
         num_tokens = gates.shape[0]
         num_experts = gates.shape[1]
         capacity = int((num_tokens // num_experts) * capacity_factor)
-        if capacity < min_capacity:
-            capacity = min_capacity
-        if capacity > max_capacity:
-            capacity = max_capacity
         assert capacity > 0, f"requires capacity > 0, capacity_factor: {capacity_factor}, input_shape: {gates.shape}"
 
         return capacity
@@ -132,13 +125,13 @@ class MoEGateMixin:
 
     def _cal_seq_aux_loss(self, probs, top_k, routing_map, max_seq_len):
         sub_max_seq_len = max_seq_len
-        if hasattr(self, "moe_subbatch_token_num") and self.moe_subbatch_token_num > 0:
-            sub_max_seq_len = self.moe_subbatch_token_num * self.tensor_parallel_degree
+        if hasattr(self, "moe_subbatch_token_num_before_dispatch") and self.moe_subbatch_token_num_before_dispatch > 0:
+            sub_max_seq_len = self.moe_subbatch_token_num_before_dispatch * self.tensor_model_parallel_size
 
         # all_probs and routing_map should be computed using the runtime local sequence length on each worker.
-        if self.tensor_parallel_degree > 1:
-            assert self.sequence_parallel and max_seq_len % self.tensor_parallel_degree == 0
-            local_seq_len = sub_max_seq_len // self.tensor_parallel_degree
+        if self.tensor_model_parallel_size > 1:
+            assert self.sequence_parallel and max_seq_len % self.tensor_model_parallel_size == 0
+            local_seq_len = sub_max_seq_len // self.tensor_model_parallel_size
             # [B*S, E]
             all_probs = AllGatherOp.apply(probs)
             # [B, S, E]
@@ -363,7 +356,7 @@ class MoEGateMixin:
 
         # The bias term b is used only to adjust affinity scores for Top-K expert selection (routing); it does not affect gating.
         # The gate applied during dispatch and to weight the FFN output is computed from the original affinity score s_{i,t} (without the bias).
-        topk_weight = scores.take_along_axis(topk_idx, axis=1) if not self.training else topk_weight
+        topk_weight = scores.take_along_axis(topk_idx, axis=1)
 
         return topk_weight, topk_idx
 
@@ -383,9 +376,11 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         n_group: int,
         topk_group: int,
         routed_scaling_factor: float,
-        moe_subbatch_token_num: int,
-        tensor_parallel_degree: int,
+        moe_subbatch_token_num_before_dispatch: int,
+        tensor_model_parallel_size: int,
         sequence_parallel: bool,
+        moe_expert_capacity_factor: float,
+        moe_token_drop_policy: str,
         transpose_gate_weight: bool,
     ):
         super(StandardMoEGate, self).__init__()
@@ -402,21 +397,19 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
         self.n_group = n_group
         self.topk_group = topk_group
         self.routed_scaling_factor = routed_scaling_factor
-        self.moe_subbatch_token_num = moe_subbatch_token_num
-        self.tensor_parallel_degree = tensor_parallel_degree
+        self.moe_subbatch_token_num_before_dispatch = moe_subbatch_token_num_before_dispatch
+        self.tensor_model_parallel_size = tensor_model_parallel_size
         self.sequence_parallel = sequence_parallel
+        self.moe_expert_capacity_factor = moe_expert_capacity_factor
+        self.moe_token_drop_policy = moe_token_drop_policy
         self.transpose_gate_weight = transpose_gate_weight
 
         self.scoring_func = moe_config.get("gate_activation", "softmax")
-        self.capacity_factor = moe_config.get("capacity_factor", 1.0)
         self.eval_capacity_factor = moe_config.get("eval_capacity_factor", 1.0)
-        self.min_capacity = moe_config.get("min_capacity", 1)
-        self.max_capacity = moe_config.get("max_capacity", pow(2, 32))
         self.group = moe_config.get("group", None)
         self.global_aux_loss = moe_config.get("global_aux_loss", False)
         self.use_rts = moe_config.get("use_rts", True)
         self.top2_2nd_expert_sampling = moe_config.get("top2_2nd_expert_sampling", True)
-        self.drop_policy = moe_config.get("drop_policy", "probs")
         self.seq_aux = moe_config.get("seq_aux", True)
 
         if self.global_aux_loss:
@@ -516,20 +509,18 @@ class StandardMoEGate(nn.Layer, MoEGateMixin):
             # Calculate configured capacity and remove locations outside capacity from mask
             capacity = self._capacity(
                 gates,
-                self.capacity_factor * self.num_experts_per_tok,
-                self.max_capacity,
-                self.min_capacity,
+                self.moe_expert_capacity_factor * self.num_experts_per_tok,
             )
 
             # update mask and locations by capacity
-            if self.drop_policy == "probs":
+            if self.moe_token_drop_policy == "probs":
                 topk_masked_gates = paddle.zeros_like(gates).put_along_axis(top_idx, top_gate, axis=1)
                 token_priority = self._probs_drop_policy(topk_masked_gates, capacity)
 
-            elif self.drop_policy == "position":
+            elif self.moe_token_drop_policy == "position":
                 token_priority = self._priority(top_idx, capacity)
             else:
-                raise ValueError(f"Invalid drop_policy: {self.drop_policy}")
+                raise ValueError(f"Invalid moe_token_drop_policy: {self.moe_token_drop_policy}")
         else:
             # Do not drop tokens - set capacity according to current expert assignments
             local_capacity = paddle.max(exp_counts)

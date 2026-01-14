@@ -17,7 +17,6 @@ import json
 from typing import Optional, Union
 
 from paddleformers.transformers.configuration_utils import PretrainedConfig
-from paddleformers.utils.log import logger
 
 from .dfnrope.modeling import DFNRopeVisionTransformerConfig
 
@@ -79,8 +78,6 @@ class Ernie4_5_Config(PretrainedConfig):
         use_flash_attention=True,
         use_sparse_flash_attn=True,
         use_var_len_flash_attn=False,
-        recompute=False,
-        recompute_granularity="core_attn",
         recompute_use_reentrant=False,
         use_rmsnorm=True,
         fuse_rms_norm=False,
@@ -91,16 +88,13 @@ class Ernie4_5_Config(PretrainedConfig):
         fuse_swiglu=False,
         use_bias=False,
         rope_theta=10000,
-        fuse_rope=False,
+        apply_rope_fusion=False,
         fuse_softmax_mask=False,
         weight_share_add_bias=True,
         fuse_linear=False,
         max_sequence_length=None,
         ignored_index=-100,
         add_tail_layers=False,
-        use_recompute_lm_head=False,
-        use_recompute_loss_fn=False,
-        refined_recompute=dict(),
         attention_probs_dropout_prob=0.0,
         hidden_dropout_prob=0.0,
         compression_ratio: float = 1.0,
@@ -130,8 +124,6 @@ class Ernie4_5_Config(PretrainedConfig):
             use_flash_attention (bool): Whether to use FlashAttention for optimized attention computation
             use_sparse_flash_attn (bool): Whether to use sparse FlashAttention
             use_var_len_flash_attn (bool): Whether to use variable-length FlashAttention
-            recompute (bool): Whether to use gradient checkpointing to save memory
-            recompute_granularity (str): Granularity of recomputation ("core_attn", "full", etc.)
             recompute_use_reentrant (bool): Whether to use reentrant checkpointing
             use_rmsnorm (bool): Whether to use RMSNorm instead of LayerNorm
             fuse_rms_norm (bool): Whether to fuse RMSNorm operations for optimization
@@ -142,15 +134,12 @@ class Ernie4_5_Config(PretrainedConfig):
             fuse_swiglu (bool): Whether to fuse SwiGLU operations
             use_bias (bool): Whether to use bias terms in linear layers
             rope_theta (float): The base period of the RoPE embeddings
-            fuse_rope (bool): Whether to fuse RoPE operations
+            apply_rope_fusion (bool): Whether to fuse RoPE operations
             weight_share_add_bias (bool): Whether to share bias weights in certain layers
             fuse_linear (bool): Whether to fuse linear operations
             max_sequence_length (int): Maximum sequence length for positional embeddings
             ignored_index (int): Target value that is ignored during loss computation
             add_tail_layers (int): Whether to add additional layers at the end
-            use_recompute_lm_head (bool): Whether to recompute gradients for language model head
-            use_recompute_loss_fn (bool): Whether to recompute gradients for loss function
-            refined_recompute (dict): Dictionary specifying refined recomputation settings
             attention_probs_dropout_prob (float): Dropout probability for attention weights
             hidden_dropout_prob (float): Dropout probability for hidden layers
             compression_ratio (float): Ratio for KV cache compression (1.0 = no compression)
@@ -185,8 +174,6 @@ class Ernie4_5_Config(PretrainedConfig):
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
-        self.recompute = recompute
-        self.recompute_granularity = recompute_granularity
         self.use_flash_attention = use_flash_attention
         self.use_sparse_flash_attn = use_sparse_flash_attn
         self.recompute_use_reentrant = recompute_use_reentrant
@@ -204,37 +191,14 @@ class Ernie4_5_Config(PretrainedConfig):
         self.use_bias = use_bias
         self.weight_share_add_bias = weight_share_add_bias
         self.rope_theta = rope_theta
-        self.fuse_rope = fuse_rope
+        self.apply_rope_fusion = apply_rope_fusion
         self.fuse_softmax_mask = fuse_softmax_mask
 
         self.fuse_linear = fuse_linear
         self.ignored_index = ignored_index
         self.add_tail_layers = add_tail_layers
-        self.use_recompute_lm_head = use_recompute_lm_head
-        self.use_recompute_loss_fn = use_recompute_loss_fn
 
-        self.refined_recompute = refined_recompute
         self.skip_recompute_ops = dict()
-        """
-            `refined_recompute` is a dictionary that specifies fine-grained gradient recomputation settings,
-            which currently only takes effect in Pipeline Parallel (PP) mode.
-
-            In PP mode, this dictionary populates `self.skip_recompute_ops` with the following structure:
-            - Key (`op_name`): The operation name to configure, with possible values:
-            * "mlp_row_ln" - MLP row-wise layer normalization
-            * "flash_attn" - Flash attention operation
-            * "attention_row_ln" - Attention row-wise layer normalization
-            * "attention_column_ln" - Attention column-wise layer normalization
-            * "mlp_column_ln" - MLP column-wise layer normalization
-
-            - Value (`skip_num`): Controls how many times to skip recomputation:
-            * 0: Never skip recomputation (minimum memory usage)
-            * -1: Always skip recomputation (maximum memory usage)
-            * [0,1,...,12]: Skip recomputation for specified number of times
-            * ≥12: Equivalent to -1 (always skip recomputation)
-
-            This allows precise control over memory/computation tradeoffs for different operations.
-        """
         self.attention_probs_dropout_prob = attention_probs_dropout_prob
         self.hidden_dropout_prob = hidden_dropout_prob
         self.compression_ratio = compression_ratio
@@ -249,12 +213,7 @@ class Ernie4_5_Config(PretrainedConfig):
 
         self.register_unsavable_keys(
             [
-                "recompute",
                 "recompute_use_reentrant",
-                "refined_recompute",
-                "recompute_granularity",
-                "use_recompute_lm_head",
-                "use_recompute_loss_fn",
                 "pp_seg_method",
                 "skip_recompute_ops",
                 "use_sparse_flash_attn",
@@ -266,6 +225,7 @@ class Ernie4_5_Config(PretrainedConfig):
                 "cachekv_quant",
                 "use_fused_head_and_loss_fn",
                 "max_sequence_length",
+                "head_dim",
             ]
         )
 
@@ -296,7 +256,6 @@ class Ernie4_5_MoeConfig(Ernie4_5_Config):
     def __init__(
         self,
         moe_num_experts: Optional[Union[int, list]] = None,
-        use_recompute_moe=False,
         moe_capacity=[],
         moe_layer_interval=2,
         moe_layer_start_index=0,
@@ -308,7 +267,7 @@ class Ernie4_5_MoeConfig(Ernie4_5_Config):
         sinkhorn_temp=3e-2,
         global_aux_loss=False,
         moe_dropout_prob=0.0,
-        moe_group="world",
+        moe_group="mp",
         moe_gate="topk",
         moe_intermediate_size: Union[int, list] = 0,
         moe_num_shared_experts: int = 0,
@@ -331,7 +290,13 @@ class Ernie4_5_MoeConfig(Ernie4_5_Config):
         num_nextn_predict_layers=0,
         multi_token_pred_lambda=0.1,
         enable_mtp_magic_send=False,
-        use_recompute_mtp=False,
+        recompute_granularity=None,
+        recompute_method=None,
+        recompute_modules=None,
+        recompute_num_layers=None,
+        recompute_mtp_granularity=None,
+        recompute_mtp_method=None,
+        recompute_mtp_modules=None,
         **kwargs,
     ):
         """
@@ -339,7 +304,6 @@ class Ernie4_5_MoeConfig(Ernie4_5_Config):
 
         Args:
             moe_num_experts: Number of experts in MoE layers
-            use_recompute_moe: Whether to use recomputation for MoE layers
             moe_capacity: Capacity configuration for MoE layers
             moe_layer_interval: Interval between MoE layers
             moe_layer_start_index: Starting layer index for MoE
@@ -368,20 +332,11 @@ class Ernie4_5_MoeConfig(Ernie4_5_Config):
             fuse_gate_detach_matmul: Whether to fuse gate detach matmul
             **kwargs: Additional base model configuration parameters
 
-        Note:
-            When use_recompute_moe is True, recompute_granularity will be changed to full_attn.
         """
 
-        if use_recompute_moe:
-            logger.warning(
-                "set `use_recompute_moe`=True, disabling `recompute_granularity=full`, change to full_attn."
-            )
-            if kwargs["recompute"] and kwargs["recompute_granularity"] == "full":
-                kwargs["recompute_granularity"] = "full_attn"
         super().__init__(**kwargs)
 
         self.moe_num_experts = moe_num_experts
-        self.use_recompute_moe = use_recompute_moe
         self.moe_capacity = moe_capacity
         self.moe_aux_loss_lambda = moe_aux_loss_lambda
         self.moe_z_loss_lambda = moe_z_loss_lambda
@@ -415,12 +370,18 @@ class Ernie4_5_MoeConfig(Ernie4_5_Config):
         self.num_nextn_predict_layers = num_nextn_predict_layers
         self.multi_token_pred_lambda = multi_token_pred_lambda
         self.enable_mtp_magic_send = enable_mtp_magic_send
-        self.use_recompute_mtp = use_recompute_mtp
+        self.recompute_granularity = None
+        self.recompute_granularity = None
+        self.recompute_method = None
+        self.recompute_modules = None
+        self.recompute_num_layers = None
+        self.recompute_mtp_granularity = None
+        self.recompute_mtp_method = None
+        self.recompute_mtp_modules = None
         self.register_unsavable_keys(
             [
                 "moe_group",
                 "dpo_config",
-                "use_recompute_moe",
                 "enable_delay_scale_loss",
                 "moe_dropout_prob",
                 "moe_all_to_all_dropout",
@@ -429,6 +390,13 @@ class Ernie4_5_MoeConfig(Ernie4_5_Config):
                 "moe_group_origin",
                 "moe_rank",
                 "moe_world_size",
+                "recompute_granularity",
+                "recompute_method",
+                "recompute_modules",
+                "recompute_num_layers",
+                "recompute_mtp_granularity",
+                "recompute_mtp_method",
+                "recompute_mtp_modules",
             ]
         )
 

@@ -95,12 +95,12 @@ class PipelinePretrainedModel(PipelinePretrainedModelBase):
             first_key = first_key.split(".")
             # if use virtual pp_degree, the prefix is like 0.0.xxx
             # else it will be like 0.xxx
-            use_virtual_pp_degree = first_key[0].isdigit() and first_key[1].isdigit()
+            use_virtual_pipeline_model_parallel_size = first_key[0].isdigit() and first_key[1].isdigit()
 
             prefixes = self.get_sequential_name_prefixes()
             for k in state_dict_keys:
                 name_splited = k.split(".")
-                if use_virtual_pp_degree:
+                if use_virtual_pipeline_model_parallel_size:
                     if name_splited[0].isdigit():
                         if name_splited[1].isdigit():
                             idx = str(int(name_splited[0]) + int(name_splited[1]))
@@ -151,7 +151,11 @@ class ErniePretrainingCriterionPipe(ErniePretrainingCriterion):
     """
 
     def __init__(self, config):
-        if config.use_recompute_loss_fn or config.use_sparse_head_and_loss_fn:
+        if (
+            config.recompute_modules is not None
+            and "loss_fn" in config.recompute_modules
+            or config.use_sparse_head_and_loss_fn
+        ):
             config = deepcopy(config)
             config.sequence_parallel = False  # Do GatherOp in LMHead
         super().__init__(config)
@@ -165,7 +169,11 @@ class ErniePretrainingCriterionPipe(ErniePretrainingCriterion):
             # audio_labels = None
         else:
             token_type_ids_untouched, labels, audio_labels = labels
-        if self.config.use_recompute_loss_fn or self.config.use_sparse_head_and_loss_fn:
+        if (
+            self.config.recompute_modules is not None
+            and "loss_fn" in self.config.recompute_modules
+            or self.config.use_sparse_head_and_loss_fn
+        ):
             token_type_ids, logits_text, logits_image, logits_audio, *head_and_bias = logits
             # token_type_ids, logits_text, logits_image, *head_and_bias = logits
         else:
@@ -389,28 +397,6 @@ def get_send_recv_pairs(diff_rank2size):
         len(send_rank_size_pairs) == 0 and len(recv_rank_size_pairs) == 0
     ), f"send={send_rank_size_pairs} and recv={recv_rank_size_pairs} heap should be empty"
     return send_recv_pairs
-
-
-def partition_numbers(nums, m):
-    """
-    Args:
-    nums: List[int] - Sorted list of positive integers
-    m: int - Number of piles to partition into.
-
-    Returns:
-    List[List[int]] - A list containing m lists
-    """
-    heap = [(0, 0, i) for i in range(m)]
-    heapq.heapify(heap)
-    piles = [[] for _ in range(m)]
-    for num in reversed(nums):
-        sum_pile, count_pile, pile_index = heapq.heappop(heap)
-        piles[pile_index].append(num)
-        sum_pile += num[1] * num[2]
-        count_pile += 1
-        heapq.heappush(heap, (sum_pile, count_pile, pile_index))
-
-    return piles
 
 
 def shard_data_in_pp_group(
@@ -689,7 +675,11 @@ class ErnieMoELMHeadPipe(Ernie4_5_MoeVLHead):
         logits_text, logits_image = super().forward(hidden_states, token_type_ids_shifted)
         token_type_ids = token_type_ids.detach()
         token_type_ids.stop_gradient = True
-        if self.config.use_recompute_loss_fn or self.config.use_sparse_head_and_loss_fn:
+        if (
+            self.config.recompute_modules is not None
+            and "loss_fn" in self.config.recompute_modules
+            or self.config.use_sparse_head_and_loss_fn
+        ):
             mm_head_weight = self.mm_head.weight if self.mm_head is not None else None
             mm_head_bias = self.mm_head.bias if self.mm_head is not None else None
             return (
@@ -730,7 +720,6 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
         )
         self.config = config
         self.scatter_output = sequence_parallel  # outer `ScatterOp`
-        self.use_mem_eff_attn = config.use_mem_eff_attn
 
     def forward(self, args):
         """forward lm embedding + mm embedding + resampler"""
@@ -770,7 +759,7 @@ class ErnieVLEmbeddingPipe(Ernie4_5_EmbeddingPipe):
         # inbatch_pack_offset, image_features, image_type_ids, grid_thw, position_ids, audio_ids = get_args(
         inbatch_pack_offset, image_features, image_type_ids, grid_thw, position_ids = get_args(
             args,
-            self.use_mem_eff_attn,  # inbatch, False
+            True,
             self.config.vision_config is not None,  # image-type-ids
             getattr(self.config.vision_config, "variable_resolution", False),  # varres
             self.config.rope_3d,  # position-ids
@@ -903,7 +892,6 @@ class ErnieDecoderLayerPipe(ErnieMoEDecoderLayer):
         super().__init__(config, layer_idx)
         self.layer_idx = layer_idx
         self.use_full_recompute = use_full_recompute
-        self.use_meme_eff_attn = config.use_mem_eff_attn  # fix by liaojincheng
         self.sequence_parallel = config.sequence_parallel
         self.rope_3d = config.rope_3d
 
@@ -932,7 +920,12 @@ class ErnieDecoderLayerPipe(ErnieMoEDecoderLayer):
             attn_mask_start_row_indices = None
 
         has_gradient = not hidden_states.stop_gradient
-        if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+        if (
+            self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+            and has_gradient
+        ):
             decoderlayer_act_offload_settings = self.config.get(
                 "decoderlayer_act_offload_settings", {"type": "", "value": ""}
             )
@@ -1212,6 +1205,10 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
     _init_weights = Ernie4_5_VLMoeForConditionalGeneration._init_weights
     _keep_in_fp32_modules = Ernie4_5_VLMoeForConditionalGeneration._keep_in_fp32_modules
     transpose_weight_keys = Ernie4_5_VLMoeForConditionalGeneration.transpose_weight_keys
+    _gen_aoa_config = Ernie4_5_VLMoeForConditionalGeneration._gen_aoa_config
+    _gen_inv_aoa_config = Ernie4_5_VLMoeForConditionalGeneration._gen_inv_aoa_config
+    get_rope_index = Ernie4_5_VLMoeForConditionalGeneration.get_rope_index
+    get_token_type_ids = Ernie4_5_VLMoeForConditionalGeneration.get_token_type_ids
     pipe_model_type = "torch"
 
     def _prepare_pipeline_inputs_func(self, data: Union[List, Dict]):
@@ -1491,7 +1488,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
             else:
                 assert images.dtype == paddle.bfloat16, images.dtype
             image_fea = self.vision_model.extract_feature(images, grid_thw)
-            if self.config.tensor_parallel_degree > 1:
+            if self.config.tensor_model_parallel_size > 1:
                 if getattr(self.config.vision_config, "variable_resolution", False):
                     S, C = image_fea.shape
                     image_fea = image_fea.reshape([-1, C * self.config.spatial_conv_size**2])
@@ -1630,16 +1627,16 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
         )
         self.balanced_image_shape = None
 
-        tensor_parallel_degree = max(hcg.get_model_parallel_world_size(), 1)
+        tensor_model_parallel_size = max(hcg.get_model_parallel_world_size(), 1)
         tensor_parallel_rank = max(hcg.get_model_parallel_rank(), 0)
-        logger.info(f"using vpp={config.virtual_pp_degree}")
+        logger.info(f"using vpp={config.virtual_pipeline_model_parallel_size}")
         if config.sequence_parallel:
             logger.info(f"using sequence_parallel, input seqlen={config.max_sequence_length}")
             assert config.max_sequence_length is not None
             assert (
-                config.tensor_parallel_degree > 1
-            ), f"sequence-parallel needs mp>1, got mp={config.tensor_parallel_degree}"
-        config.tensor_parallel_degree = tensor_parallel_degree
+                config.tensor_model_parallel_size > 1
+            ), f"sequence-parallel needs mp>1, got mp={config.tensor_model_parallel_size}"
+        config.tensor_model_parallel_size = tensor_model_parallel_size
         config.tensor_parallel_rank = tensor_parallel_rank
 
         logger.info("variable resolution vision model")
@@ -1651,7 +1648,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
                     key="embed_weight_share",
                     layer_func=ErnieVLEmbeddingPipe,
                     shared_weight_attr="embedding_weight",
-                    use_full_recompute=config.recompute,
+                    use_full_recompute=bool(config.recompute_granularity is not None),
                     config=config,
                 ),
                 "model",
@@ -1661,7 +1658,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
                 LayerDesc(
                     ErnieVLEmbeddingPipe,
                     config=config,
-                    use_full_recompute=config.recompute,
+                    use_full_recompute=bool(config.recompute_granularity is not None),
                 ),
                 "model",
             )
@@ -1669,7 +1666,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
         no_recompute_layers = get_pp_vp_split_layers(config)
 
         def _need_full_recompute(layer_idx):
-            return layer_idx not in no_recompute_layers and config.recompute
+            return layer_idx not in no_recompute_layers and config.recompute_granularity == "full"
 
         for i in range(config.num_hidden_layers):
             self.add_sequential_layer(
@@ -1739,11 +1736,15 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
                 "offload": False,
                 "partition": False,
             },
-            num_virtual_pipeline_stages=config.virtual_pp_degree,
+            num_virtual_pipeline_stages=config.virtual_pipeline_model_parallel_size,
         )
         self.model = Ernie4_5_VLModel(self.config)
         self._modality_param_mapping = None
         self.vision_model = DFNRopeVisionTransformerPipe(self.config)
+
+        pipeline_model_parallel_size = self.config.pipeline_model_parallel_size
+        if pipeline_model_parallel_size > 1:
+            self.set_pp_need_data_degree(pipeline_model_parallel_size)
 
     def add_vision_model(
         self,
@@ -1777,7 +1778,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
             if not name_split[0].isdigit():
                 pipe = None
             else:
-                if self.config.virtual_pp_degree > 1:
+                if self.config.virtual_pipeline_model_parallel_size > 1:
                     pipe = self._sub_layers[name_split[0]]._sub_layers[name_split[1]]
                 else:
                     pipe = self._sub_layers[name_split[0]]

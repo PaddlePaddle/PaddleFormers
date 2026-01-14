@@ -17,6 +17,7 @@ from typing import Optional
 import paddle
 import paddle.nn as nn
 
+from ...utils.masking_utils import _gen_from_sparse_attn_mask_indices
 from .utils import repeat_kv
 
 
@@ -32,6 +33,7 @@ def eager_attention_forward(
     is_causal: Optional[bool] = None,
     **kwargs,
 ):
+
     # b h l d -> b l h d
     key = key.transpose(1, 2)
     value = value.transpose(1, 2)
@@ -40,13 +42,25 @@ def eager_attention_forward(
         key = repeat_kv(key, num_key_value_groups)
         value = repeat_kv(value, num_key_value_groups)
 
+    if attention_mask is None and kwargs.get("attn_mask_startend_row_indices", None) is not None:
+        attn_mask_startend_row_indices = kwargs["attn_mask_startend_row_indices"]
+        if attn_mask_startend_row_indices.ndim == 3:
+            attn_mask_startend_row_indices = attn_mask_startend_row_indices.unsqueeze(-1)
+        if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 1:
+            is_causal = True
+        if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 4:
+            is_causal = False
+
+        attention_mask = _gen_from_sparse_attn_mask_indices(attn_mask_startend_row_indices, query.dtype, is_causal)
+
     # b l h d -> b h l d
     key = key.transpose(1, 2)
     value = value.transpose(1, 2)
     attn_weights = paddle.matmul(query, key.transpose([0, 1, 3, 2])) * scaling
+
     if attention_mask is not None:
-        causal_mask = attention_mask[:, :, :, : key.shape[-2]]
-        attn_weights = attn_weights + causal_mask
+        attention_mask = attention_mask[:, :, :, : key.shape[-2]]
+        attn_weights = attn_weights + attention_mask
 
     if sink is not None:
         sink = sink.reshape([1, -1, 1, 1]).expand([query.shape[0], -1, query.shape[-2], -1])

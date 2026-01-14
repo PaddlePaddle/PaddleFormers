@@ -208,9 +208,9 @@ def is_protobuf_available():
 
 def is_paddle_cuda_available() -> bool:
     if is_paddle_available():
-        import paddle
+        from .tools import paddle_device
 
-        return paddle.device.cuda.device_count() > 0
+        return paddle_device.device_count() > 0
     else:
         return False
 
@@ -296,6 +296,15 @@ def is_transformers_available() -> bool:
         bool: if `transformers` is available
     """
     return is_package_available("transformers")
+
+
+def is_paddlefleet_available() -> bool:
+    """check if `paddlefleet` package is installed and can be imported
+
+    Returns:
+        bool: if `paddlefleet` is available
+    """
+    return is_package_available("paddlefleet")
 
 
 def install_package(

@@ -95,7 +95,7 @@ class ErnieEmbeddingPipe(nn.Layer):
 
         super(ErnieEmbeddingPipe, self).__init__()
         self.use_moe = config.use_moe
-        if config.tensor_parallel_degree > 1:
+        if config.tensor_model_parallel_size > 1:
             self.embed_tokens = VocabParallelEmbedding(
                 config.vocab_size,
                 config.hidden_size,
@@ -575,12 +575,12 @@ class PipelinePretrainedModel(PretrainedModel):
                     first_key = k
                     break
             first_key = first_key.split(".")
-            use_virtual_pp_degree = first_key[0].isdigit() and first_key[1].isdigit()
+            use_virtual_pipeline_model_parallel_size = first_key[0].isdigit() and first_key[1].isdigit()
 
             prefixes = self.get_sequential_name_prefixs()
             for k in state_dict_keys:
                 name_splited = k.split(".")
-                if use_virtual_pp_degree:
+                if use_virtual_pipeline_model_parallel_size:
                     if name_splited[0].isdigit():
                         if name_splited[1].isdigit():
                             idx = str(int(name_splited[0]) + int(name_splited[1]))
@@ -655,7 +655,7 @@ class PipelinePretrainedModel(PretrainedModel):
         return state_dict
 
     def _init_weights(self, layer):
-        if self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_model_parallel_size > 1:
             rng_tracker = get_rng_state_tracker().rng_state
         else:
             rng_tracker = contextlib.nullcontext
@@ -763,7 +763,7 @@ class PipelinePretrainedModel(PretrainedModel):
 def get_pp_vp_split_layers(config):
     hcg = fleet.get_hybrid_communicate_group()
     pp_size = max(hcg.get_pipe_parallel_world_size(), 1)
-    vp_size = max(config.virtual_pp_degree, 1)
+    vp_size = max(config.virtual_pipeline_model_parallel_size, 1)
     layer_num = config.num_hidden_layers
     selective_no_recompute_num = config.selective_no_recompute_num
 
@@ -863,17 +863,17 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         self.config = config
 
         hcg = fleet.get_hybrid_communicate_group()
-        tensor_parallel_degree = max(hcg.get_model_parallel_world_size(), 1)
+        tensor_model_parallel_size = max(hcg.get_model_parallel_world_size(), 1)
         tensor_parallel_rank = max(hcg.get_model_parallel_rank(), 0)
-        logger.info(f"using vpp={config.virtual_pp_degree}")
+        logger.info(f"using vpp={config.virtual_pipeline_model_parallel_size}")
         if config.sequence_parallel:
             logger.info(f"using sequence_parallel, input seqlen={config.seqlen}")
             assert config.seqlen is not None
             assert (
-                config.tensor_parallel_degree > 1
-            ), f"sequence-parallel needs mp>1, got mp={config.tensor_parallel_degree}"
+                config.tensor_model_parallel_size > 1
+            ), f"sequence-parallel needs mp>1, got mp={config.tensor_model_parallel_size}"
 
-        config.tensor_parallel_degree = tensor_parallel_degree
+        config.tensor_model_parallel_size = tensor_model_parallel_size
         config.tensor_parallel_rank = tensor_parallel_rank
         PipelinePretrainedModel.init(self, config=config)
 
@@ -908,8 +908,10 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             else:
                 self.add_sequential_layer(LayerDesc(self.ErnieEmbeddingPipeClass, config=config), "ernie")
 
-        num_empty_layers = config.remove_tail_layer if isinstance(config.remove_tail_layer, int) else 1
-        for i in range(config.num_hidden_layers - num_empty_layers):
+        num_empty_layers = (
+            config.num_empty_layers_add_in_tail if isinstance(config.num_empty_layers_add_in_tail, int) else 1
+        )
+        for i in range(config.num_hidden_layers):
             self.add_sequential_layer(
                 LayerDesc(
                     self.ErnieDecoderLayerPipeClass,
@@ -941,24 +943,13 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             self.add_sequential_layer(LayerDesc(self.MTPLayerClass, config=config), "ernie")
             num_empty_layers = num_empty_layers - config.multi_token_pred_depth
 
-        if config.remove_tail_layer:
+        if config.num_empty_layers_add_in_tail:
             for n in range(num_empty_layers):
                 self.add_sequential_layer(
                     LayerDesc(
                         EmptyLayer,
                     ),
                     f"empty.layers.{n}",
-                )
-        else:
-            for n in range(num_empty_layers):
-                self.add_sequential_layer(
-                    LayerDesc(
-                        self.ErnieDecoderLayerPipeClass,
-                        config=config,
-                        layer_idx=i,
-                        use_full_recompute=_need_full_recompute(i),
-                    ),
-                    f"ernie.layers.{n + config.num_hidden_layers - num_empty_layers}",
                 )
 
         i = config.num_hidden_layers
@@ -996,14 +987,14 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 "offload": False,
                 "partition": False,
             },
-            num_virtual_pipeline_stages=config.virtual_pp_degree,
+            num_virtual_pipeline_stages=config.virtual_pipeline_model_parallel_size,
         )
 
     def get_loss_fn(self, config):
         return ErniePretrainingCriterionPipe(config)
 
     def rename_model_params(self, func):
-        if self.config.virtual_pp_degree == 1:
+        if self.config.virtual_pipeline_model_parallel_size == 1:
             _layers = iter(self.run_function)
         else:
             _layers = (cc for c in self._model_chunks for cc in c.run_function)
@@ -1037,7 +1028,7 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             self._set_pipeline_name_mapping()
 
         layer_idxs = []
-        if self.config.virtual_pp_degree == 1:
+        if self.config.virtual_pipeline_model_parallel_size == 1:
             _layers = iter(self.run_function)
         else:
             _layers = (cc for c in self._model_chunks for cc in c.run_function)

@@ -14,11 +14,9 @@
 
 import copy
 import gc
-import json
 import math
 import os
 import re
-import sys
 import tempfile
 from collections import OrderedDict
 from functools import partial
@@ -27,44 +25,69 @@ from typing import Dict, Union
 import aistudio_sdk
 import numpy as np
 import paddle
+import paddle.distributed as dist
 import paddle.nn as nn
 from paddle.distributed.fleet.meta_parallel import (
     ColumnParallelLinear,
     PipelineLayer,
     RowParallelLinear,
 )
+from paddle.incubate.nn import FusedLinear
 
-from ...trainer.argparser import strtobool
+from ...transformers.model_utils import VLMS
+from ...utils.import_utils import is_paddlefleet_available
+
+# Conditionally import paddlefleet modules
+if is_paddlefleet_available():
+    from paddlefleet.parallel_state import (
+        get_tensor_model_parallel_group,
+        get_tensor_model_parallel_world_size,
+    )
+    from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
+    from paddlefleet.tensor_parallel import (
+        ColumnParallelLinear as FleetColumnParallelLinear,
+    )
+    from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
+else:
+    # Define mock objects or alternative implementations when paddlefleet is not available
+    def get_tensor_model_parallel_group():
+        return None
+
+    def get_tensor_model_parallel_world_size():
+        return 1
+
+    class PaddleFleetPipelineLayer:
+        pass
+
+    class FleetColumnParallelLinear:
+        pass
+
+    class FleetRowParallelLinear:
+        pass
+
+
 from ...transformers import linear_utils
 from ...transformers.conversion_utils import ConversionMixin
 from ...transformers.model_utils import (
+    HFFormatFullParamSaver,
     PretrainedModel,
     _add_variant,
     _load_state_dict_into_model,
     clean_unrelated_safetensors,
     dtype_guard,
     load_state_dict,
-    prepare_safe_save_state_dict,
+    unwrap_model,
 )
-from ...transformers.utils import (
-    dtype_byte_size,
-    get_checkpoint_shard_files,
-    is_safetensors_available,
-    weight_name_suffix,
-)
+from ...transformers.utils import get_checkpoint_shard_files, weight_name_suffix
 from ...utils.distributed import distributed_allgather, distributed_gather
-from ...utils.env import LORA_WEIGHTS_NAME, SAFE_PEFT_WEIGHTS_INDEX_NAME
+from ...utils.env import (
+    FLEX_CKPT_AUTO_GENERATED_METADATA,
+    LORA_WEIGHTS_NAME,
+    SAFE_PEFT_WEIGHTS_INDEX_NAME,
+)
 from ...utils.log import logger
 from ...utils.tools import get_env_device
 from .lora_config import LoRAAutoConfig, LoRAConfig
-
-if is_safetensors_available():
-    from safetensors.numpy import save_file as safe_save_file
-
-    if sys.platform.startswith("win"):
-        from safetensors import safe_open
-    else:
-        from ...utils.safetensors import fast_safe_open as safe_open
 
 
 def get_lora_layers():
@@ -92,6 +115,11 @@ def get_lora_layers():
         from .lora_layers import (
             ColumnParallelLoRALinear,
             ColumnSequenceParallelLoRALinear,
+            FleetColumnParallelLoRALinear,
+            FleetColumnSequenceParallelLoRALinear,
+            FleetLoRALinear,
+            FleetRowParallelLoRALinear,
+            FleetRowSequenceParallelLoRALinear,
             LoRAConv2D,
             LoRALinear,
             RowParallelLoRALinear,
@@ -105,6 +133,11 @@ def get_lora_layers():
         "LoRALinear": LoRALinear,
         "RowParallelLoRALinear": RowParallelLoRALinear,
         "RowSequenceParallelLoRALinear": RowSequenceParallelLoRALinear,
+        "FleetLoRALinear": FleetLoRALinear,
+        "FleetRowParallelLoRALinear": FleetRowParallelLoRALinear,
+        "FleetColumnParallelLoRALinear": FleetColumnParallelLoRALinear,
+        "FleetRowSequenceParallelLoRALinear": FleetRowSequenceParallelLoRALinear,
+        "FleetColumnSequenceParallelLoRALinear": FleetColumnSequenceParallelLoRALinear,
     }
 
 
@@ -115,6 +148,12 @@ LoRAConv2D = lora_layers["LoRAConv2D"]
 LoRALinear = lora_layers["LoRALinear"]
 RowParallelLoRALinear = lora_layers["RowParallelLoRALinear"]
 RowSequenceParallelLoRALinear = lora_layers["RowSequenceParallelLoRALinear"]
+FleetLoRALinear = lora_layers["FleetLoRALinear"]
+FleetRowParallelLoRALinear = lora_layers["FleetRowParallelLoRALinear"]
+FleetColumnParallelLoRALinear = lora_layers["FleetColumnParallelLoRALinear"]
+FleetRowSequenceParallelLoRALinear = lora_layers["FleetRowSequenceParallelLoRALinear"]
+FleetColumnSequenceParallelLoRALinear = lora_layers["FleetColumnSequenceParallelLoRALinear"]
+
 
 from ...quantization.quantization_linear import (
     ColumnParallelQuantizationLinear,
@@ -160,17 +199,27 @@ class LoRAModel(nn.Layer):
         with dtype_guard(self.lora_config.dtype):
             self.model = self.get_lora_model(model, lora_config)
         self.is_pipelinemodel = False
-        if issubclass(type(self.model), PipelineLayer):
+        pipeline_layer_types = [PipelineLayer]
+        if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
+            pipeline_layer_types.append(PaddleFleetPipelineLayer)
+        if issubclass(type(self.model), tuple(pipeline_layer_types)):
             self.is_pipelinemodel = True
             self.model._single_to_pp_mapping = None
-        if (self.lora_config.tensor_parallel_degree > 1 or self.is_pipelinemodel) and (
+
+        self.use_paddlefleet = False
+        if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
+            if isinstance(self.model, PaddleFleetPipelineLayer):
+                self.use_paddlefleet = True
+
+        if (self.lora_config.tensor_model_parallel_size > 1 or self.is_pipelinemodel) and (
             self.lora_config.lora_use_mixer or self.lora_config.use_mora
         ):
             raise NotImplementedError("lora_use_mixer or mora is not supported in tensor parallel mode.")
-        if self.lora_config.tensor_parallel_degree != self.model.config.tensor_parallel_degree:
-            self.lora_config.tensor_parallel_degree = self.model.config.tensor_parallel_degree
+
+        if self.lora_config.tensor_model_parallel_size != self.model.config.tensor_model_parallel_size:
+            self.lora_config.tensor_model_parallel_size = self.model.config.tensor_model_parallel_size
             logger.warning(
-                f"Reset tensor_parallel_degree of lora_config to {self.model.config.tensor_parallel_degree}."
+                f"Reset tensor_model_parallel_size of lora_config to {self.model.config.tensor_model_parallel_size}."
             )
 
         self.forward = self.model.forward
@@ -199,13 +248,16 @@ class LoRAModel(nn.Layer):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=num_attention_heads,
         )
 
         rename_lora_split_mapping = {}
-        if issubclass(type(self.model), PipelineLayer):
+        pipeline_layer_types = [PipelineLayer]
+        if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
+            pipeline_layer_types.append(PaddleFleetPipelineLayer)
+        if issubclass(type(self.model), tuple(pipeline_layer_types)):
             # rename lora_split_mapping
             prefixes = self.model.get_sequential_name_prefixes()
             keys = self.lora_split_mapping.keys()
@@ -214,11 +266,11 @@ class LoRAModel(nn.Layer):
                 first_key = k
                 break
             first_key = first_key.split(".")
-            use_virtual_pp_degree = first_key[0].isdigit() and first_key[1].isdigit()
+            use_virtual_pipeline_model_parallel_size = first_key[0].isdigit() and first_key[1].isdigit()
 
             for k in keys:
                 name_splited = k.split(".")
-                if use_virtual_pp_degree:
+                if use_virtual_pipeline_model_parallel_size:
                     if name_splited[0].isdigit():
                         if name_splited[1].isdigit():
                             idx = str(int(name_splited[0]) + int(name_splited[1]))
@@ -248,8 +300,14 @@ class LoRAModel(nn.Layer):
                         raise ValueError(f"Unexpected key: {k} for pp lora layer.")
                 rename_lora_split_mapping[".".join(single_name)] = self.lora_split_mapping[k]
 
+        pipeline_layer_types = [PipelineLayer]
+        if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
+            pipeline_layer_types.append(PaddleFleetPipelineLayer)
+
         lora_split_mapping = (
-            rename_lora_split_mapping if issubclass(type(self.model), PipelineLayer) else self.lora_split_mapping
+            rename_lora_split_mapping
+            if issubclass(type(self.model), tuple(pipeline_layer_types))
+            else self.lora_split_mapping
         )
 
         def get_tensor_parallel_split_mappings():
@@ -265,23 +323,53 @@ class LoRAModel(nn.Layer):
 
     @classmethod
     def from_pretrained(cls, model, lora_path, **kwargs):
+        load_checkpoint_format = kwargs.pop("load_checkpoint_format", "flex_checkpoint")
+        load_via_cpu = kwargs.pop("load_via_cpu", False)
         lora_config = kwargs.pop("lora_config", None)
         # init lora config & lora model
         if not isinstance(lora_config, LoRAConfig):
             lora_config = LoRAConfig.from_pretrained(lora_path)
-        # define a new variable to conserve original lora_config.tensor_parallel_degree value which will update while initializing lora model
-        lora_config_tensor_parallel_degree = lora_config.tensor_parallel_degree
+        # define a new variable to conserve original lora_config.tensor_model_parallel_size value which will update while initializing lora model
+        lora_config_tensor_model_parallel_size = lora_config.tensor_model_parallel_size
         lora_model = cls(model, lora_config)
 
         lora_model_index_file = os.path.join(lora_path, SAFE_PEFT_WEIGHTS_INDEX_NAME)
         if os.path.exists(lora_model_index_file):
             # load safetensors format file.
+            expected_keys = set(lora_model.get_trainable_state_dict().keys())
+
+            if load_checkpoint_format == "flex_checkpoint":
+                lora_sharded_state_dict = lora_model.sharded_state_dict()
+                metadata_path = os.path.join(lora_path, FLEX_CKPT_AUTO_GENERATED_METADATA)
+
+                # delete the existing metadata file if it exists
+                try:
+                    os.remove(metadata_path)
+                except FileNotFoundError:
+                    pass
+                except Exception as e:
+                    logger.error(f"Failed to delete {metadata_path}: {e}")
+
+                aoa_config = {"aoa_statements": []}
+                for key in lora_sharded_state_dict.keys():
+                    if key not in expected_keys:
+                        aoa_config["aoa_statements"].append(f"_ -> {key}")
+
+                dist.load_state_dict(
+                    lora_sharded_state_dict,
+                    path=lora_path,
+                    aoa_config=aoa_config,
+                    safetensors=True,
+                    offload=load_via_cpu,
+                )
+
+                return lora_model
+
             resolved_archieve_file, sharded_metadata = get_checkpoint_shard_files(
                 pretrained_model_name_or_path=lora_path,
                 index_filename=lora_model_index_file,
             )
             loaded_keys = sharded_metadata["all_checkpoint_keys"]
-            expected_keys = set(lora_model.get_trainable_state_dict().keys())
             missing_keys = expected_keys - set(loaded_keys)
             if len(missing_keys) > 0:
                 raise ValueError(f"missing_keys: {missing_keys}")
@@ -289,7 +377,7 @@ class LoRAModel(nn.Layer):
             error_msgs = []
             for shard_file in resolved_archieve_file:
                 pre_tensor_parallel_split = False
-                if model.config.tensor_parallel_degree > 1:
+                if model.config.tensor_model_parallel_size > 1:
                     pre_tensor_parallel_split = True
                     tp_actions = lora_model._get_tensor_parallel_convert_actions(loaded_keys, is_split=True)
                 state_dict = load_state_dict(
@@ -310,7 +398,7 @@ class LoRAModel(nn.Layer):
             return lora_model
 
         # define lora weight name
-        if lora_config_tensor_parallel_degree > 1:
+        if lora_config_tensor_model_parallel_size > 1:
             lora_weight_name = _add_variant(LORA_WEIGHTS_NAME, f"tp{model.config.tensor_parallel_rank:0>2d}")
         else:
             lora_weight_name = LORA_WEIGHTS_NAME
@@ -323,15 +411,15 @@ class LoRAModel(nn.Layer):
             logger.info(f"Loading the LoRA weights from {lora_weight_path}")
 
             if (
-                lora_config_tensor_parallel_degree > 1
-                and lora_config_tensor_parallel_degree != model.config.tensor_parallel_degree
+                lora_config_tensor_model_parallel_size > 1
+                and lora_config_tensor_model_parallel_size != model.config.tensor_model_parallel_size
             ):
                 raise NotImplementedError(
-                    f"{lora_config_tensor_parallel_degree} is not equal to {model.config.tensor_parallel_degree}. Please merge LoRA weights first."
+                    f"{lora_config_tensor_model_parallel_size} is not equal to {model.config.tensor_model_parallel_size}. Please merge LoRA weights first."
                 )
 
             # convert parameters to tensor parallel for mp model
-            if lora_config_tensor_parallel_degree <= 1 and model.config.tensor_parallel_degree > 1:
+            if lora_config_tensor_model_parallel_size <= 1 and model.config.tensor_model_parallel_size > 1:
                 lora_state_dict = lora_model._convert_tensor_parallel(lora_state_dict=lora_state_dict)
 
             # set lora state dict
@@ -397,10 +485,17 @@ class LoRAModel(nn.Layer):
         trainable_name_action_mappings = self._get_tensor_parallel_convert_actions(
             trainable_state_dict.keys(), is_split=False
         )
-
-        hcg = paddle.distributed.fleet.get_hybrid_communicate_group()
-        mp_group = hcg.get_model_parallel_group()
-        is_dst = paddle.distributed.get_rank(mp_group) == 0
+        if self.use_paddlefleet:
+            if not is_paddlefleet_available():
+                raise ImportError(
+                    "paddlefleet is required for _merge_trainable_tensor_parallel with paddlefleet. Please install paddlefleet."
+                )
+            mp_group = get_tensor_model_parallel_group()
+            is_dst = get_tensor_model_parallel_world_size() > 1
+        else:
+            hcg = paddle.distributed.fleet.get_hybrid_communicate_group()
+            mp_group = hcg.get_model_parallel_group()
+            is_dst = paddle.distributed.get_rank(mp_group) == 0
 
         for key in trainable_state_dict:
             tensor = trainable_state_dict[key]
@@ -457,7 +552,9 @@ class LoRAModel(nn.Layer):
 
     def save_pretrained(self, save_directory: str, merge_tensor_parallel: bool = False, **kwargs):
         save_model_config = kwargs.get("save_model_config", True)
-        save_checkpoint_format = kwargs.get("save_checkpoint_format", None)
+        save_checkpoint_format = kwargs.get("save_checkpoint_format", "flex_checkpoint")
+        max_shard_size = kwargs.get("max_shard_size", "4GB")
+
         safetensors = False
         if save_checkpoint_format == "flex_checkpoint":
             safetensors = True
@@ -468,7 +565,7 @@ class LoRAModel(nn.Layer):
         if (
             self.is_pipelinemodel
             and merge_tensor_parallel
-            and self.lora_config.tensor_parallel_degree > 1
+            and self.lora_config.tensor_model_parallel_size > 1
             and not safetensors
         ):
             merge_tensor_parallel = False
@@ -491,74 +588,60 @@ class LoRAModel(nn.Layer):
 
         trainable_state_dict = self.get_trainable_state_dict(concat_init_lora=lora_config_to_save.loraga)
 
-        if merge_tensor_parallel and lora_config_to_save.tensor_parallel_degree > 1:
+        if (
+            merge_tensor_parallel
+            and lora_config_to_save.tensor_model_parallel_size > 1
+            and save_checkpoint_format != "flex_checkpoint"
+        ):
             trainable_state_dict = self._merge_trainable_tensor_parallel(trainable_state_dict, offload=not safetensors)
             if not is_main_process and not safetensors:
                 logger.info("Saving with merge_tensor_parallel, tensor_parallel_rank > 0 don't need save")
                 return
             if variant is not None and "tp" in variant:
                 variant = "_".join([x for x in variant.split("_") if "tp" not in x])
-            lora_config_to_save.tensor_parallel_degree = -1
+            lora_config_to_save.tensor_model_parallel_size = -1
         else:
-            if lora_config_to_save.tensor_parallel_degree > 1:
+            if lora_config_to_save.tensor_model_parallel_size > 1:
                 if variant is None:
                     variant = weight_name_suffix()
 
-        # save lora weight
-        total_size = 0
-        if safetensors:
+        # Map the key names that the model expects from the serialized keys in VLMs (Supports for MLLM LoRA training)
+        if any(
+            allowed_name in class_name.__name__.lower()
+            for class_name in self.model.__class__.__mro__[:-1]
+            for allowed_name in VLMS
+        ):
+            reverse_key_mapping = {v: k for k, v in self.model._checkpoint_conversion_mapping.items()}
+
+            original_state_dict = {}
+            for key, value in trainable_state_dict.items():
+                for pattern, replacement in reverse_key_mapping.items():
+                    replacement = replacement.lstrip("^")  # strip off un-needed chars and patterns
+                    replacement = re.sub(r"\(.*\)", "", replacement)
+                    key, n_replace = re.subn(pattern, replacement, key)
+                    # Early exit of the loop
+                    if n_replace > 0:
+                        break
+                original_state_dict[key] = value
+            trainable_state_dict = original_state_dict
+
+        if save_checkpoint_format == "flex_checkpoint":
             clean_unrelated_safetensors(save_directory)
-            lora_weight_name = _add_variant(LORA_WEIGHTS_NAME, variant)
-            tensor_state_dict = {}
-            for key, weight in trainable_state_dict.items():
-                if isinstance(weight, paddle.Tensor):
-                    total_size += weight.numel().item() * dtype_byte_size(weight.dtype)
-                    tensor_state_dict[key] = weight
-                else:
-                    logger.info(f"Wrong type: {key}: {weight}")
-            logger.info(f"Total size of LoRA weights: {total_size} bytes")
-            weight_filename = os.path.join(save_directory, lora_weight_name)
-            if total_size != 0:
-                logger.info(f"Saving LoRA weights to {weight_filename}")
-                tensor_state_dict, metadata = prepare_safe_save_state_dict(tensor_state_dict, save_to_hf=safetensors)
-                safe_save_file(tensor_state_dict, weight_filename, metadata=metadata)
+            model_to_save = unwrap_model(self.model)
+
+            aoa_config = {"aoa_statements": []}
+            for key in model_to_save.state_dict().keys():
+                if key not in trainable_state_dict:
+                    aoa_config["aoa_statements"].append(f"{key} -> _")
+
+            HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(
+                save_directory, max_shard_size, save_peft=True
+            )
+
         else:
             lora_weight_name = _add_variant(LORA_WEIGHTS_NAME, variant)
             weight_filename = os.path.join(save_directory, lora_weight_name)
             paddle.save(trainable_state_dict, weight_filename, safetensors=safetensors)
-
-        def replace_name_and_gen_index_lora(path):
-            index_mapping = {}
-            safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".pdparams")]
-            total_files_num = len(safetensor_files)
-            cur_file_index = 0
-            total_size = 0
-            for file in safetensor_files:
-                single_size = 0
-                cur_file_index += 1
-                file_path = os.path.join(path, file)
-                new_file_name = f"peft_model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
-
-                with safe_open(file_path, framework="np") as f:
-                    for key in f.keys():
-                        index_mapping[key] = new_file_name
-                        single_size += f.get_tensor(key).nbytes
-                total_size += single_size
-                new_file_path = os.path.join(path, new_file_name)
-                os.rename(file_path, new_file_path)
-            index_file_name = SAFE_PEFT_WEIGHTS_INDEX_NAME
-            index_infos = {}
-            index_infos["metadata"] = {}
-            index_infos["metadata"]["total_size"] = total_size
-            index_infos["weight_map"] = index_mapping
-            index_infos["type"] = "lora"
-            with open(os.path.join(path, index_file_name), "w") as f:
-                json.dump(index_infos, f, indent=4)
-            # For PDC signal
-            if strtobool(os.getenv("FLAG_LLM_PDC", "False")):
-                for i in range(paddle.distributed.get_world_size()):
-                    saved_signal_path = os.path.join(path, f".model_weights.done.{i}")
-                    paddle.save(i, saved_signal_path)
 
         # save lora config
         if paddle.distributed.get_world_size() > 1:
@@ -566,12 +649,13 @@ class LoRAModel(nn.Layer):
         if is_main_process:
             lora_config_to_save.save_pretrained(save_directory)
             if save_model_config:
-                model_config_to_save = copy.deepcopy(self.model.config)
+                if hasattr(self.model, "config_to_save"):
+                    model_config_to_save = copy.deepcopy(self.model.config_to_save)
+                else:
+                    model_config_to_save = copy.deepcopy(self.model.config)
                 if merge_tensor_parallel:
-                    model_config_to_save.tensor_parallel_degree = -1
+                    model_config_to_save.tensor_model_parallel_size = -1
                 model_config_to_save.save_pretrained(save_directory)
-            if safetensors:
-                replace_name_and_gen_index_lora(save_directory)
 
     def _find_and_replace_module(self, model, module_name, lora_config):
         parent_module = model
@@ -580,7 +664,7 @@ class LoRAModel(nn.Layer):
             parent_module = getattr(parent_module, name)
         module = getattr(parent_module, attribute_chain[-1])
         lora_module = None
-        if isinstance(module, nn.Linear):
+        if isinstance(module, nn.Linear) or isinstance(module, FusedLinear):
             lora_module = LoRALinear(
                 in_features=module.weight.shape[0],
                 out_features=module.weight.shape[1],
@@ -712,6 +796,117 @@ class LoRAModel(nn.Layer):
                 self.add_lora_split_mapping(module_name + ".weight_quanter._scale", is_column=False)
                 self.add_lora_split_mapping(module_name + ".activation_quanter._scale", is_column=False)
                 self.add_lora_split_mapping(module_name + ".activation_quanter.quanter._scale", is_column=False)
+        elif is_paddlefleet_available() and (
+            isinstance(module, FleetColumnParallelLinear) or isinstance(module, FleetRowParallelLinear)
+        ):
+            if module.world_size == 1:
+                lora_module = FleetLoRALinear(
+                    in_features=module.weight.shape[0],
+                    out_features=module.weight.shape[1],
+                    skip_bias_add=module.skip_bias_add,
+                    r=lora_config.r,
+                    lora_alpha=lora_config.lora_alpha,
+                    lora_dropout=lora_config.lora_dropout,
+                    rslora=lora_config.rslora,
+                    lora_plus_scale=lora_config.lora_plus_scale,
+                    pissa=lora_config.pissa,
+                    bias_attr=False if module.bias is None else None,
+                    use_quick_lora=lora_config.use_quick_lora,
+                    lora_use_mixer=lora_config.lora_use_mixer,
+                    use_mora=lora_config.use_mora,
+                    mp_moe=getattr(module.weight, "mp_moe", False),
+                    is_distributed=getattr(module.weight, "is_distributed", False),
+                    lorapro=lora_config.lorapro,
+                )
+            elif isinstance(module, FleetRowParallelLinear):
+                # recover the original output_features
+                if module.sequence_parallel:
+                    lora_module = FleetRowSequenceParallelLoRALinear(
+                        in_features=module.weight.shape[0] * module.world_size,
+                        out_features=module.weight.shape[1],
+                        skip_bias_add=module.skip_bias_add,
+                        has_bias=module.bias is not None,
+                        input_is_parallel=module.input_is_parallel,
+                        r=lora_config.r,
+                        lora_alpha=lora_config.lora_alpha,
+                        lora_dropout=lora_config.lora_dropout,
+                        rslora=lora_config.rslora,
+                        lora_plus_scale=lora_config.lora_plus_scale,
+                        use_quick_lora=lora_config.use_quick_lora,
+                    )
+                else:
+                    lora_module = FleetRowParallelLoRALinear(
+                        in_features=module.weight.shape[0] * module.world_size,
+                        out_features=module.weight.shape[1],
+                        skip_bias_add=module.skip_bias_add,
+                        has_bias=module.bias is not None,
+                        input_is_parallel=module.input_is_parallel,
+                        r=lora_config.r,
+                        lora_alpha=lora_config.lora_alpha,
+                        lora_dropout=lora_config.lora_dropout,
+                        rslora=lora_config.rslora,
+                        lora_plus_scale=lora_config.lora_plus_scale,
+                        pissa=lora_config.pissa,
+                        use_quick_lora=lora_config.use_quick_lora,
+                    )
+                # Lora column parallel will spilt lora A matrix
+                self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
+
+                # for lora qat
+                if self.lora_config.do_qat:
+                    self.add_lora_split_mapping(module_name + ".weight_quanter._scale", is_column=False)
+                    self.add_lora_split_mapping(module_name + ".activation_quanter._scale", is_column=False)
+                    self.add_lora_split_mapping(module_name + ".activation_quanter.quanter._scale", is_column=False)
+            elif isinstance(module, FleetColumnParallelLinear):
+                # recover the original output_features
+                output_features = module.weight.shape[1] * module.world_size
+                if module.sequence_parallel:
+                    lora_module = FleetColumnSequenceParallelLoRALinear(
+                        in_features=module.weight.shape[0],
+                        out_features=output_features,
+                        skip_bias_add=module.skip_bias_add,
+                        gather_output=module.gather_output,
+                        has_bias=module.bias is not None,
+                        r=lora_config.r,
+                        lora_alpha=lora_config.lora_alpha,
+                        lora_dropout=lora_config.lora_dropout,
+                        rslora=lora_config.rslora,
+                        lora_plus_scale=lora_config.lora_plus_scale,
+                        lora_A_weight_attr=paddle.ParamAttr(
+                            initializer=nn.initializer.KaimingUniform(
+                                negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
+                            )
+                        ),
+                        use_quick_lora=lora_config.use_quick_lora,
+                    )
+                else:
+                    lora_module = FleetColumnParallelLoRALinear(
+                        in_features=module.weight.shape[0],
+                        out_features=output_features,
+                        skip_bias_add=module.skip_bias_add,
+                        gather_output=module.gather_output,
+                        has_bias=module.bias is not None,
+                        r=lora_config.r,
+                        lora_alpha=lora_config.lora_alpha,
+                        lora_dropout=lora_config.lora_dropout,
+                        rslora=lora_config.rslora,
+                        lora_plus_scale=lora_config.lora_plus_scale,
+                        pissa=lora_config.pissa,
+                        lora_A_weight_attr=paddle.ParamAttr(
+                            initializer=nn.initializer.KaimingUniform(
+                                negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
+                            )
+                        ),
+                        use_quick_lora=lora_config.use_quick_lora,
+                    )
+                # Lora column parallel will spilt lora B matrix
+                self.add_lora_split_mapping(module_name + ".lora_B", is_column=True)
+
+                # for lora qat
+                if self.lora_config.do_qat:
+                    self.add_lora_split_mapping(module_name + ".weight_quanter._scale", is_column=True)
+                    self.add_lora_split_mapping(module_name + ".activation_quanter._scale", is_column=False)
+                    self.add_lora_split_mapping(module_name + ".activation_quanter.quanter._scale", is_column=False)
         elif isinstance(module, QuantizationLinear):
             lora_module = QuantizationLoRALinear(module, lora_config)
         elif isinstance(module, ColumnParallelQuantizationLinear):
@@ -776,11 +971,16 @@ class LoRAModel(nn.Layer):
         for _, layer in self.model.named_sublayers():
             if (
                 isinstance(layer, LoRALinear)
+                or isinstance(layer, FleetLoRALinear)
                 or isinstance(layer, LoRAConv2D)
                 or isinstance(layer, ColumnParallelLoRALinear)
+                or isinstance(layer, FleetColumnParallelLoRALinear)
                 or isinstance(layer, RowParallelLoRALinear)
+                or isinstance(layer, FleetRowParallelLoRALinear)
                 or isinstance(layer, ColumnSequenceParallelLoRALinear)
+                or isinstance(layer, FleetColumnSequenceParallelLoRALinear)
                 or isinstance(layer, RowSequenceParallelLoRALinear)
+                or isinstance(layer, FleetRowSequenceParallelLoRALinear)
                 or (QuantizationLoRALinear is not None and isinstance(layer, QuantizationLoRALinear))
                 or (
                     ColumnParallelQuantizationLoRALinear is not None
@@ -817,12 +1017,12 @@ class LoRAModel(nn.Layer):
             return model
         if isinstance(lora_config.target_modules, str):
             lora_config.target_modules = [lora_config.target_modules]
-
-        for target_module in lora_config.target_modules:
-            for i in model.named_sublayers():
-                module_name = i[0]
+        for i in model.named_sublayers():
+            module_name = i[0]
+            for target_module in lora_config.target_modules:
                 if re.fullmatch(target_module, module_name):
                     self._find_and_replace_module(model, module_name, lora_config)
+                    break
         return model
 
     def restore_original_model(self):
@@ -945,3 +1145,26 @@ class LoRAModel(nn.Layer):
         for _, layer in self.model.named_sublayers():
             if any(isinstance(layer, lora_layer) for lora_layer in AVAILABLE_LAYERS):
                 layer.unmerge()
+
+    def get_merge_state_dict(self, offload: bool = True):
+        merge_state_dict = {}
+        base_state_dict = self.model.state_dict()
+        scaling = self.lora_config.lora_alpha / self.lora_config.r
+
+        model_key_list = list(base_state_dict.keys())
+        for k in model_key_list:
+            if "lora" in k:
+                continue
+            tensor = base_state_dict.pop(k)
+            if "weight" in k:
+                lora_A_key, lora_B_key = k.replace("weight", "lora_A"), k.replace("weight", "lora_B")
+                if lora_A_key in base_state_dict.keys():
+                    lora_A_tensor, lora_B_tensor = base_state_dict.pop(lora_A_key), base_state_dict.pop(lora_B_key)
+                    tensor += lora_A_tensor @ lora_B_tensor * scaling
+
+            if offload:
+                tensor = tensor.pin_memory()
+
+            merge_state_dict[k] = tensor
+
+        return merge_state_dict

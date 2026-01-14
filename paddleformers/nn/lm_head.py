@@ -14,13 +14,9 @@
 
 import paddle
 import paddle.nn as nn
-
-try:
-    from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
-        build_sharded_state_dict,
-    )
-except:
-    build_sharded_state_dict = None
+from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+    build_sharded_state_dict,
+)
 
 from ..generation.configuration_utils import PretrainedConfig
 from .criterion.loss_utils import calc_lm_head_logits
@@ -36,14 +32,14 @@ class LMHead(nn.Layer):
         self.vocab_parallel = False
 
         # apply vocab tensor parallel
-        if config.vocab_size % config.tensor_parallel_degree != 0:
+        if config.vocab_size % config.tensor_model_parallel_size != 0:
             raise ValueError(
                 f"lm_head can not activate vocab parallelism "
-                f"(vocab_size={config.vocab_size} % tp_degree={config.tensor_parallel_degree} != 0)."
+                f"(vocab_size={config.vocab_size} % tp_degree={config.tensor_model_parallel_size} != 0)."
             )
 
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
-            vocab_size = config.vocab_size // config.tensor_parallel_degree
+        if config.tensor_model_parallel_size > 1 and config.vocab_size % config.tensor_model_parallel_size == 0:
+            vocab_size = config.vocab_size // config.tensor_model_parallel_size
             self.vocab_parallel = True
         else:
             vocab_size = config.vocab_size
@@ -84,7 +80,7 @@ class LMHead(nn.Layer):
         Returns:
             Union[
                 Tuple[paddle.Tensor, paddle.Tensor, Optional[paddle.Tensor]]:
-                    # When use_recompute_loss_fn or use_sparse_head_and_loss_fn
+                    # When recompute loss_fn or use_sparse_head_and_loss_fn
                     - hidden_states: Original input
                     - weight: Projection weights
                     - bias: Optional bias term
@@ -125,7 +121,7 @@ class LMHead(nn.Layer):
                 "Please install paddlepaddle>=3.2."
             )
 
-        if self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_model_parallel_size > 1:
             state_dict = self.state_dict(structured_name_prefix="")
             return build_sharded_state_dict(state_dict, {"weight": 0, "bias": 0}, structured_name_prefix)
         return super().sharded_state_dict(structured_name_prefix)

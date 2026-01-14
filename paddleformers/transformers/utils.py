@@ -174,13 +174,10 @@ def adapt_stale_fwd_patch(self, name, value):
         # NOTE(changwenbin & zhoukangkang):
         # When use model = paddle.incubate.jit.inference(model), it reportes errors, we fix it here.
         # is_inference_mode API is only available in PaddlePaddle develop，so we add a try except.
-        try:
-            from paddle.incubate.jit import is_inference_mode
+        from paddle.incubate.jit import is_inference_mode
 
-            if is_inference_mode(value):
-                return value
-        except:
-            pass
+        if is_inference_mode(value):
+            return value
 
         if hasattr(inspect, "getfullargspec"):
             (

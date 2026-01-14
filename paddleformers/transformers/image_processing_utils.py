@@ -121,8 +121,10 @@ class PaddleImageProcessingMixin:
             if isinstance(inputs, list):
                 if isinstance(inputs[0], int):
                     return paddle.to_tensor([inputs])
-                else:
+                elif isinstance(inputs[0], (bool, float, np.ndarray)):
                     return paddle.to_tensor(inputs)
+                else:
+                    return inputs
             elif isinstance(inputs, int):
                 return paddle.to_tensor(inputs)
             elif isinstance(inputs, np.ndarray):

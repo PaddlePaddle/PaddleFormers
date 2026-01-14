@@ -104,8 +104,25 @@ class BatchFeature(UserDict):
             def is_tensor(x):
                 return isinstance(x, np.ndarray)
 
+        def _is_tensor_or_array_like(value):
+            """
+            Check if a value is array-like or tensor-like.
+            """
+            if isinstance(value, np.ndarray) or isinstance(value, paddle.Tensor):
+                return True
+            if isinstance(value, (int, float, bool, np.number)):
+                return True
+            if isinstance(value, (list, tuple)):
+                if len(value) == 0:
+                    return True
+                return _is_tensor_or_array_like(value[0])
+
+            return False
+
         # Do the tensor conversion in batch
         for key, value in self.items():
+            if not _is_tensor_or_array_like(value):
+                continue
             try:
                 if not is_tensor(value):
                     tensor = as_tensor(value)

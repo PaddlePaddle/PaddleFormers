@@ -224,6 +224,10 @@ def get_train_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _
 
         os.environ["FLAGS_call_stack_level"] = "2"
         os.environ["FLAGS_eager_communication_connection"] = "0"
+
+    if data_args.split_multi_turn and data_args.template_backend != "jinja":
+        raise ValueError("data_args.template_backend must be jinja when split_multi_turn is True")
+
     return model_args, data_args, preprocess_args, generating_args, finetuning_args
 
 

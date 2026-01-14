@@ -121,7 +121,7 @@ def get_pp_vp_split_layers(config, skip_recompute_num=-1):
     Args:
         config (Config): Model configuration object containing:
             - num_hidden_layers (int): Total number of transformer layers
-            - virtual_pp_degree (int): Virtual pipeline parallelism degree
+            - virtual_pipeline_model_parallel_size (int): Virtual pipeline parallelism degree
             - add_tail_layers (int): Additional tail layers to append
         skip_recompute_num (int): Number of layers per virtual pipeline stage
             to exclude from recomputation. Defaults to -1 (auto-configure).
@@ -134,7 +134,7 @@ def get_pp_vp_split_layers(config, skip_recompute_num=-1):
     """
     hcg = get_hcg()
     pp_size = max(hcg.get_pipe_parallel_world_size(), 1)
-    vp_size = max(config.virtual_pp_degree, 1)
+    vp_size = max(config.virtual_pipeline_model_parallel_size, 1)
 
     assert pp_size > 1, (
         "Only support pipeline parallel, " f"pp_size must be greater than 1, but got pp_size: {pp_size}"
@@ -267,7 +267,7 @@ class EmbeddingPipe(nn.Layer):
         )
         input_ids.stop_gradient = True
         emb = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
-        if position_ids is None and not self.config.fuse_rope:
+        if position_ids is None and not self.config.apply_rope_fusion:
             position_ids = (
                 paddle.arange(
                     0,
@@ -277,7 +277,7 @@ class EmbeddingPipe(nn.Layer):
                 .unsqueeze(0)
                 .tile([input_ids.shape[0], 1])
             )
-        if self.config.fuse_rope:
+        if self.config.apply_rope_fusion:
             position_embeddings = None
         else:
             position_embeddings = paddle.stack(self.rotary_emb(emb, position_ids))  # cos and sin
@@ -319,6 +319,8 @@ class EmbeddingPipe(nn.Layer):
 
             ret = (emb,)
 
+        if paddle.core._has_grad():
+            ret[0].stop_gradient = False  # 开启lora 防止recompute pylayer因base weight输入没有gradient而报错
         if attention_mask is not None:
             if attention_mask.dtype != paddle.int32:
                 if len(attention_mask.shape) == 2:
@@ -422,7 +424,7 @@ def make_decoder_layer_pipe(decoder_layer):
         hidden_states, attention_mask, position_ids, position_embeddings, nbatch_pack_offset = parse_args(args)
         max_seq_len = hidden_states.shape[1]
         if self.config.sequence_parallel:
-            max_seq_len = hidden_states.shape[0] * self.config.tensor_parallel_degree
+            max_seq_len = hidden_states.shape[0] * self.config.tensor_model_parallel_size
         if attention_mask is None:
             tgt_mask = None
             attn_mask_startend_row_indices = None
@@ -441,7 +443,12 @@ def make_decoder_layer_pipe(decoder_layer):
             tuple_position_embeddings = None
 
         has_gradient = not hidden_states.stop_gradient
-        if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+        if (
+            self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+            and has_gradient
+        ):
             hidden_states = recompute(
                 decoder_layer.forward,
                 self,
@@ -564,9 +571,9 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
 
         self.config = config
         hcg = get_hcg()
-        tensor_parallel_degree = max(hcg.get_model_parallel_world_size(), 1)
+        tensor_model_parallel_size = max(hcg.get_model_parallel_world_size(), 1)
         tensor_parallel_rank = max(hcg.get_model_parallel_rank(), 0)
-        config.tensor_parallel_degree = tensor_parallel_degree
+        config.tensor_model_parallel_size = tensor_model_parallel_size
         config.tensor_parallel_rank = tensor_parallel_rank
 
         no_recompute_layers = get_pp_vp_split_layers(config)
@@ -660,17 +667,15 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 "offload": False,
                 "partition": False,
             },
-            num_virtual_pipeline_stages=config.virtual_pp_degree,
+            num_virtual_pipeline_stages=config.virtual_pipeline_model_parallel_size,
         )
 
     def get_loss_fn(self, config):
-        CriterionPipeCls = self._criterion_pipe_cls if self._criterion_pipe_cls is not None else CriterionLayerPipe
-
         if config.get("dpo_config", None) is not None:
-            loss_fn = CriterionPipeCls(config, use_infohub=True)
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
         else:
+            CriterionPipeCls = self._criterion_pipe_cls if self._criterion_pipe_cls is not None else CriterionLayerPipe
             loss_fn = CriterionPipeCls(config)
-
         return loss_fn
 
     @classmethod

@@ -11,32 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """Useful data utility."""
 
 import json
-from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from itertools import islice
+from typing import List, Tuple
 
 import numpy as np
+import paddle
 
 from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 
 from ..utils.log import logger
-
-INF = 1000000
-OPT_MULTI_OF = 256
-
-
-@dataclass
-class Example:
-    """Data format for raw SFT (Supervised Fine-Tuning) examples."""
-
-    request: Dict
-    system: str
-    label: List[int]
-    is_system: int
-    source: str
-    is_function_call: bool = False
 
 
 def round_up_to_multiple_of_8(n):
@@ -44,54 +31,13 @@ def round_up_to_multiple_of_8(n):
     return (n + 7) & ~7
 
 
-def pad_batch_data(
-    insts,
-    pad_idx=0,
-    return_pos=False,
-    max_seq_len=None,
-    return_input_mask=False,
-    return_max_len=False,
-    return_num_token=False,
-    return_seq_lens=False,
-):
-    """
-    Pad the instances to the max sequence length in batch, and generate the
-    corresponding position data and attention bias.
-    """
-    return_list = []
-    max_len = max_seq_len if max_seq_len is not None else max(len(inst) for inst in insts)
-    # Any token included in dict can be used to pad, since the paddings' loss
-    # will be masked out by weights and make no effect on parameter gradients.
-
-    inst_data = np.array([inst + list([pad_idx] * (max_len - len(inst))) for inst in insts])
-    return_list += [inst_data.astype("int64").reshape([-1, max_len])]
-
-    # position data
-    if return_pos:
-        inst_pos = np.array([list(range(0, len(inst))) + [pad_idx] * (max_len - len(inst)) for inst in insts])
-
-        return_list += [inst_pos.astype("int64").reshape([-1, max_len])]
-
-    if return_input_mask:
-        # This is used to avoid attention on paddings.
-        input_mask_data = np.array([[1] * len(inst) + [0] * (max_len - len(inst)) for inst in insts])
-        input_mask_data = np.expand_dims(input_mask_data, axis=-1)
-        return_list += [input_mask_data.astype("float32")]
-
-    if return_max_len:
-        return_list += [max_len]
-
-    if return_num_token:
-        num_token = 0
-        for inst in insts:
-            num_token += len(inst)
-        return_list += [num_token]
-
-    if return_seq_lens:
-        seq_lens = np.array([len(inst) for inst in insts])
-        return_list += [seq_lens.astype("int64").reshape([-1, 1])]
-
-    return return_list if len(return_list) > 1 else return_list[0]
+def print_debug_info(tokenizer, data, label):
+    """Helper function to print tokenized data debug info"""
+    try:
+        decoded = tokenizer.decode(data)
+        logger.info(f"[dataset debug] {label}: {decoded}")
+    except (TypeError, ValueError, OverflowError) as e:
+        logger.info(f"[dataset debug] tokenizer decode {label} error: {str(e)}")
 
 
 def convert_to_tokens_for_pt(
@@ -204,6 +150,8 @@ def function_call_chat_template(tokenizer, messages, tools):
     input_dict = dict()
     input_dict["messages"] = history
     if tools is not None:
+        if isinstance(tools, str):
+            tools = json.loads(tools)
         input_dict["tools"] = tools
     history_str = tokenizer.apply_chat_template(
         input_dict,
@@ -250,14 +198,6 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
     train_dataset.estimate = True
     logger.info("Start to estimate max training steps...")
 
-    train_dataset_path_list = [path for path in str(data_args.train_dataset_path).replace(" ", "").split(",")]
-    if len(train_dataset_path_list) > 1:
-        logger.warning("Suggest to use max_steps instead of num_train_epochs for multi source dataset.")
-        logger.info(
-            "Multi source dataset detected, number of samples will be estimated by following rule. "
-            "num_samples = (source1_num_samples * prob1 + source2_num_samples * prob2 + ...) * epochs"
-        )
-
     max_samples = train_dataset.max_estimate_samples
 
     if training_args.max_estimate_samples != -1:
@@ -282,8 +222,8 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
         global_batch_size = (
             training_args.per_device_train_batch_size
             * training_args.gradient_accumulation_steps
-            * max(training_args.data_parallel_degree, 1)
-            * max(training_args.sharding_parallel_degree, 1)
+            * max(training_args.data_parallel_size, 1)
+            * max(training_args.sharding_parallel_size, 1)
         )
         max_steps = train_batches / global_batch_size
 
@@ -303,9 +243,9 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
             "gradient_accumulation_steps": training_args.gradient_accumulation_steps,
             "warmup_steps": int(np.ceil(0.1 * max_steps)),
             "per_device_train_batch_size": int(training_args.per_device_train_batch_size),
-            "tensor_parallel_degree": int(training_args.tensor_parallel_degree),
-            "pipeline_parallel_degree": int(training_args.pipeline_parallel_degree),
-            "sharding_parallel_degree": int(training_args.sharding_parallel_degree),
+            "tensor_model_parallel_size": int(training_args.tensor_model_parallel_size),
+            "pipeline_model_parallel_size": int(training_args.pipeline_model_parallel_size),
+            "sharding_parallel_size": int(training_args.sharding_parallel_size),
             "seed": training_args.seed,
             "num_samples_each_epoch": data_args.num_samples_each_epoch,
             "max_seq_len": int(training_args.max_seq_len),
@@ -334,12 +274,12 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
             "gradient_accumulation_steps": training_args.gradient_accumulation_steps,
             "train_tokens": 0,
             "per_device_train_batch_size": int(training_args.per_device_train_batch_size),
-            "tensor_parallel_degree": int(training_args.tensor_parallel_degree),
-            "pipeline_parallel_degree": int(training_args.pipeline_parallel_degree),
-            "sharding_parallel_degree": int(training_args.sharding_parallel_degree),
+            "tensor_model_parallel_size": int(training_args.tensor_model_parallel_size),
+            "pipeline_model_parallel_size": int(training_args.pipeline_model_parallel_size),
+            "sharding_parallel_size": int(training_args.sharding_parallel_size),
             "num_samples_each_epoch": data_args.num_samples_each_epoch,
             "max_seq_len": int(data_args.max_seq_len),
-            "seed": data_args.seed,
+            "seed": training_args.seed,
             "valid": False,
             "train_samples": 0,
         }
@@ -352,3 +292,35 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
 
         logger.error("No valid data found, please check your dataset format.")
         return 0
+
+
+def get_worker_sliced_iterator(dataset):
+    """
+    Splits the dataset iterator based on the current Paddle worker information.
+
+    This function is designed to distribute data across multiple processes
+    (when dataloader_num_workers > 0) for an IterableDataset.
+
+    Args:
+        dataset: An iterable dataset object.
+
+    Returns:
+        Iterator: An iterator yielding data specific to the current worker.
+    """
+    # 1. Get the full original iterator
+    # Ensure the input is converted to an iterator so islice works correctly
+    dataset_iterator = iter(dataset)
+
+    # 2. Retrieve Paddle worker information
+    worker_info = paddle.io.get_worker_info()
+
+    # 3. Apply strided slicing (sharding) if running in multi-worker mode
+    if worker_info is not None:
+        dataset_iterator = islice(
+            dataset_iterator,
+            worker_info.id,  # Start: Offset by the current Worker ID
+            None,  # Stop: None means iterate until the end
+            worker_info.num_workers,  # Step: Jump by the total number of workers
+        )
+
+    return dataset_iterator

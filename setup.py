@@ -137,7 +137,7 @@ def append_version_py(filename="paddleformers/__init__.py"):
 
 append_version_py(filename="paddleformers/__init__.py")
 
-extras = {}
+
 REQUIRED_PACKAGES = read_requirements_file("requirements.txt")
 
 
@@ -198,12 +198,16 @@ try:
             exclude=("examples*", "tests*", "applications*", "fast_generation*", "model_zoo*"),
         ),
         package_data={
-            "paddleformers": ["datasets/hf/data_info.json"],
+            "paddleformers": ["datasets/reader/data_info.json"],
         },
-        setup_requires=["cython", "numpy"],
+        setup_requires=["numpy"],
         install_requires=REQUIRED_PACKAGES,
         entry_points={"console_scripts": get_console_scripts()},
-        extras_require=extras,
+        extras_require={
+            "paddlefleet": [
+                "paddlefleet >= 0.0.1.dev; platform_system == 'Linux' and platform_machine == 'x86_64'"
+            ],
+        },
         python_requires=">=3.8",
         classifiers=[
             "Programming Language :: Python :: 3",

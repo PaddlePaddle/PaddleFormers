@@ -16,7 +16,6 @@
 import json
 from typing import Optional, Union
 
-from ...utils.log import logger
 from ..configuration_utils import PretrainedConfig
 from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
@@ -46,7 +45,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         initializer_range=0.02,
         rms_norm_eps=1e-6,
         use_cache=False,
-        use_flash_attention=True,
         use_rmsnorm=True,
         pad_token_id=0,
         bos_token_id=1,
@@ -60,7 +58,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         num_key_value_heads=None,
         micro_batch_size=-1,
         moe_num_experts: Optional[Union[int, list]] = 16,
-        use_recompute_moe=False,
         moe_capacity=[64, 64, 64],
         moe_norm_min=1e-12,
         moe_aux_loss_lambda=1e-2,
@@ -70,7 +67,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         sinkhorn_temp=3e-2,
         global_aux_loss=False,
         moe_dropout_prob=0.0,
-        moe_group="dummy",
+        moe_group="mp",
         moe_intermediate_size: Union[int, list] = 0,
         moe_num_shared_experts: int = 2,
         moe_layer_start_index=1,
@@ -91,9 +88,15 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         num_nextn_predict_layers=1,
         multi_token_pred_lambda=0.1,
         enable_mtp_magic_send=False,
-        use_recompute_mtp=False,
         dpo_config=None,
         moe_multimodal_dispatch_use_allgather="",
+        recompute_granularity=None,
+        recompute_method=None,
+        recompute_modules=None,
+        recompute_num_layers=None,
+        recompute_mtp_granularity=None,
+        recompute_mtp_method=None,
+        recompute_mtp_modules=None,
         **kwargs,
     ):
         """
@@ -110,9 +113,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
             hidden_act (str): Name of the activation function used in the feed-forward network
             rms_norm_eps (float): The epsilon used by the RMS normalization layers
             use_cache (bool): Whether to use caching for faster generation (decoding)
-            use_flash_attention (bool): Whether to use FlashAttention for optimized attention computation
-            recompute (bool): Whether to use gradient checkpointing to save memory
-            recompute_granularity (str): Granularity of recomputation ("core_attn", "full", etc.)
             recompute_use_reentrant (bool): Whether to use reentrant checkpointing
             use_rmsnorm (bool): Whether to use RMSNorm instead of LayerNorm
             pad_token_id (int): Token ID used for padding sequences
@@ -127,7 +127,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
             num_key_value_heads (int): Number of key/value heads (for Grouped Query Attention)
             micro_batch_size (int): Size of micro batches (-1 for automatic)
             moe_num_experts: Number of experts in MoE layers
-            use_recompute_moe: Whether to use recomputation for MoE layers
             moe_capacity: Capacity configuration for MoE layers
             moe_norm_min: Minimum value for routing normalization
             moe_layer_interval: Interval between MoE layers
@@ -156,16 +155,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
             fuse_gate_detach_matmul: Whether to fuse gate detach matmul
             **kwargs: Additional keyword arguments passed to parent class
 
-        Note:
-            When use_recompute_moe is True, recompute_granularity will be changed to full_attn.
         """
-
-        if use_recompute_moe:
-            logger.warning(
-                "set `use_recompute_moe`=True, disabling `recompute_granularity=full`, change to full_attn."
-            )
-            if kwargs["recompute"] and kwargs["recompute_granularity"] == "full":
-                kwargs["recompute_granularity"] = "full_attn"
 
         # Set default for tied embeddings if not specified.
         if "tie_word_embeddings" not in kwargs:
@@ -187,7 +177,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
-        self.use_flash_attention = use_flash_attention
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
@@ -201,7 +190,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.hidden_dropout_prob = hidden_dropout_prob
         self.num_key_value_heads = num_key_value_heads
         self.moe_num_experts = moe_num_experts
-        self.use_recompute_moe = use_recompute_moe
         self.moe_capacity = moe_capacity
         self.moe_norm_min = moe_norm_min
         self.moe_aux_loss_lambda = moe_aux_loss_lambda
@@ -236,8 +224,15 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.num_nextn_predict_layers = num_nextn_predict_layers
         self.multi_token_pred_lambda = multi_token_pred_lambda
         self.enable_mtp_magic_send = enable_mtp_magic_send
-        self.use_recompute_mtp = use_recompute_mtp
         self.dpo_config = dpo_config
+        self.recompute_granularity = None
+        self.recompute_granularity = None
+        self.recompute_method = None
+        self.recompute_modules = None
+        self.recompute_num_layers = None
+        self.recompute_mtp_granularity = None
+        self.recompute_mtp_method = None
+        self.recompute_mtp_modules = None
         self.register_unsavable_keys(
             [
                 "disable_ffn_model_parallel",
@@ -251,9 +246,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
                 "max_sequence_length",
                 "moe_group",
                 "ignored_index",
-                "use_recompute_moe",
                 "use_rmsnorm",
-                "use_recompute_mtp",
                 "sinkhorn_2gate",
                 "sinkhorn_temp",
                 "enable_delay_scale_loss",
@@ -276,6 +269,13 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
                 "moe_world_size",
                 "multi_token_pred_lambda",
                 "moe_multimodal_dispatch_use_allgather",
+                "recompute_granularity",
+                "recompute_method",
+                "recompute_modules",
+                "recompute_num_layers",
+                "recompute_mtp_granularity",
+                "recompute_mtp_method",
+                "recompute_mtp_modules",
             ]
         )
         standardize_rope_params(self, rope_theta=rope_theta)

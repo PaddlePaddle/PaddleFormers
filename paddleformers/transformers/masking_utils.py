@@ -131,9 +131,9 @@ def create_causal_masks_and_row_indices(
 
     # Enables the efficient built-in causal mode (is_causal=True)
     # for FA backends (sdpa/flashmask), bypassing manual mask generation.
-    FLASH_BACKENDS = {"sdpa", "flashmask"}
+    # for third-party attention registered via _attn_implementation, default to bypass mask generation.
     attn_impl = getattr(config, "_attn_implementation", "eager")
-    is_flash_backend = attn_impl in FLASH_BACKENDS
+    is_flash_backend = attn_impl != "eager"
     is_fully_attended = attention_mask is None or (attention_mask is not None and attention_mask.cast("bool").all())
     if is_flash_backend and is_fully_attended:
         if return_mapping:
@@ -144,7 +144,7 @@ def create_causal_masks_and_row_indices(
             return None, None
     # We only return an actual mask if there is at least 1 padding token,
     # otherwise we return `None` and use `is_causal` in FA2
-    if attention_mask.cast("bool").all():
+    if attention_mask is not None and attention_mask.cast("bool").all():
         attention_mask = None
 
     seq_length_with_past = seq_length + cache_length
@@ -241,12 +241,12 @@ def create_causal_mask_and_row_indices(
         causal_mask = None
         row_indices = attn_mask_startend_row_indices
     else:
-        FLASH_BACKENDS = {"sdpa", "flashmask"}
         attn_impl = getattr(config, "_attn_implementation", "eager")
-        is_flash_backend = attn_impl in FLASH_BACKENDS
+        is_flash_backend = attn_impl != "eager"
 
         # Check if the mask can be safely skipped
         # Condition: Must be Flash Backend AND No extra mask func AND No padding (mask is None or all True)
+        # For third-party attention registered via _attn_implementation, default to bypass mask generation.
         is_fully_attended = attention_mask is None or (
             attention_mask is not None and attention_mask.cast("bool").all()
         )

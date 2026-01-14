@@ -44,7 +44,12 @@ def sdpa_attention_forward(
         is_causal = False
         if attn_mask_startend_row_indices.ndim == 3:
             attn_mask_startend_row_indices = attn_mask_startend_row_indices.unsqueeze(-1)
-        attention_mask = _gen_from_sparse_attn_mask_indices(attn_mask_startend_row_indices, query.dtype)
+        if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 1:
+            is_causal = True
+        if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 4:
+            is_causal = False
+
+        attention_mask = _gen_from_sparse_attn_mask_indices(attn_mask_startend_row_indices, query.dtype, is_causal)
 
     if sink is None:
         attn_output = nn.functional.scaled_dot_product_attention(

@@ -29,9 +29,6 @@ import_structure = {
         "AutoTokenizer",
         "TOKENIZER_MAPPING",
     ],
-    "configuration_utils": ["PretrainedConfig"],
-    "tokenizer_utils": ["PretrainedTokenizer"],
-    "tokenizer_utils_fast": ["PretrainedTokenizerFast"],
     "configuration": ["AutoConfig"],
     "modeling": [
         "AutoModelForCausalLM",
@@ -50,6 +47,7 @@ import_structure = {
         "AutoGenerator",
         "AutoDiscriminator",
         "AutoModelForConditionalGeneration",
+        "AutoModelForConditionalGenerationPipe",
     ],
     "factory": [],
     "image_processing": ["get_image_processor_config", "AutoImageProcessor", "IMAGE_PROCESSOR_MAPPING"],
@@ -58,6 +56,7 @@ import_structure = {
 }
 
 if TYPE_CHECKING:
+    from .configuration import *
     from .image_processing import *
     from .modeling import *
     from .tokenizer import *

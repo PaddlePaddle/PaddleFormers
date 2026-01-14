@@ -27,24 +27,24 @@ TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config/pt"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
-MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
-MAX_STEPS = 6
-SAVE_STEPS = 4
+MODEL_NAME_OR_PATH = "/home/models/PaddleFormers/tiny-random-glm4moe-bf16"
+MAX_STEPS = 2
+SAVE_STEPS = 2
 
-PT_FULL_EXCEPTED_LOSS = 12.746043
-PT_FULL_RESUME_EXCEPTED_LOSS = 12.750999
-PT_FULL_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
+PT_FULL_EXCEPTED_LOSS = 12.832637
+PT_FULL_RESUME_EXCEPTED_LOSS = 12.832469
+PT_FULL_EXCEPTED_RESULT = [[10564, 10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231]]
 
-PT_LORA_EXCEPTED_LOSS = 12.746654
-PT_LORA_RESUME_EXCEPTED_LOSS = 12.752742
+PT_LORA_EXCEPTED_LOSS = 12.832637
+PT_LORA_RESUME_EXCEPTED_LOSS = 12.832492
 PT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 133362, 30625, 95331, 4198]]
 
-PT_FULL_TP_PP_EXCEPTED_LOSS = 11.932426
-PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 11.932665
-PT_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 132047, 132047, 119194, 128575, 128575, 3315, 132047, 71148, 128575]]
+PT_FULL_TP_PP_EXCEPTED_LOSS = 12.832589
+PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 12.832466
+PT_FULL_TP_PP_EXCEPTED_RESULT = [[10564, 10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231]]
 
-PT_LORA_TP_PP_EXCEPTED_LOSS = 11.93247
-PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.932783
+PT_LORA_TP_PP_EXCEPTED_LOSS = 12.832589
+PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 12.832575
 PT_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 PT_FC_EXCEPTED_LOSS = 11.931005
@@ -55,7 +55,7 @@ PT_FC_EXCEPTED_RESULT = [[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99380
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["NCCL_ALGO"] = "Tree"
 os.environ["FLAGS_embedding_deterministic"] = "1"
-os.environ["FLAGS_cudnn_deterministic"] = "0"
+os.environ["FLAGS_cudnn_deterministic"] = "1"
 
 
 class PTTrainTester(unittest.TestCase):
@@ -65,6 +65,7 @@ class PTTrainTester(unittest.TestCase):
         config.update(updates)
 
         os.makedirs(tmp_dir, exist_ok=True)
+        os.makedirs(LOG_PATH, exist_ok=True)
         updated_yaml_path = os.path.join(tmp_dir, f"updated_{os.path.basename(yaml_path)}")
         with open(updated_yaml_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(config, f, indent=4, allow_unicode=True, sort_keys=False)

@@ -41,7 +41,7 @@ class DPOCriterion(nn.Layer):
             self.dpo_config = copy.deepcopy(config.dpo_config)
         else:
             self.dpo_config = dpo_config
-        if self.config.tensor_parallel_output and self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_parallel_output and self.config.tensor_model_parallel_size > 1:
             self.logprobs = ParallelCrossEntropy()
         else:
             self.logprobs = nn.CrossEntropyLoss(reduction="none")
@@ -144,7 +144,7 @@ class DPOCriterion(nn.Layer):
             hidden_states, weight, bias = logits
 
         if use_sparse_head_and_loss_fn:
-            if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel:
+            if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel:
                 labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, 0)
 
                 hidden_states = paddle.gather(hidden_states, sparse_tgt_idx, axis=0)
@@ -157,7 +157,7 @@ class DPOCriterion(nn.Layer):
                 hidden_states = hidden_states.reshape([-1, hidden_states.shape[-1]])
                 hidden_states = paddle.gather(hidden_states, sparse_tgt_idx, axis=0)
         elif use_fused_head_and_loss_fn:
-            if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel:
+            if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel:
                 hidden_states = GatherOp.apply(hidden_states)
                 hidden_states = hidden_states.reshape(
                     [
@@ -175,7 +175,7 @@ class DPOCriterion(nn.Layer):
                 None,
                 transpose_y,
                 self.config.vocab_size,
-                self.config.tensor_parallel_degree,
+                self.config.tensor_model_parallel_size,
                 self.config.tensor_parallel_output,
                 False,  # fused_linear
                 chunk_size,

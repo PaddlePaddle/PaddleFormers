@@ -37,6 +37,8 @@ def dpo_preprocess_inputs(self, logits, labels):
         if isinstance(obj, tuple):
             if len(obj) == 1:
                 return unpack_logits(obj[0])
+            if len(obj) == 2:
+                return unpack_logits(obj[0])
             elif len(obj) == 4:
                 return None, *obj  # unpack logits when using fused head loss
         return obj, None, None, None, None
@@ -61,18 +63,20 @@ def dpo_logps(
     hidden_states=None,
     lm_head_weight=None,
     lm_head_bias=None,
+    transpose_y=None,
     **kwargs,
 ):
     """DPO logprobs"""
     weight = lm_head_weight
     bias = lm_head_bias
-    transpose_y = self.tie_word_embeddings
+    if transpose_y is None:
+        transpose_y = self.tie_word_embeddings
     labels = chosen_labels + rejected_labels
     ignore_index = kwargs.pop("ignore_index", 0)  # default is 0
 
     # drop ignored index token
     if self.use_filtered_label_loss:
-        if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel and logits is None:
+        if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel and logits is None:
             labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, ignore_index)
 
             if hidden_states is not None:
@@ -90,7 +94,7 @@ def dpo_logps(
             if logits is not None:
                 logits = paddle.gather(logits, sparse_tgt_idx, axis=1)
     else:
-        if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel and hidden_states is not None:
+        if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel and hidden_states is not None:
             hidden_states = GatherOp.apply(hidden_states)
             hidden_states = hidden_states.reshape(
                 [
@@ -112,7 +116,7 @@ def dpo_logps(
             None,
             transpose_y,
             self.config.vocab_size,
-            self.config.tensor_parallel_degree,
+            self.config.tensor_model_parallel_size,
             self.config.tensor_parallel_output,
             False,  # fused_linear
             self.loss_subbatch_sequence_length,
@@ -364,6 +368,7 @@ def dpo_loss_forward(
             hidden_states,
             lm_head_weight,
             lm_head_bias,
+            transpose_y,
             **kwargs,
         )
         if self.use_infohub:
@@ -384,6 +389,7 @@ def dpo_loss_forward(
         hidden_states,
         lm_head_weight,
         lm_head_bias,
+        transpose_y,
         **kwargs,
     )
     dpo_loss = cal_dpo_loss(

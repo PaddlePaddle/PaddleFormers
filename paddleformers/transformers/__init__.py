@@ -34,9 +34,10 @@ import_structure = {
     ],
     "model_utils": ["PretrainedModel", "register_base_model"],
     "tokenizer_utils": [
-        "PreTrainedTokenizer",
         "PretrainedTokenizer",
+        "PreTrainedTokenizer",
         "PreTrainedTokenizerBase",
+        "PreTrainedTokenizerFast",
         "BPETokenizer",
         "tokenize_chinese_chars",
         "is_chinese_char",
@@ -48,7 +49,6 @@ import_structure = {
     "attention_utils": ["create_bigbird_rand_mask_idx_list"],
     "tensor_parallel_utils": [],
     "configuration_utils": ["PretrainedConfig"],
-    "tokenizer_utils_fast": ["PretrainedTokenizerFast"],
     "processing_utils": ["ProcessorMixin"],
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
     "image_processing_utils": ["PaddleImageProcessingMixin", "ImageProcessingMixin", "BaseImageProcessor"],
@@ -61,25 +61,6 @@ import_structure = {
         "MoELayer",
         "dispatching",
         "MoEFlexTokenLayer",
-    ],
-    "bert.modeling": [
-        "BertForSequenceClassification",
-        "BertPretrainingHeads",
-        "BertForMaskedLM",
-        "BertForPretraining",
-        "BertPretrainedModel",
-        "BertForTokenClassification",
-        "BertForMultipleChoice",
-        "BertModel",
-        "BertPretrainingCriterion",
-        "BertForQuestionAnswering",
-    ],
-    "bert.tokenizer": ["BertTokenizer"],
-    "bert.tokenizer_fast": ["BertTokenizerFast"],
-    "bert.configuration": [
-        "BERT_PRETRAINED_INIT_CONFIGURATION",
-        "BertConfig",
-        "BERT_PRETRAINED_RESOURCE_FILES_MAP",
     ],
     "auto.configuration": ["AutoConfig"],
     "auto.image_processing": ["AutoImageProcessor", "IMAGE_PROCESSOR_MAPPING"],
@@ -99,6 +80,7 @@ import_structure = {
         "AutoGenerator",
         "AutoDiscriminator",
         "AutoModelForConditionalGeneration",
+        "AutoModelForConditionalGenerationPipe",
     ],
     "tokenizer_utils_base": [
         "PaddingStrategy",
@@ -110,66 +92,35 @@ import_structure = {
     "auto.processing": ["AutoProcessor"],
     "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
-    "deepseek_v2.configuration": ["DeepseekV2Config"],
-    "deepseek_v2.modeling": [
+    "deepseek_v3.configuration": ["DeepseekV3Config"],
+    "deepseek_v3.modeling": [
         "masked_fill",
-        "DeepseekV2Attention",
+        "DeepseekV3Attention",
         "MoEGate",
         "FakeGate",
-        "DeepseekV2ForCausalLM",
+        "DeepseekV3ForCausalLM",
         "_make_causal_mask",
         "is_casual_mask",
-        "DeepseekV2MoE",
-        "DeepseekV2MoEFlexToken",
+        "DeepseekV3MoE",
+        "DeepseekV3MoEFlexToken",
         "scaled_dot_product_attention",
         "rotate_half",
-        "DeepseekV2MTPLayer",
-        "DeepseekV2RMSNorm",
-        "DeepseekV2YarnRotaryEmbedding",
+        "DeepseekV3MTPLayer",
+        "DeepseekV3RMSNorm",
+        "DeepseekV3YarnRotaryEmbedding",
         "parallel_matmul",
-        "DeepseekV2PretrainedModel",
+        "DeepseekV3PretrainedModel",
         "AddAuxiliaryLoss",
         "apply_rotary_pos_emb",
         "assign_kv_heads",
-        "DeepseekV2ForSequenceClassification",
-        "_expand_2d_mask",
-        "DeepseekV2Model",
-        "repeat_kv",
-        "DeepseekV2MLP",
-        "yarn_get_mscale",
-        "DeepseekV2DecoderLayer",
-        "get_triangle_upper_mask",
-        "DeepseekV2ForCausalLMPipe",
-    ],
-    "deepseek_v2.modeling_auto": [
-        "DeepseekV2LMHeadAuto",
-        "DeepseekV2ForCausalLMAuto",
-        "DeepseekV2ModelAuto",
-        "DeepseekV2PretrainedModelAuto",
-    ],
-    "deepseek_v2.mfu_utils": ["DeepSeekProjection"],
-    "deepseek_v2.kernel": [
-        "act_quant",
-        "weight_dequant",
-        "fp8_gemm",
-        "weight_dequant_kernel",
-        "act_quant_kernel",
-        "fp8_gemm_kernel",
-    ],
-    "deepseek_v2.tokenizer_fast": ["DeepseekTokenizerFast"],
-    "deepseek_v2.fp8_linear": [
-        "Linear",
-        "ColumnParallelLinear",
-        "RowParallelLinear",
-        "ColumnSequenceParallelLinear",
-        "RowSequenceParallelLinear",
-    ],
-    "deepseek_v3.configuration": ["DeepseekV3Config"],
-    "deepseek_v3.modeling": [
-        "DeepseekV3ForCausalLM",
         "DeepseekV3ForSequenceClassification",
+        "_expand_2d_mask",
         "DeepseekV3Model",
-        "DeepseekV3PretrainedModel",
+        "repeat_kv",
+        "DeepseekV3MLP",
+        "yarn_get_mscale",
+        "DeepseekV3DecoderLayer",
+        "get_triangle_upper_mask",
         "DeepseekV3ForCausalLMPipe",
     ],
     "deepseek_v3.modeling_auto": [
@@ -178,6 +129,8 @@ import_structure = {
         "DeepseekV3ModelAuto",
         "DeepseekV3PretrainedModelAuto",
     ],
+    "deepseek_v3.mfu_utils": ["DeepSeekProjection"],
+    "deepseek_v3.tokenizer_fast": ["DeepseekTokenizerFast"],
     "ernie4_5.configuration": ["Ernie4_5Config"],
     "ernie4_5.modeling": [
         "Ernie4_5Model",
@@ -190,10 +143,16 @@ import_structure = {
     "ernie4_5_moe_vl.configuration": ["Ernie4_5_VLConfig"],
     "ernie4_5_moe_vl.modeling": [
         "Ernie4_5_VLMoeForConditionalGenerationModel",
+        "Ernie4_5_VLMoeForConditionalGeneration",
         "Ernie4_5_VLMoeForConditionalGenerationPipe",
     ],
     "ernie4_5_moe_vl.tokenizer": ["Ernie4_5_VLTokenizer"],
-    "export": ["export_model"],
+    "ernie4_5_moe_vl.image_processor": ["Ernie4_5_VLImageProcessor"],
+    "ernie4_5_moe_vl.processor": ["Ernie4_5_VLProcessor"],
+    "paddleocr_vl.configuration": ["PaddleOCRVLConfig"],
+    "paddleocr_vl.modeling": ["PaddleOCRVLForConditionalGeneration"],
+    "paddleocr_vl.image_processor": ["PaddleOCRVLImageProcessor"],
+    "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
@@ -201,7 +160,7 @@ import_structure = {
     "llama.configuration": [
         "LlamaConfig",
     ],
-    "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe"],
+    "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe", "LlamaRotaryEmbedding"],
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
     "optimization": [
@@ -212,34 +171,6 @@ import_structure = {
         "CosineAnnealingWithWarmupDecay",
         "LinearAnnealingWithWarmupDecay",
     ],
-    "qwen.configuration": ["QWenConfig"],
-    "qwen.modeling": [
-        "QWenBlock",
-        "QWenForCausalLM",
-        "QWenLMHeadModel",
-        "QWenPretrainedModel",
-        "QWenModel",
-        "QWenLMHead",
-        "QWenPretrainingCriterion",
-    ],
-    "qwen.modeling_auto": [
-        "QWenBlockAuto",
-        "QWenForCausalLM3DAuto",
-        "QWenPretrainedModelAuto",
-        "QWenModelAuto",
-        "QWenLMHeadAuto",
-        "QWenPretrainingCriterionAuto",
-    ],
-    "qwen.modeling_network": [
-        "QWenBlockNet",
-        "QWenForCausalLMNet",
-        "QWenPretrainedModelNet",
-        "QWenModelNet",
-        "QWenLMHeadNet",
-        "QWenPretrainingCriterionNet",
-    ],
-    "qwen.modeling_pp": ["QWenForCausalLMPipe"],
-    "qwen.tokenizer": ["QWenTokenizer"],
     "qwen2.configuration": ["Qwen2Config"],
     "qwen2.modeling": [
         "Qwen2Model",
@@ -261,6 +192,22 @@ import_structure = {
         "Qwen2_5_VLTextModel",
     ],
     "qwen2_5_vl.processor": ["Qwen2_5_VLProcessor"],
+    "qwen3_vl.configuration": ["Qwen3VLConfig", "Qwen3VLTextConfig"],
+    "qwen3_vl.modeling": [
+        "Qwen3VLForConditionalGeneration",
+        "Qwen3VLModel",
+        "Qwen3VLPretrainedModel",
+        "Qwen3VLTextModel",
+    ],
+    "qwen3_vl.processor": ["Qwen3VLProcessor"],
+    "qwen3_vl.video_processor": ["Qwen3VLVideoProcessor"],
+    "qwen3_vl_moe.configuration": ["Qwen3VLMoeConfig", "Qwen3VLMoeTextConfig"],
+    "qwen3_vl_moe.modeling": [
+        "Qwen3VLMoeForConditionalGeneration",
+        "Qwen3VLMoeModel",
+        "Qwen3VLMoePretrainedModel",
+        "Qwen3VLMoeTextModel",
+    ],
     "qwen2_moe.configuration": ["Qwen2MoeConfig"],
     "qwen2_moe.modeling": [
         "Qwen2MoeModel",
@@ -292,20 +239,29 @@ import_structure = {
         "Qwen3MoeForCausalLMPipe",
         "Qwen3MoePretrainingCriterion",
     ],
-    "bert": [],
+    "qwen3_next.configuration": ["Qwen3NextConfig"],
+    "qwen3_next.modeling": [
+        "Qwen3NextModel",
+        "Qwen3NextPretrainedModel",
+        "Qwen3NextForCausalLM",
+        "Qwen3NextForCausalLMPipe",
+        "Qwen3NextPretrainingCriterion",
+    ],
     "llama": [],
     "qwen2": [],
     "qwen3": [],
-    "qwen": [],
-    "deepseek_v2": [],
     "deepseek_v3": [],
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
     "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
     "ernie4_5_moe_vl": [],
+    "paddleocr_vl": [],
     "qwen2_5_vl": [],
+    "qwen3_vl": [],
+    "qwen3_vl_moe": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
+    "qwen3_next": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"],
     "auto": ["AutoModelForCausalLM"],
@@ -321,7 +277,9 @@ if TYPE_CHECKING:
     from .model_utils import PretrainedModel, register_base_model
     from .tokenizer_utils import (
         PretrainedTokenizer,
+        PreTrainedTokenizer,
         PreTrainedTokenizerBase,
+        PreTrainedTokenizerFast,
         BPETokenizer,
         tokenize_chinese_chars,
         is_chinese_char,
@@ -330,7 +288,6 @@ if TYPE_CHECKING:
         tokenize_special_chars,
         convert_to_unicode,
     )
-    from .tokenizer_utils_fast import PretrainedTokenizerFast
     from .processing_utils import ProcessorMixin
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
     from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
@@ -340,7 +297,6 @@ if TYPE_CHECKING:
     from .tensor_parallel_utils import parallel_matmul, fused_head_and_loss_fn
     from .moe_gate import *
     from .moe_layer import *
-    from .export import export_model
 
     with suppress(Exception):
         from paddle.distributed.fleet.utils.sequence_parallel_utils import (
@@ -355,31 +311,28 @@ if TYPE_CHECKING:
         )
 
     # isort: split
-    from .bert.modeling import *
-    from .bert.tokenizer import *
-    from .bert.configuration import *
-
-    # isort: split
     from .auto.configuration import *
     from .auto.image_processing import *
     from .auto.modeling import *
     from .auto.processing import *
     from .auto.tokenizer import *
     from .auto.video_processing import *
-    from .deepseek_v2 import *
     from .deepseek_v3 import *
     from .ernie4_5 import *
     from .ernie4_5_moe import *
     from .ernie4_5_moe_vl import *
+    from .paddleocr_vl import *
     from .llama import *
     from .optimization import *
-    from .qwen import *
     from .qwen2 import *
     from .qwen2_5_vl import *
     from .qwen2_moe import *
     from .qwen2_vl import *
     from .qwen3 import *
     from .qwen3_moe import *
+    from .qwen3_next import *
+    from .qwen3_vl import *
+    from .qwen3_vl_moe import *
     from .glm4_moe import *
     from .gpt_oss import *
     from .phi3 import *
