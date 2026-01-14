@@ -44,12 +44,14 @@ from ..llama.test_modeling import LlamaModelTester
 class AutoModelTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.model = AutoModel.from_pretrained("Paddleformers/tiny-random-llama")
+        cls.model = AutoModel.from_pretrained(
+            "Paddleformers/tiny-random-llama", convert_from_hf=False, load_checkpoint_format=""
+        )
 
     def test_from_pretrained_local(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
-            self.model.save_pretrained(tmp_dir)
-            model = AutoModel.from_pretrained(tmp_dir)
+            self.model.save_pretrained(tmp_dir, save_to_hf=False, save_checkpoint_format="")
+            model = AutoModel.from_pretrained(tmp_dir, convert_from_hf=False, load_checkpoint_format="")
             self.assertIsInstance(model, LlamaModel)
 
     def test_from_pretrained_no_init_class_with_model_name(self):
@@ -57,19 +59,21 @@ class AutoModelTest(unittest.TestCase):
             model = copy.deepcopy(self.model)
             # when init_class is not found, we rely on the filename to get the import class
             model_save_path = os.path.join(tmp_dir, "tiny-random-llama")
-            model.save_pretrained(model_save_path)
+            model.save_pretrained(model_save_path, save_to_hf=False, save_checkpoint_format="")
             config = model.config.to_dict()
             config.pop("architectures")
             with open(os.path.join(model_save_path, "config.json"), "w", encoding="utf-8") as writer:
                 writer.write(json.dumps(config, indent=2, sort_keys=True) + "\n")
-            reloaded_model = AutoModel.from_pretrained(model_save_path)
+            reloaded_model = AutoModel.from_pretrained(
+                model_save_path, convert_from_hf=False, load_checkpoint_format=""
+            )
             self.assertIsInstance(reloaded_model, LlamaModel)
 
     @slow
     def test_model_from_pretrained_cache_dir(self):
         model_name = "Paddleformers/tiny-random-llama"
         with tempfile.TemporaryDirectory() as tempdir:
-            AutoModel.from_pretrained(model_name, cache_dir=tempdir)
+            AutoModel.from_pretrained(model_name, cache_dir=tempdir, convert_from_hf=False, load_checkpoint_format="")
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, CONFIG_NAME)))
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_name, PADDLE_WEIGHTS_NAME)))
             # check against double appending model_name in cache_dir
@@ -77,16 +81,29 @@ class AutoModelTest(unittest.TestCase):
 
     def test_from_hf_hub(self):
         model = AutoModel.from_pretrained(
-            "dfargveazd/tiny-random-llama-paddle-safe", download_hub="huggingface", convert_from_hf=False
+            "dfargveazd/tiny-random-llama-paddle-safe",
+            download_hub="huggingface",
+            convert_from_hf=False,
+            load_checkpoint_format="",
         )
         self.assertIsInstance(model, LlamaModel)
 
     def test_from_aistudio(self):
-        model = AutoModel.from_pretrained("Paddleformers/tiny-random-llama", download_hub="aistudio")
+        model = AutoModel.from_pretrained(
+            "Paddleformers/tiny-random-llama",
+            download_hub="aistudio",
+            convert_from_hf=False,
+            load_checkpoint_format="",
+        )
         self.assertIsInstance(model, LlamaModel)
 
     def test_from_modelscope(self):
-        model = AutoModel.from_pretrained("sqlhuman/tiny-random-llama", download_hub="modelscope")
+        model = AutoModel.from_pretrained(
+            "sqlhuman/tiny-random-llama",
+            download_hub="modelscope",
+            convert_from_hf=False,
+            load_checkpoint_format="",
+        )
         self.assertIsInstance(model, LlamaModel)
 
     def test_new_model_registration(self):
@@ -120,8 +137,10 @@ class AutoModelTest(unittest.TestCase):
                     self.assertIsInstance(model, CustomModel)
 
                     with tempfile.TemporaryDirectory() as tmp_dir:
-                        model.save_pretrained(tmp_dir)
-                        new_model = auto_class.from_pretrained(tmp_dir)
+                        model.save_pretrained(tmp_dir, save_to_hf=False, save_checkpoint_format="")
+                        new_model = auto_class.from_pretrained(
+                            tmp_dir, convert_from_hf=False, load_checkpoint_format=""
+                        )
                         # The model is a CustomModel but from the new dynamically imported class.
                         self.assertIsInstance(new_model, CustomModel)
 

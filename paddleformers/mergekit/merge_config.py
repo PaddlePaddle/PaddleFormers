@@ -39,9 +39,9 @@ class MergeConfig:
     split_pieces: int = field(default=8, metadata={"help": "Split large tensor to multi-piece"})
     max_tensor_mem: float = field(default=0.5, metadata={"help": "Split tensor if exceed setting max_tensor_mem."})
     convert_from_hf: Optional[bool] = field(
-        default=False, metadata={"help": "Load base model from HuggingFace safetensors."}
+        default=True, metadata={"help": "Load base model from HuggingFace safetensors."}
     )
-    save_to_hf: Optional[bool] = field(default=False, metadata={"help": "Save model to HuggingFace safetensors."})
+    save_to_hf: Optional[bool] = field(default=True, metadata={"help": "Save model to HuggingFace safetensors."})
 
     # Model parameters
     model_path_list: Optional[List[str]] = field(default=None, metadata={"help": "Merge model name or path list"})
