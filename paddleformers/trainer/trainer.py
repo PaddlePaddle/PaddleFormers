@@ -562,7 +562,7 @@ class Trainer:
                 # set do_grad_scaling, enable_autocast_context_manager
                 self._wrap_amp_model(args, model)
 
-        if args.recompute_granularity is not None:
+        if isinstance(model, nn.Layer) and args.recompute_granularity is not None:
 
             def fn(layer):
                 if hasattr(layer, "enable_recompute") and (
