@@ -23,7 +23,6 @@ from paddleformers.transformers import AutoModelForCausalLM
 from tests.testing_utils import require_package
 
 
-@unittest.skip("TODO: Temporarily skipped")
 class TestMergeModel(unittest.TestCase):
     @parameterized.expand([("slerp",), ("della",), ("dare_linear",), ("ties",)])
     def test_merge_model_np(self, merge_method):
