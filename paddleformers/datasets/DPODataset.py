@@ -379,7 +379,7 @@ class DPODataSet(IterableDataset):
             response_index = [
                 prompt_len - 1,
                 prompt_len - 1 + len(response_token_ids_list[0]),
-                prompt_len - 1 + sum(response_len_list)  # end
+                prompt_len - 1 + sum(response_len_list),  # end
             ]
 
         # 1.5 attention mask
