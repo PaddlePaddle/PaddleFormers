@@ -3128,7 +3128,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         safe_serialization = safe_serialization or save_to_hf
 
-        using_sonic_moe = kwargs.get("using_sonic_moe", False)
+        using_sonic_moe = self.config.using_sonic_moe
 
         save_directory = save_dir
 
@@ -4063,6 +4063,7 @@ class EMAStateHFFormatFullParamSaver(HFFormatFullParamSaver):
 class SonicMoEHFFormatFullParamSaver(HFFormatFullParamSaver):
     def __init__(
         self,
+        model,
         aoa_config,
         h_group=None,
         v_group=None,
@@ -4072,7 +4073,7 @@ class SonicMoEHFFormatFullParamSaver(HFFormatFullParamSaver):
         memory_growth_threshold=8 * (2**30),
     ):
         super().__init__(
-            self,
+            model,
             aoa_config,
             h_group,
             v_group,
@@ -4085,13 +4086,12 @@ class SonicMoEHFFormatFullParamSaver(HFFormatFullParamSaver):
     def deinterleave_gate_up_proj(self, w, moe_intermediate_size):
         w_cloned = w.clone().detach()
         w_cloned = w_cloned.reshape([-1, 2 * moe_intermediate_size, w_cloned.shape[-1]])
-        B, D, C = w.shape
+        B, D, C = w_cloned.shape
         I = D // 2
         w_ = paddle.reshape(w_cloned, [B, I, 2, C])
         first_half = w_[:, :, 0, :]
         second_half = w_[:, :, 1, :]
         orig_w = paddle.concat([first_half, second_half], axis=1).contiguous()
-        paddle.assign(orig_w, w)
         return orig_w
 
     def get_full_param_iter(self):
@@ -4126,4 +4126,6 @@ class SonicMoEHFFormatFullParamSaver(HFFormatFullParamSaver):
                 aoa_config=self.aoa_config,
                 memory_growth_threshold=self.memory_growth_threshold,
             )
+
+        del model_sharded_state_dict
         return param_iter

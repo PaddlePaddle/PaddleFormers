@@ -404,7 +404,7 @@ class TrainingArguments:
         load_via_cpu (bool, optional):
             Whether to load checkpoint data into CPU memory first before transferring to GPU.
             This helps mitigate GPU memory shortage by staging data on the CPU and only moving required parts to the GPU on demand during communication.
-            Defaults to False.
+            Defaults to True.
         save_hf_steps (`int`, *optional*, defaults to -1):
             Number of updates steps before two huggingface checkpoint saves if `save_strategy="steps"`.
         hybrid_parallel_expert_grad_scale (float, optional, defaults to None)(
@@ -1248,7 +1248,7 @@ class TrainingArguments:
     )
 
     load_via_cpu: Optional[bool] = field(
-        default=False,
+        default=True,
         metadata={
             "help": "If True, loads checkpoint data to CPU first, then transfers required parts to GPU on demand to reduce GPU memory usage. Defaults to False."
         },
@@ -1567,7 +1567,10 @@ class TrainingArguments:
     )
 
     using_sonic_moe: bool = field(
-        default=False, metadata={"help": "When enabled, the computation part of the moelayer will use the implementation provided by SonicMoE."}
+        default=False,
+        metadata={
+            "help": "When enabled, the computation part of the moelayer will use the implementation provided by SonicMoE."
+        },
     )
 
     def __post_init__(self):
