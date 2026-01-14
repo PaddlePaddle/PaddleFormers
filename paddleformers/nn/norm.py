@@ -67,7 +67,7 @@ class RMSNorm(nn.Layer):
 
     def forward(self, hidden_states):
         current_device = detect_device()
-        if self.config.get("fuse_rms_norm", False) or current_device == "iluvatar_gpu":
+        if self.config.get("fuse_rms_norm", False) and current_device != "iluvatar_gpu":
             return fused_rms_norm_ext(hidden_states, self.weight, self.variance_epsilon)[0].astype(self.weight.dtype)
 
         if paddle.in_dynamic_mode():
