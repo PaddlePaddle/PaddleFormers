@@ -1925,7 +1925,7 @@ class Qwen3VLForConditionalGenerationDecapitated(Qwen3VLPretrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        self.model = Qwen3VLModel(config)
+        self.model = Qwen3VLModelDecapitated(config)
         self.lm_head = GeneralLMHead(config.text_config)
         self.criterion = CriterionLayer(config.text_config)
         self.tie_weights()
