@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import paddle.nn as nn
-from paddle.incubate.nn import FusedLinear
 
 from ..transformers.configuration_utils import PretrainedConfig
 from ..transformers.linear_utils import (
@@ -30,7 +29,6 @@ __all__ = ["Linear"]
 class Linear(GeneralInterface):
     _global_mapping = {
         "default": nn.Linear,
-        "fuse_linear": FusedLinear,
         "colwise": ColumnParallelLinear,
         "rowwise": RowParallelLinear,
         "sequence_colwise": ColumnSequenceParallelLinear,
@@ -54,7 +52,7 @@ class Linear(GeneralInterface):
             raise ValueError("linear_type or config must be specified")
 
         if linear_type is None and config is not None:
-            linear_type = self.get_linear_type(config, tp_plan, has_bias)
+            linear_type = self.get_linear_type(config, tp_plan)
 
         linear_cls = self._global_mapping[linear_type]
         fuse_matmul_bias = config.get("fuse_linear", False) if config is not None else False
@@ -62,12 +60,9 @@ class Linear(GeneralInterface):
         return linear_cls(in_features=in_features, out_features=out_features, weight_attr=weight_attr, **kwargs)
 
     @classmethod
-    def get_linear_type(self, config: PretrainedConfig, tp_plan: str = None, has_bias: bool = None):
+    def get_linear_type(self, config: PretrainedConfig, tp_plan: str = None):
         if config.tensor_model_parallel_size <= 1:
-            if config.get("fuse_linear", False) and has_bias:
-                return "fuse_linear"
-            else:
-                return "default"
+            return "default"
         linear_type = tp_plan
 
         if config.sequence_parallel:
@@ -80,7 +75,6 @@ class Linear(GeneralInterface):
     ):
         ALL_LINEAR_KWARGS = {
             "default": {"bias_attr": has_bias},
-            "fuse_linear": {"bias_attr": has_bias},
             "colwise": {
                 "has_bias": has_bias,
                 "gather_output": gather_output,

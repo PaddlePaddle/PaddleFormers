@@ -929,7 +929,6 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                         config.hidden_size,
                         has_bias=config.use_bias,
                         config=config,
-                        fuse_matmul_bias=config.fuse_linear,
                         linear_type="default",
                     )
                     for _ in range(config.num_nextn_predict_layers)
