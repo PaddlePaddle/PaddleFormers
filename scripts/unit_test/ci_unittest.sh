@@ -54,7 +54,6 @@ set_env() {
     export NVIDIA_TF32_OVERRIDE=0 
     export FLAGS_cudnn_deterministic=1
     export HF_ENDPOINT=https://hf-mirror.com
-    export FLAGS_use_cuda_managed_memory=true
 
     # for CE
     if [[ ${FLAGS_enable_CE} == "true" ]];then

@@ -67,6 +67,7 @@ class Qwen3MoEModelProvider(GPTModelProvider):
         "context_parallel_degree": "context_parallel_size",
         "expert_parallel_degree": "expert_model_parallel_size",
         "dtype": "params_dtype",
+        "num_experts": "n_routed_experts",
     }
 
     rotary_base: float = 1000000.0
@@ -88,7 +89,6 @@ class Qwen3MoEModelProvider(GPTModelProvider):
     router_aux_loss_coef: float = 0.001
     moe_grouped_gemm: bool = True
 
-    n_routed_experts: int = 128
     n_shared_experts: int = 0
 
 
@@ -808,6 +808,10 @@ class Qwen3MoePretrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_aoa_config(cls, config: Qwen3MoeConfig):
+        if hasattr(config, "n_routed_experts"):
+            num_experts = config.n_routed_experts
+        else:
+            num_experts = config.num_experts
         model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_config = {
             "aoa_statements": [
@@ -859,7 +863,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                 tgt_prefix = f"{model_prefix}layers.{layer_idx}"
                 ep_weight1 = []
                 ep_weight2 = []
-                for expert_id in range(config.num_experts):
+                for expert_id in range(num_experts):
                     ep_weight1.append(f"{src_prefix}.mlp.experts.{expert_id}.up_gate_proj.weight")
                     ep_weight2.append(f"{src_prefix}.mlp.experts.{expert_id}.down_proj.weight")
                 group_gemm1 = ",".join(ep_weight1)
@@ -877,6 +881,10 @@ class Qwen3MoePretrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_inv_aoa_config(cls, config: Qwen3MoeConfig):
+        if hasattr(config, "n_routed_experts"):
+            num_experts = config.n_routed_experts
+        else:
+            num_experts = config.num_experts
         model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_statements = [
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
@@ -913,12 +921,12 @@ class Qwen3MoePretrainedModel(PretrainedModel):
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
             ]
-            
+
         if getattr(cls, "is_fleet", False) and config.moe_grouped_gemm:
             for layer_id in range(config.num_hidden_layers):
                 ep_weight1 = []
                 ep_weight2 = []
-                for expert_id in range(config.num_experts):
+                for expert_id in range(num_experts):
                     ep_weight1.append(
                         f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight"
                     )
@@ -930,21 +938,21 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                     f"{model_prefix}layers.{layer_id}.mlp.grouped_gemm_experts.weight2 -> {group_gemm2}, axis=0"
                 ]
 
-        for layer_id in range(config.num_hidden_layers):
-            for expert_id in range(config.num_experts):
-                if getattr(cls, "is_fleet", False):
+            for layer_id in range(config.num_hidden_layers):
+                for expert_id in range(num_experts):
+                    if getattr(cls, "is_fleet", False):
+                        aoa_statements += [
+                            f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight, axis=1",
+                        ]
+                    else:
+                        aoa_statements += [
+                            f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight, fused_ffn",
+                        ]
                     aoa_statements += [
-                        f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight, axis=1",
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight",
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight",
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight",
                     ]
-                else:
-                    aoa_statements += [
-                        f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight, fused_ffn",
-                    ]
-                aoa_statements += [
-                    f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight",
-                    f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight",
-                    f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight",
-                ]
 
         if config.tie_word_embeddings:
             aoa_statements += ["lm_head.weight -> _"]

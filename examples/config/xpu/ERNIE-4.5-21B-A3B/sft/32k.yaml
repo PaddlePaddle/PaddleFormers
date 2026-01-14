@@ -1,22 +1,17 @@
 ### data
-train_dataset_type: messages
-eval_dataset_type: messages
-train_dataset_path: ./tests/fixtures/dummy/sft/function-call-train.jsonl
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: ./tests/fixtures/dummy/sft/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./tests/fixtures/dummy/sft/function-call-eval.jsonl
+eval_dataset_path: ./tests/fixtures/dummy/sft/eval.jsonl
 eval_dataset_prob: "1.0"
-max_seq_len: 8192
-packing: false
+max_seq_len: 32768
+packing: true
 mix_strategy: concat
-template_backend: custom
-template: qwen3
-split_multi_turn: False
 
 ### model
-model_name_or_path: Qwen/Qwen3-0.6B-Base
-_attn_implementation: flashmask
-use_fused_head_and_loss_fn: True
-loss_subbatch_sequence_length: 8192
+model_name_or_path: baidu/ERNIE-4.5-21B-A3B-PT
+attn_impl: flashmask
 
 ### finetuning
 # base
@@ -36,7 +31,7 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/qwen3-sft-full-fc
+output_dir: ./checkpoints/ernie-sft-full-tp-pp
 disable_tqdm: true
 eval_accumulation_steps: 16
 
@@ -45,14 +40,17 @@ warmup_steps: 20
 learning_rate: 1.0e-5
 
 # performance
-tensor_model_parallel_size: 1
-pipeline_model_parallel_size: 1
+tensor_model_parallel_size: 4
+pipeline_model_parallel_size: 2
+sequence_parallel: true
 sharding: stage1
+offload_optim: false
+tensorwise_offload_optimizer: false
 recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
-unified_checkpoint: false
-save_checkpoint_format: flex_checkpoint
-load_checkpoint_format: flex_checkpoint
+unified_checkpoint: true
+
+device: xpu
