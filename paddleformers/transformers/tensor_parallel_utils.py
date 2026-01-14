@@ -60,7 +60,7 @@ def parallel_matmul(
                 logit_weights,
                 bias=bias,
                 transpose_y=transpose_y,
-                tensor_model_parallel_size=tensor_model_parallel_size,
+                tensor_parallel_degree=tensor_model_parallel_size,
                 tensor_parallel_output=tensor_parallel_output,
                 training=training,
             )
