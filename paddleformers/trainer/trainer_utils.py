@@ -1528,7 +1528,7 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
 
         param_list = []
         for param in local_params:
-            param_name = param.name
+            param_name = param.name.replace("slice@", "")
             struct_name = static_to_struct_mapping[param_name]
             if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
                 continue
