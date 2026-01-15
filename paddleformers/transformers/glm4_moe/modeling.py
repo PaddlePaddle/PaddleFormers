@@ -841,6 +841,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
     def _gen_aoa_config(cls, config: Glm4MoeConfig):
         model_prefix = "" if cls == cls.base_model_class else "model."
         is_fleet = getattr(cls, "is_fleet", False)
+        using_sonic_moe = config.using_sonic_moe
         aoa_config = {
             "aoa_statements": [
                 f"model.norm.weight -> {model_prefix}norm.weight",
@@ -909,9 +910,16 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             aoa_config["aoa_statements"] += [
                 f"{prefix}.mlp.gate.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
                 f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='float32'",
-                f"{prefix}.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight",
                 f"{prefix}.mlp.shared_experts.down_proj.weight^T -> {prefix_offset}.mlp.shared_experts.down_proj.weight",
             ]
+            if using_sonic_moe:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.mlp.experts.$EXPERT_ID.down_proj.weight -> {prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight",
+                ]
+            else:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight",
+                ]
 
             # FFN
             if not config.fuse_attention_ffn:
@@ -927,15 +935,21 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     f"{prefix}.mlp.shared_experts.gate_proj.weight^T, {prefix}.mlp.shared_experts.up_proj.weight^T -> {prefix_offset}.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
                 ]
                 if is_fleet:
-                    aoa_config["aoa_statements"] += [
-                        f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
-                    ]
+                    if using_sonic_moe:
+                        aoa_config["aoa_statements"] += [
+                            f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=0",
+                        ]
+                    else:
+                        aoa_config["aoa_statements"] += [
+                            f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
+                        ]
+
                 else:
                     aoa_config["aoa_statements"] += [
                         f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
                     ]
 
-            if is_fleet and config.moe_grouped_gemm:
+            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
@@ -954,6 +968,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
     @classmethod
     def _gen_inv_aoa_config(cls, config: Glm4MoeConfig):
         model_prefix = "" if cls == cls.base_model_class else "model."
+        using_sonic_moe = config.using_sonic_moe
         is_fleet = getattr(cls, "is_fleet", False)
         aoa_statements = [
             f"{model_prefix}norm.weight -> model.norm.weight",
@@ -1026,7 +1041,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
             prefix = f"model.layers.{layer_idx}"
 
-            if is_fleet and config.moe_grouped_gemm:
+            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
@@ -1068,29 +1083,36 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     f"{prefix_offset}.mlp.shared_experts.up_proj.weight^T -> {prefix}.mlp.shared_experts.up_proj.weight",
                 ]
                 if is_fleet:
-                    aoa_statements += [
-                        f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, axis=1"
-                        for expert_id in range(config.n_routed_experts)
-                    ]
+                    if using_sonic_moe:
+                        aoa_statements += [
+                            f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, axis=0"
+                            for expert_id in range(config.n_routed_experts)
+                        ]
+                    else:
+                        aoa_statements += [
+                            f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, axis=1"
+                            for expert_id in range(config.n_routed_experts)
+                        ]
                 else:
                     aoa_statements += [
                         f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, fused_ffn"
                         for expert_id in range(config.n_routed_experts)
                     ]
-                aoa_statements += (
-                    [
-                        f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.down_proj.weight"
-                        for expert_id in range(config.n_routed_experts)
-                    ]
-                    + [
-                        f"{prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.gate_proj.weight"
-                        for expert_id in range(config.n_routed_experts)
-                    ]
-                    + [
-                        f"{prefix_offset}.mlp.experts.{expert_id}.up_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.up_proj.weight"
-                        for expert_id in range(config.n_routed_experts)
-                    ]
-                )
+                if not using_sonic_moe:
+                    aoa_statements += (
+                        [
+                            f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.down_proj.weight"
+                            for expert_id in range(config.n_routed_experts)
+                        ]
+                        + [
+                            f"{prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.gate_proj.weight"
+                            for expert_id in range(config.n_routed_experts)
+                        ]
+                        + [
+                            f"{prefix_offset}.mlp.experts.{expert_id}.up_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.up_proj.weight"
+                            for expert_id in range(config.n_routed_experts)
+                        ]
+                    )
 
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config

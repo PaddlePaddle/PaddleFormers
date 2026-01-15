@@ -81,7 +81,7 @@ class ErnieDPOCriterion(DPOCriterion):
                 self.config.text_config.vocab_size,
                 self.config.tensor_model_parallel_size,
                 self.config.tensor_parallel_output,
-                self.config.text_config.fuse_linear,
+                False,
                 LOOP_CHUNK_SIZE,
                 return_token_loss=True,
                 ignore_index=0,
@@ -93,7 +93,6 @@ class ErnieDPOCriterion(DPOCriterion):
                 bias=bias,
                 transpose_y=self.config.text_config.tie_word_embeddings,
                 tensor_parallel_output=self.config.tensor_parallel_output,
-                fuse_linear=self.config.text_config.fuse_linear,
             )
             logits = logits.astype("float32")
             per_token_logps = -self.logprobs(logits, labels)

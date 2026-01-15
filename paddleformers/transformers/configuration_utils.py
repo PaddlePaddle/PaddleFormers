@@ -232,7 +232,6 @@ class LlmMetaConfig:
         ("use_flash_attention", bool, False, "Only used in `ernie45_vl` and `deepseek_v3_pretrain`."),
         ("fuse_rms_norm", bool, False, "Whether to fuse RMSNorm for efficiency"),
         ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
-        ("fuse_linear", bool, False, "Use fused linear layer instead of normal linear layer."),
         ("apply_rope_fusion", bool, False, "Whether to fuse RoPE operation"),
         ("fuse_swiglu", bool, False, "Whether to fuse SwiGLU operations"),
         ("fuse_attention_qkv", bool, False, "Whether to fuse Attention QKV operations"),
@@ -255,12 +254,6 @@ class LlmMetaConfig:
         ("context_parallel_size", int, 1, "context_parallel_size"),
         # pp refine recompute
         ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
-        (
-            "pp_recompute_interval",
-            int,
-            1,
-            "The interval for the number of layers at which recomputation occurs. A value of 0 indicates no recomputation. Default is 0.",
-        ),
         ("add_tail_layers", int, 0, "Additional layers to append at the end"),
         # sep_parallel
         ("sep_parallel_size", int, 1, "sep_parallel_size"),
@@ -289,7 +282,6 @@ class LlmMetaConfig:
         ("recompute_mtp_method", Optional[str], None, "Recomputation method for MTP layers."),
         ("recompute_mtp_modules", Optional[Any], None, "List of MTP module names to apply recomputation."),
         ("recompute_use_reentrant", bool, True, "recompute_use_reentrant"),
-        ("offload_recompute_inputs", bool, False, "offload_recompute_inputs"),
     ]
 
     loss_attributes = [
@@ -421,6 +413,12 @@ class LlmMetaConfig:
             bool,
             True,
             "Whether to add barrier for MoE expert parallelization communication. Defaults to True.",
+        ),
+        (
+            "using_sonic_moe",
+            bool,
+            False,
+            "Whether to use SonicMoE as the computation backend for the moelayer.",
         ),
     ]
 
@@ -830,7 +828,6 @@ class PretrainedConfig:
             self.context_parallel_size = 1
 
         # for transformers fuse
-        self.fuse_linear = kwargs.pop("fuse_linear", False)
         self.fuse_attention_qkv = kwargs.pop("fuse_attention_qkv", False)
         self.fuse_attention_ffn = kwargs.pop("fuse_attention_ffn", False)
 

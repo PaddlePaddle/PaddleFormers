@@ -13,7 +13,6 @@
 # limitations under the License.
 """Paddle Phi3 model."""
 
-from functools import partial
 from typing import Optional, Tuple, Union
 
 import paddle
@@ -317,39 +316,6 @@ class Phi3PreTrainedModel(PretrainedModel):
     config_class = Phi3Config
     base_model_prefix = "model"
     transpose_weight_keys = ["qkv_proj", "o_proj", "gate_up_proj", "down_proj"]
-
-    @classmethod
-    def _get_tensor_parallel_mappings(cls, config, is_split=False):
-        from ..conversion_utils import split_or_merge_func
-
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_model_parallel_size=config.tensor_model_parallel_size,
-            tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
-        )
-
-        def make_base_actions():
-            actions = {
-                "lm_head.weight": partial(fn, is_column=False),
-                f"{cls.base_model_prefix}.embed_tokens.weight": partial(fn, is_column=False),
-            }
-            for layer_idx in range(config.num_hidden_layers):
-                prefix = f"{cls.base_model_prefix}.layers.{layer_idx}"
-                actions[f"{prefix}.self_attn.qkv_proj.weight"] = partial(
-                    fn,
-                    is_column=True,
-                    is_naive_3fuse=True,
-                    num_kv_groups=config.num_attention_heads // config.num_key_value_heads,
-                )
-                actions[f"{prefix}.self_attn.o_proj.weight"] = partial(fn, is_column=False)
-                actions[f"{prefix}.mlp.gate_up_proj.weight"] = partial(fn, is_column=True, is_naive_2fuse=True)
-                actions[f"{prefix}.mlp.down_proj.weight"] = partial(fn, is_column=False)
-
-            return actions
-
-        mappings = make_base_actions()
-        return mappings
 
     @classmethod
     def _gen_aoa_config(cls, config: Phi3Config):

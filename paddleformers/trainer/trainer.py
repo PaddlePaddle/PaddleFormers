@@ -162,6 +162,7 @@ from .plugins.timer import RuntimeTimer, get_timers, set_timers
 from .trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
+    InterleaveGateUpCallback,
     PrinterCallback,
     ProgressCallback,
     SPGradSyncCallback,
@@ -1550,6 +1551,10 @@ class Trainer:
 
         elif self.args.zcc_save_ema_coef is not None:
             self.add_non_zcc_ema_callback(resume_from_checkpoint)
+
+        if self.args.using_sonic_moe:
+            callback = InterleaveGateUpCallback(self.model, resume_from_checkpoint, self.args.output_dir)
+            self.add_callback(callback)
 
         self.log_trainable_numel(model)
 
@@ -4711,18 +4716,32 @@ class Trainer:
                 labels = None
             inputs = inputs.pop("input_ids")
         # train & eval share the same p2p_helper, so clear it before and after each step
-        model._p2p_helper.clear_meta_cache()
+        if hasattr(model, "_p2p_helper"):
+            model._p2p_helper.clear_meta_cache()
 
         with paddle.no_grad():
             if has_labels:
                 with self.autocast_smart_context_manager():
+
+                    def _prepare_inputs_for_fleet(inputs):
+                        if isinstance(inputs, (tuple, list)) and len(inputs) > 1:
+                            inputs = {"input_ids": inputs[0], "position_ids": inputs[1]}
+                        return inputs
+
+                    if (
+                        is_paddlefleet_available()
+                        and PaddleFleetParallelBase is not None
+                        and isinstance(model, PaddleFleetParallelBase)
+                    ):
+                        inputs = _prepare_inputs_for_fleet(inputs)
                     loss = model.eval_batch([inputs, labels], compute_loss=True)
                     # loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
                 loss = loss.mean().detach()
             else:
                 raise ValueError("pipeline mode eval need label!")
         # train & eval share the same p2p_helper, so clear it before and after each step
-        model._p2p_helper.clear_meta_cache()
+        if hasattr(model, "_p2p_helper"):
+            model._p2p_helper.clear_meta_cache()
 
         return (loss, None, labels)
 
@@ -4756,7 +4775,11 @@ class Trainer:
             Tuple[Optional[paddle.Tensor], Optional[paddle.Tensor], Optional[paddle.Tensor]]: A tuple with the loss,
             logits and labels (each being optional).
         """
-        if self.args.pipeline_model_parallel_size > 1:
+        if self.args.pipeline_model_parallel_size > 1 or (
+            is_paddlefleet_available()
+            and PaddleFleetParallelBase is not None
+            and isinstance(model, PaddleFleetParallelBase)
+        ):
             # hack for pipeline mode
             inputs = self._prepare_inputs(inputs)
             return self.prediction_pipeline_step(model, inputs, prediction_loss_only, ignore_keys)

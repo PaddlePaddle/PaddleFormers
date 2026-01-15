@@ -63,7 +63,6 @@ class PaddleOCRVisionConfig(PretrainedConfig):
         self._attn_implementation = _attn_implementation
 
         # Currently, these configuration items are hard-coded
-        self.fuse_linear = False
 
         self.register_unsavable_keys(
             [
@@ -177,7 +176,6 @@ class PaddleOCRVLConfig(PretrainedConfig):
         self.scale_qk_coeff = 1.0
         self.fuse_softmax_mask = False
         self.use_fused_head_and_loss_fn = False
-        self.fuse_linear = False
         self.token_balance_seqlen = False
         self.fuse_ln = False
         self.cachekv_quant = False
