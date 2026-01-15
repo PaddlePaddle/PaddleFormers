@@ -3886,7 +3886,7 @@ def replace_name_and_gen_index(path, total_size, save_peft=False):
         cur_file_index = start_idx[cur_rank] // env_local_size
         total_files_num = total_files_num // env_local_size
     else:
-        cur_file_index = start_idx[cur_rank]
+        cur_file_index = 0
 
     index_mapping = {}
     if env_local_rank == 0:
