@@ -103,6 +103,3 @@ fuse_attention_qkv: true
 fuse_attention_ffn: true
 fp32_residual_connection: false
 tensorwise_offload_optimizer: true
-
-
-
