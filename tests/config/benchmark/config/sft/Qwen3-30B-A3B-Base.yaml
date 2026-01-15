@@ -12,7 +12,7 @@ eval_dataset_prob: "1.0"
 
 eval_iters: 10
 
-max_seq_len: 4096
+max_seq_len: 8192
 num_samples_each_epoch: 6000000
 packing: true
 mix_strategy: concat
