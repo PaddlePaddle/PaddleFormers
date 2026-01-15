@@ -430,19 +430,25 @@ class Qwen3MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
 class Qwen3MoeIntegrationTest(unittest.TestCase):
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
+        config = Qwen3MoeConfig.from_pretrained("PaddleFormers/tiny-random-qwen3moev2")
+        config.fuse_attention_ffn = (True,)
+        config.fuse_attention_qkv = (True,)
         model = Qwen3MoeForCausalLM.from_pretrained(
             "PaddleFormers/tiny-random-qwen3moev2",
+            config=config,
             dtype="float32",
             convert_from_hf=True,
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
             out = model({"input_ids": input_ids})
 
+        print("out.mean(-1) is ", out.mean(-1))
+
         # Expected mean on dim = -1
         EXPECTED_MEAN = paddle.to_tensor(
-            [[0.00170604, 0.00471663, 0.00417853, 0.00308787, 0.00467000, 0.00604948, 0.00412507, 0.00160586]]
+            [[0.00170604, 0.00594666, 0.00417538, 0.00733661, 0.00917683, 0.00863101, 0.00907406, 0.00700793]]
         )
         self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
 
