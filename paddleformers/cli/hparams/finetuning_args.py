@@ -59,6 +59,26 @@ class PreTrainingArguments(TrainingArguments):
     )
     pp_need_data: bool = field(default=False, metadata={"help": "pipline need fetch data"})
     balanced_image_preprocess: bool = field(default=False, metadata={"help": "balanced image preprocess"})
+    decay_function: str = field(
+        default="half_life",
+        metadata={"help": "The decay function for WSD LR scheduler. support half_life(default), 1-sqrt"},
+    )
+    gc_interval: int = field(default=0, metadata={"help": "gc time"})
+    global_batch_size: int = field(default=0, metadata={"help": "global batch size"})
+    multi_token_pred_depth: Optional[int] = field(
+        default=0,
+        metadata={},
+    )
+    num_consecutive: int = field(
+        default=1,
+        metadata={"help": "H5 file consecutive num."},
+    )
+    same_data: Optional[bool] = field(
+        default=None,
+        metadata={"help": "when resume from checkpoint, keey data same with the ckpt"},
+    )
+    use_ortho_loss_callback: bool = field(default=False, metadata={"help": "Use orthogonal loss callback or not"})
+    moe_with_send_router_loss: bool = field(default=True, metadata={"help": "Whether use send router loss"})
 
     @property
     def need_data(self):

@@ -35,6 +35,40 @@ class VisionArguments:
 
 
 @dataclass
+class FP8MemConfigs:
+    recompute_fwd_gate_up: bool = False
+    dequant_input: bool = True
+    shared_expert: bool = False
+
+
+@dataclass
+class FP8FusedOpsConfigs:
+    stack_quant: bool = True
+    swiglu_probs_bwd: bool = True
+    split_group_gemm: bool = True
+    spaq: bool = True
+    transpose_split_quant: bool = True
+
+
+@dataclass
+class ErniePretrainArgument:
+    use_quant_before_a2a: bool = field(default=True, metadata={"help": "Whether to use quant before a2a"})
+    use_async_a2a: bool = field(default=False, metadata={"help": "Whether to use async a2a"})
+    use_rms_qkv_recompute: bool = field(default=False, metadata={"help": "Whether to use rms qkv recompute"})
+    moe_logging: bool = field(default=False, metadata={"help": "Whether to use moe logging"})
+    use_recompute: bool = field(default=False, metadata={"help": "Whether to use recompute"})
+    multi_token_pred_depth: int = field(default=1, metadata={"help": "Multi token pred depth"})
+    use_fp8_mlp: bool = field(default=False, metadata={"help": "Whether to use fp8 mlp"})
+    num_hidden_layers: int = field(default=12, metadata={"help": "Number of hidden layers"})
+    num_empty_layers_add_in_tail: int = field(default=0, metadata={"help": "Number of empty layers add in tail"})
+    use_fp8_fuse_node: bool = field(default=False, metadata={"help": "Whether to use fp8 fuse node"})
+    use_ep_comm_overlap: bool = field(default=False, metadata={"help": "Whether to use ep comm overlap"})
+    fp8_mem_configs: FP8MemConfigs = field(default_factory=FP8MemConfigs)
+    fp8_fused_ops_configs: FP8FusedOpsConfigs = field(default_factory=FP8FusedOpsConfigs)
+    use_combine_before_a2a: bool = field(default=False, metadata={"help": "Whether to use combine before a2a"})
+
+
+@dataclass
 class ModelArguments:
     """Model Argument"""
 
@@ -190,6 +224,9 @@ class ModelArguments:
 
     # vl model
     vision_config: VisionArguments = field(default_factory=VisionArguments, metadata={"help": "Vision configuration"})
+    ernie_model_config: ErniePretrainArgument = field(
+        default_factory=ErniePretrainArgument, metadata={"help": "Ernie pretrain configuration"}
+    )
     bos_token_id: int = field(default=0, metadata={"help": "Beginning of sentence token ID"})
     eos_token_id: int = field(default=1, metadata={"help": "End of sentence token ID"})
     max_position_embeddings: int = field(default=4096, metadata={"help": "Maximum position embeddings"})
