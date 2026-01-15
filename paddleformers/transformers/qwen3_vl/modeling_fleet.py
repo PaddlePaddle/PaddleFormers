@@ -871,7 +871,7 @@ class Qwen3VLProvider(TransformerConfig):
         return res
 
 
-class Qwen3VLModel(MCoreLLaVAModel):
+class Qwen3VLModelDist(MCoreLLaVAModel):
     """Qwen3VL Model Base Model Class."""
 
     def __init__(
@@ -1404,7 +1404,7 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
         return aoa_config
 
 
-class Qwen3VLModelDist(Qwen3VLPretrainedModelFleet):
+class Qwen3VLModel(Qwen3VLPretrainedModelFleet):
     def __new__(cls, config, have_criterion=True):
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
@@ -1416,7 +1416,7 @@ class Qwen3VLModelDist(Qwen3VLPretrainedModelFleet):
             criterion = CriterionLayer(config.text_config)
         model_provider_class = Qwen3VLProvider
         model_provider = model_provider_class.from_config(config)
-        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type, criterion=criterion)
+        qwen3vl_model = Qwen3VLModelDist(model_provider, model_version=config.model_type, criterion=criterion)
         qwen3vl_model._gen_aoa_config = cls._gen_aoa_config
         qwen3vl_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         qwen3vl_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
@@ -1436,9 +1436,9 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModelFleet):
     def __init__(self, config):
         super().__init__(config)
         # model_provider = Qwen3VLProvider.from_config(config)
-        self.model = Qwen3VLModelDist(
+        self.model = Qwen3VLModel(
             config, have_criterion=False
-        )  # Qwen3VLModelDist(model_provider, model_version=config.model_type)
+        )  # Qwen3VLModel(model_provider, model_version=config.model_type)
         self.criterion = CriterionLayer(config.text_config)
         # self.tie_weights()
 
@@ -1568,7 +1568,7 @@ class Qwen3VLForCausalLMPipe(Qwen3VLPretrainedModelFleet, GeneralModelForCausalL
             criterion = CriterionLayer(config.text_config)
         model_provider_class = Qwen3VLProvider
         model_provider = model_provider_class.from_config(config)
-        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type, criterion=criterion)
+        qwen3vl_model = Qwen3VLModelDist(model_provider, model_version=config.model_type, criterion=criterion)
         qwen3vl_model._gen_aoa_config = cls._gen_aoa_config
         qwen3vl_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         qwen3vl_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
@@ -1591,7 +1591,7 @@ class Qwen3VLModelPipe(Qwen3VLPretrainedModelFleet, GeneralModelForCausalLMPipe)
             criterion = CriterionLayer(config.text_config)
         model_provider_class = Qwen3VLProvider
         model_provider = model_provider_class.from_config(config)
-        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type, criterion=criterion)
+        qwen3vl_model = Qwen3VLModelDist(model_provider, model_version=config.model_type, criterion=criterion)
         qwen3vl_model._gen_aoa_config = cls._gen_aoa_config
         qwen3vl_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         qwen3vl_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings

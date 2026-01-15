@@ -1869,7 +1869,7 @@ class Qwen3VLMoeTextModel(Qwen3VLMoePretrainedModel):
         )
 
 
-class Qwen3VLMoeModel(Qwen3VLMoePretrainedModel):
+class Qwen3VLMoeModelDecapitated(Qwen3VLMoePretrainedModel):
     base_model_prefix = "model"
     _checkpoint_conversion_mapping = {}
     config: Qwen3VLMoeConfig
@@ -2326,7 +2326,7 @@ class Qwen3VLMoeForConditionalGenerationDecapitated(Qwen3VLMoePretrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        self.model = Qwen3VLMoeModel(config)
+        self.model = Qwen3VLMoeModelDecapitated(config)
         self.lm_head = GeneralLMHead(config.text_config)
         self.criterion = CriterionLayer(config.text_config)
         self.tie_weights()
@@ -2680,7 +2680,7 @@ class Qwen3VLMoeForConditionalGenerationDecapitated(Qwen3VLMoePretrainedModel):
         return input_ids, model_kwargs
 
 
-class Qwen3VLMoeDist(Qwen3VLMoePretrainedModelFleet):
+class Qwen3VLMoeModel(Qwen3VLMoePretrainedModelFleet):
     is_fleet = True
 
     def __new__(cls, config, have_criterion=True):
@@ -2715,7 +2715,7 @@ class Qwen3VLMoeForConditionalGeneration(Qwen3VLMoePretrainedModelFleet):
     def __init__(self, config):
         super().__init__(config)
         # model_provider = Qwen3VLProvider.from_config(config)
-        self.model = Qwen3VLMoeDist(config, have_criterion=False)
+        self.model = Qwen3VLMoeModel(config, have_criterion=False)
         self.criterion = CriterionLayer(config.text_config)
         # self.tie_weights()
 
@@ -2831,7 +2831,7 @@ class Qwen3VLMoeForConditionalGeneration(Qwen3VLMoePretrainedModelFleet):
 
 
 __all__ = [
-    "Qwen3VLMoeDist",
+    "Qwen3VLMoeModelDecapitated",
     "Qwen3VLMoeForConditionalGenerationDecapitated",
     "Qwen3VLMoeForConditionalGeneration",
     "Qwen3VLMoeModel",

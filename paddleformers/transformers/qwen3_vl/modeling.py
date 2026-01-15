@@ -50,14 +50,17 @@ from ..utils import logger
 from .configuration import Qwen3VLConfig, Qwen3VLTextConfig, Qwen3VLVisionConfig
 
 if TYPE_CHECKING:
-    from .modeling_fleet import Qwen3VLForCausalLMPipe, Qwen3VLForConditionalGeneration
-    from .modeling_fleet import Qwen3VLModelDist as Qwen3VLModel
-    from .modeling_fleet import Qwen3VLModelPipe
+    from .modeling_fleet import (
+        Qwen3VLForCausalLMPipe,
+        Qwen3VLForConditionalGeneration,
+        Qwen3VLModel,
+        Qwen3VLModelPipe,
+    )
 
 
 def __getattr__(name):
     if name == "Qwen3VLModel":
-        from .modeling_fleet import Qwen3VLModelDist as Qwen3VLModel
+        from .modeling_fleet import Qwen3VLModel
 
         return Qwen3VLModel
     elif name == "Qwen3VLForConditionalGeneration":
