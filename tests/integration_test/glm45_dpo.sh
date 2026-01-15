@@ -32,7 +32,7 @@ config_json=$CACHE_DIR/glm45/GLM-4.5-Air/config.json
 
 yq '.train_dataset_path = strenv(cur_dir) + "/dpo_data/dpo_train.jsonl"
     | .eval_dataset_path = strenv(cur_dir) + "/dpo_data/dpo_eval.jsonl"
-    | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"
+    | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
     | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_vdl_log"
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_ckpts"' \
    $config_dpo_yaml > ${config_dpo_yaml}.tmp
