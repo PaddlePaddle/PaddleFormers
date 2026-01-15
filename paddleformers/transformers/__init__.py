@@ -195,7 +195,9 @@ import_structure = {
     "qwen3_vl.configuration": ["Qwen3VLConfig", "Qwen3VLTextConfig"],
     "qwen3_vl.modeling": [
         "Qwen3VLForConditionalGeneration",
+        "Qwen3VLForConditionalGenerationDecapitated",
         "Qwen3VLModel",
+        "Qwen3VLModelDecapitated",
         "Qwen3VLPretrainedModel",
         "Qwen3VLTextModel",
         "Qwen3VLModelFleet",
