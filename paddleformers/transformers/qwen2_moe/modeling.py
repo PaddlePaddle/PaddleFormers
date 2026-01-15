@@ -254,24 +254,12 @@ class Qwen2MoeGate(PretrainedMoEGate):
 
         return capacity, combine_weights, dispatch_mask, exp_counts, l_aux, l_zloss
 
+class Qwen2MoeExperts(nn.Layer):
+    """Collection of expert weights stored as 3D tensors."""
 
-class Qwen2MoeSparseMoeBlock(nn.Layer):
     def __init__(self, config):
         super().__init__()
-        self.config = config
         self.num_experts = config.num_experts
-        self.top_k = config.num_experts_per_tok
-        self.norm_topk_prob = config.norm_topk_prob
-        self.sequence_parallel = config.sequence_parallel
-        if self.sequence_parallel and config.tensor_model_parallel_size > 1:
-            config = copy.deepcopy(config)
-            config.sequence_parallel = False
-
-        # gating
-        with dtype_guard("float32"):
-            self.gate = GeneralLinear.create(
-                config.hidden_size, config.num_experts, has_bias=False, linear_type="default"
-            )
         self.experts = nn.LayerList(
             [
                 Qwen2MoeMLP(
@@ -280,30 +268,13 @@ class Qwen2MoeSparseMoeBlock(nn.Layer):
                 for _ in range(self.num_experts)
             ]
         )
-
-        self.shared_expert = Qwen2MoeMLP(
-            config, intermediate_size=config.shared_expert_intermediate_size, fuse_up_gate=config.fuse_attention_ffn
-        )
-        self.shared_expert_gate = GeneralLinear.create(config.hidden_size, 1, has_bias=False, linear_type="default")
-
-    def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
-        """ """
-        if self.sequence_parallel:
-            hidden_states = GatherOp.apply(hidden_states)
-        residuals = hidden_states
-        orig_shape = hidden_states.shape
-
-        hidden_states = hidden_states.view([-1, hidden_states.shape[-1]])
-        # router_logits: (batch * sequence_length, n_experts)
-        router_logits = self.gate(hidden_states)
-
-        routing_weights = F.softmax(router_logits, dim=1, dtype=paddle.float32)
-        routing_weights, selected_experts = paddle.topk(routing_weights, self.top_k, dim=-1)
-        if self.norm_topk_prob:
-            routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
-        # we cast back to the input dtype
-        routing_weights = routing_weights.to(hidden_states.dtype)
-
+    
+    def forward(
+        self,
+        hidden_states: paddle.Tensor,
+        selected_experts: paddle.Tensor,
+        routing_weights: paddle.Tensor,
+    ) -> paddle.Tenosr:
         final_hidden_states = paddle.zeros(
             (hidden_states.shape[-2], hidden_states.shape[-1]), dtype=hidden_states.dtype
         )
@@ -335,12 +306,59 @@ class Qwen2MoeSparseMoeBlock(nn.Layer):
                     index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
                 )
 
-        final_hidden_states = paddle.reshape(final_hidden_states, orig_shape)
+        return final_hidden_states
 
-        shared_expert_output = self.shared_expert(residuals)
-        shared_expert_output = F.sigmoid(self.shared_expert_gate(residuals)) * shared_expert_output
+
+class Qwen2MoeSparseMoeBlock(nn.Layer):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.num_experts = config.num_experts
+        self.top_k = config.num_experts_per_tok
+        self.norm_topk_prob = config.norm_topk_prob
+        self.sequence_parallel = config.sequence_parallel
+        if self.sequence_parallel and config.tensor_model_parallel_size > 1:
+            config = copy.deepcopy(config)
+            config.sequence_parallel = False
+
+        # gating
+        with dtype_guard("float32"):
+            self.gate = GeneralLinear.create(
+                config.hidden_size, config.num_experts, has_bias=False, linear_type="default"
+            )
+        self.experts = Qwen2MoeExperts(config)
+
+        self.shared_expert = Qwen2MoeMLP(
+            config, intermediate_size=config.shared_expert_intermediate_size, fuse_up_gate=config.fuse_attention_ffn
+        )
+        self.shared_expert_gate = GeneralLinear.create(config.hidden_size, 1, has_bias=False, linear_type="default")
+
+    def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
+        """ """
+        if self.sequence_parallel:
+            hidden_states = GatherOp.apply(hidden_states)
+        residuals = hidden_states
+        orig_shape = hidden_states.shape
+
+        hidden_states = hidden_states.view([-1, hidden_states.shape[-1]])
+        # router_logits: (batch * sequence_length, n_experts)
+        router_logits = self.gate(hidden_states)
+
+        routing_weights = F.softmax(router_logits, dim=1, dtype=paddle.float32)
+        routing_weights, selected_experts = paddle.topk(routing_weights, self.top_k, dim=-1)
+        if self.norm_topk_prob:
+            routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
+        # we cast back to the input dtype
+        routing_weights = routing_weights.to(hidden_states.dtype)
+
+        final_hidden_states = self.experts(hidden_states, selected_experts, routing_weights)
+
+        shared_expert_output = self.shared_expert(hidden_states)
+        shared_expert_output = F.sigmoid(self.shared_expert_gate(hidden_states)) * shared_expert_output
 
         final_hidden_states = final_hidden_states + shared_expert_output
+
+        final_hidden_states = paddle.reshape(final_hidden_states, orig_shape)
 
         if self.sequence_parallel:
             final_hidden_states = ScatterOp.apply(final_hidden_states)
