@@ -58,6 +58,10 @@ def _training_function(config: dict[str, Any]) -> None:
         from .pretrain import run_dsv3_pretrain
 
         run_dsv3_pretrain(model_args, data_args, generating_args, finetuning_args)
+    elif model_args.stage == "ernie_pretrain":
+        from .ernie_pretrain import run_ernie_pretrain
+
+        run_ernie_pretrain(model_args, data_args, generating_args, finetuning_args)
     elif model_args.stage == "auto-parallel":
         run_auto_parallel(model_args, data_args, generating_args, finetuning_args)
     else:

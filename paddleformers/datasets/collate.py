@@ -48,9 +48,10 @@ def dpo_collate_fn(
     training_args,
     max_seq_len=None,
     padding_free=False,
-    use_sparse_head_and_loss_fn=True,
+    use_filtered_label_loss=True,
     use_fused_head_and_loss_fn=True,
     use_response_score_delta=False,
+    packing=False,
 ):
     """Convert batch data into tensor for DPO.
 
@@ -60,7 +61,7 @@ def dpo_collate_fn(
         tokenizer (Tokenizer): Text tokenizer for processing sequence components.
         max_seq_len (int, optional): Maximum sequence length for padding/truncation.
             If None, will raise ValueError. Defaults to None.
-        use_sparse_head_and_loss_fn (bool, optional): Whether to use sparse indexing for loss calculation.
+        use_filtered_label_loss (bool, optional): Whether to use sparse indexing for loss calculation.
             Enables memory-efficient indexing for large sequences. Defaults to True.
         use_fused_head_and_loss_fn (bool, optional): Whether to use fused kernel to calculate lm head and loss.
             Optimizes for memory access patterns. Defaults to True.
@@ -142,22 +143,14 @@ def dpo_collate_fn(
         sequence_sum = 0
         for sequence in sequences:
             # bs, chosen_response_start_index, rejeted_response_start_index, rejeted_response_end_index + 1
-            if use_sparse_head_and_loss_fn:
-                response_index = [
-                    i,
-                    sequence_sum_flatten,
-                    sequence.response_index[1] - sequence.response_index[0] + sequence_sum_flatten,
-                    sequence.response_index[2] - sequence.response_index[0] + sequence_sum_flatten,
-                ]
-                sequence_sum_flatten += sequence.response_index[2] - sequence.response_index[0]
-            elif use_fused_head_and_loss_fn:
+            if use_filtered_label_loss:
                 response_index = [
                     i,
                     sequence.response_index[0] + sequence_sum_flatten,
                     sequence.response_index[1] + sequence_sum_flatten,
                     sequence.response_index[2] + sequence_sum_flatten,
                 ]
-                sequence_sum_flatten += len(sequence.token_ids)
+                sequence_sum_flatten += sequence.response_index[2]
             else:
                 response_index = [
                     i,
