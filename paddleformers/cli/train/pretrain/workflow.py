@@ -354,9 +354,6 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
         logger.info(f"pre_alloc_memory size {x.shape}")
         del x
 
-    if training_args.no_recompute_layers is not None:
-        training_args.no_recompute_layers.sort()
-
     if training_args.enable_linear_fused_grad_add:
         from utils.fused_layers import mock_layers
 

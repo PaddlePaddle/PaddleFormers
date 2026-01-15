@@ -17,7 +17,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional
 
 import paddle
 from config.configuration import DeepseekV2FastConfig
@@ -117,6 +117,11 @@ class PreTrainingArguments(TrainingArguments):
         metadata={
             "help": "The interval for the number of layers at which recomputation occurs. A value of 0 indicates no recomputation."
         },
+    )
+
+    no_recompute_layers: Optional[List[int]] = field(
+        default=None,
+        metadata={"help": "no_recompute_layersq."},
     )
 
     def __post_init__(self):
@@ -470,6 +475,8 @@ def main():
     # set all llm config
     LlmMetaConfig.set_llm_config(config, training_args)
     setattr(config, "pp_recompute_interval", training_args.pp_recompute_interval)
+    setattr(config, "no_recompute_layers", training_args.no_recompute_layers)
+
     config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
     config.seq_length = data_args.max_seq_length

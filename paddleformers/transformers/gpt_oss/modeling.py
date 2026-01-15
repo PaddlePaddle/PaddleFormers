@@ -720,7 +720,6 @@ class GptOssModel(GptOssPreTrainedModel):
         self.vocab_size = config.vocab_size
         self.hidden_size = config.hidden_size
         self.sequence_parallel = config.sequence_parallel
-        self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
 
         self.embed_tokens = GeneralEmbedding.create(

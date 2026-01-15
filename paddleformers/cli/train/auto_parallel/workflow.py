@@ -261,9 +261,6 @@ def run_auto_parallel(model_args, data_args, generating_args, training_args):
             # It's OK, not use accumulate_steps optimization
             pass
 
-    if training_args.no_recompute_layers is not None:
-        training_args.no_recompute_layers.sort()
-
     if training_args.use_intermediate_api:
         config.use_single_model_implementation = True
         config.tensor_model_parallel_size = 1

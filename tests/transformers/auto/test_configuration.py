@@ -133,7 +133,6 @@ class AutoConfigTest(unittest.TestCase):
             "intermediate_size": 11008,
             "max_position_embeddings": 2048,
             "model_type": "llama",
-            "no_recompute_layers": None,
             "normalizer_type": None,
             "num_attention_heads": 32,
             "num_hidden_layers": 32,

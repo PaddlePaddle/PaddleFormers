@@ -253,7 +253,6 @@ class LlmMetaConfig:
         # context_parallel
         ("context_parallel_size", int, 1, "context_parallel_size"),
         # pp refine recompute
-        ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
         ("add_tail_layers", int, 0, "Additional layers to append at the end"),
         # sep_parallel
         ("sep_parallel_size", int, 1, "sep_parallel_size"),
