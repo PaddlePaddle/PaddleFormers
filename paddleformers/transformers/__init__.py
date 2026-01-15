@@ -208,7 +208,7 @@ import_structure = {
     "qwen3_vl_moe.modeling": [
         "Qwen3VLMoeForConditionalGeneration",
         "Qwen3VLMoeForConditionalGenerationDecapitated",
-        "Qwen3VLModelDecapitated",
+        "Qwen3VLMoeModelDecapitated",
         "Qwen3VLMoeModel",
         "Qwen3VLMoePretrainedModel",
         "Qwen3VLMoeTextModel",
