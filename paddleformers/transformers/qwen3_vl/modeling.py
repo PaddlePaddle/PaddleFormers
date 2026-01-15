@@ -591,8 +591,8 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
         weight_list = [[] for _ in range(4)]
 
         for t, h, w in zip(grid_ts, grid_hs, grid_ws):
-            h_idxs = paddle.linspace(0, self.num_grid_per_side - 1, h)
-            w_idxs = paddle.linspace(0, self.num_grid_per_side - 1, w)
+            h_idxs = paddle.linspace(0, self.num_grid_per_side - 1, int(h))
+            w_idxs = paddle.linspace(0, self.num_grid_per_side - 1, int(w))
 
             h_idxs_floor = h_idxs.int()
             w_idxs_floor = w_idxs.int()
@@ -1247,9 +1247,8 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
                 end_col = start_col + slice_width
                 visual_embeds = visual_embeds[:, start_col:end_col]
 
-        hidden_states = hidden_states.clone()
-        local_this = hidden_states._local_value()[visual_pos_masks._local_value(), :] + visual_embeds._local_value()
-        hidden_states._local_value()[visual_pos_masks._local_value(), :] = local_this
+        update_indices = paddle.nonzero(visual_pos_masks)
+        hidden_states = paddle.scatter_nd_add(hidden_states, update_indices, visual_embeds)
 
         # [Supplement 3] Restore original shape [B*S, D] -> [B, S, D] if necessary
         if len(original_shape) > 2:
