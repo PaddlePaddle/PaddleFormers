@@ -94,7 +94,7 @@ class TestMoraLayer(unittest.TestCase):
 class TestMoraModel(unittest.TestCase):
     def test_mora_model_restore(self):
         mora_config = LoRAConfig(
-            target_modules=[".*q_proj.*", ".*v_proj.*"],
+            target_modules=[".*qkv_proj.*"],
             r=4,
             lora_alpha=8,
             enable_lora_list=[None, [True, False]],
@@ -117,7 +117,7 @@ class TestMoraModel(unittest.TestCase):
     @parameterized.expand([(None,), ("all",), ("lora",)])
     def test_mora_model_constructor(self, bias):
         mora_config = LoRAConfig(
-            target_modules=[".*q_proj.*", ".*v_proj.*"],
+            target_modules=[".*qkv_proj.*"],
             r=4,
             lora_alpha=8,
             enable_lora_list=[None, [True, False]],
@@ -157,7 +157,7 @@ class TestMoraModel(unittest.TestCase):
     def test_mora_model_save_load(self):
         with TemporaryDirectory() as tempdir:
             input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
-            mora_config = LoRAConfig(target_modules=[".*q_proj.*", ".*v_proj.*"], r=4, lora_alpha=8, use_mora=True)
+            mora_config = LoRAConfig(target_modules=[".*qkv_proj.*"], r=4, lora_alpha=8, use_mora=True)
             model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
             mora_model = LoRAModel(model, mora_config)
             mora_model.eval()
