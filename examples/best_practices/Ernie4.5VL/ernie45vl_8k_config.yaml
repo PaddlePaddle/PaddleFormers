@@ -59,7 +59,7 @@ recompute: true
 recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
-recompute_modelus: ["loss_fn"]
+recompute_modules: ["loss_fn"]
 recompute_use_reentrant: true
 
 use_flash_attention: true
