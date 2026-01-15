@@ -789,7 +789,7 @@ class Qwen3VLProvider(TransformerConfig):
     freeze_vision_model: bool = True
     freeze_vision_projection: bool = False
 
-    def provide(self, tokenizer=None, vp_stage: int | None = None) -> "Qwen3VLModel":
+    def provide(self, tokenizer=None, vp_stage: int | None = None) -> "Qwen3VLModelDist":
         self.text_config.scatter_embedding_sequence_parallel = False
         self.text_config.tensor_model_parallel_size = self.tensor_model_parallel_size
         self.text_config.sequence_parallel = self.sequence_parallel
@@ -833,7 +833,7 @@ class Qwen3VLProvider(TransformerConfig):
 
         vp_stage = vp_stage or 0
 
-        model = Qwen3VLModel(
+        model = Qwen3VLModelDist(
             config=self,
             tokenizer=tokenizer,
             pre_process=parallel_state.is_pipeline_first_stage(ignore_virtual=False, vp_stage=vp_stage)
@@ -1103,6 +1103,7 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
                 video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
             video_embeds = paddle.cat(video_embeds, axis=0)
 
+        print(position_ids)
         if position_ids is None:
             if self.rope_deltas is None or cache_position is None or cache_position[0] == 0:
                 position_ids, rope_deltas = self.get_rope_index(
@@ -1404,6 +1405,8 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
 
 
 class Qwen3VLModel(Qwen3VLPretrainedModelFleet):
+    config_class = Qwen3VLConfig
+
     def __new__(cls, config, have_criterion=True):
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
