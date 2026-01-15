@@ -21,7 +21,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import partial
 from typing import TYPE_CHECKING, Any, Optional, Tuple, Union
 
 import paddle
