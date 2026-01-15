@@ -79,7 +79,6 @@ def _parallel_matmul(
     transpose_y=False,
     tensor_model_parallel_size=1,
     tensor_parallel_output=True,
-    fuse_linear=False,
 ):
     """
     Performs parallel matrix multiplication with tensor model parallelism support.
@@ -94,7 +93,6 @@ def _parallel_matmul(
         tensor_model_parallel_size (int): Degree of tensor model parallelism (default: 1)
         tensor_parallel_output (bool): Whether to keep output in tensor parallel format
             or gather across devices (default: True)
-        fuse_linear (bool): Whether to use fused linear operation for optimization
 
     Returns:
         paddle.Tensor
@@ -115,10 +113,7 @@ def _parallel_matmul(
             if bias is not None:
                 logits += bias
         else:
-            if fuse_linear:
-                logits = paddle.incubate.nn.functional.fused_linear(input_parallel, y, bias)
-            else:
-                logits = F.linear(input_parallel, y, bias)
+            logits = F.linear(input_parallel, y, bias)
 
         if tensor_parallel_output:
             return logits
@@ -126,12 +121,9 @@ def _parallel_matmul(
         return paddle.distributed.collective._c_concat(logits, group=pg)
 
     else:
-        if fuse_linear:
-            logits = paddle.incubate.nn.functional.fused_linear(x, y, bias, transpose_weight=transpose_y)
-        else:
-            logits = paddle.matmul(x, y, transpose_y=transpose_y)
-            if bias is not None:
-                logits += bias
+        logits = paddle.matmul(x, y, transpose_y=transpose_y)
+        if bias is not None:
+            logits += bias
         return logits
 
 

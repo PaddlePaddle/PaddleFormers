@@ -32,7 +32,6 @@ def parallel_matmul(
     transpose_y=False,
     tensor_model_parallel_size=1,
     tensor_parallel_output=True,
-    fuse_linear=False,
     training=True,
 ):
     """
@@ -44,7 +43,6 @@ def parallel_matmul(
         transpose_y (bool, optional): Whether to transpose y. Default is False.
         tensor_model_parallel_size (int, optional): Tensor parallel degree. Default is 1.
         tensor_parallel_output (bool, optional): Whether to output tensor parallel. Default is True.
-        fuse_linear (bool, optional): Whether to fuse linear. Default is False.
         training (bool, optional): Training state. Default is False.
 
     Returns:
@@ -87,23 +85,15 @@ def parallel_matmul(
         if transpose_y:
             logits = paddle.matmul(input_parallel, logit_weights, transpose_y=True)
         else:
-            if fuse_linear:
-                logits = paddle.incubate.nn.functional.fused_linear(input_parallel, logit_weights, bias)
-            else:
-                logits = F.linear(input_parallel, logit_weights, bias)
+            logits = F.linear(input_parallel, logit_weights, bias)
         if tensor_parallel_output:
             return logits
 
         return paddle.distributed.collective._c_concat(logits, group=model_parallel_group)
     else:
-        if fuse_linear:
-            logits = paddle.incubate.nn.functional.fused_linear(
-                lm_output, logit_weights, bias, transpose_weight=transpose_y
-            )
-        else:
-            logits = paddle.matmul(lm_output, logit_weights, transpose_y=transpose_y)
-            if bias is not None:
-                logits += bias
+        logits = paddle.matmul(lm_output, logit_weights, transpose_y=transpose_y)
+        if bias is not None:
+            logits += bias
         return logits
 
 
