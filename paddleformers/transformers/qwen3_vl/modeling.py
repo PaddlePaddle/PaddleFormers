@@ -877,8 +877,7 @@ class Qwen3VLTextRotaryEmbedding(nn.Layer):
 
     def forward(self, x, position_ids):
         with paddle.amp.auto_cast(False):
-            inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand([3, position_ids.shape[1], -1, 1])
-
+            inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand([1, position_ids.shape[1], -1, 1])
             position_ids_expanded = position_ids[:, :, None, :].float()
 
             freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(2, 3)

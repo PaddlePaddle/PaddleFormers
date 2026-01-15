@@ -854,15 +854,25 @@ class Qwen3MoePretrainedModel(PretrainedModel):
         else:
             num_experts = config.num_experts
         model_prefix = "" if cls == cls.base_model_class else "model."
+        using_sonic_moe = config.using_sonic_moe
         aoa_config = {
             "aoa_statements": [
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
-                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
                 f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"model.norm.weight -> {model_prefix}norm.weight",
             ]
         }
+
+        if using_sonic_moe:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+            ]
+
         if getattr(cls, "is_fleet", False):
             aoa_config["aoa_statements"] += [
                 f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
@@ -902,15 +912,21 @@ class Qwen3MoePretrainedModel(PretrainedModel):
             ]
         else:
             if getattr(cls, "is_fleet", False):
-                aoa_config["aoa_statements"] += [
-                    f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
-                ]
+                if using_sonic_moe:
+                    aoa_config["aoa_statements"] += [
+                        f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=0",
+                    ]
+                else:
+                    aoa_config["aoa_statements"] += [
+                        f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
+                    ]
+
             else:
                 aoa_config["aoa_statements"] += [
                     f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
                 ]
 
-        if getattr(cls, "is_fleet", False) and config.moe_grouped_gemm:
+        if getattr(cls, "is_fleet", False) and (config.moe_grouped_gemm or using_sonic_moe):
             for layer_idx in range(0, config.num_hidden_layers):
                 src_prefix = f"model.layers.{layer_idx}"
                 tgt_prefix = f"{model_prefix}layers.{layer_idx}"
@@ -939,6 +955,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
         else:
             num_experts = config.num_experts
         model_prefix = "" if cls == cls.base_model_class else "model."
+        using_sonic_moe = config.using_sonic_moe
         aoa_statements = [
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
@@ -990,7 +1007,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                 f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
             ]
         else:
-            if getattr(cls, "is_fleet", False) and config.moe_grouped_gemm:
+            if getattr(cls, "is_fleet", False) and (config.moe_grouped_gemm or using_sonic_moe):
                 for layer_id in range(config.num_hidden_layers):
                     ep_weight1 = []
                     ep_weight2 = []
@@ -1009,18 +1026,25 @@ class Qwen3MoePretrainedModel(PretrainedModel):
             for layer_id in range(config.num_hidden_layers):
                 for expert_id in range(num_experts):
                     if getattr(cls, "is_fleet", False):
-                        aoa_statements += [
-                            f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight, axis=1",
-                        ]
+                        if using_sonic_moe:
+                            aoa_statements += [
+                                f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight, axis=0",
+                            ]
+                        else:
+                            aoa_statements += [
+                                f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight, axis=1",
+                            ]
                     else:
                         aoa_statements += [
                             f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight, fused_ffn",
                         ]
-                    aoa_statements += [
-                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight",
-                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight",
-                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight",
-                    ]
+
+                    if not using_sonic_moe:
+                        aoa_statements += [
+                            f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight",
+                            f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight",
+                            f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight",
+                        ]
 
         if config.tie_word_embeddings:
             aoa_statements += ["lm_head.weight -> _"]

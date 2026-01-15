@@ -27,7 +27,6 @@ from typing import Any, Optional, Tuple, Union
 import paddle
 import paddle.nn.functional as F
 from paddle import Tensor, nn
-from paddle.distributed.fleet import get_hybrid_communicate_group
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
@@ -944,7 +943,7 @@ class Qwen3VLMoeTextRotaryEmbedding(nn.Layer):
 
     def forward(self, x, position_ids):
         with paddle.amp.auto_cast(False):
-            inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand([3, position_ids.shape[1], -1, 1])
+            inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand([1, position_ids.shape[1], -1, 1])
             position_ids_expanded = position_ids[:, :, None, :].float()
             freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(2, 3)
 
@@ -1407,6 +1406,8 @@ class Qwen3VLMoeTextModel(Qwen3VLMoePretrainedModel):
         # This block handles Sequence Parallelism (Row Slicing)
         if visual_pos_masks.shape[0] > hidden_states.shape[0]:
             try:
+                from paddle.distributed.fleet import get_hybrid_communicate_group
+
                 hcg = get_hybrid_communicate_group()
                 mp_rank = hcg.get_model_parallel_rank()
                 mp_size = hcg.get_model_parallel_world_size()
