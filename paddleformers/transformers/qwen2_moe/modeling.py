@@ -254,6 +254,7 @@ class Qwen2MoeGate(PretrainedMoEGate):
 
         return capacity, combine_weights, dispatch_mask, exp_counts, l_aux, l_zloss
 
+
 class Qwen2MoeExperts(nn.Layer):
     """Collection of expert weights stored as 3D tensors."""
 
@@ -268,7 +269,7 @@ class Qwen2MoeExperts(nn.Layer):
                 for _ in range(self.num_experts)
             ]
         )
-    
+
     def forward(
         self,
         hidden_states: paddle.Tensor,
@@ -337,7 +338,6 @@ class Qwen2MoeSparseMoeBlock(nn.Layer):
         """ """
         if self.sequence_parallel:
             hidden_states = GatherOp.apply(hidden_states)
-        residuals = hidden_states
         orig_shape = hidden_states.shape
 
         hidden_states = hidden_states.view([-1, hidden_states.shape[-1]])
