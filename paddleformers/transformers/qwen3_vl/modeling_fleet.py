@@ -374,7 +374,6 @@ class Qwen3VLVisionProvider(TransformerConfig):
     initializer_range: float = 0.02
     gated_linear_unit: bool = False
     activation_func: Callable = F.gelu
-    num_key_value_heads: int = 16
     layernorm_zero_centered_gamma: bool = False
     apply_query_key_layer_scaling: bool = False
     persist_layer_norm: bool = True
