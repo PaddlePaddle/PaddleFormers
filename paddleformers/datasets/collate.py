@@ -128,58 +128,22 @@ def dpo_collate_fn(
         sequence_sum = 0
         for sequence in sequences:
             # bs, chosen_response_start_index, rejeted_response_start_index, rejeted_response_end_index + 1
-            if padding_free:
-                if use_filtered_label_loss:
-                    response_index = [
-                        i,
-                        sequence.response_index[0] + sequence_sum_flatten,
-                        sequence.response_index[1] + sequence_sum_flatten,
-                        sequence.response_index[2] + sequence_sum_flatten,
-                    ]
-                    sequence_sum_flatten += len(sequence.token_ids)
-                else:
-                    response_index = [
-                        i,
-                        sequence.response_index[0] + sequence_sum,
-                        sequence.response_index[1] + sequence_sum,
-                        sequence.response_index[2] + sequence_sum,
-                    ]
-                    sequence_sum += len(sequence.token_ids)
+            if use_filtered_label_loss:
+                response_index = [
+                    i,
+                    sequence.response_index[0] + sequence_sum_flatten,
+                    sequence.response_index[1] + sequence_sum_flatten,
+                    sequence.response_index[2] + sequence_sum_flatten,
+                ]
+                sequence_sum_flatten += len(sequence.token_ids)
             else:
-                if packing:
-                    if use_filtered_label_loss:
-                        response_index = [
-                            i,
-                            sequence.response_index[0] + sequence_sum_flatten,
-                            sequence.response_index[1] + sequence_sum_flatten,
-                            sequence.response_index[2] + sequence_sum_flatten,
-                        ]
-                        sequence_sum_flatten += len(sequence.token_ids)
-                    else:
-                        response_index = [
-                            i,
-                            sequence.response_index[0] + sequence_sum,
-                            sequence.response_index[1] + sequence_sum,
-                            sequence.response_index[2] + sequence_sum,
-                        ]
-                        sequence_sum += len(sequence.token_ids)
-                else:
-                    if use_filtered_label_loss:
-                        response_index = [
-                            i,
-                            sequence.response_index[0] + sequence_sum_flatten,
-                            sequence.response_index[1] + sequence_sum_flatten,
-                            sequence.response_index[2] + sequence_sum_flatten,
-                        ]
-                        sequence_sum_flatten += len(sequence.token_ids)
-                    else:
-                        response_index = [
-                            i,
-                            sequence.response_index[0] + sequence_sum,
-                            sequence.response_index[1] + sequence_sum,
-                            sequence.response_index[2] + sequence_sum,
-                        ]
-                        sequence_sum += len(sequence.token_ids)
+                response_index = [
+                    i,
+                    sequence.response_index[0] + sequence_sum,
+                    sequence.response_index[1] + sequence_sum,
+                    sequence.response_index[2] + sequence_sum,
+                ]
+                sequence_sum += len(sequence.token_ids)
             input_dict["response_indexs"].append(response_index)
             if use_response_score_delta:
                 input_dict["score_deltas"].append(sequence.score_delta)
