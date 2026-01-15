@@ -619,6 +619,7 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
     # We must use non-huggingface format to save intermediate checkpoints during training.
     args.save_to_hf = False
     args.load_checkpoint_format = "unified_checkpoint"
+    args.save_checkpoint_format = "sharding_io"
 
     cfg = model.config
     logger.info(f"using model type:{type(model)}")
