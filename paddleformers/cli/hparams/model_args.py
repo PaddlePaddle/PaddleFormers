@@ -196,51 +196,6 @@ class ModelArguments:
     moe_gate: str = field(default="top2_fused", metadata={"help": "MoE gate type"})
     loss_subbatch_seqlen: int = field(default=32768, metadata={"help": "Sub batch size for loss calculation"})
 
-    num_hidden_layers: Optional[int] = field(
-        default=None,
-        metadata={"help": "num_hidden_layers."},
-    )
-
-    num_attention_heads: Optional[int] = field(
-        default=None,
-        metadata={"help": "num_attention_heads."},
-    )
-
-    num_key_value_heads: Optional[int] = field(
-        default=None,
-        metadata={"help": "num_key_value_heads."},
-    )
-
-    num_experts_per_tok: Optional[int] = field(
-        default=None,
-        metadata={"help": "num_experts_per_tok."},
-    )
-
-    hidden_size: Optional[int] = field(
-        default=None,
-        metadata={"help": "hidden_size."},
-    )
-
-    intermediate_size: Optional[int] = field(
-        default=None,
-        metadata={"help": "intermediate_size."},
-    )
-
-    n_routed_experts: Optional[int] = field(
-        default=None,
-        metadata={"help": "n_routed_experts."},
-    )
-
-    use_qk_norm: Optional[bool] = field(
-        default=None,
-        metadata={"help": "use_qk_norm."},
-    )
-
-    tie_word_embeddings: Optional[bool] = field(
-        default=None,
-        metadata={"help": "tie_word_embeddings."},
-    )
-
     def __post_init__(self):
         if self.fine_tuning.lower() == "LoRA".lower():
             self.lora = True
