@@ -562,7 +562,7 @@ class Trainer:
                 # set do_grad_scaling, enable_autocast_context_manager
                 self._wrap_amp_model(args, model)
 
-        if args.recompute_granularity is not None:
+        if isinstance(model, nn.Layer) and args.recompute_granularity is not None:
 
             def fn(layer):
                 if hasattr(layer, "enable_recompute") and (
@@ -2908,7 +2908,7 @@ class Trainer:
                 for key, value in target_attr.items():
                     if get_env_device() == "gpu":
                         target_attr[key] = getattr(value, action)()
-                    elif get_env_device() == "xpu":
+                    elif get_env_device() == "xpu" and action in ["cpu", "pin_memory"]:
                         target_attr[key] = getattr(value, action)()
                     else:
                         target_attr[key] = getattr(value, "to")(action)
@@ -4711,18 +4711,32 @@ class Trainer:
                 labels = None
             inputs = inputs.pop("input_ids")
         # train & eval share the same p2p_helper, so clear it before and after each step
-        model._p2p_helper.clear_meta_cache()
+        if hasattr(model, "_p2p_helper"):
+            model._p2p_helper.clear_meta_cache()
 
         with paddle.no_grad():
             if has_labels:
                 with self.autocast_smart_context_manager():
+
+                    def _prepare_inputs_for_fleet(inputs):
+                        if isinstance(inputs, (tuple, list)) and len(inputs) > 1:
+                            inputs = {"input_ids": inputs[0], "position_ids": inputs[1]}
+                        return inputs
+
+                    if (
+                        is_paddlefleet_available()
+                        and PaddleFleetParallelBase is not None
+                        and isinstance(model, PaddleFleetParallelBase)
+                    ):
+                        inputs = _prepare_inputs_for_fleet(inputs)
                     loss = model.eval_batch([inputs, labels], compute_loss=True)
                     # loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
                 loss = loss.mean().detach()
             else:
                 raise ValueError("pipeline mode eval need label!")
         # train & eval share the same p2p_helper, so clear it before and after each step
-        model._p2p_helper.clear_meta_cache()
+        if hasattr(model, "_p2p_helper"):
+            model._p2p_helper.clear_meta_cache()
 
         return (loss, None, labels)
 
@@ -4756,7 +4770,11 @@ class Trainer:
             Tuple[Optional[paddle.Tensor], Optional[paddle.Tensor], Optional[paddle.Tensor]]: A tuple with the loss,
             logits and labels (each being optional).
         """
-        if self.args.pipeline_model_parallel_size > 1:
+        if self.args.pipeline_model_parallel_size > 1 or (
+            is_paddlefleet_available()
+            and PaddleFleetParallelBase is not None
+            and isinstance(model, PaddleFleetParallelBase)
+        ):
             # hack for pipeline mode
             inputs = self._prepare_inputs(inputs)
             return self.prediction_pipeline_step(model, inputs, prediction_loss_only, ignore_keys)

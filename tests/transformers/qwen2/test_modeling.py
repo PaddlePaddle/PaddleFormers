@@ -372,7 +372,7 @@ class Qwen2IntegrationTest(unittest.TestCase):
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
         model = Qwen2ForCausalLM.from_pretrained(
-            "PaddleFormers/tiny-random-qwen2",
+            "PaddleFormers/tiny-random-qwen2v2",
             dtype="float32",
             convert_from_hf=True,
             load_checkpoint_format="",
@@ -383,22 +383,22 @@ class Qwen2IntegrationTest(unittest.TestCase):
 
         # Expected mean on dim = -1
         EXPECTED_MEAN = paddle.to_tensor(
-            [[0.00012923, 0.00022866, 0.00083712, 0.00048324, 0.00050315, 0.00085108, 0.00076548, 0.00031629]]
+            [[-0.00146926, -0.00330149, -0.00032814, -0.00297249, -0.00429948, -0.00450381, -0.00381698, -0.00306093]]
         )
         self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
 
         # slicing logits[0, 0, 0:30]
-        EXPECTED_SLICE = paddle.to_tensor([-0.05235012, -0.05254495, -0.54650372, -0.00349111, -0.15289409,
-                                           0.07966875, -0.09445626, 0.05722746, 0.08273896, 0.13118745,
-                                           0.03527237, 0.02604982, 0.22931044, 0.30118701, -0.09604376,
-                                           -0.00862435, 0.05576831, 0.06650923, -0.24256611, -0.30112153,
-                                           -0.02920971, -0.01462070, -0.13825229, 0.08126508, -0.17080611,
-                                           -0.34227434, 0.27646801, 0.25437784, -0.03299456, -0.40561515])  # fmt: skip
+        EXPECTED_SLICE = paddle.to_tensor([-1.37902200, 1.07084286, 0.96358645, 0.36955035, -0.65047014,
+                                           -0.04778112, -0.86020678, 1.99796367, 3.13966012, 1.85271370,
+                                           3.51248360, -0.09916682, 2.29365301, -0.51759374, -1.35876620,
+                                           0.66128075, -2.33850956, 2.07900572, 1.31320083, 2.21260858,
+                                           -2.61521029, 0.47407940, 0.40275139, -1.28010178, -0.72402960,
+                                           -0.63826722, 0.39320219, 0.98796076, 1.30758739, 0.96986938])  # fmt: skip
         self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
 
 class Qwen2GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
-    internal_testing_model = "PaddleFormers/tiny-random-qwen2"
+    internal_testing_model = "PaddleFormers/tiny-random-qwen2v2"
 
 
 class Qwen2CompatibilityTest(unittest.TestCase):
