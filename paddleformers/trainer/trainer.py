@@ -162,6 +162,7 @@ from .plugins.timer import RuntimeTimer, get_timers, set_timers
 from .trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
+    InterleaveGateUpCallback,
     PrinterCallback,
     ProgressCallback,
     SPGradSyncCallback,
@@ -1550,6 +1551,10 @@ class Trainer:
 
         elif self.args.zcc_save_ema_coef is not None:
             self.add_non_zcc_ema_callback(resume_from_checkpoint)
+
+        if self.args.using_sonic_moe:
+            callback = InterleaveGateUpCallback(self.model, resume_from_checkpoint, self.args.output_dir)
+            self.add_callback(callback)
 
         self.log_trainable_numel(model)
 
