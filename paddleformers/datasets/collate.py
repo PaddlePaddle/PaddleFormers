@@ -135,7 +135,7 @@ def dpo_collate_fn(
                     sequence.response_index[1] + sequence_sum_flatten,
                     sequence.response_index[2] + sequence_sum_flatten,
                 ]
-                sequence_sum_flatten += len(sequence.token_ids)
+                sequence_sum_flatten += sequence.response_index[2]
             else:
                 response_index = [
                     i,
