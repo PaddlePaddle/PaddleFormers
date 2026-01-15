@@ -537,39 +537,23 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
             # 2. forward the paddle model with fc
             from paddleformers.transformers import Qwen3MoeConfig, Qwen3MoeForCausalLM
 
-            paddle_model = Qwen3MoeForCausalLM.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format="flex_checkpoint"
-            )
-            paddle_model.eval()
-            paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
-
-            self.assertTrue(
-                np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e-2,
-                    rtol=1e-2,
-                )
-            )
-
-            # 3. fuse qkv/ffn with fc
             model_config = Qwen3MoeConfig.from_pretrained(tempdir)
             model_config.fuse_attention_qkv = True
             model_config.fuse_attention_ffn = True
-            paddle_model_fused = Qwen3MoeForCausalLM.from_pretrained(
+            paddle_model = Qwen3MoeForCausalLM.from_pretrained(
                 tempdir,
                 config=model_config,
                 convert_from_hf=True,
                 dtype="float32",
                 load_checkpoint_format="flex_checkpoint",
             )
-            paddle_model_fused.eval()
-            paddle_fused_logit = paddle_model_fused(paddle.to_tensor(input_ids))[0]
+            paddle_model.eval()
+            paddle_logit = paddle_model({"input_ids": paddle.to_tensor(input_ids)})[0]
 
             self.assertTrue(
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    paddle_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )
@@ -599,9 +583,21 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
-            )
+            if class_name != "Qwen3MoeModel":
+                model_config = Qwen3MoeConfig.from_pretrained(tempdir)
+                model_config.fuse_attention_ffn = (True,)
+                model_config.fuse_attention_qkv = (True,)
+                paddle_model = paddle_model_class.from_pretrained(
+                    tempdir,
+                    config=model_config,
+                    convert_from_hf=True,
+                    dtype="float32",
+                    load_checkpoint_format="flex_checkpoint",
+                )
+            else:
+                paddle_model = paddle_model_class.from_pretrained(
+                    tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+                )
             paddle_model.eval()
 
             if class_name == "Qwen3MoeModel":

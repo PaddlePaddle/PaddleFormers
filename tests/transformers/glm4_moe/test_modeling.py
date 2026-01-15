@@ -583,9 +583,22 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
-            )
+            if class_name != "Glm4MoeModel":
+                config = Glm4MoeConfig.from_pretrained(tempdir)
+                config.fuse_attention_ffn = (True,)
+                config.fuse_attention_qkv = (True,)
+                config.attention_bias = False
+                paddle_model = paddle_model_class.from_pretrained(
+                    tempdir,
+                    config=config,
+                    convert_from_hf=True,
+                    dtype="float32",
+                    load_checkpoint_format="flex_checkpoint",
+                )
+            else:
+                paddle_model = paddle_model_class.from_pretrained(
+                    tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+                )
             paddle_model.eval()
 
             if class_name == "Glm4MoeModel":
