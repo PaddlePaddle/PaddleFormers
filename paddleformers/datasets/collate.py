@@ -25,6 +25,23 @@ from paddleformers.peft.lora import LoRAModel
 from .SFTDataset import Sequence
 
 
+def calc_padding_size(seq_len: int, training_args) -> int:
+    """
+    Calculate appropriate padding size based on training parameters
+
+    Args:
+        seq_len (int): Sequence length
+        training_args: Training parameter object
+
+    Returns:
+        int: Aligned sequence length
+    """
+    cp_size = training_args.context_parallel_size
+    sp_size = training_args.tensor_model_parallel_size if training_args.sequence_parallel else 1
+    padding_to_size = cp_size * sp_size * 2
+    return math.ceil(seq_len / padding_to_size) * padding_to_size
+
+
 def dpo_collate_fn(
     batch,
     tokenizer,
@@ -61,11 +78,9 @@ def dpo_collate_fn(
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
-        cp_size = training_args.sequence_parallel
-        if cp_size > 1:
-            max_seq_len = math.ceil(max_seq_len / (cp_size * 2)) * (cp_size * 2)
-    if max_seq_len is None:
-        max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
+    if not max_seq_len:
+        max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
+    max_seq_len = calc_padding_size(max_seq_len, training_args)
 
     input_dict = {
         "input_ids": [],
@@ -193,11 +208,10 @@ def collate_fn(
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
-        cp_size = training_args.sequence_parallel
-        if cp_size > 1:
-            max_seq_len = math.ceil(max_seq_len / (cp_size * 2)) * (cp_size * 2)
-    if max_seq_len is None:
-        max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
+    if not max_seq_len:
+        max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
+    max_seq_len = calc_padding_size(max_seq_len, training_args)
+
     for batch_sequence in batch:
         if len(batch_sequence) == 1 and isinstance(batch_sequence[0].position_ids[0], List):
             original_position_ids = batch_sequence[0].position_ids
@@ -312,11 +326,9 @@ def mm_collate_fn(
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
-        cp_size = training_args.sequence_parallel
-        if cp_size > 1:
-            max_seq_len = math.ceil(max_seq_len / (cp_size * 2)) * (cp_size * 2)
-    if max_seq_len is None:
-        max_seq_len = max(len(item.token_ids) for sequence in batch for item in sequence)
+    if not max_seq_len:
+        max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
+    max_seq_len = calc_padding_size(max_seq_len, training_args)
     for batch_sequence in batch:
         original_token_ids = []
         original_position_ids = []
