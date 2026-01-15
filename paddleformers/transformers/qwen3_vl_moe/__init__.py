@@ -23,7 +23,7 @@ import_structure = {
     "modeling": [
         "Qwen3VLMoeForConditionalGenerationDecapitated",
         "Qwen3VLMoeForConditionalGeneration",
-        "Qwen3VLMoeDist",
+        "Qwen3VLMoeDecapitated",
         "Qwen3VLMoeModel",
         "Qwen3VLMoePretrainedModel",
         "Qwen3VLMoeTextModel",

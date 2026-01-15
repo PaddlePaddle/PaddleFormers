@@ -1602,7 +1602,7 @@ class Qwen3VLModelPipe(Qwen3VLPretrainedModelFleet, GeneralModelForCausalLMPipe)
 
 
 __all__ = [
-    "Qwen3VLModelDist",
+    "Qwen3VLModel",
     "Qwen3VLForCausalLMPipe",
     "Qwen3VLModelPipe",
     "Qwen3VLForConditionalGeneration",
