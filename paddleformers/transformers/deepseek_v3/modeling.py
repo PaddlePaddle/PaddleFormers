@@ -24,7 +24,6 @@ from __future__ import annotations
 import math
 import warnings
 from copy import deepcopy
-from functools import partial
 from typing import Optional, Tuple, Union
 
 import paddle
@@ -53,7 +52,6 @@ from ...nn.pp_model import EmbeddingPipe, GeneralModelForCausalLMPipe, parse_arg
 from ...utils.log import logger
 from ...utils.masking_utils import _expand_2d_mask, _make_causal_mask
 from ..cache_utils import Cache, DynamicCache
-from ..conversion_utils import StateDictNameMapping, init_name_mappings
 from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_outputs import (
     BaseModelOutputWithPastAndMTP,
@@ -1113,137 +1111,6 @@ class DeepseekV3PretrainedModel(PretrainedModel):
         "eh_proj",
     ]
     _keep_in_fp32_modules = ["mlp.gate.weight", "e_score_correction_bias"]
-
-    @classmethod
-    def _get_name_mappings(cls, config: DeepseekV3Config) -> list[StateDictNameMapping]:
-        mappings: list[StateDictNameMapping] = []
-        model_mappings = [
-            ["embed_tokens.weight"],
-            ["norm.weight"],
-        ]
-        # last one layer contains MTP (eagle) parameters for inference
-        for layer_index in range(config.num_hidden_layers + config.num_nextn_predict_layers):
-            layer_mappings = [
-                [f"layers.{layer_index}.self_attn.q_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.q_a_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.q_a_layernorm.weight"],
-                [f"layers.{layer_index}.self_attn.q_b_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.kv_a_proj_with_mqa.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.kv_a_layernorm.weight"],
-                [f"layers.{layer_index}.self_attn.kv_b_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.o_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.mlp.gate_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.mlp.up_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.mlp.down_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.input_layernorm.weight"],
-                [f"layers.{layer_index}.post_attention_layernorm.weight"],
-            ]
-            model_mappings.extend(layer_mappings)
-
-            # MoE parameters
-            model_mappings.append([f"layers.{layer_index}.mlp.gate.weight", None, "transpose"])
-            model_mappings.append([f"layers.{layer_index}.mlp.gate.e_score_correction_bias"])
-            for expert_idx in range(config.n_routed_experts):
-                expert_mappings = [
-                    [f"layers.{layer_index}.mlp.experts.{expert_idx}.gate_proj.weight", None, "transpose"],
-                    [f"layers.{layer_index}.mlp.experts.{expert_idx}.up_proj.weight", None, "transpose"],
-                    [f"layers.{layer_index}.mlp.experts.{expert_idx}.down_proj.weight", None, "transpose"],
-                ]
-                model_mappings.extend(expert_mappings)
-            model_mappings.append([f"layers.{layer_index}.mlp.shared_experts.gate_proj.weight", None, "transpose"])
-            model_mappings.append([f"layers.{layer_index}.mlp.shared_experts.up_proj.weight", None, "transpose"])
-            model_mappings.append([f"layers.{layer_index}.mlp.shared_experts.down_proj.weight", None, "transpose"])
-
-            # MTP (eagle) parameters for inference
-            if layer_index >= config.num_hidden_layers:
-                model_mappings.append([f"layers.{layer_index}.embed_tokens.weight"])
-                model_mappings.append([f"layers.{layer_index}.enorm.weight"])
-                model_mappings.append([f"layers.{layer_index}.hnorm.weight"])
-                model_mappings.append([f"layers.{layer_index}.eh_proj.weight", None, "transpose"])
-                model_mappings.append([f"layers.{layer_index}.shared_head.norm.weight"])
-                model_mappings.append([f"layers.{layer_index}.shared_head.head.weight", None, "transpose"])
-
-        init_name_mappings(mappings=model_mappings)
-        if cls.base_model_class.__name__ not in config.architectures:
-            for mapping in model_mappings:
-                mapping[0] = "model." + mapping[0]
-                mapping[1] = f"{cls.base_model_prefix}." + mapping[1]
-            if not config.tie_word_embeddings:
-                model_mappings.append(["lm_head.weight", "lm_head.weight", "transpose"])
-
-        mappings = [StateDictNameMapping(*mapping, index=index) for index, mapping in enumerate(model_mappings)]
-        return mappings
-
-    @classmethod
-    def _get_tensor_parallel_mappings(cls, config: DeepseekV3Config, is_split=True):
-        from ..conversion_utils import split_or_merge_func
-
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_model_parallel_size=config.tensor_model_parallel_size,
-            tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
-        )
-
-        def get_tensor_parallel_split_mappings(num_layers):
-            final_actions = {}
-
-            base_actions = {
-                # Row Linear
-                "embed_tokens.weight": partial(fn, is_column=False),
-                "layers.0.self_attn.o_proj.weight": partial(fn, is_column=False),
-            }
-
-            base_actions["lm_head.weight"] = partial(fn, is_column=False)
-
-            if not config.vocab_size % config.tensor_model_parallel_size == 0:
-                base_actions.pop("lm_head.weight")
-                base_actions.pop("embed_tokens.weight")
-
-            # Column Linear
-            base_actions["layers.0.self_attn.q_proj.weight"] = partial(fn, is_column=True)
-            base_actions["layers.0.self_attn.q_proj.bias"] = partial(fn, is_column=True)
-            base_actions["layers.0.self_attn.q_b_proj.weight"] = partial(fn, is_column=True)
-
-            # if we have enough num_key_value_heads to split, then split it.
-            if config.num_key_value_heads % config.tensor_model_parallel_size == 0:
-                base_actions["layers.0.self_attn.kv_b_proj.weight"] = partial(fn, is_column=True)
-
-            # dense mlp
-            base_actions["layers.0.mlp.up_proj.weight"] = partial(fn, is_column=True)
-            base_actions["layers.0.mlp.gate_proj.weight"] = partial(fn, is_column=True)
-            base_actions["layers.0.mlp.down_proj.weight"] = partial(fn, is_column=False)
-
-            # moe unit shared experts
-            base_actions["layers.0.mlp.shared_experts.gate_proj.weight"] = partial(fn, is_column=True)
-            base_actions["layers.0.mlp.shared_experts.up_proj.weight"] = partial(fn, is_column=True)
-            base_actions["layers.0.mlp.shared_experts.down_proj.weight"] = partial(fn, is_column=False)
-
-            for key, action in base_actions.items():
-                if "layers.0." in key:
-                    for i in range(num_layers):
-                        final_actions[key.replace("layers.0.", f"layers.{i}.")] = action
-                final_actions[key] = action
-
-            # for MTP (eagle) parameters for inference
-            base_actions.pop("embed_tokens.weight")
-            base_actions.pop("lm_head.weight")
-            base_actions["layers.0.embed_tokens.weight"] = partial(fn, is_column=False)
-            base_actions["layers.0.shared_head.head.weight"] = partial(fn, is_column=True)
-            for key, action in base_actions.items():
-                if "layers.0." in key:
-                    for i in range(
-                        config.num_hidden_layers, config.num_hidden_layers + config.num_nextn_predict_layers
-                    ):
-                        final_actions[key.replace("layers.0.", f"layers.{i}.")] = action
-                else:
-                    final_actions[key] = action
-
-            return final_actions
-
-        mappings = get_tensor_parallel_split_mappings(config.num_hidden_layers)
-
-        return mappings
 
     @classmethod
     def _gen_aoa_config(cls, config: DeepseekV3Config):
