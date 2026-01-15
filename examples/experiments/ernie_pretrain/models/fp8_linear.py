@@ -31,7 +31,7 @@ incubate APIs for low-precision training. Key features include:
 import numpy
 import paddle
 from paddle.incubate.fp8 import deep_gemm
-from paddle.incubate.nn.functional import swiglu
+from paddle.nn.functional import swiglu
 
 # Keep reference to original linear op for fallback if needed
 original_linear = paddle.nn.functional.linear
