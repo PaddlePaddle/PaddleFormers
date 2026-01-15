@@ -64,7 +64,11 @@ class PreTrainingArguments(TrainingArguments):
         metadata={"help": "The decay function for WSD LR scheduler. support half_life(default), 1-sqrt"},
     )
     gc_interval: int = field(default=0, metadata={"help": "gc time"})
-    global_batch_size: int = field(default=0, metadata={"help": "global batch size"})
+    global_batch_size: int = field(default=-1, metadata={"help": "global batch size"})
+    global_logging_interval: int = field(
+        default=1,
+        metadata={"help": "the logging interval of global_training_logs"},
+    )
     multi_token_pred_depth: Optional[int] = field(
         default=0,
         metadata={},
@@ -79,6 +83,22 @@ class PreTrainingArguments(TrainingArguments):
     )
     use_ortho_loss_callback: bool = field(default=False, metadata={"help": "Use orthogonal loss callback or not"})
     moe_with_send_router_loss: bool = field(default=True, metadata={"help": "Whether use send router loss"})
+    log_global_grad_norm: Optional[bool] = field(
+        default=False,
+        metadata={"help": "print global grad-norm"},
+    )
+    moe_gate_lr_ratio: float = field(
+        default=None,
+        metadata={"help": ("special handle the lr for gate/router")},
+    )
+    log_global_grad_norm: Optional[bool] = field(
+        default=False,
+        metadata={"help": "print global grad-norm"},
+    )
+    shuffle_consecutive: Optional[bool] = field(
+        default=False,
+        metadata={"help": "shuffle num_consecutive or not"},
+    )
 
     @property
     def need_data(self):

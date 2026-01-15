@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional, Union
 
 
 @dataclass
@@ -36,15 +36,17 @@ class VisionArguments:
 
 @dataclass
 class FP8MemConfigs:
-    recompute_fwd_gate_up: bool = False
-    dequant_input: bool = True
     shared_expert: bool = False
+    recompute_fwd_gate_up: Union[bool, List[int]] = False
+    dequant_input: bool = False
+    offline_quant_expert_weight: bool = False
+    clear_origin_weight_when_offline_quant: bool = False
 
 
 @dataclass
 class FP8FusedOpsConfigs:
-    stack_quant: bool = True
-    swiglu_probs_bwd: bool = True
+    stack_quant: bool = False
+    swiglu_probs_bwd: bool = False
     split_group_gemm: bool = True
     spaq: bool = True
     transpose_split_quant: bool = True
@@ -52,20 +54,26 @@ class FP8FusedOpsConfigs:
 
 @dataclass
 class ErniePretrainArgument:
-    use_quant_before_a2a: bool = field(default=True, metadata={"help": "Whether to use quant before a2a"})
+    use_quant_before_a2a: bool = field(default=False, metadata={"help": "Whether to use quant before a2a"})
     use_async_a2a: bool = field(default=False, metadata={"help": "Whether to use async a2a"})
     use_rms_qkv_recompute: bool = field(default=False, metadata={"help": "Whether to use rms qkv recompute"})
     moe_logging: bool = field(default=False, metadata={"help": "Whether to use moe logging"})
     use_recompute: bool = field(default=False, metadata={"help": "Whether to use recompute"})
-    multi_token_pred_depth: int = field(default=1, metadata={"help": "Multi token pred depth"})
+    multi_token_pred_depth: int = field(default=0, metadata={"help": "Multi token pred depth"})
     use_fp8_mlp: bool = field(default=False, metadata={"help": "Whether to use fp8 mlp"})
-    num_hidden_layers: int = field(default=12, metadata={"help": "Number of hidden layers"})
+    num_hidden_layers: int = field(default=2, metadata={"help": "Number of hidden layers"})
     num_empty_layers_add_in_tail: int = field(default=0, metadata={"help": "Number of empty layers add in tail"})
     use_fp8_fuse_node: bool = field(default=False, metadata={"help": "Whether to use fp8 fuse node"})
     use_ep_comm_overlap: bool = field(default=False, metadata={"help": "Whether to use ep comm overlap"})
     fp8_mem_configs: FP8MemConfigs = field(default_factory=FP8MemConfigs)
     fp8_fused_ops_configs: FP8FusedOpsConfigs = field(default_factory=FP8FusedOpsConfigs)
     use_combine_before_a2a: bool = field(default=False, metadata={"help": "Whether to use combine before a2a"})
+    moe_num_experts: Union[int, list] = 0
+    moe_k: int = field(default=2, metadata={"help": "Number of keys per experts"})
+    moe_capacity = ()
+    moe_use_aux_free: bool = field(default=False, metadata={"help": "Whether to use aux free"})
+    moe_gate: str = field(default="top2_fused", metadata={"help": "MoE gate type"})
+    transpose_split_quant: bool = field(default=False, metadata={"help": "Whether to use transpose split quant"})
 
 
 @dataclass
