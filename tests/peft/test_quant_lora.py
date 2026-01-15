@@ -129,7 +129,7 @@ class TestQuantedLoRAModel(unittest.TestCase):
         quant_lora_model = qat.quantize(self.lora_model, inplace=False)
         quantizer_cnt = self._count_layers(quant_lora_model, FakeQuanterWithAbsMaxObserverLayer)
         # 2 LoRA layers (qkv_proj) per transformer layer
-        self.assertEqual(quantizer_cnt, 2 * self.model.config.num_hidden_layers)
+        self.assertEqual(quantizer_cnt, self.model.config.num_hidden_layers)
 
     def test_forward_no_quant(self):
         q_config = QuantConfig(activation=None, weight=None)

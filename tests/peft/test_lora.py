@@ -235,7 +235,10 @@ class TestLoraModelFC(unittest.TestCase):
                 lora_alpha=8,
             )
             model = Glm4MoeModel.from_pretrained(
-                "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=True
+                "PaddleFormers/tiny-random-glm4moe-bf16",
+                download_hub="aistudio",
+                convert_from_hf=True,
+                dtype="float32",
             )
             lora_model = LoRAModel(model, lora_config)
             lora_model.eval()
