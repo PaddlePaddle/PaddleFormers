@@ -358,20 +358,12 @@ def run_dpo(
 
     logger.info(f"callbacks: {callbacks}")
     # padding to the maximum seq length in batch data when max_seq_len is None
-    if getattr(model, "is_fleet", False) and not model_args.lora:
-        if training_args.per_device_train_batch_size > 1:
-            max_seq_len = data_args.max_seq_len + model_config.num_nextn_predict_layers
-            logger.warning(f"Setting max_seq_len to {max_seq_len} for mbs > 1 using PaddleFleet model.")
-        else:
-            max_seq_len = None
-            logger.warning("Setting max_seq_len to None for mbs = 1 using PaddleFleet Model.")
-    else:
-        max_seq_len = (
-            data_args.max_seq_len + model_config.num_nextn_predict_layers
-            if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
-            else None
-        )
-        logger.info(f"Setting max_seq_len to {max_seq_len} using PaddleFormers Model.")
+    max_seq_len = (
+        data_args.max_seq_len + model_config.num_nextn_predict_layers
+        if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
+        else None
+    )
+    logger.info(f"Setting max_seq_len to {max_seq_len} using PaddleFormers Model.")
     trainer = DPOTrainer(
         model=model,
         ref_model=ref_model,
