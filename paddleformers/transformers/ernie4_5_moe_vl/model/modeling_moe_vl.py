@@ -617,7 +617,6 @@ def calc_multimodal_logits(
         parallel_matmul,
         tensor_model_parallel_size=config.tensor_model_parallel_size,
         tensor_parallel_output=config.tensor_parallel_output,
-        fuse_linear=config.fuse_linear,
         transpose_y=config.tie_word_embeddings,
     )
 
@@ -721,7 +720,6 @@ class Ernie4_5_MoeVLHead(Ernie4_5_LMHead):
                     transpose_y=self.config.tie_word_embeddings,
                     tensor_model_parallel_size=self.config.tensor_model_parallel_size,
                     tensor_parallel_output=False,
-                    fuse_linear=self.config.fuse_linear,
                 ),
                 None,
             )
