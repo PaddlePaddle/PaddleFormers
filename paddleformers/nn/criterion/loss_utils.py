@@ -58,7 +58,6 @@ def calc_lm_head_logits(
         transpose_y=True,
         tensor_model_parallel_size=config.tensor_model_parallel_size,
         tensor_parallel_output=tensor_parallel_output,
-        fuse_linear=config.get("fuse_linear", False),
         training=training,
     )
 

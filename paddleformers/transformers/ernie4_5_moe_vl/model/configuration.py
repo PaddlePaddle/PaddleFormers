@@ -91,7 +91,6 @@ class Ernie4_5_Config(PretrainedConfig):
         apply_rope_fusion=False,
         fuse_softmax_mask=False,
         weight_share_add_bias=True,
-        fuse_linear=False,
         max_sequence_length=None,
         ignored_index=-100,
         add_tail_layers=False,
@@ -136,7 +135,6 @@ class Ernie4_5_Config(PretrainedConfig):
             rope_theta (float): The base period of the RoPE embeddings
             apply_rope_fusion (bool): Whether to fuse RoPE operations
             weight_share_add_bias (bool): Whether to share bias weights in certain layers
-            fuse_linear (bool): Whether to fuse linear operations
             max_sequence_length (int): Maximum sequence length for positional embeddings
             ignored_index (int): Target value that is ignored during loss computation
             add_tail_layers (int): Whether to add additional layers at the end
@@ -194,7 +192,6 @@ class Ernie4_5_Config(PretrainedConfig):
         self.apply_rope_fusion = apply_rope_fusion
         self.fuse_softmax_mask = fuse_softmax_mask
 
-        self.fuse_linear = fuse_linear
         self.ignored_index = ignored_index
         self.add_tail_layers = add_tail_layers
 
