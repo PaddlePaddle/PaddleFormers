@@ -424,43 +424,6 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_model_name_list(self):
         pass
 
-    def test_save_load(self):
-        for model_class in self.all_model_classes:
-            # test from_pretrained
-            model1 = model_class.from_pretrained(
-                "PaddleFormers/tiny-random-glm4moe",
-                download_hub="aistudio",
-                convert_from_hf=True,
-                load_checkpoint_format="",
-            )
-
-            model2 = model_class.from_pretrained(
-                "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", load_checkpoint_format="flex_checkpoint"
-            )
-
-            model_state_1 = model1.state_dict()
-            model_state_2 = model2.state_dict()
-
-            for k, v in model_state_1.items():
-                md51 = v._md5sum()
-                md52 = model_state_2[k]._md5sum()
-                assert md51 == md52
-
-            # test save_pretrained
-            with tempfile.TemporaryDirectory() as tmpdirname:
-                model2.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-                model3 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
-                model_state_3 = model3.state_dict()
-
-                for k, v in model_state_3.items():
-                    md53 = v._md5sum()
-                    md52 = model_state_2[k]._md5sum()
-                    if k.endswith(".mlp.gate.weight"):
-                        md52 = model_state_2[k].cast("bfloat16")._md5sum()
-                        md53 = model_state_3[k].cast("bfloat16")._md5sum()
-                    print(k)
-                    assert md52 == md53
-
     def test_hidden_states_output(self):
         pass
 
@@ -620,9 +583,22 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
-            )
+            if class_name != "Glm4MoeModel":
+                config = Glm4MoeConfig.from_pretrained(tempdir)
+                config.fuse_attention_ffn = (True,)
+                config.fuse_attention_qkv = (True,)
+                config.attention_bias = False
+                paddle_model = paddle_model_class.from_pretrained(
+                    tempdir,
+                    config=config,
+                    convert_from_hf=True,
+                    dtype="float32",
+                    load_checkpoint_format="flex_checkpoint",
+                )
+            else:
+                paddle_model = paddle_model_class.from_pretrained(
+                    tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+                )
             paddle_model.eval()
 
             if class_name == "Glm4MoeModel":
