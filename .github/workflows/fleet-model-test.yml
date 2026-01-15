@@ -88,6 +88,7 @@ jobs:
           pip install --upgrade pip
           git clone https://github.com/PaddlePaddle/PaddleFormers.git -b ${BRANCH}
           cd PaddleFormers
+          git status
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
@@ -218,6 +219,7 @@ jobs:
           pip install --upgrade pip
           git clone https://github.com/PaddlePaddle/PaddleFormers.git  -b ${BRANCH}
           cd PaddleFormers
+          git status
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
@@ -413,6 +415,7 @@ jobs:
           pip install --upgrade pip
           git clone https://github.com/PaddlePaddle/PaddleFormers.git -b ${BRANCH}
           cd PaddleFormers
+          git status
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
