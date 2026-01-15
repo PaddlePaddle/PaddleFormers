@@ -238,6 +238,7 @@ import_structure = {
         "Qwen3MoeForCausalLM",
         "Qwen3MoeForCausalLMPipe",
         "Qwen3MoePretrainingCriterion",
+        "Qwen3MoeForCausalLMDecapitated",
     ],
     "qwen3_next.configuration": ["Qwen3NextConfig"],
     "qwen3_next.modeling": [
@@ -263,7 +264,7 @@ import_structure = {
     "qwen3_moe": [],
     "qwen3_next": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
-    "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"],
+    "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDecapitated"],
     "auto": ["AutoModelForCausalLM"],
     "legacy.tokenizer_utils_base": ["EncodingFast"],
     "legacy": [],

@@ -21,8 +21,11 @@ import numpy as np
 import paddle
 from parameterized import parameterized
 
-from paddleformers.trainer.trainer_utils import set_random_seed
-from paddleformers.transformers import Glm4MoeConfig, Glm4MoeForCausalLM, Glm4MoeModel
+from paddleformers.transformers import Glm4MoeConfig
+from paddleformers.transformers import (
+    Glm4MoeForCausalLMDecapitated as Glm4MoeForCausalLM,
+)
+from paddleformers.transformers import Glm4MoeModel
 from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -184,15 +187,7 @@ class Glm4MoeModelTester:
         model.eval()
 
         # first forward pass
-
-        data = {
-            "input_ids": input_ids,
-            "position_ids": None,
-            "attention_mask": input_mask,
-            "labels:": None,
-        }
-
-        outputs = model(data)
+        outputs = model(input_ids, attention_mask=input_mask, use_cache=True, return_dict=self.return_dict)
         past_key_values = outputs.past_key_values if self.return_dict else outputs[2]
 
         # create hypothetical multiple next token and extent to next_input_ids
@@ -246,40 +241,35 @@ class Glm4MoeModelTester:
         model = Glm4MoeForCausalLM(config)
         model.eval()
 
-        data = {
-            "input_ids": input_ids,
-            "position_ids": None,
-            "attention_mask": None,
-            "labels:": input_ids if self.parent.use_labels else None,
-        }
-
-        result = model(data)
-
-        self.parent.assertEqual(result.shape, [self.batch_size, self.seq_length, self.vocab_size])
+        result = model(
+            input_ids,
+            use_cache=True,
+            labels=input_ids if self.parent.use_labels else None,
+            return_dict=self.parent.return_dict,
+        )
+        if self.parent.use_labels:
+            self.parent.assertIsInstance(result[0].item(), float)
+            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
+        else:
+            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
     def check_model_position_ids(self, config, input_ids, input_mask, *args):
         model = Glm4MoeForCausalLM(config)
         model.eval()
 
-        data = {
-            "input_ids": input_ids,
-            "position_ids": None,
-            "attention_mask": None,
-            "labels": input_ids if self.parent.use_labels else None,
-        }
-
-        result_no_position_id = model(data)
+        result_no_position_id = model(
+            input_ids,
+            labels=input_ids if self.parent.use_labels else None,
+            return_dict=self.parent.return_dict,
+        )
         batch_size, seq_len = input_ids.shape
         position_ids = paddle.arange(seq_len).expand((batch_size, seq_len))
-
-        data = {
-            "input_ids": input_ids,
-            "position_ids": position_ids,
-            "attention_mask": None,
-            "labels": input_ids if self.parent.use_labels else None,
-        }
-
-        result_position_id = model(data)
+        result_position_id = model(
+            input_ids,
+            position_ids,
+            labels=input_ids if self.parent.use_labels else None,
+            return_dict=self.parent.return_dict,
+        )
         if self.parent.use_labels:
             self.parent.assertTrue((result_position_id[1] == result_no_position_id[1]).all())
         else:
@@ -291,16 +281,17 @@ class Glm4MoeModelTester:
         config.apply_rope_fusion = True
         model.eval()
 
-        data = {
-            "input_ids": input_ids,
-            "position_ids": None,
-            "attention_mask": None,
-            "labels": input_ids if self.parent.use_labels else None,
-        }
-
-        result = model(data)
-
-        self.parent.assertEqual(result.shape, [self.batch_size, self.seq_length, self.vocab_size])
+        result = model(
+            input_ids,
+            use_cache=True,
+            labels=input_ids if self.parent.use_labels else None,
+            return_dict=self.parent.return_dict,
+        )
+        if self.parent.use_labels:
+            self.parent.assertIsInstance(result[0].item(), float)
+            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
+        else:
+            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
 
 class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
@@ -313,7 +304,7 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 
     def setUp(self):
         super().setUp()
-        set_random_seed(42)
+
         self.model_tester = Glm4MoeModelTester(self)
         self.config_tester = ConfigTester(self, config_class=Glm4MoeConfig, vocab_size=256, hidden_size=24)
 
@@ -341,66 +332,24 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         self.model_tester.create_and_check_model_attention_mask(*config_and_inputs)
         # pass
 
-    # def test_model_position_ids(self):
-    #     # pass
-    #     config_and_inputs = self.model_tester.prepare_config_and_inputs()
-    #     self.model_tester.check_model_position_ids(*config_and_inputs)
+    def test_model_position_ids(self):
+        # pass
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.check_model_position_ids(*config_and_inputs)
 
     def test_generate_without_input_ids(self):
         # this requires 4-D attention mask logic, which is not supported yet
         pass
 
-    # def test_Glm4Moe_lm_head_model(self):
-    #     # pass
-    #     config_and_inputs = self.model_tester.prepare_config_and_inputs()
-    #     self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
+    def test_Glm4Moe_lm_head_model(self):
+        # pass
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
 
     def test_Glm4Moe_gqa_model(self):
-        pass
-
-    #     config_and_inputs = self.model_tester.prepare_config_and_inputs()
-    #     self.model_tester.create_and_check_gqa_model(*config_and_inputs)
-
-    def test_forward_signature(self):
-        pass
-
-    #     config, _ = self.model_tester.prepare_config_and_inputs_for_common()
-
-    #     for model_class in self.all_model_classes:
-    #         model = self._make_model_instance(config, model_class)
-    #         signature = inspect.signature(model.forward)
-    #         # signature.parameters is an OrderedDict => so arg_names order is deterministic
-    #         arg_names = [*signature.parameters.keys()]
-    #         expected_arg_names = ["input_ids", "input"]
-    #         assert arg_names[:1][0] in expected_arg_names
-
-    def test_for_missed_attribute(self):
-        pass
-        # if not self.test_model_compatibility_keys:
-        #     self.skipTest(f"Do not test model_compatibility_keys on {self.base_model_class}")
-        #     return
-
-        # config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        # for model_class in self.all_model_classes:
-        #     if not model_class.constructed_from_pretrained_config():
-        #         continue
-
-        #     model = self._make_model_instance(config, model_class)
-
-        #     all_maps: dict = copy.deepcopy(model_class.config_class.attribute_map)
-
-        #     for old_attribute, new_attribute in all_maps.items():
-        #         print("old_attribute", old_attribute, "new_attribute", new_attribute)
-        #         if old_attribute == "num_classes":
-        #             continue
-        #         old_value = getattr(model.config, old_attribute)
-        #         new_value = getattr(model.config, new_attribute)
-
-        #         # eg: dropout can be an instance of nn.Dropout, so we should check it attribute
-        #         if type(new_value) != type(old_value):
-        #             continue
-
-        #         self.assertEqual(old_value, new_value)
+        # pass
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_gqa_model(*config_and_inputs)
 
     def test_attention_outputs(self):
         pass
@@ -425,6 +374,43 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 
     def test_model_name_list(self):
         pass
+
+    def test_save_load(self):
+        for model_class in self.all_model_classes:
+            # test from_pretrained
+            model1 = model_class.from_pretrained(
+                "PaddleFormers/tiny-random-glm4moe",
+                download_hub="aistudio",
+                convert_from_hf=True,
+                load_checkpoint_format="",
+            )
+
+            model2 = model_class.from_pretrained(
+                "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", load_checkpoint_format="flex_checkpoint"
+            )
+
+            model_state_1 = model1.state_dict()
+            model_state_2 = model2.state_dict()
+
+            for k, v in model_state_1.items():
+                md51 = v._md5sum()
+                md52 = model_state_2[k]._md5sum()
+                assert md51 == md52
+
+            # test save_pretrained
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                model2.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+                model3 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
+                model_state_3 = model3.state_dict()
+
+                for k, v in model_state_3.items():
+                    md53 = v._md5sum()
+                    md52 = model_state_2[k]._md5sum()
+                    if k.endswith(".mlp.gate.weight"):
+                        md52 = model_state_2[k].cast("bfloat16")._md5sum()
+                        md53 = model_state_3[k].cast("bfloat16")._md5sum()
+                    print(k)
+                    assert md52 == md53
 
     def test_hidden_states_output(self):
         pass
@@ -584,29 +570,19 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
             # 3. forward the paddle model
             from paddleformers import transformers
 
+            if class_name == "Glm4MoeForCausalLM":
+                class_name = "Glm4MoeForCausalLMDecapitated"
+
             paddle_model_class = getattr(transformers, class_name)
-            if class_name != "Glm4MoeModel":
-                config = Glm4MoeConfig.from_pretrained(tempdir)
-                config.fuse_attention_ffn = (True,)
-                config.fuse_attention_qkv = (True,)
-                config.attention_bias = False
-                paddle_model = paddle_model_class.from_pretrained(
-                    tempdir,
-                    config=config,
-                    convert_from_hf=True,
-                    dtype="float32",
-                    load_checkpoint_format="flex_checkpoint",
-                )
-            else:
-                paddle_model = paddle_model_class.from_pretrained(
-                    tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
-                )
+            paddle_model = paddle_model_class.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            )
             paddle_model.eval()
 
             if class_name == "Glm4MoeModel":
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
             else:
-                paddle_logit = paddle_model({"input_ids": paddle.to_tensor(input_ids)})
+                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
 
             self.assertTrue(
                 np.allclose(

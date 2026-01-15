@@ -14,7 +14,6 @@
 # limitations under the License.
 from __future__ import annotations
 
-import copy
 import tempfile
 import unittest
 
@@ -22,12 +21,11 @@ import numpy as np
 import paddle
 from parameterized import parameterized
 
-from paddleformers.trainer.trainer_utils import set_random_seed
+from paddleformers.transformers import Qwen3MoeConfig
 from paddleformers.transformers import (
-    Qwen3MoeConfig,
-    Qwen3MoeForCausalLM,
-    Qwen3MoeModel,
+    Qwen3MoeForCausalLMDecapitated as Qwen3MoeForCausalLM,
 )
+from paddleformers.transformers import Qwen3MoeModel
 from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -210,17 +208,9 @@ class Qwen3MoeModelTester:
         choice_labels,
     ):
         model = Qwen3MoeForCausalLM(config=config)
-        model = paddle.amp.decorate(models=model, level="O2", dtype="bfloat16")
-        data = {
-            "input_ids": input_ids,
-            "position_ids": None,
-            "attention_mask": input_mask,
-            "labels": token_labels,
-        }
-        with paddle.amp.auto_cast(enable=True, dtype="bfloat16"):
-            model.eval()
-            result = model(data)
-        self.parent.assertEqual(result.shape, [self.batch_size, self.seq_length, self.vocab_size])
+        model.eval()
+        result = model(input_ids, attention_mask=input_mask, labels=token_labels, return_dict=True)
+        self.parent.assertEqual(result.logits.shape, [self.batch_size, self.seq_length, self.vocab_size])
 
     def prepare_config_and_inputs_for_common(self):
         config_and_inputs = self.prepare_config_and_inputs()
@@ -237,44 +227,37 @@ class Qwen3MoeModelTester:
 
     def create_and_check_lm_head_model(self, config, input_ids, input_mask, *args):
         model = Qwen3MoeForCausalLM(config)
-        data = {
-            "input_ids": input_ids,
-            "position_ids": None,
-            "attention_mask": None,
-            "labels": input_ids if self.parent.use_labels else None,
-        }
-        model = paddle.amp.decorate(models=model, level="O2", dtype="bfloat16")
+        model.eval()
 
-        with paddle.amp.auto_cast(enable=True, dtype="bfloat16"):
-            model.eval()
-            result = model(data)
-
-        self.parent.assertEqual(result.shape, [self.batch_size, self.seq_length, self.vocab_size])
+        result = model(
+            input_ids,
+            use_cache=True,
+            labels=input_ids if self.parent.use_labels else None,
+            return_dict=self.parent.return_dict,
+        )
+        if self.parent.use_labels:
+            self.parent.assertIsInstance(result[0].item(), float)
+            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
+        else:
+            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
     def check_model_position_ids(self, config, input_ids, input_mask, *args):
         model = Qwen3MoeForCausalLM(config)
-        model = paddle.amp.decorate(models=model, level="O2", dtype="bfloat16")
-        data = {
-            "input_ids": input_ids,
-            "position_ids": None,
-            "attention_mask": None,
-            "labels": input_ids if self.parent.use_labels else None,
-        }
-        with paddle.amp.auto_cast(enable=True, dtype="bfloat16"):
-            model.eval()
-            result_no_position_id = model(data)
+        model.eval()
 
+        result_no_position_id = model(
+            input_ids,
+            labels=input_ids if self.parent.use_labels else None,
+            return_dict=self.parent.return_dict,
+        )
         batch_size, seq_len = input_ids.shape
         position_ids = paddle.arange(seq_len).expand((batch_size, seq_len))
-
-        data = {
-            "input_ids": input_ids,
-            "position_ids": position_ids,
-            "attention_mask": None,
-            "labels": input_ids if self.parent.use_labels else None,
-        }
-        with paddle.amp.auto_cast(enable=True, dtype="bfloat16"):
-            result_position_id = model(data)
+        result_position_id = model(
+            input_ids,
+            position_ids=position_ids,
+            labels=input_ids if self.parent.use_labels else None,
+            return_dict=self.parent.return_dict,
+        )
         if self.parent.use_labels:
             self.parent.assertTrue((result_position_id[1] == result_no_position_id[1]).all())
         else:
@@ -292,7 +275,7 @@ class Qwen3MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
 
     def setUp(self):
         super().setUp()
-        set_random_seed(42)
+
         self.model_tester = Qwen3MoeModelTester(self)
         self.config_tester = ConfigTester(self, config_class=Qwen3MoeConfig, vocab_size=256, hidden_size=24)
 
@@ -357,99 +340,20 @@ class Qwen3MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
     #                 md52 = model_state_2[k]._md5sum()
     #                 assert md51 == md52
 
-    def test_forward_signature(self):
-        pass
-
-    #     config, _ = self.model_tester.prepare_config_and_inputs_for_common()
-
-    #     for model_class in self.all_model_classes:
-    #         model = self._make_model_instance(config, model_class)
-    #         signature = inspect.signature(model.forward)
-    #         # signature.parameters is an OrderedDict => so arg_names order is deterministic
-    #         arg_names = [*signature.parameters.keys()]
-    #         expected_arg_names = ["input_ids", "input"]
-    #         assert arg_names[:1][0] in expected_arg_names
-
-    def test_for_missed_attribute(self):
-        if not self.test_model_compatibility_keys:
-            self.skipTest(f"Do not test model_compatibility_keys on {self.base_model_class}")
-            return
-
-        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        for model_class in self.all_model_classes:
-            if not model_class.constructed_from_pretrained_config():
-                continue
-
-            model = self._make_model_instance(config, model_class)
-
-            all_maps: dict = copy.deepcopy(model_class.config_class.attribute_map)
-
-            for old_attribute, new_attribute in all_maps.items():
-                print("old_attribute", old_attribute, "new_attribute", new_attribute)
-                if old_attribute == "num_classes":
-                    continue
-                old_value = getattr(model.config, old_attribute)
-                new_value = getattr(model.config, new_attribute)
-
-                # eg: dropout can be an instance of nn.Dropout, so we should check it attribute
-                if type(new_value) != type(old_value):
-                    continue
-
-                self.assertEqual(old_value, new_value)
-
-    def test_attention_outputs(self):
-        pass
-
-    def test_beam_search_generate(self):
-        pass
-
-    def test_greedy_generate(self):
-        pass
-
-    def test_group_beam_search_generate(self):
-        pass
-
-    def test_resize_tokens_embeddings(self):
-        pass
-
-    def test_sample_generate(self):
-        pass
-
-    def test_determinism(self):
-        pass
-
-    def test_model_name_list(self):
-        pass
-
-    def test_save_load(self):
-        pass
-
-    def test_hidden_states_output(self):
-        pass
-
 
 class Qwen3MoeIntegrationTest(unittest.TestCase):
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
-        config = Qwen3MoeConfig.from_pretrained("PaddleFormers/tiny-random-qwen3moev2")
-        config.fuse_attention_ffn = (True,)
-        config.fuse_attention_qkv = (True,)
         model = Qwen3MoeForCausalLM.from_pretrained(
-            "PaddleFormers/tiny-random-qwen3moev2",
-            config=config,
-            dtype="float32",
-            convert_from_hf=True,
-            load_checkpoint_format="flex_checkpoint",
+            "PaddleFormers/tiny-random-qwen3moev2", dtype="float32", convert_from_hf=True, load_checkpoint_format=""
         )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
-            out = model({"input_ids": input_ids})
-
-        print("out.mean(-1) is ", out.mean(-1))
+            out = model(input_ids, return_dict=True).logits
 
         # Expected mean on dim = -1
         EXPECTED_MEAN = paddle.to_tensor(
-            [[0.00170604, 0.00594666, 0.00417538, 0.00733661, 0.00917683, 0.00863101, 0.00907406, 0.00700793]]
+            [[0.00170604, 0.00471663, 0.00417853, 0.00308787, 0.00467000, 0.00604948, 0.00412507, 0.00160586]]
         )
         self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
 
@@ -519,46 +423,65 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
             )
         )
 
-    # @require_package("transformers", "torch")
-    # def test_Qwen3Moe_converter_from_local_dir(self):
-    #     with tempfile.TemporaryDirectory() as tempdir:
+    @require_package("transformers", "torch")
+    def test_Qwen3Moe_converter_from_local_dir(self):
+        with tempfile.TemporaryDirectory() as tempdir:
 
-    #         # 1. create common input
-    #         input_ids = np.random.randint(100, 200, [1, 20])
+            # 1. create common input
+            input_ids = np.random.randint(100, 200, [1, 20])
 
-    #         # 2. forward the torch  model
-    #         import torch
-    #         from transformers import Qwen3MoeForCausalLM
+            # 2. forward the torch  model
+            import torch
+            from transformers import Qwen3MoeForCausalLM
 
-    #         torch_model = Qwen3MoeForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-    #         torch_model.eval()
-    #         torch_model.save_pretrained(tempdir)
-    #         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+            torch_model = Qwen3MoeForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model.eval()
+            torch_model.save_pretrained(tempdir)
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
-    #         # 2. forward the paddle model with fc
-    #         from paddleformers.transformers import Qwen3MoeConfig, Qwen3MoeForCausalLM
+            # 2. forward the paddle model with fc
+            from paddleformers.transformers import Qwen3MoeConfig
+            from paddleformers.transformers import (
+                Qwen3MoeForCausalLMDecapitated as Qwen3MoeForCausalLM,
+            )
 
-    #         model_config = Qwen3MoeConfig.from_pretrained(tempdir)
-    #         model_config.fuse_attention_qkv = True
-    #         model_config.fuse_attention_ffn = True
-    #         paddle_model = Qwen3MoeForCausalLM.from_pretrained(
-    #             tempdir,
-    #             config=model_config,
-    #             convert_from_hf=True,
-    #             dtype="float32",
-    #             load_checkpoint_format="flex_checkpoint",
-    #         )
-    #         paddle_model.eval()
-    #         paddle_logit = paddle_model({"input_ids": paddle.to_tensor(input_ids)})[0]
+            paddle_model = Qwen3MoeForCausalLM.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
+            paddle_model.eval()
+            paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
-    #         self.assertTrue(
-    #             np.allclose(
-    #                 paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-    #                 torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-    #                 atol=1e-2,
-    #                 rtol=1e-2,
-    #             )
-    #         )
+            self.assertTrue(
+                np.allclose(
+                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    atol=1e-2,
+                    rtol=1e-2,
+                )
+            )
+
+            # 3. fuse qkv/ffn with fc
+            model_config = Qwen3MoeConfig.from_pretrained(tempdir)
+            model_config.fuse_attention_qkv = True
+            model_config.fuse_attention_ffn = True
+            paddle_model_fused = Qwen3MoeForCausalLM.from_pretrained(
+                tempdir,
+                config=model_config,
+                convert_from_hf=True,
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
+            )
+            paddle_model_fused.eval()
+            paddle_fused_logit = paddle_model_fused(paddle.to_tensor(input_ids))[0]
+
+            self.assertTrue(
+                np.allclose(
+                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    paddle_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    atol=1e-2,
+                    rtol=1e-2,
+                )
+            )
 
     @parameterized.expand([("Qwen3MoeModel",), ("Qwen3MoeForCausalLM",)])
     @require_package("transformers", "torch")
@@ -583,28 +506,18 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
             # 3. forward the paddle model
             from paddleformers import transformers
 
+            if class_name == "Qwen3MoeForCausalLM":
+                class_name = "Qwen3MoeForCausalLMDecapitated"
             paddle_model_class = getattr(transformers, class_name)
-            if class_name != "Qwen3MoeModel":
-                model_config = Qwen3MoeConfig.from_pretrained(tempdir)
-                model_config.fuse_attention_ffn = (True,)
-                model_config.fuse_attention_qkv = (True,)
-                paddle_model = paddle_model_class.from_pretrained(
-                    tempdir,
-                    config=model_config,
-                    convert_from_hf=True,
-                    dtype="float32",
-                    load_checkpoint_format="flex_checkpoint",
-                )
-            else:
-                paddle_model = paddle_model_class.from_pretrained(
-                    tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
-                )
+            paddle_model = paddle_model_class.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            )
             paddle_model.eval()
 
             if class_name == "Qwen3MoeModel":
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
             else:
-                paddle_logit = paddle_model({"input_ids": paddle.to_tensor(input_ids)})
+                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
 
             self.assertTrue(
                 np.allclose(
