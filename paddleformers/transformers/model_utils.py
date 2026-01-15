@@ -3177,9 +3177,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             if is_main_process:
                 if config_to_save.tensor_model_parallel_size > 1:
                     config_to_save.tensor_model_parallel_size = 1
-                if config_to_save.get("model_type", "").startswith(
-                    "ernie4_5"
-                ):  # hacking for FastDeploy to deploy ernie 4.5 series model
+                paddle_series = ["ernie4_5", "paddleocr_vl"]
+                if any(paddle_model in config_to_save.get("model_type", "") for paddle_model in paddle_series):
+                    # hacking for FastDeploy to deploy paddle series model
                     config_to_save.save_pretrained(save_directory, save_to_hf=True)
                 else:
                     config_to_save.save_pretrained(save_directory)
