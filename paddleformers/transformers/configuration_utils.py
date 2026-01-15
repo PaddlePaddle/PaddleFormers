@@ -234,8 +234,8 @@ class LlmMetaConfig:
         ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
         ("apply_rope_fusion", bool, False, "Whether to fuse RoPE operation"),
         ("fuse_swiglu", bool, False, "Whether to fuse SwiGLU operations"),
-        ("fuse_attention_qkv", bool, False, "Whether to fuse Attention QKV operations"),
-        ("fuse_attention_ffn", bool, False, "Whether to fuse Attention FFN operations"),
+        ("fuse_attention_qkv", bool, True, "Whether to fuse Attention QKV operations"),
+        ("fuse_attention_ffn", bool, True, "Whether to fuse Attention FFN operations"),
     ]
 
     hybrid_parallel_attributes = [
@@ -829,8 +829,8 @@ class PretrainedConfig:
             self.context_parallel_size = 1
 
         # for transformers fuse
-        self.fuse_attention_qkv = kwargs.pop("fuse_attention_qkv", False)
-        self.fuse_attention_ffn = kwargs.pop("fuse_attention_ffn", False)
+        self.fuse_attention_qkv = kwargs.pop("fuse_attention_qkv", True)
+        self.fuse_attention_ffn = kwargs.pop("fuse_attention_ffn", True)
 
         # for general components
         self._attn_implementation = kwargs.pop("_attn_implementation", "eager")
