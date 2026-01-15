@@ -606,10 +606,10 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
             base_h_ceil = h_idxs_ceil * self.num_grid_per_side
 
             indices = [
-                (base_h.unsqueeze(1) + w_idxs_floor.unsqueeze(0)).flatten(),
-                (base_h.unsqueeze(1) + w_idxs_ceil.unsqueeze(0)).flatten(),
-                (base_h_ceil.unsqueeze(1) + w_idxs_floor.unsqueeze(0)).flatten(),
-                (base_h_ceil.unsqueeze(1) + w_idxs_ceil.unsqueeze(0)).flatten(),
+                (base_h[None].T + w_idxs_floor[None]).flatten(),
+                (base_h[None].T + w_idxs_ceil[None]).flatten(),
+                (base_h_ceil[None].T + w_idxs_floor[None]).flatten(),
+                (base_h_ceil[None].T + w_idxs_ceil[None]).flatten(),
             ]
 
             weights = [
