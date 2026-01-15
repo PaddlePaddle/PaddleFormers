@@ -281,6 +281,7 @@ def mm_collate_fn(
         get_rope_func = model.model.get_rope_index  # transformers >= 4.52.0
     else:
         get_rope_func = None
+    bs_idx_in_rope = 1
 
     if model is not None and hasattr(model, "get_token_type_ids"):
         get_token_type_func = model.get_token_type_ids  # transformers < 4.52.0
@@ -364,6 +365,7 @@ def mm_collate_fn(
         if len(pixel_values_videos) > 0:
             pixel_values_videos = paddle.concat(pixel_values_videos, axis=0)
         if get_token_type_func is not None:  # ernie45vl
+            bs_idx_in_rope = 0
             padded_position_ids = padded_position_ids.transpose([1, 2, 0])
             padded_token_type_ids, images, grid_thw = get_token_type_func(
                 paddle.to_tensor(padded_token_ids), pixel_values, image_grid_thw, pixel_values_videos, video_grid_thw
@@ -408,14 +410,18 @@ def mm_collate_fn(
             )
 
     transposed_list = list(zip(*return_list))
-    return_list = []
-    for tensors in transposed_list:
+    input_dict = {}
+    for key, tensors in zip(input_keys, transposed_list):
         filtered_tensors = [paddle.to_tensor(x) for x in tensors if x is not None and len(x) > 0]
         if filtered_tensors:
-            return_list.append(paddle.concat(filtered_tensors, axis=0))
+            if key == "position_ids":
+                value = paddle.concat(filtered_tensors, axis=bs_idx_in_rope)
+            else:
+                value = paddle.concat(filtered_tensors, axis=0)
         else:
-            return_list.append(paddle.to_tensor([]))
-    input_dict = {key: value for key, value in zip(input_keys, return_list) if (value is not None and len(value) > 0)}
+            value = paddle.to_tensor([])
+        if value is not None and len(value) > 0:
+            input_dict[key] = value
     return input_dict
 
 
