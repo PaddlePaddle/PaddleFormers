@@ -165,7 +165,6 @@ class Glm4vMoeVisionConfig(PretrainedConfig):
         self.rms_norm_eps = rms_norm_eps
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
-        self._attn_implementation = "sdpa"
 
 
 class Glm4vMoeTextConfig(PretrainedConfig):
@@ -329,7 +328,6 @@ class Glm4vMoeTextConfig(PretrainedConfig):
         rope_config_validation(self, ignore_keys=ignore_keys_at_rope_validation)
 
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
-        self._attn_implementation = "sdpa"
 
 
 class Glm4vMoeConfig(PretrainedConfig):
@@ -413,6 +411,29 @@ class Glm4vMoeConfig(PretrainedConfig):
             and self.vision_config.tie_word_embeddings
         )
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
+
+    def __setattr__(self, key, value):
+        if (
+            (text_config := super().__getattribute__("__dict__").get("text_config")) is not None
+            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+            and key in text_config.__dict__
+        ):
+            setattr(text_config, key, value)
+        else:
+            super().__setattr__(key, value)
+
+    def __getattribute__(self, key):
+        if "text_config" in super().__getattribute__("__dict__") and key not in [
+            "_name_or_path",
+            "model_type",
+            "dtype",
+            "_attn_implementation_internal",
+        ]:
+            text_config = super().__getattribute__("text_config")
+            if key in text_config.__dict__:
+                return getattr(text_config, key)
+
+        return super().__getattribute__(key)
 
 
 __all__ = ["Glm4vMoeConfig", "Glm4vMoeTextConfig", "Glm4vMoeVisionConfig"]

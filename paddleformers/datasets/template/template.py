@@ -770,7 +770,7 @@ register_template(
 # copied from glm4 template
 register_template(
     name="glm4v_moe",
-    format_user=StringFormatter(slots=["<|user|>\n{{content}}<|assistant|>"]),
+    format_user=StringFormatter(slots=["<|user|>\n{{content}}<|assistant|>\n"]),
     format_assistant=StringFormatter(slots=["\n{{content}}"]),
     format_system=StringFormatter(slots=["<|system|>\n{{content}}"]),
     format_function=FunctionFormatter(slots=["{{content}}"], tool_format="glm4_moe"),
@@ -780,8 +780,7 @@ register_template(
     suffix=["<|user|>"],
     stop_words=["<|user|>", "<|observation|>", "</answer>"],
     efficient_eos=True,
-    replace_eos=True,
-    thought_words=("\n<think>", "</think>"),
+    thought_words=("<think>", "</think>"),
     mm_plugin=get_mm_plugin(name="glm4v", image_token="<|image|>", video_token="<|video|>"),
     template_class=ReasoningTemplate,
 )

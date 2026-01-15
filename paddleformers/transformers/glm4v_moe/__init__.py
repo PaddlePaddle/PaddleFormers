@@ -29,18 +29,18 @@ import_structure = {
     ],
     # TODO: might be moved to glm4v in the future
     "image_processor": ["Glm4vImageProcessor"],
-    "image_processor_fast": ["Glm4vImageProcessorFast"], 
+    "image_processor_fast": ["Glm4vImageProcessorFast"],
     "processor": ["Glm4vProcessor"],
     "video_processor": ["Glm4vVideoProcessor"],
 }
 
 if TYPE_CHECKING:
     from .configuration import *
+    from .image_processor import *
+    from .image_processor_fast import *
     from .modeling import *
     from .processor import *
     from .video_processor import *
-    from .image_processor import *
-    from .image_processor_fast import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

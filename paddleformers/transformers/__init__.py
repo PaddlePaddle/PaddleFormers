@@ -289,7 +289,6 @@ import_structure = {
         "Glm4vMoeVisionModel",
     ],
     "glm4v_moe.processor": ["Glm4vProcessor"],
-    "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
     "glm4v_moe.video_processor": ["Glm4vVideoProcessor"],
     "glm4v_moe": [],
 }
@@ -361,7 +360,6 @@ if TYPE_CHECKING:
     from .gpt_oss import *
     from .phi3 import *
     from .gemma3_text import *
-    from .glm4v_moe import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

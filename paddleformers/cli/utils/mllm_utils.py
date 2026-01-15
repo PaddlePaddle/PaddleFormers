@@ -30,6 +30,7 @@ class MLLMModelMapping:
     qwen3_vl_moe = "qwen3_vl_moe"
     paddleocr_vl = "paddleocr_vl"
     ernie4_5_moe_vl = "ernie4_5_moe_vl"
+    glm4v_moe = "glm4v_moe"
 
 
 @dataclass
@@ -224,5 +225,14 @@ register_multimodel_keys(
         aligner="resampler_model",
         llm=["model", "lm_head", "mlp", "self_attn"],
         vision="vision_model",
+    )
+)
+
+register_multimodel_keys(
+    MultiModelKeys(
+        model_dtype=MLLMModelMapping.glm4v_moe,
+        aligner="model.visual.merger",
+        llm=["model.language_model", "lm_head"],
+        vision="model.visual",
     )
 )
