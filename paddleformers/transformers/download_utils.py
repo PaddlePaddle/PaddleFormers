@@ -986,6 +986,11 @@ register_model_group(
             DownloadSource.AISTUDIO: "PaddlePaddle/ERNIE-4.5-21B-A3B-PT",
             DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-21B-A3B-PT",
         },
+        "ERNIE-4.5-21B-A3B-Thinking": {
+            DownloadSource.HUGGINGFACE: "baidu/ERNIE-4.5-21B-A3B-Thinking",
+            DownloadSource.AISTUDIO: "PaddlePaddle/ERNIE-4.5-21B-A3B-Thinking",
+            DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-21B-A3B-Thinking",
+        },
         "ERNIE-4.5-0.3B-Base": {
             DownloadSource.HUGGINGFACE: "baidu/ERNIE-4.5-0.3B-Base-PT",
             DownloadSource.AISTUDIO: "PaddlePaddle/ERNIE-4.5-0.3B-Base-PT",
@@ -1015,6 +1020,11 @@ register_model_group(
             DownloadSource.HUGGINGFACE: "baidu/ERNIE-4.5-VL-28B-A3B-PT",
             DownloadSource.AISTUDIO: "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-PT",
             DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-PT",
+        },
+        "ERNIE-4.5-VL-28B-A3B-Thinking": {
+            DownloadSource.HUGGINGFACE: "baidu/ERNIE-4.5-VL-28B-A3B-Thinking",
+            DownloadSource.AISTUDIO: "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-Thinking",
+            DownloadSource.MODELSCOPE: "PaddlePaddle/ERNIE-4.5-VL-28B-A3B-Thinking",
         },
     }
 )
