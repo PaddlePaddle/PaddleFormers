@@ -427,7 +427,7 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to use SonicMoE as the computation backend for the moelayer.",
-        )
+        ),
     ]
 
     mtp_attributes = [
