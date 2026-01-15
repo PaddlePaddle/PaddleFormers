@@ -3,7 +3,7 @@ stage: ernie_pretrain
 
 # data
 dataset_type: pretrain
-input_dir: "1.0 ./data/llama_openwebtext_100k"
+input_dir: "0.4 ./demo_data/data-1-part0 0.6 ./demo_data/data-1-part0"
 split: "998,1,1"
 data_load_process_num: 40
 max_seq_len: 4096
@@ -13,7 +13,7 @@ prefetch_factor: 32
 ignore_data_skip: 0
 
 # model
-model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/liangshuhao/ERNIE-4.5-21B-A3B-Base-PT
+model_name_or_path: model_configs/ERNIE-4.5-21B-A3B/
 tokenizer_name_or_path: paddleformers/cli/train/ernie_pretrain/src/tokenizers/tokenizer_model
 moe_use_aux_free_update_coef: 0.001
 moe_with_send_router_loss: False
@@ -21,61 +21,63 @@ moe_group: ep
 use_moe: true
 
 # train
-seed: 42
 output_dir: ./output/
-do_train: True
-per_device_train_batch_size: 2
-save_steps: 20
-max_steps: 100
+num_consecutive: 32
 enable_global_training_logs: False
 global_logging_interval: 1
+enable_mtp_magic_send: True
+do_train: True
+overwrite_output_dir: 1
+disable_tqdm: 1
 logging_steps: 1
+eval_steps: 1000000
+eval_iters: -1
+save_steps: 10
+max_steps: 20
 adam_beta1: 0.9
 adam_beta2: 0.95
 adam_epsilon: 1e-8
-eval_steps: 1000000
-eval_iters: -1
-overwrite_output_dir: 1
-disable_tqdm: 1
-report_to: none
 learning_rate: 3.14e-4
 min_lr: 3.14e-6
-global_batch_size: 128
 gradient_accumulation_steps: 8
+per_device_train_batch_size: 2
 lr_scheduler: wsd:603000
 decay_function: 1-sqrt
 max_grad_norm: 1.0
 weight_decay: 0.1
 warmup_steps: 2000
 save_total_limit: 5
-scale_loss: 4096
-from_scratch: 1
-
-# performance
 bf16: True
 fp16_opt_level: "O2"
+scale_loss: 4096
+seed: 42
 use_train_part_sharding: 1
-offload_optim: true
-amp_master_grad: 1
-num_consecutive: 32
-enable_mtp_magic_send: True
-gc_interval: 100000
-use_ortho_loss_callback: true
 pre_alloc_memory: 60
-sharding_comm_buffer_size_MB: 2048
+offload_optim: true
 use_expert_parallel: True
 expert_model_parallel_size: 8
 sharding: "stage1"
 sharding_parallel_size: 8
-split_param: true
+amp_master_grad: 1
+report_to: none
+global_batch_size: 128
+from_scratch: 1
+use_ortho_loss_callback: true
 same_data: True
 enable_timer: 1
-skip_profile_timer: False
 skip_load_data_seq_cache: 1
+
+# sharding_parallel_config
+split_param: true
+sharding_comm_buffer_size_MB: 2048
+
+# tensor_parallel_config
+skip_profile_timer: False
 load_sharded_model: True
 save_sharded_model: True
 ignore_load_lr_and_optim: False
 enable_optimizer_timer: False
+gc_interval: 100000
 
 # ernie_model_config
 ernie_model_config:
