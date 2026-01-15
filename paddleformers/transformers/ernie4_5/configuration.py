@@ -49,7 +49,6 @@ class Ernie4_5Config(PretrainedConfig):
         rope_theta=10000,
         apply_rope_fusion=False,
         fuse_softmax_mask=False,
-        fuse_linear=False,
         max_sequence_length=None,
         ignored_index=-100,
         attention_dropout_prob=0.0,
@@ -91,7 +90,6 @@ class Ernie4_5Config(PretrainedConfig):
             use_bias (bool): Whether to use bias terms in linear layers
             rope_theta (float): The base period of the RoPE embeddings
             apply_rope_fusion (bool): Whether to fuse RoPE operations
-            fuse_linear (bool): Whether to fuse linear operations
             fuse_up_gate (bool): Whether to fuse up_proj and gate_proj to a single linear layer
             max_sequence_length (int): Maximum sequence length for positional embeddings
             ignored_index (int): Target value that is ignored during loss computation
@@ -134,7 +132,6 @@ class Ernie4_5Config(PretrainedConfig):
         self.tie_word_embeddings = tie_word_embeddings
         self.apply_rope_fusion = apply_rope_fusion
         self.fuse_softmax_mask = fuse_softmax_mask
-        self.fuse_linear = fuse_linear
         self.ignored_index = ignored_index
         self.attention_dropout_prob = attention_dropout_prob
         self.hidden_act = hidden_act

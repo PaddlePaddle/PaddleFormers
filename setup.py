@@ -179,6 +179,11 @@ def get_console_scripts() -> list[str]:
     return console_scripts
 
 
+import sys
+
+major = sys.version_info.major
+minor = sys.version_info.minor
+ver_str = f"{major}{minor}"
 if commit != "unknown":
     write_version_py(filename="paddleformers/version/__init__.py")
 
@@ -205,7 +210,7 @@ try:
         entry_points={"console_scripts": get_console_scripts()},
         extras_require={
             "paddlefleet": [
-                "paddlefleet >= 0.0.1.dev; platform_system == 'Linux' and platform_machine == 'x86_64'"
+                f"paddlefleet @ https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp{ver_str}-cp{ver_str}-linux_x86_64.whl"
             ],
         },
         python_requires=">=3.8",

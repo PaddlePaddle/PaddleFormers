@@ -53,57 +53,6 @@ class PreTrainingArguments(TrainingArguments):
             )
         },
     )
-    pp_need_data_degree: int = field(
-        default=0,
-        metadata={"help": "pipline need data degree"},
-    )
-    pp_need_data: bool = field(default=False, metadata={"help": "pipline need fetch data"})
-    balanced_image_preprocess: bool = field(default=False, metadata={"help": "balanced image preprocess"})
-
-    @property
-    def need_data(self):
-        """
-        whether need load data
-        return True
-        """
-        # only mp0、pp0 need data
-        if self.pp_need_data_degree:
-            assert self.pipeline_model_parallel_size > 1
-            assert self.pp_need_data_degree >= 2 and self.pp_need_data_degree <= self.pipeline_model_parallel_size, (
-                self.pp_need_data_degree,
-                self.pipeline_model_parallel_size,
-            )
-            # shift by 1 to avoid last pp no nee data
-            no_need_data_range = list(range(self.pp_need_data_degree - 1, self.pipeline_model_parallel_size - 1))
-            return self.tensor_parallel_rank == 0 and (self.pipeline_parallel_rank not in no_need_data_range)
-        return self.pipeline_parallel_rank == 0 and self.tensor_parallel_rank == 0
-
-    @property
-    def reeao_dataset_rank(self):
-        """
-        pp /sharding/ dp sum data stream rank
-        """
-        if not self.pp_need_data_degree:
-            return super().dataset_rank
-        no_need_data_range = list(range(self.pp_need_data_degree - 1, self.pipeline_model_parallel_size - 1))
-        ranks = [i for i in range(self.pipeline_model_parallel_size) if i not in no_need_data_range]
-        if self.pipeline_parallel_rank not in ranks:
-            return None
-        reeao_pp_rank = ranks.index(self.pipeline_parallel_rank)
-        return (
-            max(self.sharding_parallel_size, 1) * max(self.pp_need_data_degree, 1) * self.data_parallel_rank
-            + max(self.pp_need_data_degree, 1) * self.sharding_parallel_rank
-            + reeao_pp_rank
-        )
-
-    @property
-    def reeao_dataset_world_size(self):
-        """
-        pp /sharding/ dp sum data stream worldsize
-        """
-        if not self.pp_need_data_degree:
-            return super().dataset_world_size
-        return max(self.sharding_parallel_size, 1) * max(self.pp_need_data_degree, 1) * max(self.data_parallel_size, 1)
 
 
 @dataclass
@@ -292,18 +241,6 @@ class FinetuningArguments(
             # logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size} in Pipeline Parallel!")
             user_defined_strategy = fleet.fleet._user_defined_strategy
             user_defined_strategy.strategy.pipeline_configs.accumulate_steps = self.gradient_accumulation_steps
-            if self.pp_need_data and not self.pp_need_data_degree:
-                self.pp_need_data_degree = self.pipeline_model_parallel_size
-            if self.pp_need_data_degree:
-                assert self.gradient_accumulation_steps % self.pp_need_data_degree == 0, (
-                    f"gradient_accumulation_steps[{self.gradient_accumulation_steps}] should be divisible by "
-                    f"pp_need_data_degree[{self.pp_need_data_degree}]"
-                )
-
-                self.gradient_accumulation_steps = self.gradient_accumulation_steps // self.pp_need_data_degree
-                logger.info(
-                    f"pp-need-data hack args.gradient_accumulation_steps to - {self.gradient_accumulation_steps}"
-                )
             self.max_gradient_accumulation_steps = self.gradient_accumulation_steps
             logger.info(f"fixing pp configs: {user_defined_strategy.pipeline_configs}")
         # else:
