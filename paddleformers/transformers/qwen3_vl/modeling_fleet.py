@@ -1095,7 +1095,7 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
             image_embeds = paddle.cat(image_embeds, dim=0)
 
         if self.add_encoder and pixel_values_videos is not None:
-            pixel_values_videos.to(next(self.vision_model.parameters()).dtype)
+            pixel_values_videos.to(self.vision_model.parameters()[0].dtype)
             if self.config.freeze_vision_model:
                 with paddle.no_grad():
                     video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
