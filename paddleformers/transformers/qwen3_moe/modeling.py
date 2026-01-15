@@ -35,7 +35,7 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
 from ...nn.moe_deepep.moe_factory import QuickAccessMoEFactory
 from ...nn.norm import Norm as GeneralNorm
-from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..gpt_provider import GPTModelProvider
@@ -89,6 +89,8 @@ class Qwen3MoEModelProvider(GPTModelProvider):
     moe_grouped_gemm: bool = True
 
     n_shared_experts: int = 0
+
+    use_qk_norm: bool = True
 
 
 def rotate_half(x):
@@ -1206,6 +1208,7 @@ class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
+        # Hybrid parallel config convert.
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
@@ -1214,11 +1217,15 @@ class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel):
 
         model_provider_class = Qwen3MoEModelProvider
         model_provider = model_provider_class.from_config(config)
-        gpt_model = model_provider.provide()
+        loss_fn = None
+        if hasattr(config, "dpo_config"):
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
+        gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
         gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
 
         return gpt_model
 
@@ -1355,13 +1362,24 @@ class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel, GeneralModelForCausa
     is_fleet = True
 
     def __new__(cls, config):
+        # Hybrid parallel config convert.
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+
         model_provider_class = Qwen3MoEModelProvider
         model_provider = model_provider_class.from_config(config)
-        gpt_model = model_provider.provide()
+        loss_fn = None
+        if hasattr(config, "dpo_config"):
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
+        gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
         gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
         return gpt_model
 
 

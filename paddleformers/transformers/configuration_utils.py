@@ -1304,6 +1304,10 @@ class PretrainedConfig:
 
         # only serialize values that differ from the default config
         for key, value in config_dict.items():
+            white_list = ["tie_word_embeddings"]
+            if key in white_list:
+                serializable_config_dict[key] = value
+                continue
             if key == "quantization_config":
                 quantization_diff_dict = self.quantization_config.to_diff_dict()
                 if len(quantization_diff_dict) > 0:
