@@ -95,7 +95,6 @@ def calc_lm_head_logits(config, hidden_states, weight, bias, tensor_parallel_out
         transpose_y=config.tie_word_embeddings,
         tensor_model_parallel_size=config.tensor_model_parallel_size,
         tensor_parallel_output=tensor_parallel_output,
-        fuse_linear=config.fuse_linear,
         training=training,
     )
 
@@ -538,7 +537,6 @@ class Ernie4_5_MLP(nn.Layer):
                 self.intermediate_size,
                 gather_output=False,
                 has_bias=config.use_bias,
-                fuse_matmul_bias=config.fuse_linear,
                 **column_ln_configs,
             )
             self.gate_proj = ColumnLN(
@@ -546,11 +544,10 @@ class Ernie4_5_MLP(nn.Layer):
                 self.intermediate_size,
                 gather_output=False,
                 has_bias=config.use_bias,
-                fuse_matmul_bias=config.fuse_linear,
                 **column_ln_configs,
             )
         else:
-            LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else Linear
+            LinearFN = Linear
             self.up_proj = LinearFN(self.hidden_size, self.intermediate_size, bias_attr=config.use_bias)
             self.gate_proj = LinearFN(self.hidden_size, self.intermediate_size, bias_attr=config.use_bias)
 
@@ -568,11 +565,10 @@ class Ernie4_5_MLP(nn.Layer):
                 self.hidden_size,
                 input_is_parallel=True,
                 has_bias=config.use_bias,
-                fuse_matmul_bias=config.fuse_linear,
                 **row_ln_configs,
             )
         else:
-            LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else Linear
+            LinearFN = Linear
             self.down_proj = LinearFN(self.intermediate_size, self.hidden_size, bias_attr=config.use_bias)
 
         self.fuse_swiglu = config.fuse_swiglu
@@ -674,7 +670,6 @@ class Ernie4_5_Attention(nn.Layer):
                 q_hidden_size,
                 has_bias=config.use_bias,
                 gather_output=False,
-                fuse_matmul_bias=config.fuse_linear,
                 **column_ln_configs,
             )
             self.k_proj = ColumnLN(
@@ -682,7 +677,6 @@ class Ernie4_5_Attention(nn.Layer):
                 kv_hidden_size,
                 has_bias=config.use_bias,
                 gather_output=False,
-                fuse_matmul_bias=config.fuse_linear,
                 **column_ln_configs,
             )
             self.v_proj = ColumnLN(
@@ -690,11 +684,10 @@ class Ernie4_5_Attention(nn.Layer):
                 kv_hidden_size,
                 has_bias=config.use_bias,
                 gather_output=False,
-                fuse_matmul_bias=config.fuse_linear,
                 **column_ln_configs,
             )
         else:
-            LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else Linear
+            LinearFN = Linear
             self.q_proj = LinearFN(
                 self.hidden_size,
                 q_hidden_size,
@@ -726,11 +719,10 @@ class Ernie4_5_Attention(nn.Layer):
                 self.hidden_size,
                 has_bias=config.use_bias,
                 input_is_parallel=True,
-                fuse_matmul_bias=config.fuse_linear,
                 **row_ln_configs,
             )
         else:
-            LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else Linear
+            LinearFN = Linear
             self.o_proj = LinearFN(
                 (self.hidden_size if getattr(config, "head_dim", None) is None else q_hidden_size),
                 self.hidden_size,
@@ -1100,7 +1092,6 @@ class FusedHeadParallelCrossEntropy(PyLayer):
         ignore_index=-100,
         seq_chunk_size=8192,
         transpose_y=False,
-        fuse_linear=False,
         training=True,
     ):
         """Forward pass for parallel cross-entropy computation.
@@ -1116,7 +1107,6 @@ class FusedHeadParallelCrossEntropy(PyLayer):
             ignore_index (int): Index to ignore in loss computation. Defaults to -100
             seq_chunk_size (int): Chunk size for processing long sequences. Defaults to 8192
             transpose_y (bool): Whether to transpose weight matrix. Defaults to False
-            fuse_linear (bool): Whether to use fused linear ops. Defaults to False
             training (bool): Whether in training mode. Defaults to True
 
         Returns:
@@ -1129,7 +1119,6 @@ class FusedHeadParallelCrossEntropy(PyLayer):
         ctx.ignore_index = ignore_index
         ctx.seq_chunk_size = seq_chunk_size
         ctx.transpose_y = transpose_y
-        ctx.fuse_linear = fuse_linear
         ctx.training = training
 
         ctx.hidden_states_shape = hidden_states.shape
@@ -1185,7 +1174,6 @@ class FusedHeadParallelCrossEntropy(PyLayer):
                         transpose_y=ctx.transpose_y,
                         tensor_model_parallel_size=ctx.tensor_model_parallel_size,
                         tensor_parallel_output=True,
-                        fuse_linear=ctx.fuse_linear,
                         training=ctx.training,
                     )
 
@@ -1287,7 +1275,6 @@ class FusedHeadParallelCrossEntropy(PyLayer):
                         transpose_y=ctx.transpose_y,
                         tensor_model_parallel_size=ctx.tensor_model_parallel_size,
                         tensor_parallel_output=True,
-                        fuse_linear=ctx.fuse_linear,
                         training=ctx.training,
                     )
 
@@ -1460,7 +1447,6 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
             ignore_index=self.ignored_index,
             seq_chunk_size=self.config.get("loss_subbatch_seqlen", 32768),
             transpose_y=self.config.tie_word_embeddings,
-            fuse_linear=self.config.fuse_linear,
             training=self.training,
         )
         if loss_mask is None:

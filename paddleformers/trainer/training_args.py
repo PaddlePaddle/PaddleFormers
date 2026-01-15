@@ -1292,7 +1292,7 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Whether to use deterministic mode."},
     )
-    cp_comm_type: str = field(
+    cp_comm_type: Optional[str] = field(
         default=None,
         metadata={"help": "Communication type."},
     )

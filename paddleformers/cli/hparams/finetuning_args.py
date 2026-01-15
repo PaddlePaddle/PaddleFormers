@@ -332,18 +332,6 @@ class FinetuningArguments(
             # logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size} in Pipeline Parallel!")
             user_defined_strategy = fleet.fleet._user_defined_strategy
             user_defined_strategy.strategy.pipeline_configs.accumulate_steps = self.gradient_accumulation_steps
-            if self.pp_need_data and not self.pp_need_data_degree:
-                self.pp_need_data_degree = self.pipeline_model_parallel_size
-            if self.pp_need_data_degree:
-                assert self.gradient_accumulation_steps % self.pp_need_data_degree == 0, (
-                    f"gradient_accumulation_steps[{self.gradient_accumulation_steps}] should be divisible by "
-                    f"pp_need_data_degree[{self.pp_need_data_degree}]"
-                )
-
-                self.gradient_accumulation_steps = self.gradient_accumulation_steps // self.pp_need_data_degree
-                logger.info(
-                    f"pp-need-data hack args.gradient_accumulation_steps to - {self.gradient_accumulation_steps}"
-                )
             self.max_gradient_accumulation_steps = self.gradient_accumulation_steps
             logger.info(f"fixing pp configs: {user_defined_strategy.pipeline_configs}")
         # else:
