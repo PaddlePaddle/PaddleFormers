@@ -230,7 +230,6 @@ class LlmMetaConfig:
     op_fusion_attributes = [
         # name, type, default_value, comment
         ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
-        ("fuse_linear", bool, False, "Use fused linear layer instead of normal linear layer."),
         ("apply_rope_fusion", bool, False, "Whether to fuse RoPE operation"),
         ("fuse_swiglu", bool, False, "Whether to fuse SwiGLU operations"),
     ]
@@ -822,9 +821,6 @@ class PretrainedConfig:
             self.tensor_model_parallel_size = 1
             self.sep_parallel_size = 1
             self.context_parallel_size = 1
-
-        # for transformers fuse
-        self.fuse_linear = kwargs.pop("fuse_linear", False)
 
         # for general components
         self._attn_implementation = kwargs.pop("_attn_implementation", "eager")

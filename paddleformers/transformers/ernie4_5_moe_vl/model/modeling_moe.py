@@ -983,7 +983,7 @@ class Ernie4_5_Model(Ernie4_5_PretrainedModel):
                 [Norm(config) for _ in range(self.config.num_nextn_predict_layers)]
             )
 
-            LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else paddle.nn.Linear
+            LinearFN = paddle.nn.Linear
             self.mtp_linear_proj = paddle.nn.LayerList(
                 [
                     LinearFN(
