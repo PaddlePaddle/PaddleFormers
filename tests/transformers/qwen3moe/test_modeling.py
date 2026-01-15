@@ -438,7 +438,7 @@ class Qwen3MoeIntegrationTest(unittest.TestCase):
         )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
-            out = model(input_ids, return_dict=True).logits
+            out = model({"input_ids": input_ids})
 
         # Expected mean on dim = -1
         EXPECTED_MEAN = paddle.to_tensor(
@@ -601,7 +601,7 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
             if class_name == "Qwen3MoeModel":
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
             else:
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
+                paddle_logit = paddle_model({"input_ids": paddle.to_tensor(input_ids)})
 
             self.assertTrue(
                 np.allclose(

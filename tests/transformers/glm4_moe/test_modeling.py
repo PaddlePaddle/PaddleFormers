@@ -628,7 +628,7 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
             if class_name == "Glm4MoeModel":
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
             else:
-                paddle_logit = paddle_model({"input_ids": paddle.to_tensor(input_ids)}).logits
+                paddle_logit = paddle_model({"input_ids": paddle.to_tensor(input_ids)})
 
             self.assertTrue(
                 np.allclose(
