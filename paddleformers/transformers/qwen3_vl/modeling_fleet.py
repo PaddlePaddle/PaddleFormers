@@ -137,6 +137,7 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
         # this is only used to uniquely identify decode and non-decode cuda graph
         # runners in the cuda graph manager
         dict_args.pop("dynamic_inference_decode_only", None)
+        dict_args.pop("position_ids", None)
         if self.full_recompute:
             hidden_states = dict_args["hidden_states"]
             attention_mask = dict_args.get("attention_mask", None)
@@ -1057,7 +1058,6 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
         return self.get_image_features(pixel_values_videos, video_grid_thw)
 
     def get_image_features(self, pixel_values: paddle.FloatTensor, image_grid_thw: paddle.LongTensor | None = None):
-        pixel_values = pixel_values.to(self.vision_model._dtype)
         image_embeds, deepstack_image_embeds = self.vision_model(pixel_values, grid_thw=image_grid_thw)
         # print("vision_model output ",image_embeds.shape)
         # print(f"image_grid_thw {image_grid_thw.prod(-1)} spatial_merge_size {self.vision_model.spatial_merge_size ** 2}")
@@ -1086,7 +1086,7 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
         assert loss_mask is None, "loss_mask is not supported yet"
         image_embeds, video_embeds, deepstack_image_embeds, deepstack_video_embeds = (None for _ in range(4))
         if self.add_encoder and pixel_values is not None:
-            pixel_values.to(self.vision_model.parameters()[0].dtype)
+            pixel_values = pixel_values.to(self.vision_model.parameters()[0].dtype)
             if self.config.freeze_vision_model:
                 with paddle.no_grad():
                     image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
@@ -1095,7 +1095,7 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
             image_embeds = paddle.cat(image_embeds, dim=0)
 
         if self.add_encoder and pixel_values_videos is not None:
-            pixel_values_videos.to(self.vision_model.parameters()[0].dtype)
+            pixel_values_videos = pixel_values_videos.to(self.vision_model.parameters()[0].dtype)
             if self.config.freeze_vision_model:
                 with paddle.no_grad():
                     video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
@@ -1103,7 +1103,6 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
                 video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
             video_embeds = paddle.cat(video_embeds, axis=0)
 
-        print(position_ids)
         if position_ids is None:
             if self.rope_deltas is None or cache_position is None or cache_position[0] == 0:
                 position_ids, rope_deltas = self.get_rope_index(
@@ -1122,6 +1121,18 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
                 else:
                     delta = paddle.zeros((batch_size, seq_length))
                 delta = delta.repeat_interleave(batch_size // delta.shape[0], axis=1)
+                position_ids = position_ids + delta
+        else:
+            if position_ids.shape == input_ids.shape:
+                position_ids = position_ids.expand(3, position_ids.shape[0], -1)
+            else:
+                batch_size, seq_length = input_ids.shape
+                position_ids = paddle.arange(seq_length)
+                position_ids = position_ids.view(1, 1, -1).expand(3, batch_size, -1)
+                if cache_position is not None:
+                    delta = cache_position[0] + self.rope_deltas
+                else:
+                    delta = paddle.zeros((batch_size, seq_length))
                 position_ids = position_ids + delta
 
         input_dict = {

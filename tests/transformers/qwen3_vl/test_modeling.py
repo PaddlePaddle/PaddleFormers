@@ -112,6 +112,7 @@ class Qwen3VLVisionText2TextModelTester:
                 "spatial_merge_size": 1,
                 "temporal_patch_size": 2,
                 "deepstack_visual_indexes": [0, 1],
+                "dtype": "bfloat16",
             }
         self.vision_config = vision_config
 
@@ -133,6 +134,7 @@ class Qwen3VLVisionText2TextModelTester:
             "vocab_size": vocab_size,
             "rope_parameters": {"mrope_section": mrope_section, "rope_type": "default", "type": "mrope"},
             "rope_scaling": {"mrope_section": mrope_section, "type": "mrope"},
+            "dtype": "bfloat16",
         }
 
     def get_config(self):
@@ -142,6 +144,7 @@ class Qwen3VLVisionText2TextModelTester:
             vision_start_token_id=self.vision_start_token_id,
             image_token_id=self.image_token_id,
             video_token_id=self.video_token_id,
+            dtype="bfloat16",
         )
 
     def prepare_config_and_inputs(self):
@@ -385,6 +388,7 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
         for model_class in self.all_model_classes:
             model = model_class(config)
+            model.to(dtype=config.dtype)
             model.eval()
             _ = model(**input_dict)  # successful forward with no modifications
             curr_input_dict = copy.deepcopy(input_dict)
@@ -421,16 +425,88 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
             )
 
     def test_video_forward(self):
-        pass
+        config, _ = self.model_tester.prepare_config_and_inputs_for_common()
+
+        B = self.model_tester.batch_size
+        C = config.vision_config.in_chans
+        T = config.vision_config.temporal_patch_size
+        P = config.vision_config.patch_size
+
+        input_ids = ids_tensor([B, self.model_tester.seq_length], self.model_tester.vocab_size)
+
+        F = 4
+        patch_H = self.model_tester.image_size // P
+        patch_W = self.model_tester.image_size // P
+        patch_T = F // T
+        patches_per_video = patch_T * patch_H * patch_W
+        pixel_values_videos = floats_tensor(
+            [
+                # first dim: batch_size * num_patches
+                B * patches_per_video,
+                # second dim: in_channels * temporal_patch_size * patch_size^2
+                C * T * (P**2),
+            ]
+        )
+        video_grid_thw = paddle.to_tensor([[patch_T, patch_H, patch_W]] * B)
+
+        # sanity check
+        assert pixel_values_videos.shape[0] == video_grid_thw.prod(dim=1).sum().item()
+
+        # Insert video token sequence
+        input_ids[:, -1] = self.model_tester.pad_token_id
+        input_ids[input_ids == self.model_tester.video_token_id] = self.model_tester.pad_token_id
+        input_ids[input_ids == self.model_tester.image_token_id] = self.model_tester.pad_token_id
+        input_ids[input_ids == self.model_tester.vision_start_token_id] = self.model_tester.pad_token_id
+        input_ids[:, self.model_tester.num_image_tokens] = self.model_tester.video_token_id
+
+        insertion_point = self.model_tester.num_image_tokens
+
+        assert (B * patches_per_video) + insertion_point <= self.model_tester.seq_length
+        for b in range(B):
+            input_ids[b, insertion_point - 1] = self.model_tester.vision_start_token_id
+            input_ids[b, insertion_point : insertion_point + patches_per_video] = self.model_tester.video_token_id
+
+        for model_class in self.all_model_classes:
+            second_per_grid_ts = paddle.to_tensor([1.0] * B)
+            model = model_class(config)
+            model.to(dtype=config.dtype)
+            outputs = model(
+                input_ids=input_ids,
+                pixel_values_videos=pixel_values_videos,
+                video_grid_thw=video_grid_thw,
+                second_per_grid_ts=second_per_grid_ts,
+            )
+            self.assertIsNotNone(outputs)
 
     def test_attention_outputs(self):
         pass
 
     def test_beam_search_generate(self):
-        pass
+        for model_class in self.all_generative_model_classes:
+            config, inputs_dict = self.prepare_config_and_inputs_for_generate()
+
+            model = model_class(config).eval()
+            model.to(dtype=config.dtype)
+            beam_kwargs, _ = self._get_beam_scorer_and_kwargs(1, 1)
+            output_generate = self._beam_search_generate(model=model, inputs_dict=inputs_dict, beam_kwargs=beam_kwargs)
+
+            if model.config.is_encoder_decoder:
+                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + 1)
+            else:
+                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
     def test_greedy_generate(self):
-        pass
+        for model_class in self.all_generative_model_classes:
+            config, inputs_dict = self.prepare_config_and_inputs_for_generate()
+
+            model = model_class(config).eval()
+            model.to(dtype=config.dtype)
+            output_generate = self._greedy_generate(model=model, inputs_dict=inputs_dict)
+
+            if model.config.is_encoder_decoder:
+                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + 1)
+            else:
+                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
     def test_group_beam_search_generate(self):
         pass
@@ -439,7 +515,17 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         pass
 
     def test_sample_generate(self):
-        pass
+        for model_class in self.all_generative_model_classes:
+            config, inputs_dict = self.prepare_config_and_inputs_for_generate()
+
+            model = model_class(config).eval()
+            model.to(dtype=config.dtype)
+            output_generate = self._sample_generate(model=model, inputs_dict=inputs_dict, num_return_sequences=1)
+
+            if model.config.is_encoder_decoder:
+                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + 1)
+            else:
+                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
     def test_determinism(self):
         pass
@@ -502,7 +588,7 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 class Qwen3VLIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(
-            "PaddleFormers/tiny-random-qwen3vlv2", convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            "PaddleFormers/tiny-random-qwen3vlv2", dtype="bfloat16", load_checkpoint_format="flex_checkpoint"
         )
 
         self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen3vlv2")
