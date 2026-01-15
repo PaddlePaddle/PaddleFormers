@@ -86,7 +86,7 @@ jobs:
           mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
-          git clone https://github.com/PaddlePaddle/PaddleFormers.git
+          git clone https://github.com/PaddlePaddle/PaddleFormers.git -b ${BRANCH}
           cd PaddleFormers
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
@@ -216,7 +216,7 @@ jobs:
           mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
-          git clone https://github.com/PaddlePaddle/PaddleFormers.git
+          git clone https://github.com/PaddlePaddle/PaddleFormers.git  -b ${BRANCH}
           cd PaddleFormers
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
@@ -411,7 +411,7 @@ jobs:
           mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
-          git clone https://github.com/PaddlePaddle/PaddleFormers.git
+          git clone https://github.com/PaddlePaddle/PaddleFormers.git -b ${BRANCH}
           cd PaddleFormers
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
