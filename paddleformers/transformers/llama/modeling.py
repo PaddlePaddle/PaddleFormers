@@ -12,18 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from functools import partial
 from typing import Callable, Optional, cast
 
 import paddle
 from paddle import nn
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
-
-from paddleformers.transformers.conversion_utils import (
-    StateDictNameMapping,
-    init_name_mappings,
-)
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
@@ -325,111 +319,6 @@ class LlamaPretrainedModel(PretrainedModel):
         "up_proj",
         "down_proj",
     ]
-
-    @classmethod
-    def _get_name_mappings(cls, config: LlamaConfig) -> list[StateDictNameMapping]:
-        mappings: list[StateDictNameMapping] = []
-        model_mappings = [
-            ["embed_tokens.weight"],
-            ["norm.weight"],
-        ]
-        for layer_index in range(config.num_hidden_layers):
-            layer_mappings = [
-                [f"layers.{layer_index}.self_attn.q_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.k_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.v_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.o_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.self_attn.rotary_emb.inv_freq"],
-                [f"layers.{layer_index}.mlp.gate_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.mlp.down_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.mlp.up_proj.weight", None, "transpose"],
-                [f"layers.{layer_index}.input_layernorm.weight"],
-                [f"layers.{layer_index}.post_attention_layernorm.weight"],
-            ]
-            model_mappings.extend(layer_mappings)
-
-        init_name_mappings(mappings=model_mappings)
-        # base-model prefix "LlamaModel"
-        if "LlamaModel" not in config.architectures:
-            for mapping in model_mappings:
-                mapping[0] = "model." + mapping[0]
-                mapping[1] = "llama." + mapping[1]
-            if not config.tie_word_embeddings:
-                model_mappings.append(["lm_head.weight", "lm_head.weight", "transpose"])
-
-        mappings = [StateDictNameMapping(*mapping, index=index) for index, mapping in enumerate(model_mappings)]
-        return mappings
-
-    @classmethod
-    def _get_tensor_parallel_mappings(cls, config: LlamaConfig, is_split=True):
-        from ..conversion_utils import split_or_merge_func
-
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_model_parallel_size=config.tensor_model_parallel_size,
-            tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
-        )
-
-        LAYER_COLWISE = [
-            "self_attn.q_proj.weight",
-            "self_attn.k_proj.weight",
-            "self_attn.v_proj.weight",
-            "mlp.up_proj.weight",
-            "mlp.gate_proj.weight",
-        ]
-
-        LAYER_ROWWISE = ["self_attn.o_proj.weight", "mlp.down_proj.weight"]
-        MLP_BIAS_KEYS = [
-            "mlp.gate_proj.bias",
-            "mlp.up_proj.bias",
-            "mlp.down_proj.bias",
-        ]
-        ATTN_BIAS_KEYS = [
-            "self_attn.q_proj.bias",
-            "self_attn.k_proj.bias",
-            "self_attn.v_proj.bias",
-            "self_attn.o_proj.bias",
-        ]
-
-        def make_base_actions():
-            actions = {
-                "lm_head.weight": partial(fn, is_column=False),
-                f"{cls.base_model_prefix}.embed_tokens.weight": partial(fn, is_column=False),
-            }
-            for layer_idx in range(config.num_hidden_layers):
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
-                        for k in LAYER_COLWISE
-                    }
-                )
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
-                        for k in LAYER_ROWWISE
-                    }
-                )
-                # bias
-                if config.mlp_bias:
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
-                            for b in MLP_BIAS_KEYS
-                        }
-                    )
-                if config.attention_bias:
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
-                            for b in ATTN_BIAS_KEYS
-                        }
-                    )
-
-            return actions
-
-        mappings = make_base_actions()
-        return mappings
 
     @classmethod
     def _gen_aoa_config(cls, config: LlamaConfig):

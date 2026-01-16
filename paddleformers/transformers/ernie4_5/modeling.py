@@ -15,7 +15,6 @@
 """Paddle Ernie model."""
 
 import math
-from functools import partial
 from typing import Optional, Tuple
 
 import paddle
@@ -477,68 +476,6 @@ class Ernie4_5PretrainedModel(PretrainedModel):
     config_class = Ernie4_5Config
     base_model_prefix = "model"
     transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-
-    @classmethod
-    def _get_tensor_parallel_mappings(cls, config, is_split=True):
-        """Generate tensor parallel mappings for model conversion."""
-        from ..conversion_utils import split_or_merge_func
-
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_model_parallel_size=config.tensor_model_parallel_size,
-            tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
-        )
-
-        LAYER_COLWISE = [
-            "self_attn.q_proj.weight",
-            "self_attn.k_proj.weight",
-            "self_attn.v_proj.weight",
-            "mlp.up_proj.weight",
-            "mlp.gate_proj.weight",
-        ]
-
-        LAYER_ROWWISE = ["self_attn.o_proj.weight", "mlp.down_proj.weight"]
-
-        BIAS_KEYS = [
-            "self_attn.q_proj.bias",
-            "self_attn.k_proj.bias",
-            "self_attn.v_proj.bias",
-            "mlp.gate_proj.bias",
-            "mlp.up_proj.bias",
-            "self_attn.o_proj.bias",
-            "mlp.down_proj.bias",
-            "lm_head.bias",
-        ]
-
-        def make_base_actions():
-            actions = {
-                "lm_head.weight": partial(fn, is_column=False),
-                "embed_tokens.weight": partial(fn, is_column=False),
-            }
-            for layer_idx in range(config.num_hidden_layers):
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
-                        for k in LAYER_COLWISE
-                    }
-                )
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
-                        for k in LAYER_ROWWISE
-                    }
-                )
-                # bias
-                if config.use_bias:
-                    actions.update(
-                        {f"{cls.base_model_prefix}.layers.0.{b}": partial(fn, is_column=True) for b in BIAS_KEYS}
-                    )
-
-            return actions
-
-        mappings = make_base_actions()
-        return mappings
 
     @classmethod
     def _gen_aoa_config(cls, config: Ernie4_5Config):

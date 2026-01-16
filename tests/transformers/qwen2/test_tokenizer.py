@@ -20,7 +20,7 @@ from paddleformers.transformers import Qwen2Tokenizer, Qwen2TokenizerFast
 
 
 class TestTokenizer(unittest.TestCase):
-    from_pretrained_id = "paddleformers_test/tiny-random-qwen2"
+    from_pretrained_id = "PaddleFormers/tiny-random-qwen2v2"
     tokenizer_class = Qwen2Tokenizer
     rust_tokenizer_class = Qwen2TokenizerFast
     test_slow_tokenizer = True

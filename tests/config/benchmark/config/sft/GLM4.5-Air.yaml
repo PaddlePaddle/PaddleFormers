@@ -62,8 +62,7 @@ recompute_granularity: full
 recompute_method: block
 recompute_num_layers: 11
 
-recompute_modules:
-  flash_attn: 6
+using_sonic_moe: true
 
 moe_grouped_gemm: true
 apply_rope_fusion: true
