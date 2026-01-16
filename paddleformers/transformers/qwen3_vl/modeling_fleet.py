@@ -1122,6 +1122,9 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
                     delta = paddle.zeros((batch_size, seq_length))
                 delta = delta.repeat_interleave(batch_size // delta.shape[0], axis=1)
                 position_ids = position_ids + delta
+        else:
+            if position_ids.shape == input_ids.shape:
+                position_ids = position_ids.expand(3, position_ids.shape[0], -1)
 
         input_dict = {
             "input_ids": input_ids,
