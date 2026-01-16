@@ -16,14 +16,10 @@
 
 import ast
 import contextlib
-import functools
-import heapq
 import json
 import math
 from collections import defaultdict
 from copy import deepcopy
-from dataclasses import dataclass
-from functools import partial, reduce
 from itertools import accumulate
 from types import MethodType
 from typing import Dict, List, Optional, Union
@@ -43,7 +39,6 @@ from paddle.distributed.fleet.meta_parallel import (
 )
 from paddle.distributed.fleet.utils import recompute
 from paddle.nn import functional as F
-from paddle.utils.layers_utils import flatten, map_structure, pack_sequence_as
 
 from paddleformers.transformers.model_utils import (
     PipelinePretrainedModel as PipelinePretrainedModelBase,
@@ -51,7 +46,7 @@ from paddleformers.transformers.model_utils import (
 from paddleformers.transformers.model_utils import PretrainedModel
 from paddleformers.utils.log import logger
 
-from .comm_utils import all_gather_varlen, gather_varlen
+from .comm_utils import all_gather_varlen
 from .configuration import Ernie4_5_VLMoeConfig
 from .dfnrope.modeling_pp import DFNRopeVisionTransformerPipe
 from .modeling import LayerNorm, RMSNorm
@@ -154,7 +149,7 @@ class ErniePretrainingCriterionPipe(ErniePretrainingCriterion):
         if (
             config.recompute_modules is not None
             and "loss_fn" in config.recompute_modules
-            or config.use_sparse_head_and_loss_fn
+            or config.use_filtered_label_loss
         ):
             config = deepcopy(config)
             config.sequence_parallel = False  # Do GatherOp in LMHead
@@ -172,7 +167,7 @@ class ErniePretrainingCriterionPipe(ErniePretrainingCriterion):
         if (
             self.config.recompute_modules is not None
             and "loss_fn" in self.config.recompute_modules
-            or self.config.use_sparse_head_and_loss_fn
+            or self.config.use_filtered_label_loss
         ):
             token_type_ids, logits_text, logits_image, logits_audio, *head_and_bias = logits
             # token_type_ids, logits_text, logits_image, *head_and_bias = logits
@@ -192,386 +187,6 @@ class ErniePretrainingCriterionPipe(ErniePretrainingCriterion):
             *head_and_bias,
         )
         return loss
-
-
-@dataclass
-class _DtypeSndShape:
-    dtype: paddle.dtype
-    shape: list
-
-    def size(self):
-        """size"""
-        return reduce(lambda x, y: x * y, self.shape)
-
-
-def gather_tensors_list_in_pp_group(inputs, offload_pp_data_chunk_size=0, merge_output=True):
-    """
-    gather `inputs` from all pp group, send to pp 0 and pp -1
-    Args:
-        `inputs`: (nested) lists of tensor
-        `offload_pp_data_chunk_size`
-        `merge_output`:
-            if specified, return tensors.
-            if no specified, return list of results gather from each pp rank.
-    """
-    hcg = get_hcg()
-    dp_group = hcg.get_pipe_parallel_group()
-    dp_worldsize = hcg.get_pipe_parallel_world_size()
-    dp_src_rank = dp_group.ranks[0]
-    dp_src_rank_last = dp_group.ranks[-1]
-    this_rank = dist.get_rank()
-    if dp_worldsize <= 1:
-        return inputs
-
-    template = map_structure(
-        lambda x: (
-            _DtypeSndShape(dtype=x.dtype, shape=x.shape) if x is not None else _DtypeSndShape(dtype="", shape=(0,))
-        ),
-        inputs,
-    )
-    tensor_flat = flatten(inputs)
-
-    all_template = []
-    dist.all_gather_object(all_template, template, group=dp_group)
-
-    gather_meta = []
-    dtype = [temp.dtype for temp in flatten(all_template) if temp.dtype != ""]
-    if len(dtype) == 0:  # world all none
-        nones = sum(map_structure(lambda i: None, all_template), [])
-        if this_rank in (dp_src_rank, dp_src_rank_last):
-            return nones
-        return None
-
-    assert len(set(dtype)) == 1, dtype
-    dtype = dtype[0]
-    for temps_per_rank in all_template:
-        if all([temp.dtype == "" for temp in flatten(temps_per_rank)]):
-            gather_meta.append((None, None))
-        else:
-            gather_meta.append(
-                (
-                    [
-                        sum([np.prod(temp.shape) for temp in flatten(temps_per_rank)]),
-                    ],
-                    dtype,
-                )
-            )
-
-    if all([t is None for t in tensor_flat]):
-        tensor = None
-    else:
-        tensor = paddle.concat([t.reshape([-1]) for t in tensor_flat if t is not None], 0)
-
-    gathered_tensor_first = gather_varlen(
-        tensor,
-        dp_src_rank,
-        dp_group,
-        offload_pp_data_chunk_size,
-        all_shape_and_dtype=gather_meta,
-    )
-    gathered_tensor_last = gather_varlen(
-        tensor,
-        dp_src_rank_last,
-        dp_group,
-        offload_pp_data_chunk_size,
-        all_shape_and_dtype=gather_meta,
-    )
-
-    gathered_tensor = gathered_tensor_first if len(gathered_tensor_first) > 0 else gathered_tensor_last
-    if not len(gathered_tensor):
-        return None
-
-    start, end = 0, 0
-    ret = []
-    for template in all_template:
-        ret_per_rank = []
-        for temp in flatten(template):
-            if np.prod(temp.shape) == 0:
-                ret_per_rank.append(None)
-                continue
-            end += np.prod(temp.shape)
-            r = gathered_tensor[start:end].clone().reshape(temp.shape)  # remove clone will trigger 719 error
-            ret_per_rank.append(r)
-            start = end
-        ret_per_rank = pack_sequence_as(template, ret_per_rank)
-        ret.append(ret_per_rank)
-    if merge_output:
-        return sum(ret, [])
-    return ret
-
-
-def exchange_images_meta(images, group):
-    """
-    exchange_images_meta
-    """
-    batch_size = paddle.to_tensor(images.shape[0], dtype=paddle.int32)
-    batch_size_list = []
-    dist.stream.all_gather(batch_size_list, batch_size, group=group, use_calc_stream=True)
-    total_batch_size = sum(batch_size_list)
-    avg = total_batch_size // len(batch_size_list)
-    remain = total_batch_size % len(batch_size_list)
-    unbalanced_rank2size = dict(enumerate(batch_size_list))
-    sorted_unbalanced_rank2size = dict(sorted(unbalanced_rank2size.items(), key=lambda item: item[1]))
-    balanced_rank2size = {key: avg for key in sorted_unbalanced_rank2size.keys()}
-    if remain > 0:
-        for key in list(sorted_unbalanced_rank2size.keys())[-remain:]:
-            balanced_rank2size[key] += 1
-    diff_rank2size = {key: sorted_unbalanced_rank2size[key] - balanced_rank2size[key] for key in balanced_rank2size}
-    return diff_rank2size
-
-
-def reshard_images(send_recv_pairs, group, images, reshard_size):
-    """
-    reshard_images
-    """
-    rank_in_group = group.rank
-    if reshard_size > 0:
-        send_meta = list()
-        for pair in send_recv_pairs:
-            if rank_in_group == pair[0]:
-                send_meta.append((pair[1], pair[2]))
-        sections = [images.shape[0] - reshard_size]
-        for tup in send_meta:
-            sections.append(tup[1])
-        images_list = paddle.split(images, num_or_sections=sections)
-        tasks = []
-        with _coalescing_manager(group, tasks):
-            for i in range(1, len(images_list)):
-                task = dist.isend(images_list[i], group.ranks[send_meta[i - 1][0]], group=group)
-                tasks.append(task)
-        for task in tasks:
-            task.wait()
-        return images_list[0]
-    elif reshard_size < 0:
-        recv_images_list = [images]
-        tasks = []
-        with _coalescing_manager(group, tasks):
-            for pair in send_recv_pairs:
-                if rank_in_group == pair[1]:
-                    data_shape = images.shape
-                    data_shape[0] = pair[2]
-                    data = paddle.empty(data_shape, dtype=images.dtype)
-                    task = dist.irecv(data, group.ranks[pair[0]], group=group)
-                    tasks.append(task)
-                    recv_images_list.append(data)
-        for task in tasks:
-            task.wait()
-        return paddle.concat(recv_images_list)
-    else:
-        return images
-
-
-def get_send_recv_pairs(diff_rank2size):
-    """
-    get_send_recv_pairs
-    """
-    send_rank_size_pairs = list()
-    recv_rank_size_pairs = list()
-    for key in diff_rank2size:
-        if diff_rank2size[key] > 0:
-            send_rank_size_pairs.append((-diff_rank2size[key].item(), key))
-        elif diff_rank2size[key] < 0:
-            recv_rank_size_pairs.append((diff_rank2size[key].item(), key))
-    # max heap
-    heapq.heapify(send_rank_size_pairs)
-    # min heap
-    heapq.heapify(recv_rank_size_pairs)
-
-    send_recv_pairs = list()
-    while len(send_rank_size_pairs) > 0 and len(recv_rank_size_pairs) > 0:
-        src_pair = heapq.heappop(send_rank_size_pairs)
-        src_size = -src_pair[0]
-        src_rank = src_pair[1]
-        dst_pair = heapq.heappop(recv_rank_size_pairs)
-        dst_size = -dst_pair[0]
-        dst_rank = dst_pair[1]
-        if src_size > dst_size:
-            send_recv_pairs.append((src_rank, dst_rank, dst_size))
-            heapq.heappush(send_rank_size_pairs, (dst_size - src_size, src_rank))
-        elif src_size == dst_size:
-            send_recv_pairs.append((src_rank, dst_rank, src_size))
-        else:
-            send_recv_pairs.append((src_rank, dst_rank, src_size))
-            heapq.heappush(recv_rank_size_pairs, (src_size - dst_size, dst_rank))
-    assert (
-        len(send_rank_size_pairs) == 0 and len(recv_rank_size_pairs) == 0
-    ), f"send={send_rank_size_pairs} and recv={recv_rank_size_pairs} heap should be empty"
-    return send_recv_pairs
-
-
-def shard_data_in_pp_group(
-    fn,
-    fwd_batch_size=128,
-    scatter_size=2048,
-    input_is_parallel=False,
-    feature_shape=None,
-    is_balanced=False,
-    offload_pp_data_chunk_size=0,
-    patches_per_image=256,
-):
-    """shard data in pipe parallel group"""
-
-    @functools.wraps(fn)
-    @paddle.no_grad()
-    def _wrapper(*args):
-        if len(args) == 2:
-            images, grid_thw = args
-        else:
-            images, grid_thw = args[0], None
-        if grid_thw is not None:
-            assert input_is_parallel, "input_is_parallel must be true when grid_thw is not None"
-            assert not is_balanced, "is_balanced must be false when grid_thw is not None"
-        hcg = get_hcg()
-        dp_group = hcg.get_pipe_parallel_group()
-        dp_worldsize = hcg.get_pipe_parallel_world_size()
-        dp_src_rank = dp_group.ranks[0]
-        this_rank = dist.get_rank()
-
-        if dp_worldsize <= 1:
-            if images is None:
-                return None
-            with paddle.no_grad():
-                out = fn(images)
-            return out
-
-        if is_balanced:
-            pp_sd_group = hcg.pp_sd_group
-            diff_rank2size = exchange_images_meta(images, pp_sd_group)
-            send_recv_pairs = get_send_recv_pairs(diff_rank2size)
-            images = reshard_images(
-                send_recv_pairs,
-                pp_sd_group,
-                images,
-                diff_rank2size[pp_sd_group.rank].item(),
-            )
-
-        if not input_is_parallel:
-            if dp_src_rank == this_rank:
-                assert images.ndim == 4, images.shape
-                full_image_shape = paddle.shape(images).cuda().astype("int32")
-            else:
-                full_image_shape = paddle.empty([4], dtype="int32")
-            dist.broadcast(full_image_shape, dp_src_rank, group=dp_group)
-            full_image_shape = full_image_shape.tolist()
-            assert scatter_size % dp_worldsize == 0 and scatter_size >= dp_worldsize, (
-                scatter_size,
-                dp_worldsize,
-            )
-            # pad to multiply of `scatter_size`
-            pad_size = (full_image_shape[0] + scatter_size - 1) // scatter_size * scatter_size - full_image_shape[0]
-            # logger.info(f"full_image:{full_image_shape}, pad_size:{pad_size}")
-            shareded_images = paddle.empty(
-                [(full_image_shape[0] + pad_size) // dp_worldsize] + full_image_shape[1:],
-                dtype="uint8",
-            )  # images dtype bfloat16
-            for ichunk in range((full_image_shape[0] + pad_size) // scatter_size):
-                if images is not None:
-                    i = images[ichunk * scatter_size : (ichunk + 1) * scatter_size]
-                    assert len(i) <= scatter_size, (len(i), scatter_size)
-                    if len(i) < scatter_size:
-                        pad_len = int(scatter_size - len(i)) * int(np.prod(images.shape[1:]))
-                        # shit hack
-                        i = F.pad(i.astype("bfloat16").reshape([-1]), (0, pad_len)).astype("uint8")
-                        i = i.reshape([scatter_size] + images.shape[1:])
-                else:
-                    i = None
-                o = shareded_images[
-                    ichunk * scatter_size // dp_worldsize : (ichunk + 1) * scatter_size // dp_worldsize
-                ]
-                dist.stream.scatter(o, i, dp_src_rank, dp_group, use_calc_stream=True)
-            images = shareded_images  # release mem
-
-        # logger.info(f'sharded image :{images.shape}')
-        if images is not None and len(images) > 0:
-            out = []
-            with paddle.no_grad():
-                if grid_thw is not None:
-                    grid_thw = grid_thw[grid_thw > 0].reshape([-1, 3])
-                    grid_thw = F.pad(
-                        paddle.repeat_interleave(grid_thw[:, 1:], grid_thw[:, 0], 0),
-                        [0, 0, 1, 0],
-                        value=1,
-                    )
-                    grid_thw_cumsum = F.pad(paddle.prod(grid_thw, -1).cumsum(0), [1, 0])
-
-                    assert grid_thw_cumsum[-1] == len(images), (
-                        grid_thw_cumsum[-1],
-                        len(images),
-                    )
-                    # logger.info(f"GRID_THW_CUMSUM:{grid_thw_cumsum}")
-                    s = 0
-                    for i in range(1, len(grid_thw)):
-                        if (grid_thw_cumsum[i] - grid_thw_cumsum[s]) >= fwd_batch_size * patches_per_image:
-                            # logger.info(f"{patches_cumsum[s]}--{patches_cumsum[i]}")
-                            # logger.info(f"{grid_thw_cumsum[s]}--{grid_thw_cumsum[i]}")
-                            # logger.info(f"images----{images[grid_thw_cumsum[s]: grid_thw_cumsum[i]]}")
-                            o = fn(
-                                images[grid_thw_cumsum[s] : grid_thw_cumsum[i]],
-                                grid_thw[s:i],
-                            )
-                            s = i
-                            out.append(o)
-                    if s < len(grid_thw):
-                        # logger.info(f"final-{patches_cumsum[s]}--{patches_cumsum[-1]}")
-                        # logger.info(f"final-{grid_thw_cumsum[s]}--{grid_thw_cumsum[-1]}")
-                        o = fn(images[grid_thw_cumsum[s] :], grid_thw[s:])
-                        out.append(o)
-                else:
-                    s = 0
-                    while s < len(images):
-                        i = images[s : s + fwd_batch_size]
-                        assert len(i) > 0, i.shape
-                        o = fn(
-                            i,
-                            None,
-                        )
-                        s += fwd_batch_size
-                        out.append(o)
-            if len(out) == 1:
-                if is_balanced:
-                    reverse_send_recv_pairs = [(p[1], p[0], p[2]) for p in send_recv_pairs]
-                    out = reshard_images(
-                        reverse_send_recv_pairs,
-                        pp_sd_group,
-                        out[0],
-                        -diff_rank2size[pp_sd_group.rank].item(),
-                    )
-                else:
-                    (out,) = out
-            else:
-                # I dont know why can not release GPU memory, so I using `_clear_data` to clear underlaying GPU memory
-                if offload_pp_data_chunk_size > 0:
-                    args[0]._clear_data()
-                    images._clear_data()
-                out = paddle.concat(out, 0)
-                if is_balanced:
-                    reverse_send_recv_pairs = [(p[1], p[0], p[2]) for p in send_recv_pairs]
-                    out = reshard_images(
-                        reverse_send_recv_pairs,
-                        pp_sd_group,
-                        out,
-                        -diff_rank2size[pp_sd_group.rank].item(),
-                    )
-            # self.offload()
-            out = out.contiguous()
-        else:
-            out = None
-
-        if input_is_parallel:
-            # gather var len
-            gathered = gather_varlen(out, dp_src_rank, dp_group, offload_pp_data_chunk_size)
-        else:
-            gathered = []
-            dist.stream.gather(out, gathered, dp_src_rank, dp_group, use_calc_stream=True)
-            if gathered:
-                gathered = paddle.concat(gathered, 0)
-                if pad_size > 0:
-                    gathered = gathered[:-pad_size]
-        if not len(gathered):
-            return None
-        return gathered
-
-    return _wrapper
 
 
 def modality_detach(wrapped_class):
@@ -678,7 +293,7 @@ class ErnieMoELMHeadPipe(Ernie4_5_MoeVLHead):
         if (
             self.config.recompute_modules is not None
             and "loss_fn" in self.config.recompute_modules
-            or self.config.use_sparse_head_and_loss_fn
+            or self.config.use_filtered_label_loss
         ):
             mm_head_weight = self.mm_head.weight if self.mm_head is not None else None
             mm_head_bias = self.mm_head.bias if self.mm_head is not None else None
@@ -1241,10 +856,6 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
             AssertionError: If data is not a list or a dictionary, an AssertionError will be raised .
         """
         assert isinstance(data, list), type(data)
-        if getattr(self.config.vision_config, "variable_resolution", False):
-            assert (
-                not self.balanced_image_preprocess
-            ), "balanced_image_preprocess is not supported in variable_resolution"
         all_keys = [
             "images",
             "grid_thw",
@@ -1272,47 +883,20 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
         dp_worldsize = hcg.get_pipe_parallel_world_size()
         dp_src_rank = dp_group.ranks[0]
         dp_rank = hcg._get_pipe_parallel_id()
-        this_rank = dist.get_rank()
 
         images, grid_thw, *other_inputs = inputs
 
-        if self.pp_need_data_ranks:
-            send_args = [
-                grid_thw,
-            ] + other_inputs
-            recv_args = gather_tensors_list_in_pp_group(send_args, merge_output=False)
-            if recv_args is not None:
-                recv_args = list(zip(*recv_args))
-                (
-                    global_grid_thw,
-                    ids,
-                    inbatch_pack_offset,
-                    audio_ids,
-                    token_type_ids,
-                    image_type_ids,
-                    labels,
-                    audio_labels,
-                    position_ids,
-                ) = (sum(args_from_all_pp, []) for args_from_all_pp in recv_args)
-            else:
-                # middle pp
-                global_grid_thw = (
-                    ids
-                ) = (
-                    audio_ids
-                ) = token_type_ids = image_type_ids = labels = audio_labels = position_ids = inbatch_pack_offset = None
-        else:
-            (
-                ids,
-                inbatch_pack_offset,
-                audio_ids,
-                token_type_ids,
-                image_type_ids,
-                labels,
-                audio_labels,
-                position_ids,
-            ) = other_inputs
-            global_grid_thw = grid_thw
+        (
+            ids,
+            inbatch_pack_offset,
+            audio_ids,
+            token_type_ids,
+            image_type_ids,
+            labels,
+            audio_labels,
+            position_ids,
+        ) = other_inputs
+        global_grid_thw = grid_thw
         if ids is not None:  # pp0, pp, -1
             token_type_ids = [t.astype("int32") for t in token_type_ids]
             token_type_ids_shifted = [t[:, 1:] for t in token_type_ids]
@@ -1377,7 +961,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
         # start pp data balance
         pp_data_balance = getattr(self.vision_model, "pp_data_balance", False)
 
-        if self.balanced_image_preprocess or self.config.offload_pp_data_chunk_size > 0 or pp_data_balance:
+        if self.config.offload_pp_data_chunk_size > 0 or pp_data_balance:
             # to initial group of batch send recv, early do alltoall
             if not hasattr(get_hcg(), "pp_sd_group"):
                 pp_sd_group = get_hcg().get_pipe_parallel_group()
@@ -1469,15 +1053,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
             for img in inputs[0]:
                 if img is not None:
                     img._clear_data()
-        image_len_before_concat_gathered = gather_varlen(image_len_before_concat, dst=dp_src_rank, group=dp_group)
 
-        @partial(
-            shard_data_in_pp_group,
-            fwd_batch_size=getattr(self.config.vision_config, "vit_first_fwd_bsz", 128),
-            input_is_parallel=len(self.pp_need_data_ranks) > 1,
-            is_balanced=self.balanced_image_preprocess,
-            offload_pp_data_chunk_size=self.config.offload_pp_data_chunk_size,
-        )
         def fwd_image(images, grid_thw):
             # logger.info(f"# image inside shard : {images.shape}")
             if self.image_preprocess is not None:
@@ -1498,32 +1074,6 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
             # logger.info(f"# image-fea inside shard : {image_fea.shape}")
 
             return image_fea
-
-        if self.balanced_image_preprocess:
-            # broadcast image shape if needed
-            if len(self.pp_need_data_ranks) < dp_worldsize:
-                if self.balanced_image_shape is None:
-                    pp_sd_group = get_hcg().pp_sd_group
-                    src_rank = pp_sd_group.ranks[0]
-                    this_rank = dist.get_rank()
-                    if src_rank == this_rank:
-                        assert images.ndim == 4, images.shape
-                        full_image_shape = paddle.shape(images).cuda().astype("int32")
-                    else:
-                        full_image_shape = paddle.empty([4], dtype="int32")
-                    dist.broadcast(full_image_shape, src_rank, group=pp_sd_group)
-                    full_image_shape = full_image_shape.tolist()
-                    self.balanced_image_shape = full_image_shape
-                if dp_rank not in self.pp_need_data_ranks:
-                    assert images is None, "pp rank exceed partial pp_need_data must be None"
-                    full_image_shape = self.balanced_image_shape
-                    full_image_shape[0] = 0
-                    images = paddle.empty(full_image_shape, dtype=paddle.uint8)
-                else:
-                    # check [c, h, w] must be equal
-                    assert (
-                        images.shape[1:] == self.balanced_image_shape[1:]
-                    ), "image shape is not equal to the previous cache shape"
 
         image_fea = fwd_image(images, grid_thw)
 
@@ -1582,7 +1132,7 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
                     audio_ids,
                 ),
                 (token_type_ids_shifted, labels, audio_labels),
-                split_image=image_len_before_concat_gathered.tolist(),
+                split_image=image_len_before_concat.tolist(),
                 image_fea_concated=isinstance(image_fea, paddle.Tensor),
             )
 
@@ -1622,9 +1172,6 @@ class Ernie4_5_VLMoeForConditionalGenerationPipe(PipelinePretrainedModel, Pipeli
         self.config = config
         self.image_preprocess = None
         self.pp_need_data_ranks = []  # default to all need data
-        self.balanced_image_preprocess = (
-            config.balanced_image_preprocess if hasattr(config, "balanced_image_preprocess") else False
-        )
         self.balanced_image_shape = None
 
         tensor_model_parallel_size = max(hcg.get_model_parallel_world_size(), 1)

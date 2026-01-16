@@ -1,4 +1,4 @@
-# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,14 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import importlib
+from .logging import logger, setup_logger_output_file
 
-from ..utils.log import logger
-
-logger.warning(
-    "paddleformers.trl.llm_utils is deprecated and will be removed in a future version. "
-    "Please use paddleformers.cli.utils.llm_utils instead."
-)
-
-_llm_utils = importlib.import_module("paddleformers.cli.utils.llm_utils")
-globals().update({k: v for k, v in _llm_utils.__dict__.items() if not k.startswith("_")})
+__all__ = ["logger", "setup_logger_output_file"]

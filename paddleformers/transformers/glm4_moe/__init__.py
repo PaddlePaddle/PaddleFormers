@@ -25,6 +25,7 @@ import_structure = {
         "Glm4MoeForCausalLMPipe",
         "Glm4MoeModel",
         "Glm4MoeForCausalLM",
+        "Glm4MoeForCausalLMDecapitated",
     ],
 }
 

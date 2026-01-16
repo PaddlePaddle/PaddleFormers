@@ -77,7 +77,6 @@ def parallel_matmul(
     transpose_y=False,
     tensor_model_parallel_size=1,
     tensor_parallel_output=True,
-    fuse_linear=False,
     training=None,
 ):
     """
@@ -90,7 +89,6 @@ def parallel_matmul(
         transpose_y (bool, optional): Whether to transpose y. Default is False.
         tensor_model_parallel_size (int, optional): Tensor parallel degree. Default is 1.
         tensor_parallel_output (bool, optional): Whether to output tensor parallel. Default is True.
-        fuse_linear (bool, optional): Whether to fuse linear. Default is False.
         training (bool, optional): Training state. Default is None.
     Returns:
         Tensor: Output tensor.
@@ -107,7 +105,6 @@ def parallel_matmul(
                 transpose_y=transpose_y,
                 tensor_model_parallel_size=tensor_model_parallel_size,
                 tensor_parallel_output=tensor_parallel_output,
-                fused_linear=fuse_linear,
             )
         else:
             return default_parallel_matmul(
@@ -117,7 +114,6 @@ def parallel_matmul(
                 transpose_y=transpose_y,
                 tensor_model_parallel_size=tensor_model_parallel_size,
                 tensor_parallel_output=tensor_parallel_output,
-                fuse_linear=fuse_linear,
             )
     else:
         from .common_dist_utils import _parallel_matmul
@@ -129,5 +125,4 @@ def parallel_matmul(
         transpose_y=transpose_y,
         tensor_model_parallel_size=tensor_model_parallel_size,
         tensor_parallel_output=tensor_parallel_output,
-        fuse_linear=fuse_linear,
     )
