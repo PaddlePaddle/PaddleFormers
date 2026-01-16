@@ -46,7 +46,7 @@ learning_rate: 1.0e-4
 # performance
 tensor_model_parallel_size: 1
 pipeline_model_parallel_size: 1
-sharding: stage2
+sharding: stage1
 recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
