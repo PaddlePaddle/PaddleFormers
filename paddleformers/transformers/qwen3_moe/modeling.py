@@ -319,23 +319,10 @@ class Qwen3MoeGate(PretrainedMoEGate):
         return capacity, combine_weights, dispatch_mask, exp_counts, l_aux, l_zloss
 
 
-class Qwen3MoeSparseMoeBlock(nn.Layer):
+class Qwen3MoeExperts(nn.Layer):
     def __init__(self, config):
         super().__init__()
-        self.config = config
         self.num_experts = config.num_experts
-        self.top_k = config.num_experts_per_tok
-        self.norm_topk_prob = config.norm_topk_prob
-        self.sequence_parallel = config.sequence_parallel
-        if self.sequence_parallel and config.tensor_model_parallel_size > 1:
-            config = copy.deepcopy(config)
-            config.sequence_parallel = False
-
-        # gating
-        with dtype_guard("float32"):
-            self.gate = GeneralLinear.create(
-                config.hidden_size, config.num_experts, has_bias=False, linear_type="default"
-            )
         self.experts = nn.LayerList(
             [
                 Qwen3MoeMLP(
@@ -345,24 +332,12 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
             ]
         )
 
-    def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
-        """ """
-        if self.sequence_parallel:
-            hidden_states = GatherOp.apply(hidden_states)
-        orig_shape = hidden_states.shape
-
-        hidden_states = hidden_states.view([-1, hidden_states.shape[-1]])
-        # router_logits: (batch * sequence_length, n_experts)
-        router_logits = self.gate(hidden_states)
-
-        routing_weights = F.softmax(router_logits, axis=1, dtype=paddle.float32)
-        # (batch * sequence_length, topk)
-        routing_weights, selected_experts = paddle.topk(routing_weights, self.top_k, axis=-1)
-        if self.norm_topk_prob:  # only diff with mixtral sparse moe block!
-            routing_weights /= routing_weights.sum(axis=-1, keepdim=True)
-        # we cast back to the input dtype
-        routing_weights = routing_weights.to(hidden_states.dtype)
-
+    def forward(
+        self,
+        hidden_states: paddle.Tensor,
+        selected_experts: paddle.Tensor,
+        routing_weights: paddle.Tensor,
+    ) -> paddle.Tensor:
         final_hidden_states = paddle.zeros(
             (hidden_states.shape[-2], hidden_states.shape[-1]), dtype=hidden_states.dtype
         )
@@ -393,6 +368,48 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
                 final_hidden_states.index_add_(
                     index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
                 )
+
+        return final_hidden_states
+
+
+class Qwen3MoeSparseMoeBlock(nn.Layer):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.num_experts = config.num_experts
+        self.top_k = config.num_experts_per_tok
+        self.norm_topk_prob = config.norm_topk_prob
+        self.sequence_parallel = config.sequence_parallel
+        if self.sequence_parallel and config.tensor_model_parallel_size > 1:
+            config = copy.deepcopy(config)
+            config.sequence_parallel = False
+
+        # gating
+        with dtype_guard("float32"):
+            self.gate = GeneralLinear.create(
+                config.hidden_size, config.num_experts, has_bias=False, linear_type="default"
+            )
+        self.experts = Qwen3MoeExperts(config)
+
+    def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
+        """ """
+        if self.sequence_parallel:
+            hidden_states = GatherOp.apply(hidden_states)
+        orig_shape = hidden_states.shape
+
+        hidden_states = hidden_states.view([-1, hidden_states.shape[-1]])
+        # router_logits: (batch * sequence_length, n_experts)
+        router_logits = self.gate(hidden_states)
+
+        routing_weights = F.softmax(router_logits, axis=1, dtype=paddle.float32)
+        # (batch * sequence_length, topk)
+        routing_weights, selected_experts = paddle.topk(routing_weights, self.top_k, axis=-1)
+        if self.norm_topk_prob:  # only diff with mixtral sparse moe block!
+            routing_weights /= routing_weights.sum(axis=-1, keepdim=True)
+        # we cast back to the input dtype
+        routing_weights = routing_weights.to(hidden_states.dtype)
+
+        final_hidden_states = self.experts(hidden_states, selected_experts, routing_weights)
 
         final_hidden_states = paddle.reshape(final_hidden_states, orig_shape)
 

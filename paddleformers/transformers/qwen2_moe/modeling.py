@@ -256,8 +256,6 @@ class Qwen2MoeGate(PretrainedMoEGate):
 
 
 class Qwen2MoeExperts(nn.Layer):
-    """Collection of expert weights stored as 3D tensors."""
-
     def __init__(self, config):
         super().__init__()
         self.num_experts = config.num_experts
