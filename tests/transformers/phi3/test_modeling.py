@@ -380,7 +380,6 @@ class Phi3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
                     if k.endswith(".mlp.gate_up_proj.weight"):
                         md52 = model_state_2[k].cast("bfloat16")._md5sum()
                         md53 = model_state_3[k].cast("bfloat16")._md5sum()
-                    print(k)
                     assert md52 == md53
 
     def test_attention_outputs(self):
@@ -419,8 +418,7 @@ class Phi3IntegrationTest(unittest.TestCase):
             "PaddleFormers/tiny-random-phi4",
             download_hub="aistudio",
             dtype="float32",
-            convert_from_hf=True,
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
 
         input_ids = paddle.to_tensor(input_ids)
@@ -493,7 +491,7 @@ class Phi3CompatibilityTest(unittest.TestCase):
         from paddleformers.transformers import Phi3Model
 
         paddle_model = Phi3Model.from_pretrained(
-            self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
@@ -518,21 +516,21 @@ class Phi3CompatibilityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tempdir:
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            import torch
-            from transformers import Phi3Model
-
-            torch_model = Phi3Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
             from paddleformers.transformers import Phi3Model
 
             paddle_model = Phi3Model.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
+            paddle_model.save_pretrained(tempdir)
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
+
+            import torch
+            from transformers import Phi3Model
+
+            torch_model = Phi3Model.from_pretrained(tempdir, torch_dtype=torch.float32)
+            torch_model.eval()
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             self.assertTrue(
                 np.allclose(
@@ -549,28 +547,28 @@ class Phi3CompatibilityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tempdir:
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            import torch
-            import transformers
-
-            torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
             paddle_model = paddle_model_class.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
+            paddle_model.save_pretrained(tempdir)
 
             if class_name == "Phi3Model":
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
             else:
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
+
+            import torch
+            import transformers
+
+            torch_model_class = getattr(transformers, pytorch_class_name)
+            torch_model = torch_model_class.from_pretrained(tempdir, torch_dtype=torch.float32)
+            torch_model.eval()
+
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             self.assertTrue(
                 np.allclose(
@@ -579,7 +577,3 @@ class Phi3CompatibilityTest(unittest.TestCase):
                     atol=1e2,
                 )
             )
-
-
-if __name__ == "__main__":
-    unittest.main()

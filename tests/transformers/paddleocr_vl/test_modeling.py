@@ -446,6 +446,7 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 gc.collect()
 
                 model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
+
                 model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
 
                 model_state_1 = model1.state_dict()
@@ -465,8 +466,7 @@ class PaddleOCRVLIntegrationTest(unittest.TestCase):
         self.model = PaddleOCRVLForConditionalGeneration.from_pretrained(
             "PaddleFormers/tiny-random-paddleocr-vl-bf16",
             dtype="float32",
-            convert_from_hf=True,
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
 
         self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-paddleocr-vl-bf16")

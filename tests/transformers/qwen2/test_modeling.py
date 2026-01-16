@@ -374,8 +374,7 @@ class Qwen2IntegrationTest(unittest.TestCase):
         model = Qwen2ForCausalLM.from_pretrained(
             "PaddleFormers/tiny-random-qwen2v2",
             dtype="float32",
-            convert_from_hf=True,
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
@@ -424,12 +423,12 @@ class Qwen2CompatibilityTest(unittest.TestCase):
         from paddleformers.transformers import Qwen2Model
 
         paddle_model = Qwen2Model.from_pretrained(
-            self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
-        # 3. forward the torch  model
+        # 3. forward the torch model
         import torch
         from transformers import Qwen2Model
 
@@ -453,7 +452,7 @@ class Qwen2CompatibilityTest(unittest.TestCase):
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch  model
+            # 2. forward the torch model
             import torch
             from transformers import Qwen2ForCausalLM
 
@@ -466,7 +465,7 @@ class Qwen2CompatibilityTest(unittest.TestCase):
             from paddleformers.transformers import Qwen2Config, Qwen2ForCausalLM
 
             paddle_model = Qwen2ForCausalLM.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format="flex_checkpoint"
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
@@ -487,7 +486,6 @@ class Qwen2CompatibilityTest(unittest.TestCase):
             paddle_model_fused = Qwen2ForCausalLM.from_pretrained(
                 tempdir,
                 config=model_config,
-                convert_from_hf=True,
                 dtype="float32",
                 load_checkpoint_format="flex_checkpoint",
             )
@@ -512,7 +510,22 @@ class Qwen2CompatibilityTest(unittest.TestCase):
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch model
+            # 2. forward the paddle model
+            from paddleformers import transformers
+
+            paddle_model_class = getattr(transformers, class_name)
+            paddle_model = paddle_model_class.from_pretrained(
+                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
+            paddle_model.eval()
+            paddle_model.save_pretrained(tempdir)
+
+            if class_name == "Qwen2Model":
+                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
+            else:
+                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
+
+            # 3. forward the torch model
             import torch
             import transformers
 
@@ -520,22 +533,7 @@ class Qwen2CompatibilityTest(unittest.TestCase):
             torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
             torch_model.eval()
 
-            torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-            # 3. forward the paddle model
-            from paddleformers import transformers
-
-            paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
-            )
-            paddle_model.eval()
-
-            if class_name == "Qwen2Model":
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
-            else:
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
 
             self.assertTrue(
                 np.allclose(

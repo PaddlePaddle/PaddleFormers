@@ -376,9 +376,8 @@ class DeepseekV3IntegrationTest(unittest.TestCase):
             "PaddleFormers/tiny-random-deepseek-v3",
             dtype="float32",
             download_hub="aistudio",
-            convert_from_hf=True,
             seq_length=len(input_ids),
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
         model.config.seq_length = len(input_ids)
         input_ids = paddle.to_tensor([input_ids])
@@ -473,12 +472,12 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
         from paddleformers.transformers import DeepseekV3Model
 
         paddle_model = DeepseekV3Model.from_pretrained(
-            self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
-        # 3. forward the torch  model
+        # 3. forward the torch model
         import torch
         from transformers import DeepseekV3Model
 
@@ -502,23 +501,23 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch  model
-            import torch
-            from transformers import DeepseekV3Model
-
-            torch_model = DeepseekV3Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
             # 2. forward the paddle model
             from paddleformers.transformers import DeepseekV3Model
 
             paddle_model = DeepseekV3Model.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
+            paddle_model.save_pretrained(tempdir)
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
+
+            # 3. forward the torch model
+            import torch
+            from transformers import DeepseekV3Model
+
+            torch_model = DeepseekV3Model.from_pretrained(tempdir, torch_dtype=torch.float32)
+            torch_model.eval()
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             self.assertTrue(
                 np.allclose(
@@ -538,30 +537,30 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch model
-            import torch
-            import transformers
-
-            torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-            # 3. forward the paddle model
+            # 2. forward the paddle model
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
             paddle_model = paddle_model_class.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
+            paddle_model.save_pretrained(tempdir)
 
             if class_name == "DeepseekV3Model":
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
             else:
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
+
+            # 3. forward the torch model
+            import torch
+            import transformers
+
+            torch_model_class = getattr(transformers, pytorch_class_name)
+            torch_model = torch_model_class.from_pretrained(tempdir, torch_dtype=torch.float32)
+            torch_model.eval()
+
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             self.assertTrue(
                 np.allclose(

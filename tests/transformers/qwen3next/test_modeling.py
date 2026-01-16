@@ -317,8 +317,7 @@ class Qwen3NextIntegrationTest(unittest.TestCase):
         model = Qwen3NextForCausalLM.from_pretrained(
             "PaddleFormers/tiny-random-qwen3next",
             dtype="float32",
-            convert_from_hf=True,
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
@@ -374,12 +373,12 @@ class Qwen3NextCompatibilityTest:
         from paddleformers.transformers import Qwen3NextModel
 
         paddle_model = Qwen3NextModel.from_pretrained(
-            self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
-        # 3. forward the torch  model
+        # 3. forward the torch model
         import torch
         from transformers import Qwen3NextModel
 
@@ -403,23 +402,23 @@ class Qwen3NextCompatibilityTest:
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch  model
-            import torch
-            from transformers import Qwen3NextModel
-
-            torch_model = Qwen3NextModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
             # 2. forward the paddle model
             from paddleformers.transformers import Qwen3NextModel
 
             paddle_model = Qwen3NextModel.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
+            paddle_model.save_pretrained(tempdir)
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
+
+            # 3. forward the torch model
+            import torch
+            from transformers import Qwen3NextModel
+
+            torch_model = Qwen3NextModel.from_pretrained(tempdir, torch_dtype=torch.float32)
+            torch_model.eval()
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             self.assertTrue(
                 np.allclose(
@@ -439,30 +438,30 @@ class Qwen3NextCompatibilityTest:
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch model
-            import torch
-            import transformers
-
-            torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-            # 3. forward the paddle model
+            # 2. forward the paddle model
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
             paddle_model = paddle_model_class.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
+            paddle_model.save_pretrained(tempdir)
 
             if class_name == "Qwen3NextModel":
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
             else:
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
+
+            # 3. forward the torch model
+            import torch
+            import transformers
+
+            torch_model_class = getattr(transformers, pytorch_class_name)
+            torch_model = torch_model_class.from_pretrained(tempdir, torch_dtype=torch.float32)
+            torch_model.eval()
+
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             self.assertTrue(
                 np.allclose(
@@ -472,7 +471,3 @@ class Qwen3NextCompatibilityTest:
                     rtol=1e-2,
                 )
             )
-
-
-if __name__ == "__main__":
-    unittest.main()

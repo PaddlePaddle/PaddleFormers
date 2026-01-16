@@ -385,8 +385,7 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         model = GptOssModel.from_pretrained(
             "PaddleFormers/tiny-random-gptoss",
             download_hub="aistudio",
-            convert_from_hf=True,
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -410,8 +409,7 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         model = GptOssModel.from_pretrained(
             "PaddleFormers/tiny-random-gptoss",
             download_hub="aistudio",
-            convert_from_hf=True,
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -453,12 +451,12 @@ class GptOssCompatibilityTest(unittest.TestCase):
         from paddleformers.transformers import GptOssModel
 
         paddle_model = GptOssModel.from_pretrained(
-            self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
-        # 3. forward the torch  model
+        # 3. forward the torch model
         import torch
         from transformers import GptOssModel
 
@@ -481,23 +479,23 @@ class GptOssCompatibilityTest(unittest.TestCase):
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch  model
-            import torch
-            from transformers import GptOssModel
-
-            torch_model = GptOssModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
             # 2. forward the paddle model
             from paddleformers.transformers import GptOssModel
 
             paddle_model = GptOssModel.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
+            paddle_model.save_pretrained(tempdir)
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
+
+            # 3. forward the torch model
+            import torch
+            from transformers import GptOssModel
+
+            torch_model = GptOssModel.from_pretrained(tempdir, torch_dtype=torch.float32)
+            torch_model.eval()
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             self.assertTrue(
                 np.allclose(
@@ -516,30 +514,30 @@ class GptOssCompatibilityTest(unittest.TestCase):
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch model
-            import torch
-            import transformers
-
-            torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-            # 3. forward the paddle model
+            # 2. forward the paddle model
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
             paddle_model = paddle_model_class.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+                self.torch_model_path, dtype="float32", load_checkpoint_format=""
             )
             paddle_model.eval()
+            paddle_model.save_pretrained(tempdir)
 
             if class_name == "GptOssModel":
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
             else:
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
+
+            # 3. forward the torch model
+            import torch
+            import transformers
+
+            torch_model_class = getattr(transformers, pytorch_class_name)
+            torch_model = torch_model_class.from_pretrained(tempdir, torch_dtype=torch.float32)
+            torch_model.eval()
+
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             self.assertTrue(
                 np.allclose(
@@ -548,7 +546,3 @@ class GptOssCompatibilityTest(unittest.TestCase):
                     atol=1e2,
                 )
             )
-
-
-if __name__ == "__main__":
-    unittest.main()

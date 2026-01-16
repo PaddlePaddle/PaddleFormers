@@ -466,12 +466,12 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
         from paddleformers.transformers import Ernie4_5Model
 
         paddle_model = Ernie4_5Model.from_pretrained(
-            self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
-        # 3. forward the torch  model
+        # 3. forward the torch model
         import torch
         from transformers import Ernie4_5Model
 
@@ -494,23 +494,23 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch  model
-            import torch
-            from transformers import Ernie4_5Model
-
-            torch_model = Ernie4_5Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
             # 2. forward the paddle model
             from paddleformers.transformers import Ernie4_5Model
 
             paddle_model = Ernie4_5Model.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
+            paddle_model.save_pretrained(tempdir)
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
+
+            # 3. forward the torch model
+            import torch
+            from transformers import Ernie4_5Model
+
+            torch_model = Ernie4_5Model.from_pretrained(tempdir, torch_dtype=torch.float32)
+            torch_model.eval()
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             self.assertTrue(
                 np.allclose(
@@ -520,7 +520,7 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                 )
             )
 
-            # 3. forward with fc
+            # 4. forward with fc
             from paddleformers.transformers import Ernie4_5Config, Ernie4_5ForCausalLM
 
             uc_load_model = Ernie4_5ForCausalLM.from_pretrained(
@@ -530,7 +530,7 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                 load_checkpoint_format="",
             )
             fc_load_model = Ernie4_5ForCausalLM.from_pretrained(
-                self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format="flex_checkpoint"
+                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             uc_load_model.eval()
             fc_load_model.eval()
@@ -551,7 +551,6 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
             fc_fused_load_model = Ernie4_5ForCausalLM.from_pretrained(
                 self.torch_model_path,
                 config=model_config,
-                convert_from_hf=True,
                 dtype="float32",
                 load_checkpoint_format="flex_checkpoint",
             )
@@ -575,30 +574,30 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch model
-            import torch
-            import transformers
-
-            torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-            # 3. forward the paddle model
+            # 2. forward the paddle model
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
             paddle_model = paddle_model_class.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
+            paddle_model.save_pretrained(tempdir)
 
             if class_name == "Ernie4_5Model":
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
             else:
                 paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
+
+            # 3. forward the torch model
+            import torch
+            import transformers
+
+            torch_model_class = getattr(transformers, pytorch_class_name)
+            torch_model = torch_model_class.from_pretrained(tempdir, torch_dtype=torch.float32)
+            torch_model.eval()
+
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             self.assertTrue(
                 np.allclose(
@@ -607,7 +606,3 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                     atol=1e2,
                 )
             )
-
-
-if __name__ == "__main__":
-    unittest.main()
