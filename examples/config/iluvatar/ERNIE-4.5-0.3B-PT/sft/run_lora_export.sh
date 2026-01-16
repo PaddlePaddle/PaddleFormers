@@ -1,0 +1,1 @@
+paddleformers-cli export examples/config/iluvatar/ERNIE-4.5-0.3B-PT/sft/lora_export.yaml
