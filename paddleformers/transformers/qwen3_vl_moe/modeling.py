@@ -46,7 +46,7 @@ from ..masking_utils import (
 from ..model_outputs import BaseModelOutputWithPast, ModelOutput
 from ..model_utils import PretrainedModel
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS
-from ..qwen3_vl.modeling_fleet import Qwen3VLModel, Qwen3VLProvider
+from ..qwen3_vl.modeling_fleet import Qwen3VLModelDist, Qwen3VLProvider
 from ..utils import logger
 from .configuration import (
     Qwen3VLMoeConfig,
@@ -376,7 +376,7 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
             else:
                 split_experts_up_gate = ""
                 split_experts_down = ""
-                for expert_id in range(config.text_config.n_routed_experts):
+                for expert_id in range(config.text_config.num_experts):
                     split_experts_up_gate += f"{llm_prefix}{layer_id + 1}.mlp.experts.{expert_id}.up_gate_proj.weight,"
                     split_experts_down += f"{llm_prefix}{layer_id + 1}.mlp.experts.{expert_id}.down_proj.weight,"
                 split_experts_down += "axis=0"
@@ -2594,12 +2594,13 @@ class Qwen3VLMoeModel(Qwen3VLMoePretrainedModelFleet):
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+        config.moe_grouped_gemm = True
         criterion = None
         if have_criterion:
             criterion = CriterionLayer(config.text_config)
         model_provider_class = Qwen3VLProvider
         model_provider = model_provider_class.from_config(config)
-        qwen3vl_model = Qwen3VLModel(model_provider, model_version=config.model_type, criterion=criterion)
+        qwen3vl_model = Qwen3VLModelDist(model_provider, model_version=config.model_type, criterion=criterion)
         qwen3vl_model._gen_aoa_config = cls._gen_aoa_config
         qwen3vl_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         qwen3vl_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
