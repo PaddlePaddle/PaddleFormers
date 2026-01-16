@@ -112,6 +112,13 @@ class PreTrainingArguments(TrainingArguments):
         },
     )
 
+    pp_recompute_interval: int = field(
+        default=1,
+        metadata={
+            "help": "The interval for the number of layers at which recomputation occurs. A value of 0 indicates no recomputation."
+        },
+    )
+
     def __post_init__(self):
         super().__post_init__()
         # NOTE(gongenlei): new add autotuner_benchmark
@@ -462,6 +469,7 @@ def main():
 
     # set all llm config
     LlmMetaConfig.set_llm_config(config, training_args)
+    setattr(config, "pp_recompute_interval", training_args.pp_recompute_interval)
     config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
     config.seq_length = data_args.max_seq_length

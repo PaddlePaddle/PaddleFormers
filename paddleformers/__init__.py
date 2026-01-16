@@ -19,8 +19,32 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from .utils.lazy_import import _LazyModule
+from .utils.tools import compare_version
 
 PADDLEFORMERS_STABLE_VERSION = "PADDLEFORMERS_STABLE_VERSION"
+from paddleformers.utils.log import logger
+
+try:
+    from importlib import metadata
+except ImportError:
+    import importlib_metadata as metadata
+
+
+def _check_dependency_versions():
+    for pkg_names, min_version in [(["paddlepaddle-gpu", "paddlepaddle"], "3.3"), (["paddlefleet"], "0.1")]:
+        for pkg_name in pkg_names:
+            try:
+                _version = metadata.version(pkg_name)
+                if compare_version(_version, min_version) < 0:
+                    logger.warning(
+                        "Version check warning:\n" + f"{pkg_name} version {version}, recommended >= {min_version}"
+                    )
+            except:
+                pass
+
+
+_check_dependency_versions()
+
 
 with suppress(Exception):
     import paddle
@@ -42,8 +66,6 @@ else:
 # [VERSION_INFO]
 
 import os
-
-from paddleformers.utils.log import logger
 
 PADDLEFORMERS_TESTING = os.environ.get("PADDLEFORMERS_TESTING", False)
 if "torch" not in sys.modules and not PADDLEFORMERS_TESTING:

@@ -88,6 +88,7 @@ python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
 
 if [ $? -ne 0 ]; then
   pushd $root_dir/PaddleFormers
+  source /root/proxy
   bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
   if [ $? -ne 0 ]; then
     echo -e "\033[31mThe precision has been changed and requires approvals.\033[0m"

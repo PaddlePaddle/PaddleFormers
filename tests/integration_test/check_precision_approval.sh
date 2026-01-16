@@ -28,7 +28,7 @@ echo_list=()
 function check_approval(){
     person_num=`echo $@|awk '{for (i=2;i<=NF;i++)print $i}'`
     APPROVALS=`echo ${approval_line}|python ${PADDLE_ROOT}/tests/integration_test/check_pr_approval.py $1 $person_num`
-    if [[ "${APPROVALS}" == "FALSE" && "${echo_line}" != "" ]]; then
+    if [[ "${APPROVALS}" != "TRUE" && "${echo_line}" != "" ]]; then
         add_failed "${failed_num}. ${echo_line}"
     fi
 }

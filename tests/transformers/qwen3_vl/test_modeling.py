@@ -15,8 +15,6 @@
 from __future__ import annotations
 
 import copy
-import gc
-import shutil
 import tempfile
 import unittest
 
@@ -24,13 +22,12 @@ import numpy as np
 import paddle
 from parameterized import parameterized
 
+from paddleformers.transformers import AutoProcessor, Qwen3VLConfig
 from paddleformers.transformers import (
-    AutoProcessor,
-    Qwen3VLConfig,
-    Qwen3VLForConditionalGeneration,
-    Qwen3VLModel,
-    process_vision_info,
+    Qwen3VLForConditionalGenerationDecapitated as Qwen3VLForConditionalGeneration,
 )
+from paddleformers.transformers import Qwen3VLModelDecapitated as Qwen3VLModel
+from paddleformers.transformers import process_vision_info
 from paddleformers.transformers.video_utils import load_video
 from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
@@ -514,11 +511,9 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
             else:
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
-    @unittest.skip("TODO: Temporarily skipped")
     def test_save_load_flex_checkpoint(self):
         for model_class in self.all_model_classes:
-            tmpdirname = tempfile.mkdtemp()
-            try:
+            with tempfile.TemporaryDirectory() as tmpdirname:
                 tiny_vision_config = {
                     "depth": 4,
                     "intermediate_size": 64,
@@ -533,14 +528,10 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                     tie_word_embedding=False,
                     vision_config=tiny_vision_config,
                 )
-
                 model = model_class(config)
                 model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
 
-                model = None
-                gc.collect()
-
-                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
+                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
 
                 model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
 
@@ -552,14 +543,11 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                     md52 = model_state_2[k]._md5sum()
                     assert md51 == md52
 
-            finally:
-                shutil.rmtree(tmpdirname, ignore_errors=True)
-
 
 class Qwen3VLIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(
-            "PaddleFormers/tiny-random-qwen3vl", convert_from_hf=True, load_checkpoint_format=""
+            "PaddleFormers/tiny-random-qwen3vl", convert_from_hf=True
         )
 
         self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen3vl")
@@ -917,11 +905,13 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
     def test_Qwen3VL_converter(self):
 
         # 1. forward the paddle model
-        from paddleformers.transformers import Qwen3VLForConditionalGeneration
+        from paddleformers.transformers import (
+            Qwen3VLForConditionalGenerationDecapitated as Qwen3VLForConditionalGeneration,
+        )
 
         paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
         paddle_model = Qwen3VLForConditionalGeneration.from_pretrained(
-            self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            self.torch_model_path, convert_from_hf=True, dtype="float32"
         ).eval()
         paddle_logit = paddle_model(**paddle_inputs)["logits"]
 
@@ -962,11 +952,13 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
             torch_logit = torch_model(**torch_inputs)["logits"]
 
             # 2. forward the paddle model
-            from paddleformers.transformers import Qwen3VLForConditionalGeneration
+            from paddleformers.transformers import (
+                Qwen3VLForConditionalGenerationDecapitated as Qwen3VLForConditionalGeneration,
+            )
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
             paddle_model = Qwen3VLForConditionalGeneration.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+                tempdir, convert_from_hf=True, dtype="float32"
             )
             paddle_model.eval()
             paddle_logit = paddle_model(**paddle_inputs)["logits"]
@@ -1002,10 +994,8 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-            paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
-            ).eval()
+            paddle_model_class = getattr(transformers, class_name + "Decapitated")
+            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32").eval()
             paddle_model_fused = paddle_model_class.from_pretrained(
                 tempdir,
                 dtype="float32",
