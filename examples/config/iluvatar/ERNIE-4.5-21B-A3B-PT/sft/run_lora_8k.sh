@@ -12,5 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 rm -rf paddleformers_dist_log checkpoints/ernie-21B-sft-lora-tp-pp/ vdl_log/
 paddleformers-cli train examples/config/iluvatar/ERNIE-4.5-21B-A3B-PT/sft/lora_8k.yaml
+unset CUDA_VISIBLE_DEVICES
