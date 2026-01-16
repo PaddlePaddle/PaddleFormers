@@ -49,7 +49,7 @@ from tqdm.auto import tqdm
 from ..transformers.moe_gate import PretrainedMoEGate
 from ..transformers.moe_utils import offload, reload
 from ..utils.log import logger
-from .trainer_utils import IntervalStrategy, has_length
+from .trainer_utils import IntervalStrategy, get_last_checkpoint, has_length
 from .training_args import TrainingArguments
 
 __all__ = [
@@ -888,3 +888,26 @@ class EMAStateAssemblerCallback(TrainerCallback):
         self.ema_state_assembler.run()
         duration = time.time() - start
         logger.info(f"[EMAStateAssembler] Assembling EMA state took {duration:.3f} seconds.")
+
+
+class InterleaveGateUpCallback(TrainerCallback):
+    def __init__(self, model, resume_from_checkpoint=None, output_dir=None):
+        self.model = model
+        self.resume_from_checkpoint = None
+        self.output_dir = output_dir
+
+    def interleave_gate_up_proj(self, w):
+        w_cloned = w.clone().detach()
+        I = w_cloned.shape[1] // 2
+        interleaved_w = paddle.stack([w_cloned[:, :I, :], w_cloned[:, I:, :]], dim=2).reshape(
+            w_cloned.shape[0], 2 * I, w_cloned.shape[2]
+        )
+        paddle.assign(interleaved_w, w)
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        if self.resume_from_checkpoint is not None or get_last_checkpoint(self.output_dir):
+            # NOTE(xingmingyyj) For a normal hot start from weights saved by FlexCheckpoint, we assume that the weights have already been interleaved.
+            return
+        for name, param in self.model.state_dict().items():
+            if "weight1" in name:
+                self.interleave_gate_up_proj(param)

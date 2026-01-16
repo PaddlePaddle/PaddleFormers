@@ -21,7 +21,11 @@ import numpy as np
 import paddle
 from parameterized import parameterized
 
-from paddleformers.transformers import Glm4MoeConfig, Glm4MoeForCausalLM, Glm4MoeModel
+from paddleformers.transformers import Glm4MoeConfig
+from paddleformers.transformers import (
+    Glm4MoeForCausalLMDecapitated as Glm4MoeForCausalLM,
+)
+from paddleformers.transformers import Glm4MoeModel
 from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -565,6 +569,9 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
 
             # 3. forward the paddle model
             from paddleformers import transformers
+
+            if class_name == "Glm4MoeForCausalLM":
+                class_name = "Glm4MoeForCausalLMDecapitated"
 
             paddle_model_class = getattr(transformers, class_name)
             paddle_model = paddle_model_class.from_pretrained(

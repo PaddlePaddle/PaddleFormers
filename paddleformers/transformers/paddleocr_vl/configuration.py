@@ -108,7 +108,7 @@ class PaddleOCRVLConfig(PretrainedConfig):
         hidden_dropout_prob=0.0,
         compression_ratio: float = 1.0,
         num_key_value_heads=None,
-        use_sparse_head_and_loss_fn=False,
+        use_filtered_label_loss=False,
         max_sequence_length=None,
         tie_word_embeddings=False,
         vision_config=None,
@@ -159,7 +159,7 @@ class PaddleOCRVLConfig(PretrainedConfig):
         self.hidden_dropout_prob = hidden_dropout_prob
         self.compression_ratio = compression_ratio
         self.num_key_value_heads = num_key_value_heads
-        self.use_sparse_head_and_loss_fn = use_sparse_head_and_loss_fn
+        self.use_filtered_label_loss = use_filtered_label_loss
         self.max_sequence_length = max_sequence_length
         self.rope_scaling = rope_scaling
         self.rope_parameters = rope_scaling
@@ -194,7 +194,7 @@ class PaddleOCRVLConfig(PretrainedConfig):
             [
                 "use_sparse_flash_attn",
                 "use_var_len_flash_attn",
-                "use_sparse_head_and_loss_fn",
+                "use_filtered_label_loss",
                 "fuse_softmax_mask",
                 "cachekv_quant",
                 "use_fused_head_and_loss_fn",

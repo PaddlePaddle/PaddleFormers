@@ -210,7 +210,7 @@ try:
         entry_points={"console_scripts": get_console_scripts()},
         extras_require={
             "paddlefleet": [
-                f"paddlefleet @ https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp{ver_str}-cp{ver_str}-linux_x86_64.whl"
+                f"paddlefleet @ https://paddle-github-action.bj.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp{ver_str}-cp{ver_str}-linux_x86_64.whl"
             ],
         },
         python_requires=">=3.8",
