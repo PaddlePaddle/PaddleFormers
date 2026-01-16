@@ -12,7 +12,7 @@ template_backend: custom
 template: ernie_nothink
 
 ### model
-model_name_or_path: ERNIE-4.5-21B-A3B-PT
+model_name_or_path: baidu/ERNIE-4.5-21B-A3B-PT
 attn_impl: eager
 lora: true
 lora_rank: 8
