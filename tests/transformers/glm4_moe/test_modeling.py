@@ -497,7 +497,7 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
         import torch
         from transformers import Glm4MoeModel
 
-        torch_model = Glm4MoeModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+        torch_model = Glm4MoeModel.from_pretrained(self.torch_model_path, torch_dtype="auto")
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
@@ -530,7 +530,7 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
             import torch
             from transformers import Glm4MoeModel
 
-            torch_model = Glm4MoeModel.from_pretrained(tempdir, torch_dtype=torch.float32)
+            torch_model = Glm4MoeModel.from_pretrained(tempdir, torch_dtype="auto")
             torch_model.eval()
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
@@ -574,7 +574,7 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
             import transformers
 
             torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(tempdir, torch_dtype=torch.float32)
+            torch_model = torch_model_class.from_pretrained(tempdir, torch_dtype="auto")
             torch_model.eval()
 
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
