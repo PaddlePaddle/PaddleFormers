@@ -194,7 +194,11 @@ class _BaseAutoModelClass:
         class_name = cls._name_mapping[init_class]
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
         # Currently, DPO-lora and Qwen3VL LoRA fallback to formers
-        if is_lora and (config.get("dpo_config", None) or class_name in ["qwen3_vl", "qwen3_vl_moe"]):
+        is_dpo = False
+        if config is not None:
+            is_dpo = config.get("dpo_config", None) is not None
+        logger.info(f"Is DPO Model: {is_dpo}.")
+        if is_lora and (is_dpo or class_name in ["qwen3_vl", "qwen3_vl_moe"]):
             try:
                 model_class = getattr(import_class, init_class + "Decapitated")
                 return model_class
