@@ -9,17 +9,19 @@ max_seq_len: 8192
 packing: true
 mix_strategy: concat
 template_backend: custom
-template: qwen3
+template: ernie_nothink
 
 ### model
 model_name_or_path: ERNIE-4.5-21B-A3B-PT
 attn_impl: eager
+lora: true
+lora_rank: 8
 
 ### finetuning
 # base
 device: metax_gpu
 stage: SFT
-fine_tuning: full
+fine_tuning: lora
 seed: 23
 do_train: true
 do_eval: true
@@ -34,13 +36,13 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/ERNIE-4.5-21B-A3B-PT-sft-full-tp-pp
+output_dir: ./checkpoints/ERNIE-4.5-21B-A3B-PT-sft-lora-tp-pp
 disable_tqdm: true
 eval_accumulation_steps: 16
 
 # train
 warmup_steps: 20
-learning_rate: 1.0e-5
+learning_rate: 1.0e-4
 
 # performance
 tensor_model_parallel_size: 2
