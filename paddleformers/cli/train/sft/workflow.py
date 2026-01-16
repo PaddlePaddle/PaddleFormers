@@ -265,6 +265,11 @@ def run_sft(
         model_config.vision_config.recompute_method = model_config.recompute_method
         model_config.vision_config.recompute_num_layers = model_config.recompute_num_layers
 
+    if "qwen3vl" in model_config.model_type and not model_args.lora:
+        if training_args.sequence_parallel:
+            logger.warning("Qwen3VL model not support `sequence_parallel`, set to False")
+        training_args.sequence_parallel = False
+
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 

@@ -228,7 +228,7 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
             packed_seq_params=packed_seq_params,
         )
         hidden_states = self._forward_mlp(hidden_states)
-        if self.layer_number in range(len(deepstack_visual_emb)):
+        if deepstack_visual_emb and self.layer_number in range(len(deepstack_visual_emb)):
             # print("process _deepstack_process ",hidden_states.shape,visual_pos_masks.shape,deepstack_visual_emb[self.layer_number].shape)
             hidden_states = self._deepstack_process(
                 hidden_states=hidden_states,
@@ -339,6 +339,7 @@ class Qwen3VLTextProvider(GPTModelProvider):
     use_flash_attention: bool = True
     use_fused_linear_cross_entropy: bool = True
     high_precision_rope: bool = True
+    moe_grouped_gemm: bool = True
 
     n_shared_experts: int = 0
     transform_rules = {
