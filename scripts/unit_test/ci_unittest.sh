@@ -120,7 +120,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     COVERAGE_SOURCE=paddleformers \
     python -m pytest -v -s -n 8 \
         --dist no \
-        --maxfail=1 \
+        --maxfail=5 \
         --retries 3 --retry-delay 1 \
         --timeout 200 --durations 20 \
         --alluredir=result \

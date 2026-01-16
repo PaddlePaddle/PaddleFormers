@@ -1204,7 +1204,7 @@ def load_balancing_loss_func(gate_logits, num_experts, top_k=2, attention_mask=N
     return overall_loss * num_experts
 
 
-class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel):
+class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1230,7 +1230,7 @@ class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel):
         return gpt_model
 
 
-class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
+class Qwen3MoeForCausalLMDecapitated(Qwen3MoePretrainedModel):
     enable_to_static_method = True
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -1358,7 +1358,7 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
         )
 
 
-class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel, GeneralModelForCausalLMPipe):
+class Qwen3MoeForCausalLMPipe(Qwen3MoePretrainedModel, GeneralModelForCausalLMPipe):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1383,7 +1383,7 @@ class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel, GeneralModelForCausa
         return gpt_model
 
 
-class Qwen3MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
+class Qwen3MoeForCausalLMPipeDecapitated(GeneralModelForCausalLMPipe):
     config_class = Qwen3MoeConfig
     _decoder_layer_cls = Qwen3MoeDecoderLayer
     _get_tensor_parallel_mappings = Qwen3MoeModel._get_tensor_parallel_mappings
@@ -1400,7 +1400,7 @@ __all__ = [
     "Qwen3MoeModel",
     "Qwen3MoePretrainedModel",
     "Qwen3MoeForCausalLM",
-    "Qwen3MoeForCausalLMFleet",
+    "Qwen3MoeForCausalLMDecapitated",
     "Qwen3MoeForCausalLMPipe",
-    "Qwen3MoeForCausalLMPipeFleet",
+    "Qwen3MoeForCausalLMPipeDecapitated",
 ]

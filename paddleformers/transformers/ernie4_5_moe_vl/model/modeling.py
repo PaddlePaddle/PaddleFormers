@@ -79,7 +79,7 @@ def calc_lm_head_logits(config, hidden_states, weight, bias, tensor_parallel_out
         Tensor: The computed logits for language modeling.
     """
     if config.sequence_parallel:
-        if config.use_sparse_head_and_loss_fn:
+        if config.use_filtered_label_loss:
             pass  # Nothing needs to be done.
         else:
             hidden_states = GatherOp.apply(hidden_states)
@@ -1355,7 +1355,7 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
                 - If return_tuple=True: Tuple of (normalized_loss, sum_loss)
         """
 
-        if self.config.use_sparse_head_and_loss_fn:
+        if self.config.use_filtered_label_loss:
             hidden_states, outlinear_weight, outlinear_bias = prediction_scores[:3]
 
             if self.config.sequence_parallel:
@@ -1374,7 +1374,7 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
                 hidden_states = paddle.take_along_axis(hidden_states, sparse_label_idx.reshape([-1, 1]), axis=0)
 
             # `loss_mask` must be reset to None and re-calculate it in ErnieBotPretrainingCriterion
-            # when use use_sparse_head_and_loss_fn.
+            # when use use_filtered_label_loss.
             loss_mask = None
             if self.config.recompute_modules is not None and "loss_fn" in self.config.recompute_modules:
                 offload_kwargs = {}
@@ -1593,7 +1593,7 @@ class Ernie4_5_LMHead(nn.Layer):
                 - tie_word_embeddings: Whether to tie input/output embeddings
                 - weight_share_add_bias: Whether to add bias when weight sharing
                 - use_bias: Whether to use bias term
-                - use_sparse_head_and_loss_fn: Whether to use sparse head computation
+                - use_filtered_label_loss: Whether to use sparse head computation
         """
 
         super(Ernie4_5_LMHead, self).__init__()
@@ -1645,7 +1645,7 @@ class Ernie4_5_LMHead(nn.Layer):
         Returns:
             Union[
                 Tuple[paddle.Tensor, paddle.Tensor, Optional[paddle.Tensor]]:
-                    # When recompute loss_fn or use_sparse_head_and_loss_fn
+                    # When recompute loss_fn or use_filtered_label_loss
                     - hidden_states: Original input
                     - weight: Projection weights
                     - bias: Optional bias term
@@ -1656,12 +1656,12 @@ class Ernie4_5_LMHead(nn.Layer):
             ]
         """
         #  will enter this branch when:
-        # 1. recompute loss_fn or use_sparse_head_and_loss_fn
+        # 1. recompute loss_fn or use_filtered_label_loss
         # 2. dpo training
         if (
             self.config.recompute_modules is not None
             and "loss_fn" in self.config.recompute_modules
-            or self.config.use_sparse_head_and_loss_fn
+            or self.config.use_filtered_label_loss
         ):
             return (
                 hidden_states,

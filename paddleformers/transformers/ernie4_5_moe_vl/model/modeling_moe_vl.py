@@ -487,7 +487,7 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
             if (
                 self.config.recompute_modules is not None
                 and "loss_fn" in self.config.recompute_modules
-                or self.config.use_sparse_head_and_loss_fn
+                or self.config.use_filtered_label_loss
             ):
                 loss, loss_sum = super().forward((scores_text.unsqueeze(0), lm_weight, lm_bias), labels.unsqueeze(0))
             else:
@@ -506,7 +506,7 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
             if (
                 self.config.recompute_modules is not None
                 and "loss_fn" in self.config.recompute_modules
-                or self.config.use_sparse_head_and_loss_fn
+                or self.config.use_filtered_label_loss
             ):
                 assert lm_weight is not None and mm_weight is not None
                 loss, loss_sum = super().forward(
@@ -530,7 +530,7 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
             if (
                 self.config.recompute_modules is not None
                 and "loss_fn" in self.config.recompute_modules
-                or self.config.use_sparse_head_and_loss_fn
+                or self.config.use_filtered_label_loss
             ):
                 assert mm_weight is not None and mm_bias is not None
                 loss_image, _ = super().forward(
@@ -624,7 +624,7 @@ def calc_multimodal_logits(
         if (
             config.recompute_modules is not None
             and "loss_fn" in config.recompute_modules
-            or config.use_sparse_head_and_loss_fn
+            or config.use_filtered_label_loss
         ):
             return last_hidden_state, None, None
         score_text = parallel_matmul_tp(
@@ -642,7 +642,7 @@ def calc_multimodal_logits(
         if (
             config.recompute_modules is not None
             and "loss_fn" in config.recompute_modules
-            or config.use_sparse_head_and_loss_fn
+            or config.use_filtered_label_loss
         ):
             score_text = last_hidden_state[text_pos_shifted]
         else:
@@ -654,7 +654,7 @@ def calc_multimodal_logits(
         if (
             config.recompute_modules is not None
             and "loss_fn" in config.recompute_modules
-            or config.use_sparse_head_and_loss_fn
+            or config.use_filtered_label_loss
         ):
             score_image = last_hidden_state[image_mask_shifted]
         else:

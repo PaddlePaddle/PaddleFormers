@@ -24,13 +24,12 @@ import numpy as np
 import paddle
 from parameterized import parameterized
 
+from paddleformers.transformers import AutoProcessor, Qwen3VLMoeConfig
 from paddleformers.transformers import (
-    AutoProcessor,
-    Qwen3VLMoeConfig,
-    Qwen3VLMoeForConditionalGeneration,
-    Qwen3VLMoeModel,
-    process_vision_info,
+    Qwen3VLMoeForConditionalGenerationDecapitated as Qwen3VLMoeForConditionalGeneration,
 )
+from paddleformers.transformers import Qwen3VLMoeModelDecapitated as Qwen3VLMoeModel
+from paddleformers.transformers import process_vision_info
 from paddleformers.transformers.video_utils import load_video
 from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
@@ -946,7 +945,9 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
     def test_Qwen3VLMoe_converter(self):
 
         # 1. forward the paddle model
-        from paddleformers.transformers import Qwen3VLMoeForConditionalGeneration
+        from paddleformers.transformers import (
+            Qwen3VLMoeForConditionalGenerationDecapitated as Qwen3VLMoeForConditionalGeneration,
+        )
 
         paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
         paddle_model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
@@ -991,7 +992,9 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
             torch_logit = torch_model(**torch_inputs)["logits"]
 
             # 2. forward the paddle model
-            from paddleformers.transformers import Qwen3VLMoeForConditionalGeneration
+            from paddleformers.transformers import (
+                Qwen3VLMoeForConditionalGenerationDecapitated as Qwen3VLMoeForConditionalGeneration,
+            )
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
             paddle_model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
@@ -1031,7 +1034,7 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-            paddle_model_class = getattr(transformers, class_name)
+            paddle_model_class = getattr(transformers, class_name + "Decapitated")
             paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32").eval()
             paddle_model_fused = paddle_model_class.from_pretrained(
                 tempdir,
