@@ -1,8 +1,8 @@
 # ERNIE-4.5-VL-28B-A3B-Thinking 微调指南
 本文旨在指导用户如何微调 ERNIE-4.5-VL-28B-A3B-Thinking 模型。ERNIE-4.5-VL-28B-A3B-Thinking 是一个强大的多模态模型，结合了视觉与语言理解能力。微调该模型可以帮助用户根据特定任务进行优化，提升模型在特定领域或任务上的表现。基于飞桨（PaddlePaddle）框架，我们整理了一套“开箱即用”的用于微调 ERNIE-4.5-VL-28B-A3B-Thinking 模型的配置。根据以下步骤即可轻松进行微调。
 
-### 快速开始
-##### 环境配置
+## 快速开始
+### 环境配置
 1. 安装 PaddlePaddle
 ```
 # cuda12.6
@@ -17,7 +17,7 @@ cd PaddleFormers
 pip install -e .
 ```
 
-##### 数据准备
+### 数据准备
 本次实验采用 messages 格式类数据集，以下是部分数据样例
 
 ```
@@ -31,7 +31,7 @@ wget https://paddleformers.bj.bcebos.com/datasets/thinksafe_vl_data.tar
 tar -xf thinksafe_vl_data.tar
 ```
 
-##### 训练配置
+### 训练配置
 | 训练方法 | 上下文长度 | 配置文件 |
 |------------|----------|----------|
 | SFT-FULL   | 8K   | [`ernie45vl_8k_config.yaml`](./ernie45vl_8k_config.yaml) |
@@ -47,8 +47,8 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train examples/best_pract
 CUDA_VISIBLE_DEVICES=0,1,2,3 paddleformers-cli train examples/best_practices/Ernie4.5VL/ernie45vl_8k_lora_config.yaml 
 ```
 
-### 超参配置
-##### 数据超参
+## 超参配置
+### 数据超参
 | 参数名 | 说明 |
 |--------|------|
 | `train_dataset_path` | 训练数据路径。 |
@@ -58,7 +58,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 paddleformers-cli train examples/best_practices/Ern
 | `random_shuffle` | 是否随机打乱数据集内数据顺序。 |
 | `image_folder` | 图片数据路径。 |
 
-##### 训练超参
+### 训练超参
 | 参数名 | 说明 |
 |--------|------|
 | `per_device_train_batch_size` | 每张卡的batch size大小，目前仅支持`1`。 |
