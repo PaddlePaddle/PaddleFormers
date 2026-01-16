@@ -31,6 +31,19 @@ wget https://paddleformers.bj.bcebos.com/datasets/thinksafe_vl_data.tar
 tar -xf thinksafe_vl_data.tar
 ```
 
+### 模型准备
+若本地缓存目录下没有模型，PaddleFormers会自动下载模型。默认从 HuggingFace 下载模型，可以按以下方式修改下载源：
+```
+# 指定下载源为 HuggingFace
+export DOWNLOAD_SOURCE=huggingface
+
+# 指定下载源为 ModelScope
+export DOWNLOAD_SOURCE=modelscope
+
+# 指定下载源为 AIStudio
+export DOWNLOAD_SOURCE=aistudio
+```
+
 ### 训练配置
 | 训练方法 | 上下文长度 | 配置文件 |
 |------------|----------|----------|
