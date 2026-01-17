@@ -1218,7 +1218,7 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
         model_provider_class = Qwen3MoEModelProvider
         model_provider = model_provider_class.from_config(config)
         loss_fn = None
-        if hasattr(config, "dpo_config"):
+        if getattr(config, "dpo_config", None):
             loss_fn = CriterionLayerPipe(config, use_infohub=True)
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
@@ -1372,7 +1372,7 @@ class Qwen3MoeForCausalLMPipe(Qwen3MoePretrainedModel, GeneralModelForCausalLMPi
         model_provider_class = Qwen3MoEModelProvider
         model_provider = model_provider_class.from_config(config)
         loss_fn = None
-        if hasattr(config, "dpo_config"):
+        if getattr(config, "dpo_config", None):
             loss_fn = CriterionLayerPipe(config, use_infohub=True)
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
