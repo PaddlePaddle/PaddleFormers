@@ -60,7 +60,9 @@ try:
 except:
     flash_attention = None
 
+import fp8_linear as linear_utils
 from config.configuration import DeepseekV2FastConfig
+from fp8_linear import Linear as Linear_
 from moe_gate import PretrainedMoEGate
 from moe_layer import MoELayer
 from moe_utils import get_env_device
@@ -71,13 +73,11 @@ from paddleformers.transformers.conversion_utils import (
     StateDictNameMapping,
     init_name_mappings,
 )
-from paddleformers.transformers.deepseek_v3 import fp8_linear as linear_utils
 from paddleformers.transformers.deepseek_v3 import (
     rotate_half,
     scaled_dot_product_attention,
     yarn_get_mscale,
 )
-from paddleformers.transformers.deepseek_v3.fp8_linear import Linear as Linear_
 from paddleformers.transformers.fp8_utils import (
     FP8KeepXLinear,
     FP8Linear,

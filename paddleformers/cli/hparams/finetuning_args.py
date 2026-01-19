@@ -53,6 +53,97 @@ class PreTrainingArguments(TrainingArguments):
             )
         },
     )
+    pp_need_data_degree: int = field(
+        default=0,
+        metadata={"help": "pipline need data degree"},
+    )
+    pp_need_data: bool = field(default=False, metadata={"help": "pipline need fetch data"})
+    balanced_image_preprocess: bool = field(default=False, metadata={"help": "balanced image preprocess"})
+    decay_function: str = field(
+        default="half_life",
+        metadata={"help": "The decay function for WSD LR scheduler. support half_life(default), 1-sqrt"},
+    )
+    gc_interval: int = field(default=0, metadata={"help": "gc time"})
+    global_batch_size: int = field(default=-1, metadata={"help": "global batch size"})
+    global_logging_interval: int = field(
+        default=1,
+        metadata={"help": "the logging interval of global_training_logs"},
+    )
+    multi_token_pred_depth: Optional[int] = field(
+        default=0,
+        metadata={},
+    )
+    num_consecutive: int = field(
+        default=1,
+        metadata={"help": "H5 file consecutive num."},
+    )
+    same_data: Optional[bool] = field(
+        default=None,
+        metadata={"help": "when resume from checkpoint, keey data same with the ckpt"},
+    )
+    use_ortho_loss_callback: bool = field(default=False, metadata={"help": "Use orthogonal loss callback or not"})
+    moe_with_send_router_loss: bool = field(default=True, metadata={"help": "Whether use send router loss"})
+    log_global_grad_norm: Optional[bool] = field(
+        default=False,
+        metadata={"help": "print global grad-norm"},
+    )
+    moe_gate_lr_ratio: float = field(
+        default=None,
+        metadata={"help": ("special handle the lr for gate/router")},
+    )
+    log_global_grad_norm: Optional[bool] = field(
+        default=False,
+        metadata={"help": "print global grad-norm"},
+    )
+    shuffle_consecutive: Optional[bool] = field(
+        default=False,
+        metadata={"help": "shuffle num_consecutive or not"},
+    )
+
+    @property
+    def need_data(self):
+        """
+        whether need load data
+        return True
+        """
+        # only mp0、pp0 need data
+        if self.pp_need_data_degree:
+            assert self.pipeline_model_parallel_size > 1
+            assert self.pp_need_data_degree >= 2 and self.pp_need_data_degree <= self.pipeline_model_parallel_size, (
+                self.pp_need_data_degree,
+                self.pipeline_model_parallel_size,
+            )
+            # shift by 1 to avoid last pp no nee data
+            no_need_data_range = list(range(self.pp_need_data_degree - 1, self.pipeline_model_parallel_size - 1))
+            return self.tensor_parallel_rank == 0 and (self.pipeline_parallel_rank not in no_need_data_range)
+        return self.pipeline_parallel_rank == 0 and self.tensor_parallel_rank == 0
+
+    @property
+    def reeao_dataset_rank(self):
+        """
+        pp /sharding/ dp sum data stream rank
+        """
+        if not self.pp_need_data_degree:
+            return super().dataset_rank
+        no_need_data_range = list(range(self.pp_need_data_degree - 1, self.pipeline_model_parallel_size - 1))
+        ranks = [i for i in range(self.pipeline_model_parallel_size) if i not in no_need_data_range]
+        if self.pipeline_parallel_rank not in ranks:
+            return None
+        reeao_pp_rank = ranks.index(self.pipeline_parallel_rank)
+        return (
+            max(self.sharding_parallel_size, 1) * max(self.pp_need_data_degree, 1) * self.data_parallel_rank
+            + max(self.pp_need_data_degree, 1) * self.sharding_parallel_rank
+            + reeao_pp_rank
+        )
+
+    @property
+    def reeao_dataset_world_size(self):
+        """
+        pp /sharding/ dp sum data stream worldsize
+        """
+        if not self.pp_need_data_degree:
+            return super().dataset_world_size
+        return max(self.sharding_parallel_size, 1) * max(self.pp_need_data_degree, 1) * max(self.data_parallel_size, 1)
 
 
 @dataclass

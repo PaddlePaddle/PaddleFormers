@@ -35,15 +35,15 @@ SAVE_STEPS = 2
 
 # tmp change loss, this loss change is not from this pr, zhangjunjun will recover it to right loss later.
 DPO_FULL_EXCEPTED_LOSS = 0.693147
-DPO_FULL_RESUME_EXCEPTED_LOSS = 0.69498
+DPO_FULL_RESUME_EXCEPTED_LOSS = 0.692832
 DPO_FULL_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
 DPO_LORA_EXCEPTED_LOSS = 0.693147
-DPO_LORA_RESUME_EXCEPTED_LOSS = 0.693468
+DPO_LORA_RESUME_EXCEPTED_LOSS = 0.691905
 DPO_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 DPO_FULL_TP_PP_EXCEPTED_LOSS = 0.693147
-DPO_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 0.693975
+DPO_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 0.69417
 DPO_FULL_TP_PP_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
 DPO_LORA_TP_PP_EXCEPTED_LOSS = 0.693147
@@ -101,11 +101,13 @@ class DPOTrainTester(unittest.TestCase):
         model_path,
         excepted_result,
     ):
-        from paddleformers.transformers import Glm4MoeForCausalLM
+        from paddleformers.transformers.glm4_moe.modeling import (
+            Glm4MoeForCausalLMDecapitated,
+        )
 
         input_ids = paddle.to_tensor([[1, 306, 4658, 278, 6593, 310, 2834, 338]])
         attention_mask = paddle.ones_like(input_ids)
-        model = Glm4MoeForCausalLM.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
+        model = Glm4MoeForCausalLMDecapitated.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
         with paddle.no_grad():
             result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
         print(f"excepted_result is : {excepted_result}")

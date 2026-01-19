@@ -3877,12 +3877,16 @@ def replace_name_and_gen_index(path, total_size, save_peft=False):
         start_idx.append(acc)
         acc += files_num
 
+    # NOTE(xingmingyyj) If PADDLE_LOCAL_SIZE is not set, assume PADDLE_LOCAL_SIZE=8.
     env_local_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
     env_local_rank = dist.get_rank() % env_local_size
     assert env_local_rank >= 0, f"expected positive local rank, got {env_local_rank}"
 
-    cur_file_index = start_idx[cur_rank] // env_local_size
-    total_files_num = total_files_num // env_local_size
+    if paddle.distributed.get_world_size() > 1:
+        cur_file_index = start_idx[cur_rank] // env_local_size
+        total_files_num = total_files_num // env_local_size
+    else:
+        cur_file_index = 0
 
     index_mapping = {}
     if env_local_rank == 0:

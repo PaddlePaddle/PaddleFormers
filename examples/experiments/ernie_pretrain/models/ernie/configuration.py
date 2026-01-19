@@ -116,7 +116,7 @@ class ErnieMoEConfig(PretrainedConfig):
         hidden_dropout_prob=0.0,
         compression_ratio: float = 1.0,
         num_key_value_heads=None,
-        use_sparse_head_and_loss_fn=False,
+        use_filtered_label_loss=False,
         using_dynamic_sequence_length=False,
         micro_batch_size=-1,
         use_qk_norm=False,
@@ -249,7 +249,7 @@ class ErnieMoEConfig(PretrainedConfig):
         self.compression_ratio = compression_ratio
         self.skip_recompute_ops = dict()
         self.num_key_value_heads = num_key_value_heads
-        self.use_sparse_head_and_loss_fn = use_sparse_head_and_loss_fn
+        self.use_filtered_label_loss = use_filtered_label_loss
         self.use_tpsp_comm_overlap = use_tpsp_comm_overlap
         self.use_ep_comm_overlap = use_ep_comm_overlap
         self.offload_pp_data_chunk_size = offload_pp_data_chunk_size

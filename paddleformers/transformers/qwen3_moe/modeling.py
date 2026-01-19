@@ -35,7 +35,7 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
 from ...nn.moe_deepep.moe_factory import QuickAccessMoEFactory
 from ...nn.norm import Norm as GeneralNorm
-from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..gpt_provider import GPTModelProvider
@@ -89,6 +89,8 @@ class Qwen3MoEModelProvider(GPTModelProvider):
     moe_grouped_gemm: bool = True
 
     n_shared_experts: int = 0
+
+    use_qk_norm: bool = True
 
 
 def rotate_half(x):
@@ -1130,10 +1132,11 @@ def load_balancing_loss_func(gate_logits, num_experts, top_k=2, attention_mask=N
     return overall_loss * num_experts
 
 
-class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel):
+class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
+        # Hybrid parallel config convert.
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
@@ -1142,16 +1145,20 @@ class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel):
 
         model_provider_class = Qwen3MoEModelProvider
         model_provider = model_provider_class.from_config(config)
-        gpt_model = model_provider.provide()
+        loss_fn = None
+        if getattr(config, "dpo_config", None):
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
+        gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
         gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
 
         return gpt_model
 
 
-class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
+class Qwen3MoeForCausalLMDecapitated(Qwen3MoePretrainedModel):
     enable_to_static_method = True
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -1279,21 +1286,32 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
         )
 
 
-class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel, GeneralModelForCausalLMPipe):
+class Qwen3MoeForCausalLMPipe(Qwen3MoePretrainedModel, GeneralModelForCausalLMPipe):
     is_fleet = True
 
     def __new__(cls, config):
+        # Hybrid parallel config convert.
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+
         model_provider_class = Qwen3MoEModelProvider
         model_provider = model_provider_class.from_config(config)
-        gpt_model = model_provider.provide()
+        loss_fn = None
+        if getattr(config, "dpo_config", None):
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
+        gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
         gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
         return gpt_model
 
 
-class Qwen3MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
+class Qwen3MoeForCausalLMPipeDecapitated(GeneralModelForCausalLMPipe):
     config_class = Qwen3MoeConfig
     _decoder_layer_cls = Qwen3MoeDecoderLayer
     _get_tensor_parallel_mappings = Qwen3MoeModel._get_tensor_parallel_mappings
@@ -1310,7 +1328,7 @@ __all__ = [
     "Qwen3MoeModel",
     "Qwen3MoePretrainedModel",
     "Qwen3MoeForCausalLM",
-    "Qwen3MoeForCausalLMFleet",
+    "Qwen3MoeForCausalLMDecapitated",
     "Qwen3MoeForCausalLMPipe",
-    "Qwen3MoeForCausalLMPipeFleet",
+    "Qwen3MoeForCausalLMPipeDecapitated",
 ]

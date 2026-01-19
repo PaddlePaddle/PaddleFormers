@@ -1,0 +1,5 @@
+### model
+fine_tuning: LoRA
+model_name_or_path: baidu/ERNIE-4.5-0.3B-PT
+output_dir: checkpoints/ernie-0.3B-sft-lora
+device: iluvatar_gpu

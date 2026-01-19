@@ -278,6 +278,7 @@ def run_dpo(
         "encode_one_turn": data_args.encode_one_turn,
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
+        "use_filtered_label_loss": False,
     }
 
     dataset_config.update(
@@ -360,7 +361,12 @@ def run_dpo(
 
     logger.info(f"callbacks: {callbacks}")
     # padding to the maximum seq length in batch data when max_seq_len is None
-    max_seq_len = data_args.max_seq_len if (data_args.packing or training_args.sequence_parallel) else None
+    max_seq_len = (
+        data_args.max_seq_len + model_config.num_nextn_predict_layers
+        if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
+        else None
+    )
+    logger.info(f"Setting max_seq_len to {max_seq_len} using PaddleFormers Model.")
     trainer = DPOTrainer(
         model=model,
         ref_model=ref_model,
@@ -375,8 +381,9 @@ def run_dpo(
             training_args=training_args,
             max_seq_len=max_seq_len,
             padding_free=data_args.padding_free,
-            use_sparse_head_and_loss_fn=model_config.use_sparse_head_and_loss_fn,
+            use_filtered_label_loss=False,
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
+            packing=data_args.packing,
         ),
         ignore_eos_token=dpo_config.ignore_eos_token,
         model_with_dpo_criterion=model_args.model_with_dpo_criterion,

@@ -847,8 +847,11 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             # attention qkv
             aoa_config["aoa_statements"] += [
                 f"{prefix}.self_attn.q_proj.weight^T, {prefix}.self_attn.k_proj.weight^T, {prefix}.self_attn.v_proj.weight^T -> {prefix_offset}.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
-                f"{prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias -> {prefix_offset}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
             ]
+            if config.attention_bias:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias -> {prefix_offset}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                ]
         # layer1 - layer_num_hidden_layers
         for layer_idx in reversed(range(1, num_hidden_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
@@ -954,11 +957,14 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             ]
             aoa_statements += [
                 f"{prefix_offset}.self_attn.qkv_proj.weight -> {prefix}.self_attn.q_proj.weight, {prefix}.self_attn.k_proj.weight, {prefix}.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
-                f"{prefix_offset}.self_attn.qkv_proj.bias -> {prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
             ]
             aoa_statements += [
                 f"{prefix}.self_attn.{x}_proj.weight^T -> {prefix}.self_attn.{x}_proj.weight" for x in ("q", "k", "v")
             ]
+            if config.attention_bias:
+                aoa_statements += [
+                    f"{prefix_offset}.self_attn.qkv_proj.bias -> {prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
+                ]
 
         # layer 1 -> layer num_hidden_layers-1
         for layer_idx in range(1, num_hidden_layers):
@@ -1088,11 +1094,6 @@ class Glm4MoeRotaryEmbedding(nn.Layer):
             sin = emb.sin() * self.attention_scaling
 
         return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
-
-
-@register_base_model
-class Glm4MoeModelFleet(Glm4MoePreTrainedModel):
-    pass
 
 
 @register_base_model
@@ -1290,7 +1291,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         )
 
 
-class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
+class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1304,18 +1305,17 @@ class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)
         loss_fn = None
-        if hasattr(config, "dpo_config"):
+        if getattr(config, "dpo_config", None):
             loss_fn = CriterionLayerPipe(config, use_infohub=True)
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
-        if not hasattr(config, "architectures"):
-            config.architectures = [cls.__name__.replace("Fleet", "")]
         gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
         return gpt_model
 
 
-class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
+class Glm4MoeForCausalLMDecapitated(Glm4MoePreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
     _tp_plan = {"lm_head": "colwise_rep"}
     _pp_plan = {"lm_head": (["hidden_states"], ["logits"])}
@@ -1465,7 +1465,7 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
         return ret
 
 
-class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe):
+class Glm4MoeForCausalLMPipe(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1479,18 +1479,19 @@ class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalL
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)
         loss_fn = None
-        if hasattr(config, "dpo_config"):
+        if getattr(config, "dpo_config", None):
             loss_fn = CriterionLayerPipe(config, use_infohub=True)
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         if not hasattr(config, "architectures"):
-            config.architectures = [cls.__name__.replace("PipeFleet", "")]
+            config.architectures = [cls.__name__.replace("Pipe", "")]
         gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
         return gpt_model
 
 
-class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
+class Glm4MoeForCausalLMPipeDecapitated(GeneralModelForCausalLMPipe):
     config_class = Glm4MoeConfig
     _decoder_layer_cls = Glm4MoeDecoderLayer
     _decoder_layer_pipe_cls = Glm4MoeDecoderLayerPipe
@@ -1499,15 +1500,14 @@ class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Glm4MoeModel.transpose_weight_keys
     _rotary_emb_cls = Glm4MoeRotaryEmbedding
-    _gen_aoa_config = Glm4MoeForCausalLM._gen_aoa_config
-    _gen_inv_aoa_config = Glm4MoeForCausalLM._gen_inv_aoa_config
+    _gen_aoa_config = Glm4MoeForCausalLMDecapitated._gen_aoa_config
+    _gen_inv_aoa_config = Glm4MoeForCausalLMDecapitated._gen_inv_aoa_config
 
 
 __all__ = [
-    "Glm4MoeForCausalLMPipeFleet",
-    "Glm4MoeModelFleet",
-    "Glm4MoeForCausalLMFleet",
     "Glm4MoeForCausalLMPipe",
     "Glm4MoeModel",
     "Glm4MoeForCausalLM",
+    "Glm4MoeForCausalLMPipeDecapitated",
+    "Glm4MoeForCausalLMDecapitated",
 ]

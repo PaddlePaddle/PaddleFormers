@@ -34,7 +34,7 @@ max_steps: 10
 eval_steps: 100000
 evaluation_strategy: steps
 #pipeline_model_parallel_size: 1
-continue_training: false
+continue_training: true
 save_steps: 100000
 save_strategy: steps
 logging_steps: 1
@@ -66,4 +66,5 @@ moe_router_force_load_balancing: true
 clear_every_step_cache: true
 partial_send_recv: false
 #use_cpu_initialization: true
-num_empty_layers_add_in_head: 1
+
+num_empty_layers_add_in_tail: 1

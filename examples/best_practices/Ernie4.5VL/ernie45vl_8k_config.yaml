@@ -1,10 +1,7 @@
 ### data
 train_dataset_type: messages
-eval_dataset_type: messages
 train_dataset_path: tests/fixtures/dummy/sft-vl/thinking_safety_demo.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: tests/fixtures/dummy/sft-vl/thinking_safety_demo.jsonl
-eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: false
 mix_strategy: concat
@@ -22,13 +19,10 @@ stage: VL-SFT
 fine_tuning: full
 seed: 23
 do_train: true
-do_eval: true
-per_device_eval_batch_size: 1
+do_eval: false
 per_device_train_batch_size: 1
 num_train_epochs: 3
 max_steps: -1
-eval_steps: 10000
-evaluation_strategy: steps
 save_steps: 10000
 save_strategy: steps
 logging_steps: 1
@@ -36,7 +30,6 @@ gradient_accumulation_steps: 16
 logging_dir: ./vdl_log
 output_dir: ./checkpoints/ernie-vl
 disable_tqdm: true
-eval_accumulation_steps: 16
 
 # train
 warmup_steps: 0
