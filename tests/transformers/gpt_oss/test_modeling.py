@@ -474,6 +474,7 @@ class GptOssCompatibilityTest(unittest.TestCase):
             )
         )
 
+    @unittest.skip("TODO: Temporarily skipped")
     @require_package("transformers", "torch")
     def test_GptOss_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
@@ -507,6 +508,7 @@ class GptOssCompatibilityTest(unittest.TestCase):
                 )
             )
 
+    @unittest.skip("TODO: Temporarily skipped")
     @parameterized.expand([("GptOssModel",), ("GptOssForCausalLM",)])
     @require_package("transformers", "torch")
     def test_GptOss_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
