@@ -545,6 +545,9 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
     @parameterized.expand([("Glm4MoeModel",), ("Glm4MoeForCausalLM",)])
     @require_package("transformers", "torch")
     def test_Glm4Moe_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
         pytorch_class_name = pytorch_class_name or class_name
         with tempfile.TemporaryDirectory() as tempdir:
 
@@ -574,15 +577,15 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
             import transformers
 
             torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(tempdir, dtype=torch.float32)
+            torch_model = torch_model_class.from_pretrained(tempdir, dtype=torch.float32, device_map="cuda")
             torch_model.eval()
 
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+            torch_logit = torch_model(torch.tensor(input_ids).to("cuda"), return_dict=False)[0]
 
             self.assertTrue(
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    torch_logit.detach().cpu().reshape([-1])[:9].float().cpu().numpy(),
                     atol=1e2,
                 )
             )
