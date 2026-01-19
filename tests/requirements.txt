@@ -1,3 +1,4 @@
+accelerate
 parameterized
 torch>=2.1
 sacremoses
