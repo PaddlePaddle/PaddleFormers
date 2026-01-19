@@ -548,6 +548,12 @@ class Phi3CompatibilityTest(unittest.TestCase):
         pytorch_class_name = pytorch_class_name or class_name
         with tempfile.TemporaryDirectory() as tempdir:
             input_ids = np.random.randint(100, 200, [1, 20])
+            try:
+                import sys
+
+                del sys.modules["torch"]
+            except:
+                pass
 
             import torch
             import transformers

@@ -517,6 +517,12 @@ class Qwen3CompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch model
+            try:
+                import sys
+
+                del sys.modules["torch"]
+            except:
+                pass
             import torch
             import transformers
 

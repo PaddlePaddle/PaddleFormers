@@ -937,6 +937,12 @@ class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tempdir:
 
             # 1. forward the torch model
+            try:
+                import sys
+
+                del sys.modules["torch"]
+            except:
+                pass
             import torch
             import transformers
 
