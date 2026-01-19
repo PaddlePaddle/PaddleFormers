@@ -21,6 +21,14 @@ from typing import Optional
 import paddle
 
 try:
+    import sys
+
+    examples_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", "..", "..", "examples", "experiments", "deepseek_v3_pretrain"
+    )
+    examples_path = os.path.abspath(examples_path)
+    sys.path.insert(0, examples_path)
+
     from config.configuration import DeepseekV2FastConfig
     from load_hf_ckpt import load_huggingface_ckpt
     from modeling_pp import DeepseekV2ForCausalLMPipe
