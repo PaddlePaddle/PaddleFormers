@@ -1,0 +1,5 @@
+### model
+fine_tuning: LoRA
+model_name_or_path: PaddlePaddle/PaddleOCR-VL
+output_dir: ./PaddleOCR-VL-SFT-Bengali-lora
+device: iluvatar_gpu
