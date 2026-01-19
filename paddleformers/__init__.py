@@ -55,7 +55,7 @@ with suppress(Exception):
 
 # this version is used for develop and test.
 # release version will be added fixed version by setup.py.
-__version__ = "0.4.0.post"
+__version__ = "1.0.0.post"
 if os.getenv(PADDLEFORMERS_STABLE_VERSION):
     __version__ = __version__.replace(".post", "")
 else:
