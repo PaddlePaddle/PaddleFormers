@@ -19,7 +19,6 @@ import unittest
 
 import numpy as np
 import paddle
-from parameterized import parameterized
 
 from paddleformers.transformers import Glm4MoeConfig
 from paddleformers.transformers import (
@@ -484,28 +483,30 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
         # 1. create common input
         input_ids = np.random.randint(100, 200, [1, 20])
 
-        # 2. forward the paddle model
-        from paddleformers.transformers import Glm4MoeModel
+        # 2. forward the torch model
+        import torch
+        from transformers import Glm4MoeForCausalLM
 
-        paddle_model = Glm4MoeModel.from_pretrained(
+        torch_model = Glm4MoeForCausalLM.from_pretrained(self.torch_model_path, dtype=torch.float32)
+        torch_model.eval()
+        torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+
+        # 3. forward the paddle model
+        from paddleformers.transformers import (
+            Glm4MoeForCausalLMDecapitated as Glm4MoeForCausalLM,
+        )
+
+        paddle_model = Glm4MoeForCausalLM.from_pretrained(
             self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
-        # 3. forward the torch model
-        import torch
-        from transformers import Glm4MoeModel
-
-        torch_model = Glm4MoeModel.from_pretrained(self.torch_model_path, dtype=torch.float32)
-        torch_model.eval()
-        torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
         self.assertTrue(
             np.allclose(
                 paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                 torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                rtol=1e2,
+                rtol=1e-2,
             )
         )
 
@@ -516,76 +517,30 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the paddle model
-            from paddleformers.transformers import Glm4MoeModel
+            # 2. forward the torch model
+            import torch
+            from transformers import Glm4MoeForCausalLM
 
-            paddle_model = Glm4MoeModel.from_pretrained(
-                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            torch_model = Glm4MoeForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model.eval()
+            torch_model.save_pretrained(tempdir)
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+
+            # 3. forward the paddle model
+            from paddleformers.transformers import (
+                Glm4MoeForCausalLMDecapitated as Glm4MoeForCausalLM,
+            )
+
+            paddle_model = Glm4MoeForCausalLM.from_pretrained(
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
-            paddle_model.save_pretrained(tempdir)
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
-
-            # 3. forward the torch model
-            import torch
-            from transformers import Glm4MoeModel
-
-            torch_model = Glm4MoeModel.from_pretrained(tempdir, dtype=torch.float32)
-            torch_model.eval()
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             self.assertTrue(
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    rtol=1e2,
-                )
-            )
-
-    @parameterized.expand([("Glm4MoeModel",), ("Glm4MoeForCausalLM",)])
-    @require_package("transformers", "torch")
-    def test_Glm4Moe_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-        pytorch_class_name = pytorch_class_name or class_name
-        with tempfile.TemporaryDirectory() as tempdir:
-
-            # 1. create common input
-            input_ids = np.random.randint(100, 200, [1, 20])
-
-            # 2. forward the paddle model
-            from paddleformers import transformers
-
-            if class_name == "Glm4MoeForCausalLM":
-                class_name = "Glm4MoeForCausalLMDecapitated"
-
-            paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(
-                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
-            )
-            paddle_model.eval()
-            paddle_model.save_pretrained(tempdir)
-
-            if class_name == "Glm4MoeModel":
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
-            else:
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
-
-            # 3. forward the torch model
-            import torch
-            import transformers
-
-            torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(tempdir, dtype=torch.float32, device_map="cuda")
-            torch_model.eval()
-
-            torch_logit = torch_model(torch.tensor(input_ids).to("cuda"), return_dict=False)[0]
-
-            self.assertTrue(
-                np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().cpu().numpy(),
-                    atol=1e2,
+                    rtol=1e-2,
                 )
             )

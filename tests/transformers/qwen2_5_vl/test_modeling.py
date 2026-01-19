@@ -867,8 +867,15 @@ class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
 
     @require_package("transformers", "torch")
     def test_Qwen2_5_VL_converter(self):
+        # 1. forward the torch model
+        import torch
+        from transformers import Qwen2_5_VLModel
 
-        # 1. forward the paddle model
+        torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
+        torch_model = Qwen2_5_VLModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32).eval()
+        torch_logit = torch_model(**torch_inputs)[0]
+
+        # 2. forward the paddle model
         from paddleformers.transformers import Qwen2_5_VLModel
 
         paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
@@ -876,14 +883,6 @@ class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
             self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
         ).eval()
         paddle_logit = paddle_model(**paddle_inputs)[0]
-
-        # 2. forward the torch model
-        import torch
-        from transformers import Qwen2_5_VLModel
-
-        torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
-        torch_model = Qwen2_5_VLModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32).eval()
-        torch_logit = torch_model(**torch_inputs)[0]
 
         # 3. compare the result between paddle and torch
         self.assertTrue(

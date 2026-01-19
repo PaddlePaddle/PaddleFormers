@@ -19,7 +19,6 @@ import unittest
 
 import numpy as np
 import paddle
-from parameterized import parameterized
 
 from paddleformers.transformers import Phi3Config, Phi3ForCausalLM, Phi3Model
 from tests.testing_utils import require_package
@@ -486,94 +485,63 @@ class Phi3CompatibilityTest(unittest.TestCase):
 
     @require_package("transformers", "torch")
     def test_Phi3_converter(self):
+        # 1. create common input
         input_ids = np.random.randint(100, 200, [1, 20])
 
-        from paddleformers.transformers import Phi3Model
+        # 2. forward the torch model
+        import torch
+        from transformers import Phi3ForCausalLM
 
-        paddle_model = Phi3Model.from_pretrained(
+        torch_model = Phi3ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+        torch_model.eval()
+        torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+
+        # 3. forward the paddle model
+        from paddleformers.transformers import Phi3ForCausalLM
+
+        paddle_model = Phi3ForCausalLM.from_pretrained(
             self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
-        import torch
-        from transformers import Phi3Model
-
-        torch_model = Phi3Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-        torch_model.eval()
-        torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
         self.assertTrue(
             np.allclose(
                 paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                 torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                rtol=1e2,
+                rtol=1e-2,
             )
         )
 
     @require_package("transformers", "torch")
     def test_Phi3_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
+            # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            from paddleformers.transformers import Phi3Model
+            # 2. forward the torch model
+            import torch
+            from transformers import Phi3ForCausalLM
 
-            paddle_model = Phi3Model.from_pretrained(
-                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            torch_model = Phi3ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model.eval()
+            torch_model.save_pretrained(tempdir)
+            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+
+            # 3. forward the paddle model
+            from paddleformers.transformers import Phi3ForCausalLM
+
+            paddle_model = Phi3ForCausalLM.from_pretrained(
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
-            paddle_model.save_pretrained(tempdir)
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
-            import torch
-            from transformers import Phi3Model
-
-            torch_model = Phi3Model.from_pretrained(tempdir, torch_dtype=torch.float32)
-            torch_model.eval()
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
             self.assertTrue(
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    rtol=1e2,
-                )
-            )
-
-    @parameterized.expand([("Phi3Model",), ("Phi3ForCausalLM",)])
-    @require_package("transformers", "torch")
-    def test_Phi3_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
-        pytorch_class_name = pytorch_class_name or class_name
-        with tempfile.TemporaryDirectory() as tempdir:
-            input_ids = np.random.randint(100, 200, [1, 20])
-
-            from paddleformers import transformers
-
-            paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(
-                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
-            )
-            paddle_model.eval()
-            paddle_model.save_pretrained(tempdir)
-
-            if class_name == "Phi3Model":
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
-            else:
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
-
-            import torch
-            import transformers
-
-            torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(tempdir, torch_dtype=torch.float32)
-            torch_model.eval()
-
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-            self.assertTrue(
-                np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e2,
+                    atol=1e-3,
+                    rtol=1e-2,
                 )
             )

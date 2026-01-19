@@ -942,8 +942,17 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
 
     @require_package("transformers", "torch")
     def test_Qwen3VLMoe_converter(self):
+        # 1. forward the torch model
+        import torch
+        from transformers import Qwen3VLMoeForConditionalGeneration
 
-        # 1. forward the paddle model
+        torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
+        torch_model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
+            self.torch_model_path, torch_dtype=torch.float32
+        ).eval()
+        torch_logit = torch_model(**torch_inputs)["logits"]
+
+        # 2. forward the paddle model
         from paddleformers.transformers import (
             Qwen3VLMoeForConditionalGenerationDecapitated as Qwen3VLMoeForConditionalGeneration,
         )
@@ -953,16 +962,6 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
             self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
         ).eval()
         paddle_logit = paddle_model(**paddle_inputs)["logits"]
-
-        # 2. forward the torch model
-        import torch
-        from transformers import Qwen3VLMoeForConditionalGeneration
-
-        torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
-        torch_model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
-            self.torch_model_path, torch_dtype=torch.float32
-        ).eval()
-        torch_logit = torch_model(**torch_inputs)["logits"]
 
         # 3. compare the result between paddle and torch
         self.assertTrue(
