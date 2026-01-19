@@ -72,6 +72,7 @@ fuse_swiglu: true
 fuse_rms_norm: true
 fuse_linear: true
 use_paddlefleet: true
+use_qk_norm: true
 
 # unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"

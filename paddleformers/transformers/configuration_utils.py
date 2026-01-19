@@ -288,12 +288,6 @@ class LlmMetaConfig:
         ("use_fused_head_and_loss_fn", bool, False, "Whether to use fused head and loss function."),
         ("use_filtered_label_loss", bool, False, "Whether to use filtered label loss."),
         (
-            "use_sparse_head_and_loss_fn",
-            bool,
-            False,
-            "Maintained for compatibility, recommend using use_filtered_label_loss instead. (Legacy params)",
-        ),
-        (
             "loss_subbatch_sequence_length",
             int,
             -1,
@@ -447,6 +441,18 @@ class LlmMetaConfig:
         ),
     ]
 
+    model_conf = [
+        ("num_hidden_layers", int, None, "Number of hidden layers in the model."),
+        ("num_attention_heads", int, None, "Number of attention heads in the model."),
+        ("num_key_value_heads", int, None, "Number of key/value heads in the model (for GQA/MQA)."),
+        ("num_experts_per_tok", int, None, "Number of experts to activate per token (for MoE models)."),
+        ("hidden_size", int, None, "Hidden size/dimension of the model."),
+        ("intermediate_size", int, None, "Intermediate size in the feed-forward network."),
+        ("n_routed_experts", int, None, "Number of routed experts in the model (for MoE models)."),
+        ("use_qk_norm", bool, None, "Whether to use query/key normalization."),
+        ("tie_word_embeddings", bool, None, "Whether to tie input and output embeddings."),
+    ]
+
     model_attributes = [
         (
             "multi_latent_attention",
@@ -525,6 +531,25 @@ class LlmMetaConfig:
             cls.mtp_attributes,
             cls.fp8_attributes,
             cls.model_attributes,
+            cls.model_conf,
+        ]:
+            for attr in attrs:
+                # return dict of key and default values
+                ret[attr[0]] = attr[2]
+        return ret
+
+    @classmethod
+    def _get_init(cls):
+        ret = {}
+        for attrs in [
+            cls.op_fusion_attributes,
+            cls.hybrid_parallel_attributes,
+            cls.recompute_attributes,
+            cls.loss_attributes,
+            cls.moe_attributes,
+            cls.mtp_attributes,
+            cls.fp8_attributes,
+            cls.model_attributes,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -542,6 +567,7 @@ class LlmMetaConfig:
             cls.moe_attributes,
             cls.fp8_attributes,
             cls.model_attributes,
+            cls.model_conf,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -800,7 +826,7 @@ class PretrainedConfig:
         # map the old attr to new atr, eg: num_classes -> num_labels
         kwargs = attribute_map(self, kwargs=kwargs)
         kwargs.pop("transformers_version", None)
-        llm_meta = LlmMetaConfig._get_defaults()
+        llm_meta = LlmMetaConfig._get_init()
         self._unsavable_keys.update(LlmMetaConfig._get_unsavable_keys())
         self._unsavable_keys.remove("tensor_model_parallel_size")
         self._unsavable_keys.remove("fuse_attention_qkv")
@@ -1304,6 +1330,10 @@ class PretrainedConfig:
 
         # only serialize values that differ from the default config
         for key, value in config_dict.items():
+            white_list = ["tie_word_embeddings"]
+            if key in white_list:
+                serializable_config_dict[key] = value
+                continue
             if key == "quantization_config":
                 quantization_diff_dict = self.quantization_config.to_diff_dict()
                 if len(quantization_diff_dict) > 0:

@@ -21,3 +21,4 @@ omegaconf
 modelscope
 transformers>=4.55.1
 GPUtil
+importlib_metadata

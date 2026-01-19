@@ -21,11 +21,11 @@ import numpy as np
 import paddle
 from parameterized import parameterized
 
+from paddleformers.transformers import Qwen3MoeConfig
 from paddleformers.transformers import (
-    Qwen3MoeConfig,
-    Qwen3MoeForCausalLM,
-    Qwen3MoeModel,
+    Qwen3MoeForCausalLMDecapitated as Qwen3MoeForCausalLM,
 )
+from paddleformers.transformers import Qwen3MoeModel
 from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -440,7 +440,10 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             # 2. forward the paddle model with fc
-            from paddleformers.transformers import Qwen3MoeConfig, Qwen3MoeForCausalLM
+            from paddleformers.transformers import Qwen3MoeConfig
+            from paddleformers.transformers import (
+                Qwen3MoeForCausalLMDecapitated as Qwen3MoeForCausalLM,
+            )
 
             paddle_model = Qwen3MoeForCausalLM.from_pretrained(
                 tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format="flex_checkpoint"
@@ -503,6 +506,8 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
             # 3. forward the paddle model
             from paddleformers import transformers
 
+            if class_name == "Qwen3MoeForCausalLM":
+                class_name = "Qwen3MoeForCausalLMDecapitated"
             paddle_model_class = getattr(transformers, class_name)
             paddle_model = paddle_model_class.from_pretrained(
                 tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""

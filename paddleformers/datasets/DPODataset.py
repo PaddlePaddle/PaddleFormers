@@ -64,6 +64,7 @@ class DPODataSet(IterableDataset):
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
         self.buffer_size = dataset_config.get("buffer_size", 500)
         self.efficient_eos = True if not self.template else getattr(self.template, "efficient_eos", True)
+        self.use_filtered_label_loss = dataset_config.get("use_filtered_label_loss", False)
 
         # data loader + multisource dataset mix
         if self.is_valid:
@@ -372,8 +373,14 @@ class DPODataSet(IterableDataset):
         rejected_labels = [0] * (prompt_len - 1) + [0] * len(response_token_ids_list[0]) + response_label_ids_list[1]
 
         # 1.4 response index
-        # support use_sparse_head_and_loss_fn only
-        response_index = [0, response_len_list[0], sum(response_len_list)]
+        if self.use_filtered_label_loss:
+            response_index = [0, response_len_list[0], sum(response_len_list)]
+        else:
+            response_index = [
+                prompt_len,
+                prompt_len + len(response_token_ids_list[0]),
+                prompt_len + sum(response_len_list),  # end
+            ]
 
         # 1.5 attention mask
         if self.use_attn_mask_startend_row_indices:

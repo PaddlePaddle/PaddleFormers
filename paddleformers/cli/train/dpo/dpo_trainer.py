@@ -329,12 +329,12 @@ class DPOTrainer(Trainer):
                             response_index[0] -= i * per_device_train_batch_size
                             concatenated_inputs["response_indexs"][i].append(response_index)
                     concatenated_inputs["response_indexs"][i] = paddle.stack(concatenated_inputs["response_indexs"][i])
-                    use_sparse_head_and_loss_fn = (
-                        model._layers.config.use_sparse_head_and_loss_fn
+                    use_filtered_label_loss = (
+                        model._layers.config.use_filtered_label_loss
                         if hasattr(model, "_layers")
-                        else model.config.use_sparse_head_and_loss_fn
+                        else model.config.use_filtered_label_loss
                     )
-                    if use_sparse_head_and_loss_fn:
+                    if use_filtered_label_loss:
                         last_batch_response_length = concatenated_inputs["response_indexs"][i][0, 1]
                         concatenated_inputs["response_indexs"][i][:, 1:] -= last_batch_response_length
 
@@ -431,7 +431,7 @@ class DPOTrainer(Trainer):
                             response_index[0] -= i * per_device_train_batch_size
                             concatenated_inputs["response_indexs"][i].append(response_index)
                     concatenated_inputs["response_indexs"][i] = paddle.stack(concatenated_inputs["response_indexs"][i])
-                    if model._layers.config.use_sparse_head_and_loss_fn:
+                    if model._layers.config.use_filtered_label_loss:
                         last_batch_response_length = concatenated_inputs["response_indexs"][i][0, 1]
                         concatenated_inputs["response_indexs"][i][:, 1:] -= last_batch_response_length
 
