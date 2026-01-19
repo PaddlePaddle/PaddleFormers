@@ -137,15 +137,14 @@ class ConcatDataset(BaseMixDataset):
         """
         Returns an iterator that can loop over the dataset indefinitely.
         """
-        while True:
-            if self.random_shuffle:
-                self.epoch_np_rng.shuffle(self.indices)
+        if self.random_shuffle:
+            self.epoch_np_rng.shuffle(self.indices)
 
-            for i in self.indices:
-                yield self.data[i]
+        for i in self.indices:
+            yield self.data[i]
 
-            self.epoch_index += 1
-            self.epoch_np_rng = np.random.RandomState(self.epoch_index + self.seed)
+        self.epoch_index += 1
+        self.epoch_np_rng = np.random.RandomState(self.epoch_index + self.seed)
 
     def __len__(self):
         """Returns the total size of the dataset."""

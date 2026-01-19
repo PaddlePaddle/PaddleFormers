@@ -324,3 +324,17 @@ def get_worker_sliced_iterator(dataset):
         )
 
     return dataset_iterator
+
+
+def calculate_matched_group(sequences, packing_length: int, is_finished: bool = True):
+    if len(sequences) == 0:
+        return [], []
+    # https://arxiv.org/pdf/2404.10830
+    import binpacking
+
+    sequences = binpacking.to_constant_volume(sequences, packing_length, weight_pos=1)
+    if sequences and not is_finished:
+        sequences, ret_sequences = sequences[:-1], sequences[-1]
+    else:
+        ret_sequences = []
+    return sequences, ret_sequences
