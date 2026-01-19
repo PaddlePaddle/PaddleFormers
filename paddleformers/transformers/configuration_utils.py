@@ -318,6 +318,12 @@ class LlmMetaConfig:
             "Type of token dispatcher for MoE (e.g., 'round_robin', 'top_k'). Defaults to None (use default dispatcher).",
         ),
         (
+            "moe_use_fusion_node",
+            bool,
+            True,
+            "Whether to use fusion node for MoE layer. Default to True.",
+        ),
+        (
             "moe_pad_expert_input_to_capacity",
             bool,
             False,
@@ -389,12 +395,6 @@ class LlmMetaConfig:
             Optional[int],
             None,
             "Number of tokens per sub-batch after MoE expert dispatch. Controls memory usage for expert computations. Defaults to 4096 (balances memory efficiency and parallelism for most GPUs).",
-        ),
-        (
-            "moe_use_fusion_node",
-            bool,
-            True,
-            "Whether to use fusion node for MoE layer. Default to True.",
         ),
         (
             "moe_grouped_gemm",
