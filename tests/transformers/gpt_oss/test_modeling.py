@@ -383,7 +383,10 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     def test_inference_no_attention(self):
         model = GptOssModel.from_pretrained(
-            "PaddleFormers/tiny-random-gptoss", download_hub="aistudio", convert_from_hf=True
+            "PaddleFormers/tiny-random-gptoss",
+            download_hub="aistudio",
+            convert_from_hf=True,
+            load_checkpoint_format="",
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -405,7 +408,10 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     def test_inference_with_attention(self):
         model = GptOssModel.from_pretrained(
-            "PaddleFormers/tiny-random-gptoss", download_hub="aistudio", convert_from_hf=True
+            "PaddleFormers/tiny-random-gptoss",
+            download_hub="aistudio",
+            convert_from_hf=True,
+            load_checkpoint_format="",
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -446,7 +452,9 @@ class GptOssCompatibilityTest(unittest.TestCase):
         # 2. forward the paddle model
         from paddleformers.transformers import GptOssModel
 
-        paddle_model = GptOssModel.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
+        paddle_model = GptOssModel.from_pretrained(
+            self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+        )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -485,7 +493,9 @@ class GptOssCompatibilityTest(unittest.TestCase):
             # 2. forward the paddle model
             from paddleformers.transformers import GptOssModel
 
-            paddle_model = GptOssModel.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = GptOssModel.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -521,7 +531,9 @@ class GptOssCompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = paddle_model_class.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            )
             paddle_model.eval()
 
             if class_name == "GptOssModel":

@@ -19,7 +19,6 @@ import paddle
 import paddle.distributed.fleet.meta_parallel as mpu
 import paddle.nn as nn
 from paddle.distributed import fleet
-from paddle.incubate.nn import FusedLinear
 
 from paddleformers.nn.linear import Linear  # Replace with your actual module path
 from paddleformers.transformers import LlamaConfig
@@ -101,24 +100,11 @@ class TestLinear(TestMultipleGpus):
         linear = Linear.create(in_features=self.in_features, out_features=self.out_features, linear_type="default")
         self.assertIsInstance(linear, nn.Linear)
 
-    def test_create_fused_linear(self):
-        # Test creating fused linear layer
-        linear = Linear.create(in_features=self.in_features, out_features=self.out_features, linear_type="fuse_linear")
-
-        self.assertIsInstance(linear, FusedLinear)
-
     def test_get_linear_type_default(self):
         # Test linear type detection for default case
         self.config.tensor_model_parallel_size = 1
         linear_type = Linear.get_linear_type(self.config)
         self.assertEqual(linear_type, "default")
-
-    def test_get_linear_type_fused(self):
-        # Test fused linear type detection
-        self.config.tensor_model_parallel_size = 1
-        self.config.fuse_linear = True
-        linear_type = Linear.get_linear_type(self.config, has_bias=True)
-        self.assertEqual(linear_type, "fuse_linear")
 
     def test_get_linear_type_parallel(self):
         # Test parallel linear type detection

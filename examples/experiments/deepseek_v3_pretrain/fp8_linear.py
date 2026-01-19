@@ -19,13 +19,19 @@ original_linear = paddle.nn.functional.linear
 from typing import Literal, Optional
 
 # from ..linear_utils import RowParallelLinear as PD_RowParallelLinear
-from ..linear_utils import ColumnParallelLinear as PD_ColumnParallelLinear
-from ..linear_utils import (
+from paddleformers.transformers.linear_utils import (
+    ColumnParallelLinear as PD_ColumnParallelLinear,
+)
+from paddleformers.transformers.linear_utils import (
     ColumnSequenceParallelLinear as PD_ColumnSequenceParallelLinear,
 )
-from ..linear_utils import Linear as PD_Linear
-from ..linear_utils import RowParallelLinear as PD_RowParallelLinear
-from ..linear_utils import RowSequenceParallelLinear as PD_RowSequenceParallelLinear
+from paddleformers.transformers.linear_utils import Linear as PD_Linear
+from paddleformers.transformers.linear_utils import (
+    RowParallelLinear as PD_RowParallelLinear,
+)
+from paddleformers.transformers.linear_utils import (
+    RowSequenceParallelLinear as PD_RowSequenceParallelLinear,
+)
 
 try:
     from .kernel import act_quant, fp8_gemm, weight_dequant
@@ -52,17 +58,14 @@ def fp8_linear(
     Applies a linear transformation to the incoming data: y = xA^T + b.
     This function supports specialized implementations based on quantization
     and tensor formats.
-
     Args:
         x (paddle.Tensor): The input tensor.
         weight (paddle.Tensor): The weight tensor. It may be quantized and
             requires dequantization for certain cases.
         bias (Optional[paddle.Tensor]): The bias tensor to be added. Default is None.
-
     Returns:
         paddle.Tensor: The result of the linear transformation, which may involve
         quantization-aware computations depending on the input parameters.
-
     Notes:
         - If `weight` is quantized (e.g., `element_size() == 1`), a dequantized version
           is used for computation.

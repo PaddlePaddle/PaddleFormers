@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - develop
+      - release/**
 
 permissions: read-all
 
@@ -85,8 +86,9 @@ jobs:
           mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
-          git clone https://github.com/PaddlePaddle/PaddleFormers.git
+          git clone https://github.com/PaddlePaddle/PaddleFormers.git -b ${BRANCH}
           cd PaddleFormers
+          git status
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
@@ -94,9 +96,15 @@ jobs:
           git pull --no-edit origin pull/${PR_ID}/head
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
-          pip install -e ".[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-          pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
+          pip install -e ".[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+          wget https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
+          pip uninstall paddlefleet -y
+          pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
+          # pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
+          echo "paddle commit:"
           python -c "import paddle; print(paddle.version.commit)"
+          echo "paddlefleet commit:"
+          python -c "import paddlefleet; print(paddlefleet.version.commit)"
           cd /workspace
           wget -q --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
           mkdir bos
@@ -111,7 +119,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFormers/tests/integration_test/preprocess.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/preprocess.sh
           preprocess_exit_code=$?
           if [[ "$preprocess_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mPreprocess failed.\033[0m"
@@ -126,7 +134,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFormers/tests/integration_test/glm45_pt_single_card.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_single_card.sh
           glm45_single_card_exit_code=$?
           if [[ "$glm45_single_card_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 single-card.\033[0m"
@@ -142,7 +150,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFormers/tests/integration_test/qwen3_single_card.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3_single_card.sh
           qwen3_single_card_exit_code=$?
           if [[ "$qwen3_single_card_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: Qwen3-30B-A3B single-card.\033[0m"
@@ -209,17 +217,24 @@ jobs:
           mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
-          git clone https://github.com/PaddlePaddle/PaddleFormers.git
+          git clone https://github.com/PaddlePaddle/PaddleFormers.git  -b ${BRANCH}
           cd PaddleFormers
+          git status
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
           git pull --no-edit origin pull/${PR_ID}/head
-          pip install -e ".[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          pip install -e ".[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+          wget https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
+          pip uninstall paddlefleet -y
+          pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
-          pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
+          # pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
+          echo "paddle commit:"
           python -c "import paddle; print(paddle.version.commit)"
+          echo "paddlefleet commit:"
+          python -c "import paddlefleet; print(paddlefleet.version.commit)"
           cd /workspace
           wget -q --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
           mkdir bos
@@ -234,7 +249,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFormers/tests/integration_test/glm45_pt.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
@@ -248,7 +263,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFormers/tests/integration_test/glm45_sft.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_sft.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 sft.\033[0m"
@@ -263,7 +278,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFormers/tests/integration_test/glm45_lora.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_lora.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 lora.\033[0m"
@@ -278,7 +293,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFormers/tests/integration_test/glm45_dpo.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_dpo.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 dpo.\033[0m"
@@ -293,7 +308,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFormers/tests/integration_test/glm45_pt_fp8.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_fp8.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
@@ -308,7 +323,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFormers/tests/integration_test/glm45_pt_grouped_gemm.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_grouped_gemm.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 Grouped GEMM.\033[0m"
@@ -323,7 +338,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFormers/tests/integration_test/qwen.sh pt
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh pt
           '
         
       - name: Qwen sft
@@ -331,7 +346,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFormers/tests/integration_test/qwen.sh sft
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh sft
           '
 
       - name: Qwen lora
@@ -339,7 +354,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFormers/tests/integration_test/qwen.sh lora
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh lora
           '
 
       - name: Terminate and delete the container
@@ -398,8 +413,9 @@ jobs:
           mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
-          git clone https://github.com/PaddlePaddle/PaddleFormers.git
+          git clone https://github.com/PaddlePaddle/PaddleFormers.git -b ${BRANCH}
           cd PaddleFormers
+          git status
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
@@ -407,9 +423,15 @@ jobs:
           git pull --no-edit origin pull/${PR_ID}/head
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
-          pip install -e ".[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-          pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
+          pip install -e ".[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+          wget https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
+          pip uninstall paddlefleet -y
+          pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
+          # pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-cache-dir
+          echo "paddle commit:"
           python -c "import paddle; print(paddle.version.commit)"
+          echo "paddlefleet commit:"
+          python -c "import paddlefleet; print(paddlefleet.version.commit)"
           cd /workspace
           wget -q --no-proxy -O bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
           mkdir bos
@@ -423,7 +445,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          bash -x PaddleFormers/tests/integration_test/glm45_pt_a100.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_a100.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"

@@ -384,7 +384,7 @@ def _load_part_state_dict(
     quantization_config=None,
     dtype=None,
     return_numpy=False,
-    convert_from_hf=False,
+    convert_from_hf=True,
     transpose_weight_keys=None,
 ):
     """load part state dict from checkpoint file.
@@ -517,7 +517,7 @@ def load_state_dict(
     quantization_config=None,
     dtype=None,
     return_numpy=False,
-    convert_from_hf=False,
+    convert_from_hf=True,
     transpose_weight_keys=None,
 ):
     """
@@ -618,7 +618,7 @@ def load_state_dict(
     return state_dict
 
 
-def prepare_safe_save_state_dict(state_dict, save_to_hf=False):
+def prepare_safe_save_state_dict(state_dict, save_to_hf=True):
     for k in list(state_dict.keys()):
         if isinstance(state_dict[k], paddle.Tensor):
             if state_dict[k].dtype == paddle.bfloat16:
@@ -1945,7 +1945,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         cache_dir: str | None = None,
         subfolder: Optional[str] = "",
         config: PretrainedConfig = None,
-        convert_from_hf: bool = False,
+        convert_from_hf: bool = True,
         use_safetensors: bool | None = None,
         variant=None,
     ) -> str:
@@ -2185,7 +2185,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         config=None,
         ignore_mismatched_sizes=False,
         low_cpu_mem_usage=False,
-        convert_from_hf=False,
+        convert_from_hf=True,
         dtype=None,
         keep_in_fp32_modules=None,
         quantization_linear_list=None,
@@ -2762,14 +2762,14 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         download_hub = kwargs.pop("download_hub", None)
         subfolder = kwargs.pop("subfolder", None)
         load_via_cpu = kwargs.pop("load_via_cpu", False)
-        load_checkpoint_format = kwargs.pop("load_checkpoint_format", "")
+        load_checkpoint_format = kwargs.pop("load_checkpoint_format", "flex_checkpoint")
         if subfolder is None:
             subfolder = ""
         variant = kwargs.pop("variant", None)
         use_safetensors = kwargs.pop("use_safetensors", None if is_safetensors_available() else False)
 
         low_cpu_mem_usage = kwargs.pop("low_cpu_mem_usage", False)
-        convert_from_hf = kwargs.pop("convert_from_hf", None)
+        convert_from_hf = kwargs.pop("convert_from_hf", True)
         load_state_as_np = kwargs.pop("load_state_as_np", None)
         if load_state_as_np is not None:
             logger.warning("`load_state_as_np` is deprecated,  please delete it!")
@@ -2799,7 +2799,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             convert_from_hf = True
         # convert_from_hf default is False
         if convert_from_hf is None:
-            convert_from_hf = False
+            convert_from_hf = True
 
         # 1. get the PretrainedConfig to init model
         if not isinstance(config, PretrainedConfig):
@@ -2897,6 +2897,15 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 pass
             except Exception as e:
                 logger.error(f"Failed to delete {metadata_path}: {e}")
+
+            # change dtype in aoa
+            if dtype is not None:
+                for key in model.state_dict().keys():
+                    # keep fp32
+                    if model.state_dict()[key].dtype == paddle.float32:
+                        aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='float32'")
+                    else:
+                        aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='{dtype}'")
 
             dist.load_state_dict(
                 sharded_state_dict,
@@ -3109,15 +3118,17 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         shard_format = kwargs.get("shard_format", "naive")  # support naive pipeline
         # variant = kwargs.get("variant", None)
         # is_main_process = kwargs.get("is_main_process", True)
-        save_to_hf = kwargs.get("save_to_hf", False)
+        save_to_hf = kwargs.get("save_to_hf", True)
 
-        save_checkpoint_format = kwargs.get("save_checkpoint_format", "")
+        save_checkpoint_format = kwargs.get("save_checkpoint_format", "flex_checkpoint")
 
         if kwargs.get("enable_auto_parallel", ""):
             # use flex_checkpoint as the default format in auto_parallel
             save_checkpoint_format = "flex_checkpoint"
 
         safe_serialization = safe_serialization or save_to_hf
+
+        using_sonic_moe = self.config.using_sonic_moe
 
         save_directory = save_dir
 
@@ -3151,7 +3162,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
             clean_unrelated_safetensors(save_dir)
 
-            HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
+            if using_sonic_moe:
+                SonicMoEHFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
+            else:
+                HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
 
             dtype = get_parameter_dtype(model_to_save)
             if dtype is not None:
@@ -3168,7 +3182,12 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             if is_main_process:
                 if config_to_save.tensor_model_parallel_size > 1:
                     config_to_save.tensor_model_parallel_size = 1
-                config_to_save.save_pretrained(save_directory)
+                paddle_series = ["ernie4_5", "paddleocr_vl"]
+                if any(paddle_model in config_to_save.get("model_type", "") for paddle_model in paddle_series):
+                    # hacking for FastDeploy to deploy paddle series model
+                    config_to_save.save_pretrained(save_directory, save_to_hf=True)
+                else:
+                    config_to_save.save_pretrained(save_directory)
                 if self.can_generate():
                     model_to_save.generation_config.save_pretrained(save_directory)
             return
@@ -3671,7 +3690,7 @@ def load_sharded_checkpoint_as_one(folder, variant=None, return_numpy=False):
     return ret
 
 
-def load_tp_checkpoint(folder, cls, config, return_numpy=False, convert_from_hf=False, transpose_weight_keys=None):
+def load_tp_checkpoint(folder, cls, config, return_numpy=False, convert_from_hf=True, transpose_weight_keys=None):
     """
 
     This load is performed efficiently: Load tp checkpoint only from cpu, no need to init the model.
@@ -3858,12 +3877,16 @@ def replace_name_and_gen_index(path, total_size, save_peft=False):
         start_idx.append(acc)
         acc += files_num
 
+    # NOTE(xingmingyyj) If PADDLE_LOCAL_SIZE is not set, assume PADDLE_LOCAL_SIZE=8.
     env_local_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
     env_local_rank = dist.get_rank() % env_local_size
     assert env_local_rank >= 0, f"expected positive local rank, got {env_local_rank}"
 
-    cur_file_index = start_idx[cur_rank] // env_local_size
-    total_files_num = total_files_num // env_local_size
+    if paddle.distributed.get_world_size() > 1:
+        cur_file_index = start_idx[cur_rank] // env_local_size
+        total_files_num = total_files_num // env_local_size
+    else:
+        cur_file_index = 0
 
     index_mapping = {}
     if env_local_rank == 0:
@@ -4038,4 +4061,75 @@ class EMAStateHFFormatFullParamSaver(HFFormatFullParamSaver):
                 aoa_config=self.aoa_config,
                 memory_growth_threshold=self.memory_growth_threshold,
             )
+        return param_iter
+
+
+class SonicMoEHFFormatFullParamSaver(HFFormatFullParamSaver):
+    def __init__(
+        self,
+        model,
+        aoa_config,
+        h_group=None,
+        v_group=None,
+        num_splits=None,
+        shard_idx=None,
+        saved_in_one_node=False,
+        memory_growth_threshold=8 * (2**30),
+    ):
+        super().__init__(
+            model,
+            aoa_config,
+            h_group,
+            v_group,
+            num_splits=num_splits,
+            shard_idx=shard_idx,
+            saved_in_one_node=saved_in_one_node,
+            memory_growth_threshold=memory_growth_threshold,
+        )
+
+    def deinterleave_gate_up_proj(self, w, moe_intermediate_size):
+        w_cloned = w.clone().detach()
+        w_cloned = w_cloned.reshape([-1, 2 * moe_intermediate_size, w_cloned.shape[-1]])
+        B, D, C = w_cloned.shape
+        I = D // 2
+        w_ = paddle.reshape(w_cloned, [B, I, 2, C])
+        first_half = w_[:, :, 0, :]
+        second_half = w_[:, :, 1, :]
+        orig_w = paddle.concat([first_half, second_half], axis=1).contiguous()
+        return orig_w
+
+    def get_full_param_iter(self):
+        assert (self.v_group and self.h_group) or not (
+            self.v_group or self.h_group
+        ), f"both h_group and v_group are provided or none of them, but got {self.v_group} and {self.h_group}"
+        from paddle.distributed.flex_checkpoint.dcp.full_param import full_param
+
+        model_sharded_state_dict = self.model.sharded_state_dict()
+        moe_intermediate_size = self.model.config.moe_intermediate_size
+        for k, v in model_sharded_state_dict.items():
+            if "weight1" in k:
+                weight1 = self.deinterleave_gate_up_proj(v.local_tensor, moe_intermediate_size)
+                v.local_tensor = weight1
+
+        if self.v_group and self.h_group:
+            assert self.shard_idx is not None, "expected shard_idx is not None"
+            assert self.num_splits is not None, "expected num_splits is not None"
+
+            param_iter = full_param(
+                model_sharded_state_dict,
+                aoa_config=self.aoa_config,
+                h_group=self.h_group,
+                v_group=self.v_group,
+                num_splits=self.num_splits,
+                shard_idx=self.shard_idx,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+        else:
+            param_iter = full_param(
+                model_sharded_state_dict,
+                aoa_config=self.aoa_config,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+
+        del model_sharded_state_dict
         return param_iter

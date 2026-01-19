@@ -323,7 +323,7 @@ class LoRAModel(nn.Layer):
 
     @classmethod
     def from_pretrained(cls, model, lora_path, **kwargs):
-        load_checkpoint_format = kwargs.pop("load_checkpoint_format", None)
+        load_checkpoint_format = kwargs.pop("load_checkpoint_format", "flex_checkpoint")
         load_via_cpu = kwargs.pop("load_via_cpu", False)
         lora_config = kwargs.pop("lora_config", None)
         # init lora config & lora model
@@ -552,7 +552,7 @@ class LoRAModel(nn.Layer):
 
     def save_pretrained(self, save_directory: str, merge_tensor_parallel: bool = False, **kwargs):
         save_model_config = kwargs.get("save_model_config", True)
-        save_checkpoint_format = kwargs.get("save_checkpoint_format", None)
+        save_checkpoint_format = kwargs.get("save_checkpoint_format", "flex_checkpoint")
         max_shard_size = kwargs.get("max_shard_size", "4GB")
 
         safetensors = False
@@ -606,24 +606,13 @@ class LoRAModel(nn.Layer):
                     variant = weight_name_suffix()
 
         # Map the key names that the model expects from the serialized keys in VLMs (Supports for MLLM LoRA training)
+        reverse_key_mapping = {}
         if any(
             allowed_name in class_name.__name__.lower()
             for class_name in self.model.__class__.__mro__[:-1]
             for allowed_name in VLMS
         ):
             reverse_key_mapping = {v: k for k, v in self.model._checkpoint_conversion_mapping.items()}
-
-            original_state_dict = {}
-            for key, value in trainable_state_dict.items():
-                for pattern, replacement in reverse_key_mapping.items():
-                    replacement = replacement.lstrip("^")  # strip off un-needed chars and patterns
-                    replacement = re.sub(r"\(.*\)", "", replacement)
-                    key, n_replace = re.subn(pattern, replacement, key)
-                    # Early exit of the loop
-                    if n_replace > 0:
-                        break
-                original_state_dict[key] = value
-            trainable_state_dict = original_state_dict
 
         if save_checkpoint_format == "flex_checkpoint":
             clean_unrelated_safetensors(save_directory)
@@ -634,11 +623,34 @@ class LoRAModel(nn.Layer):
                 if key not in trainable_state_dict:
                     aoa_config["aoa_statements"].append(f"{key} -> _")
 
+                if reverse_key_mapping:
+                    for pattern, replacement in reverse_key_mapping.items():
+                        replacement = replacement.lstrip("^")  # strip off un-needed chars and patterns
+                        replacement = re.sub(r"\(.*\)", "", replacement)
+                        key_new, n_replace = re.subn(pattern, replacement, key)
+                        # Early exit of the loop
+                        if n_replace > 0:
+                            aoa_config["aoa_statements"].append(f"{key} -> {key_new}")
+                            break
+
             HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(
                 save_directory, max_shard_size, save_peft=True
             )
 
         else:
+            if reverse_key_mapping:
+                original_state_dict = {}
+                for key, value in trainable_state_dict.items():
+                    for pattern, replacement in reverse_key_mapping.items():
+                        replacement = replacement.lstrip("^")  # strip off un-needed chars and patterns
+                        replacement = re.sub(r"\(.*\)", "", replacement)
+                        key, n_replace = re.subn(pattern, replacement, key)
+                        # Early exit of the loop
+                        if n_replace > 0:
+                            break
+                    original_state_dict[key] = value
+                trainable_state_dict = original_state_dict
+
             lora_weight_name = _add_variant(LORA_WEIGHTS_NAME, variant)
             weight_filename = os.path.join(save_directory, lora_weight_name)
             paddle.save(trainable_state_dict, weight_filename, safetensors=safetensors)

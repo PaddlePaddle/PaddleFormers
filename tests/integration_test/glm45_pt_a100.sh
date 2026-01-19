@@ -98,12 +98,12 @@ else
 fi
 
 export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
-if [[ "${PP}" == "rel" ]]; then
-  export pppatch="_PPrel"
-fi
-if [[ "${PF}" == rel* ]]; then
-  export pfpatch="rel"
-fi
+# if [[ "${PP}" == "rel" ]]; then
+#   export pppatch="_PPrel"
+# fi
+# if [[ "${PF}" == rel* ]]; then
+#   export pfpatch="rel"
+# fi
 wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}_latest/${gt_loss_file}
 if [ $? -ne 0 ]; then
   echo "To request precision checks for new models, please contact swgu98."
@@ -119,6 +119,7 @@ python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
 
 if [ $? -ne 0 ]; then
   pushd $root_dir/PaddleFormers
+  source /root/proxy
   bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
   if [ $? -ne 0 ]; then
     echo -e "\033[31mThe precision has been changed and requires approvals.\033[0m"

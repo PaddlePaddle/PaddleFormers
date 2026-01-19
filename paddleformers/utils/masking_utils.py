@@ -79,11 +79,11 @@ def _gen_from_sparse_attn_mask_indices(
     # [batch_size, k_num_heads, k_seq_len, {1, 2, 4}] -> [batch_size, k_num_heads, {1, 2, 4}, k_seq_len]
     mask_indices = attn_mask_startend_row_indices.transpose([0, 1, 3, 2])
 
-    downstart_mask_indices = mask_indices[:, :, 0, :]
+    downstart_mask_indices = mask_indices[:, :, 0:1, :]
     downstart_mask_indices = downstart_mask_indices.expand([batch_size, num_head, seq_len, -1])
     lower_tri = base < downstart_mask_indices
     if has_end:
-        downend_mask_indices = mask_indices[:, :, 1, :]
+        downend_mask_indices = mask_indices[:, :, 1:2, :]
         downend_mask_indices = downend_mask_indices.expand([batch_size, num_head, seq_len, -1])
         lower_tri = paddle.logical_or(lower_tri, base >= downend_mask_indices)
 
@@ -91,14 +91,14 @@ def _gen_from_sparse_attn_mask_indices(
 
     if not is_causal:
         if has_end:
-            upstart_mask_indices = mask_indices[:, :, 2, :]
+            upstart_mask_indices = mask_indices[:, :, 2:3, :]
             upstart_mask_indices = upstart_mask_indices.expand([batch_size, num_head, seq_len, -1])
-            upend_mask_indices = mask_indices[:, :, 3, :]
+            upend_mask_indices = mask_indices[:, :, 3:4, :]
             upend_mask_indices = upend_mask_indices.expand([batch_size, num_head, seq_len, -1])
             upper_tri = base >= upend_mask_indices
             upper_tri = paddle.logical_or(upper_tri, base < upstart_mask_indices)
         else:
-            upend_mask_indices = mask_indices[:, :, 1, :]
+            upend_mask_indices = mask_indices[:, :, 1:2, :]
             upend_mask_indices = upend_mask_indices.expand([batch_size, num_head, seq_len, -1])
             upper_tri = base >= upend_mask_indices
 

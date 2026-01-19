@@ -32,7 +32,7 @@ config_json=$CACHE_DIR/glm45/GLM-4.5-Air/config.json
 
 yq '.train_dataset_path = strenv(cur_dir) + "/dpo_data/dpo_train.jsonl"
     | .eval_dataset_path = strenv(cur_dir) + "/dpo_data/dpo_eval.jsonl"
-    | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"
+    | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
     | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_vdl_log"
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_ckpts"' \
    $config_dpo_yaml > ${config_dpo_yaml}.tmp
@@ -70,12 +70,12 @@ if [ $sft_exit_code -ne 0 ]; then
 fi
 
 export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
-if [[ "${PP}" == "rel" ]]; then
-  export pppatch="_PPrel"
-fi
-if [[ "${PF}" == rel* ]]; then
-  export pfpatch="rel"
-fi
+# if [[ "${PP}" == "rel" ]]; then
+#   export pppatch="_PPrel"
+# fi
+# if [[ "${PF}" == rel* ]]; then
+#   export pfpatch="rel"
+# fi
 wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}_latest/${gt_loss_file}
 if [ $? -ne 0 ]; then
   echo "To request precision checks for new models, please contact swgu98."
@@ -91,6 +91,7 @@ python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
 
 if [ $? -ne 0 ]; then
   pushd $root_dir/PaddleFormers
+  source /root/proxy
   bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
   if [ $? -ne 0 ]; then
     echo -e "\033[31mThe precision has been changed and requires approvals.\033[0m"

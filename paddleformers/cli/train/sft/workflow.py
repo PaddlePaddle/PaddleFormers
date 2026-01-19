@@ -177,6 +177,7 @@ def run_sft(
     if is_paddlefleet_available() and model_args.lora and training_args.moe_token_dispatcher_type == "deepep":
         logger.warning("For PaddleFleet, moe_use_fusion_node should False when using LoRA.")
         training_args.moe_use_fusion_node = False
+
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
     training_args.print_config(training_args, "Train")
@@ -234,6 +235,11 @@ def run_sft(
     if "DeepseekV3" in str(model_config.architectures):
         training_args.prediction_loss_only = True
 
+    if "qwen3_vl" in model_config.model_type and not model_args.lora:
+        if training_args.sequence_parallel:
+            logger.warning("Qwen3VL model do not support `sequence_parallel` yet, temporarily set to False")
+        training_args.sequence_parallel = False
+
     LlmMetaConfig.set_llm_config(model_config, training_args)
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
@@ -254,21 +260,6 @@ def run_sft(
     model_config.max_sequence_length = data_args.max_seq_len
     model_config._attn_implementation = model_args.attn_impl
     model_config.is_lora = model_args.lora
-    model_config.stage = model_args.stage
-
-    def set_attr_func(config, key, value):
-        if value is not None:
-            setattr(config, key, value)
-
-    set_attr_func(model_config, "num_hidden_layers", model_args.num_hidden_layers)
-    set_attr_func(model_config, "num_attention_heads", model_args.num_attention_heads)
-    set_attr_func(model_config, "num_key_value_heads", model_args.num_key_value_heads)
-    set_attr_func(model_config, "num_experts_per_tok", model_args.num_experts_per_tok)
-    set_attr_func(model_config, "hidden_size", model_args.hidden_size)
-    set_attr_func(model_config, "intermediate_size", model_args.intermediate_size)
-    set_attr_func(model_config, "n_routed_experts", model_args.n_routed_experts)
-    set_attr_func(model_config, "use_qk_norm", model_args.use_qk_norm)
-    set_attr_func(model_config, "tie_word_embeddings", model_args.tie_word_embeddings)
 
     # Sync arguments to MLLM sub_config
     if getattr(model_config, "text_config", None) is not None:
@@ -404,15 +395,23 @@ def run_sft(
         freeze_model_parameters(model, training_args.freeze_config)
 
     model = create_peft_model(model_args, training_args, dtype, model)
-
     # Create trainer
 
     # padding to the maximum seq length in batch data when max_seq_len is None
-    max_seq_len = (
-        data_args.max_seq_len + model_config.num_nextn_predict_layers
-        if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
-        else None
-    )
+    if getattr(model, "is_fleet", False) and not model_args.lora:
+        if training_args.per_device_train_batch_size > 1:
+            max_seq_len = data_args.max_seq_len + model_config.num_nextn_predict_layers
+            logger.warning(f"Setting max_seq_len to {max_seq_len} for mbs > 1 using PaddleFleet model.")
+        else:
+            max_seq_len = None
+            logger.warning("Setting max_seq_len to None for mbs = 1 using PaddleFleet Model.")
+    else:
+        max_seq_len = (
+            data_args.max_seq_len + model_config.num_nextn_predict_layers
+            if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
+            else None
+        )
+        logger.info(f"Setting max_seq_len to {max_seq_len} using PaddleFormers Model.")
     if data_args.dataset_type != "pretrain":
         if model_args.stage == "VL-SFT":
             data_collator = partial(

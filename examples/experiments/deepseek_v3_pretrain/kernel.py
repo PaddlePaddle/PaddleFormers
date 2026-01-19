@@ -16,8 +16,12 @@
 from typing import Tuple
 
 import paddle
-import triton
-import triton.language as tl
+
+try:
+    import triton
+    import triton.language as tl
+except:
+    raise RuntimeError("Triton is not installed" "Please run 'python -m pip install triton>=3.1' to install Triton.")
 
 # from triton import Config
 
@@ -26,13 +30,11 @@ import triton.language as tl
 def act_quant_kernel(x_ptr, y_ptr, s_ptr, BLOCK_SIZE: tl.constexpr):
     """
     Quantizes the input tensor `x_ptr` and stores the result in `y_ptr` and the scaling factor in `s_ptr`.
-
     Args:
         x_ptr (triton.Pointer): Pointer to the input tensor.
         y_ptr (triton.Pointer): Pointer to the output tensor where quantized values will be stored.
         s_ptr (triton.Pointer): Pointer to the output tensor where scaling factors will be stored.
         BLOCK_SIZE (tl.constexpr): The size of the block to be processed by each program instance.
-
     Returns:
         None
     """
@@ -49,11 +51,9 @@ def act_quant_kernel(x_ptr, y_ptr, s_ptr, BLOCK_SIZE: tl.constexpr):
 def act_quant(x: paddle.Tensor, block_size: int = 128) -> Tuple[paddle.Tensor, paddle.Tensor]:
     """
     Quantizes the input tensor `x` using block-wise quantization.
-
     Args:
         x (paddle.Tensor): The input tensor to be quantized. Must be contiguous and its last dimension size must be divisible by `block_size`.
         block_size (int, optional): The size of the blocks to be used for quantization. Default is 128.
-
     Returns:
         Tuple[paddle.Tensor, paddle.Tensor]: A tuple containing:
             - The quantized tensor with dtype `paddle.float8_e4m3fn`.
@@ -74,7 +74,6 @@ def act_quant(x: paddle.Tensor, block_size: int = 128) -> Tuple[paddle.Tensor, p
 def weight_dequant_kernel(x_ptr, s_ptr, y_ptr, M, N, BLOCK_SIZE: tl.constexpr):
     """
     Dequantizes weights using the provided scaling factors and stores the result.
-
     Args:
         x_ptr (tl.pointer): Pointer to the quantized weights.
         s_ptr (tl.pointer): Pointer to the scaling factors.
@@ -82,7 +81,6 @@ def weight_dequant_kernel(x_ptr, s_ptr, y_ptr, M, N, BLOCK_SIZE: tl.constexpr):
         M (int): Number of rows in the weight matrix.
         N (int): Number of columns in the weight matrix.
         BLOCK_SIZE (tl.constexpr): Size of the block for tiling.
-
     Returns:
         None
     """
@@ -102,15 +100,12 @@ def weight_dequant_kernel(x_ptr, s_ptr, y_ptr, M, N, BLOCK_SIZE: tl.constexpr):
 def weight_dequant(x: paddle.Tensor, s: paddle.Tensor, block_size: int = 128) -> paddle.Tensor:
     """
     Dequantizes the given weight tensor using the provided scale tensor.
-
     Args:
         x (paddle.Tensor): The quantized weight tensor of shape (M, N).
         s (paddle.Tensor): The scale tensor of shape (M, N).
         block_size (int, optional): The block size to use for dequantization. Defaults to 128.
-
     Returns:
         paddle.Tensor: The dequantized weight tensor of the same shape as `x`.
-
     Raises:
         AssertionError: If `x` or `s` are not contiguous or if their dimensions are not 2.
     """
@@ -147,7 +142,6 @@ def fp8_gemm_kernel(
 ):
     """
     Performs a matrix multiplication operation on FP8 matrices with scaling factors.
-
     Args:
         a_ptr (tl.tensor): Pointer to the first input matrix A.
         b_ptr (tl.tensor): Pointer to the second input matrix B.
@@ -160,7 +154,6 @@ def fp8_gemm_kernel(
         BLOCK_SIZE_M (tl.constexpr): Block size for the M dimension.
         BLOCK_SIZE_N (tl.constexpr): Block size for the N dimension.
         BLOCK_SIZE_K (tl.constexpr): Block size for the K dimension.
-
     Returns:
         None
     """

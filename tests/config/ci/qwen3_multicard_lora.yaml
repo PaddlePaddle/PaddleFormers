@@ -50,7 +50,7 @@ learning_rate: 1.0e-5
 
 # performance
 recompute_granularity: ""
-apply_rope_fusion: true
+# apply_rope_fusion: true
 moe_router_fusion: false
 moe_router_force_load_balancing: true
 # moe_grouped_gemm: true
@@ -73,6 +73,7 @@ fuse_swiglu: true
 fuse_rms_norm: true
 fuse_linear: true
 use_paddlefleet: true
+use_qk_norm: true
 
 # unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"

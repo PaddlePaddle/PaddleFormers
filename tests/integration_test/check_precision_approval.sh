@@ -28,7 +28,7 @@ echo_list=()
 function check_approval(){
     person_num=`echo $@|awk '{for (i=2;i<=NF;i++)print $i}'`
     APPROVALS=`echo ${approval_line}|python ${PADDLE_ROOT}/tests/integration_test/check_pr_approval.py $1 $person_num`
-    if [[ "${APPROVALS}" == "FALSE" && "${echo_line}" != "" ]]; then
+    if [[ "${APPROVALS}" != "TRUE" && "${echo_line}" != "" ]]; then
         add_failed "${failed_num}. ${echo_line}"
     fi
 }
@@ -67,14 +67,12 @@ check_approval 1 "${APPROVER_LIST2[@]}"
 #     fi
 # done
 # check_approval $NEED_APPROVALS "${APPROVER_LIST[@]}"
-if [[ "${PP}" == "rel" ]]; then
-  echo_line="You must be approved by swgu98 for changing precision with Paddle release branch.\n"
-  check_approval 1 "swgu98"
-fi
-if [[ "${PF}" == rel* ]]; then
-  echo_line="You must be approved by swgu98 for changing precision with PaddleFleet release branch.\n"
-  check_approval 1 "swgu98"
-fi
+
+PRECISION_APPROVERS3="tianlef swgu98"
+echo_line="You must be approved by one of ${PRECISION_APPROVERS3} for changing precision.\n"
+APPROVER_LIST3=(${PRECISION_APPROVERS3})
+check_approval 1 "${APPROVER_LIST3[@]}"
+
 
 if [ -n "${echo_list}" ];then
   echo "****************"
