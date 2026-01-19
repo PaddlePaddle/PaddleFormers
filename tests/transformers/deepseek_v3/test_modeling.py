@@ -481,7 +481,7 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
         import torch
         from transformers import DeepseekV3Model
 
-        torch_model = DeepseekV3Model.from_pretrained(self.torch_model_path, torch_dtype="auto")
+        torch_model = DeepseekV3Model.from_pretrained(self.torch_model_path, dtype=torch.float32)
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
@@ -515,7 +515,7 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
             import torch
             from transformers import DeepseekV3Model
 
-            torch_model = DeepseekV3Model.from_pretrained(tempdir, torch_dtype="auto")
+            torch_model = DeepseekV3Model.from_pretrained(tempdir, dtype=torch.float32)
             torch_model.eval()
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
@@ -557,7 +557,7 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
             import transformers
 
             torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(tempdir, torch_dtype="auto")
+            torch_model = torch_model_class.from_pretrained(tempdir, dtype=torch.float32)
             torch_model.eval()
 
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
