@@ -1238,7 +1238,7 @@ class Trainer:
 
             if enable_bf16_opt:
                 model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
-
+            print("aoa config", self.args.aoa_config)
             dist.load_state_dict(
                 model_sharded_state_dict,
                 model_states_path,
@@ -4460,7 +4460,11 @@ class Trainer:
             model = self.model_wrapped
             if _prepare_pipeline_inputs_func is not None:
                 model._prepare_pipeline_inputs_func = _prepare_pipeline_inputs_func
-        elif is_paddlefleet_available() and isinstance(self.model, GPTModel):
+        elif (
+            is_paddlefleet_available()
+            and isinstance(self.model, GPTModel)
+            or (isinstance(self.model, LoRAModel) and isinstance(self.model.model, GPTModel))
+        ):
             model = self.model_wrapped
         else:
             model = self.model
