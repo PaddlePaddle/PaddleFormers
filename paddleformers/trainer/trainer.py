@@ -1238,7 +1238,6 @@ class Trainer:
 
             if enable_bf16_opt:
                 model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
-            print("aoa config", self.args.aoa_config)
             dist.load_state_dict(
                 model_sharded_state_dict,
                 model_states_path,
