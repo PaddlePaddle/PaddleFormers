@@ -353,7 +353,6 @@ class Qwen3PretrainedModel(PretrainedModel):
 
         if config.tie_word_embeddings:
             aoa_statements += ["lm_head.weight -> _"]
-
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config
 

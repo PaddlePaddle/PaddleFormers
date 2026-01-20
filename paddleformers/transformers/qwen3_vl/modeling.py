@@ -373,6 +373,10 @@ class Qwen3VLPretrainedModel(PretrainedModel):
         aoa_config["aoa_statements"] += [
             f"model.language_model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.language_model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.language_model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups={config.text_config.num_key_value_heads}"
         ]
+        if config.attention_bias:
+            aoa_config["aoa_statements"] += [
+                f"model.language_model.layers.$LAYER_ID.self_attn.q_proj.bias, model.language_model.layers.$LAYER_ID.self_attn.k_proj.bias, model.language_model.layers.$LAYER_ID.self_attn.v_proj.bias -> {llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups={config.text_config.num_key_value_heads}"
+            ]
 
         # FFN
         aoa_config["aoa_statements"] += [
@@ -456,17 +460,21 @@ class Qwen3VLPretrainedModel(PretrainedModel):
 
         # attention qkv
         aoa_config["aoa_statements"] += [
-            f"{llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight  -> model.language_model.layers.$LAYER_ID.self_attn.q_proj.weight, model.language_model.layers.$LAYER_ID.self_attn.k_proj.weight, model.language_model.layers.$LAYER_ID.self_attn.v_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups = {config.text_config.num_key_value_heads}",
+            f"{llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight  -> {llm_prefix}layers.$LAYER_ID.self_attn.q_proj.weight, {llm_prefix}layers.$LAYER_ID.self_attn.k_proj.weight, {llm_prefix}layers.$LAYER_ID.self_attn.v_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups = {config.text_config.num_key_value_heads}",
         ]
         aoa_config["aoa_statements"] += [
             f"{llm_prefix}layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.self_attn.{x}_proj.weight"
             for layer_id in range(config.text_config.num_hidden_layers)
             for x in ("q", "k", "v")
         ]
+        if config.attention_bias:
+            aoa_config["aoa_statements"] += [
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias  -> model.language_model.layers.$LAYER_ID.self_attn.q_proj.bias, model.language_model.layers.$LAYER_ID.self_attn.k_proj.bias, model.language_model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups = {config.text_config.num_key_value_heads}",
+            ]
 
         # FFN
         aoa_config["aoa_statements"] += [
-            f"{llm_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight -> model.language_model.layers.$LAYER_ID.mlp.gate_proj.weight, model.language_model.layers.$LAYER_ID.mlp.up_proj.weight, fused_ffn"
+            f"{llm_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight -> {llm_prefix}layers.$LAYER_ID.mlp.gate_proj.weight, {llm_prefix}layers.$LAYER_ID.mlp.up_proj.weight, fused_ffn"
         ]
         aoa_config["aoa_statements"] += [
             f"{llm_prefix}layers.{layer_id}.mlp.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.mlp.{x}_proj.weight"
