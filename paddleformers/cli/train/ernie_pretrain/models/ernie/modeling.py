@@ -24,17 +24,6 @@ import numpy as np
 import paddle
 import paddle.distributed as dist
 import paddle.nn.functional as F
-from models.comm_utils import subbatch
-from models.fp8_linear import MemEfficientFp8FusedMlpFunc
-from models.sequence_parallel_utils import (
-    AllGatherVarlenOp,
-    ColumnSequenceParallelLinear,
-    GatherOp,
-    RowSequenceParallelLinear,
-    ScatterOp,
-    mark_as_sequence_parallel_parameter,
-    sequence_parallel_sparse_mask_labels,
-)
 from paddle import nn
 from paddle.autograd import PyLayer
 from paddle.distributed import fleet
@@ -55,6 +44,19 @@ from paddle.incubate.nn.memory_efficient_attention import (
     memory_efficient_attention,
 )
 
+from paddleformers.cli.train.ernie_pretrain.models.comm_utils import subbatch
+from paddleformers.cli.train.ernie_pretrain.models.fp8_linear import (
+    MemEfficientFp8FusedMlpFunc,
+)
+from paddleformers.cli.train.ernie_pretrain.models.sequence_parallel_utils import (
+    AllGatherVarlenOp,
+    ColumnSequenceParallelLinear,
+    GatherOp,
+    RowSequenceParallelLinear,
+    ScatterOp,
+    mark_as_sequence_parallel_parameter,
+    sequence_parallel_sparse_mask_labels,
+)
 from paddleformers.transformers.conversion_utils import (
     StateDictNameMapping,
     init_name_mappings,
@@ -110,7 +112,9 @@ except (ImportError, ModuleNotFoundError):
     fused_swiglu = None
 
 try:
-    from src.utils.misc import global_training_logs
+    from paddleformers.cli.train.ernie_pretrain.src.utils.misc import (
+        global_training_logs,
+    )
 except ModuleNotFoundError:
     global_training_logs = {}
 
