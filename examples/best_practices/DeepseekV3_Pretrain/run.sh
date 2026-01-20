@@ -17,9 +17,5 @@
 # wget https://bj.bcebos.com/paddlenlp/models/transformers/llama/data/llama_openwebtext_100k.bin
 # wget https://bj.bcebos.com/paddlenlp/models/transformers/llama/data/llama_openwebtext_100k.idx
 
-# mpirun sh script/kill_process.sh 
-# mpirun rm -rf output
-source /root/paddlejob/share-storage/gpfs/system-public/zhangbo54/PaddleFormers/.venv/bin/activate
-
 bash train_gpu.sh ./config/pretrain_argument.yaml > run.log 2>&1
 
