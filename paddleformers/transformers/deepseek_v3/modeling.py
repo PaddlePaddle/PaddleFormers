@@ -1122,13 +1122,34 @@ class DeepseekV3PretrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> {model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias, dtype='float32'",
-                f"model.layers.$LAYER_ID.mlp.gate.weight -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
+                f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
                 f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
                 f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
                 f"model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
             ]
         }
+
+        if config.q_lora_rank:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.q_{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.q_{x}_proj.weight"
+                for x in ("a", "b")
+            ]
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.q_a_layernorm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_a_layernorm.weight"
+            ]
+
+        aoa_config["aoa_statements"] += [
+            f"model.layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.weight",
+            f"model.layers.$LAYER_ID.self_attn.kv_b_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.kv_b_proj.weight",
+            f"model.layers.$LAYER_ID.self_attn.kv_a_layernorm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.kv_a_layernorm.weight",
+        ]
+
+        if config.attention_bias:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.q_a_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.q_a_proj.bias",
+                f"model.layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.bias -> {model_prefix}layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.bias",
+            ]
 
         # attention qkv
         aoa_config["aoa_statements"] += [
@@ -1151,7 +1172,7 @@ class DeepseekV3PretrainedModel(PretrainedModel):
         model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_statements = [
             # do cast
-            f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
+            f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
             # do transpose
             f"{model_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
@@ -1164,6 +1185,27 @@ class DeepseekV3PretrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias",
         ]
 
+        if config.q_lora_rank:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.self_attn.q_{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.q_{x}_proj.weight"
+                for x in ("a", "b")
+            ]
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.self_attn.q_a_layernorm.weight -> model.layers.$LAYER_ID.self_attn.q_a_layernorm.weight"
+            ]
+
+        aoa_statements += [
+            f"{model_prefix}layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.weight^T -> model.layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.weight",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.kv_b_proj.weight^T -> model.layers.$LAYER_ID.self_attn.kv_b_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.kv_a_layernorm.weight -> model.layers.$LAYER_ID.self_attn.kv_a_layernorm.weight",
+        ]
+
+        if config.attention_bias:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.self_attn.q_a_proj.bias -> model.layers.$LAYER_ID.self_attn.q_a_proj.bias",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.bias -> model.layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.bias",
+            ]
+
         aoa_statements += [
             f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
             f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
@@ -1175,11 +1217,11 @@ class DeepseekV3PretrainedModel(PretrainedModel):
         ]
 
         aoa_statements += [
-            f"{model_prefix}layers.0.mlp.up_gate_proj.weight -> model.layers.0.mlp.gate_proj.weight, model.layers.0.mlp.up_proj.weight, fused_ffn",
-            "model.layers.0.mlp.gate_proj.weight^T -> model.layers.0.mlp.gate_proj.weight",
-            "model.layers.0.mlp.up_proj.weight^T -> model.layers.0.mlp.up_proj.weight",
-            f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.shared_experts.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_experts.up_proj.weight, fused_ffn",
-            f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
+            f"{model_prefix}layers.0.mlp.up_gate_proj.weight^T -> model.layers.0.mlp.gate_proj.weight, model.layers.0.mlp.up_proj.weight, fused_ffn",
+            f"{model_prefix}layers.0.mlp.gate_proj.weight^T -> model.layers.0.mlp.gate_proj.weight",
+            f"{model_prefix}layers.0.mlp.up_proj.weight^T -> model.layers.0.mlp.up_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.up_gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_experts.up_proj.weight, fused_ffn",
+            f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
         ]
         aoa_statements += (
             [

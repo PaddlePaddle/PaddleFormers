@@ -481,6 +481,7 @@ class Qwen2MoePretrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"model.norm.weight -> {model_prefix}norm.weight",
                 f"model.layers.$LAYER_ID.mlp.shared_expert.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_expert.down_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.shared_expert_gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_expert_gate.weight, dtype='float32'",
             ]
         }
 
@@ -517,6 +518,7 @@ class Qwen2MoePretrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
             f"{model_prefix}norm.weight -> model.norm.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert.down_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert_gate.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert_gate.weight, dtype='bfloat16'",
         ]
 
         aoa_statements += [

@@ -21,6 +21,14 @@ from typing import Optional
 import paddle
 
 try:
+    import sys
+
+    examples_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", "..", "..", "examples", "experiments", "deepseek_v3_pretrain"
+    )
+    examples_path = os.path.abspath(examples_path)
+    sys.path.insert(0, examples_path)
+
     from config.configuration import DeepseekV2FastConfig
     from load_hf_ckpt import load_huggingface_ckpt
     from modeling_pp import DeepseekV2ForCausalLMPipe
@@ -175,10 +183,6 @@ class ModelArguments:
         metadata={
             "help": "Pre-training from existing paddleformers model weights. Default False and model will train from scratch. If set True, the model_name_or_path argument must exist in the paddleformers models."
         },
-    )
-    num_hidden_layers: Optional[int] = field(
-        default=None,
-        metadata={"help": "num_hidden_layers."},
     )
 
 
@@ -418,9 +422,6 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
         config.vocab_size = max(config.vocab_size, ((tokenizer.vocab_size - 1) // 128 + 1) * 128)
         logger.info(f"Reset vocab size to {config.vocab_size} for batter amp peformance.")
 
-    config.num_hidden_layers = (
-        model_args.num_hidden_layers if model_args.num_hidden_layers is not None else config.num_hidden_layers
-    )
     # Config for model using dropout, such as GPT.
     if hasattr(config, "use_dualpipev"):
         # NOTE(zhangyuqin): In Paddle, the segmentation and scheduling of pipeline parallel
