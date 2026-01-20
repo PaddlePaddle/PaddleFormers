@@ -59,7 +59,7 @@ split_param: true
 num_empty_layers_add_in_head: 0
 
 #performance
-recompute_granularity: “”
+recompute_granularity: ""
 
 fuse_rms_norm: true
 fp32_residual_connection: false
