@@ -83,7 +83,7 @@ from paddleformers.transformers.model_utils import PretrainedModel, register_bas
 from paddleformers.utils.tools import get_env_device
 
 try:
-    from paddle.incubate.nn.functional import swiglu as fused_swiglu
+    from paddle.nn.functional import swiglu as fused_swiglu
 except (ImportError, ModuleNotFoundError):
     fused_swiglu = None
 
