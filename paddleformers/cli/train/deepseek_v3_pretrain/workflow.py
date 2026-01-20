@@ -20,25 +20,6 @@ from typing import Optional
 
 import paddle
 
-try:
-    import sys
-
-    examples_path = os.path.join(
-        os.path.dirname(__file__), "..", "..", "..", "..", "examples", "experiments", "deepseek_v3_pretrain"
-    )
-    examples_path = os.path.abspath(examples_path)
-    sys.path.insert(0, examples_path)
-
-    from config.configuration import DeepseekV2FastConfig
-    from load_hf_ckpt import load_huggingface_ckpt
-    from modeling_pp import DeepseekV2ForCausalLMPipe
-    from moe_utils import get_env_device
-except:
-    DeepseekV2FastConfig = None
-    load_huggingface_ckpt = None
-    DeepseekV2ForCausalLMPipe = None
-    get_env_device = None
-
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
     check_data_split,
@@ -64,6 +45,11 @@ from paddleformers.transformers.configuration_utils import LlmMetaConfig, llmmet
 from paddleformers.transformers.deepseek_v3 import DeepseekV3ForCausalLM
 from paddleformers.utils.batch_sampler import DistributedBatchSampler
 from paddleformers.utils.log import logger
+
+from .configuration import DeepseekV2FastConfig
+from .modeling_pp import DeepseekV2ForCausalLMPipe
+from .moe_utils import get_env_device
+from .utils.load_hf_ckpt import load_huggingface_ckpt
 
 # Pretaining Environment Variables to support sharding stage1 overlap optimization.
 os.environ["USE_CASUAL_MASK"] = "True"
