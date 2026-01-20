@@ -32,7 +32,7 @@ import numpy
 import paddle
 from models.fp8_linear import fp8_gemm
 from paddle.incubate.fp8 import deep_gemm
-from paddle.incubate.nn.functional import swiglu
+from paddle.nn.functional import swiglu
 
 __all__ = [
     "ExpertsGroupGemmNode",
