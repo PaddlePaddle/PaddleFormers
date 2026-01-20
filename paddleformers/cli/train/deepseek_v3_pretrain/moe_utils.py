@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 # Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
 # Copyright (c) 2025 DeepSeek
 #
