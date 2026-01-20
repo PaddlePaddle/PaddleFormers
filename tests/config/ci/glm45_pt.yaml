@@ -46,8 +46,8 @@ learning_rate: 1.0e-5
 
 # performance
 tensor_model_parallel_size: 4
-pipeline_model_parallel_size: 2
-expert_model_parallel_size: 4
+pipeline_model_parallel_size: 1
+expert_model_parallel_size: 8
 sequence_parallel: true
 use_expert_parallel: true
 
@@ -59,7 +59,9 @@ split_param: true
 num_empty_layers_add_in_head: 0
 
 #performance
-recompute_granularity: ""
+recompute_granularity: full
+recompute_method: block
+recompute_num_layers: 1
 
 fuse_rms_norm: true
 fp32_residual_connection: false
