@@ -332,7 +332,6 @@ class GptOssAttention(nn.Layer):
         self.head_dim = config.head_dim
         self.sequence_parallel = config.sequence_parallel
         self.attention_bias = config.attention_bias
-        self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
         self.sequence_parallel = config.sequence_parallel
 
@@ -353,9 +352,23 @@ class GptOssAttention(nn.Layer):
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.num_attention_heads * self.head_dim
 
-        self.qkv_proj = GeneralLinear.create(
+        self.q_proj = GeneralLinear.create(
             self.hidden_size,
-            q_hidden_size + 2 * kv_hidden_size,
+            q_hidden_size,
+            has_bias=self.attention_bias,
+            config=config,
+            tp_plan="colwise",
+        )
+        self.k_proj = GeneralLinear.create(
+            self.hidden_size,
+            kv_hidden_size,
+            has_bias=self.attention_bias,
+            config=config,
+            tp_plan="colwise",
+        )
+        self.v_proj = GeneralLinear.create(
+            self.hidden_size,
+            kv_hidden_size,
             has_bias=self.attention_bias,
             config=config,
             tp_plan="colwise",
@@ -403,31 +416,25 @@ class GptOssAttention(nn.Layer):
                 - attention_weights: Optional attention probabilities
                 - updated_key_value_cache: Optional updated cache
         """
-        mix_layer = self.qkv_proj(hidden_states)
-        if self.sequence_parallel:
-            max_sequence_length = self.config.max_sequence_length
-            bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
-            q_len = max_sequence_length
-            target_shape = [
-                bsz,
-                q_len,
-                self.num_key_value_heads,
-                (self.num_key_value_groups + 2) * self.head_dim,
-            ]
-        else:
-            target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
-        mix_layer = paddle.reshape_(mix_layer, target_shape)
-        query_states, key_states, value_states = paddle.split(
-            mix_layer,
-            num_or_sections=[self.num_key_value_groups * self.head_dim, self.head_dim, self.head_dim],
-            axis=-1,
-        )
-        if self.gqa_or_mqa:
-            query_states = paddle.reshape_(query_states, [0, 0, self.num_heads, self.head_dim])
+        query_states = self.q_proj(hidden_states)
+        key_states = self.k_proj(hidden_states)
+        value_states = self.v_proj(hidden_states)
 
-        query_states = query_states.transpose(1, 2)
-        key_states = key_states.transpose(1, 2)
-        value_states = value_states.transpose(1, 2)
+        if self.sequence_parallel:
+            if batch_size is None:
+                batch_size = (
+                    hidden_states.shape[0] * self.config.tensor_model_parallel_size // self.config.max_sequence_length
+                )
+            q_len = self.config.max_sequence_length
+            target_query_shape = [batch_size, q_len, self.num_heads, self.head_dim]
+            target_key_value_shape = [batch_size, q_len, self.num_key_value_heads, self.head_dim]
+        else:
+            target_query_shape = [0, 0, self.num_heads, self.head_dim]
+            target_key_value_shape = [0, 0, self.num_key_value_heads, self.head_dim]
+        # b l h d -> b h l d
+        query_states = query_states.reshape(target_query_shape).transpose(1, 2)
+        key_states = key_states.reshape(target_key_value_shape).transpose(1, 2)
+        value_states = value_states.reshape(target_key_value_shape).transpose(1, 2)
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
         cos, sin = position_embeddings
@@ -584,8 +591,12 @@ class GptOssPreTrainedModel(PretrainedModel):
 
         # attention qkv
         aoa_config["aoa_statements"] += [
-            f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
-            f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+            f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
+            for x in ("q", "k", "v")
+        ]
+        aoa_config["aoa_statements"] += [
+            f"model.layers.$LAYER_ID.self_attn.{x}_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias"
+            for x in ("q", "k", "v")
         ]
 
         return aoa_config
@@ -612,12 +623,11 @@ class GptOssPreTrainedModel(PretrainedModel):
         ]
 
         aoa_statements += [
-            f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+            for x in ("q", "k", "v")
         ]
         aoa_statements += [
-            f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight"
-            for layer_id in range(config.num_hidden_layers)
+            f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias -> model.layers.$LAYER_ID.self_attn.{x}_proj.bias"
             for x in ("q", "k", "v")
         ]
 
