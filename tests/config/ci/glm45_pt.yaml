@@ -61,7 +61,7 @@ num_empty_layers_add_in_head: 0
 #performance
 recompute_granularity: full
 recompute_method: block
-recompute_num_layers: 11
+recompute_num_layers: 1
 
 fuse_rms_norm: true
 fp32_residual_connection: false
