@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 # Copyright (c) Microsoft Corporation.
 # Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
 # Copyright (C) 2024 THL A29 Limited, a Tencent company.  All rights reserved.
@@ -19,16 +19,7 @@ from __future__ import annotations
 import numpy as np
 import paddle
 import paddle.distributed as dist
-from moe_gate import PretrainedMoEGate
-from moe_utils import (
-    UnZipNode,
-    ZipNode,
-    merge_subbatch_cast,
-    tokens_zip_unique_add_with_subbatch,
-)
 from paddle import nn
-from token_dispatcher import MoEFlexTokenDispatcherFast as MoEFlexTokenDispatcher
-from token_dispatcher import PreDispatchNode
 
 from paddleformers.transformers import _AllToAll
 from paddleformers.transformers.fp8_utils import (
@@ -43,6 +34,16 @@ from paddleformers.transformers.fused_a2a import (
 )
 from paddleformers.transformers.moe_utils import offload, reload
 from paddleformers.utils.log import logger
+
+from .moe_gate import PretrainedMoEGate
+from .moe_utils import (
+    UnZipNode,
+    ZipNode,
+    merge_subbatch_cast,
+    tokens_zip_unique_add_with_subbatch,
+)
+from .token_dispatcher import MoEFlexTokenDispatcherFast as MoEFlexTokenDispatcher
+from .token_dispatcher import PreDispatchNode
 
 try:
     import paddle.distributed.communication.deep_ep as deep_ep
@@ -147,7 +148,7 @@ class MoELayer(nn.Layer):
         self._post_init()
 
     def update_flex_token(self):
-        from modeling import get_global_step
+        from .modeling import get_global_step
 
         if (
             (not hasattr(self.config, "using_flex_token"))
