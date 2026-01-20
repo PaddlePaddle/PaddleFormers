@@ -30,9 +30,10 @@ additional optimizations specific to MoE workloads.
 
 import numpy
 import paddle
-from models.fp8_linear import fp8_gemm
 from paddle.incubate.fp8 import deep_gemm
 from paddle.incubate.nn.functional import swiglu
+
+from paddleformers.cli.train.ernie_pretrain.models.fp8_linear import fp8_gemm
 
 __all__ = [
     "ExpertsGroupGemmNode",
