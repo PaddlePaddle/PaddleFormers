@@ -27,33 +27,6 @@ import paddle
 import paddle.distributed as dist
 import paddle.distributed.communication.group
 import paddle.nn.functional as F
-from models.comm_utils import profile
-from models.ernie import ErnieMoEConfig
-from models.ernie.modeling import ErnieAttention, ErnieLMHead, ErnieMLP
-from models.ernie.modeling import (
-    ErniePretrainingCriterion as ErniePretrainingCriterionBase,
-)
-from models.ernie.modeling import (
-    FusedDropoutImpl,
-    RMSNorm,
-    RotaryEmbedding,
-    _expand_mask,
-    _make_causal_mask,
-    finfo,
-)
-from models.fp8_linear import Fp8FusedMlpFunc, MemEfficientFp8FusedMlpFunc
-from models.moe.moe_layer import MOELayer, MoEStatics
-from models.moe.top2_gate import Top2Gate, TopKGateFused
-from models.sequence_parallel_utils import (
-    ColumnSequenceParallelLinear,
-    GatherOp,
-    RowSequenceParallelLinear,
-    ScatterOp,
-    get_async_loader,
-    hack_offload_wait,
-    mark_as_sequence_parallel_parameter,
-)
-from models.utils import get_global_training_logs
 from paddle import nn
 from paddle.autograd import PyLayer
 from paddle.distributed import fleet
@@ -69,6 +42,46 @@ from paddle.distributed.fleet.utils import recompute
 from paddle.incubate.nn.functional import fused_rms_norm_ext
 from paddle.incubate.tensor.manipulation import async_offload
 
+from paddleformers.cli.train.ernie_pretrain.models.comm_utils import profile
+from paddleformers.cli.train.ernie_pretrain.models.ernie import ErnieMoEConfig
+from paddleformers.cli.train.ernie_pretrain.models.ernie.modeling import (
+    ErnieAttention,
+    ErnieLMHead,
+    ErnieMLP,
+)
+from paddleformers.cli.train.ernie_pretrain.models.ernie.modeling import (
+    ErniePretrainingCriterion as ErniePretrainingCriterionBase,
+)
+from paddleformers.cli.train.ernie_pretrain.models.ernie.modeling import (
+    FusedDropoutImpl,
+    RMSNorm,
+    RotaryEmbedding,
+    _expand_mask,
+    _make_causal_mask,
+    finfo,
+)
+from paddleformers.cli.train.ernie_pretrain.models.fp8_linear import (
+    Fp8FusedMlpFunc,
+    MemEfficientFp8FusedMlpFunc,
+)
+from paddleformers.cli.train.ernie_pretrain.models.moe.moe_layer import (
+    MOELayer,
+    MoEStatics,
+)
+from paddleformers.cli.train.ernie_pretrain.models.moe.top2_gate import (
+    Top2Gate,
+    TopKGateFused,
+)
+from paddleformers.cli.train.ernie_pretrain.models.sequence_parallel_utils import (
+    ColumnSequenceParallelLinear,
+    GatherOp,
+    RowSequenceParallelLinear,
+    ScatterOp,
+    get_async_loader,
+    hack_offload_wait,
+    mark_as_sequence_parallel_parameter,
+)
+from paddleformers.cli.train.ernie_pretrain.models.utils import get_global_training_logs
 from paddleformers.transformers.conversion_utils import (
     StateDictNameMapping,
     init_name_mappings,
@@ -1311,8 +1324,10 @@ class ErniePretrainedModel(PretrainedModel):
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config, is_split=True):
-        from models.ernie.modeling import gqa_qkv_merge_func, gqa_qkv_split_func
-
+        from paddleformers.cli.train.ernie_pretrain.models.ernie.modeling import (
+            gqa_qkv_merge_func,
+            gqa_qkv_split_func,
+        )
         from paddleformers.transformers.conversion_utils import split_or_merge_func
 
         fn = split_or_merge_func(

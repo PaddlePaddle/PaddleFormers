@@ -25,8 +25,8 @@ virtual_pipeline_model_parallel_size: 1
 sequence_parallel: 0
 use_flash_attention: true
 max_seq_len: 4097
-learning_rate: 2.2e-05
-min_lr: 7.333e-07
+learning_rate: 0.000022
+min_lr: 0.00000073333
 warmup_steps: 30
 logging_steps: 1
 max_steps: 200
