@@ -180,7 +180,7 @@ class DPOCriterion(nn.Layer):
                 False,  # fused_linear
                 chunk_size,
                 return_token_loss=True,
-                ignore_index=0,
+                ignore_index=-100,
             )
         elif use_filtered_label_loss:
             logits = parallel_matmul(

@@ -70,6 +70,7 @@ def dpo_collate_fn(
         Dict[str, np.ndarray]: Processed tensor dictionary containing:
             - input_ids (int32): Padded token ids [batch_size, max_seq_len]
             - position_ids (int32): Position ids [batch_size, max_seq_len]
+            - prompt_labels (int32): prompt labels [batch_size, max_seq_len]
             - chosen_labels (int32): Preferred response labels [batch_size, max_seq_len]
             - rejected_labels (int32): Unpreferred response labels [batch_size, max_seq_len]
             - response_indexs (int32): Response span indices [batch_size, 4]
@@ -86,6 +87,7 @@ def dpo_collate_fn(
     input_dict = {
         "input_ids": [],
         "position_ids": [],
+        "prompt_labels": [],
         "chosen_labels": [],
         "rejected_labels": [],
         "response_indexs": [],
@@ -110,11 +112,14 @@ def dpo_collate_fn(
         input_dict["position_ids"].append(
             sum([sequence.position_ids for sequence in sequences], []) + [0] * difference
         )
+        input_dict["prompt_labels"].append(
+            sum([sequence.prompt_labels for sequence in sequences], []) + [-100] * difference
+        )
         input_dict["chosen_labels"].append(
             sum([sequence.chosen_labels for sequence in sequences], []) + [0] * difference
         )
         input_dict["rejected_labels"].append(
-            sum([sequence.rejected_labels for sequence in sequences], []) + [-100] * difference
+            sum([sequence.rejected_labels for sequence in sequences], []) + [0] * difference
         )
         if use_attn_mask_startend_row_indices:
             start_row_indices = []

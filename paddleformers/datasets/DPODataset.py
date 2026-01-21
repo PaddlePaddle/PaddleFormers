@@ -41,6 +41,7 @@ class Sequence:
     position_ids: Optional[List[int]]
     attention_mask: Optional[List[List[int]]]
     attn_mask_startend_row_indices: Optional[List[int]]
+    prompt_labels: List[int]
     chosen_labels: List[int]
     rejected_labels: List[int]
     response_index: List[int]
@@ -283,7 +284,7 @@ class DPODataSet(IterableDataset):
 
                 # response
                 if self.mask_out_eos_token:
-                    label_ids += a[:-1] + [0, -100]
+                    label_ids += a[:-1] + [-100, -100]
                     response_len += len(a) - 1
                     res += a
                 else:
@@ -369,7 +370,8 @@ class DPODataSet(IterableDataset):
         )
 
         # 1.3 labels
-        chosen_labels = [-100] * (prompt_len - 1) + response_label_ids_list[0] + [0] * len(response_token_ids_list[1])
+        prompt_labels = [-100] * (prompt_len - 1) + [0] * len(response_token_ids_list[0]) + [0] * len(response_token_ids_list[1]) + [0]
+        chosen_labels = [0] * (prompt_len - 1) + response_label_ids_list[0] + [0] * len(response_token_ids_list[1])
         rejected_labels = [0] * (prompt_len - 1) + [0] * len(response_token_ids_list[0]) + response_label_ids_list[1]
 
         # 1.4 response index
@@ -425,6 +427,7 @@ class DPODataSet(IterableDataset):
             position_ids=position_ids,
             attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            prompt_labels=prompt_labels,
             chosen_labels=chosen_labels,
             rejected_labels=rejected_labels,
             response_index=response_index,

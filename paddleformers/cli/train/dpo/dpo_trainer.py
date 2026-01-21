@@ -135,6 +135,7 @@ class DPOTrainer(Trainer):
             dpo_inputs["attn_mask_startend_row_indices"] = batch["attn_mask_startend_row_indices"]
 
         if self.model_with_dpo_criterion:
+            dpo_inputs["prompt_labels"] = batch["prompt_labels"]
             dpo_inputs["chosen_labels"] = batch["chosen_labels"]
             dpo_inputs["rejected_labels"] = batch["rejected_labels"]
             dpo_inputs["response_indexs"] = batch["response_indexs"]
@@ -158,7 +159,7 @@ class DPOTrainer(Trainer):
             dpo_inputs["reference_rejected_logps"] = reference_rejected_logps
             policy_chosen_logps, policy_rejected_logps, sft_loss, dpo_loss, loss = model(**dpo_inputs)
         else:
-            labels = (batch["chosen_labels"], batch["rejected_labels"], batch["response_indexs"], None, None)
+            labels = (batch["prompt_labels"], batch["chosen_labels"], batch["rejected_labels"], batch["response_indexs"], None, None)
             if self.dpo_config.reference_free:
                 reference_chosen_logps = paddle.zeros([1])
                 reference_rejected_logps = paddle.zeros([1])
@@ -692,6 +693,7 @@ def prepare_pipeline_dpo_inputs_func(inputs):
         ]
 
     last_stage_keys = [
+        "prompt_labels",
         "chosen_labels",
         "rejected_labels",
         "response_indexs",
@@ -733,6 +735,7 @@ def _prepare_pipeline_dpo_inputs_func_fleet(inputs):
     """
 
     last_stage_keys = [
+        "prompt_labels",
         "chosen_labels",
         "rejected_labels",
         "response_indexs",
