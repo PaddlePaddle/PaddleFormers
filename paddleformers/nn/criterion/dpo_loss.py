@@ -56,7 +56,6 @@ def loss_impl(self, logits, labels):
 def dpo_logps(
     self: nn.Layer,
     logits,
-    prompt_labels,
     chosen_labels,
     rejected_labels,
     response_indexs,
@@ -72,7 +71,10 @@ def dpo_logps(
     bias = lm_head_bias
     if transpose_y is None:
         transpose_y = self.tie_word_embeddings
-    labels = prompt_labels + chosen_labels + rejected_labels
+    print("chosen_labels: ", chosen_labels)
+    print("rejected_labels: ", rejected_labels)
+    labels = paddle.where(chosen_labels == -100, paddle.zeros_like(chosen_labels), chosen_labels) + rejected_labels
+    print("labels: ", labels)
 
     ignore_index = kwargs.pop("ignore_index", -100)  # default is -100
 
@@ -336,9 +338,8 @@ def dpo_loss_forward(
         self, logits, labels
     )
 
-    if self.dpo_config.offset_alpha > 0 or len(labels) == 7:
+    if self.dpo_config.offset_alpha > 0 or len(labels) == 6:
         (
-            prompt_labels,
             chosen_labels,
             rejected_labels,
             response_indexs,
@@ -348,7 +349,6 @@ def dpo_loss_forward(
         ) = labels
     else:
         (
-            prompt_labels,
             chosen_labels,
             rejected_labels,
             response_indexs,
@@ -365,7 +365,6 @@ def dpo_loss_forward(
         reference_chosen_logps, reference_rejected_logps, sft_loss = dpo_logps(
             self,
             logits,
-            prompt_labels,
             chosen_labels,
             rejected_labels,
             response_indexs,
@@ -387,7 +386,6 @@ def dpo_loss_forward(
     policy_chosen_logps, policy_rejected_logps, sft_loss = dpo_logps(
         self,
         logits,
-        prompt_labels,
         chosen_labels,
         rejected_labels,
         response_indexs,
