@@ -114,7 +114,7 @@ def dpo_collate_fn(
             sum([sequence.chosen_labels for sequence in sequences], []) + [0] * difference
         )
         input_dict["rejected_labels"].append(
-            sum([sequence.rejected_labels for sequence in sequences], []) + [0] * difference
+            sum([sequence.rejected_labels for sequence in sequences], []) + [-100] * difference
         )
         if use_attn_mask_startend_row_indices:
             start_row_indices = []

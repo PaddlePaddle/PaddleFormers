@@ -72,7 +72,7 @@ def dpo_logps(
     if transpose_y is None:
         transpose_y = self.tie_word_embeddings
     labels = chosen_labels + rejected_labels
-    ignore_index = kwargs.pop("ignore_index", 0)  # default is 0
+    ignore_index = kwargs.pop("ignore_index", -100)  # default is 0
 
     # drop ignored index token
     if self.use_filtered_label_loss:
@@ -84,7 +84,7 @@ def dpo_logps(
                 hidden_states = AllGatherVarlenOp.apply(hidden_states)
         else:
             labels = labels.flatten()
-            sparse_tgt_idx = paddle.nonzero(labels != 0).flatten()
+            sparse_tgt_idx = paddle.nonzero(labels != -100).flatten()
             labels = paddle.take_along_axis(labels, sparse_tgt_idx, axis=0)
 
             if hidden_states is not None:

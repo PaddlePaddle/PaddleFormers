@@ -283,11 +283,11 @@ class DPODataSet(IterableDataset):
 
                 # response
                 if self.mask_out_eos_token:
-                    label_ids += a[:-1] + [0, 0]
+                    label_ids += a[:-1] + [0, -100]
                     response_len += len(a) - 1
                     res += a
                 else:
-                    label_ids += a + [0]
+                    label_ids += a + [-100]
                     response_len += len(a)
                     res += a
                 responses_token_ids += res
@@ -369,7 +369,7 @@ class DPODataSet(IterableDataset):
         )
 
         # 1.3 labels
-        chosen_labels = [0] * (prompt_len - 1) + response_label_ids_list[0] + [0] * len(response_token_ids_list[1])
+        chosen_labels = [-100] * (prompt_len - 1) + response_label_ids_list[0] + [0] * len(response_token_ids_list[1])
         rejected_labels = [0] * (prompt_len - 1) + [0] * len(response_token_ids_list[0]) + response_label_ids_list[1]
 
         # 1.4 response index
