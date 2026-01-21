@@ -588,7 +588,7 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 first = model(**self._prepare_for_class(inputs_dict, model_class))[0]
 
             with tempfile.TemporaryDirectory() as tmpdirname:
-                model.save_pretrained(tmpdirname, save_to_hf=False, save_checkpoint_format="")
+                model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
                 config = self.config_tester.config_class.from_pretrained(tmpdirname)
                 config["moe_group"] = "dummy"
                 config["moe_multimodal_dispatch_use_allgather"] = "v2-alltoall-unpad-text"
@@ -596,8 +596,7 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                     tmpdirname,
                     config=config,
                     dtype="bfloat16",
-                    convert_from_hf=False,
-                    load_checkpoint_format="",
+                    load_checkpoint_format="flex_checkpoint",
                 )
                 paddle.amp.decorate(
                     models=model,
@@ -636,7 +635,7 @@ class Ernie4_5_MoE_VLIntegrationTest(unittest.TestCase):
             dtype="bfloat16",
             convert_from_hf=True,
             download_hub="aistudio",
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
         paddle.amp.decorate(
             models=model,

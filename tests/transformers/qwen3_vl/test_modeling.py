@@ -547,7 +547,9 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 class Qwen3VLIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(
-            "PaddleFormers/tiny-random-qwen3vl", convert_from_hf=True
+            "PaddleFormers/tiny-random-qwen3vl",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
         )
 
         self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen3vl")
@@ -903,19 +905,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
 
     @require_package("transformers", "torch")
     def test_Qwen3VL_converter(self):
-
-        # 1. forward the paddle model
-        from paddleformers.transformers import (
-            Qwen3VLForConditionalGenerationDecapitated as Qwen3VLForConditionalGeneration,
-        )
-
-        paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-        paddle_model = Qwen3VLForConditionalGeneration.from_pretrained(
-            self.torch_model_path, convert_from_hf=True, dtype="float32"
-        ).eval()
-        paddle_logit = paddle_model(**paddle_inputs)["logits"]
-
-        # 2. forward the torch  model
+        # 1. forward the torch model
         import torch
         from transformers import Qwen3VLForConditionalGeneration
 
@@ -924,6 +914,17 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
             self.torch_model_path, torch_dtype=torch.float32
         ).eval()
         torch_logit = torch_model(**torch_inputs)["logits"]
+
+        # 2. forward the paddle model
+        from paddleformers.transformers import (
+            Qwen3VLForConditionalGenerationDecapitated as Qwen3VLForConditionalGeneration,
+        )
+
+        paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
+        paddle_model = Qwen3VLForConditionalGeneration.from_pretrained(
+            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+        ).eval()
+        paddle_logit = paddle_model(**paddle_inputs)["logits"]
 
         # 3. compare the result between paddle and torch
         self.assertTrue(
@@ -939,7 +940,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
     def test_Qwen3VL_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
 
-            # 1. forward the torch  model
+            # 1. forward the torch model
             import torch
             from transformers import Qwen3VLForConditionalGeneration
 
@@ -958,7 +959,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
             paddle_model = Qwen3VLForConditionalGeneration.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32"
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
             paddle_logit = paddle_model(**paddle_inputs)["logits"]
@@ -995,7 +996,10 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
             paddle_model_class = getattr(transformers, class_name + "Decapitated")
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32").eval()
+            paddle_model = paddle_model_class.from_pretrained(
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            ).eval()
+
             paddle_model_fused = paddle_model_class.from_pretrained(
                 tempdir,
                 dtype="float32",
@@ -1020,6 +1024,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
+
             # 4.compare the result between paddle and paddle_fused
             self.assertTrue(
                 np.allclose(

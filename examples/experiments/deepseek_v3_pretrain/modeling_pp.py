@@ -2128,7 +2128,7 @@ class DeepseekV2ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         # Enable_recompute defaults to False and is controlled by Trainer
         self.enable_recompute = False
         self.recompute_granularity = self.config.recompute_granularity
-        self.pp_recompute_interval = self.config.pp_recompute_interval
+        self.pp_recompute_interval = 1
         self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
         if self.recompute_granularity == "full":
             assert len(self.no_recompute_layers) == 0, "for pp with full recompute, no_recompute_layers is not support"
@@ -2261,15 +2261,6 @@ class DeepseekV2ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             self.add_sequential_layer(LayerDesc(DeepseekV2LMHeadPipe, config=config), "lm_head")
 
         recompute_interval = 0
-        if (
-            self.config.recompute_granularity == "full"
-            and self.config.recompute_method == "uniform"
-            and self.config.recompute_num_layers == 1
-        ):
-            assert self.config.pp_recompute_interval <= config.num_hidden_layers // (
-                virtual_pipeline_model_parallel_size * get_hcg().topology().get_dim_size("pipe")
-            ), "pp recompute interval should smaller than num layers of each pp chunk"
-            recompute_interval = self.config.pp_recompute_interval
 
         seg_method = "layer:DeepseekV2DecoderLayer|DeepseekV2MTPLayerPipe"
         if config.num_hidden_layers % get_hcg().topology().get_dim_size("pipe") != 0:

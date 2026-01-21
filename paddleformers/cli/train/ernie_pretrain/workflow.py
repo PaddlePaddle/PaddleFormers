@@ -23,8 +23,8 @@ from functools import partial
 import numpy as np
 import paddle
 from paddle.distributed import fleet
-from src.utils import logger
 
+from paddleformers.cli.train.ernie_pretrain.src.utils import logger
 from paddleformers.utils.tools import get_env_device, paddle_device
 
 try:
@@ -40,24 +40,33 @@ try:
 except ImportError:
     get_static_model_on_pdc = None
 
-from model_config import ModelConfig
-from models.ernie import ErnieMoEConfig
-from models.ernie.modeling_moe import ErnieMoEForCausalLM
-from models.ernie.modeling_pp import ErnieMoEForCausalLMPipe
 from omegaconf.dictconfig import DictConfig
 from omegaconf.listconfig import ListConfig
 from safetensors import safe_open
-from src.callbacks import (
+
+from paddleformers.cli.train.ernie_pretrain.model_config import ModelConfig
+from paddleformers.cli.train.ernie_pretrain.models.ernie import ErnieMoEConfig
+from paddleformers.cli.train.ernie_pretrain.models.ernie.modeling_moe import (
+    ErnieMoEForCausalLM,
+)
+from paddleformers.cli.train.ernie_pretrain.models.ernie.modeling_pp import (
+    ErnieMoEForCausalLMPipe,
+)
+from paddleformers.cli.train.ernie_pretrain.src.callbacks import (
     GlobalRNGCallback,
     MoECorrectionBiasAdjustCallback,
     OrthogonalCallback,
 )
-from src.tokenizers.tokenization_eb_v2 import ErnieBotTokenizer
-from src.trainers import PreTrainingArguments, PretrainingTrainer
-from src.utils import setup_logger_output_file
-from src.utils.misc import global_training_logs
-from src.utils.seed_utils import set_seed
-
+from paddleformers.cli.train.ernie_pretrain.src.tokenizers.tokenization_eb_v2 import (
+    ErnieBotTokenizer,
+)
+from paddleformers.cli.train.ernie_pretrain.src.trainers import (
+    PreTrainingArguments,
+    PretrainingTrainer,
+)
+from paddleformers.cli.train.ernie_pretrain.src.utils import setup_logger_output_file
+from paddleformers.cli.train.ernie_pretrain.src.utils.misc import global_training_logs
+from paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils import set_seed
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
     check_data_split,

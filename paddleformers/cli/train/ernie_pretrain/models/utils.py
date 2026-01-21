@@ -30,7 +30,9 @@ except ImportError:
 
 def get_global_training_logs():
     try:
-        from src.utils.misc import global_training_logs
+        from paddleformers.cli.train.ernie_pretrain.src.utils.misc import (
+            global_training_logs,
+        )
 
         return global_training_logs
     except (ImportError, ModuleNotFoundError):
