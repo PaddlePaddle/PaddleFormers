@@ -95,6 +95,9 @@ bf16: true
 fp16_opt_level: O2
 amp_master_grad: true
 
+fuse_attention_qkv: true
+fuse_attention_ffn: true
+
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
 

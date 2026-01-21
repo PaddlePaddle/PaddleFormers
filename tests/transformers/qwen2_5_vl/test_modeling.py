@@ -956,6 +956,8 @@ class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
             paddle_model_fused = paddle_model_class.from_pretrained(
                 tempdir,
                 dtype="float32",
+                fuse_attention_qkv=True,
+                fuse_attention_ffn=True,
                 load_checkpoint_format="flex_checkpoint",
             ).eval()
 

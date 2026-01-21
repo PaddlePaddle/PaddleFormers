@@ -145,6 +145,8 @@ class TestMergeModel(unittest.TestCase):
             from paddleformers.transformers import Qwen3Config, Qwen3ForCausalLM
 
             model_config = Qwen3Config.from_pretrained(torch_model_path)
+            model_config.fuse_attention_qkv = True
+            model_config.fuse_attention_ffn = True
             fused_base_model = Qwen3ForCausalLM.from_pretrained(
                 torch_model_path,
                 config=model_config,

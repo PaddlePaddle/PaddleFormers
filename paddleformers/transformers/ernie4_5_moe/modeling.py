@@ -290,7 +290,7 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
                         config.hidden_size,
                         config.moe_intermediate_size,
                         layer_idx,
-                        fuse_up_gate=True,
+                        fuse_up_gate=config.fuse_attention_ffn,
                     )
                 )
             else:
@@ -308,7 +308,7 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
                 deepcopy(config),
                 config.hidden_size,
                 config.moe_intermediate_size * config.moe_num_shared_experts,
-                fuse_up_gate=True,
+                fuse_up_gate=config.fuse_attention_ffn,
             )
         use_expert_out_alltoall = use_expert_out_alltoall = "alltoall" in config.moe_multimodal_dispatch_use_allgather
         use_padding = "unpad" not in config.moe_multimodal_dispatch_use_allgather
@@ -367,7 +367,7 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
                 config,
                 hidden_size=config.hidden_size,
                 intermediate_size=config.intermediate_size,
-                fuse_up_gate=True,
+                fuse_up_gate=config.fuse_attention_ffn,
             )
 
         if config.sequence_parallel and isinstance(
@@ -544,7 +544,7 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
         }
 
         # attention qkv
-        if not True:
+        if not config.fuse_attention_qkv:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
@@ -565,7 +565,7 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
                 ]
 
         # FFN
-        if not True:
+        if not config.fuse_attention_ffn:
             aoa_config["aoa_statements"] += (
                 [
                     f"model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight"
@@ -620,7 +620,7 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
             f"{model_prefix}mtp_linear_proj.$LAYER_ID.weight^T -> model.mtp_linear_proj.$LAYER_ID.weight",
         ]
 
-        if not True:
+        if not config.fuse_attention_qkv:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
@@ -649,7 +649,7 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
                     f"{model_prefix}mtp_block.$LAYER_ID.self_attn.qkv_proj.bias -> model.mtp_block.$LAYER_ID.self_attn.q_proj.bias, model.mtp_block.$LAYER_ID.self_attn.k_proj.bias, model.mtp_block.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
                 ]
 
-        if not True:
+        if not config.fuse_attention_ffn:
             aoa_statements += (
                 [
                     f"{model_prefix}layers.$LAYER_ID.mlp.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{y}_proj.weight"

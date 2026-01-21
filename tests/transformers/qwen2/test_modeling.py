@@ -480,6 +480,8 @@ class Qwen2CompatibilityTest(unittest.TestCase):
 
             # 4. fuse qkv/ffn with fc
             model_config = Qwen2Config.from_pretrained(tempdir)
+            model_config.fuse_attention_qkv = True
+            model_config.fuse_attention_ffn = True
             paddle_model_fused = Qwen2ForCausalLM.from_pretrained(
                 tempdir,
                 config=model_config,

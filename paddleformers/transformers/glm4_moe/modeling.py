@@ -165,6 +165,7 @@ class Glm4MoeAttention(nn.Layer):
         self.tensor_parallel = config.tensor_model_parallel_size > 1
         self.sequence_parallel = config.sequence_parallel
         self.attention_bias = config.attention_bias
+        self.fuse_attention_qkv = config.fuse_attention_qkv
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
         if config.tensor_model_parallel_size > 1:
@@ -180,7 +181,7 @@ class Glm4MoeAttention(nn.Layer):
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.num_attention_heads * self.head_dim
 
-        if not True:
+        if not self.fuse_attention_qkv:
             self.q_proj = GeneralLinear.create(
                 self.hidden_size,
                 q_hidden_size,
@@ -247,7 +248,7 @@ class Glm4MoeAttention(nn.Layer):
         batch_size: Optional[int] = None,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
 
-        if not True:
+        if not self.fuse_attention_qkv:
             query_states = self.q_proj(hidden_states)
             key_states = self.k_proj(hidden_states)
             value_states = self.v_proj(hidden_states)
@@ -433,7 +434,9 @@ class Glm4MoeMoE(nn.Layer):
             config.sequence_parallel = False
         self.experts = nn.LayerList(
             [
-                Glm4MoeMLP(config, intermediate_size=config.moe_intermediate_size, fuse_up_gate=True)
+                Glm4MoeMLP(
+                    config, intermediate_size=config.moe_intermediate_size, fuse_up_gate=config.fuse_attention_ffn
+                )
                 for _ in range(config.n_routed_experts)
             ]
         )
@@ -441,7 +444,7 @@ class Glm4MoeMoE(nn.Layer):
         self.shared_experts = Glm4MoeMLP(
             config=config,
             intermediate_size=config.moe_intermediate_size * config.n_shared_experts,
-            fuse_up_gate=True,
+            fuse_up_gate=config.fuse_attention_ffn,
         )
 
     def moe(self, hidden_states: paddle.Tensor, topk_indices: paddle.Tensor, topk_weights: paddle.Tensor):
@@ -545,7 +548,7 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
             expert_kwargs={
                 "config": mlp_config,
                 "intermediate_size": mlp_config.moe_intermediate_size,
-                "fuse_up_gate": True,
+                "fuse_up_gate": config.fuse_attention_ffn,
             },
             gate=gate,
             moe_group=moe_group,
@@ -565,7 +568,7 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
         self.shared_experts = Glm4MoeMLP(
             config=config,
             intermediate_size=config.moe_intermediate_size * config.n_shared_experts,
-            fuse_up_gate=True,
+            fuse_up_gate=config.fuse_attention_ffn,
         )
 
     def forward(self, hidden_states):
@@ -609,7 +612,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
                 )
             )
         else:
-            self.mlp = Glm4MoeMLP(config, fuse_up_gate=True)
+            self.mlp = Glm4MoeMLP(config, fuse_up_gate=config.fuse_attention_ffn)
 
         self.input_layernorm = GeneralNorm.create(
             config=config,
@@ -868,7 +871,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         aoa_config["aoa_statements"] += [
             f"model.layers.0.mlp.down_proj.weight^T -> {model_prefix}layers.{num_head_empty_layers}.mlp.down_proj.weight"
         ]
-        if not True:
+        if not config.fuse_attention_ffn:
             aoa_config["aoa_statements"] += [
                 f"model.layers.0.mlp.gate_proj.weight^T -> {model_prefix}layers.{num_head_empty_layers}.mlp.gate_proj.weight",
                 f"model.layers.0.mlp.up_proj.weight^T -> {model_prefix}layers.{num_head_empty_layers}.mlp.up_proj.weight",
@@ -889,7 +892,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
             ]
             # attention qkv
-            if not True:
+            if not config.fuse_attention_qkv:
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.self_attn.{x}_proj.weight^T -> {prefix_offset}.self_attn.{x}_proj.weight"
                     for x in ("q", "k", "v")
@@ -922,7 +925,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 ]
 
             # FFN
-            if not True:
+            if not config.fuse_attention_ffn:
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.mlp.shared_experts.{p}_proj.weight^T -> {prefix_offset}.mlp.shared_experts.{p}_proj.weight"
                     for p in ("gate", "up")
@@ -997,7 +1000,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         aoa_statements += [
             f"{model_prefix}layers.{num_head_empty_layers}.mlp.down_proj.weight^T -> model.layers.0.mlp.down_proj.weight",
         ]
-        if not True:
+        if not config.fuse_attention_ffn:
             aoa_statements += [
                 f"{model_prefix}layers.{num_head_empty_layers}.mlp.gate_proj.weight^T -> model.layers.0.mlp.gate_proj.weight",
                 f"{model_prefix}layers.{num_head_empty_layers}.mlp.up_proj.weight^T -> model.layers.0.mlp.up_proj.weight",
@@ -1020,7 +1023,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.post_attention_layernorm.weight -> {prefix}.post_attention_layernorm.weight",
                 f"{prefix_offset}.self_attn.o_proj.weight^T -> {prefix}.self_attn.o_proj.weight",
             ]
-            if not True:
+            if not config.fuse_attention_qkv:
                 aoa_statements += [
                     f"{prefix_offset}.self_attn.{x}_proj.weight^T -> {prefix}.self_attn.{x}_proj.weight"
                     for x in ("q", "k", "v")
@@ -1065,7 +1068,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.mlp.shared_experts.down_proj.weight^T -> {prefix}.mlp.shared_experts.down_proj.weight",
             ]
 
-            if not True:
+            if not config.fuse_attention_ffn:
                 aoa_statements += (
                     [
                         f"{prefix_offset}.mlp.shared_experts.{y}_proj.weight^T -> {prefix}.mlp.shared_experts.{y}_proj.weight"

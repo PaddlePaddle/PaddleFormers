@@ -124,6 +124,8 @@ class AutoConfigTest(unittest.TestCase):
             "bos_token_id": 1,
             "do_normalize": False,
             "eos_token_id": 2,
+            "fuse_attention_ffn": False,
+            "fuse_attention_qkv": False,
             "fuse_sequence_parallel_allreduce": False,
             "hidden_act": "silu",
             "hidden_size": 4096,

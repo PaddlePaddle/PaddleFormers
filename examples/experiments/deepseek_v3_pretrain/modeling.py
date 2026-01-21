@@ -258,6 +258,7 @@ class DeepseekV2MLP(nn.Layer):
         self.config = config
         self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
         self.intermediate_size = config.intermediate_size if intermediate_size is None else intermediate_size
+        self.fuse_attention_ffn = config.fuse_attention_ffn
         Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear_
 
         def linear_dtype_gaurd():
@@ -294,7 +295,7 @@ class DeepseekV2MLP(nn.Layer):
                     has_bias=False,
                 )
             else:
-                if False:
+                if config.fuse_attention_ffn:
                     self.gate_up_fused_proj = Linear(self.hidden_size, self.intermediate_size * 2, bias_attr=False)
                 else:
                     self.gate_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)
@@ -304,7 +305,7 @@ class DeepseekV2MLP(nn.Layer):
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(self, x):
-        if False:
+        if self.fuse_attention_ffn:
             x = swiglu(self.gate_up_fused_proj(x))
         else:
             x = swiglu(self.gate_proj(x), self.up_proj(x))

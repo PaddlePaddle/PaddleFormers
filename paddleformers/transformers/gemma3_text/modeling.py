@@ -202,6 +202,7 @@ class Gemma3Attention(nn.Layer):
         self.attention_dropout = config.attention_dropout
         self.is_causal = not config.use_bidirectional_attention
         self.attn_implementation = config._attn_implementation
+        self.fuse_attention_qkv = config.fuse_attention_qkv
 
         self.num_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
@@ -222,7 +223,7 @@ class Gemma3Attention(nn.Layer):
         kv_hidden_size = config.num_key_value_heads * self.head_dim
         q_hidden_size = config.num_attention_heads * self.head_dim
 
-        if not True:
+        if not self.fuse_attention_qkv:
             self.q_proj = GeneralLinear.create(
                 config.hidden_size,
                 q_hidden_size,
@@ -280,7 +281,7 @@ class Gemma3Attention(nn.Layer):
         use_cache: bool = False,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
     ) -> tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[tuple[paddle.Tensor]]]:
-        if not True:
+        if not self.fuse_attention_qkv:
             if self.config.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
                 bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
@@ -363,7 +364,7 @@ class Gemma3DecoderLayer(nn.Layer):
         self.layer_idx = layer_idx
         self.attention_type = config.layer_types[layer_idx]
         self.self_attn = Gemma3Attention(config=config, layer_idx=layer_idx)
-        self.mlp = Gemma3MLP(config, fuse_up_gate=True)
+        self.mlp = Gemma3MLP(config, fuse_up_gate=config.fuse_attention_ffn)
         self.input_layernorm = Gemma3RMSNorm(self.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = Gemma3RMSNorm(self.hidden_size, eps=config.rms_norm_eps)
         self.pre_feedforward_layernorm = Gemma3RMSNorm(self.hidden_size, eps=config.rms_norm_eps)
@@ -453,7 +454,7 @@ class Gemma3PreTrainedModel(PretrainedModel):
         }
 
         # attention qkv
-        if not True:
+        if not config.fuse_attention_qkv:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
@@ -473,7 +474,7 @@ class Gemma3PreTrainedModel(PretrainedModel):
                 ]
 
         # FFN
-        if not True:
+        if not config.fuse_attention_ffn:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight"
                 for p in ("gate", "up")
@@ -506,7 +507,7 @@ class Gemma3PreTrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.layers.$LAYER_ID.self_attn.k_norm.weight",
         ]
 
-        if not True:
+        if not config.fuse_attention_qkv:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
@@ -530,7 +531,7 @@ class Gemma3PreTrainedModel(PretrainedModel):
                     f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
                 ]
 
-        if not True:
+        if not config.fuse_attention_ffn:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.mlp.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{y}_proj.weight"
                 for y in ("gate", "up")

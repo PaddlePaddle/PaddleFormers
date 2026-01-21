@@ -49,6 +49,7 @@ unified_checkpoint: true
 save_total_limit: 2
 skip_profile_timer: false
 fuse_rms_norm: true
+fuse_attention_ffn: true
 apply_rope_fusion: true
 save_sharded_model: false
 load_sharded_model: false

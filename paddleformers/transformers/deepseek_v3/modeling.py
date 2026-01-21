@@ -1152,7 +1152,7 @@ class DeepseekV3PretrainedModel(PretrainedModel):
             ]
 
         # attention qkv
-        if not False:
+        if not config.fuse_attention_qkv:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
@@ -1168,7 +1168,7 @@ class DeepseekV3PretrainedModel(PretrainedModel):
             ]
 
         # FFN
-        if not False:
+        if not config.fuse_attention_ffn:
             aoa_config["aoa_statements"] += (
                 [
                     f"model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight"
@@ -1232,7 +1232,7 @@ class DeepseekV3PretrainedModel(PretrainedModel):
                 f"{model_prefix}layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.bias -> model.layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.bias",
             ]
 
-        if not False:
+        if not config.fuse_attention_qkv:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
@@ -1252,7 +1252,7 @@ class DeepseekV3PretrainedModel(PretrainedModel):
                 for x in ("q", "k", "v")
             ]
 
-        if not False:
+        if not config.fuse_attention_ffn:
             aoa_statements += (
                 [
                     f"{model_prefix}layers.$LAYER_ID.mlp.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{y}_proj.weight"

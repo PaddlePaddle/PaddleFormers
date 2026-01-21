@@ -590,7 +590,7 @@ class GptOssPreTrainedModel(PretrainedModel):
         }
 
         # attention qkv
-        if not False:
+        if not config.fuse_attention_qkv:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
@@ -628,7 +628,7 @@ class GptOssPreTrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.mlp.experts.down_proj_bias -> model.layers.$LAYER_ID.mlp.experts.down_proj_bias",
         ]
 
-        if not False:
+        if not config.fuse_attention_qkv:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")

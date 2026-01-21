@@ -197,6 +197,7 @@ class Ernie4_5Attention(nn.Layer):
         self.num_key_value_heads = config.num_key_value_heads
         self.head_dim = config.head_dim
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
+        self.fuse_attention_qkv = config.fuse_attention_qkv
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
         if config.tensor_model_parallel_size > 1:
@@ -217,7 +218,7 @@ class Ernie4_5Attention(nn.Layer):
         kv_hidden_size = self.head_dim * config.num_key_value_heads
         q_hidden_size = self.head_dim * config.num_attention_heads
 
-        if not True:
+        if not self.fuse_attention_qkv:
             self.q_proj = GeneralLinear.create(
                 self.hidden_size,
                 q_hidden_size,
@@ -287,7 +288,7 @@ class Ernie4_5Attention(nn.Layer):
                 - attention_weights: Optional attention probabilities
                 - updated_key_value_cache: Optional updated cache
         """
-        if not True:
+        if not self.fuse_attention_qkv:
             if self.config.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
                 bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
@@ -376,7 +377,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
         self.layer_idx = layer_idx
         self.config = config
         self.self_attn = Ernie4_5Attention(config, layer_idx)
-        self.mlp = Ernie4_5MLP(config, fuse_up_gate=True)
+        self.mlp = Ernie4_5MLP(config, fuse_up_gate=config.fuse_attention_ffn)
         self.input_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
@@ -491,7 +492,7 @@ class Ernie4_5PretrainedModel(PretrainedModel):
         }
 
         # attention qkv
-        if not True:
+        if not config.fuse_attention_qkv:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
@@ -506,7 +507,7 @@ class Ernie4_5PretrainedModel(PretrainedModel):
                 ]
 
         # FFN
-        if not True:
+        if not config.fuse_attention_ffn:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight"
                 for p in ("gate", "up")
@@ -534,7 +535,7 @@ class Ernie4_5PretrainedModel(PretrainedModel):
             f"{model_prefix}norm.weight -> model.norm.weight",
         ]
 
-        if not True:
+        if not config.fuse_attention_qkv:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
@@ -553,7 +554,7 @@ class Ernie4_5PretrainedModel(PretrainedModel):
                     f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
                 ]
 
-        if not True:
+        if not config.fuse_attention_ffn:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.mlp.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{y}_proj.weight"
                 for y in ("gate", "up")
