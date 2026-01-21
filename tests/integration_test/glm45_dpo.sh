@@ -19,7 +19,7 @@ if [ -f 'PaddleFleet/.venv/bin/activate' ]; then
    source PaddleFleet/.venv/bin/activate
 fi
 
-cd $root_dir/glm45_fleets
+cd $root_dir/glm45_fleet
 export cur_dir=$(pwd)
 
 config_dpo_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_dpo.yaml
