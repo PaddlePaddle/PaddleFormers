@@ -370,7 +370,9 @@ class DPODataSet(IterableDataset):
 
         # 1.3 labels
         chosen_labels = [-100] * (prompt_len - 1) + response_label_ids_list[0] + [0] * len(response_token_ids_list[1])
-        rejected_labels = [-100] * (prompt_len - 1) + [0] * len(response_token_ids_list[0]) + response_label_ids_list[1]
+        rejected_labels = (
+            [-100] * (prompt_len - 1) + [0] * len(response_token_ids_list[0]) + response_label_ids_list[1]
+        )
 
         # 1.4 response index
         if self.use_filtered_label_loss:
