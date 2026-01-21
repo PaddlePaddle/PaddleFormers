@@ -56,8 +56,6 @@ sharding: stage1
 stage1_overlap: true
 split_param: true
 
-num_empty_layers_add_in_head: 0
-
 #performance
 recompute_granularity: full
 recompute_method: block
