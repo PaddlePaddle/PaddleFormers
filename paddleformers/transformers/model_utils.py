@@ -2459,6 +2459,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 ignore_mismatched_sizes,
             )
 
+            print("---------pzl loaded_keys--------")
+            print("state_dict: ", state_dict)
+            print("loaded_keys: ", loaded_keys)
             if quantization_linear_list is not None:
                 error_msgs = _load_state_dict_into_meta_model(
                     model_to_load,
@@ -2629,6 +2632,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     )
                     error_msgs += new_error_msgs
                 else:
+                    print("---------pzl state_dict1--------")
+                    print("state_dict: ", state_dict.keys())
                     error_msgs += _load_state_dict_into_model(
                         model_to_load, state_dict, start_prefix, model_to_load_state_dict
                     )
@@ -2880,6 +2885,51 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         with ContextManagers(init_contexts):
             model = cls(config, *init_args, **model_kwargs)
 
+        if config.quantization_config.is_weight_quantize() and load_checkpoint_format == "flex_checkpoint": # flex_checkpoint need initialized weights
+            origin_model = copy.deepcopy(model)
+            # original_state_dict = copy.deepcopy(model.state_dict())
+            for name, param in model.named_parameters():
+                with paddle.device_guard('cpu'):
+                    value = paddle.normal(
+                        mean=0.0,
+                        std=0.02,
+                        shape=param.shape,
+                    ).astype(param.dtype)
+                param.set_value(value)
+
+            # test
+            for name, param in origin_model.named_parameters():
+                with paddle.device_guard('gpu'):
+                    value = paddle.normal(
+                        mean=0.0,
+                        std=0.02,
+                        shape=param.shape,
+                    ).astype(param.dtype)
+                param.set_value(value)
+
+
+
+        # quantization_linear_list = None
+        # if config.quantization_config.is_weight_quantize():
+        #     with ContextManagers(quantization_init_contexts):
+        #         replace_with_quantization_linear(
+        #             model=model,
+        #             quantization_config=config.quantization_config,
+        #             llm_int8_threshold=config.quantization_config.llm_int8_threshold,
+        #         )
+        #         quantization_linear_list = []
+        #         for key in model.state_dict().keys():
+        #             if "quant_weight" in key:
+        #                 quantization_linear_list.append(key[:-13])
+
+
+        # print("after model:")
+        # model_state_dict = model.state_dict()
+        # print("state_dict['model.layers.1.self_attn.k_proj.quant_weight']: ", model_state_dict['model.layers.1.self_attn.k_proj.quant_weight'])
+        # # print("model_state_dict: ", model_state_dict.keys())
+        # print("quantization_linear_list: ", quantization_linear_list)
+        # exit()
+
         if load_checkpoint_format == "flex_checkpoint":
             if not hasattr(cls, "_gen_aoa_config"):
                 raise RuntimeError(
@@ -2915,9 +2965,89 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 offload=load_via_cpu,
             )
 
+            sharded_state_dict = origin_model.sharded_state_dict()
+            dist.load_state_dict(
+                sharded_state_dict,
+                path=ckpt_path,
+                aoa_config=aoa_config,
+                safetensors=True,
+                offload=load_via_cpu,
+            )
+
+            original_state_dict = origin_model.state_dict()
+            new_state_dict = model.state_dict()
+
+            print("-------test cpu key-------")
+            for key in original_state_dict.keys():
+                if key == "lm_head.weight" or key == "model.embed_tokens.weight":
+                    print("original_state_dict[key]: ", original_state_dict[key])
+                    print("new_state_dict[key]: ", new_state_dict[key])
+                if not paddle.allclose(original_state_dict[key].float(), new_state_dict[key].float()):
+                    print("key: ", key, " not equal")
+                # print("original_state_dict[key]: ", original_state_dict[key])
+                # print("new_state_dict[key]: ", new_state_dict[key])
+                # print("paddle.allclose(original_state_dict[key], new_state_dict[key]): ", paddle.allclose(original_state_dict[key].float(), new_state_dict[key].float()))
+                # exit()
+
+
             for v in sharded_state_dict.values():
                 if hasattr(v.local_tensor, "target_tensor"):
                     del v.local_tensor.target_tensor
+
+            if config.quantization_config.is_weight_quantize():
+            # if 0:
+                new_state_dict = copy.deepcopy(model.state_dict())
+
+                # # init_contexts = []
+                # # if low_cpu_mem_usage or config.quantization_config.is_weight_quantize():
+                # #     # Instantiate model.
+                # #     init_contexts.append(no_init_weights(_enable=True))
+                # #     if is_paddle_support_lazy_init():
+                # #         init_contexts.append(paddle.LazyGuard())
+
+                # # if dtype:
+                # #     init_contexts.append(dtype_guard(dtype))
+
+                # # print("init_contexts: ", init_contexts)
+                # # with ContextManagers(init_contexts):
+                # #     model = cls(config, *init_args, **model_kwargs)
+                model_state_dict = model.state_dict()
+                set_state_dict = {}
+                for param_name, param in new_state_dict.items():
+                    # print("param_name: ", param_name)
+                    # print("model_state_dict['param_name']: ", model_state_dict[param_name])
+                    # print("param: ", param)
+                    # model_state_dict[param_name].value().get_tensor()._clear()
+                    with paddle.no_grad():
+                        set_state_dict[param_name] = param.cuda()
+                        model_state_dict[param_name].get_tensor()._share_data_with(set_state_dict[param_name].value().get_tensor())
+                    param.value().get_tensor()._clear()
+
+                original_state_dict = origin_model.state_dict()
+                new_state_dict = model.state_dict()
+
+                print("-------test gpu key-------")
+                for key in original_state_dict.keys():
+                    if key == "lm_head.weight":
+                        print("original_state_dict[key]: ", original_state_dict[key])
+                        print("new_state_dict[key]: ", new_state_dict[key])
+                    if not paddle.allclose(original_state_dict[key].float(), new_state_dict[key].float()):
+                        print("key: ", key, " not equal")
+                exit()
+                #     # print("-------after--------")
+                #     # print("model_state_dict['param_name']: ", model_state_dict[param_name])
+                #     # print("param: ", param)
+                #     # exit()
+                # # model.set_state_dict(set_state_dict)
+                # # for name, p in model.named_parameters():
+                # #     p.set_value(p.cpu().cuda())
+                # # try:
+                # print("model.state_dict()['model.layers.1.self_attn.k_proj.weight']: ", origin_model.state_dict()['model.layers.1.self_attn.k_proj.weight'])
+                # print("new_state_dict['model.layers.1.self_attn.k_proj.weight']: ", new_state_dict['model.layers.1.self_attn.k_proj.weight'])
+                # # except:
+                # #     pass
+                # exit()
+                # return origin_model
 
             return model
 
@@ -2995,6 +3125,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     if "quant_weight" in key:
                         quantization_linear_list.append(key[:-13])
 
+        # print("-----------pzl 1-------------")
+        # # state_dict = model.state_dict()
+        # # print("state_dict['model.layers.1.self_attn.k_proj.weight']: ", model.state_dict()['model.layers.1.self_attn.k_proj.weight'])
+        # print("state_dict['model.layers.1.self_attn.k_proj.quant_weight']: ", model.state_dict()['model.layers.1.self_attn.k_proj.quant_weight'])
+        # # exit()
         model, missing_keys, unexpected_keys, mismatched_keys = cls._load_pretrained_model(
             model=model,
             state_dict=state_dict,
@@ -3011,6 +3146,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             sharded_metadata=sharded_metadata if is_sharded else None,
             key_mapping=key_mapping,
         )
+        # print("-----------pzl 2-------------")
+        # state_dict = model.state_dict()
+        # # print("state_dict['model.layers.1.self_attn.k_proj.weight']: ", state_dict['model.layers.1.self_attn.k_proj.weight'])
+        # print("state_dict['model.layers.1.self_attn.k_proj.quant_weight']: ", state_dict['model.layers.1.self_attn.k_proj.quant_weight'])
+        # exit()
 
         # load generation_config.json
         if model.can_generate() and pretrained_model_name_or_path is not None:
