@@ -93,7 +93,7 @@ class TestLoRAProModel(unittest.TestCase):
 
     def test_lorapro_model_restore(self):
         lorapro_config = LoRAConfig(
-            target_modules=[".*qkv_proj.*"],
+            target_modules=[".*q_proj.*", ".*v_proj.*"],
             r=4,
             lora_alpha=8,
             enable_lora_list=[None, [True, False]],
@@ -116,7 +116,7 @@ class TestLoRAProModel(unittest.TestCase):
     @parameterized.expand([(None,), ("all",), ("lora",)])
     def test_lorapro_model_constructor(self, bias):
         lorapro_config = LoRAConfig(
-            target_modules=[".*qkv_proj.*"],
+            target_modules=[".*q_proj.*", ".*v_proj.*"],
             r=4,
             lora_alpha=8,
             enable_lora_list=[None, [True, False]],
@@ -156,7 +156,7 @@ class TestLoRAProModel(unittest.TestCase):
     def test_lorapro_model_save_load(self):
         with TemporaryDirectory() as tempdir:
             input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
-            lorapro_config = LoRAConfig(target_modules=[".*qkv_proj.*"], r=4, lora_alpha=8, lorapro=True)
+            lorapro_config = LoRAConfig(target_modules=[".*q_proj.*", ".*v_proj.*"], r=4, lora_alpha=8, lorapro=True)
             model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
             lorapro_model = LoRAModel(model, lorapro_config)
             lorapro_model.eval()
@@ -177,7 +177,7 @@ class TestLoRAProModel(unittest.TestCase):
     def test_lorapro_modes(self, x_mode):
         """Test if AdamWLoRAPro optimizer with different x_modes can perform optimization steps"""
         lorapro_config = LoRAConfig(
-            target_modules=[".*qkv_proj.*"],
+            target_modules=[".*q_proj.*", ".*v_proj.*"],
             r=4,
             lora_alpha=8,
             enable_lora_list=[None, [True, False]],
