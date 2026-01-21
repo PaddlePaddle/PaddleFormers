@@ -159,7 +159,14 @@ class DPOTrainer(Trainer):
             dpo_inputs["reference_rejected_logps"] = reference_rejected_logps
             policy_chosen_logps, policy_rejected_logps, sft_loss, dpo_loss, loss = model(**dpo_inputs)
         else:
-            labels = (batch["prompt_labels"], batch["chosen_labels"], batch["rejected_labels"], batch["response_indexs"], None, None)
+            labels = (
+                batch["prompt_labels"],
+                batch["chosen_labels"],
+                batch["rejected_labels"],
+                batch["response_indexs"],
+                None,
+                None,
+            )
             if self.dpo_config.reference_free:
                 reference_chosen_logps = paddle.zeros([1])
                 reference_rejected_logps = paddle.zeros([1])
@@ -246,7 +253,6 @@ class DPOTrainer(Trainer):
         return super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
 
     def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None):
-
         """prediction_step"""
         if is_paddlefleet_available() and isinstance(model, PaddleFleetParallelBase):
             inputs = self._prepare_inputs(inputs)
