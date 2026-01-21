@@ -49,8 +49,10 @@ class Glm4vImageProcessorTest(unittest.TestCase):
             )
 
     def test_fast_image_processor_consistency_with_hf(self):
+        import torch
+
         # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
+        if not paddle.to_tensor([0]).place.is_gpu_place() or not torch.cuda.is_available():
             self.skipTest("No GPU currently available/allocated")
 
         with tempfile.TemporaryDirectory() as tempdir:
@@ -58,6 +60,9 @@ class Glm4vImageProcessorTest(unittest.TestCase):
             image_processor_pd.save_pretrained(tempdir)
 
             from transformers import AutoImageProcessor as AutoImageProcessor_hf
+
+            if torch.cuda.device_count() > 0:
+                torch.cuda.set_device(0)
 
             image_processor_hf = AutoImageProcessor_hf.from_pretrained(tempdir, device="cuda")
             inputs_pd = image_processor_pd(self.image, return_tensors="pd")
