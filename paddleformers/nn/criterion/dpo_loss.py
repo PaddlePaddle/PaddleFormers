@@ -71,10 +71,7 @@ def dpo_logps(
     bias = lm_head_bias
     if transpose_y is None:
         transpose_y = self.tie_word_embeddings
-    print("chosen_labels: ", chosen_labels)
-    print("rejected_labels: ", rejected_labels)
     labels = paddle.where(chosen_labels == -100, paddle.zeros_like(chosen_labels), chosen_labels) + rejected_labels
-    print("labels: ", labels)
 
     ignore_index = kwargs.pop("ignore_index", -100)  # default is -100
 
