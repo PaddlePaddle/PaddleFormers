@@ -25,7 +25,9 @@ from paddle.nn.clip import _squared_l2_norm
 from paddle.utils import unique_name
 
 try:
-    from src.utils.misc import global_training_logs
+    from paddleformers.cli.train.ernie_pretrain.src.utils.misc import (
+        global_training_logs,
+    )
 except ModuleNotFoundError:
     global_training_logs = {}
 
