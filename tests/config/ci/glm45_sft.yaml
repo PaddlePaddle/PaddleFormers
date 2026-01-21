@@ -92,8 +92,5 @@ pp_release_grads: true
 # tp
 tp_delay_scale_loss: true
 
-
-tensorwise_offload_optimizer: true
-skip_profile_timer: false
 num_empty_layers_add_in_head: 1
 
