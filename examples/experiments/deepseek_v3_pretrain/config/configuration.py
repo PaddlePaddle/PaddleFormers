@@ -166,7 +166,6 @@ class DeepseekV2FastConfig(PretrainedConfig):
         seq_length=32768,
         initializer_range=0.02,
         rms_norm_eps=1e-6,
-        fuse_rms_norm=True,
         use_cache=True,
         pad_token_id=None,
         bos_token_id=100000,
@@ -245,7 +244,6 @@ class DeepseekV2FastConfig(PretrainedConfig):
         self.hidden_act = hidden_act
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
-        self.fuse_rms_norm = fuse_rms_norm
         self.pretraining_tp = pretraining_tp
         self.use_cache = use_cache
         self.rope_theta = rope_theta
