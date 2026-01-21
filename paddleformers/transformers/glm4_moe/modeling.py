@@ -1014,21 +1014,21 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, fused_ffn"
                     for expert_id in range(config.n_routed_experts)
                 ]
-                if not using_sonic_moe:
-                    aoa_statements += (
-                        [
-                            f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.down_proj.weight"
-                            for expert_id in range(config.n_routed_experts)
-                        ]
-                        + [
-                            f"{prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.gate_proj.weight"
-                            for expert_id in range(config.n_routed_experts)
-                        ]
-                        + [
-                            f"{prefix_offset}.mlp.experts.{expert_id}.up_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.up_proj.weight"
-                            for expert_id in range(config.n_routed_experts)
-                        ]
-                    )
+            if not using_sonic_moe:
+                aoa_statements += (
+                    [
+                        f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.down_proj.weight"
+                        for expert_id in range(config.n_routed_experts)
+                    ]
+                    + [
+                        f"{prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.gate_proj.weight"
+                        for expert_id in range(config.n_routed_experts)
+                    ]
+                    + [
+                        f"{prefix_offset}.mlp.experts.{expert_id}.up_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.up_proj.weight"
+                        for expert_id in range(config.n_routed_experts)
+                    ]
+                )
 
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config
