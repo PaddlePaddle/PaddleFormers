@@ -28,7 +28,7 @@ CONFIG_PATH = "./examples/config/dpo"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
 
-MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe-bf16"
+MODEL_NAME_OR_PATH = "/home/models/PaddleFormers/tiny-random-glm4moe-bf16"
 TEMPLATE = "glm4_moe"
 MAX_STEPS = 2
 SAVE_STEPS = 2
