@@ -14,8 +14,10 @@
 
 
 import paddle
-from models.ernie.modeling_moe import ErnieDecoderLayer
 
+from paddleformers.cli.train.ernie_pretrain.models.ernie.modeling_moe import (
+    ErnieDecoderLayer,
+)
 from paddleformers.trainer.trainer_callback import TrainerCallback
 
 

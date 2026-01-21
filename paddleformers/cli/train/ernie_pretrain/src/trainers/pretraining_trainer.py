@@ -62,26 +62,38 @@ except ImportError:
     from paddleformers.utils.env import PADDLE_WEIGHTS_NAME
 
 import paddle.distributed as dist
-from models.sequence_parallel_utils import register_sequence_parallel_allreduce_hooks
-from models.utils import global_training_logs_enabled
 from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_optimizer import (
     HybridParallelOptimizer,
 )
-from src.callbacks import (
+
+from paddleformers.cli.train.ernie_pretrain.models.sequence_parallel_utils import (
+    register_sequence_parallel_allreduce_hooks,
+)
+from paddleformers.cli.train.ernie_pretrain.models.utils import (
+    global_training_logs_enabled,
+)
+from paddleformers.cli.train.ernie_pretrain.src.callbacks import (
     FP8QuantWeightCallback,
     GCCallback,
     LoggingCallback,
     SPGradSyncCallback,
     TensorBoardCallback,
 )
-from src.callbacks.moe_logging_callback import MoeLoggingCallback
-from src.clip import ClipGradForMOEByGlobalNorm
-from src.lr_schedulers import get_wsd_schedule_with_warmup
-from src.trainers.data_parallel import sync_dp_moe_params_across_sharding
-from src.utils.misc import global_training_logs
-from src.utils.training_utils import reset_per_device_batch_size
-
+from paddleformers.cli.train.ernie_pretrain.src.callbacks.moe_logging_callback import (
+    MoeLoggingCallback,
+)
+from paddleformers.cli.train.ernie_pretrain.src.clip import ClipGradForMOEByGlobalNorm
+from paddleformers.cli.train.ernie_pretrain.src.lr_schedulers import (
+    get_wsd_schedule_with_warmup,
+)
+from paddleformers.cli.train.ernie_pretrain.src.trainers.data_parallel import (
+    sync_dp_moe_params_across_sharding,
+)
+from paddleformers.cli.train.ernie_pretrain.src.utils.misc import global_training_logs
+from paddleformers.cli.train.ernie_pretrain.src.utils.training_utils import (
+    reset_per_device_batch_size,
+)
 from paddleformers.datasets import MapDataset
 from paddleformers.trainer.trainer_callback import PrinterCallback
 from paddleformers.trainer.trainer_utils import ShardingOption
@@ -99,7 +111,7 @@ def distributed_optimizer_maybe_overwrite(
     use_moe,
 ):
     if use_moe:
-        from src.trainers.dygraph_optimizer.hybrid_parallel_optimizer import (
+        from paddleformers.cli.train.ernie_pretrain.src.trainers.dygraph_optimizer.hybrid_parallel_optimizer import (
             HybridParallelOptimizer as MoEHybridParallelOptimizer,
         )
 
@@ -829,7 +841,9 @@ class PretrainingTrainer(Trainer):
             model = paddle.amp.decorate(models=model, level=self.args.fp16_opt_level, dtype=self.amp_dtype)
 
         if self.args.use_moe:
-            from src.trainers.data_parallel import DataParallel as MoEDDP
+            from paddleformers.cli.train.ernie_pretrain.src.trainers.data_parallel import (
+                DataParallel as MoEDDP,
+            )
 
             paddle.DataParallel = MoEDDP
 

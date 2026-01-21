@@ -12,7 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import importlib.metadata
+import importlib
+
+try:
+    from importlib import metadata
+except ImportError:
+    import importlib_metadata as metadata
 import unittest
 
 import numpy as np
@@ -69,7 +74,7 @@ def skip_if_version_not_equal(version="0.1.1", package_name="fast_dataindex"):
         importlib.import_module(package_name)
     except ImportError:
         return True, f"package<{package_name}> not found, so to skip this test"
-    package_version = importlib.metadata.version(package_name)
+    package_version = metadata.version(package_name)
     if package_version != version:
         return True, f"{package_name} version must be equal to {version}, but got {package_version}!"
     return False, f"{package_name} version is ok!"
