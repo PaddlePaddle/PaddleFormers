@@ -54,7 +54,7 @@ fuse_attention_ffn: true
 moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
 tensor_model_parallel_size: 4
-pipeline_model_parallel_size: 1
+pipeline_model_parallel_size: 2
 expert_model_parallel_size: 4
 use_expert_parallel: true
 sequence_parallel: true
@@ -95,4 +95,5 @@ tp_delay_scale_loss: true
 
 tensorwise_offload_optimizer: true
 skip_profile_timer: false
+num_empty_layers_add_in_head: 1
 
