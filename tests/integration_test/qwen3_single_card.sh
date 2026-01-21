@@ -21,7 +21,6 @@ fi
 export root_dir=$(pwd)
 
 config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_pt.yaml
-
 yq eval '
   .save_steps = 100 |
   .input_dir = "1.0 '"${CACHE_DIR}"'/glm45/data/pre-training/llama_openwebtext_100k" |

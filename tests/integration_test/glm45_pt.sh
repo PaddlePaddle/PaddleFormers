@@ -25,9 +25,9 @@ cd $root_dir/glm45_fleet
 export cur_dir=$(pwd)
 
 config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_pt.yaml
-
-yq eval '.train_dataset_path = strenv(cur_dir) + "/data/pre-training/train.jsonl"
-    | .eval_dataset_path = strenv(cur_dir) + "/data/pre-training/eval.jsonl"
+export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
+yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+    | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
     | .model_name_or_path = strenv(cur_dir) + "/GLM-4.5-Air"
     | .logging_dir = strenv(cur_dir) + "/vdl_log"
     | .output_dir = strenv(cur_dir) + "/checkpoints/pretrain"' \
