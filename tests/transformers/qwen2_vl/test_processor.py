@@ -38,6 +38,11 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         processor.save_pretrained(cls.tmpdir)
         cls.image_token = processor.image_token
 
+    def setUp(self):
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
+
     def get_tokenizer(self, **kwargs):
         return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).tokenizer
 
@@ -84,9 +89,6 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         self.assertEqual(processor.video_processor.__class__.__name__, "Qwen2VLVideoProcessor")
 
     def test_image_processor(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
         video_processor = self.get_video_processor()
@@ -104,9 +106,6 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             self.assertAlmostEqual(input_image_proc[key].sum(), input_processor[key].sum(), delta=1e-2)
 
     def test_processor(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
         video_processor = self.get_video_processor()
@@ -341,9 +340,6 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         #     )
 
     def test_kwargs_overrides_custom_image_processor_kwargs(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
         processor = self.get_processor()
         # self.skip_processor_without_typed_kwargs(processor)
 

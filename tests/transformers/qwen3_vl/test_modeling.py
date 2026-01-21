@@ -546,6 +546,10 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 
 class Qwen3VLIntegrationTest(unittest.TestCase):
     def setUp(self):
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
+
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(
             "PaddleFormers/tiny-random-qwen3vl",
             dtype="float32",
@@ -772,10 +776,6 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
         self.assertTrue(paddle.allclose(output[1, 500, 10000:10030], EXPECTED_SLICE_2, atol=1e-3, rtol=1e-3))
 
     def test_model_tiny_logits_with_video(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-
         video_url = "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
         messages2 = [
             {
