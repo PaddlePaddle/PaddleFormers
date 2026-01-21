@@ -20,6 +20,8 @@ import paddle
 
 from paddleformers.transformers import AutoImageProcessor
 
+from ..utils.log import logger
+
 
 class Glm4vImageProcessorTest(unittest.TestCase):
     @classmethod
@@ -67,6 +69,9 @@ class Glm4vImageProcessorTest(unittest.TestCase):
             image_processor_hf = AutoImageProcessor_hf.from_pretrained(tempdir, device="cuda:1")
             inputs_pd = image_processor_pd(self.image, return_tensors="pd")
             inputs_hf = image_processor_hf(self.image, return_tensors="pt")
+
+            logger.info(paddle.to_tensor(inputs_hf["pixel_values"].cpu().numpy()))
+            logger.info(inputs_pd["pixel_values"])
 
             self.assertTrue(
                 paddle.to_tensor(inputs_hf["pixel_values"].cpu().numpy())._md5sum()
