@@ -17,11 +17,13 @@ import paddle.nn as nn
 from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     mark_as_sequence_parallel_parameter,
 )
-from paddle.incubate.nn.functional import fused_rms_norm_ext
 
-from ..cli.utils.process import detect_device
+# from ..cli.utils.process import detect_device
 from ..generation.configuration_utils import PretrainedConfig
 from .general import GeneralInterface
+
+# from paddle.incubate.nn.functional import fused_rms_norm_ext
+
 
 __all__ = ["Norm"]
 
@@ -66,9 +68,9 @@ class RMSNorm(nn.Layer):
             self.enable_sequence_parallel()
 
     def forward(self, hidden_states):
-        current_device = detect_device()
-        if self.config.get("fuse_rms_norm", False) and current_device != "iluvatar_gpu":
-            return fused_rms_norm_ext(hidden_states, self.weight, self.variance_epsilon)[0].astype(self.weight.dtype)
+        # current_device = detect_device()
+        # if self.config.get("fuse_rms_norm", False) and current_device != "iluvatar_gpu":
+        #     return fused_rms_norm_ext(hidden_states, self.weight, self.variance_epsilon)[0].astype(self.weight.dtype)
 
         if paddle.in_dynamic_mode():
             with paddle.amp.auto_cast(False):
