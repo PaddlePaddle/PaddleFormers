@@ -310,7 +310,7 @@ class Qwen2MoeSparseMoeBlock(nn.Layer):
         self.top_k = config.num_experts_per_tok
         self.norm_topk_prob = config.norm_topk_prob
         self.sequence_parallel = config.sequence_parallel
-        self.fd_fallback = config.fd_fallback
+        self.fd_fallback = config.get("fd_fallback", False)
         if self.sequence_parallel and config.tensor_model_parallel_size > 1:
             config = copy.deepcopy(config)
             config.sequence_parallel = False
@@ -622,7 +622,7 @@ class Qwen2MoePretrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
             ]
 
-        if config.fd_fallback:
+        if config.get("fd_fallback", False):
             if not config.fuse_attention_ffn:
                 aoa_config["aoa_statements"] += [
                     f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
@@ -692,7 +692,7 @@ class Qwen2MoePretrainedModel(PretrainedModel):
                 ]
 
         if not config.fuse_attention_ffn:
-            if config.fd_fallback:
+            if config.get("fd_fallback", False):
                 for layer_id in range(config.num_hidden_layers):
                     ep_weight1 = []
                     ep_weight2 = []
@@ -719,7 +719,7 @@ class Qwen2MoePretrainedModel(PretrainedModel):
                 for y in ("gate", "up")
             ]
         else:
-            if config.fd_fallback:
+            if config.get("fd_fallback", False):
                 for layer_id in range(config.num_hidden_layers):
                     ep_weight1 = []
                     ep_weight2 = []
