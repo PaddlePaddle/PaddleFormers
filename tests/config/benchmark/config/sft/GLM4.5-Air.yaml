@@ -94,9 +94,6 @@ save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
 continue_training: true
 
-fuse_attention_qkv: true
-fuse_attention_ffn: true
-
 tensorwise_offload_optimizer: true
 
 benchmark: true

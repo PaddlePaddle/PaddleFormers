@@ -91,7 +91,6 @@ class Qwen2Attention(nn.Layer):
         assert config.num_attention_heads // config.num_key_value_heads
 
         self.sequence_parallel = config.sequence_parallel
-        self.fuse_attention_qkv = config.fuse_attention_qkv
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
         if config.tensor_model_parallel_size > 1:
@@ -108,7 +107,7 @@ class Qwen2Attention(nn.Layer):
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.config.num_attention_heads * self.head_dim
 
-        if not self.fuse_attention_qkv:
+        if not True:
             self.q_proj = GeneralLinear.create(
                 config.hidden_size,
                 q_hidden_size,
@@ -160,7 +159,7 @@ class Qwen2Attention(nn.Layer):
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         """Input shape: Batch x Time x Channel"""
-        if not self.fuse_attention_qkv:
+        if not True:
             # [bs, seq_len, num_head * head_dim] -> [seq_len / n, bs, num_head * head_dim] (n is model parallelism)
             query_states = self.q_proj(hidden_states)
             key_states = self.k_proj(hidden_states)
@@ -240,7 +239,7 @@ class Qwen2DecoderLayer(nn.Layer):
 
         self.self_attn = Qwen2Attention(config, layer_idx)
 
-        self.mlp = Qwen2MLP(config, fuse_up_gate=config.fuse_attention_ffn)
+        self.mlp = Qwen2MLP(config, fuse_up_gate=True)
         self.input_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
@@ -319,7 +318,7 @@ class Qwen2PretrainedModel(PretrainedModel):
         }
 
         # attention qkv
-        if not config.fuse_attention_qkv:
+        if not True:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
@@ -337,7 +336,7 @@ class Qwen2PretrainedModel(PretrainedModel):
             ]
 
         # FFN
-        if not config.fuse_attention_ffn:
+        if not True:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight"
                 for p in ("gate", "up")
@@ -365,7 +364,7 @@ class Qwen2PretrainedModel(PretrainedModel):
             f"{model_prefix}norm.weight -> model.norm.weight",
         ]
 
-        if not config.fuse_attention_qkv:
+        if not True:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
@@ -387,7 +386,7 @@ class Qwen2PretrainedModel(PretrainedModel):
                 f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
             ]
 
-        if not config.fuse_attention_ffn:
+        if not True:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.mlp.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{y}_proj.weight"
                 for y in ("gate", "up")

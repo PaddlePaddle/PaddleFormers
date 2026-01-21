@@ -66,8 +66,6 @@ optim: adamw
 bf16: true
 fp16_opt_level: O2
 amp_master_grad: true
-fuse_attention_qkv: true
-fuse_attention_ffn: true
 fuse_swiglu: true
 fuse_rms_norm: true
 fuse_linear: true

@@ -66,8 +66,6 @@ num_hidden_layers: 3
 apply_rope_fusion: true
 moe_router_fusion: true
 router_aux_loss_coef: 0.001
-fuse_attention_qkv: true
-fuse_attention_ffn: true
 
 # grouped gemm
 moe_grouped_gemm: true

@@ -42,8 +42,6 @@ warmup_steps: 20
 learning_rate: 1.0e-4
 
 # performance
-fuse_attention_qkv: true
-fuse_attention_ffn: true
 moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
 tensor_model_parallel_size: 4

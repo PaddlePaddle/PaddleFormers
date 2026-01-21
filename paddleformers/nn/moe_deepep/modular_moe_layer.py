@@ -69,7 +69,8 @@ class ModularMoELayer(nn.Layer):
         self.sequence_parallel = pretrained_config.get("sequence_parallel", False)
         self.tensor_model_parallel_size = pretrained_config.get("tensor_model_parallel_size", 1)
         self.seq_length = pretrained_config.get("seq_length", pretrained_config.get("max_seq_len", 1024))
-        self.fuse_up_gate = pretrained_config.get("fuse_attention_ffn", False)
+        # watch out!!!
+        self.fuse_up_gate = True
         self.ep_communication_type = pretrained_config.get("ep_communication_type", "deepep")
         self.n_group = pretrained_config.get("n_group", 1)
         self.topk_group = pretrained_config.get("topk_group", 1)
