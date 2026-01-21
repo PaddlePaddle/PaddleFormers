@@ -31,6 +31,7 @@ yq eval '.expert_model_parallel_size = 1
     | .num_hidden_layers = 2
     | .per_device_train_batch_size = 1
     | .use_expert_parallel = false
+    | .stage1_overlap = false
     | .train_dataset_path = strenv(data_dir) + "/train.jsonl"
     | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
     | .model_name_or_path = strenv(cur_dir) + "/GLM-4.5-Air"
