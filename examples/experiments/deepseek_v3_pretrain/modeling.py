@@ -103,7 +103,7 @@ from paddleformers.utils.masking_utils import (
 )
 
 try:
-    from paddle.incubate.nn.functional import swiglu
+    from paddle.nn.functional import swiglu
 except ImportError:
 
     def swiglu(x, y=None):
