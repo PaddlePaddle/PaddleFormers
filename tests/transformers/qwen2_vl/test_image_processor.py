@@ -19,8 +19,7 @@ import unittest
 import paddle
 
 from paddleformers.transformers import AutoImageProcessor
-
-from ..utils.log import logger
+from paddleformers.utils.log import logger
 
 
 class Qwen2VLImageProcessorTest(unittest.TestCase):
