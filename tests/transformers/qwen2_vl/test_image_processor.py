@@ -62,9 +62,9 @@ class Qwen2VLImageProcessorTest(unittest.TestCase):
             from transformers import AutoImageProcessor as AutoImageProcessor_hf
 
             if torch.cuda.device_count() > 0:
-                torch.cuda.set_device(0)
+                torch.cuda.set_device(1)
 
-            image_processor_hf = AutoImageProcessor_hf.from_pretrained(tempdir, device="cuda")
+            image_processor_hf = AutoImageProcessor_hf.from_pretrained(tempdir, device="cuda:1")
             inputs_pd = image_processor_pd(self.image, return_tensors="pd")
             inputs_hf = image_processor_hf(self.image, return_tensors="pt")
 
