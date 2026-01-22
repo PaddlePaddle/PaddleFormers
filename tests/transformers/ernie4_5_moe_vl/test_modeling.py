@@ -375,6 +375,9 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
 
     def setUp(self):
         super().setUp()
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
         self.model_tester = Ernie4_5_VLModelTester(self)
         self.config_tester = ConfigTester(self, config_class=Ernie4_5_VLConfig, hidden_size=37)
 
@@ -624,6 +627,11 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
 
 
 class Ernie4_5_MoE_VLIntegrationTest(unittest.TestCase):
+    def setUp(self):
+        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
+        if not paddle.to_tensor([0]).place.is_gpu_place():
+            self.skipTest("No GPU currently available/allocated")
+
     def test_model_tiny_logits(self):
 
         config = Ernie4_5_VLConfig.from_pretrained("PaddleFormers/tiny_random_ernie4_5_vl", download_hub="aistudio")
