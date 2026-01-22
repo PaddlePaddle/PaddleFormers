@@ -44,6 +44,7 @@ jobs:
         with:
           python-version: '3.10'
       - name: git diff and check
+        id: check_files
         run: |
           changed_files=$(git diff origin/${{ github.event.pull_request.base.ref }}...HEAD --name-only)
           echo "Changed files: $changed_files"
