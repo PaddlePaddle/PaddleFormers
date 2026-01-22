@@ -31,6 +31,7 @@ class TestQwenVisionProcessing(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
+        # Initialize device when GPU is needed by certain test case
         gpu_count = paddle.device.cuda.device_count()
         pid = os.getpid()
 
@@ -38,6 +39,7 @@ class TestQwenVisionProcessing(unittest.TestCase):
             paddle.set_device(f"gpu:{pid % gpu_count}")
         else:
             paddle.set_device("cpu")
+            self.skipTest("No GPU currently available/allocated")
         logger.info(f"TestQwenVisionProcessing [PID:{pid}] Device initialized: {paddle.get_device()}")
 
         # Create test image
