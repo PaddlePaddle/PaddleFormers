@@ -587,7 +587,7 @@ class Qwen3VLMoeIntegrationTest(unittest.TestCase):
         pid = os.getpid()
 
         if gpu_count > 0:
-            paddle.set_device(f"gpu:{pid % gpu_count}")
+            paddle.set_device("gpu")
         else:
             paddle.set_device("cpu")
             self.skipTest("No GPU currently available/allocated")
