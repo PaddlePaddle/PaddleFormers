@@ -32,7 +32,7 @@ tar -xf thinksafe_vl_data.tar
 ```
 
 ### 模型准备
-若本地缓存目录下没有模型，PaddleFormers会自动下载模型。默认从 HuggingFace 下载模型，可以按以下方式修改下载源：
+若本地缓存目录下没有模型，PaddleFormers 会自动下载模型。默认从 HuggingFace 下载模型，可以按以下方式修改下载源：
 ```
 # 指定下载源为 HuggingFace
 export DOWNLOAD_SOURCE=huggingface
@@ -54,10 +54,10 @@ export DOWNLOAD_SOURCE=aistudio
 ### 启动命令
 ```
 # SFT-FULL训练需要8 * 80G GPU
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train examples/best_practices/Ernie4.5VL/ernie45vl_8k_config.yaml 
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train examples/best_practices/Ernie4.5VL/ernie45vl_8k_config.yaml
 
 # SFT-LoRA训练需要4 * 80G GPU
-CUDA_VISIBLE_DEVICES=0,1,2,3 paddleformers-cli train examples/best_practices/Ernie4.5VL/ernie45vl_8k_lora_config.yaml 
+CUDA_VISIBLE_DEVICES=0,1,2,3 paddleformers-cli train examples/best_practices/Ernie4.5VL/ernie45vl_8k_lora_config.yaml
 ```
 
 ## 超参配置
@@ -67,13 +67,13 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 paddleformers-cli train examples/best_practices/Ern
 | `train_dataset_path` | 训练数据路径。 |
 | `train_dataset_prob` | 各个训练数据集的采样概率。 |
 | `max_seq_len` | 最大序列长度。 |
-| `packing` | 开启后会将多条短数据拼接为单条长数据，从而减少无效token数。开启后可适当减小`gradient_accumulation_steps`。 |
+| `packing` | 开启后会将多条短数据拼接为单条长数据，从而减少无效 token 数。开启后可适当减小`gradient_accumulation_steps`。 |
 | `random_shuffle` | 是否随机打乱数据集内数据顺序。 |
 
 ### 训练超参
 | 参数名 | 说明 |
 |--------|------|
-| `per_device_train_batch_size` | 每张卡的batch size大小，目前仅支持`1`。 |
+| `per_device_train_batch_size` | 每张卡的 batch size 大小，目前仅支持`1`。 |
 | `num_train_epochs` | 训练的总轮数。 |
 | `max_steps` | 训练的总步数。设置为`-1`时，会自动根据`num_train_epochs`估算（此过程在数据集较大时耗时较长）；设置值大于`0`时，`num_train_epochs`将不生效。 |
 | `save_steps` | 保存中间检查点的间隔步数。 |

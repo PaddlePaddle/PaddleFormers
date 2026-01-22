@@ -19,13 +19,8 @@ export DOWNLOAD_SOURCE=aistudio
 
 训练前请先准备数据集，参考：
 
-中文：
-- [数据集格式说明及 demo 数据下载](../docs/zh/datasets_format_zh.md)
-- [数据流参数说明](../docs/zh/datasets_zh.md)
-
-英文：
-- [Dataset format description and demo data download](../docs/en/datasets_format.md)
-- [Description of dataset parameters](../docs/en/datasets.md)
+- [数据集格式说明及 demo 数据下载](../docs/zh/dataset_format.md)
+- [数据流参数说明](../docs/zh/data_processing_guide.md)
 
 ## 1. 预训练
 
