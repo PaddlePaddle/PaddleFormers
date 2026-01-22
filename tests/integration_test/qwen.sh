@@ -24,37 +24,6 @@ if [[ ! -d $CACHE_DIR/Qwen3-30B-A3B ]]; then
     popd
 fi
 
-if [[ "$step" == "pt" ]]; then
-    pushd $root_dir/PaddleFormers
-    git reset --hard HEAD
-    popd
-    python <<EOF
-infile = '$root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py'
-print(infile)
-outfile = infile + '.new'
-with open(infile) as fin:
-    lines = fin.readlines()
-with open(outfile, 'w') as fout:
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        next_line = lines[i+1] if i+1 < len(lines) else ''
-        pad = line[:len(line)-len(line.lstrip())]
-        if line.lstrip().startswith('class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel)') and next_line.strip().startswith('is_fleet'):
-            fout.write(pad + 'class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel)' + line.lstrip()[len('class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel)'):])
-        elif line.lstrip().startswith('class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel)') and next_line.strip().startswith('enable_to_static_method'):
-            fout.write(pad + 'class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel)' + line.lstrip()[len('class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel)'):])
-        elif line.lstrip().startswith('class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel') and next_line.strip().startswith('is_fleet'):
-            fout.write(pad + 'class Qwen3MoeForCausalLMPipe(Qwen3MoePretrainedModel' + line.lstrip()[len('class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel'):])
-        elif line.lstrip().startswith('class Qwen3MoeForCausalLMPipe(GeneralModelForCausalLMPipe)') and next_line.strip().startswith('config_class'):
-            fout.write(pad + 'class Qwen3MoeForCausalLMPipeFleet(GeneralModelForCausalLMPipe)' + line.lstrip()[len('class Qwen3MoeForCausalLMPipe(GeneralModelForCausalLMPipe)'):])
-        else:
-            fout.write(line)
-        i += 1
-EOF
-    mv $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py
-fi
-
 if [ -f 'PaddleFleet/.venv/bin/activate' ]; then
    source PaddleFleet/.venv/bin/activate
 fi

@@ -1,4 +1,5 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright 2025 The ZhipuAI Inc. team and HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +13,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .workflow import run_dsv3_pretrain
+import sys
+from typing import TYPE_CHECKING
 
-__all__ = ["run_dsv3_pretrain"]
+from ...utils.lazy_import import _LazyModule
+
+import_structure = {
+    "image_processor": ["Glm4vImageProcessor"],
+    "image_processor_fast": ["Glm4vImageProcessorFast"],
+}
+
+if TYPE_CHECKING:
+    from .image_processor import *
+    from .image_processor_fast import *
+
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

@@ -270,7 +270,7 @@ class LlmMetaConfig:
             None,
             "Recompute granularity, Choose among ['full', 'core_attn', 'full_attn']",
         ),
-        ("recompute_method", str, None, "Determines which transformer layers will be recomputed."),
+        ("recompute_method", Optional[str], None, "Determines which transformer layers will be recomputed."),
         (
             "recompute_num_layers",
             Optional[int],
@@ -442,15 +442,15 @@ class LlmMetaConfig:
     ]
 
     model_conf = [
-        ("num_hidden_layers", int, None, "Number of hidden layers in the model."),
-        ("num_attention_heads", int, None, "Number of attention heads in the model."),
-        ("num_key_value_heads", int, None, "Number of key/value heads in the model (for GQA/MQA)."),
-        ("num_experts_per_tok", int, None, "Number of experts to activate per token (for MoE models)."),
-        ("hidden_size", int, None, "Hidden size/dimension of the model."),
-        ("intermediate_size", int, None, "Intermediate size in the feed-forward network."),
-        ("n_routed_experts", int, None, "Number of routed experts in the model (for MoE models)."),
-        ("use_qk_norm", bool, None, "Whether to use query/key normalization."),
-        ("tie_word_embeddings", bool, None, "Whether to tie input and output embeddings."),
+        ("num_hidden_layers", Optional[int], None, "Number of hidden layers in the model."),
+        ("num_attention_heads", Optional[int], None, "Number of attention heads in the model."),
+        ("num_key_value_heads", Optional[int], None, "Number of key/value heads in the model (for GQA/MQA)."),
+        ("num_experts_per_tok", Optional[int], None, "Number of experts to activate per token (for MoE models)."),
+        ("hidden_size", Optional[int], None, "Hidden size/dimension of the model."),
+        ("intermediate_size", Optional[int], None, "Intermediate size in the feed-forward network."),
+        ("n_routed_experts", Optional[int], None, "Number of routed experts in the model (for MoE models)."),
+        ("use_qk_norm", Optional[bool], None, "Whether to use query/key normalization."),
+        ("tie_word_embeddings", Optional[bool], None, "Whether to tie input and output embeddings."),
     ]
 
     model_attributes = [

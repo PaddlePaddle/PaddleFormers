@@ -16,10 +16,12 @@ import logging
 
 import paddle
 import paddle.distributed as dist
-from models.ernie.modeling_moe import ErnieDecoderLayer
-from models.moe.moe_layer import MOELayer
 from paddle.distributed.fleet import fleet
 
+from paddleformers.cli.train.ernie_pretrain.models.ernie.modeling_moe import (
+    ErnieDecoderLayer,
+)
+from paddleformers.cli.train.ernie_pretrain.models.moe.moe_layer import MOELayer
 from paddleformers.trainer.trainer_callback import TrainerCallback
 
 logger = logging.getLogger(__name__)

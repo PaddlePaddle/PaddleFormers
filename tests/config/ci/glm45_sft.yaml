@@ -6,8 +6,12 @@ train_dataset_prob: "1.0"
 eval_dataset_path: ./data/sft/dev.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
-packing: false
+packing: true
+truncate_packing: true
 mix_strategy: concat
+dataloader_shuffle: false
+dataloader_num_workers: 24
+prefetch_factor: 24
 
 ### model
 model_name_or_path: ./zai-org/GLM-4.5-Air
@@ -37,6 +41,9 @@ output_dir: ./checkpoints/glm_full_pp_ckpts
 disable_tqdm: true
 eval_accumulation_steps: 16
 
+# args
+router_aux_loss_coef: 0.0001
+
 # train
 warmup_steps: 20
 learning_rate: 1.0e-4
@@ -47,15 +54,18 @@ fuse_attention_ffn: true
 moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
 tensor_model_parallel_size: 4
-pipeline_model_parallel_size: 1
+pipeline_model_parallel_size: 2
 expert_model_parallel_size: 4
 use_expert_parallel: true
 sequence_parallel: true
 moe_group: mp
 sharding: stage1
+stage1_overlap: true
 amp_master_grad: true
-recompute: false
-recompute_granularity: ""
+# performance
+recompute_granularity: full
+recompute_method: block
+recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
 save_to_hf: true
@@ -63,5 +73,24 @@ save_to_hf: true
 load_checkpoint_format: flex_checkpoint
 save_checkpoint_format: flex_checkpoint
 
+
+
 moe_router_force_load_balancing: true
 split_param: true
+apply_rope_fusion: true
+fuse_rms_norm: true
+fp32_residual_connection: false
+
+
+# pp
+pp_delay_scale_loss: true
+overlap_p2p_comm: true
+variable_seq_lengths: true
+best_unbalanced_scheduler: true
+pp_release_grads: true
+
+# tp
+tp_delay_scale_loss: true
+
+num_empty_layers_add_in_head: 1
+

@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,17 +19,6 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import paddle
-
-try:
-    from config.configuration import DeepseekV2FastConfig
-    from load_hf_ckpt import load_huggingface_ckpt
-    from modeling_pp import DeepseekV2ForCausalLMPipe
-    from moe_utils import get_env_device
-except:
-    DeepseekV2FastConfig = None
-    load_huggingface_ckpt = None
-    DeepseekV2ForCausalLMPipe = None
-    get_env_device = None
 
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
@@ -56,6 +45,11 @@ from paddleformers.transformers.configuration_utils import LlmMetaConfig, llmmet
 from paddleformers.transformers.deepseek_v3 import DeepseekV3ForCausalLM
 from paddleformers.utils.batch_sampler import DistributedBatchSampler
 from paddleformers.utils.log import logger
+
+from .configuration import DeepseekV2FastConfig
+from .modeling_pp import DeepseekV2ForCausalLMPipe
+from .moe_utils import get_env_device
+from .utils.load_hf_ckpt import load_huggingface_ckpt
 
 # Pretaining Environment Variables to support sharding stage1 overlap optimization.
 os.environ["USE_CASUAL_MASK"] = "True"
@@ -175,10 +169,6 @@ class ModelArguments:
         metadata={
             "help": "Pre-training from existing paddleformers model weights. Default False and model will train from scratch. If set True, the model_name_or_path argument must exist in the paddleformers models."
         },
-    )
-    num_hidden_layers: Optional[int] = field(
-        default=None,
-        metadata={"help": "num_hidden_layers."},
     )
 
 
@@ -418,9 +408,6 @@ def run_dsv3_pretrain(model_args, data_args, generating_args, training_args):
         config.vocab_size = max(config.vocab_size, ((tokenizer.vocab_size - 1) // 128 + 1) * 128)
         logger.info(f"Reset vocab size to {config.vocab_size} for batter amp peformance.")
 
-    config.num_hidden_layers = (
-        model_args.num_hidden_layers if model_args.num_hidden_layers is not None else config.num_hidden_layers
-    )
     # Config for model using dropout, such as GPT.
     if hasattr(config, "use_dualpipev"):
         # NOTE(zhangyuqin): In Paddle, the segmentation and scheduling of pipeline parallel

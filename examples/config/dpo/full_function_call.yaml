@@ -43,6 +43,8 @@ eval_accumulation_steps: 16
 # train
 warmup_steps: 20
 learning_rate: 1.0e-6
+loss_type: sigmoid  # choices: [sigmoid (dpo), hinge, simpo, ipo, dpop, kto_pair, sppo_hard, nca_pair, or, orpo]
+reference_free: false  # True only supports loss types of or, orpo, simpo, sigmoid, hinge, and ipo. When loss_type is or, orpo and simpo, automatically set to True.
 
 # performance
 tensor_model_parallel_size: 1

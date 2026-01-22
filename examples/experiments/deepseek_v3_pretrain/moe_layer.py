@@ -50,9 +50,9 @@ except ImportError:
     deep_ep = None
 
 try:
-    import TokenDispatcherUtils as TDU
+    import paddlefleet as paddlefleet
 except ImportError:
-    TDU = None
+    paddlefleet = None
 
 
 def record_stream_for_multi_input(x):
@@ -937,7 +937,7 @@ class FusionMlpNode:
                 assert (
                     self.experts_group_gemm_node.recompute_fwd_gate_up
                 ), "recompute_fwd_gate_up must be true when use_mlp_subbatch = True"
-                map_unzipped_indices_to_zipped = TDU.tokens_unzip_slice(
+                map_unzipped_indices_to_zipped = paddlefleet.extensions.ops.tokens_unzip_slice(
                     extract_first_if_tuple(hs_2d_dispatched),
                     zipped_expertwise_rowmap,
                     num_experts,
@@ -1051,7 +1051,7 @@ class FusionMlpNode:
         padding_token_per_experts = [(x + 127) // 128 * 128 for x in self.tokens_per_expert]
 
         if self.mlp_bwd_subbatch_rows != 0 and total_unzipped_tokens > self.mlp_bwd_subbatch_rows * 2:
-            map_unzipped_indices_to_zipped = TDU.tokens_unzip_slice(
+            map_unzipped_indices_to_zipped = paddlefleet.extensions.ops.tokens_unzip_slice(
                 extract_first_if_tuple(hidden_states_out_grad),
                 self.unzip_node.zipped_expertwise_rowmap,
                 num_experts,
@@ -1095,7 +1095,7 @@ class FusionMlpNode:
             else:
                 unzipped_grad._clear_to_zero_allocation()
             hs_dispatched_grad = merge_subbatch_cast(output, paddle.bfloat16)
-            dispatched_probs_grad = TDU.tokens_zip_prob_seq_subbatch(
+            dispatched_probs_grad = paddlefleet.extensions.ops.tokens_zip_prob_seq_subbatch(
                 probs_grad_list, self.unzip_node.zipped_expertwise_rowmap, self.dispatched_indices, subbatch_rows
             )
             self.reset_statue()

@@ -14,12 +14,14 @@
 
 import logging
 
-from models.sequence_parallel_utils import is_sequence_parallel_parameter
 from paddle.distributed.fleet import fleet
 from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     fused_allreduce_gradients_with_group,
 )
 
+from paddleformers.cli.train.ernie_pretrain.models.sequence_parallel_utils import (
+    is_sequence_parallel_parameter,
+)
 from paddleformers.trainer.trainer_callback import TrainerCallback
 
 logger = logging.getLogger(__name__)

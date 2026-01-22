@@ -13,6 +13,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Check if PR description contains dev PR link
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
@@ -25,6 +26,8 @@ jobs:
           echo "Dev PR link found"
 
       - name: Check the referenced PR is merged into dev
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           DEV_PR=$(echo "${{ github.event.pull_request.body }}" | grep -Eo "#[0-9]+" | head -1 | tr -d "#")
           echo "Found dev PR: $DEV_PR"
