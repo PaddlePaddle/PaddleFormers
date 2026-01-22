@@ -71,6 +71,7 @@ PADDLEFORMERS_TESTING = os.environ.get("PADDLEFORMERS_TESTING", False)
 if "torch" not in sys.modules and not PADDLEFORMERS_TESTING:
     sys.modules["torch"] = None
     sys.modules["torchvision"] = None
+    sys.modules["torchcodec"] = None
     import transformers  # qa
 
     del sys.modules["torch"]
@@ -78,7 +79,7 @@ else:
     import transformers  # qa
 
 logger.warning(
-    """Due to potential compatibility issues between PaddlePaddle and PyTorch in PaddleFormers, PaddleFormers defaults `transformers.utils.import_utils.is_torch_available` and `transformers.utils.import_utils.is_torchvision_available` to False. If you need to use PyTorch in transformers or torchvision, please add `del sys.modules['transformers']` before using them."""
+    """Due to potential compatibility issues between PaddlePaddle and PyTorch in PaddleFormers, PaddleFormers defaults `transformers.utils.import_utils.is_torch_available`, `transformers.utils.import_utils.is_torchvision_available` and `transformers.utils.import_utils.is_torchcodec_available` to False. If you need to use PyTorch, torchvision or torcodec in transformers, please add `del sys.modules['transformers']` before using them."""
 )
 
 if "datasets" in sys.modules.keys():
