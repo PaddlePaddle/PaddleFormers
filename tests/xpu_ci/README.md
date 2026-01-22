@@ -128,16 +128,16 @@ Return Code: 0
    ```python
    import pytest
    from conftest import run_command_and_validate
-   
+
    def test_your_model(project_root, base_value_dir, log_file):
        """Test description.
-       
+
        This test runs the following shell command:
            <写清楚你要执行的完整命令>
        """
        # 直接写你要执行的 shell 命令
        cmd = "paddleformers-cli train tests/xpu_ci/config/your_config.yaml"
-       
+
        passed, error_msg = run_command_and_validate(
            cmd=cmd,
            baseline_path=base_value_dir / "your_model_loss.json",
@@ -146,25 +146,25 @@ Return Code: 0
            tolerance=1e-6,
            timeout=3600
        )
-       
+
        if not passed:
            pytest.fail(error_msg)
    ```
 
 3. **生成基准值**
-   
+
    首先运行一次训练，获取 loss 值：
    ```bash
    # 手动运行你的命令
    cd /paddle/sjx_cuda12.6_py310/formers_test/PaddleFormers
    paddleformers-cli train tests/xpu_ci/config/your_config.yaml | tee output.log
-   
+
    # 提取 loss 值
    grep "loss:" output.log
    ```
 
 4. **创建基准文件**
-   
+
    在 `base_value/` 目录创建 `your_model_loss.json`：
    ```json
    {
@@ -185,7 +185,7 @@ Return Code: 0
 ```python
 def test_llama_training(project_root, base_value_dir, log_file):
     cmd = "paddleformers-cli train tests/xpu_ci/config/llama_7b.yaml"
-    
+
     passed, error_msg = run_command_and_validate(
         cmd=cmd,
         baseline_path=base_value_dir / "llama_7b_loss.json",
@@ -194,7 +194,7 @@ def test_llama_training(project_root, base_value_dir, log_file):
         tolerance=1e-6,
         timeout=3600
     )
-    
+
     if not passed:
         pytest.fail(error_msg)
 ```
@@ -203,7 +203,7 @@ def test_llama_training(project_root, base_value_dir, log_file):
 ```python
 def test_custom_script(project_root, base_value_dir, log_file):
     cmd = "python scripts/train_custom.py --epochs 10 --lr 1e-5"
-    
+
     passed, error_msg = run_command_and_validate(
         cmd=cmd,
         baseline_path=base_value_dir / "custom_script_loss.json",
@@ -212,7 +212,7 @@ def test_custom_script(project_root, base_value_dir, log_file):
         tolerance=1e-5,
         timeout=7200
     )
-    
+
     if not passed:
         pytest.fail(error_msg)
 ```
@@ -221,7 +221,7 @@ def test_custom_script(project_root, base_value_dir, log_file):
 ```python
 def test_with_env_vars(project_root, base_value_dir, log_file):
     cmd = "CUDA_VISIBLE_DEVICES=0,1,2,3 XPU_VISIBLE_DEVICES=0,1 paddleformers-cli train config.yaml"
-    
+
     passed, error_msg = run_command_and_validate(
         cmd=cmd,
         baseline_path=base_value_dir / "multi_device_loss.json",
@@ -230,7 +230,7 @@ def test_with_env_vars(project_root, base_value_dir, log_file):
         tolerance=1e-6,
         timeout=3600
     )
-    
+
     if not passed:
         pytest.fail(error_msg)
 ```
@@ -243,7 +243,7 @@ def test_with_preprocessing(project_root, base_value_dir, log_file):
     python preprocess.py --input $DATA_DIR --output /tmp/processed && \
     paddleformers-cli train tests/xpu_ci/config/model.yaml --data /tmp/processed
     """
-    
+
     passed, error_msg = run_command_and_validate(
         cmd=cmd,
         baseline_path=base_value_dir / "with_preprocessing_loss.json",
@@ -252,7 +252,7 @@ def test_with_preprocessing(project_root, base_value_dir, log_file):
         tolerance=1e-6,
         timeout=3600
     )
-    
+
     if not passed:
         pytest.fail(error_msg)
 ```
