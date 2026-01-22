@@ -52,6 +52,7 @@ import_structure = {
     "processing_utils": ["ProcessorMixin"],
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
     "image_processing_utils": ["PaddleImageProcessingMixin", "ImageProcessingMixin", "BaseImageProcessor"],
+    "image_processing_utils_fast": ["BaseImageProcessorFast"],
     "video_processing_utils": ["BaseVideoProcessor"],
     "moe_gate": ["PretrainedMoEGate", "MoEGateMixin"],
     "token_dispatcher": ["_DispatchManager"],
@@ -222,6 +223,7 @@ import_structure = {
         "Qwen2MoePretrainingCriterion",
     ],
     "qwen2_vl.image_processor": ["Qwen2VLImageProcessor"],
+    "qwen2_vl.image_processor_fast": ["Qwen2VLImageProcessorFast"],
     "qwen2_vl.processor": ["Qwen2VLProcessor"],
     "qwen2_vl.video_processor": ["Qwen2VLVideoProcessor"],
     "qwen2_vl.vision_process": ["process_vision_info"],
@@ -270,6 +272,8 @@ import_structure = {
     "qwen3_next": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDecapitated"],
+    "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
+    "glm4v_moe.image_processor_fast": ["Glm4vImageProcessorFast"],
     "auto": ["AutoModelForCausalLM"],
     "legacy.tokenizer_utils_base": ["EncodingFast"],
     "legacy": [],
@@ -297,6 +301,7 @@ if TYPE_CHECKING:
     from .processing_utils import ProcessorMixin
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
     from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
+    from .image_processing_utils_fast import BaseImageProcessorFast
     from .video_processing_utils import BaseVideoProcessor
     from .attention_utils import create_bigbird_rand_mask_idx_list
     from .sequence_parallel_utils import AllGatherVarlenOp, sequence_parallel_sparse_mask_labels
@@ -340,6 +345,7 @@ if TYPE_CHECKING:
     from .qwen3_vl import *
     from .qwen3_vl_moe import *
     from .glm4_moe import *
+    from .glm4v_moe import *
     from .gpt_oss import *
     from .phi3 import *
     from .gemma3_text import *
