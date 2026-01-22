@@ -20,37 +20,7 @@ fi
 
 export root_dir=$(pwd)
 
-
-
-python -c "
-infile = '$root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py'
-print(infile)
-outfile = infile + '.new'
-with open(infile) as fin:
-    lines = fin.readlines()
-with open(outfile, 'w') as fout:
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        next_line = lines[i+1] if i+1 < len(lines) else ''
-        pad = line[:len(line)-len(line.lstrip())]
-        if line.lstrip().startswith('class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel)') and next_line.strip().startswith('is_fleet'):
-            fout.write(pad + 'class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel)' + line.lstrip()[len('class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel)'):])
-        elif line.lstrip().startswith('class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel)') and next_line.strip().startswith('enable_to_static_method'):
-            fout.write(pad + 'class Qwen3MoeForCausalLMFleet(Qwen3MoePretrainedModel)' + line.lstrip()[len('class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel)'):])
-        elif line.lstrip().startswith('class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel') and next_line.strip().startswith('is_fleet'):
-            fout.write(pad + 'class Qwen3MoeForCausalLMPipe(Qwen3MoePretrainedModel' + line.lstrip()[len('class Qwen3MoeForCausalLMPipeFleet(Qwen3MoePretrainedModel'):])
-        elif line.lstrip().startswith('class Qwen3MoeForCausalLMPipe(GeneralModelForCausalLMPipe)') and next_line.strip().startswith('config_class'):
-            fout.write(pad + 'class Qwen3MoeForCausalLMPipeFleet(GeneralModelForCausalLMPipe)' + line.lstrip()[len('class Qwen3MoeForCausalLMPipe(GeneralModelForCausalLMPipe)'):])
-        else:
-            fout.write(line)
-        i += 1
-"
-mv $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py
-
-
 config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_pt.yaml
-
 yq eval '
   .save_steps = 100 |
   .input_dir = "1.0 '"${CACHE_DIR}"'/glm45/data/pre-training/llama_openwebtext_100k" |
