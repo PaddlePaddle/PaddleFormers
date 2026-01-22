@@ -124,6 +124,7 @@ jobs:
           unset http_proxy
           unset https_proxy
           echo "============================开始运行pytest测试============================"
+          ln -s /model baidu
           python -m pytest -v -s --tb=short tests/xpu_ci/
           exit_code=$?
 
