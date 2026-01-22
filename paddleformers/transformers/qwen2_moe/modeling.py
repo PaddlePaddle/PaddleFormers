@@ -23,6 +23,9 @@ import paddle.nn.functional as F
 from paddle import Tensor, nn
 from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp, ScatterOp
+from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+    build_sharded_state_dict,
+)
 
 from ...nn.activation import ACT2FN
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
@@ -274,6 +277,21 @@ class Qwen2MoeExperts(nn.Layer):
             is_bias=False,
         )
 
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        state_dict = self.state_dict(structured_name_prefix="")
+        w1 = state_dict["up_gate_proj"].reshape(-1, self.up_gate_proj.shape[-1])
+        w2 = state_dict["down_proj"].reshape(-1, self.down_proj.shape[-1])
+        state_dict["up_gate_proj"] = w1
+        state_dict["down_proj"] = w2
+        sharded_dict = {}
+
+        sharded_dict = build_sharded_state_dict(state_dict, None, structured_name_prefix)
+
+        return sharded_dict
+
     def forward(
         self,
         hidden_states: paddle.Tensor,
@@ -293,7 +311,7 @@ class Qwen2MoeExperts(nn.Layer):
                 continue
             top_k_pos, token_idx = paddle.where(expert_mask[expert_idx])
             current_state = hidden_states[token_idx]
-            up, gate = nn.functional.linear(current_state, self.up_gate_proj[expert_idx]).chunk(2, dim=-1)
+            gate, up = nn.functional.linear(current_state, self.up_gate_proj[expert_idx]).chunk(2, dim=-1)
             current_hidden_states = self.act_fn(gate) * up
             current_hidden_states = nn.functional.linear(current_hidden_states, self.down_proj[expert_idx])
             current_hidden_states = current_hidden_states * top_k_weights[token_idx, top_k_pos, None]
@@ -625,7 +643,7 @@ class Qwen2MoePretrainedModel(PretrainedModel):
         if config.get("fd_fallback", False):
             if not config.fuse_attention_ffn:
                 aoa_config["aoa_statements"] += [
-                    f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
+                    f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
                 ]
             for layer_idx in range(0, config.num_hidden_layers):
                 src_prefix = f"model.layers.{layer_idx}"
@@ -638,8 +656,8 @@ class Qwen2MoePretrainedModel(PretrainedModel):
                 group1 = ",".join(ep_weight1)
                 group2 = ",".join(ep_weight2)
                 aoa_config["aoa_statements"] += [
-                    f"{group1} -> {tgt_prefix}.mlp.experts.up_gate_proj.weight, axis=0"
-                    f"{group2} -> {tgt_prefix}.mlp.experts.down_proj.weight, axis=0"
+                    f"{group1} -> {tgt_prefix}.mlp.experts.up_gate_proj, axis=0"
+                    f"{group2} -> {tgt_prefix}.mlp.experts.down_proj, axis=0"
                 ]
 
         # lm_head
@@ -704,20 +722,31 @@ class Qwen2MoePretrainedModel(PretrainedModel):
                     group1 = ",".join(ep_weight1)
                     group2 = ",".join(ep_weight2)
                     aoa_statements += [
-                        f"{model_prefix}layers.{layer_id}.mlp.experts.up_gate_proj.weight -> {group1}, axis=0"
-                        f"{model_prefix}layers.{layer_id}.mlp.experts.down_proj.weight -> {group2}, axis=0"
+                        f"{model_prefix}layers.{layer_id}.mlp.experts.up_gate_proj -> {group1}, axis=0"
+                        f"{model_prefix}layers.{layer_id}.mlp.experts.down_proj -> {group2}, axis=0"
                     ]
                 aoa_statements += [
-                    f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight, fused_ffn",
+                    f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert.{y}_proj.weight"
+                    for y in ("gate", "up")
                 ]
-
-            aoa_statements += [
-                f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert.{y}_proj.weight"
-                for y in ("gate", "up")
-            ] + [
-                f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight"
-                for y in ("gate", "up")
-            ]
+                for layer_id in range(config.num_hidden_layers):
+                    for expert_id in range(num_experts):
+                        aoa_statements += [
+                            f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight, axis=1",
+                        ]
+                        aoa_statements += [
+                            f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight",
+                            f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight",
+                            f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight",
+                        ]
+            else:
+                aoa_statements += [
+                    f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert.{y}_proj.weight"
+                    for y in ("gate", "up")
+                ] + [
+                    f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight"
+                    for y in ("gate", "up")
+                ]
         else:
             if config.get("fd_fallback", False):
                 for layer_id in range(config.num_hidden_layers):
@@ -731,13 +760,25 @@ class Qwen2MoePretrainedModel(PretrainedModel):
                     group1 = ",".join(ep_weight1)
                     group2 = ",".join(ep_weight2)
                     aoa_statements += [
-                        f"{model_prefix}layers.{layer_id}.mlp.up_gate_proj.weight -> {group1}, axis=0"
-                        f"{model_prefix}layers.{layer_id}.mlp.down_proj.weight -> {group2}, axis=0"
+                        f"{model_prefix}layers.{layer_id}.mlp.experts.up_gate_proj -> {group1}, axis=0"
+                        f"{model_prefix}layers.{layer_id}.mlp.experts.down_proj -> {group2}, axis=0"
                     ]
-            aoa_statements += [
-                f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight, fused_ffn",
-                f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
-            ]
+                aoa_statements += [
+                    f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight, fused_ffn",
+                ]
+                for layer_id in range(config.num_hidden_layers):
+                    for expert_id in range(num_experts):
+                        aoa_statements += [
+                            f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight, axis=1",
+                        ]
+                        aoa_statements += [
+                            f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight",
+                        ]
+            else:
+                aoa_statements += [
+                    f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight, fused_ffn",
+                    f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
+                ]
             for layer_id in range(config.num_hidden_layers):
                 aoa_statements += [
                     f"model.layers.{layer_id}.mlp.shared_expert.gate_proj.weight^T -> model.layers.{layer_id}.mlp.shared_expert.gate_proj.weight",
