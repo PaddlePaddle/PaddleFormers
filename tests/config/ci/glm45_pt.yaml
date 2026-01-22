@@ -7,6 +7,11 @@ eval_dataset_path: ./data/pre-training/eval.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
 mix_strategy: concat
+packing: true
+truncate_packing: true
+dataloader_shuffle: false
+dataloader_num_workers: 24
+prefetch_factor: 24
 
 
 ### model
@@ -35,7 +40,6 @@ logging_dir: ./vdl_log
 output_dir: ./checkpoints
 disable_tqdm: true
 eval_accumulation_steps: 16
-
 # train
 warmup_steps: 20
 learning_rate: 1.0e-5
@@ -46,17 +50,36 @@ pipeline_model_parallel_size: 1
 expert_model_parallel_size: 8
 sequence_parallel: true
 use_expert_parallel: true
+
+# sharding
 sharding: stage1
+stage1_overlap: true
 split_param: true
-recompute_granularity: ""
+
+#performance
+recompute_granularity: full
+recompute_method: block
+recompute_num_layers: 1
+
+fuse_rms_norm: true
+fp32_residual_connection: false
+
+
+# tp
+tp_delay_scale_loss: true
+
+# bf16
 amp_master_grad: true
 bf16: true
 fp16_opt_level: O2
 
+# save and load
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
 continue_training: false
-dataloader_shuffle: false
+
+# args
+router_aux_loss_coef: 0.001
 
 benchmark: false
 moe_router_force_load_balancing: true
@@ -65,6 +88,6 @@ gated_linear_unit: true
 num_hidden_layers: 3
 apply_rope_fusion: true
 moe_router_fusion: true
-router_aux_loss_coef: 0.001
+
 fuse_attention_qkv: true
 fuse_attention_ffn: true
