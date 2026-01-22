@@ -1127,11 +1127,11 @@ class Trainer:
 
             if enable_bf16_opt:
                 model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
-
+            # NOTE(xingmingyyj) When saving model states only in float32 format, we assume that users
+            # will not use AOA to change the mapping relationships among these float32 weights.
             flex_checkpoint_load_func(
                 model_sharded_state_dict,
                 model_states_path,
-                aoa_config=self.args.aoa_config,
                 offload=self.args.load_via_cpu,
                 comm_method=self.args.flex_ckpt_comm_method,
                 worker_groups=worker_groups,
