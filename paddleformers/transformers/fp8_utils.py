@@ -20,8 +20,8 @@ import paddle
 import paddle.nn.functional as F
 
 try:
-    import fused_ln
-    from paddle.incubate.nn.functional import swiglu
+    # import fused_ln
+    from paddle.nn.functional import swiglu
 except ImportError:
 
     def swiglu(x, y=None):
@@ -462,7 +462,7 @@ class FP8LinearFunctionBase:
     @staticmethod
     def fp8_mlp_fwd_norm_rc(x, norm_w, norm_eps, w1, w2):
         # compute norm_output
-        norm_output, _ = fused_ln.fused_rms_norm(x, norm_w, norm_eps)
+        norm_output, _ = paddle.incubate.nn.functional.fused_rms_norm_ext(x, norm_w, norm_eps)
         # compute fp8_mlp_fwd
         _, _, _, o3 = FP8LinearFunctionBase.fp8_mlp_fwd(norm_output, w1, w2)
         return o3
@@ -512,13 +512,13 @@ class FP8LinearFunctionBase:
     @staticmethod
     def fp8_mlp_bwd_norm_rc(do3, x, norm_w, norm_eps, w1, w2):
         # recompute norm_output
-        norm_output, invar = fused_ln.fused_rms_norm(x, norm_w, norm_eps)
+        norm_output, invar = paddle.incubate.nn.functional.fused_rms_norm_ext(x, norm_w, norm_eps)
 
         # compute fp8_mlp_fwd
         d_norm_output = FP8LinearFunctionBase.fp8_mlp_bwd(do3, norm_output, w1, w2, True)
 
         # ===== compute norm grad =====
-        dx, d_rms_norm_weight = fused_ln.fused_rms_norm_grad_func(x, norm_w, invar, d_norm_output, norm_eps)
+        dx, d_rms_norm_weight = paddle._C_ops.fused_rms_norm_ext_grad(x, norm_w, invar, d_norm_output, norm_eps)
         if hasattr(norm_w, "main_grad"):
             if norm_w.main_grad is None:
                 norm_w.main_grad = paddle.zeros(shape=norm_w.shape, dtype=paddle.float32)
@@ -681,7 +681,7 @@ class FusedNormFP8MLPFunction(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, x, norm_w, w1, w2, norm_eps):
         # compute norm_output
-        norm_output, invar = fused_ln.fused_rms_norm(x, norm_w, norm_eps)
+        norm_output, invar = paddle.incubate.nn.functional.fused_rms_norm_ext(x, norm_w, norm_eps)
         # reshape for deep_gemm, since deep_gemm only support 2D
         x_orig_shape = norm_output.shape
         norm_output = norm_output.reshape([-1, x_orig_shape[-1]])
@@ -729,7 +729,7 @@ class FusedNormFP8MLPFunction(paddle.autograd.PyLayer):
             d_norm_output = d_norm_output.reshape([x_orig_shape[0], -1, d_norm_output.shape[-1]])
 
         # compute norm grad
-        dx, d_rms_norm_weight = fused_ln.fused_rms_norm_grad_func(x, norm_w, invar, d_norm_output, norm_eps)
+        dx, d_rms_norm_weight = paddle._C_ops.fused_rms_norm_ext_grad(x, norm_w, invar, d_norm_output, norm_eps)
 
         return dx, d_rms_norm_weight, dw1, dw2
 

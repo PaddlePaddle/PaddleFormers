@@ -98,7 +98,7 @@ class Ernie4_5_Config(PretrainedConfig):
         hidden_dropout_prob=0.0,
         compression_ratio: float = 1.0,
         num_key_value_heads=None,
-        use_sparse_head_and_loss_fn=False,
+        use_filtered_label_loss=False,
         micro_batch_size=-1,
         use_fused_head_and_loss_fn=False,
         token_balance_loss=False,
@@ -142,7 +142,7 @@ class Ernie4_5_Config(PretrainedConfig):
             hidden_dropout_prob (float): Dropout probability for hidden layers
             compression_ratio (float): Ratio for KV cache compression (1.0 = no compression)
             num_key_value_heads (int): Number of key/value heads (for Grouped Query Attention)
-            use_sparse_head_and_loss_fn (bool): Whether to use sparse attention head and loss function
+            use_filtered_label_loss (bool): Whether to use sparse attention head and loss function
             micro_batch_size (int): Size of micro batches (-1 for automatic)
             use_fused_head_and_loss_fn (bool): Whether to use fused head and loss function
             token_balance_loss (bool): Whether to balance loss by token count
@@ -200,7 +200,7 @@ class Ernie4_5_Config(PretrainedConfig):
         self.hidden_dropout_prob = hidden_dropout_prob
         self.compression_ratio = compression_ratio
         self.num_key_value_heads = num_key_value_heads
-        self.use_sparse_head_and_loss_fn = use_sparse_head_and_loss_fn
+        self.use_filtered_label_loss = use_filtered_label_loss
         self.use_fused_head_and_loss_fn = use_fused_head_and_loss_fn
         self.token_balance_loss = token_balance_loss
         self.token_balance_seqlen = token_balance_seqlen
@@ -215,7 +215,7 @@ class Ernie4_5_Config(PretrainedConfig):
                 "skip_recompute_ops",
                 "use_sparse_flash_attn",
                 "use_var_len_flash_attn",
-                "use_sparse_head_and_loss_fn",
+                "use_filtered_label_loss",
                 "loss_subbatch_seqlen",
                 "micro_batch_size",
                 "fuse_softmax_mask",

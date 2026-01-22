@@ -162,6 +162,7 @@ from .plugins.timer import RuntimeTimer, get_timers, set_timers
 from .trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
+    InterleaveGateUpCallback,
     PrinterCallback,
     ProgressCallback,
     SPGradSyncCallback,
@@ -1551,6 +1552,10 @@ class Trainer:
         elif self.args.zcc_save_ema_coef is not None:
             self.add_non_zcc_ema_callback(resume_from_checkpoint)
 
+        if self.args.using_sonic_moe:
+            callback = InterleaveGateUpCallback(self.model, resume_from_checkpoint, self.args.output_dir)
+            self.add_callback(callback)
+
         self.log_trainable_numel(model)
 
         return self._inner_training_loop(
@@ -1938,8 +1943,7 @@ class Trainer:
             step = -1
 
             for step, inputs in enumerate(epoch_iterator):
-
-                if self.args.profile:
+                if self.args.profile and step % self.args.gradient_accumulation_steps == 0:
                     perf_utils.switch_profile(
                         self.state.global_step,
                         self.args.profile_step_start,
@@ -4071,6 +4075,7 @@ class Trainer:
                     max_shard_size="1024GB",
                     save_to_hf=True,
                     enable_auto_parallel=True,
+                    save_checkpoint_format=self.args.save_checkpoint_format,
                 )
             else:
                 self._save_flex_model_state(output_dir)
@@ -4128,6 +4133,7 @@ class Trainer:
                     is_main_process=self.args.should_save,
                     max_shard_size="1024GB",
                     save_to_hf=self.args.save_to_hf,
+                    save_checkpoint_format=self.args.save_checkpoint_format,
                 )
             # TODO: @ZHUI unify unwrap_model(self.model) and self.model
             elif not isinstance(self.model, PretrainedModel):
@@ -4152,6 +4158,7 @@ class Trainer:
                             is_main_process=self.args.should_save,
                             max_shard_size="1024GB",
                             save_to_hf=self.args.save_to_hf,
+                            save_checkpoint_format=self.args.save_checkpoint_format,
                         )
                     else:
                         unwrap_model(self.model).save_pretrained(
@@ -4162,6 +4169,7 @@ class Trainer:
                             is_main_process=self.args.should_save,
                             max_shard_size="1024GB",
                             save_to_hf=self.args.save_to_hf,
+                            save_checkpoint_format=self.args.save_checkpoint_format,
                         )
                 else:
                     logger.info("Trainer.model is not a `PretrainedModel`, only saving its state dict.")
@@ -4197,6 +4205,7 @@ class Trainer:
                         is_main_process=self.args.should_save,
                         max_shard_size="1024GB",
                         save_to_hf=self.args.save_to_hf,
+                        save_checkpoint_format=self.args.save_checkpoint_format,
                     )
                 else:
                     self.model.save_pretrained(
@@ -4207,6 +4216,7 @@ class Trainer:
                         is_main_process=self.args.should_save,
                         max_shard_size="1024GB",
                         save_to_hf=self.args.save_to_hf,
+                        save_checkpoint_format=self.args.save_checkpoint_format,
                     )
             if self.args.should_save_sharding_stage1_model:
                 model_meta = self.sharding_io.gather_distributed_model_meta()

@@ -841,6 +841,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
     def _gen_aoa_config(cls, config: Glm4MoeConfig):
         model_prefix = "" if cls == cls.base_model_class else "model."
         is_fleet = getattr(cls, "is_fleet", False)
+        using_sonic_moe = config.using_sonic_moe
         aoa_config = {
             "aoa_statements": [
                 f"model.norm.weight -> {model_prefix}norm.weight",
@@ -899,8 +900,11 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             else:
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.self_attn.q_proj.weight^T, {prefix}.self_attn.k_proj.weight^T, {prefix}.self_attn.v_proj.weight^T -> {prefix_offset}.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
-                    f"{prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias -> {prefix_offset}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
                 ]
+                if config.attention_bias:
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias -> {prefix_offset}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                    ]
         # layer1 - layer_num_hidden_layers
         for layer_idx in reversed(range(1, num_hidden_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
@@ -909,9 +913,16 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             aoa_config["aoa_statements"] += [
                 f"{prefix}.mlp.gate.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
                 f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='float32'",
-                f"{prefix}.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight",
                 f"{prefix}.mlp.shared_experts.down_proj.weight^T -> {prefix_offset}.mlp.shared_experts.down_proj.weight",
             ]
+            if using_sonic_moe:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.mlp.experts.$EXPERT_ID.down_proj.weight -> {prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight",
+                ]
+            else:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight",
+                ]
 
             # FFN
             if not config.fuse_attention_ffn:
@@ -927,15 +938,21 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     f"{prefix}.mlp.shared_experts.gate_proj.weight^T, {prefix}.mlp.shared_experts.up_proj.weight^T -> {prefix_offset}.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
                 ]
                 if is_fleet:
-                    aoa_config["aoa_statements"] += [
-                        f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
-                    ]
+                    if using_sonic_moe:
+                        aoa_config["aoa_statements"] += [
+                            f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=0",
+                        ]
+                    else:
+                        aoa_config["aoa_statements"] += [
+                            f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
+                        ]
+
                 else:
                     aoa_config["aoa_statements"] += [
                         f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
                     ]
 
-            if is_fleet and config.moe_grouped_gemm:
+            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
@@ -954,6 +971,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
     @classmethod
     def _gen_inv_aoa_config(cls, config: Glm4MoeConfig):
         model_prefix = "" if cls == cls.base_model_class else "model."
+        using_sonic_moe = config.using_sonic_moe
         is_fleet = getattr(cls, "is_fleet", False)
         aoa_statements = [
             f"{model_prefix}norm.weight -> model.norm.weight",
@@ -1013,12 +1031,15 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             else:
                 aoa_statements += [
                     f"{prefix_offset}.self_attn.qkv_proj.weight -> {prefix}.self_attn.q_proj.weight, {prefix}.self_attn.k_proj.weight, {prefix}.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
-                    f"{prefix_offset}.self_attn.qkv_proj.bias -> {prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
                 ]
                 aoa_statements += [
                     f"{prefix}.self_attn.{x}_proj.weight^T -> {prefix}.self_attn.{x}_proj.weight"
                     for x in ("q", "k", "v")
                 ]
+                if config.attention_bias:
+                    aoa_statements += [
+                        f"{prefix_offset}.self_attn.qkv_proj.bias -> {prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
+                    ]
 
         # layer 1 -> layer num_hidden_layers-1
         for layer_idx in range(1, num_hidden_layers):
@@ -1026,7 +1047,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
             prefix = f"model.layers.{layer_idx}"
 
-            if is_fleet and config.moe_grouped_gemm:
+            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
@@ -1068,29 +1089,36 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     f"{prefix_offset}.mlp.shared_experts.up_proj.weight^T -> {prefix}.mlp.shared_experts.up_proj.weight",
                 ]
                 if is_fleet:
-                    aoa_statements += [
-                        f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, axis=1"
-                        for expert_id in range(config.n_routed_experts)
-                    ]
+                    if using_sonic_moe:
+                        aoa_statements += [
+                            f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, axis=0"
+                            for expert_id in range(config.n_routed_experts)
+                        ]
+                    else:
+                        aoa_statements += [
+                            f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, axis=1"
+                            for expert_id in range(config.n_routed_experts)
+                        ]
                 else:
                     aoa_statements += [
                         f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight, {prefix_offset}.mlp.experts.{expert_id}.up_proj.weight, fused_ffn"
                         for expert_id in range(config.n_routed_experts)
                     ]
-                aoa_statements += (
-                    [
-                        f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.down_proj.weight"
-                        for expert_id in range(config.n_routed_experts)
-                    ]
-                    + [
-                        f"{prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.gate_proj.weight"
-                        for expert_id in range(config.n_routed_experts)
-                    ]
-                    + [
-                        f"{prefix_offset}.mlp.experts.{expert_id}.up_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.up_proj.weight"
-                        for expert_id in range(config.n_routed_experts)
-                    ]
-                )
+                if not using_sonic_moe:
+                    aoa_statements += (
+                        [
+                            f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.down_proj.weight"
+                            for expert_id in range(config.n_routed_experts)
+                        ]
+                        + [
+                            f"{prefix_offset}.mlp.experts.{expert_id}.gate_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.gate_proj.weight"
+                            for expert_id in range(config.n_routed_experts)
+                        ]
+                        + [
+                            f"{prefix_offset}.mlp.experts.{expert_id}.up_proj.weight^T -> {prefix}.mlp.experts.{expert_id}.up_proj.weight"
+                            for expert_id in range(config.n_routed_experts)
+                        ]
+                    )
 
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config
@@ -1156,11 +1184,6 @@ class Glm4MoeRotaryEmbedding(nn.Layer):
             sin = emb.sin() * self.attention_scaling
 
         return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
-
-
-@register_base_model
-class Glm4MoeModelFleet(Glm4MoePreTrainedModel):
-    pass
 
 
 @register_base_model
@@ -1358,7 +1381,7 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
         )
 
 
-class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
+class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1372,18 +1395,17 @@ class Glm4MoeForCausalLMFleet(Glm4MoePreTrainedModel):
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)
         loss_fn = None
-        if hasattr(config, "dpo_config"):
+        if getattr(config, "dpo_config", None):
             loss_fn = CriterionLayerPipe(config, use_infohub=True)
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
-        if not hasattr(config, "architectures"):
-            config.architectures = [cls.__name__.replace("Fleet", "")]
         gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
         return gpt_model
 
 
-class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
+class Glm4MoeForCausalLMDecapitated(Glm4MoePreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
     _tp_plan = {"lm_head": "colwise_rep"}
     _pp_plan = {"lm_head": (["hidden_states"], ["logits"])}
@@ -1533,7 +1555,7 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
         return ret
 
 
-class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe):
+class Glm4MoeForCausalLMPipe(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1547,18 +1569,19 @@ class Glm4MoeForCausalLMPipeFleet(Glm4MoePreTrainedModel, GeneralModelForCausalL
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)
         loss_fn = None
-        if hasattr(config, "dpo_config"):
+        if getattr(config, "dpo_config", None):
             loss_fn = CriterionLayerPipe(config, use_infohub=True)
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         if not hasattr(config, "architectures"):
-            config.architectures = [cls.__name__.replace("PipeFleet", "")]
+            config.architectures = [cls.__name__.replace("Pipe", "")]
         gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
         return gpt_model
 
 
-class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
+class Glm4MoeForCausalLMPipeDecapitated(GeneralModelForCausalLMPipe):
     config_class = Glm4MoeConfig
     _decoder_layer_cls = Glm4MoeDecoderLayer
     _decoder_layer_pipe_cls = Glm4MoeDecoderLayerPipe
@@ -1567,15 +1590,14 @@ class Glm4MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Glm4MoeModel.transpose_weight_keys
     _rotary_emb_cls = Glm4MoeRotaryEmbedding
-    _gen_aoa_config = Glm4MoeForCausalLM._gen_aoa_config
-    _gen_inv_aoa_config = Glm4MoeForCausalLM._gen_inv_aoa_config
+    _gen_aoa_config = Glm4MoeForCausalLMDecapitated._gen_aoa_config
+    _gen_inv_aoa_config = Glm4MoeForCausalLMDecapitated._gen_inv_aoa_config
 
 
 __all__ = [
-    "Glm4MoeForCausalLMPipeFleet",
-    "Glm4MoeModelFleet",
-    "Glm4MoeForCausalLMFleet",
     "Glm4MoeForCausalLMPipe",
     "Glm4MoeModel",
     "Glm4MoeForCausalLM",
+    "Glm4MoeForCausalLMPipeDecapitated",
+    "Glm4MoeForCausalLMDecapitated",
 ]

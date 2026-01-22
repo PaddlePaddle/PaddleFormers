@@ -25,8 +25,10 @@ export cur_dir=$(pwd)
 config_sft_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_sft.yaml
 
 
-yq '.train_dataset_path = strenv(cur_dir) + "/data/sft/train.jsonl"
-    | .eval_dataset_path = strenv(cur_dir) + "/data/sft/dev.jsonl"
+export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
+
+yq '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+    | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
     | .model_name_or_path = strenv(cur_dir) + "/checkpoints/pretrain"
     | .logging_dir = strenv(cur_dir) + "/glm_full_pp_vdl_log"
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"' \
@@ -88,6 +90,7 @@ python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
 
 if [ $? -ne 0 ]; then
   pushd $root_dir/PaddleFormers
+  source /root/proxy
   bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
   if [ $? -ne 0 ]; then
     echo -e "\033[31mThe precision has been changed and requires approvals.\033[0m"

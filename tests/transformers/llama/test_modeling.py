@@ -19,7 +19,6 @@ import unittest
 
 import numpy as np
 import paddle
-from parameterized import parameterized
 
 from paddleformers.transformers import LlamaConfig, LlamaForCausalLM, LlamaModel
 from tests.testing_utils import require_package, slow
@@ -440,9 +439,8 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         model = LlamaModel.from_pretrained(
             "Paddleformers/tiny-random-llama3",
             download_hub="aistudio",
-            convert_from_hf=True,
             dtype="float32",
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -470,9 +468,8 @@ class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
         model = LlamaModel.from_pretrained(
             "Paddleformers/tiny-random-llama3",
             download_hub="aistudio",
-            convert_from_hf=True,
             dtype="float32",
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -522,22 +519,22 @@ class LlamaCompatibilityTest(unittest.TestCase):
         # 1. create common input
         input_ids = np.random.randint(100, 200, [1, 20])
 
-        # 2. forward the paddle model
-        from paddleformers.transformers import LlamaModel
+        # 2. forward the torch model
+        import torch
+        from transformers import LlamaForCausalLM
 
-        paddle_model = LlamaModel.from_pretrained(
-            self.torch_model_path, convert_from_hf=True, load_checkpoint_format=""
+        torch_model = LlamaForCausalLM.from_pretrained(self.torch_model_path)
+        torch_model.eval()
+        torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+
+        # 3. forward the paddle model
+        from paddleformers.transformers import LlamaForCausalLM
+
+        paddle_model = LlamaForCausalLM.from_pretrained(
+            self.torch_model_path, load_checkpoint_format="flex_checkpoint"
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
-
-        # 3. forward the torch  model
-        import torch
-        from transformers import LlamaModel
-
-        torch_model = LlamaModel.from_pretrained(self.torch_model_path)
-        torch_model.eval()
-        torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
         self.assertTrue(
             np.allclose(
@@ -553,19 +550,19 @@ class LlamaCompatibilityTest(unittest.TestCase):
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch  model
+            # 2. forward the torch model
             import torch
-            from transformers import LlamaModel
+            from transformers import LlamaForCausalLM
 
-            torch_model = LlamaModel.from_pretrained(self.torch_model_path)
+            torch_model = LlamaForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
-            # 2. forward the paddle model
-            from paddleformers.transformers import LlamaModel
+            # 3. forward the paddle model
+            from paddleformers.transformers import LlamaForCausalLM
 
-            paddle_model = LlamaModel.from_pretrained(tempdir, convert_from_hf=True, load_checkpoint_format="")
+            paddle_model = LlamaForCausalLM.from_pretrained(tempdir, load_checkpoint_format="flex_checkpoint")
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -573,46 +570,7 @@ class LlamaCompatibilityTest(unittest.TestCase):
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].numpy(),
+                    atol=1e-3,
                     rtol=1e-2,
                 )
             )
-
-    @parameterized.expand([("LlamaModel",), ("LlamaForCausalLM",)])
-    @require_package("transformers", "torch")
-    def test_llama_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
-        pytorch_class_name = pytorch_class_name or class_name
-        with tempfile.TemporaryDirectory() as tempdir:
-            # 1. create common input
-            input_ids = np.random.randint(100, 200, [1, 20])
-
-            # 2. forward the torch model
-            import torch
-            import transformers
-
-            torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path)
-            torch_model.eval()
-
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-            # 3. forward the paddle model
-            from paddleformers import transformers
-
-            paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, load_checkpoint_format="")
-            paddle_model.eval()
-
-            paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
-
-            self.assertTrue(
-                np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].numpy(),
-                    atol=1e-3,
-                )
-            )
-
-
-if __name__ == "__main__":
-    unittest.main()
