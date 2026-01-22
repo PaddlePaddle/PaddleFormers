@@ -12,5 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+export CUDA_VISIBLE_DEVICES=0
 rm -rf paddleformers_dist_log checkpoints/ernie-0.3B-sft-full/ vdl_log/
 paddleformers-cli train examples/config/iluvatar/ERNIE-4.5-0.3B-PT/sft/full_8k.yaml
