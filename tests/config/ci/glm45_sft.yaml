@@ -71,14 +71,10 @@ save_to_hf: true
 load_checkpoint_format: flex_checkpoint
 save_checkpoint_format: flex_checkpoint
 
-
-
 moe_router_force_load_balancing: true
 split_param: true
 apply_rope_fusion: true
-fuse_rms_norm: true
 fp32_residual_connection: false
-
 
 # pp
 pp_delay_scale_loss: true

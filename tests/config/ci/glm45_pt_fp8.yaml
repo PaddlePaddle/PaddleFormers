@@ -78,7 +78,6 @@ moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
 num_hidden_layers: 3
 apply_rope_fusion: true
-fuse_rms_norm: true
 fp32_residual_connection: false
 moe_router_fusion: true
 router_aux_loss_coef: 0.001
