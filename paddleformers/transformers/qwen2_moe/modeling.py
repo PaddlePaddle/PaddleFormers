@@ -81,7 +81,6 @@ class Qwen2MoeAttention(nn.Layer):
         assert config.num_attention_heads // config.num_key_value_heads
 
         self.sequence_parallel = config.sequence_parallel
-        self.fuse_attention_qkv = config.fuse_attention_qkv
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
         if config.tensor_model_parallel_size > 1:
@@ -98,7 +97,7 @@ class Qwen2MoeAttention(nn.Layer):
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.config.num_attention_heads * self.head_dim
 
-        if not self.fuse_attention_qkv:
+        if not True:
             self.q_proj = GeneralLinear.create(
                 config.hidden_size,
                 q_hidden_size,
@@ -149,7 +148,7 @@ class Qwen2MoeAttention(nn.Layer):
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         """Input shape: Batch x Time x Channel"""
-        if not self.fuse_attention_qkv:
+        if not True:
             # [bs, seq_len, num_head * head_dim] -> [seq_len / n, bs, num_head * head_dim] (n is model parallelism)
             query_states = self.q_proj(hidden_states)
             key_states = self.k_proj(hidden_states)
@@ -273,15 +272,13 @@ class Qwen2MoeSparseMoeBlock(nn.Layer):
             )
         self.experts = nn.LayerList(
             [
-                Qwen2MoeMLP(
-                    config, intermediate_size=config.moe_intermediate_size, fuse_up_gate=config.fuse_attention_ffn
-                )
+                Qwen2MoeMLP(config, intermediate_size=config.moe_intermediate_size, fuse_up_gate=True)
                 for _ in range(self.num_experts)
             ]
         )
 
         self.shared_expert = Qwen2MoeMLP(
-            config, intermediate_size=config.shared_expert_intermediate_size, fuse_up_gate=config.fuse_attention_ffn
+            config, intermediate_size=config.shared_expert_intermediate_size, fuse_up_gate=True
         )
         self.shared_expert_gate = GeneralLinear.create(config.hidden_size, 1, has_bias=False, linear_type="default")
 
@@ -359,7 +356,7 @@ class Qwen2MoeDecoderLayer(nn.Layer):
             self.mlp = Qwen2MoeSparseMoeBlock(config)
         else:
             # num_experts == 0 or this layer is not sparse layer
-            self.mlp = Qwen2MoeMLP(config, fuse_up_gate=config.fuse_attention_ffn)
+            self.mlp = Qwen2MoeMLP(config, fuse_up_gate=True)
 
         self.input_layernorm = GeneralNorm.create(
             config=config,
@@ -528,7 +525,7 @@ class Qwen2MoePretrainedModel(PretrainedModel):
         }
 
         # attention qkv
-        if not config.fuse_attention_qkv:
+        if not True:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
@@ -548,7 +545,7 @@ class Qwen2MoePretrainedModel(PretrainedModel):
                 ]
 
         # FFN
-        if not config.fuse_attention_ffn:
+        if not True:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.mlp.shared_expert.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_expert.{p}_proj.weight"
                 for p in ("gate", "up")
@@ -583,7 +580,7 @@ class Qwen2MoePretrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert_gate.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert_gate.weight, dtype='bfloat16'",
         ]
 
-        if not config.fuse_attention_qkv:
+        if not True:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
@@ -607,7 +604,7 @@ class Qwen2MoePretrainedModel(PretrainedModel):
                     f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
                 ]
 
-        if not config.fuse_attention_ffn:
+        if not True:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert.{y}_proj.weight"
                 for y in ("gate", "up")

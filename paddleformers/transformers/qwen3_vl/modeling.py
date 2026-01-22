@@ -370,7 +370,7 @@ class Qwen3VLPretrainedModel(PretrainedModel):
         ]
 
         # attention qkv
-        if not config.text_config.fuse_attention_qkv:
+        if not True:
             aoa_config["aoa_statements"] += [
                 f"model.language_model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
@@ -385,7 +385,7 @@ class Qwen3VLPretrainedModel(PretrainedModel):
             ]
 
         # FFN
-        if not config.text_config.fuse_attention_ffn:
+        if not True:
             aoa_config["aoa_statements"] += [
                 f"model.language_model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight"
                 for p in ("gate", "up")
@@ -471,7 +471,7 @@ class Qwen3VLPretrainedModel(PretrainedModel):
         ]
 
         # attention qkv
-        if not config.text_config.fuse_attention_qkv:
+        if not True:
             aoa_config["aoa_statements"] += [
                 f"{llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.language_model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
@@ -491,7 +491,7 @@ class Qwen3VLPretrainedModel(PretrainedModel):
             ]
 
         # FFN
-        if not config.text_config.fuse_attention_ffn:
+        if not True:
             aoa_config["aoa_statements"] += [
                 f"{llm_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight^T -> model.language_model.layers.$LAYER_ID.mlp.{p}_proj.weight"
                 for p in ("gate", "up")
@@ -915,7 +915,6 @@ class Qwen3VLTextAttention(nn.Layer):
         #     )
 
         self.sequence_parallel = config.sequence_parallel
-        self.fuse_attention_qkv = config.fuse_attention_qkv
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
         if config.tensor_model_parallel_size > 1:
@@ -932,7 +931,7 @@ class Qwen3VLTextAttention(nn.Layer):
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.config.num_attention_heads * self.head_dim
 
-        if not self.fuse_attention_qkv:
+        if not True:
             self.q_proj = GeneralLinear.create(
                 config.hidden_size,
                 q_hidden_size,
@@ -984,7 +983,7 @@ class Qwen3VLTextAttention(nn.Layer):
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
-        if not self.fuse_attention_qkv:
+        if not True:
             if self.sequence_parallel:
                 max_sequence_length = self.config.max_sequence_length
                 bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
@@ -1067,7 +1066,7 @@ class Qwen3VLTextDecoderLayer(nn.Layer):
         self.hidden_size = config.hidden_size
         self.self_attn = Qwen3VLTextAttention(config, layer_idx)
 
-        self.mlp = Qwen3VLTextMLP(config, fuse_up_gate=config.fuse_attention_ffn)
+        self.mlp = Qwen3VLTextMLP(config, fuse_up_gate=True)
         self.input_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
