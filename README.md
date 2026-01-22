@@ -200,7 +200,7 @@ python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepa
 
 * [昆仑芯安装说明文档](./docs/zh/XPU_installation_guide.md)
 * [天数智芯安装说明文档](./docs/zh/ILUVATAR-GPU_installation_guide.md)
-* [沐熙安装说明文档](./docs/zh/Metax-GPU_installation_guide.md)
+* [沐曦安装说明文档](./docs/zh/Metax-GPU_installation_guide.md)
 
 # ⚡快速体验
 
