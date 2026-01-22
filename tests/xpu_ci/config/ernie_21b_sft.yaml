@@ -12,7 +12,7 @@ template_backend: custom
 template: ernie_nothink
 
 ### model
-model_name_or_path: /home/model/ERNIE-4.5-21B-A3B-PT
+model_name_or_path: /model/ERNIE-4.5-21B-A3B-PT
 attn_impl: flashmask
 num_hidden_layers: 4
 
