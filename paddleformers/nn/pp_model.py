@@ -281,7 +281,6 @@ class EmbeddingPipe(nn.Layer):
             position_embeddings = None
         else:
             position_embeddings = paddle.stack(self.rotary_emb(emb, position_ids))  # cos and sin
-
         if num_nextn_predict_layers > 0:
             if enable_mtp_magic_send:
                 emb = emb[:, :-num_nextn_predict_layers, :]
@@ -310,7 +309,7 @@ class EmbeddingPipe(nn.Layer):
                         inputs_embeds_mtp = ScatterOp.apply(inputs_embeds_mtp)
 
                     mtp_emb_res.append(inputs_embeds_mtp)
-                res = paddle.cat(mtp_emb_res)
+                res = paddle.concat(mtp_emb_res, axis=-1)
                 ret = (res,)
         else:
             if self.sequence_parallel:
@@ -494,10 +493,10 @@ class CriterionLayerPipe(CriterionLayer):
         super().__init__(*args, **kwargs)
         self.return_tuple = False  # loss_func only return loss, no loss_sum
 
-    def forward(self, logits, labels):
+    def forward(self, logits, labels, mtp_logits=None):
         if isinstance(labels, tuple) and "sft" in self.loss_type:
             labels, loss_mask = labels
-        loss = super().forward(logits, labels)
+        loss = super().forward(logits, labels, mtp_logits=mtp_logits)
         return loss
 
 
@@ -603,12 +602,6 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 ),
                 f"model.layers.{i}",
             )
-        for i in range(config.num_nextn_predict_layers):
-            if MTPLayerPipeCls is not None:
-                self.add_sequential_layer(
-                    LayerDesc(MTPLayerPipeCls, config=config, layer_idx=config.num_hidden_layers + i),
-                    f"model.layers.{config.num_hidden_layers + i}",
-                )
         for i in range(config.add_tail_layers):
             self.add_sequential_layer(
                 LayerDesc(
@@ -621,6 +614,13 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             LayerDesc(RMSNormPipeCls if self._norm_cls == "rms_norm" else LayerNormPipe, config=config),
             "model.norm",
         )
+        
+        for i in range(config.num_nextn_predict_layers):
+            if MTPLayerPipeCls is not None:
+                self.add_sequential_layer(
+                    LayerDesc(MTPLayerPipeCls, config=config, layer_idx=config.num_hidden_layers + i),
+                    f"model.layers.{config.num_hidden_layers + i}",
+                )
 
         if config.tie_word_embeddings:
             self.add_sequential_layer(
