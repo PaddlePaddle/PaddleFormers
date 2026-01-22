@@ -1,4 +1,4 @@
-name: CI_XPU_
+name: CI_XPU
 
 on:
   pull_request:
