@@ -1010,26 +1010,26 @@ class Trainer:
         model_states_path = os.path.join(resume_from_checkpoint, MODEL_STATE_DIC)
 
         hcg = dist.fleet.get_hybrid_communicate_group()
-        try:
-            pp_group = hcg.get_pipe_parallel_group()
-            if pp_group is None or pp_group.nranks < 1:
-                raise NotImplementedError("Only support when pp_group is not None.")
-        except Exception:
-            raise RuntimeError("Only support when pp_group is not None.")
-
-        try:
-            moe_group = hcg.get_expert_parallel_group()
-            if moe_group is None or moe_group.nranks < 1:
-                raise NotImplementedError("Only support when moe_group is not None.")
-        except Exception:
-            raise RuntimeError("Only support when moe_group is not None.")
-
-        try:
-            moe_sharding_group = hcg.get_moe_sharding_parallel_group()
-        except Exception:
-            moe_sharding_group = None
-
         if self.args.flex_ckpt_comm_method == "parallel_broadcast":
+            try:
+                pp_group = hcg.get_pipe_parallel_group()
+                if pp_group is None or pp_group.nranks < 1:
+                    raise NotImplementedError("Only support when pp_group is not None.")
+            except Exception:
+                raise RuntimeError("Only support when pp_group is not None.")
+
+            try:
+                moe_group = hcg.get_expert_parallel_group()
+                if moe_group is None or moe_group.nranks < 1:
+                    raise NotImplementedError("Only support when moe_group is not None.")
+            except Exception:
+                raise RuntimeError("Only support when moe_group is not None.")
+
+            try:
+                moe_sharding_group = hcg.get_moe_sharding_parallel_group()
+            except Exception:
+                moe_sharding_group = None
+
             worker_groups = [moe_group, pp_group, moe_sharding_group]
         else:
             worker_groups = None
