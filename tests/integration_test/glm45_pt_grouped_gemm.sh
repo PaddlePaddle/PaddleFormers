@@ -54,7 +54,7 @@ NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformer
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
    echo "Training failed with exit code $exit_cod, see ./${log_file} for details."
-   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./${log_file}
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./${log_file} "***** train metrics *****"
    check_result=$?
    if [ $check_result -ne 0 ]; then
        echo "Failed to find 'Training completed' in log file."
