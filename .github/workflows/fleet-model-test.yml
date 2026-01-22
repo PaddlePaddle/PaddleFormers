@@ -65,6 +65,7 @@ jobs:
             echo "is_md_only=false" >> $GITHUB_OUTPUT
             echo "is_md_only=false"
           fi
+          echo "is_md_only: $(cat $GITHUB_OUTPUT | grep is_md_only || echo '未找到')"
     
   integration-test-H20-single-card:
     needs: check_documents_type
