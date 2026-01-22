@@ -12,7 +12,7 @@ template_backend: custom
 template: qwen3_vl
 
 ### model
-model_name_or_path: ./tiny-random-qwen3vlv2
+model_name_or_path: ./tiny-random-qwen3vlmoev2
 attn_impl: flashmask
 
 ### finetuning
@@ -24,7 +24,7 @@ do_train: true
 do_eval: true
 per_device_eval_batch_size: 1
 per_device_train_batch_size: 1
-num_train_epochs: -1
+num_train_epochs: 1
 max_steps: 10
 eval_steps: 100
 evaluation_strategy: steps
@@ -33,7 +33,7 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/qwen3vl_ce_tp
+output_dir: ./checkpoints/qwen3vl_ce_tp_pp
 disable_tqdm: true
 eval_accumulation_steps: 16
 
@@ -44,6 +44,7 @@ learning_rate: 1.0e-5
 # performance
 tensor_model_parallel_size: 8
 pipeline_model_parallel_size: 1
+sequence_parallel: true
 sharding: stage1
 recompute_granularity: full
 recompute_method: uniform
@@ -51,6 +52,5 @@ recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
 unified_checkpoint: false
-save_checkpoint_format: "flex_checkpoint"
-load_checkpoint_format: "flex_checkpoint"
-freeze_config: freeze_vision freeze_aligner
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint
