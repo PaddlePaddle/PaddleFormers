@@ -105,7 +105,7 @@ except (ImportError, ModuleNotFoundError):
     fused_rope = None
 
 try:
-    from paddle.incubate.nn.functional import swiglu as fused_swiglu
+    from paddle.nn.functional import swiglu as fused_swiglu
 except (ImportError, ModuleNotFoundError):
     fused_swiglu = None
 
@@ -230,7 +230,7 @@ def parallel_matmul(
 
 def calc_lm_head_logits(config, hidden_states, weight, bias, tensor_parallel_output=None, training=True):
     if config.sequence_parallel:
-        if config.use_sparse_head_and_loss_fn:
+        if config.use_filtered_label_loss:
             pass
         else:
             lm_head_use_gather = getattr(config, "lm_head_use_gather", True)
@@ -1945,7 +1945,7 @@ class ErniePretrainingCriterion(paddle.nn.Layer):
 
     def forward(self, prediction_scores, masked_lm_labels):
 
-        if self.config.use_sparse_head_and_loss_fn:
+        if self.config.use_filtered_label_loss:
             hidden_states, outlinear_weight, outlinear_bias = prediction_scores
 
             if self.config.sequence_parallel:
@@ -2148,7 +2148,7 @@ class ErnieLMHead(nn.Layer):
             )
 
     def forward(self, hidden_states, tensor_parallel_output=None):
-        if self.config.use_recompute_loss_fn or self.config.use_sparse_head_and_loss_fn:
+        if self.config.use_recompute_loss_fn or self.config.use_filtered_label_loss:
             out_tensors = (
                 (hidden_states, self.weight, self.bias)
                 if tensor_parallel_output is None

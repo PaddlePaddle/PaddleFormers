@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional, Union
 
 
 @dataclass
@@ -32,6 +32,48 @@ class VisionArguments:
     spatial_merge_size: int = field(default=2, metadata={"help": "Spatial merge size"})
     tensor_model_parallel_size: int = field(default=4, metadata={"help": "Tensor parallel degree"})
     vit_num_recompute_layers: int = field(default=10000, metadata={"help": "Number of recompute layers"})
+
+
+@dataclass
+class FP8MemConfigs:
+    shared_expert: bool = False
+    recompute_fwd_gate_up: Union[bool, List[int]] = False
+    dequant_input: bool = False
+    offline_quant_expert_weight: bool = False
+    clear_origin_weight_when_offline_quant: bool = False
+
+
+@dataclass
+class FP8FusedOpsConfigs:
+    stack_quant: bool = False
+    swiglu_probs_bwd: bool = False
+    split_group_gemm: bool = True
+    spaq: bool = True
+    transpose_split_quant: bool = True
+
+
+@dataclass
+class ErniePretrainArgument:
+    use_quant_before_a2a: bool = field(default=False, metadata={"help": "Whether to use quant before a2a"})
+    use_async_a2a: bool = field(default=False, metadata={"help": "Whether to use async a2a"})
+    use_rms_qkv_recompute: bool = field(default=False, metadata={"help": "Whether to use rms qkv recompute"})
+    moe_logging: bool = field(default=False, metadata={"help": "Whether to use moe logging"})
+    use_recompute: bool = field(default=False, metadata={"help": "Whether to use recompute"})
+    multi_token_pred_depth: int = field(default=0, metadata={"help": "Multi token pred depth"})
+    use_fp8_mlp: bool = field(default=False, metadata={"help": "Whether to use fp8 mlp"})
+    num_hidden_layers: int = field(default=2, metadata={"help": "Number of hidden layers"})
+    num_empty_layers_add_in_tail: int = field(default=0, metadata={"help": "Number of empty layers add in tail"})
+    use_fp8_fuse_node: bool = field(default=False, metadata={"help": "Whether to use fp8 fuse node"})
+    use_ep_comm_overlap: bool = field(default=False, metadata={"help": "Whether to use ep comm overlap"})
+    fp8_mem_configs: FP8MemConfigs = field(default_factory=FP8MemConfigs)
+    fp8_fused_ops_configs: FP8FusedOpsConfigs = field(default_factory=FP8FusedOpsConfigs)
+    use_combine_before_a2a: bool = field(default=False, metadata={"help": "Whether to use combine before a2a"})
+    moe_num_experts: Union[int, list] = 0
+    moe_k: int = field(default=2, metadata={"help": "Number of keys per experts"})
+    moe_capacity = ()
+    moe_use_aux_free: bool = field(default=False, metadata={"help": "Whether to use aux free"})
+    moe_gate: str = field(default="top2_fused", metadata={"help": "MoE gate type"})
+    transpose_split_quant: bool = field(default=False, metadata={"help": "Whether to use transpose split quant"})
 
 
 @dataclass
@@ -177,56 +219,14 @@ class ModelArguments:
 
     # vl model
     vision_config: VisionArguments = field(default_factory=VisionArguments, metadata={"help": "Vision configuration"})
+    ernie_model_config: ErniePretrainArgument = field(
+        default_factory=ErniePretrainArgument, metadata={"help": "Ernie pretrain configuration"}
+    )
     bos_token_id: int = field(default=0, metadata={"help": "Beginning of sentence token ID"})
     eos_token_id: int = field(default=1, metadata={"help": "End of sentence token ID"})
     max_position_embeddings: int = field(default=4096, metadata={"help": "Maximum position embeddings"})
     moe_gate: str = field(default="top2_fused", metadata={"help": "MoE gate type"})
     loss_subbatch_seqlen: int = field(default=32768, metadata={"help": "Sub batch size for loss calculation"})
-
-    num_hidden_layers: Optional[int] = field(
-        default=None,
-        metadata={"help": "num_hidden_layers."},
-    )
-
-    num_attention_heads: Optional[int] = field(
-        default=None,
-        metadata={"help": "num_attention_heads."},
-    )
-
-    num_key_value_heads: Optional[int] = field(
-        default=None,
-        metadata={"help": "num_key_value_heads."},
-    )
-
-    num_experts_per_tok: Optional[int] = field(
-        default=None,
-        metadata={"help": "num_experts_per_tok."},
-    )
-
-    hidden_size: Optional[int] = field(
-        default=None,
-        metadata={"help": "hidden_size."},
-    )
-
-    intermediate_size: Optional[int] = field(
-        default=None,
-        metadata={"help": "intermediate_size."},
-    )
-
-    n_routed_experts: Optional[int] = field(
-        default=None,
-        metadata={"help": "n_routed_experts."},
-    )
-
-    use_qk_norm: Optional[bool] = field(
-        default=None,
-        metadata={"help": "use_qk_norm."},
-    )
-
-    tie_word_embeddings: Optional[bool] = field(
-        default=None,
-        metadata={"help": "tie_word_embeddings."},
-    )
 
     def __post_init__(self):
         if self.fine_tuning.lower() == "LoRA".lower():

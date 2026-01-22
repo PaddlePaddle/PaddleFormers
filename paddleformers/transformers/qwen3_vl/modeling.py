@@ -21,13 +21,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import partial
-from typing import Any, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Optional, Tuple, Union
 
 import paddle
 import paddle.nn.functional as F
 from paddle import Tensor, nn
-from paddle.distributed.fleet import get_hybrid_communicate_group
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
@@ -49,6 +47,35 @@ from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS
 from ..utils import logger
 from .configuration import Qwen3VLConfig, Qwen3VLTextConfig, Qwen3VLVisionConfig
+
+if TYPE_CHECKING:
+    from .modeling_fleet import (
+        Qwen3VLForCausalLMPipe,
+        Qwen3VLForConditionalGeneration,
+        Qwen3VLModel,
+        Qwen3VLModelPipe,
+    )
+
+
+def __getattr__(name):
+    if name == "Qwen3VLModel":
+        from .modeling_fleet import Qwen3VLModel
+
+        return Qwen3VLModel
+    elif name == "Qwen3VLForConditionalGeneration":
+        from .modeling_fleet import Qwen3VLForConditionalGeneration
+
+        return Qwen3VLForConditionalGeneration
+    elif name == "Qwen3VLForCausalLMPipe":
+        from .modeling_fleet import Qwen3VLForCausalLMPipe
+
+        return Qwen3VLForCausalLMPipe
+    elif name == "Qwen3VLModelPipe":
+        from .modeling_fleet import Qwen3VLModelPipe
+
+        return Qwen3VLModelPipe
+
+    raise AttributeError(f"module {__name__} has no attribute {name}")
 
 
 class Qwen3VLVisionMLP(nn.Layer):
@@ -273,101 +300,6 @@ class Qwen3VLPretrainedModel(PretrainedModel):
         "proj",
         "linear_fc\d+",
     ]
-
-    @classmethod
-    def _get_tensor_parallel_mappings(cls, config: Qwen3VLConfig, is_split=True):
-        """Generate tensor parallel mappings for model conversion."""
-        from ..conversion_utils import split_or_merge_func
-
-        llm_target = next(
-            (v for v in cls._checkpoint_conversion_mapping.values() if "language_model" in v), "language_model"
-        )
-        llm_prefix = f"{llm_target}" if not llm_target.endswith(".") else llm_target
-
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_model_parallel_size=config.text_config.tensor_model_parallel_size,
-            tensor_parallel_rank=config.text_config.tensor_parallel_rank,
-            num_attention_heads=config.text_config.num_attention_heads,
-        )
-
-        ATTN_LAYER_COLWISE = [
-            "self_attn.q_proj.weight",
-            "self_attn.k_proj.weight",
-            "self_attn.v_proj.weight",
-        ]
-        FUSE_ATTN_LAYER_COLWISE = [
-            "self_attn.qkv_proj.weight",
-        ]
-        MLP_LAYER_COLWISE = [
-            "mlp.up_proj.weight",
-            "mlp.gate_proj.weight",
-            "mlp.linear_fc1.weight",  # todo check rationality
-        ]
-        FUSE_MLP_LAYER_COLWISE = [
-            "up_gate_proj.weight",
-        ]
-
-        LAYER_ROWWISE = [
-            "self_attn.o_proj.weight",
-            "mlp.down_proj.weight",
-            "mlp.linear_fc2.weight",
-        ]  # todo check rationality
-
-        BIAS_KEYS = [
-            "self_attn.q_proj.bias",
-            "self_attn.k_proj.bias",
-            "self_attn.v_proj.bias",
-            "mlp.linear_fc1.bias",
-            # todo check fc2's bias needs not to be split
-        ]
-
-        def make_base_actions():
-            actions = {
-                "lm_head.weight": partial(fn, is_column=False),
-                f"{llm_prefix}.embed_tokens.weight": partial(fn, is_column=False),
-            }
-            for layer_idx in range(config.text_config.num_hidden_layers):
-                if not config.text_config.fuse_attention_qkv:
-                    actions.update(
-                        {
-                            f"{llm_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
-                            for k in ATTN_LAYER_COLWISE
-                        }
-                    )
-                else:
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
-                            for k in FUSE_ATTN_LAYER_COLWISE
-                        }
-                    )
-                if not config.text_config.fuse_attention_ffn:
-                    actions.update(
-                        {
-                            f"{llm_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
-                            for k in MLP_LAYER_COLWISE
-                        }
-                    )
-                else:
-                    actions.update(
-                        {
-                            f"{llm_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
-                            for k in FUSE_MLP_LAYER_COLWISE
-                        }
-                    )
-                actions.update(
-                    {f"{llm_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False) for k in LAYER_ROWWISE}
-                )
-                # bias
-                actions.update(
-                    {f"{llm_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True) for b in BIAS_KEYS}
-                )
-
-            return actions
-
-        mappings = make_base_actions()
-        return mappings
 
     @classmethod
     def _gen_aoa_config(cls, config: Qwen3VLConfig):
@@ -661,8 +593,9 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
         self,
         layer_module: nn.Layer,
         hidden_states: paddle.Tensor,
-        cu_seqlens_now: paddle.Tensor,
-        position_embeddings: paddle.Tensor,
+        cu_seqlens: paddle.Tensor,
+        rotary_pos_emb: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
     ):
         def create_custom_forward(module):
             def custom_forward(*inputs):
@@ -673,7 +606,8 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
         hidden_states = recompute(
             create_custom_forward(layer_module),
             hidden_states,
-            cu_seqlens_now,
+            cu_seqlens,
+            rotary_pos_emb,
             position_embeddings,
         )
         return hidden_states
@@ -890,14 +824,11 @@ class Qwen3VLTextRotaryEmbedding(nn.Layer):
 
     def forward(self, x, position_ids):
         with paddle.amp.auto_cast(False):
-            inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand([3, position_ids.shape[1], -1, 1])
-
+            inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand([1, position_ids.shape[1], -1, 1])
             position_ids_expanded = position_ids[:, :, None, :].float()
 
             freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(2, 3)
-
             freqs = self.apply_interleaved_mrope(freqs, self.mrope_section)
-
             emb = paddle.concat((freqs, freqs), axis=-1)
 
             cos = emb.cos() * self.attention_scaling
@@ -956,7 +887,7 @@ class Qwen3VLTextAttention(nn.Layer):
 
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
-        self.head_dim = self.hidden_size // self.num_heads
+        self.head_dim = config.head_dim  # self.hidden_size // self.num_heads
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.is_causal = True
@@ -977,11 +908,11 @@ class Qwen3VLTextAttention(nn.Layer):
             has_bias=False,
         )
 
-        if (self.head_dim * self.num_heads) != self.hidden_size:
-            raise ValueError(
-                f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
-                f" and `num_heads`: {self.num_heads})."
-            )
+        # if (self.head_dim * self.num_heads) != self.hidden_size:
+        #     raise ValueError(
+        #         f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size}"
+        #         f" and `num_heads`: {self.num_heads})."
+        #     )
 
         self.sequence_parallel = config.sequence_parallel
         self.fuse_attention_qkv = config.fuse_attention_qkv
@@ -1307,6 +1238,8 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
         # This block handles Sequence Parallelism (Row Slicing)
         if visual_pos_masks.shape[0] > hidden_states.shape[0]:
             try:
+                from paddle.distributed.fleet import get_hybrid_communicate_group
+
                 hcg = get_hybrid_communicate_group()
                 mp_rank = hcg.get_model_parallel_rank()
                 mp_size = hcg.get_model_parallel_world_size()
@@ -1530,7 +1463,7 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
 
 
 @register_base_model
-class Qwen3VLModel(Qwen3VLPretrainedModel):
+class Qwen3VLModelDecapitated(Qwen3VLPretrainedModel):
     base_model_prefix = "model"
     _checkpoint_conversion_mapping = {}
     config: Qwen3VLConfig
@@ -1894,7 +1827,7 @@ class Qwen3VLCausalLMOutputWithPast(ModelOutput):
     rope_deltas: Optional[paddle.Tensor] = None
 
 
-class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModel):
+class Qwen3VLForConditionalGenerationDecapitated(Qwen3VLPretrainedModel):
     _checkpoint_conversion_mapping = {
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
@@ -1904,7 +1837,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        self.model = Qwen3VLModel(config)
+        self.model = Qwen3VLModelDecapitated(config)
         self.lm_head = GeneralLMHead(config.text_config)
         self.criterion = CriterionLayer(config.text_config)
         self.tie_weights()
@@ -2247,4 +2180,13 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModel):
         return input_ids, model_kwargs
 
 
-__all__ = ["Qwen3VLForConditionalGeneration", "Qwen3VLModel", "Qwen3VLPretrainedModel", "Qwen3VLTextModel"]
+__all__ = [
+    "Qwen3VLForConditionalGenerationDecapitated",
+    "Qwen3VLModelDecapitated",
+    "Qwen3VLModelPipe",
+    "Qwen3VLForCausalLMPipe",
+    "Qwen3VLPretrainedModel",
+    "Qwen3VLTextModel",
+    "Qwen3VLModel",
+    "Qwen3VLForConditionalGeneration",
+]

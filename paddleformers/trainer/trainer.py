@@ -46,10 +46,12 @@ from packaging import version
 from paddle import framework
 from paddle.base import core
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
-from paddle.distributed.fleet.meta_parallel import (
-    PipelineDatasetPreprocessor,
-    PipelineLayer,
-)
+from paddle.distributed.fleet.meta_parallel import PipelineLayer
+
+try:
+    from paddle.distributed.fleet.meta_parallel import PipelineDatasetPreprocessor
+except:
+    PipelineDatasetPreprocessor = None
 
 from ..utils.import_utils import is_paddlefleet_available
 
@@ -160,6 +162,7 @@ from .plugins.timer import RuntimeTimer, get_timers, set_timers
 from .trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
+    InterleaveGateUpCallback,
     PrinterCallback,
     ProgressCallback,
     SPGradSyncCallback,
@@ -230,7 +233,14 @@ DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
 
 if is_datasets_available():
-    import datasets
+    PADDLEFORMERS_TESTING = os.environ.get("PADDLEFORMERS_TESTING", False)
+    if "torch" not in sys.modules and not PADDLEFORMERS_TESTING:
+        sys.modules["torch"] = None
+        import datasets
+
+        del sys.modules["torch"]
+    else:
+        import datasets
 
 from paddle.distributed import in_auto_parallel_align_mode
 from paddle.distributed.fleet.utils import mix_precision_utils
@@ -334,10 +344,11 @@ class Trainer:
         self._memory_tracker.start()
 
         # Seed must be set before instantiating the model when using model
-        if not self.args.enable_auto_parallel:
-            set_random_seed(seed_=self.args.seed)
-        else:
-            logger.warning("set_seed not support yet in auto_parallel mode")
+        if is_paddlefleet_available():
+            if not self.args.enable_auto_parallel:
+                set_random_seed(seed_=self.args.seed)
+            else:
+                logger.warning("set_seed not support yet in auto_parallel mode")
 
         set_seed(seed=self.args.seed)
 
@@ -552,7 +563,7 @@ class Trainer:
                 # set do_grad_scaling, enable_autocast_context_manager
                 self._wrap_amp_model(args, model)
 
-        if args.recompute_granularity is not None:
+        if isinstance(model, nn.Layer) and args.recompute_granularity is not None:
 
             def fn(layer):
                 if hasattr(layer, "enable_recompute") and (
@@ -1010,7 +1021,7 @@ class Trainer:
 
         logger.info("Zero cost checkpoint manager created successfully.")
 
-    def add_non_zcc_ema_callback(self, resume_from_checkpoint):
+    def add_non_zcc_ema_callback(self, resume_from_checkpoint, ema_state_assembler=None):
 
         non_zcc_ema_callback = NonZCCEMACallback.create_nonzcc_callback(
             args=self.args,
@@ -1019,6 +1030,7 @@ class Trainer:
             model=self.model,
             optimizer=self.optimizer,
             hcg=self.hcg,
+            ema_state_assembler=ema_state_assembler,
         )
 
         self.add_callback(non_zcc_ema_callback)
@@ -1196,6 +1208,9 @@ class Trainer:
                 )
 
             self._load_scheduler(resume_from_checkpoint)
+            if self.args.tensorwise_offload_optimizer:
+                logger.info("Offloading optimizer state for FC...")
+                self._offload_optimizer()
 
         enable_bf16_opt = (
             not isinstance(self.model, LoRAModel) and self.args.enable_zero_cost_checkpoint and self.args.bf16
@@ -1536,6 +1551,10 @@ class Trainer:
 
         elif self.args.zcc_save_ema_coef is not None:
             self.add_non_zcc_ema_callback(resume_from_checkpoint)
+
+        if self.args.using_sonic_moe:
+            callback = InterleaveGateUpCallback(self.model, resume_from_checkpoint, self.args.output_dir)
+            self.add_callback(callback)
 
         self.log_trainable_numel(model)
 
@@ -2894,7 +2913,7 @@ class Trainer:
                 for key, value in target_attr.items():
                     if get_env_device() == "gpu":
                         target_attr[key] = getattr(value, action)()
-                    elif get_env_device() == "xpu":
+                    elif get_env_device() == "xpu" and action in ["cpu", "pin_memory"]:
                         target_attr[key] = getattr(value, action)()
                     else:
                         target_attr[key] = getattr(value, "to")(action)
@@ -3148,6 +3167,8 @@ class Trainer:
                 assert self.optimizer is not None, "optimizer is empty!"
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
 
+        if isinstance(model, LoRAModel):
+            model = model.model
         if (
             is_paddlefleet_available()
             and PaddleFleetPipelineLayer is not None
@@ -3193,8 +3214,7 @@ class Trainer:
             prepare_pipeline_inputs_func = (
                 model._prepare_pipeline_inputs_func if hasattr(model, "_prepare_pipeline_inputs_func") else None
             )
-            if isinstance(model, LoRAModel):
-                model = model.model
+
             if (
                 is_paddlefleet_available()
                 and paddlefleet_dist_model is not None
@@ -4056,6 +4076,7 @@ class Trainer:
                     max_shard_size="1024GB",
                     save_to_hf=True,
                     enable_auto_parallel=True,
+                    save_checkpoint_format=self.args.save_checkpoint_format,
                 )
             else:
                 self._save_flex_model_state(output_dir)
@@ -4113,6 +4134,7 @@ class Trainer:
                     is_main_process=self.args.should_save,
                     max_shard_size="1024GB",
                     save_to_hf=self.args.save_to_hf,
+                    save_checkpoint_format=self.args.save_checkpoint_format,
                 )
             # TODO: @ZHUI unify unwrap_model(self.model) and self.model
             elif not isinstance(self.model, PretrainedModel):
@@ -4137,6 +4159,7 @@ class Trainer:
                             is_main_process=self.args.should_save,
                             max_shard_size="1024GB",
                             save_to_hf=self.args.save_to_hf,
+                            save_checkpoint_format=self.args.save_checkpoint_format,
                         )
                     else:
                         unwrap_model(self.model).save_pretrained(
@@ -4147,6 +4170,7 @@ class Trainer:
                             is_main_process=self.args.should_save,
                             max_shard_size="1024GB",
                             save_to_hf=self.args.save_to_hf,
+                            save_checkpoint_format=self.args.save_checkpoint_format,
                         )
                 else:
                     logger.info("Trainer.model is not a `PretrainedModel`, only saving its state dict.")
@@ -4182,6 +4206,7 @@ class Trainer:
                         is_main_process=self.args.should_save,
                         max_shard_size="1024GB",
                         save_to_hf=self.args.save_to_hf,
+                        save_checkpoint_format=self.args.save_checkpoint_format,
                     )
                 else:
                     self.model.save_pretrained(
@@ -4192,6 +4217,7 @@ class Trainer:
                         is_main_process=self.args.should_save,
                         max_shard_size="1024GB",
                         save_to_hf=self.args.save_to_hf,
+                        save_checkpoint_format=self.args.save_checkpoint_format,
                     )
             if self.args.should_save_sharding_stage1_model:
                 model_meta = self.sharding_io.gather_distributed_model_meta()
@@ -4696,18 +4722,32 @@ class Trainer:
                 labels = None
             inputs = inputs.pop("input_ids")
         # train & eval share the same p2p_helper, so clear it before and after each step
-        model._p2p_helper.clear_meta_cache()
+        if hasattr(model, "_p2p_helper"):
+            model._p2p_helper.clear_meta_cache()
 
         with paddle.no_grad():
             if has_labels:
                 with self.autocast_smart_context_manager():
+
+                    def _prepare_inputs_for_fleet(inputs):
+                        if isinstance(inputs, (tuple, list)) and len(inputs) > 1:
+                            inputs = {"input_ids": inputs[0], "position_ids": inputs[1]}
+                        return inputs
+
+                    if (
+                        is_paddlefleet_available()
+                        and PaddleFleetParallelBase is not None
+                        and isinstance(model, PaddleFleetParallelBase)
+                    ):
+                        inputs = _prepare_inputs_for_fleet(inputs)
                     loss = model.eval_batch([inputs, labels], compute_loss=True)
                     # loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
                 loss = loss.mean().detach()
             else:
                 raise ValueError("pipeline mode eval need label!")
         # train & eval share the same p2p_helper, so clear it before and after each step
-        model._p2p_helper.clear_meta_cache()
+        if hasattr(model, "_p2p_helper"):
+            model._p2p_helper.clear_meta_cache()
 
         return (loss, None, labels)
 
@@ -4741,7 +4781,11 @@ class Trainer:
             Tuple[Optional[paddle.Tensor], Optional[paddle.Tensor], Optional[paddle.Tensor]]: A tuple with the loss,
             logits and labels (each being optional).
         """
-        if self.args.pipeline_model_parallel_size > 1:
+        if self.args.pipeline_model_parallel_size > 1 or (
+            is_paddlefleet_available()
+            and PaddleFleetParallelBase is not None
+            and isinstance(model, PaddleFleetParallelBase)
+        ):
             # hack for pipeline mode
             inputs = self._prepare_inputs(inputs)
             return self.prediction_pipeline_step(model, inputs, prediction_loss_only, ignore_keys)

@@ -30,7 +30,6 @@ class TestMLP(unittest.TestCase):
         self.config.mlp_bias = False
         self.config.fuse_swiglu = False
         self.config.hidden_act = "silu"
-        self.config.fuse_linear = False
 
         # Default test input
         self.batch_size = 2

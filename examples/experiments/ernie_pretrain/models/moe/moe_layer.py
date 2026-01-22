@@ -62,6 +62,12 @@ GateOutput = namedtuple(
 )
 
 
+def set_grad_in_dtype_non_consistent(ctx):
+    """Allow grad dtype not consistent with forward dtype"""
+    if hasattr(ctx, "set_grad_in_dtype_consistent"):
+        ctx.set_grad_in_dtype_consistent(False)
+
+
 class Fp8MoeGateDispatchAndQuant(paddle.autograd.PyLayer):
     """Fp8MoeGateDispatchAndQuant"""
 
@@ -77,6 +83,7 @@ class Fp8MoeGateDispatchAndQuant(paddle.autograd.PyLayer):
         use_pow2_scale=True,
     ):
         """forward"""
+        set_grad_in_dtype_non_consistent(ctx)
         assert moe_gate_dispatch_and_quant is not None, "Please use new version Paddle."
         with paddle.amp.auto_cast(enable=False):
             (out_fp8, scale, combine_weights, scatter_index, expert_offset, expert_id,) = moe_gate_dispatch_and_quant(
@@ -382,6 +389,18 @@ def combining_fused(x, combine_weights, scatter_index, hard_gate=False):
     return ret
 
 
+class ReshapeKeepGradDtype(PyLayer):
+    @staticmethod
+    def forward(ctx, x, shape):
+        set_grad_in_dtype_non_consistent(ctx)
+        ctx.orig_shape = x.shape
+        return x.reshape(shape)
+
+    @staticmethod
+    def backward(ctx, grad):
+        return grad.reshape(ctx.orig_shape)
+
+
 class MOELayer(nn.Layer):
     """Mixture of Experts (MoE) Layer implementation.
 
@@ -634,12 +653,13 @@ class MOELayer(nn.Layer):
         combine_weights = combine_weights.cast("bfloat16")
 
         def reshape_for_a2a(tensor):
-            return tensor.reshape(
+            return ReshapeKeepGradDtype.apply(
+                tensor,
                 [
                     self.world_size * self.num_local_experts,
                     capacity,
                     -1,
-                ]
+                ],
             )
 
         dispatched_input = reshape_for_a2a(dispatched_input)

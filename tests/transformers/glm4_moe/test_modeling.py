@@ -14,7 +14,6 @@
 # limitations under the License.
 from __future__ import annotations
 
-import sys
 import tempfile
 import unittest
 
@@ -22,7 +21,11 @@ import numpy as np
 import paddle
 from parameterized import parameterized
 
-from paddleformers.transformers import Glm4MoeConfig, Glm4MoeForCausalLM, Glm4MoeModel
+from paddleformers.transformers import Glm4MoeConfig
+from paddleformers.transformers import (
+    Glm4MoeForCausalLMDecapitated as Glm4MoeForCausalLM,
+)
+from paddleformers.transformers import Glm4MoeModel
 from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -376,7 +379,10 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         for model_class in self.all_model_classes:
             # test from_pretrained
             model1 = model_class.from_pretrained(
-                "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=True
+                "PaddleFormers/tiny-random-glm4moe",
+                download_hub="aistudio",
+                convert_from_hf=True,
+                load_checkpoint_format="",
             )
 
             model2 = model_class.from_pretrained(
@@ -394,7 +400,7 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
             # test save_pretrained
             with tempfile.TemporaryDirectory() as tmpdirname:
                 model2.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-                model3 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
+                model3 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
                 model_state_3 = model3.state_dict()
 
                 for k, v in model_state_3.items():
@@ -415,7 +421,10 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
 
     def test_inference_no_attention(self):
         model = Glm4MoeModel.from_pretrained(
-            "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=True
+            "PaddleFormers/tiny-random-glm4moe",
+            download_hub="aistudio",
+            convert_from_hf=True,
+            load_checkpoint_format="",
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -438,7 +447,10 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
 
     def test_inference_with_attention(self):
         model = Glm4MoeModel.from_pretrained(
-            "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=True
+            "PaddleFormers/tiny-random-glm4moe",
+            download_hub="aistudio",
+            convert_from_hf=True,
+            load_checkpoint_format="",
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -480,19 +492,13 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
         # 2. forward the paddle model
         from paddleformers.transformers import Glm4MoeModel
 
-        paddle_model = Glm4MoeModel.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
+        paddle_model = Glm4MoeModel.from_pretrained(
+            self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+        )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         # 3. forward the torch  model
-        try:
-            sys.modules["torch"] = sys.modules["torch_save"]
-        except:
-            pass
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
         import torch
         from transformers import Glm4MoeModel
 
@@ -507,11 +513,6 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
                 rtol=1e2,
             )
         )
-        sys.modules["torch"] = None
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
 
     @require_package("transformers", "torch")
     def test_Glm4Moe_converter_from_local_dir(self):
@@ -521,14 +522,6 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch  model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
             import torch
             from transformers import Glm4MoeModel
 
@@ -540,7 +533,9 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
             # 2. forward the paddle model
             from paddleformers.transformers import Glm4MoeModel
 
-            paddle_model = Glm4MoeModel.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = Glm4MoeModel.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -552,12 +547,6 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
                 )
             )
 
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
-
     @parameterized.expand([("Glm4MoeModel",), ("Glm4MoeForCausalLM",)])
     @require_package("transformers", "torch")
     def test_Glm4Moe_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
@@ -568,14 +557,6 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
             input_ids = np.random.randint(100, 200, [1, 20])
 
             # 2. forward the torch model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
             import torch
             import transformers
 
@@ -589,8 +570,13 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
             # 3. forward the paddle model
             from paddleformers import transformers
 
+            if class_name == "Glm4MoeForCausalLM":
+                class_name = "Glm4MoeForCausalLMDecapitated"
+
             paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = paddle_model_class.from_pretrained(
+                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            )
             paddle_model.eval()
 
             if class_name == "Glm4MoeModel":
@@ -605,11 +591,6 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
                     atol=1e2,
                 )
             )
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
 
 
 if __name__ == "__main__":

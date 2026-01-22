@@ -21,10 +21,14 @@ from ...utils.lazy_import import _LazyModule
 import_structure = {
     "configuration": ["Qwen3VLConfig", "Qwen3VLTextConfig"],
     "modeling": [
-        "Qwen3VLForConditionalGeneration",
+        "Qwen3VLForConditionalGenerationDecapitated",
         "Qwen3VLModel",
         "Qwen3VLPretrainedModel",
         "Qwen3VLTextModel",
+        "Qwen3VLModelFleet",
+        "Qwen3VLModelPipe",
+        "Qwen3VLForCausalLMPipe",
+        "Qwen3VLForConditionalGeneration",
     ],
     "processor": ["Qwen3VLProcessor"],
     "video_processor": ["Qwen3VLVideoProcessor"],

@@ -27,24 +27,24 @@ TRAIN_PATH = "./examples"
 CONFIG_PATH = "./examples/config/pt"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
-MODEL_NAME_OR_PATH = "./models/tiny-random-glm4moe"
-MAX_STEPS = 6
-SAVE_STEPS = 4
+MODEL_NAME_OR_PATH = "/home/models/PaddleFormers/tiny-random-glm4moe-bf16"
+MAX_STEPS = 2
+SAVE_STEPS = 2
 
-PT_FULL_EXCEPTED_LOSS = 12.795225
-PT_FULL_RESUME_EXCEPTED_LOSS = 12.793377
-PT_FULL_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
+PT_FULL_EXCEPTED_LOSS = 12.830773
+PT_FULL_RESUME_EXCEPTED_LOSS = 12.830642
+PT_FULL_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
-PT_LORA_EXCEPTED_LOSS = 12.795628
-PT_LORA_RESUME_EXCEPTED_LOSS = 12.794621
+PT_LORA_EXCEPTED_LOSS = 12.832637
+PT_LORA_RESUME_EXCEPTED_LOSS = 12.832492
 PT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 133362, 30625, 95331, 4198]]
 
-PT_FULL_TP_PP_EXCEPTED_LOSS = 11.931645
-PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 11.931562
-PT_FULL_TP_PP_EXCEPTED_RESULT = [[132047, 132047, 132047, 119194, 128575, 128575, 3315, 132047, 71148, 128575]]
+PT_FULL_TP_PP_EXCEPTED_LOSS = 12.83085
+PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 12.830748
+PT_FULL_TP_PP_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
-PT_LORA_TP_PP_EXCEPTED_LOSS = 11.93168
-PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 11.931659
+PT_LORA_TP_PP_EXCEPTED_LOSS = 12.832589
+PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 12.832575
 PT_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 PT_FC_EXCEPTED_LOSS = 11.931005
@@ -53,9 +53,8 @@ PT_FC_EXCEPTED_RESULT = [[51172, 99380, 99380, 99380, 99380, 99380, 99380, 99380
 
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
-os.environ["NCCL_ALGO"] = "Tree"
 os.environ["FLAGS_embedding_deterministic"] = "1"
-os.environ["FLAGS_cudnn_deterministic"] = "0"
+os.environ["FLAGS_cudnn_deterministic"] = "1"
 
 
 class PTTrainTester(unittest.TestCase):
@@ -100,11 +99,13 @@ class PTTrainTester(unittest.TestCase):
         model_path,
         excepted_result,
     ):
-        from paddleformers.transformers import Glm4MoeForCausalLM
+        from paddleformers.transformers.glm4_moe.modeling import (
+            Glm4MoeForCausalLMDecapitated,
+        )
 
         input_ids = paddle.to_tensor([[1, 306, 4658, 278, 6593, 310, 2834, 338]])
         attention_mask = paddle.ones_like(input_ids)
-        model = Glm4MoeForCausalLM.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
+        model = Glm4MoeForCausalLMDecapitated.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
         with paddle.no_grad():
             result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
         print(f"excepted_result is : {excepted_result}")

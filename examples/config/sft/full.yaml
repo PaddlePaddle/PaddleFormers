@@ -8,6 +8,8 @@ eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: false
 mix_strategy: concat
+template_backend: custom
+template: qwen3
 
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B-Base
@@ -42,10 +44,12 @@ learning_rate: 1.0e-5
 # performance
 tensor_model_parallel_size: 1
 pipeline_model_parallel_size: 1
-sharding: stage2
+sharding: stage1
 recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
-unified_checkpoint: true
+unified_checkpoint: false
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint

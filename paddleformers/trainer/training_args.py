@@ -212,18 +212,18 @@ class TrainingArguments:
         fp16_opt_level (`str`, *optional*, defaults to 'O1'):
             For `fp16` training,  AMP optimization level selected in ['O0', 'O1', 'O2']. See details at
             https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/api/paddle/amp/auto_cast_cn.html
-        amp_custom_black_list (`List[str]`, *optional*, defaults to `None`):
+        amp_custom_black_list (`List[str]`, *optional*, defaults to ["reduce_sum", "softmax_with_cross_entropy", "c_softmax_with_cross_entropy", "elementwise_div", "sin", "cos"]):
             The custom black_list. The set of ops that support fp16/bf16 calculation and are considered numerically-dangerous
             and whose effects may also be observed in downstream ops. These ops will not be converted to fp16/bf16.
-        amp_custom_white_list (`List[str]`, *optional*, defaults to `None`):
+        amp_custom_white_list (`List[str]`, *optional*, defaults to ["lookup_table", "lookup_table_v2", "flash_attn", "matmul", "matmul_v2", "fused_gemm_epilogue"]):
             The custom white_list. It’s the set of ops that support fp16/bf16 calculation and are considered numerically-safe and
              performance-critical. These ops will be converted to fp16/bf16.
-        amp_master_grad (`bool`, *optional*, defaults to `False`):
+        amp_master_grad (`bool`, *optional*, defaults to `True`):
             For amp opt level=’O2’, whether to use float32 weight gradients
             for calculations such as gradient clipping, weight decay, and weight updates. If master_grad is enabled,
             the weight gradients will be float32 dtype after the backpropagation. Default is False, there is only float16 weight gradients.
             Note: only support model parallel and pipeline parallel for now !!!
-        sharding (`str`, *optional*, defaults to ``):
+        sharding (`str`, *optional*, defaults to `stage1`):
             Whether or not to use Paddle Sharding Data Parallel training (in distributed training
             only). The base option should be `stage1`, `stage2` or `stage3` and you can add
             CPU-offload to `stage2` or `stage3` like this: `stage2 offload` or `stage3 offload`.
@@ -404,7 +404,7 @@ class TrainingArguments:
         load_via_cpu (bool, optional):
             Whether to load checkpoint data into CPU memory first before transferring to GPU.
             This helps mitigate GPU memory shortage by staging data on the CPU and only moving required parts to the GPU on demand during communication.
-            Defaults to False.
+            Defaults to True.
         save_hf_steps (`int`, *optional*, defaults to -1):
             Number of updates steps before two huggingface checkpoint saves if `save_strategy="steps"`.
         hybrid_parallel_expert_grad_scale (float, optional, defaults to None)(
@@ -572,7 +572,7 @@ class TrainingArguments:
         },
     )
     amp_master_grad: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "amp_master_grad (bool, optional) – For amp opt level=’O2’, whether to use float32 weight gradients "
             " for calculations such as gradient clipping, weight decay, and weight updates. If master_grad is enabled,"
@@ -595,20 +595,34 @@ class TrainingArguments:
     )
 
     amp_custom_black_list: Optional[List[str]] = field(
-        default=None,
+        default_factory=lambda: [
+            "reduce_sum",
+            "softmax_with_cross_entropy",
+            "c_softmax_with_cross_entropy",
+            "elementwise_div",
+            "sin",
+            "cos",
+        ],
         metadata={
             "help": "The set of ops that support fp16/bf16 calculation and are considered numerically-dangerous and whose effects may also be observed in downstream ops."
         },
     )
     amp_custom_white_list: Optional[List[str]] = field(
-        default=None,
+        default_factory=lambda: [
+            "lookup_table",
+            "lookup_table_v2",
+            "flash_attn",
+            "matmul",
+            "matmul_v2",
+            "fused_gemm_epilogue",
+        ],
         metadata={
             "help": "The the set of ops that support fp16/bf16 calculation and are considered numerically-safe and performance-critical. These ops will be converted to fp16/bf16."
         },
     )
 
     sharding: str = field(
-        default="",
+        default="stage1",
         metadata={
             "help": (
                 "Whether or not to use Paddle Sharding Data Parallel training (in distributed training"
@@ -1203,7 +1217,7 @@ class TrainingArguments:
     profile_step_start: int = field(default=10, metadata={"help": "Step to start nsys profiling."})
     profile_step_end: int = field(default=12, metadata={"help": "Step to end nsys profiling."})
     save_checkpoint_format: Optional[str] = field(
-        default=None,
+        default="flex_checkpoint",
         metadata={
             "help": (
                 "Specifies the format used to save checkpoints. "
@@ -1215,7 +1229,7 @@ class TrainingArguments:
     )
 
     load_checkpoint_format: Optional[str] = field(
-        default=None,
+        default="flex_checkpoint",
         metadata={
             "help": (
                 "Specifies the format used to load checkpoints. "
@@ -1234,7 +1248,7 @@ class TrainingArguments:
     )
 
     load_via_cpu: Optional[bool] = field(
-        default=False,
+        default=True,
         metadata={
             "help": "If True, loads checkpoint data to CPU first, then transfers required parts to GPU on demand to reduce GPU memory usage. Defaults to False."
         },
@@ -1278,7 +1292,7 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Whether to use deterministic mode."},
     )
-    cp_comm_type: str = field(
+    cp_comm_type: Optional[str] = field(
         default=None,
         metadata={"help": "Communication type."},
     )
@@ -1531,7 +1545,7 @@ class TrainingArguments:
         },
     )
     split_param: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "Enable parameter sharding to distribute model parameters across devices, reducing memory footprint per GPU (ZeRO-style optimization)."
         },
@@ -1550,6 +1564,13 @@ class TrainingArguments:
     )
     fa_version: int = field(
         default=2, metadata={"help": "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."}
+    )
+
+    using_sonic_moe: bool = field(
+        default=False,
+        metadata={
+            "help": "When enabled, the computation part of the moelayer will use the implementation provided by SonicMoE."
+        },
     )
 
     def __post_init__(self):
@@ -1571,15 +1592,17 @@ class TrainingArguments:
             os.environ["FLAGS_embedding_deterministic"] = "1"
 
         if self.fa_version == 2 or self.fa_version == 3:
-            is_sm90 = (
-                paddle.base.core.is_compiled_with_cuda()
-                and paddle_device.get_device_capability()[0] == 9
-                and paddle_device.get_device_capability()[1] == 0
-            )
-            if is_sm90:
-                paddle.set_flags({"FLAGS_flash_attn_version": 3})
-            else:
-                paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
+            if paddle.base.core.is_compiled_with_cuda():
+                is_sm90 = (
+                    paddle_device.get_device_capability()[0] == 9 and paddle_device.get_device_capability()[1] == 0
+                )
+                if is_sm90:
+                    paddle.set_flags({"FLAGS_flash_attn_version": 3})
+                    self.fa_version = 3
+                    warnings.warn("sm90 automatic set fa_version to fa3")
+                else:
+                    paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
+                    logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
         else:
             raise ValueError(f"--fa_version should be 2 or 3, but got {self.fa_version}")
 
@@ -1676,17 +1699,29 @@ class TrainingArguments:
         self._post_init_parallel_degree()
 
         # check recompute
-        if not isinstance(self.recompute_modules, list) and not not isinstance(self.recompute_modules, dict):
-            raise ValueError("recompute_modules must be list or dict")
+        if (
+            self.recompute_modules is not None
+            and not isinstance(self.recompute_modules, list)
+            and not isinstance(self.recompute_modules, dict)
+        ):
+            raise ValueError("recompute_modules must be list, dict or None")
         # check recompute:
-        if not isinstance(self.recompute_mtp_modules, list) and not not isinstance(self.recompute_mtp_modules, dict):
-            raise ValueError("recompute_mtp_modules must be list or dict")
+        if (
+            self.recompute_mtp_modules is not None
+            and not isinstance(self.recompute_mtp_modules, list)
+            and not isinstance(self.recompute_mtp_modules, dict)
+        ):
+            raise ValueError("recompute_mtp_modules must be list, dict or None")
 
+        if getattr(self, "moe_subbatch_token_num_before_dispatch", 0) > 0 and self.recompute_granularity == "full":
+            raise ValueError(
+                "When moe_subbatch_token_num_before_dispatch > 0, please set recompute_granularity='selective and add corresponding module name to recompute_modules"
+            )
         self._post_init_save_checkpoint_format()
         self._post_init_load_checkpoint_format()
         if self.tensorwise_offload_optimizer and self.data_parallel_size > 1:
             raise NotImplementedError(
-                f"Optimizer offload is not supported under data parallel. Please use sharding by setting --sharding stage1 --sharding_parallel_size {self.sharding_parallel_size*self.data_parallel_size}."
+                f"Optimizer offload is not supported under data parallel. Please use sharding by setting --sharding stage1 --sharding_parallel_size {self.sharding_parallel_size * self.data_parallel_size}."
             )
 
         if self.to_static:

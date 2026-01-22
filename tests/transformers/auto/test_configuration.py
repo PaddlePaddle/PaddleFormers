@@ -140,7 +140,6 @@ class AutoConfigTest(unittest.TestCase):
             "num_key_value_heads": 32,
             "pad_token_id": 32000,
             "paddleformers_version": None,
-            "pp_recompute_interval": 1,
             "recompute_granularity": "full",
             "rms_norm_eps": 1e-06,
             "rope_scaling_factor": 1.0,

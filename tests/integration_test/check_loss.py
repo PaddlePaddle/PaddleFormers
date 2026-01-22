@@ -1,5 +1,16 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# ... (License header omitted for brevity) ...
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import argparse
 import re
@@ -46,7 +57,6 @@ def parse_log_file(file_path):
                 if loss_match and step_match:
                     loss_val = float(loss_match.group(1))
                     step_val = int(step_match.group(1))
-                    # 使用 step 作为 key 存入字典
                     loss_dict[step_val] = loss_val
 
     return loss_dict
@@ -74,6 +84,12 @@ def main():
         default=None,
         help="If set, only compare loss at this specific global step.",
     )
+    parser.add_argument(
+        "--log_loss_file",
+        type=str,
+        default=None,
+        help="Record the loss values from the log file to this file.",
+    )
     args = parser.parse_args()
 
     print(f"Starting loss check with log file: {args.log_file}")
@@ -97,6 +113,11 @@ def main():
         log_loss = log_dict[target_step]
         gt_loss = gt_dict[target_step]
 
+        if args.log_loss_file is not None:
+            log_loss_file = args.log_loss_file
+            with open(log_loss_file, "w") as f:
+                f.write(f"{target_step} {log_loss}\n")
+
         print(f"\nChecking Step {target_step}:")
         print(f"  Log Loss: {log_loss}")
         print(f"  GT  Loss: {gt_loss}")
@@ -115,6 +136,12 @@ def main():
 
         actual_losses = [log_dict[s] for s in common_steps]
         target_losses = [gt_dict[s] for s in common_steps]
+
+        if args.log_loss_file is not None:
+            log_loss_file = args.log_loss_file
+            with open(log_loss_file, "w") as f:
+                for s in common_steps:
+                    f.write(f"{s} {log_dict[s]}\n")
 
         print("\nLog values (step loss):")
         print("\n".join([f"{s} {l:.8f}" for s, l in zip(common_steps, actual_losses)]))

@@ -135,15 +135,15 @@ class DPOCriterion(nn.Layer):
     ):
         """DPO logprobs"""
         use_fused_head_and_loss_fn = getattr(self.config, "use_fused_head_and_loss_fn", False)
-        use_sparse_head_and_loss_fn = getattr(self.config, "use_sparse_head_and_loss_fn", False)
+        use_filtered_label_loss = getattr(self.config, "use_filtered_label_loss", False)
         chunk_size = getattr(self.config, "chunk_size", 1024)
         labels = chosen_labels + rejected_labels
         if use_fused_head_and_loss_fn:
             hidden_states, weight, bias, transpose_y = logits
-        elif use_sparse_head_and_loss_fn:
+        elif use_filtered_label_loss:
             hidden_states, weight, bias = logits
 
-        if use_sparse_head_and_loss_fn:
+        if use_filtered_label_loss:
             if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel:
                 labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, 0)
 
@@ -182,7 +182,7 @@ class DPOCriterion(nn.Layer):
                 return_token_loss=True,
                 ignore_index=0,
             )
-        elif use_sparse_head_and_loss_fn:
+        elif use_filtered_label_loss:
             logits = parallel_matmul(
                 hidden_states,
                 weight,
@@ -207,7 +207,7 @@ class DPOCriterion(nn.Layer):
             response_indexs = response_indexs[0]
 
         offset = 1 if self.ignore_eos_token else 0
-        if use_sparse_head_and_loss_fn:
+        if use_filtered_label_loss:
             chosen_logps = paddle.stack(
                 [
                     (

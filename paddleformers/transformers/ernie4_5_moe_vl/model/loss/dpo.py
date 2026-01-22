@@ -46,7 +46,7 @@ class ErnieDPOCriterion(DPOCriterion):
         labels = chosen_labels + rejected_labels
         hidden_states, weight, bias, transpose_y = logits
 
-        if self.config.use_sparse_head_and_loss_fn:
+        if self.config.use_filtered_label_loss:
             if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel:
                 labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, 0)
 
@@ -81,7 +81,7 @@ class ErnieDPOCriterion(DPOCriterion):
                 self.config.text_config.vocab_size,
                 self.config.tensor_model_parallel_size,
                 self.config.tensor_parallel_output,
-                self.config.text_config.fuse_linear,
+                False,
                 LOOP_CHUNK_SIZE,
                 return_token_loss=True,
                 ignore_index=0,
@@ -93,7 +93,6 @@ class ErnieDPOCriterion(DPOCriterion):
                 bias=bias,
                 transpose_y=self.config.text_config.tie_word_embeddings,
                 tensor_parallel_output=self.config.tensor_parallel_output,
-                fuse_linear=self.config.text_config.fuse_linear,
             )
             logits = logits.astype("float32")
             per_token_logps = -self.logprobs(logits, labels)
@@ -101,7 +100,7 @@ class ErnieDPOCriterion(DPOCriterion):
         if len(response_indexs.shape) == 3:
             response_indexs = response_indexs[0]
 
-        if self.config.use_sparse_head_and_loss_fn:
+        if self.config.use_filtered_label_loss:
             chosen_logps = paddle.stack(
                 [
                     (

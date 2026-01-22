@@ -5,8 +5,13 @@ train_dataset_path: ./data/sft/train.jsonl
 train_dataset_prob: "1.0"
 eval_dataset_path: ./data/sft/eval.jsonl
 eval_dataset_prob: "1.0"
+packing: true
+truncate_packing: true
 max_seq_len: 8192
 mix_strategy: concat
+dataloader_shuffle: false
+dataloader_num_workers: 24
+prefetch_factor: 24
 
 ### model
 model_name_or_path: /root/paddlejob/gpfs/efficient_benchmark/huggingface/GLM-4.5-Air
@@ -20,52 +25,79 @@ seed: 23
 do_train: true
 do_eval: true
 per_device_eval_batch_size: 1
-per_device_train_batch_size: 1
+per_device_train_batch_size: 2
 num_train_epochs: 1
 max_steps: 100
 eval_iters: 10
-eval_steps: 100
+eval_steps: 300
 evaluation_strategy: steps
 save_steps: 100
 save_strategy: steps
 logging_steps: 1
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 64
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/qwen3_hf_0p6b_sft_ckpts
+output_dir: ./checkpoints
 disable_tqdm: true
 eval_accumulation_steps: 16
+
+# args
+router_aux_loss_coef: 0.0001
 
 # train
 warmup_steps: 20
 learning_rate: 1.0e-5
-random_shuffle: false
 
-# performance
-tensor_model_parallel_size: 4
-pipeline_model_parallel_size: 4
+# parallel
+tensor_model_parallel_size: 1
+sequence_parallel: false
 use_expert_parallel: true
 expert_model_parallel_size: 8
-sequence_parallel: true
+pipeline_model_parallel_size: 4
+#virtual_pipeline_model_parallel_size: 12
+num_empty_layers_add_in_head: 0
+num_empty_layers_add_in_tail: 2
 
-# sharding_parallel_config
+# performance
+recompute_granularity: full
+recompute_method: block
+recompute_num_layers: 11
+
+using_sonic_moe: true
+
+moe_grouped_gemm: true
+apply_rope_fusion: true
+fuse_rms_norm: true
+fp32_residual_connection: false
+# moe_router_force_load_balancing: true
+
+# sharding
 split_param: true
+sharding: stage1
+stage1_overlap: true
+# fuse_optimizer_states: true
+
+# pp
+pp_delay_scale_loss: true
+overlap_p2p_comm: true
+variable_seq_lengths: true
+best_unbalanced_scheduler: true
+pp_release_grads: true
+
+# tp
+tp_delay_scale_loss: true
 
 amp_master_grad: true
-#sharding_parallel_size: 8
-sharding: stage1
-recompute_granularity: full
-recompute_method: uniform
-recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
-# unified_checkpoint: true
-load_via_cpu: true
-# resume_from_checkpoint: false
-save_checkpoint_format : "flex_checkpoint"
-load_checkpoint_format : "flex_checkpoint"
-save_to_hf: true
+
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint
+continue_training: true
+
+fuse_attention_qkv: true
+fuse_attention_ffn: true
+
+tensorwise_offload_optimizer: true
 
 benchmark: true
-num_empty_layers_add_in_head: 1
-num_empty_layers_add_in_tail: 1
-continue_training: false
+skip_profile_timer: false

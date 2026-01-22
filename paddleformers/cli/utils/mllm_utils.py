@@ -27,6 +27,7 @@ _ALL_MODULES = ["vision", "aligner", "llm"]
 class MLLMModelMapping:
     qwen2_5_vl = "qwen2_5_vl"
     qwen3_vl = "qwen3_vl"
+    qwen3_vl_moe = "qwen3_vl_moe"
     paddleocr_vl = "paddleocr_vl"
     ernie4_5_moe_vl = "ernie4_5_moe_vl"
 
@@ -107,7 +108,7 @@ def get_multimodel_lora_target_modules(model, target_modules, freeze_config):
         remove_module = None
 
         for prefix in sorted_prefixes:
-            if tm.startswith(prefix):
+            if prefix in tm:
                 remove_module = prefix_to_module[prefix]
                 break
 
@@ -199,6 +200,14 @@ register_multimodel_keys(
         vision="model.visual",
     )
 )
+register_multimodel_keys(
+    MultiModelKeys(
+        model_dtype=MLLMModelMapping.qwen3_vl_moe,
+        aligner=["model.visual.merger", "model.visual.deepstack_merger_list"],
+        llm=["model.language_model", "lm_head"],
+        vision="model.visual",
+    )
+)
 
 register_multimodel_keys(
     MultiModelKeys(
@@ -212,8 +221,8 @@ register_multimodel_keys(
 register_multimodel_keys(
     MultiModelKeys(
         model_dtype=MLLMModelMapping.ernie4_5_moe_vl,
-        aligner="model.resampler_model",
-        llm=["model", "lm_head"],
+        aligner="resampler_model",
+        llm=["model", "lm_head", "mlp", "self_attn"],
         vision="vision_model",
     )
 )

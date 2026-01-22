@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from functools import partial
 from typing import Optional, Tuple, Union
 
 import paddle
@@ -431,77 +430,6 @@ class Gemma3PreTrainedModel(PretrainedModel):
         "down_proj",
         "lm_head",
     ]
-
-    @classmethod
-    def _get_fuse_or_split_param_mappings(cls, config: Gemma3TextConfig, is_fuse=False):
-        # return parameter fuse utils
-        from ..conversion_utils import split_or_fuse_func
-
-        fn = split_or_fuse_func(is_fuse=is_fuse)
-
-        # last key is fused key, other keys are to be fused.
-        fuse_qkv_keys = [
-            (
-                "layers.0.self_attn.q_proj.weight",
-                "layers.0.self_attn.k_proj.weight",
-                "layers.0.self_attn.v_proj.weight",
-                "layers.0.self_attn.qkv_proj.weight",
-            ),
-            (
-                "layers.0.self_attn.q_proj.bias",
-                "layers.0.self_attn.k_proj.bias",
-                "layers.0.self_attn.v_proj.bias",
-                "layers.0.self_attn.qkv_proj.bias",
-            ),
-        ]
-        fuse_gate_up_keys = [
-            (
-                "layers.0.mlp.gate_proj.weight",
-                "layers.0.mlp.up_proj.weight",
-                "layers.0.mlp.up_gate_proj.weight",
-            ),
-        ]
-        num_heads = config.num_attention_heads
-        num_key_value_heads = getattr(config, "num_key_value_heads", num_heads)
-        fuse_attention_qkv = getattr(config, "fuse_attention_qkv", False)
-        fuse_attention_ffn = getattr(config, "fuse_attention_ffn", False)
-
-        final_actions = {}
-        if is_fuse:
-            if fuse_attention_qkv:
-                for i in range(config.num_hidden_layers):
-                    for fuse_keys in fuse_qkv_keys:
-                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
-                        final_actions[keys] = partial(
-                            fn, is_qkv=True, num_heads=num_heads, num_key_value_heads=num_key_value_heads
-                        )
-
-            if fuse_attention_ffn:
-                for i in range(config.num_hidden_layers):
-                    for fuse_keys in fuse_gate_up_keys:
-                        keys = [key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys]
-                        experts_keys = tuple(keys)
-                        final_actions[experts_keys] = fn
-
-        else:
-            if not fuse_attention_qkv:
-                for i in range(config.num_hidden_layers):
-                    for fuse_keys in fuse_qkv_keys:
-                        keys = tuple([key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys])
-                        final_actions[keys] = partial(
-                            fn,
-                            split_nums=3,
-                            is_qkv=True,
-                            num_heads=num_heads,
-                            num_key_value_heads=num_key_value_heads,
-                        )
-            if not fuse_attention_ffn:
-                for i in range(config.num_hidden_layers):
-                    for fuse_keys in fuse_gate_up_keys:
-                        keys = [key.replace("layers.0.", f"layers.{i}.") for key in fuse_keys]
-                        experts_keys = tuple(keys)
-                        final_actions[experts_keys] = partial(fn, split_nums=2)
-        return final_actions
 
     @classmethod
     def _gen_aoa_config(cls, config: Gemma3TextConfig):
