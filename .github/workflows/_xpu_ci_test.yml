@@ -25,7 +25,7 @@ on:
 
 jobs:
   run_xpu_cases:
-    runs-on: [self-hosted, XPU-P800-4Cards]
+    runs-on: [self-hosted, XPU-P800-8Cards]
     timeout-minutes: 60
     steps:
       - name: Print current runner name
