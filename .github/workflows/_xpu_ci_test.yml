@@ -125,6 +125,7 @@ jobs:
           unset https_proxy
           echo "============================开始运行pytest测试============================"
           ln -s /model baidu
+          export XPU_VISIBLE_DEVICES="0,1,2,3"
           python -m pytest -v -s --tb=short tests/xpu_ci/
           exit_code=$?
 
