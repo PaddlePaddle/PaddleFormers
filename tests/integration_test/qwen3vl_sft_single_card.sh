@@ -18,27 +18,11 @@ export root_dir=$(pwd)
 step=$1
 
 
-if [[ "$step" == "single" ]]; then
-    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft_single.yaml
-    export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
-    export model_name_or_path=$CACHE_DIR/qwen3vl/Qwen3-VL-8B-Instruct
-    export output_dir=$root_dir/checkpoints/qwen3vl-single
-if [[ "$step" == "moe" ]]; then
-    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft_moe.yaml
-    export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
-    export model_name_or_path=$CACHE_DIR/qwen3vl/Qwen3-VL-30B-A3B-Instruct
-    export output_dir=$root_dir/checkpoints/qwen3vl-moe
-elif [[ "$step" == "fsdp" ]]; then
-    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft_fsdp.yaml
-    export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
-    export model_name_or_path=$CACHE_DIR/qwen3vl/Qwen3-VL-8B-Instruct
-    export output_dir=$root_dir/checkpoints/qwen3vl-fsdp
-elif [[ "$step" == "tp8" ]]; then
-    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft.yaml
-    export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
-    export model_name_or_path=$CACHE_DIR/qwen3vl/Qwen3-VL-8B-Instruct
-    export output_dir=$root_dir/checkpoints/qwen3vl-sft
-fi
+
+export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft_single.yaml
+export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
+export model_name_or_path=$CACHE_DIR/qwen3vl/Qwen3-VL-8B-Instruct
+export output_dir=$root_dir/checkpoints/qwen3vl-single
 
 yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
     | .eval_dataset_path = strenv(data_dir) + "/train.jsonl"
@@ -55,7 +39,6 @@ port=36677
 export FLAGS_embedding_deterministic=1
 export FLAGS_cudnn_deterministic=1
 export FLAGS_use_stride_compute_kernel=False
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 
 unset http_proxy https_proxy
 

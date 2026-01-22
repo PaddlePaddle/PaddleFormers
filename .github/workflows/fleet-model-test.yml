@@ -192,7 +192,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh single
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft_single_card.sh
           exit_code=$?
           if [[ "$exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: Qwen3-vl-8k-single-card.\033[0m"
