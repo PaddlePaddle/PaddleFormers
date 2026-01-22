@@ -198,7 +198,7 @@ def dpo_logps(
                 (
                     paddle.gather(
                         paddle.gather(per_token_logps, response_index[0], axis=0),
-                        paddle.arange(response_index[1], response_index[2], dtype=paddle.int32),
+                        paddle.arange(response_index[1] - 1, response_index[2] - 1, dtype=paddle.int32),
                         axis=0,
                     ).sum()
                     if response_index[3] != 0
@@ -213,7 +213,7 @@ def dpo_logps(
                 (
                     paddle.gather(
                         paddle.gather(per_token_logps, response_index[0], axis=0),
-                        paddle.arange(response_index[2] + offset, response_index[3], dtype=paddle.int32),
+                        paddle.arange(response_index[2] + offset - 1, response_index[3] - 1, dtype=paddle.int32),
                         axis=0,
                     ).sum()
                     if response_index[3] != 0
