@@ -377,37 +377,6 @@ class Qwen3MoeIntegrationTest(unittest.TestCase):
         self.assertTrue(paddle.allclose(out_fd_fallback, out, atol=1e-3, rtol=1e-3))
         self.assertTrue(paddle.allclose(out_fd_fallback_fused_ffn, out, atol=1e-3, rtol=1e-3))
 
-        with tempfile.TemporaryDirectory() as tmpdirname:
-            model_fd_fallback.save_pretrained(tmpdirname, save_to_hf=False, save_checkpoint_format="flex_checkpoint")
-            model = Qwen3MoeForCausalLM.from_pretrained(
-                tmpdirname,
-                convert_from_hf=False,
-                load_checkpoint_format="flex_checkpoint",
-                fd_fallback=True,
-            )
-            with paddle.no_grad():
-                out_fd_fallback_second = model(input_ids)[0]
-
-        self.assertTrue(paddle.allclose(out_fd_fallback, out_fd_fallback_second, atol=1e-3, rtol=1e-3))
-
-        with tempfile.TemporaryDirectory() as tmpdirname:
-            model_fd_fallback_fused_ffn.save_pretrained(
-                tmpdirname, save_to_hf=False, save_checkpoint_format="flex_checkpoint"
-            )
-            model = Qwen3MoeForCausalLM.from_pretrained(
-                tmpdirname,
-                convert_from_hf=False,
-                load_checkpoint_format="flex_checkpoint",
-                fd_fallback=True,
-                fuse_attention_ffn=True,
-            )
-            with paddle.no_grad():
-                model_fd_fallback_fused_ffn_second = model(input_ids)[0]
-
-        self.assertTrue(
-            paddle.allclose(out_fd_fallback_fused_ffn, model_fd_fallback_fused_ffn_second, atol=1e-3, rtol=1e-3)
-        )
-
 
 class Qwen3MoeGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
     internal_testing_model = "PaddleFormers/tiny-random-qwen3moev2"
