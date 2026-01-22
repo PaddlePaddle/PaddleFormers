@@ -5,8 +5,9 @@ from pathlib import Path
 def parse_loss_values(log_content):
     """Parse loss values from training log
     
-    The log format is:
-    loss: 7.11594725 learning_rate: 5e-07 global_step: 1 ...
+    The log format can be either:
+    - loss: 7.11594725 learning_rate: 5e-07 global_step: 1 ...
+    - loss: 12.24401569, learning_rate: 2.5e-06, global_step: 5, ...
     
     Args:
         log_content (str): The content of the log file
@@ -14,7 +15,8 @@ def parse_loss_values(log_content):
     Returns:
         dict: Dictionary containing step numbers as keys and loss values as values
     """
-    loss_pattern = re.compile(r"loss:\s*([\d\.e+-]+)\s+learning_rate:.*?global_step:\s*(\d+)")
+    # Support both formats: with and without commas after values
+    loss_pattern = re.compile(r"loss:\s*([\d\.e+-]+),?\s+learning_rate:.*?global_step:\s*(\d+)")
     matches = loss_pattern.findall(log_content)
     return {int(step): float(loss) for loss, step in matches}
 
