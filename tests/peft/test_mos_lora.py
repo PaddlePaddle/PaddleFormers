@@ -97,7 +97,7 @@ class TestMosLoraLayer(unittest.TestCase):
 class TestMosLoraModel(unittest.TestCase):
     def test_lora_model_restore(self):
         lora_config = LoRAConfig(
-            target_modules=[".*q_proj.*", ".*v_proj.*"],
+            target_modules=[".*qkv_proj.*"],
             r=4,
             lora_alpha=8,
             enable_lora_list=[None, [True, False]],
@@ -119,7 +119,7 @@ class TestMosLoraModel(unittest.TestCase):
 
     def test_parallel_support(self):
         lora_config = LoRAConfig(
-            target_modules=[".*q_proj.*", ".*v_proj.*"],
+            target_modules=[".*qkv_proj.*"],
             r=4,
             lora_alpha=8,
             enable_lora_list=[None, [True, False]],
@@ -135,7 +135,7 @@ class TestMosLoraModel(unittest.TestCase):
     @parameterized.expand([(None,), ("all",), ("lora",)])
     def test_lora_model_constructor(self, bias):
         lora_config = LoRAConfig(
-            target_modules=[".*q_proj.*", ".*v_proj.*"],
+            target_modules=[".*qkv_proj.*"],
             r=4,
             lora_alpha=8,
             enable_lora_list=[None, [True, False]],
@@ -175,9 +175,7 @@ class TestMosLoraModel(unittest.TestCase):
     def test_lora_model_save_load(self):
         with TemporaryDirectory() as tempdir:
             input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
-            lora_config = LoRAConfig(
-                target_modules=[".*q_proj.*", ".*v_proj.*"], r=4, lora_alpha=8, lora_use_mixer=True
-            )
+            lora_config = LoRAConfig(target_modules=[".*qkv_proj.*"], r=4, lora_alpha=8, lora_use_mixer=True)
             model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
             lora_model = LoRAModel(model, lora_config)
             lora_model.eval()
