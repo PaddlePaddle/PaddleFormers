@@ -2885,9 +2885,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         with ContextManagers(init_contexts):
             model = cls(config, *init_args, **model_kwargs)
 
-        pzl_test_tp_model = True
-        # pzl_test_tp_model = False
+
         if config.quantization_config.is_weight_quantize() and load_checkpoint_format == "flex_checkpoint": # flex_checkpoint need initialized weights
+            # copy model for loading flex_ckpt
+            origin_model = copy.deepcopy(model)
+            model, origin_model = origin_model, model
             for name, param in model.named_parameters():
                 with paddle.device_guard('cpu'):
                     value = paddle.normal(
@@ -2897,27 +2899,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     ).astype(param.dtype)
                 param.set_value(value)
 
-
-        # quantization_linear_list = None
-        # if config.quantization_config.is_weight_quantize():
-        #     with ContextManagers(quantization_init_contexts):
-        #         replace_with_quantization_linear(
-        #             model=model,
-        #             quantization_config=config.quantization_config,
-        #             llm_int8_threshold=config.quantization_config.llm_int8_threshold,
-        #         )
-        #         quantization_linear_list = []
-        #         for key in model.state_dict().keys():
-        #             if "quant_weight" in key:
-        #                 quantization_linear_list.append(key[:-13])
-
-
-        # print("after model:")
-        # model_state_dict = model.state_dict()
-        # print("state_dict['model.layers.1.self_attn.k_proj.quant_weight']: ", model_state_dict['model.layers.1.self_attn.k_proj.quant_weight'])
-        # # print("model_state_dict: ", model_state_dict.keys())
-        # print("quantization_linear_list: ", quantization_linear_list)
-        # exit()
 
         if load_checkpoint_format == "flex_checkpoint":
             if not hasattr(cls, "_gen_aoa_config"):
@@ -2960,14 +2941,37 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
             if config.quantization_config.is_weight_quantize():
                 new_state_dict = copy.deepcopy(model.state_dict())
+                del model
+                model = origin_model       
+
+                quantization_linear_list = None
+                if config.quantization_config.is_weight_quantize():
+                    with ContextManagers(quantization_init_contexts):
+                        replace_with_quantization_linear(
+                            model=model,
+                            quantization_config=config.quantization_config,
+                        )
+                        quantization_linear_list = []
+                        for key in model.state_dict().keys():
+                            if "quant_weight" in key:
+                                quantization_linear_list.append(key[:-13])
+
+
+                # params_name = []
+                # for param_name, param in model.named_parameters():
+                #     params_name.append(param_name)
+                # print("after model:")
+                model_state_dict = model.state_dict()
+                print("model_state_dict['model.layers.1.self_attn.k_proj.quant_weight']: ", model_state_dict['model.layers.1.self_attn.k_proj.quant_weight'])
+                print("model_state_dict: ", model_state_dict.keys())
+                print("new_state_dict.keys(): ", new_state_dict.keys())
+                # print("params_name: ", params_name)
+                print("quantization_linear_list: ", quantization_linear_list)
+                exit()
 
                 model_state_dict = model.state_dict()
                 set_state_dict = {}
                 for param_name, param in new_state_dict.items():
-                    # print("param_name: ", param_name)
-                    # print("model_state_dict['param_name']: ", model_state_dict[param_name])
-                    # print("param: ", param)
-                    # model_state_dict[param_name].value().get_tensor()._clear()
                     with paddle.no_grad():
                         set_state_dict[param_name] = param.cuda()
                         model_state_dict[param_name].get_tensor()._share_data_with(set_state_dict[param_name].value().get_tensor())
@@ -3039,16 +3043,33 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         quantization_linear_list = None
         if config.quantization_config.is_weight_quantize():
             with ContextManagers(quantization_init_contexts):
+                print("before model.state_dict().keys(): ", list(model.state_dict().keys())[:3])
                 replace_with_quantization_linear(
                     model=model,
                     quantization_config=config.quantization_config,
                     llm_int8_threshold=config.quantization_config.llm_int8_threshold,
                 )
+                # print("after model.state_dict().keys(): ", list(model.state_dict().keys())[:3])
                 quantization_linear_list = []
                 for key in model.state_dict().keys():
                     if "quant_weight" in key:
                         quantization_linear_list.append(key[:-13])
 
+        # print("after model:")
+        # model_state_dict = model.state_dict()
+        # print("model_state_dict: ", model_state_dict.keys())
+        # print("state_dict['model.layers.1.self_attn.k_proj.quant_weight']: ", model_state_dict['model.layers.1.self_attn.k_proj.quant_weight'])
+        print("quantization_linear_list: ", quantization_linear_list)
+        print("---------outside--------")
+        # print("'0.resampler_model.spatial_linear.0.weight' in model.state_dict(): ", 
+        #     '0.resampler_model.spatial_linear.0.weight' in model.state_dict())
+        # print("'0.resampler_model.spatial_linear.0.weight' in model._pp_to_single_mapping: ", 
+        #     '0.resampler_model.spatial_linear.0.weight' in model._pp_to_single_mapping)
+        # print("'0.resampler_model.spatial_linear.0.quant_weight' in model.state_dict(): ", 
+        #     '0.resampler_model.spatial_linear.0.quant_weight' in model.state_dict())
+        # print("'0.resampler_model.spatial_linear.0.quant_weight' in model._pp_to_single_mapping: ", 
+        #     '0.resampler_model.spatial_linear.0.quant_weight' in model._pp_to_single_mapping)
+        exit()
         # print("-----------pzl 1-------------")
         # # state_dict = model.state_dict()
         # # print("state_dict['model.layers.1.self_attn.k_proj.weight']: ", model.state_dict()['model.layers.1.self_attn.k_proj.weight'])
