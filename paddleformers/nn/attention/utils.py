@@ -20,9 +20,8 @@ def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
     This is the equivalent of paddle.repeat_interleave(hidden_states, n_rep, axis=1). The hidden states go from (batch,
     num_key_value_heads, seqlen, head_dim) to (batch, num_attention_heads, seqlen, head_dim)
     """
-    batch, slen, num_key_value_heads, head_dim = hidden_states.shape
+    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
     if n_rep == 1:
         return hidden_states
-
-    hidden_states = hidden_states.unsqueeze(-2).tile([1, 1, 1, n_rep, 1])
-    return hidden_states.reshape([batch, slen, num_key_value_heads * n_rep, head_dim])
+    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
+    return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
