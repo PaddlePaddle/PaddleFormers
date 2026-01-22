@@ -18,11 +18,7 @@ export root_dir=$(pwd)
 step=$1
 
 
-if [[ "$step" == "single" ]]; then
-    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft_single.yaml
-    export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
-    export model_name_or_path=$CACHE_DIR/qwen3vl/Qwen3-VL-8B-Instruct
-    export output_dir=$root_dir/checkpoints/qwen3vl-single
+
 if [[ "$step" == "moe" ]]; then
     export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft_moe.yaml
     export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
@@ -38,6 +34,12 @@ elif [[ "$step" == "tp8" ]]; then
     export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
     export model_name_or_path=$CACHE_DIR/qwen3vl/Qwen3-VL-8B-Instruct
     export output_dir=$root_dir/checkpoints/qwen3vl-sft
+fi
+
+if [[ ! -d $data_dir/DoclingMatix ]]; then
+  wget https://paddleformers.bj.bcebos.com/datasets/DoclingMatix.tar.gz
+  tar -xf DoclingMatix.tar.gz -C $data_dir
+  rm -rf DoclingMatix.tar.gz
 fi
 
 yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"

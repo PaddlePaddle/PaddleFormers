@@ -24,6 +24,12 @@ export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
 export model_name_or_path=$CACHE_DIR/qwen3vl/Qwen3-VL-8B-Instruct
 export output_dir=$root_dir/checkpoints/qwen3vl-single
 
+if [[ ! -d $data_dir/DoclingMatix ]]; then
+  wget https://paddleformers.bj.bcebos.com/datasets/DoclingMatix.tar.gz
+  tar -xf DoclingMatix.tar.gz -C $data_dir
+  rm -rf DoclingMatix.tar.gz
+fi
+
 yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
     | .eval_dataset_path = strenv(data_dir) + "/train.jsonl"
     | .model_name_or_path = strenv(model_name_or_path)
