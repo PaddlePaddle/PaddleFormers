@@ -1,4 +1,4 @@
-name: CI_new
+name: CI_XPU_
 
 on:
   pull_request:
@@ -15,14 +15,14 @@ jobs:
     name: Clone-Linux
     uses: ./.github/workflows/_clone_linux.yml
 
-  # xpu_build_test:
-  #   name: xpu_build_test
-  #   needs: [clone]
-  #   uses: ./.github/workflows/_build_xpu.yml
-  #   with:
-  #     FASTDEPLOY_ARCHIVE_URL: ${{ needs.clone.outputs.repo_archive_url }}
-  #     DOCKER_IMAGE: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/fastdeploy-xpu:ci
-
+  xpu_test:
+    name: xpu_test
+    needs: [clone]
+    uses: ./.github/workflows/_xpu_ci_test.yml
+    with:
+      PADDLEFORMERS_ARCHIVE_URL: ${{ needs.clone.outputs.repo_archive_url }}
+      DOCKER_IMAGE: registry.baidubce.com/device/paddle-xpu:ubuntu20-x86_64-gcc84-py310
+      MODEL_PATH: /ssd3/model
   # xpu_4cards_case_test:
   #   name: xpu_4cards_case_test
   #   needs: [clone, xpu_build_test]
