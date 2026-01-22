@@ -14,8 +14,8 @@
 
 from typing import Any, Dict
 
-from .DPODataset import DPODataSet
-from .SFTDataset import Sequence, SFTDataSet
+from .DPODataset import IteratorDPODataset, MapDPODataset
+from .SFTDataset import IteratorSFTDataset, MapSFTDataset, Sequence
 
 
 def create_dataset(**dataset_config: Dict[str, Any]):
@@ -30,9 +30,15 @@ def create_dataset(**dataset_config: Dict[str, Any]):
         SequenceDataset: Configured sequence dataset
     """
     if dataset_config["stage"].lower() == "dpo":
-        train_dataset = DPODataSet(**dataset_config)
+        if dataset_config["dataset_type"].lower() == "map":
+            train_dataset = MapDPODataset(**dataset_config)
+        elif dataset_config["dataset_type"].lower() == "iterable":
+            train_dataset = IteratorDPODataset(**dataset_config)
     else:
-        train_dataset = SFTDataSet(**dataset_config)
+        if dataset_config["dataset_type"].lower() == "map":
+            train_dataset = MapSFTDataset(**dataset_config)
+        elif dataset_config["dataset_type"].lower() == "iterable":
+            train_dataset = IteratorSFTDataset(**dataset_config)
 
     return train_dataset
 

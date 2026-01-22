@@ -357,6 +357,7 @@ def run_sft(
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
+        "dataset_type": data_args.dataset_type,
     }
 
     dataset_config.update(

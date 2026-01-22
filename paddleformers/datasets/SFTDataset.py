@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional
 
 import numpy as np
-from paddle.io import IterableDataset
+from paddle.io import Dataset, IterableDataset
 
 from paddleformers.datasets.data_utils import (
     calculate_matched_group,
@@ -46,7 +46,7 @@ class Sequence:
     mm_inputs: Dict = field(default_factory=dict)
 
 
-class SFTDataSet(IterableDataset):
+class BaseSFTDataset:
     def __init__(self, **dataset_config):
 
         # parameter init
@@ -61,8 +61,9 @@ class SFTDataSet(IterableDataset):
         self.split_multi_turn = dataset_config.get("split_multi_turn", False)
         self.encode_one_turn = dataset_config.get("encode_one_turn", True)
         self.is_pretraining = dataset_config.get("is_pretraining", False)
-        self.truncate_packing = dataset_config.get("truncate_packing", True)
         self.is_valid = dataset_config.get("is_valid", False)
+        self.truncate_packing = dataset_config.get("truncate_packing", True)
+        self.truncation_strategy = dataset_config.get("truncation_strategy", "delete")
         if self.truncate_packing and not self.is_pretraining:
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
         self.packing = dataset_config.get("packing", False)
@@ -71,14 +72,15 @@ class SFTDataSet(IterableDataset):
         self.packing_interval = dataset_config.get("packing_interval", 128)
         self.cyclic = dataset_config.get("cyclic", False)
         self.strict = dataset_config.get("strict", False)
-        self.truncation_strategy = dataset_config.get("truncation_strategy", "delete")
         self.placeholder_tokens = []
-        if self.template.mm_plugin.image_token:
-            self.placeholder_tokens.append(self.template.mm_plugin.image_token)
-        if self.template.mm_plugin.video_token:
-            self.placeholder_tokens.append(self.template.mm_plugin.video_token)
-        if self.template.mm_plugin.audio_token:
-            self.placeholder_tokens.append(self.template.mm_plugin.audio_token)
+        if self.template and self.template.mm_plugin:
+            for tok in [
+                self.template.mm_plugin.image_token,
+                self.template.mm_plugin.video_token,
+                self.template.mm_plugin.audio_token,
+            ]:
+                if tok:
+                    self.placeholder_tokens.append(tok)
         for i, token in enumerate(self.placeholder_tokens):
             if isinstance(token, str):
                 if isinstance(self.tokenizer, PretrainedTokenizer):
@@ -130,7 +132,7 @@ class SFTDataSet(IterableDataset):
     def __len__(self):
         return len(self.mix_datasets)
 
-    def __iter_func(self):
+    def _generate_sequences(self):
 
         # prepare epoch data
         batch_sequence, cur_len = [], 0
@@ -367,17 +369,6 @@ class SFTDataSet(IterableDataset):
                         for pack in generate_packs:
                             if len(pack) > 0:
                                 yield pack
-
-    def __iter__(self):
-        """
-        Rewrite the __iter__ method to implement dataset iteration.
-        Each iteration returns a Sequence-type element.
-        """
-        if self.is_valid:
-            yield from self.__iter_func()
-        else:
-            while True:
-                yield from self.__iter_func()
 
     def _postprocess_pretraining_sequence(self, example, actual_example_num):
         tokens = self._encode_pretraining_example(example, actual_example_num)
@@ -743,3 +734,30 @@ class SFTDataSet(IterableDataset):
             return None
         except Exception:
             return None
+
+
+class IteratorSFTDataset(BaseSFTDataset, IterableDataset):
+    def __init__(self, **dataset_config):
+        super().__init__(**dataset_config)
+
+    def __iter__(self):
+        if self.is_valid:
+            yield from self._generate_sequences()
+        else:
+            while True:
+                yield from self._generate_sequences()
+
+
+class MapSFTDataset(BaseSFTDataset, Dataset):
+    def __init__(self, **dataset_config):
+        super().__init__(**dataset_config)
+        self.new_data = []
+        for batch in self._generate_sequences():
+            self.new_data.append(batch)
+        logger.info(f"[SFTMapDataset] Total batches: {len(self.new_data)}")
+
+    def __len__(self):
+        return len(self.new_data)
+
+    def __getitem__(self, idx):
+        return self.new_data[idx]
