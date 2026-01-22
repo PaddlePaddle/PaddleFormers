@@ -28,7 +28,49 @@ defaults:
     shell: bash
 
 jobs:
+  check_documents_type:
+    name: check documents type for pull request
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REPO_NAME: ${{ github.repository }}
+    outputs:
+      is_md_only: ${{ steps.check_files.outputs.is_md_only }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: git diff and check
+        id: check_files
+        run: |
+          changed_files=$(git diff origin/${{ github.event.pull_request.base.ref }}...HEAD --name-only)
+          echo "Changed files: $changed_files"
+          all_count=0
+          md_count=0
+          for file in $changed_files; do
+            all_count=$((all_count+1))
+            echo $file
+            if [[ $file == *.md ]]; then
+              echo "Markdown document: $file has been changed."
+              md_count=$((md_count+1))
+            fi
+          done
+          echo "总计: all_count=$all_count, md_count=$md_count"
+          if [ "$md_count" -eq "$all_count" ]; then
+            echo "is_md_only=true" >> $GITHUB_OUTPUT
+            echo "is_md_only=true"
+          else
+            echo "is_md_only=false" >> $GITHUB_OUTPUT
+            echo "is_md_only=false"
+          fi
+          echo "is_md_only: $(cat $GITHUB_OUTPUT | grep is_md_only || echo '未找到')"
+    
   integration-test-H20-single-card:
+    needs: check_documents_type
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' }}
     name: Integration test (H20, single card)
     runs-on:
       group: Fleet-H-single-card
@@ -170,6 +212,8 @@ jobs:
 
 
   integration-test-H20-multi-card:
+    needs: check_documents_type
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' }}
     name: Integration test (H20, multi-card)
     runs-on:
       group: Fleet-H-multi-card
@@ -366,6 +410,8 @@ jobs:
           docker rm -f ${{ env.container_name }}
 
   integration-test-a100:
+    needs: check_documents_type
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' }}
     name: Integration test (A100)
     runs-on:
       group: Distribute
