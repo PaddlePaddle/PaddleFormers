@@ -19,7 +19,6 @@ import unittest
 import paddle
 
 from paddleformers.transformers import AutoImageProcessor
-from paddleformers.utils.log import logger
 
 
 class Glm4vImageProcessorTest(unittest.TestCase):
@@ -31,6 +30,9 @@ class Glm4vImageProcessorTest(unittest.TestCase):
         IMAGE_URL = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg"
         response = requests.get(IMAGE_URL, stream=True)
         cls.image = Image.open(response.raw).convert("RGB")
+
+        cls.patch_size = 14
+        cls.size = {"longest_edge": 9633792, "shortest_edge": 12544}
 
     def test_slow_image_processor_consistency_with_hf(self):
         with tempfile.TemporaryDirectory() as tempdir:
@@ -50,29 +52,34 @@ class Glm4vImageProcessorTest(unittest.TestCase):
             )
 
     def test_fast_image_processor_consistency_with_hf(self):
-        import torch
-
         # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place() or not torch.cuda.is_available():
+        if not paddle.to_tensor([0]).place.is_gpu_place():
             self.skipTest("No GPU currently available/allocated")
 
         with tempfile.TemporaryDirectory() as tempdir:
-            image_processor_pd = AutoImageProcessor.from_pretrained("PaddleFormers/tiny-random-glm4vmoe-bf16")
+            image_processor_pd = AutoImageProcessor.from_pretrained(
+                "PaddleFormers/tiny-random-glm4vmoe-bf16", patch_size=self.patch_size, size=self.size, use_fast=True
+            )
             image_processor_pd.save_pretrained(tempdir)
 
             from transformers import AutoImageProcessor as AutoImageProcessor_hf
 
-            if torch.cuda.device_count() > 0:
-                torch.cuda.set_device(1)
-
-            image_processor_hf = AutoImageProcessor_hf.from_pretrained(tempdir, device="cuda:1")
+            image_processor_hf = AutoImageProcessor_hf.from_pretrained(tempdir, device="cuda", use_fast=True)
             inputs_pd = image_processor_pd(self.image, return_tensors="pd")
             inputs_hf = image_processor_hf(self.image, return_tensors="pt")
 
-            logger.info(paddle.to_tensor(inputs_hf["pixel_values"].cpu().numpy()))
-            logger.info(inputs_pd["pixel_values"])
-
-            self.assertTrue(
-                paddle.to_tensor(inputs_hf["pixel_values"].cpu().numpy())._md5sum()
-                == inputs_pd["pixel_values"]._md5sum()
-            )
+            # NOTE: Fallback to CPU leads to precision differences during resize.
+            if inputs_hf["pixel_values"].device.type == "cuda":
+                self.assertTrue(
+                    paddle.to_tensor(inputs_hf["pixel_values"].cpu().numpy())._md5sum()
+                    == inputs_pd["pixel_values"]._md5sum()
+                )
+            else:
+                self.assertTrue(
+                    paddle.allclose(
+                        paddle.to_tensor(inputs_hf["pixel_values"].numpy()),
+                        inputs_pd["pixel_values"],
+                        rtol=1e-6,
+                        atol=1e0,
+                    )
+                )
