@@ -183,8 +183,6 @@ class DPOTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
-            "fuse_attention_qkv": "true",
-            "fuse_attention_ffn": "true",
             "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
