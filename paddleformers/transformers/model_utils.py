@@ -2885,9 +2885,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         with ContextManagers(init_contexts):
             model = cls(config, *init_args, **model_kwargs)
 
+        pzl_test_tp_model = True
+        # pzl_test_tp_model = False
         if config.quantization_config.is_weight_quantize() and load_checkpoint_format == "flex_checkpoint": # flex_checkpoint need initialized weights
-            origin_model = copy.deepcopy(model)
-            # original_state_dict = copy.deepcopy(model.state_dict())
             for name, param in model.named_parameters():
                 with paddle.device_guard('cpu'):
                     value = paddle.normal(
@@ -2896,17 +2896,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                         shape=param.shape,
                     ).astype(param.dtype)
                 param.set_value(value)
-
-            # test
-            for name, param in origin_model.named_parameters():
-                with paddle.device_guard('gpu'):
-                    value = paddle.normal(
-                        mean=0.0,
-                        std=0.02,
-                        shape=param.shape,
-                    ).astype(param.dtype)
-                param.set_value(value)
-
 
 
         # quantization_linear_list = None
@@ -2965,52 +2954,13 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 offload=load_via_cpu,
             )
 
-            sharded_state_dict = origin_model.sharded_state_dict()
-            dist.load_state_dict(
-                sharded_state_dict,
-                path=ckpt_path,
-                aoa_config=aoa_config,
-                safetensors=True,
-                offload=load_via_cpu,
-            )
-
-            original_state_dict = origin_model.state_dict()
-            new_state_dict = model.state_dict()
-
-            print("-------test cpu key-------")
-            for key in original_state_dict.keys():
-                if key == "lm_head.weight" or key == "model.embed_tokens.weight":
-                    print("original_state_dict[key]: ", original_state_dict[key])
-                    print("new_state_dict[key]: ", new_state_dict[key])
-                if not paddle.allclose(original_state_dict[key].float(), new_state_dict[key].float()):
-                    print("key: ", key, " not equal")
-                # print("original_state_dict[key]: ", original_state_dict[key])
-                # print("new_state_dict[key]: ", new_state_dict[key])
-                # print("paddle.allclose(original_state_dict[key], new_state_dict[key]): ", paddle.allclose(original_state_dict[key].float(), new_state_dict[key].float()))
-                # exit()
-
-
             for v in sharded_state_dict.values():
                 if hasattr(v.local_tensor, "target_tensor"):
                     del v.local_tensor.target_tensor
 
             if config.quantization_config.is_weight_quantize():
-            # if 0:
                 new_state_dict = copy.deepcopy(model.state_dict())
 
-                # # init_contexts = []
-                # # if low_cpu_mem_usage or config.quantization_config.is_weight_quantize():
-                # #     # Instantiate model.
-                # #     init_contexts.append(no_init_weights(_enable=True))
-                # #     if is_paddle_support_lazy_init():
-                # #         init_contexts.append(paddle.LazyGuard())
-
-                # # if dtype:
-                # #     init_contexts.append(dtype_guard(dtype))
-
-                # # print("init_contexts: ", init_contexts)
-                # # with ContextManagers(init_contexts):
-                # #     model = cls(config, *init_args, **model_kwargs)
                 model_state_dict = model.state_dict()
                 set_state_dict = {}
                 for param_name, param in new_state_dict.items():
@@ -3022,32 +2972,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                         set_state_dict[param_name] = param.cuda()
                         model_state_dict[param_name].get_tensor()._share_data_with(set_state_dict[param_name].value().get_tensor())
                     param.value().get_tensor()._clear()
-
-                original_state_dict = origin_model.state_dict()
-                new_state_dict = model.state_dict()
-
-                print("-------test gpu key-------")
-                for key in original_state_dict.keys():
-                    if key == "lm_head.weight":
-                        print("original_state_dict[key]: ", original_state_dict[key])
-                        print("new_state_dict[key]: ", new_state_dict[key])
-                    if not paddle.allclose(original_state_dict[key].float(), new_state_dict[key].float()):
-                        print("key: ", key, " not equal")
-                exit()
-                #     # print("-------after--------")
-                #     # print("model_state_dict['param_name']: ", model_state_dict[param_name])
-                #     # print("param: ", param)
-                #     # exit()
-                # # model.set_state_dict(set_state_dict)
-                # # for name, p in model.named_parameters():
-                # #     p.set_value(p.cpu().cuda())
-                # # try:
-                # print("model.state_dict()['model.layers.1.self_attn.k_proj.weight']: ", origin_model.state_dict()['model.layers.1.self_attn.k_proj.weight'])
-                # print("new_state_dict['model.layers.1.self_attn.k_proj.weight']: ", new_state_dict['model.layers.1.self_attn.k_proj.weight'])
-                # # except:
-                # #     pass
-                # exit()
-                # return origin_model
 
             return model
 
@@ -3180,6 +3104,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         if isinstance(model, PipelineLayer):
             model._synchronize_shared_weights()
 
+        try:
+            print("state_dict['lm_head.weight']: ", model.state_dict()['lm_head.weight'])
+        except:
+            pass
+        exit()
         if paddle.in_dynamic_mode():
             return model
 
