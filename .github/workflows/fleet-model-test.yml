@@ -53,10 +53,6 @@ jobs:
           for file in $changed_files; do
             all_count=$((all_count+1))
             echo $file
-            if [[ $file == .github/workflows/fleet-model-test.yml ]]; then
-              echo "test passed."
-              all_count=$((all_count-1))
-            fi
             if [[ $file == *.md ]]; then
               echo "Markdown document: $file has been changed."
               md_count=$((md_count+1))
