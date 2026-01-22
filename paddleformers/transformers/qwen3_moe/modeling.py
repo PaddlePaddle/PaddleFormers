@@ -1365,6 +1365,7 @@ class Qwen3MoeForCausalLM(Qwen3MoePretrainedModel):
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+        config.fuse_rms_norm = True
 
         model_provider_class = Qwen3MoEModelProvider
         model_provider = model_provider_class.from_config(config)
@@ -1519,6 +1520,7 @@ class Qwen3MoeForCausalLMPipe(Qwen3MoePretrainedModel, GeneralModelForCausalLMPi
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+        config.fuse_rms_norm = True
 
         model_provider_class = Qwen3MoEModelProvider
         model_provider = model_provider_class.from_config(config)

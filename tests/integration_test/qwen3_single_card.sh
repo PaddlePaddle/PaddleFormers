@@ -20,6 +20,26 @@ fi
 
 export root_dir=$(pwd)
 
+python -c "
+infile = '$root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py'
+print(infile)
+outfile = infile + '.new'
+with open(infile) as fin:
+    lines = fin.readlines()
+with open(outfile, 'w') as fout:
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        pad = line[:len(line)-len(line.lstrip())]
+        if line.lstrip().startswith('config.fuse_rms_norm = True'):
+            fout.write(pad + 'config.fuse_rms_norm = True\n')
+            fout.write(pad + 'config.router_aux_loss_coef = None\n')
+        else:
+            fout.write(line)
+        i += 1
+"
+mv $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py
+
 config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_pt.yaml
 yq eval '
   .save_steps = 100 |
