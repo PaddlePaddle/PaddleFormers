@@ -51,16 +51,19 @@ jobs:
           md_count=0
           for file in $changed_files; do
             all_count=$((all_count+1))
+            echo $file
             if [[ $file == *.md ]]; then
               echo "Markdown document: $file has been changed."
               md_count=$((md_count+1))
             fi
           done
-          # 判断两个变量是否相等
+          echo "总计: all_count=$all_count, md_count=$md_count"
           if [ "$md_count" -eq "$all_count" ]; then
             echo "is_md_only=true" >> $GITHUB_OUTPUT
+            echo "is_md_only=true"
           else
             echo "is_md_only=false" >> $GITHUB_OUTPUT
+            echo "is_md_only=false"
           fi
     
   integration-test-H20-single-card:
