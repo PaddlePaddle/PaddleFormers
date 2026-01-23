@@ -42,7 +42,7 @@ warmup_steps: 20
 learning_rate: 1.0e-5
 
 # performance
-tensor_model_parallel_size: 8
+tensor_model_parallel_size: 1
 pipeline_model_parallel_size: 1
 sharding: stage3
 recompute_granularity: full
@@ -54,3 +54,4 @@ unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
 freeze_config: freeze_vision freeze_aligner
+num_hidden_layers: 2

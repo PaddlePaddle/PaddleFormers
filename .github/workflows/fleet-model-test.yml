@@ -207,7 +207,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft_single_card.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft_single_card.sh single
           exit_code=$?
           if [[ "$exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: Qwen3-vl-8k-single-card.\033[0m"
@@ -215,6 +215,14 @@ jobs:
           else
             echo -e "\033[32mIntegration test succeeded: Qwen3-vl-8k-single-card.\033[0m"
           fi
+          '
+
+      - name: Qwen3-vl-8k-single-card-fsdp
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft_single_card.sh fsdp
           '
 
 
@@ -423,14 +431,6 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
           timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8
-          '
-      
-      - name: Qwen vl fsdp
-        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp
           '
 
       - name: Qwen vl moe
