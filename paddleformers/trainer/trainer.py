@@ -1167,6 +1167,7 @@ class Trainer:
                 aoa_config=self.args.aoa_config,
                 offload=self.args.load_via_cpu,
                 comm_method=self.args.flex_ckpt_comm_method,
+                worker_groups=worker_groups,
             )
 
             if not self.args.ignore_load_lr_and_optim:
