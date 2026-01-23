@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import copy
+import os
 import tempfile
 import unittest
 
@@ -30,6 +31,7 @@ from paddleformers.transformers import (
     process_vision_info,
 )
 from paddleformers.transformers.video_utils import load_video
+from paddleformers.utils.log import logger
 from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -503,9 +505,16 @@ class Qwen2_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
 
 class Qwen2_5_VLIntegrationTest(unittest.TestCase):
     def setUp(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
+        # Initialize device when GPU is needed by certain test case
+        gpu_count = paddle.device.cuda.device_count()
+        pid = os.getpid()
+
+        if gpu_count > 0:
+            paddle.set_device("gpu")
+        else:
+            paddle.set_device("cpu")
             self.skipTest("No GPU currently available/allocated")
+        logger.info(f"Qwen2_5_VLIntegrationTest [PID:{pid}] Device initialized: {paddle.get_device()}")
 
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             "PaddleFormers/tiny-random-qwen25vlv2",
