@@ -259,6 +259,7 @@ def run_sft(
     model_config.seq_length = data_args.max_seq_len
     model_config.max_sequence_length = data_args.max_seq_len
     model_config._attn_implementation = model_args.attn_impl
+    model_config.is_lora = model_args.lora
 
     # Sync arguments to MLLM sub_config
     if getattr(model_config, "text_config", None) is not None:
@@ -392,9 +393,10 @@ def run_sft(
     # Freeze model based on training args (Supports for MLLM Full training)
     if not model_args.lora and getattr(training_args, "freeze_config", ""):
         freeze_model_parameters(model, training_args.freeze_config)
-
+    print("model ", model)
     model = create_peft_model(model_args, training_args, dtype, model)
     # Create trainer
+    print("lora model ", model)
 
     # padding to the maximum seq length in batch data when max_seq_len is None
     if getattr(model, "is_fleet", False) and not model_args.lora:

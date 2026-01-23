@@ -152,6 +152,7 @@ def run_dpo(
     model_config.pp_seg_method = model_args.pp_seg_method
     model_config.max_sequence_length = data_args.max_seq_len
     model_config.seq_length = data_args.max_seq_len
+    model_config.is_lora = model_args.lora
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
 
