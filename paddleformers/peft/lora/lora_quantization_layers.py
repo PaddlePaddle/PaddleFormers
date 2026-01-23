@@ -133,6 +133,7 @@ class QuantizationLoRALinear(QuantizationLoRABaseLinear):
         state_dict = self.state_dict(structured_name_prefix="")
         return build_sharded_state_dict(state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix)
 
+
 class ColumnParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
     """
     Quantization lora Linear layer with mp parallelized(column).

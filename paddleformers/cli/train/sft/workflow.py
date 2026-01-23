@@ -52,7 +52,10 @@ from paddleformers.transformers import (
     Llama3Tokenizer,
     LlamaTokenizer,
 )
-from paddleformers.transformers.configuration_utils import LlmMetaConfig, QuantizationConfig
+from paddleformers.transformers.configuration_utils import (
+    LlmMetaConfig,
+    QuantizationConfig,
+)
 from paddleformers.utils.import_utils import is_paddlefleet_available
 from paddleformers.utils.log import logger
 
@@ -221,12 +224,10 @@ def run_sft(
     if finetuning_args.weight_quantize_algo is not None:
         quantization_config = dict(
             weight_quantize_algo=finetuning_args.weight_quantize_algo,
-            ignore_modules=['.*out_linear.*'],
+            ignore_modules=[".*out_linear.*"],
         )
     else:
-        quantization_config = dict(
-            weight_quantize_algo=finetuning_args.weight_quantize_algo
-        )
+        quantization_config = dict(weight_quantize_algo=finetuning_args.weight_quantize_algo)
     quantization_config = QuantizationConfig.from_dict(quantization_config)
 
     model_config = AutoConfig.from_pretrained(

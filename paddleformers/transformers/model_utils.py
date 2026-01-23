@@ -2878,27 +2878,26 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # 3. init the model
         init_args = config["init_args"] or ()
         with ContextManagers(init_contexts):
-            if config.quantization_config.is_weight_quantize() and load_checkpoint_format == "flex_checkpoint": # flex_checkpoint need a extra model in cpu to initialize weights
+            if (
+                config.quantization_config.is_weight_quantize() and load_checkpoint_format == "flex_checkpoint"
+            ):  # flex_checkpoint need a extra model in cpu to initialize weights
                 copied_config = copy.deepcopy(config)
                 copied_init_args = copy.deepcopy(init_args)
                 copied_model_kwargs = copy.deepcopy(model_kwargs)
                 copied_model = cls(copied_config, *copied_init_args, **copied_model_kwargs)
             model = cls(config, *init_args, **model_kwargs)
 
-
-        if config.quantization_config.is_weight_quantize() and load_checkpoint_format == "flex_checkpoint": # flex_checkpoint need initialized weights
-            # copy model for loading flex_ckpt
-            # copied_model = copy.deepcopy(model)
-            # model, copied_model = copied_model, model
+        if (
+            config.quantization_config.is_weight_quantize() and load_checkpoint_format == "flex_checkpoint"
+        ):  # flex_checkpoint need initialized weights
             for name, param in model.named_parameters():
-                with paddle.device_guard('cpu'):
+                with paddle.device_guard("cpu"):
                     value = paddle.normal(
                         mean=0.0,
                         std=0.02,
                         shape=param.shape,
                     ).astype(param.dtype)
                 param.set_value(value)
-
 
         if load_checkpoint_format == "flex_checkpoint":
             if not hasattr(cls, "_gen_aoa_config"):
@@ -2942,7 +2941,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             if config.quantization_config.is_weight_quantize():
                 new_state_dict = copy.deepcopy(model.state_dict())
                 del model
-                model = copied_model       
+                model = copied_model
 
                 quantization_linear_list = None
                 if config.quantization_config.is_weight_quantize():
@@ -2968,7 +2967,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 for param_name, param in new_state_dict.items():
                     with paddle.no_grad():
                         set_state_dict[param_name] = param.cuda()
-                        model_state_dict[param_name].get_tensor()._share_data_with(set_state_dict[param_name].value().get_tensor())
+                        model_state_dict[param_name].get_tensor()._share_data_with(
+                            set_state_dict[param_name].value().get_tensor()
+                        )
                     param.value().get_tensor()._clear()
 
             return model

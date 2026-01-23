@@ -21,11 +21,8 @@ from paddleformers.trainer import TrainingArguments
 from paddleformers.transformers.configuration_utils import llmmetaclass
 from paddleformers.utils.log import logger
 
+DEFAULT_QUANTIZE_LAYERS = [".*mlp.*", ".*self_attn.*"]
 
-DEFAULT_QUANTIZE_LAYERS = [
-    ".*mlp.*",
-    ".*self_attn.*"
-]
 
 @dataclass
 class PreTrainingArguments(TrainingArguments):
@@ -308,13 +305,9 @@ class FinetuningArguments(
             self.fp16 = True
             self.weight_quantize_algo = None
         elif self.compute_type == "wint4":
-            self.weight_quantize_algo = {
-                "weight_only_int4": DEFAULT_QUANTIZE_LAYERS
-            }
+            self.weight_quantize_algo = {"weight_only_int4": DEFAULT_QUANTIZE_LAYERS}
         elif self.compute_type == "wint8":
-            self.weight_quantize_algo = {
-                "weight_only_int8": DEFAULT_QUANTIZE_LAYERS
-            }
+            self.weight_quantize_algo = {"weight_only_int8": DEFAULT_QUANTIZE_LAYERS}
         # TODO: @bosspi to support wint4/8
         # elif self.compute_type == "wint4/8":
         #     # self.weight_quantize_algo = "weight_only_mix"
@@ -333,9 +326,7 @@ class FinetuningArguments(
         #         ],
         #     }
         elif self.compute_type == "nf4":
-            self.weight_quantize_algo = {
-                "nf4": DEFAULT_QUANTIZE_LAYERS
-            }
+            self.weight_quantize_algo = {"nf4": DEFAULT_QUANTIZE_LAYERS}
         else:
             raise ValueError(f"Unknown compute_type: {self.compute_type}")
 
