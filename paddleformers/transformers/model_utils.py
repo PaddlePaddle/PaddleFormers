@@ -2629,8 +2629,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     )
                     error_msgs += new_error_msgs
                 else:
-                    print("---------pzl state_dict1--------")
-                    print("state_dict: ", state_dict.keys())
                     error_msgs += _load_state_dict_into_model(
                         model_to_load, state_dict, start_prefix, model_to_load_state_dict
                     )
@@ -2880,13 +2878,18 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # 3. init the model
         init_args = config["init_args"] or ()
         with ContextManagers(init_contexts):
+            if config.quantization_config.is_weight_quantize() and load_checkpoint_format == "flex_checkpoint": # flex_checkpoint need a extra model in cpu to initialize weights
+                copied_config = copy.deepcopy(config)
+                copied_init_args = copy.deepcopy(init_args)
+                copied_model_kwargs = copy.deepcopy(model_kwargs)
+                copied_model = cls(copied_config, *copied_init_args, **copied_model_kwargs)
             model = cls(config, *init_args, **model_kwargs)
 
 
         if config.quantization_config.is_weight_quantize() and load_checkpoint_format == "flex_checkpoint": # flex_checkpoint need initialized weights
             # copy model for loading flex_ckpt
-            origin_model = copy.deepcopy(model)
-            model, origin_model = origin_model, model
+            # copied_model = copy.deepcopy(model)
+            # model, copied_model = copied_model, model
             for name, param in model.named_parameters():
                 with paddle.device_guard('cpu'):
                     value = paddle.normal(
@@ -2939,7 +2942,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             if config.quantization_config.is_weight_quantize():
                 new_state_dict = copy.deepcopy(model.state_dict())
                 del model
-                model = origin_model       
+                model = copied_model       
 
                 quantization_linear_list = None
                 if config.quantization_config.is_weight_quantize():
@@ -2960,21 +2963,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     dtype,
                 )
 
-                # # print("after model:")
-                # model_state_dict = model.state_dict()
-                # # print("model_state_dict['model.layers.1.self_attn.k_proj.quant_weight']: ", model_state_dict['model.layers.1.self_attn.k_proj.quant_weight'])
-                # try:
-                #     print("new_state_dict['model.layers.1.self_attn.k_proj.quant_weight']: ", new_state_dict['model.layers.1.self_attn.k_proj.quant_weight'])
-                #     print("new_state_dict['model.layers.1.self_attn.k_proj.weight_scale']: ", new_state_dict['model.layers.1.self_attn.k_proj.weight_scale'])
-                # except:
-                #     pass
-                # print("model_state_dict: ", model_state_dict.keys())
-                # print("new_state_dict.keys(): ", new_state_dict.keys())
-                # # print("params_name: ", params_name)
-                # print("quantization_linear_list: ", quantization_linear_list)
-                # print("new_state_dict.keys() == model_state_dict.keys(): ", new_state_dict.keys() == model_state_dict.keys())
-                # exit()
-
                 model_state_dict = model.state_dict()
                 set_state_dict = {}
                 for param_name, param in new_state_dict.items():
@@ -2982,13 +2970,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                         set_state_dict[param_name] = param.cuda()
                         model_state_dict[param_name].get_tensor()._share_data_with(set_state_dict[param_name].value().get_tensor())
                     param.value().get_tensor()._clear()
-                # state_dict = model.state_dict()
-                # try:
-                #     print("state_dict['model.layers.1.self_attn.k_proj.quant_weight']: ", state_dict['model.layers.1.self_attn.k_proj.quant_weight'])
-                #     print("state_dict['model.layers.1.self_attn.k_proj.weight_scale']: ", state_dict['model.layers.1.self_attn.k_proj.weight_scale'])
-                # except:
-                #     pass
-                # exit()
 
             return model
 
@@ -3066,17 +3047,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     if "quant_weight" in key:
                         quantization_linear_list.append(key[:-13])
 
-        # print("after model:")
-        # model_state_dict = model.state_dict()
-        # print("model_state_dict: ", model_state_dict.keys())
-        # print("state_dict['model.layers.1.self_attn.k_proj.quant_weight']: ", model_state_dict['model.layers.1.self_attn.k_proj.quant_weight'])
-        # print("quantization_linear_list: ", quantization_linear_list)
-        # exit()
-        # print("-----------pzl 1-------------")
-        # # state_dict = model.state_dict()
-        # # print("state_dict['model.layers.1.self_attn.k_proj.weight']: ", model.state_dict()['model.layers.1.self_attn.k_proj.weight'])
-        # print("state_dict['model.layers.1.self_attn.k_proj.quant_weight']: ", model.state_dict()['model.layers.1.self_attn.k_proj.quant_weight'])
-        # # exit()
         model, missing_keys, unexpected_keys, mismatched_keys = cls._load_pretrained_model(
             model=model,
             state_dict=state_dict,
@@ -3093,11 +3063,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             sharded_metadata=sharded_metadata if is_sharded else None,
             key_mapping=key_mapping,
         )
-        # print("-----------pzl 2-------------")
-        # state_dict = model.state_dict()
-        # # print("state_dict['model.layers.1.self_attn.k_proj.weight']: ", state_dict['model.layers.1.self_attn.k_proj.weight'])
-        # print("state_dict['model.layers.1.self_attn.k_proj.quant_weight']: ", state_dict['model.layers.1.self_attn.k_proj.quant_weight'])
-        # exit()
 
         # load generation_config.json
         if model.can_generate() and pretrained_model_name_or_path is not None:
@@ -3127,11 +3092,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         if isinstance(model, PipelineLayer):
             model._synchronize_shared_weights()
 
-        try:
-            print("state_dict['lm_head.weight']: ", model.state_dict()['lm_head.weight'])
-        except:
-            pass
-        exit()
         if paddle.in_dynamic_mode():
             return model
 
