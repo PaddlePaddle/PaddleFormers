@@ -116,6 +116,7 @@ def weight_quant(weight, transpose=False):
                 quant_method="128x128",
                 input_transpose=True,
                 return_transpose_only=True,
+                using_pow2_scale=False,
             )
     else:
         if hasattr(weight, "fp8_weight"):
@@ -129,6 +130,7 @@ def weight_quant(weight, transpose=False):
                 quant_method="128x128",
                 input_transpose=False,
                 return_transpose_only=False,
+                using_pow2_scale=False,
             )
 
 
@@ -157,7 +159,11 @@ class FP8LinearFunctionBase:
         """Quantize input to FP8, with fallback to padded transposed version if shape not aligned."""
         if tensor.shape[0] % 512 != 0:
             tensor_fp8, tensor_scale = paddle.incubate.nn.functional.fp8_quant_blockwise(
-                tensor, output_scale_transpose=True, quant_method="1x128", input_transpose=False
+                tensor,
+                output_scale_transpose=True,
+                quant_method="1x128",
+                input_transpose=False,
+                using_pow2_scale=False,
             )
             tensor = FP8LinearFunctionBase.padding(tensor, 0)
             tensor_t_fp8, tensor_t_scale = paddle.incubate.nn.functional.fp8_quant_blockwise(
@@ -166,11 +172,16 @@ class FP8LinearFunctionBase:
                 quant_method="1x128",
                 input_transpose=True,
                 return_transpose_only=True,
+                using_pow2_scale=False,
             )
             return tensor_fp8, tensor_scale, tensor_t_fp8, tensor_t_scale
         else:
             tensor_fp8, tensor_scale, tensor_t_fp8, tensor_t_scale = paddle.incubate.nn.functional.fp8_quant_blockwise(
-                tensor, output_scale_transpose=True, quant_method="1x128", input_transpose=True
+                tensor,
+                output_scale_transpose=True,
+                quant_method="1x128",
+                input_transpose=True,
+                using_pow2_scale=False,
             )
             return tensor_fp8, tensor_scale, tensor_t_fp8, tensor_t_scale
 
@@ -257,6 +268,7 @@ class FP8LinearFunctionBase:
                     quant_method="1x128",
                     input_transpose=False,
                     return_transpose_only=False,
+                    using_pow2_scale=False,
                 )
 
         # quant weight
@@ -371,7 +383,12 @@ class FP8LinearFunctionBase:
         # dw2 = deep_gemm(o2_t_fp8, do3_t_fp8)
         o2 = FP8LinearFunctionBase.padding(o2, 0)
         o2_t_fp8, o2_t_scale = paddle.incubate.nn.functional.fp8_quant_blockwise(
-            o2, output_scale_transpose=True, quant_method="1x128", input_transpose=True, return_transpose_only=True
+            o2,
+            output_scale_transpose=True,
+            quant_method="1x128",
+            input_transpose=True,
+            return_transpose_only=True,
+            using_pow2_scale=False,
         )
         if apply_backward_hook:
             if WeightGradStore.enabled:
@@ -551,7 +568,7 @@ class FP8LinearFunction(paddle.autograd.PyLayer):
                 return_transpose_only=True,
             )
             # save for bwd
-            out = out.reshape([x_orig_shape[0], -1, weight.shape[-1]])
+            # out = out.reshape([x_orig_shape[0], -1, weight.shape[-1]])
             ctx.save_for_backward(x, weight)
             return out
         else:
@@ -559,7 +576,7 @@ class FP8LinearFunction(paddle.autograd.PyLayer):
             out, x_t_fp8, x_t_scale = FP8LinearFunctionBase.compute_fp8_linear(
                 x, weight, weight_transpose=True, return_transpose_only=True, return_mode="with_input_transpose_quant"
             )
-            out = out.reshape([x_orig_shape[0], -1, weight.shape[-1]])
+            # out = out.reshape([x_orig_shape[0], -1, weight.shape[-1]])
             ctx.save_for_backward((x_t_fp8, x_t_scale), weight)
             ctx.x_t_shape = x_t.shape
             return out
@@ -576,7 +593,12 @@ class FP8LinearFunction(paddle.autograd.PyLayer):
             dx_orig_shape = x.shape
             x = FP8LinearFunctionBase.padding(x, 0)
             x_t_fp8, x_t_scale = paddle.incubate.nn.functional.fp8_quant_blockwise(
-                x, output_scale_transpose=True, quant_method="1x128", input_transpose=True, return_transpose_only=True
+                x,
+                output_scale_transpose=True,
+                quant_method="1x128",
+                input_transpose=True,
+                return_transpose_only=True,
+                using_pow2_scale=False,
             )
 
             # dx = deep_gemm(dout_fp8, w_fp8)
@@ -628,6 +650,7 @@ def cache_fp8_weight(weight, quant_transpose=None):
             quant_method="128x128",
             input_transpose=True,
             return_transpose_only=False,
+            using_pow2_scale=False,
         )
 
         setattr(weight, "fp8_weight_transpose", w_t_fp8)
@@ -641,6 +664,7 @@ def cache_fp8_weight(weight, quant_transpose=None):
             quant_method="128x128",
             input_transpose=True,
             return_transpose_only=True,
+            using_pow2_scale=False,
         )
         setattr(weight, "fp8_weight_transpose", w_t_fp8)
         setattr(weight, "fp8_scale_transpose", w_t_scale)
@@ -651,6 +675,7 @@ def cache_fp8_weight(weight, quant_transpose=None):
             quant_method="128x128",
             input_transpose=False,
             return_transpose_only=False,
+            using_pow2_scale=False,
         )
         setattr(weight, "fp8_weight", w_fp8)
         setattr(weight, "fp8_scale", w_scale)
@@ -716,7 +741,11 @@ class FusedNormFP8MLPFunction(paddle.autograd.PyLayer):
         norm_output, invar, x, norm_w, w1, w2, norm_eps, x_orig_shape = ctx.saved_tensor()
 
         x_fp8, x_scale, x_t_fp8, x_t_scale = paddle.incubate.nn.functional.fp8_quant_blockwise(
-            norm_output, output_scale_transpose=True, quant_method="1x128", input_transpose=True
+            norm_output,
+            output_scale_transpose=True,
+            quant_method="1x128",
+            input_transpose=True,
+            using_pow2_scale=False,
         )
 
         # call func common_fp8_mlp_bwd
@@ -778,6 +807,7 @@ class FP8MlpFunction(paddle.autograd.PyLayer):
             quant_method="1x128",
             input_transpose=True,
             return_transpose_only=True,
+            using_pow2_scale=False,
         )
 
         # call func common_fp8_mlp_bwd
@@ -930,7 +960,7 @@ class FP8GroupGemmMlpFunctionNode:
             else:
                 # quant x_bf16
                 x_fp8, x_scale = paddle.incubate.nn.functional.fp8_quant_blockwise(
-                    x, output_scale_transpose=True, quant_method="1x128", input_transpose=False
+                    x, output_scale_transpose=True, quant_method="1x128", input_transpose=False, using_pow2_scale=False
                 )
                 x_scale = x_scale.T
 
@@ -1024,7 +1054,11 @@ class FP8GroupGemmMlpFunctionNode:
             unzipped_grad_scale = unzipped_grad_scale.T.contiguous().T
         else:
             unzipped_grad_fp8, unzipped_grad_scale = paddle.incubate.nn.functional.fp8_quant_blockwise(
-                unzipped_grad, output_scale_transpose=True, quant_method="1x128", input_transpose=False
+                unzipped_grad,
+                output_scale_transpose=True,
+                quant_method="1x128",
+                input_transpose=False,
+                using_pow2_scale=False,
             )
             unzipped_grad_scale = unzipped_grad_scale.T
 
@@ -1068,7 +1102,7 @@ class FP8GroupGemmMlpFunctionNode:
 
         # quant do1
         do1_fp8, do1_scale = paddle.incubate.nn.functional.fp8_quant_blockwise(
-            do1, output_scale_transpose=True, quant_method="1x128", input_transpose=False
+            do1, output_scale_transpose=True, quant_method="1x128", input_transpose=False, using_pow2_scale=False
         )
         do1_scale = do1_scale.T
         # compute gemm
