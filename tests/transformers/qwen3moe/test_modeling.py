@@ -365,7 +365,6 @@ class Qwen3MoeIntegrationTest(unittest.TestCase):
             dtype="float32",
             load_checkpoint_format="flex_checkpoint",
             fd_fallback=True,
-            fuse_attention_ffn=True,
         )
 
         input_ids = paddle.to_tensor([input_ids])

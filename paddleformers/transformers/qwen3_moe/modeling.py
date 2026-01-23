@@ -862,10 +862,6 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                 ]
         else:
             if config.get("fd_fallback", False):
-                if not config.fuse_attention_ffn:
-                    aoa_config["aoa_statements"] += [
-                        f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
-                    ]
                 for layer_idx in range(0, config.num_hidden_layers):
                     src_prefix = f"model.layers.{layer_idx}"
                     tgt_prefix = f"{model_prefix}layers.{layer_idx}"
