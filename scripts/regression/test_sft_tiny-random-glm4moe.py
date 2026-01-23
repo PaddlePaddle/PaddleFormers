@@ -101,12 +101,12 @@ class SFTTrainTester(unittest.TestCase):
         excepted_result,
     ):
         from paddleformers.transformers.glm4_moe.modeling import (
-            Glm4MoeForCausalLMDecapitated,
+            Glm4MoeForCausalLMDeprecated,
         )
 
         input_ids = paddle.to_tensor([[1, 306, 4658, 278, 6593, 310, 2834, 338]])
         attention_mask = paddle.ones_like(input_ids)
-        model = Glm4MoeForCausalLMDecapitated.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
+        model = Glm4MoeForCausalLMDeprecated.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
         with paddle.no_grad():
             result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
         print(f"excepted_result is : {excepted_result}")
