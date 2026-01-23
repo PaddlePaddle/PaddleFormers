@@ -195,7 +195,7 @@ class _BaseAutoModelClass:
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
         if is_lora:
             try:
-                model_class = getattr(import_class, init_class + "Decapitated")
+                model_class = getattr(import_class, init_class + "Deprecated")
                 return model_class
             except AttributeError:
                 model_class = getattr(import_class, init_class)
@@ -222,7 +222,7 @@ class _BaseAutoModelClass:
                 model_class = getattr(import_class, init_class)
                 return model_class
             except AttributeError:
-                model_class = getattr(import_class, init_class + "Decapitated")
+                model_class = getattr(import_class, init_class + "Deprecated")
                 return model_class
             except AttributeError as err:
                 try:

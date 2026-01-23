@@ -25,9 +25,9 @@ from parameterized import parameterized
 
 from paddleformers.transformers import AutoProcessor, Qwen3VLConfig
 from paddleformers.transformers import (
-    Qwen3VLForConditionalGenerationDecapitated as Qwen3VLForConditionalGeneration,
+    Qwen3VLForConditionalGenerationDeprecated as Qwen3VLForConditionalGeneration,
 )
-from paddleformers.transformers import Qwen3VLModelDecapitated as Qwen3VLModel
+from paddleformers.transformers import Qwen3VLModelDeprecated as Qwen3VLModel
 from paddleformers.transformers import process_vision_info
 from paddleformers.transformers.video_utils import load_video
 from paddleformers.utils.log import logger
@@ -927,7 +927,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
 
         # 2. forward the paddle model
         from paddleformers.transformers import (
-            Qwen3VLForConditionalGenerationDecapitated as Qwen3VLForConditionalGeneration,
+            Qwen3VLForConditionalGenerationDeprecated as Qwen3VLForConditionalGeneration,
         )
 
         paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
@@ -964,7 +964,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
 
             # 2. forward the paddle model
             from paddleformers.transformers import (
-                Qwen3VLForConditionalGenerationDecapitated as Qwen3VLForConditionalGeneration,
+                Qwen3VLForConditionalGenerationDeprecated as Qwen3VLForConditionalGeneration,
             )
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
@@ -1005,7 +1005,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-            paddle_model_class = getattr(transformers, class_name + "Decapitated")
+            paddle_model_class = getattr(transformers, class_name + "Deprecated")
             paddle_model = paddle_model_class.from_pretrained(
                 tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
             ).eval()
