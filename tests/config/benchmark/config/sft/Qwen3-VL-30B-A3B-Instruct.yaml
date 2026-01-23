@@ -13,7 +13,7 @@ template: qwen3_vl
 
 ### model
 model_name_or_path: ./model_30B_A3B
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -57,14 +57,10 @@ recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
 
-fuse_attention_qkv: true
-fuse_attention_ffn: true
-
 moe_grouped_gemm: true
 moe_deep_gemm: true
 
 apply_rope_fusion: False
-fuse_rms_norm: true
 # moe_router_force_load_balancing: true
 
 # sharding
