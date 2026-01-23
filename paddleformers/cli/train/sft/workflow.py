@@ -393,10 +393,9 @@ def run_sft(
     # Freeze model based on training args (Supports for MLLM Full training)
     if not model_args.lora and getattr(training_args, "freeze_config", ""):
         freeze_model_parameters(model, training_args.freeze_config)
-    print("model ", model)
+
     model = create_peft_model(model_args, training_args, dtype, model)
     # Create trainer
-    print("lora model ", model)
 
     # padding to the maximum seq length in batch data when max_seq_len is None
     if getattr(model, "is_fleet", False) and not model_args.lora:

@@ -193,7 +193,6 @@ class _BaseAutoModelClass:
         init_class = cls._name_mapping[model_name + "_Import_Class"]
         class_name = cls._name_mapping[init_class]
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
-        print(f"hahahh is_lora: {is_lora}, model_name: {class_name}")
         if is_lora and class_name in ["qwen3_vl_moe"]:
             try:
                 model_class = getattr(import_class, init_class + "Decapitated")

@@ -633,8 +633,6 @@ class LoRAModel(nn.Layer):
                             aoa_config["aoa_statements"].append(f"{key} -> {key_new}")
                             break
             if hasattr(self.model, "_gen_lora_inv_aoa_config"):
-                print("self.model._gen_lora_inv_aoa_config(self.model.config)")
-                print(self.model._gen_lora_inv_aoa_config(self.model.config))
                 aoa_config["aoa_statements"] += self.model._gen_lora_inv_aoa_config(self.model.config)
 
             HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(
