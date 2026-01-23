@@ -78,7 +78,7 @@ import_structure = {
         "StorageType",
     ],
     "batch_sampler": ["DistributedBatchSampler"],
-    "optimizer": ["AdamWMini", "AdamWCustom", "AdamWLoRAPro"],
+    "optimizer": ["AdamWMini", "AdamWCustom"],
     "env": ["CONFIG_NAME", "GENERATION_CONFIG_NAME", "LEGACY_CONFIG_NAME"],
     "log": ["logger"],
     "masking_utils": [

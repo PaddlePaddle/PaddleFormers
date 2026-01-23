@@ -20,6 +20,7 @@ from ...utils.lazy_import import _LazyModule
 
 import_structure = {
     "image_processor": ["Qwen2VLImageProcessor"],
+    "image_processor_fast": ["Qwen2VLImageProcessorFast"],
     "processor": ["Qwen2VLProcessor"],
     "video_processor": ["Qwen2VLVideoProcessor"],
     "vision_process": ["process_vision_info"],
@@ -27,6 +28,7 @@ import_structure = {
 
 if TYPE_CHECKING:
     from .image_processor import *
+    from .image_processor_fast import *
     from .processor import *
     from .video_processor import *
     from .vision_process import *

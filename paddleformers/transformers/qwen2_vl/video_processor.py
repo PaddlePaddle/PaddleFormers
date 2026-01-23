@@ -250,6 +250,7 @@ class Qwen2VLVideoProcessor(BaseVideoProcessor):
 
         return BatchFeature(
             data={"pixel_values_videos": pixel_values_videos, "video_grid_thw": video_grid_thw},
+            tensor_type=return_tensors,
         )
 
     def get_num_of_video_patches(self, num_frames: int, height: int, width: int, videos_kwargs=None):
