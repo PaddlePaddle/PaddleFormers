@@ -83,6 +83,9 @@ from paddle.distributed.fleet.utils.hybrid_parallel_util import (
 _obtain_optimizer_parameters_list = obtain_optimizer_parameters_list
 
 
+from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
+    DygraphShardingOptimizerV2,
+)
 from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     fused_allreduce_gradients,
 )
@@ -1132,33 +1135,41 @@ class Trainer:
             )
             return
 
-        if not self.args.ignore_load_lr_and_optim:
-            state_dict_metadata = {}
-            metadata_paths = [
-                os.path.join(model_states_path, get_metadata_file_name(model_states_path)),
-                os.path.join(opt_states_path, get_metadata_file_name(opt_states_path)),
-                os.path.join(master_weights_path, get_metadata_file_name(master_weights_path)),
-            ]
+        state_dict_metadata = {}
+        metadata_paths = [
+            os.path.join(model_states_path, get_metadata_file_name(model_states_path)),
+            os.path.join(opt_states_path, get_metadata_file_name(opt_states_path)),
+            os.path.join(master_weights_path, get_metadata_file_name(master_weights_path)),
+        ]
 
-            for metadata_file in metadata_paths:
-                if not os.path.exists(metadata_file):
-                    raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
-                metadata = paddle.load(metadata_file)
-                state_dict_metadata.update(metadata.state_dict_metadata)
+        for metadata_file in metadata_paths:
+            if not os.path.exists(metadata_file):
+                raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
+            metadata = paddle.load(metadata_file)
+            state_dict_metadata.update(metadata.state_dict_metadata)
 
-            if not self.args.sharded_model_from_ema:
-                init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
+        if not self.args.sharded_model_from_ema:
+            init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
 
-                optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+            optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
 
-                opt_states = {}
-                master_weights = {}
-                for k, v in optimizer_sharded_state_dict.items():
-                    if k.endswith(".w_0"):
-                        master_weights[k] = v
-                    else:
-                        opt_states[k] = v
+            opt_states = {}
+            master_weights = {}
+            for k, v in optimizer_sharded_state_dict.items():
+                if k.endswith(".w_0"):
+                    master_weights[k] = v
+                else:
+                    opt_states[k] = v
 
+            dist.load_state_dict(
+                master_weights,
+                master_weights_path,
+                aoa_config=self.args.aoa_config,
+                offload=self.args.load_via_cpu,
+                comm_method=self.args.flex_ckpt_comm_method,
+            )
+
+            if not self.args.ignore_load_lr_and_optim:
                 dist.load_state_dict(
                     opt_states,
                     opt_states_path,
@@ -1167,23 +1178,12 @@ class Trainer:
                     comm_method=self.args.flex_ckpt_comm_method,
                     worker_groups=worker_groups,
                 )
-
-                dist.load_state_dict(
-                    master_weights,
-                    master_weights_path,
-                    aoa_config=self.args.aoa_config,
-                    offload=self.args.load_via_cpu,
-                    comm_method=self.args.flex_ckpt_comm_method,
-                    worker_groups=worker_groups,
-                )
-
-            self._load_scheduler(resume_from_checkpoint)
-            if self.args.tensorwise_offload_optimizer:
-                logger.info("Offloading optimizer state for FC...")
-                self._offload_optimizer()
+                self._load_scheduler(resume_from_checkpoint)
 
         enable_bf16_opt = (
-            not isinstance(self.model, LoRAModel) and self.args.enable_zero_cost_checkpoint and self.args.bf16
+            not isinstance(self.model, LoRAModel)
+            and self.args.bf16
+            and isinstance(self.optimizer.inner_opt, DygraphShardingOptimizerV2)
         )
         logger.debug(f"sharded_model_from_ema: {self.args.sharded_model_from_ema}")
         logger.debug(f"enable_bf16_opt: {enable_bf16_opt}")
@@ -1218,7 +1218,7 @@ class Trainer:
                 worker_groups=worker_groups,
             )
 
-        if enable_bf16_opt and (not self.args.ignore_load_lr_and_optim):
+        if enable_bf16_opt:
             opt_state_dict = self.optimizer.state_dict()
 
             def recover_params_from_master_weight(opt_state_dict, group):
