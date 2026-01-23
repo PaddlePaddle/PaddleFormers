@@ -1943,8 +1943,7 @@ class Trainer:
             step = -1
 
             for step, inputs in enumerate(epoch_iterator):
-
-                if self.args.profile:
+                if self.args.profile and step % self.args.gradient_accumulation_steps == 0:
                     perf_utils.switch_profile(
                         self.state.global_step,
                         self.args.profile_step_start,

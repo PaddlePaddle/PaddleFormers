@@ -29,6 +29,8 @@ from .image_utils import (
     get_channel_dimension_axis,
     get_image_size,
     infer_channel_dimension_format,
+    is_numpy_array,
+    is_pil_image,
     to_numpy_array,
 )
 from .tokenizer_utils import ExplicitEnum, TensorType
@@ -55,7 +57,7 @@ def to_channel_dimension_format(
     Returns:
         `np.ndarray`: The image with the channel dimension set to `channel_dim`.
     """
-    if not isinstance(image, np.ndarray):
+    if not is_numpy_array(image):
         raise ValueError(f"Input image must be of type np.ndarray, got {type(image)}")
 
     if input_channel_dim is None:
@@ -95,7 +97,7 @@ def rescale(
     Returns:
         `np.ndarray`: The rescaled image.
     """
-    if not isinstance(image, np.ndarray):
+    if not is_numpy_array(image):
         raise ValueError(f"Input image must be of type np.ndarray, got {type(image)}")
 
     rescaled_image = image * scale
@@ -123,13 +125,13 @@ def to_pil_image(
     Returns:
         `PIL.Image.Image`: The converted image.
     """
-    if isinstance(image, PIL.Image.Image):
+    if is_pil_image(image):
         return image
 
     # Convert all tensors to numpy arrays before converting to PIL image
     if is_paddle_tensor(image):
         image = image.cpu().numpy()
-    elif not isinstance(image, np.ndarray):
+    elif not is_numpy_array(image):
         raise ValueError("Input image type not supported: {}".format(type(image)))
 
     # If the channel as been moved to first dim, we put it back at the end.
@@ -292,7 +294,7 @@ def resize(
 
     # To maintain backwards compatibility with the resizing done in previous image feature extractors, we use
     # the pillow library to resize the image and then convert back to numpy
-    if not isinstance(image, PIL.Image.Image):
+    if not is_pil_image(image):
         image = to_pil_image(image)
     height, width = size
     # PIL images are in the format (width, height)
@@ -331,7 +333,7 @@ def normalize(
         data_format (`ChannelDimension`, *optional*):
             The channel dimension format of the output image. If unset, will use the inferred format from the input.
     """
-    if isinstance(image, PIL.Image.Image):
+    if is_pil_image(image):
         warnings.warn(
             "PIL.Image.Image inputs are deprecated and will be removed in v4.26.0. Please use numpy arrays instead.",
             FutureWarning,
@@ -341,7 +343,7 @@ def normalize(
         image = to_numpy_array(image)
         image = rescale(image, scale=1 / 255)
 
-    if not isinstance(image, np.ndarray):
+    if not is_numpy_array(image):
         raise ValueError("image must be a numpy array")
 
     input_data_format = infer_channel_dimension_format(image)
@@ -400,7 +402,7 @@ def center_crop(
     Returns:
         `np.ndarray`: The cropped image.
     """
-    if isinstance(image, PIL.Image.Image):
+    if is_pil_image(image):
         warnings.warn(
             "PIL.Image.Image inputs are deprecated and will be removed in v4.26.0. Please use numpy arrays instead.",
             FutureWarning,
@@ -410,7 +412,7 @@ def center_crop(
     else:
         return_numpy = True if return_numpy is None else return_numpy
 
-    if not isinstance(image, np.ndarray):
+    if not is_numpy_array(image):
         raise ValueError(f"Input image must be of type np.ndarray, got {type(image)}")
 
     if not isinstance(size, Iterable) or len(size) != 2:
@@ -689,38 +691,27 @@ def convert_to_rgb(image: ImageInput) -> ImageInput:
             The image to convert.
     """
 
-    if not isinstance(image, PIL.Image.Image):
+    if not is_pil_image(image):
         return image
 
     image = image.convert("RGB")
     return image
 
 
-def _group_images_by_shape(nested_images, *paired_inputs, is_nested: bool = False):
-    """Helper function to flatten a single level of nested image and batch structures and group by shape."""
+def _group_images_by_shape(nested_images, is_nested: bool = False):
+    """Helper function to flatten a single level of nested image structures and group by shape."""
     grouped_images = defaultdict(list)
     grouped_images_index = {}
-    paired_grouped_values = [defaultdict(list) for _ in paired_inputs]
-
-    # Normalize inputs to consistent nested structure
-    normalized_images = [nested_images] if not is_nested else nested_images
-    normalized_paired = []
-    for paired_input in paired_inputs:
-        normalized_paired.append([paired_input] if not is_nested else paired_input)
-
-    # Process each image and group by shape
-    for i, (sublist, *paired_sublists) in enumerate(zip(normalized_images, *normalized_paired)):
-        for j, (image, *paired_values) in enumerate(zip(sublist, *paired_sublists)):
+    nested_images = [nested_images] if not is_nested else nested_images
+    for i, sublist in enumerate(nested_images):
+        for j, image in enumerate(sublist):
             key = (i, j) if is_nested else j
-            shape = image.shape[1:]
-
-            # Add to grouped structures
+            # NOTE: Convert to tuple since paddle.shape is unhashable for defaultdict keys.
+            shape = tuple(image.shape[1:])
             grouped_images[shape].append(image)
-            for paired_index, paired_value in enumerate(paired_values):
-                paired_grouped_values[paired_index][shape].append(paired_value)
             grouped_images_index[key] = (shape, len(grouped_images[shape]) - 1)
 
-    return grouped_images, *paired_grouped_values, grouped_images_index
+    return grouped_images, grouped_images_index
 
 
 def _reconstruct_nested_structure(indices, processed_images):
@@ -749,35 +740,13 @@ def _reconstruct_nested_structure(indices, processed_images):
     return result
 
 
-def _disable_grouping_output_nested(images, *paired_inputs):
-    """Build the disable_grouping output tuple for a single-level nested structure."""
-    outer_range = range(len(images))
-    inner_ranges = [range(len(images[i])) for i in outer_range]
-
-    # Precompute all (i, j) pairs
-    ij_pairs = [(i, j) for i in outer_range for j in inner_ranges[i]]
-
-    images_dict = {(i, j): images[i][j].unsqueeze(0) for (i, j) in ij_pairs}
-    paired_dicts = [{(i, j): paired_list[i][j].unsqueeze(0) for (i, j) in ij_pairs} for paired_list in paired_inputs]
-    index_map = {(i, j): ((i, j), 0) for (i, j) in ij_pairs}
-    return images_dict, *paired_dicts, index_map
-
-
-def _disable_grouping_output_flat(images, *paired_inputs):
-    """Build the disable_grouping output tuple for a flat list structure."""
-    idx_range = range(len(images))
-    images_dict = {i: images[i].unsqueeze(0) for i in idx_range}
-    paired_dicts = [{i: paired_list[i].unsqueeze(0) for i in idx_range} for paired_list in paired_inputs]
-    index_map = {i: (i, 0) for i in idx_range}
-    return images_dict, *paired_dicts, index_map
-
-
 def group_images_by_shape(
     images: Union[list["paddle.Tensor"], "paddle.Tensor"],
-    *paired_inputs,
-    disable_grouping: Optional[bool],
+    disable_grouping: bool,
     is_nested: bool = False,
-) -> tuple[dict, ...]:
+) -> tuple[
+    dict[tuple[int, int], list["paddle.Tensor"]], dict[Union[int, tuple[int, int]], tuple[tuple[int, int], int]]
+]:
     """
     Groups images by shape.
     Returns a dictionary with the shape as key and a list of images with that shape as value,
@@ -789,11 +758,6 @@ def group_images_by_shape(
     Args:
         images (Union[list["paddle.Tensor"], "paddle.Tensor"]):
             A list of images or a single tensor
-        *paired_inputs (Any):
-            Zero or more lists that mirror the structure of `images` (flat list, or list of lists when
-            `is_nested=True`). Each element is paired 1:1 with the corresponding image so it can be grouped by the
-            same shape key. These paired values are grouped alongside `images` but are not stacked in the output, so
-            they do not need to be tensors.
         disable_grouping (bool):
             Whether to disable grouping. If None, will be set to True if the images are on CPU, and False otherwise.
             This choice is based on empirical observations, as detailed here: https://github.com/huggingface/transformers/pull/38157
@@ -801,10 +765,8 @@ def group_images_by_shape(
             Whether the images are nested.
 
     Returns:
-        tuple[dict, ...]:
-            - A dictionary with shape as key and list/batch of images with that shape as value
-            - Zero or more dictionaries (one per argument in `*paired_inputs`) grouped consistently with `images`; these carry
-              the corresponding per-item values and are not stacked
+        tuple[dict[tuple[int, int], list["paddle.Tensor"]], dict[Union[int, tuple[int, int]], tuple[tuple[int, int], int]]]:
+            - A dictionary with shape as key and list of images with that shape as value
             - A dictionary mapping original indices to (shape, index) tuples
     """
     # If disable grouping is not explicitly provided, we favor disabling it if the images are on CPU, and enabling it otherwise.
@@ -814,19 +776,19 @@ def group_images_by_shape(
 
     if disable_grouping:
         if is_nested:
-            return _disable_grouping_output_nested(images, *paired_inputs)
+            return {(i, j): images[i][j].unsqueeze(0) for i in range(len(images)) for j in range(len(images[i]))}, {
+                (i, j): ((i, j), 0) for i in range(len(images)) for j in range(len(images[i]))
+            }
         else:
-            return _disable_grouping_output_flat(images, *paired_inputs)
+            return {i: images[i].unsqueeze(0) for i in range(len(images))}, {i: (i, 0) for i in range(len(images))}
 
     # Handle single level nested structure
-    grouped_images, *paired_grouped_values, grouped_images_index = _group_images_by_shape(
-        images, *paired_inputs, is_nested=is_nested
-    )
+    grouped_images, grouped_images_index = _group_images_by_shape(images, is_nested)
 
     # Stack images with the same shape
-    grouped_images = {shape: paddle.stack(images_list, dim=0) for shape, images_list in grouped_images.items()}
+    grouped_images = {shape: paddle.stack(images_list, axis=0) for shape, images_list in grouped_images.items()}
 
-    return grouped_images, *paired_grouped_values, grouped_images_index
+    return grouped_images, grouped_images_index
 
 
 def reorder_images(

@@ -19,7 +19,7 @@ attn_impl: flashmask
 
 ### finetuning
 # base
-stage: SFT
+stage: PT
 fine_tuning: full
 seed: 23
 do_train: true

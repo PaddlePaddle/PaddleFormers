@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 
@@ -25,6 +26,7 @@ from paddleformers.transformers import (
     Ernie4_5_VLMoeForConditionalGenerationModel,
 )
 from paddleformers.transformers.configuration_utils import PretrainedConfig
+from paddleformers.utils.log import logger
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -375,6 +377,17 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
 
     def setUp(self):
         super().setUp()
+        # Initialize device when GPU is needed by certain test case
+        gpu_count = paddle.device.cuda.device_count()
+        pid = os.getpid()
+
+        if gpu_count > 0:
+            paddle.set_device(f"gpu:{pid % gpu_count}")
+        else:
+            paddle.set_device("cpu")
+            self.skipTest("No GPU currently available/allocated")
+        logger.info(f"Ernie4_5_VLModelTest [PID:{pid}] Device initialized: {paddle.get_device()}")
+
         self.model_tester = Ernie4_5_VLModelTester(self)
         self.config_tester = ConfigTester(self, config_class=Ernie4_5_VLConfig, hidden_size=37)
 
@@ -588,7 +601,7 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 first = model(**self._prepare_for_class(inputs_dict, model_class))[0]
 
             with tempfile.TemporaryDirectory() as tmpdirname:
-                model.save_pretrained(tmpdirname, save_to_hf=False, save_checkpoint_format="")
+                model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
                 config = self.config_tester.config_class.from_pretrained(tmpdirname)
                 config["moe_group"] = "dummy"
                 config["moe_multimodal_dispatch_use_allgather"] = "v2-alltoall-unpad-text"
@@ -596,8 +609,7 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                     tmpdirname,
                     config=config,
                     dtype="bfloat16",
-                    convert_from_hf=False,
-                    load_checkpoint_format="",
+                    load_checkpoint_format="flex_checkpoint",
                 )
                 paddle.amp.decorate(
                     models=model,
@@ -625,6 +637,18 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
 
 
 class Ernie4_5_MoE_VLIntegrationTest(unittest.TestCase):
+    def setUp(self):
+        # Initialize device when GPU is needed by certain test case
+        gpu_count = paddle.device.cuda.device_count()
+        pid = os.getpid()
+
+        if gpu_count > 0:
+            paddle.set_device(f"gpu:{pid % gpu_count}")
+        else:
+            paddle.set_device("cpu")
+            self.skipTest("No GPU currently available/allocated")
+        logger.info(f"Ernie4_5_MoE_VLIntegrationTest [PID:{pid}] Device initialized: {paddle.get_device()}")
+
     def test_model_tiny_logits(self):
 
         config = Ernie4_5_VLConfig.from_pretrained("PaddleFormers/tiny_random_ernie4_5_vl", download_hub="aistudio")
@@ -636,7 +660,7 @@ class Ernie4_5_MoE_VLIntegrationTest(unittest.TestCase):
             dtype="bfloat16",
             convert_from_hf=True,
             download_hub="aistudio",
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
         paddle.amp.decorate(
             models=model,

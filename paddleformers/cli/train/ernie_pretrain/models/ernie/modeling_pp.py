@@ -21,29 +21,6 @@ from collections import deque
 import numpy as np
 import paddle
 import paddle.distributed as dist
-from models.ernie import ErnieMoEConfig
-from models.ernie.modeling_moe import (
-    ErnieDecoderLayer,
-    ErnieMLP,
-    ErnieModel,
-    ErnieMoELMHead,
-    ErniePretrainedModel,
-    ErniePretrainingCriterion,
-    RMSNorm,
-    RotaryEmbedding,
-    _parse_moe_group,
-    moe_ep2mp,
-    moe_statedict_upcycle,
-)
-from models.moe.moe_layer import MOELayer
-from models.moe.top2_gate import Top2Gate, TopKGateFused
-from models.sequence_parallel_utils import (
-    ColumnSequenceParallelLinear,
-    RowSequenceParallelLinear,
-    ScatterOp,
-    mark_as_sequence_parallel_parameter,
-)
-from models.utils import inplace_offload
 from paddle import nn
 from paddle.distributed import fleet
 from paddle.distributed.fleet.layers.mpu.mp_layers import (
@@ -59,10 +36,38 @@ from paddle.distributed.fleet.meta_parallel import (
 )
 from paddle.distributed.fleet.utils import recompute
 
+from paddleformers.cli.train.ernie_pretrain.models.ernie import ErnieMoEConfig
+from paddleformers.cli.train.ernie_pretrain.models.ernie.modeling_moe import (
+    ErnieDecoderLayer,
+    ErnieMLP,
+    ErnieModel,
+    ErnieMoELMHead,
+    ErniePretrainedModel,
+    ErniePretrainingCriterion,
+    RMSNorm,
+    RotaryEmbedding,
+    _parse_moe_group,
+    moe_ep2mp,
+    moe_statedict_upcycle,
+)
+from paddleformers.cli.train.ernie_pretrain.models.moe.moe_layer import MOELayer
+from paddleformers.cli.train.ernie_pretrain.models.moe.top2_gate import (
+    Top2Gate,
+    TopKGateFused,
+)
+from paddleformers.cli.train.ernie_pretrain.models.sequence_parallel_utils import (
+    ColumnSequenceParallelLinear,
+    RowSequenceParallelLinear,
+    ScatterOp,
+    mark_as_sequence_parallel_parameter,
+)
+from paddleformers.cli.train.ernie_pretrain.models.utils import inplace_offload
 from paddleformers.transformers import PretrainedModel
 
 try:
-    from src.utils.misc import global_training_logs
+    from paddleformers.cli.train.ernie_pretrain.src.utils.misc import (
+        global_training_logs,
+    )
 except ModuleNotFoundError:
     global_training_logs = {}
 
