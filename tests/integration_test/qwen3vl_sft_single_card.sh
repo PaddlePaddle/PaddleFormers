@@ -21,12 +21,12 @@ step=$1
 if [ $step == "single" ]; then
   export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft_single.yaml
   export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
-  export model_name_or_path=$CACHE_DIR/qwen3vl/Qwen3-VL-8B-Instruct
+  export model_name_or_path=$CACHE_DIR/qwen3vl/tiny-random-qwen3vlv2
   export output_dir=$root_dir/checkpoints/qwen3vl-single
 elif [ $step == "fsdp" ]; then
   export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft_fsdp.yaml
   export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
-  export model_name_or_path=$CACHE_DIR/qwen3vl/Qwen3-VL-8B-Instruct
+  export model_name_or_path=$CACHE_DIR/qwen3vl/tiny-random-qwen3vlv2
   export output_dir=$root_dir/checkpoints/qwen3vl-single
 fi
 
