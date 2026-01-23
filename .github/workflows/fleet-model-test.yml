@@ -417,6 +417,7 @@ jobs:
       #     timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh sft
       #     '
 
+      
       # - name: Qwen lora
       #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
       #   run: |
@@ -543,7 +544,7 @@ jobs:
       #       echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
       #     fi
       #     '
-      
+
       - name: Qwen vl sft
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
