@@ -1163,7 +1163,7 @@ class Trainer:
                 comm_method=self.args.flex_ckpt_comm_method,
             )
 
-        if enable_bf16_opt and (not self.args.ignore_load_lr_and_optim):
+        if enable_bf16_opt:
             opt_state_dict = self.optimizer.state_dict()
 
             def recover_params_from_master_weight(opt_state_dict, group):
