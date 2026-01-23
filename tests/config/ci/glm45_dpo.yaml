@@ -70,3 +70,5 @@ fuse_attention_qkv: true
 fuse_attention_ffn: true
 
 num_empty_layers_add_in_tail: 1
+
+router_aux_loss_coef: 0.0
