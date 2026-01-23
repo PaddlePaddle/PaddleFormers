@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import inspect
+import os
 import shutil
 import tempfile
 import unittest
@@ -24,6 +25,7 @@ import numpy as np
 import paddle
 
 from paddleformers.transformers import AutoProcessor, Qwen3VLProcessor
+from paddleformers.utils.log import logger
 from tests.transformers.test_processing_common import ProcessorTesterMixin
 
 
@@ -41,6 +43,18 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         )
         processor.save_pretrained(cls.tmpdir)
         cls.image_token = processor.image_token
+
+    def setUp(self):
+        # Initialize device when GPU is needed by certain test case
+        gpu_count = paddle.device.cuda.device_count()
+        pid = os.getpid()
+
+        if gpu_count > 0:
+            paddle.set_device(f"gpu:{pid % gpu_count}")
+        else:
+            paddle.set_device("cpu")
+            self.skipTest("No GPU currently available/allocated")
+        logger.info(f"Qwen3VLProcessorTest [PID:{pid}] Device initialized: {paddle.get_device()}")
 
     def get_tokenizer(self, **kwargs):
         return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).tokenizer
@@ -84,7 +98,7 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         self.assertEqual(processor.tokenizer.get_vocab(), tokenizer.get_vocab())
         self.assertEqual(processor.image_processor.to_json_string(), image_processor.to_json_string())
         self.assertEqual(processor.tokenizer.__class__.__name__, "Qwen2TokenizerFast")
-        self.assertEqual(processor.image_processor.__class__.__name__, "Qwen2VLImageProcessor")
+        self.assertEqual(processor.image_processor.__class__.__name__, "Qwen2VLImageProcessorFast")
         self.assertEqual(processor.video_processor.__class__.__name__, "Qwen3VLVideoProcessor")
 
     def test_image_processor(self):
@@ -257,10 +271,6 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         out_dict = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, return_dict=True)
         self.assertListEqual(list(out_dict.keys()), ["input_ids", "attention_mask"])
 
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-
         # Add video URL for return dict and load with `num_frames` arg
         messages[0][0]["content"][0] = {
             "type": "video",
@@ -354,7 +364,7 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     def test_special_mm_token_truncation(self):
         """Tests that special vision tokens do not get truncated when `truncation=True` is set."""
 
-        processor = self.get_processor()
+        processor = self.get_processor(use_fast=False)  # only support with slow image processor
 
         input_str = self.prepare_text_inputs(batch_size=2, modalities="image")
         image_input = self.prepare_image_inputs(batch_size=2)
