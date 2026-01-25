@@ -1214,7 +1214,7 @@ class Trainer:
         enable_bf16_opt = (
             not isinstance(self.model, LoRAModel)
             and self.args.bf16
-            and isinstance(self.optimizer.inner_opt, DygraphShardingOptimizerV2)
+            and isinstance(self.optimizer._inner_opt, DygraphShardingOptimizerV2)
         )
         logger.debug(f"sharded_model_from_ema: {self.args.sharded_model_from_ema}")
         logger.debug(f"enable_bf16_opt: {enable_bf16_opt}")
