@@ -38,7 +38,8 @@ install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip install -r requirements.txt
-    python -m pip install -U --no-cache-dir transformers
+    python -m pip install -r requirements-dev.txt
+    python -m pip install -r tests/requirements.txt
     python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
     python -m pip install paddlepaddle-gpu==3.2.2 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
     #python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
