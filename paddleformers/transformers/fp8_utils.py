@@ -134,6 +134,56 @@ def weight_quant(weight, transpose=False):
             )
 
 
+def scale_wrapper(x_amax, eps=0.0):
+    fp8_max = 448.0
+    float_max = paddle.finfo(paddle.float32).max
+    amax_mod = paddle.maximum(
+        x_amax,
+        paddle.full_like(x_amax, eps),
+    )
+    scale = fp8_max / amax_mod
+    scale = paddle.where(
+        amax_mod == 0,
+        paddle.ones_like(scale),
+        scale,
+    )
+    scale = paddle.where(
+        paddle.isinf(scale),
+        paddle.full_like(scale, float_max),
+        scale,
+    )
+    return scale
+
+
+def ceil_div(x, y):
+    return (x + y - 1) // y
+
+
+def per_block_cast_to_fp8(x, block_size=[128, 128]):
+    assert x.dim() == 2
+    m, n = x.shape
+    x_padded = paddle.zeros(
+        (
+            ceil_div(m, block_size[0]) * block_size[0],
+            ceil_div(n, block_size[1]) * block_size[1],
+        ),
+        dtype=x.dtype,
+    )
+    x_padded[:m, :n] = x
+    x_view = paddle.view(
+        x_padded,
+        (-1, block_size[0], x_padded.shape[1] // block_size[1], block_size[1]),
+    )
+
+    x_abs = paddle.abs(x_view).astype(paddle.float32)
+    x_amax = paddle.amax(x_abs, axis=(1, 3), keepdim=True)
+    scale = scale_wrapper(x_amax)
+    x_scaled = (x_view * scale).astype(paddle.float8_e4m3fn)
+    return x_scaled.view_as(x_padded)[:m, :n].contiguous(), (
+        paddle.view(1.0 / scale, (x_view.shape[0], x_view.shape[2]))
+    )
+
+
 class FP8LinearFunctionBase:
     @staticmethod
     def dequantize_fp8_to_fp32(fp8_tensor, scale):
@@ -167,11 +217,11 @@ class FP8LinearFunctionBase:
             )
             tensor = FP8LinearFunctionBase.padding(tensor, 0)
             tensor_t_fp8, tensor_t_scale = paddle.incubate.nn.functional.fp8_quant_blockwise(
-                tensor,
+                tensor.T.contiguous(),
                 output_scale_transpose=True,
                 quant_method="1x128",
-                input_transpose=True,
-                return_transpose_only=True,
+                input_transpose=False,
+                return_transpose_only=False,
                 using_pow2_scale=False,
             )
             return tensor_fp8, tensor_scale, tensor_t_fp8, tensor_t_scale
@@ -272,7 +322,10 @@ class FP8LinearFunctionBase:
                 )
 
         # quant weight
-        weight_fp8, weight_scale = weight_quant(weight, weight_transpose)
+        if weight_transpose:
+            weight_fp8, weight_scale = per_block_cast_to_fp8(weight.T.contiguous())
+        else:
+            weight_fp8, weight_scale = per_block_cast_to_fp8(weight)
 
         # FP8 GEMM
         if out is None:
@@ -368,7 +421,7 @@ class FP8LinearFunctionBase:
             # [recompute] o1 = deep_gemm(x_fp8, w1_t_fp8)
 
             # Recompute o1 using deep_gemm(x_fp8, w1_t_fp8)
-            w1_fp8, w1_scale = weight_quant(w1, True)
+            w1_fp8, w1_scale = per_block_cast_to_fp8(w1.T.contiguous())
             o1 = paddle.empty([x_fp8.shape[0], w1_fp8.shape[0]], dtype=do3.dtype)
             deep_gemm.gemm_fp8_fp8_bf16_nt((x_fp8, x_scale.T), (w1_fp8, w1_scale), o1, num_sms=get_sm_num())
 
