@@ -26,9 +26,6 @@ jobs:
           echo "Current runner name: ${{ runner.name }}"
 
       - name: Checkout code
-        env:
-          http_proxy: http://oversea-website-proxy.aistudio.public:8888
-          https_proxy: http://oversea-website-proxy.aistudio.public:8888
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'pull_request'
@@ -39,10 +36,8 @@ jobs:
 
       - name: Merge PR (if needed)
         if: ${{ github.event_name == 'pull_request' }}
-        env:
-          http_proxy: http://oversea-website-proxy.aistudio.public:8888
-          https_proxy: http://oversea-website-proxy.aistudio.public:8888
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config --global user.name "PaddleFormersCI"
           git config --global user.email "paddleformers_ci@example.com"
           echo "Fetching and merging PR..."
@@ -54,8 +49,6 @@ jobs:
       - name: Run CI unittest
         env:
           MODEL_PATH: /aistudio/paddle_ci
-          http_proxy: http://oversea-website-proxy.aistudio.public:8888
-          https_proxy: http://oversea-website-proxy.aistudio.public:8888
         run: |
           set -e
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
