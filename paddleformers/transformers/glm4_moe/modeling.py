@@ -1314,7 +1314,7 @@ class Glm4MoeMTPLayer(Glm4MoeDecoderLayer):
             hidden_states=hidden_states,
             position_ids=position_ids,
             attention_mask=attention_mask,
-            past_key_values=past_key_values,
+            past_key_value=past_key_values,
             use_cache=use_cache,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             position_embeddings=position_embeddings,
@@ -1964,23 +1964,20 @@ class Glm4MoeDecoderLayerPipe(Glm4MoeDecoderLayer):
             else:
                 ret = (hidden_states,)
         if attention_mask is not None:
-            # if num_nextn_predict_layers > 0:
-            #     ret += (paddle.concat([attention_mask.clone(), mtp_attention_mask], axis=-1),)
-            # else:
-            #     ret += (attention_mask.clone(),)
-            ret += (ori_attention_mask.clone(),)
+            if num_nextn_predict_layers > 0:
+                ret += (ori_attention_mask.clone(),)
+            else:
+                ret += (attention_mask.clone(),)
         if position_ids is not None:
-            # if num_nextn_predict_layers > 0:
-            #     ret += (paddle.concat([position_ids.clone(), mtp_position_ids], axis=-1),)
-            # else:
-            #     ret += (position_ids.clone(),)
-            ret += (ori_position_ids.clone(),)
+            if num_nextn_predict_layers > 0:
+                ret += (ori_position_ids.clone(),)
+            else:
+                ret += (position_ids.clone(),)
         if position_embeddings is not None:
-            # if num_nextn_predict_layers > 0:
-            #     ret += (paddle.concat([position_embeddings.clone(), mtp_position_embeddings], axis=-1),)
-            # else:
-            #     ret += (position_embeddings.clone(),)
-            ret += (ori_position_embeddings.clone(),)
+            if num_nextn_predict_layers > 0:
+                ret += (ori_position_embeddings.clone(),)
+            else:
+                ret += (position_embeddings.clone(),)
         if nbatch_pack_offset is not None:
             ret += (nbatch_pack_offset.clone(),)
         if len(ret) == 1:
