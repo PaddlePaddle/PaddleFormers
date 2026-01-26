@@ -206,6 +206,8 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 > ```
 ------
 
+</details>
+
  **安装依赖（XPU & ILUVATAR-GPU & Metax GPU）**
 
 * [昆仑芯安装说明文档](./docs/zh/XPU_installation_guide.md)
