@@ -19,8 +19,11 @@ if [ -f 'PaddleFleet/.venv/bin/activate' ]; then
    source PaddleFleet/.venv/bin/activate
 fi
 
-wget -q --tries=5 --no-proxy https://xly-devops.cdn.bcebos.com/PaddleFleet/glm45/glm45_fleet.12-18.tar --no-check-certificate
-tar -xf glm45_fleet.12-18.tar # glm45_fleet
+if [ ! -d "$root_dir/glm45_fleet" ]; then
+  wget -q --tries=5 --no-proxy https://xly-devops.cdn.bcebos.com/PaddleFleet/glm45/glm45_fleet.12-18.tar --no-check-certificate
+  ar -xf glm45_fleet.12-18.tar
+fi
+
 cd $root_dir/glm45_fleet
 export cur_dir=$(pwd)
 
@@ -86,7 +89,6 @@ elif [[ ${step} == "grouped_gemm" ]]; then
       | .model_name_or_path = strenv(CACHE_DIR) + "/glm45/GLM-4.5-Air"
       | .per_device_train_batch_size = 1
       | .num_hidden_layers = 2
-      | .use_expert_parallel = false
       | .stage1_overlap = false
       | .logging_dir = strenv(data_dir) + "/vdl_log"
       | .output_dir = strenv(data_dir) + "/checkpoints"' \
