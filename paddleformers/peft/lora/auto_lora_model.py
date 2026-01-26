@@ -50,12 +50,8 @@ class LoRAAutoLinear(LoRALinear):
         r: int = 0,
         lora_alpha: int = 1,
         lora_dropout: float = 0.0,
-        use_quick_lora: bool = False,
         rslora: bool = False,
         lora_plus_scale: float = 1.0,
-        pissa: bool = False,
-        lora_use_mixer: bool = False,
-        use_mora: bool = False,
         **kwargs
     ):
         self.use_intermediate_api = kwargs.pop("use_intermediate_api", False)
@@ -68,12 +64,8 @@ class LoRAAutoLinear(LoRALinear):
             r,
             lora_alpha,
             lora_dropout,
-            use_quick_lora,
             rslora,
             lora_plus_scale,
-            pissa,
-            lora_use_mixer,
-            use_mora,
             **kwargs,
         )
         if self.use_intermediate_api:
@@ -140,10 +132,6 @@ class LoRAAutoModel(nn.Layer):
             self.lora_config.dtype = paddle.get_default_dtype()
         with dtype_guard(self.lora_config.dtype):
             self.model = self.get_lora_model(model, lora_config)
-        if (self.lora_config.tensor_model_parallel_size > 1 or self.lora_config.pipeline_model_parallel_size > 1) and (
-            self.lora_config.lora_use_mixer or self.lora_config.use_mora
-        ):
-            raise NotImplementedError("lora_use_mixer or mora is not supported in tensor parallel mode.")
         if self.lora_config.tensor_model_parallel_size != self.model.config.tensor_model_parallel_size:
             self.lora_config.tensor_model_parallel_size = self.model.config.tensor_model_parallel_size
             logger.warning(
@@ -375,11 +363,7 @@ class LoRAAutoModel(nn.Layer):
                 lora_dropout=lora_config.lora_dropout,
                 rslora=lora_config.rslora,
                 lora_plus_scale=lora_config.lora_plus_scale,
-                pissa=lora_config.pissa,
                 bias_attr=False if module.bias is None else None,
-                use_quick_lora=lora_config.use_quick_lora,
-                lora_use_mixer=lora_config.lora_use_mixer,
-                use_mora=lora_config.use_mora,
                 use_intermediate_api=lora_config.use_intermediate_api,
                 weight_dist_attr=tuple((module.weight.process_mesh, module.weight.placements)),
                 parallelize_plan=layer_parallelize_plan,

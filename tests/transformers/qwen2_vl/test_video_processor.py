@@ -15,6 +15,7 @@
 # limitations under the License.
 from __future__ import annotations
 
+import os
 import unittest
 
 import numpy as np
@@ -28,6 +29,7 @@ from paddleformers.transformers.image_utils import (
     get_image_size,
 )
 from paddleformers.transformers.qwen2_vl.video_processor import smart_resize
+from paddleformers.utils import logger
 
 from ..test_video_processing_common import (
     VideoProcessingTestMixin,
@@ -127,6 +129,17 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
 
     def setUp(self):
         super().setUp()
+        # Initialize device when GPU is needed by certain test case
+        gpu_count = paddle.device.cuda.device_count()
+        pid = os.getpid()
+
+        if gpu_count > 0:
+            paddle.set_device(f"gpu:{pid % gpu_count}")
+        else:
+            paddle.set_device("cpu")
+            self.skipTest("No GPU currently available/allocated")
+        logger.info(f"Qwen2VLVideoProcessingTest [PID:{pid}] Device initialized: {paddle.get_device()}")
+
         self.video_processor_tester = Qwen2VLVideoProcessingTester(self)
 
     @property
@@ -156,10 +169,6 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
 
     @unittest.skip("Skipping due to some issues with Qwen2-VL Video Processor")
     def test_call_pil(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-
         for video_processing_class in self.video_processor_list:
             # Initialize video_processing
             video_processing = video_processing_class(**self.video_processor_dict)
@@ -183,10 +192,6 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
 
     @unittest.skip("Skipping due to some issues with Qwen2-VL Video Processor")
     def test_call_numpy(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-
         for video_processing_class in self.video_processor_list:
             # Initialize video_processing
             video_processing = video_processing_class(**self.video_processor_dict)
@@ -209,10 +214,6 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
 
     @unittest.skip("Skipping due to some issues with Qwen2-VL Video Processor")
     def test_call_paddle(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-
         for video_processing_class in self.video_processor_list:
             # Initialize video_processing
             video_processing = video_processing_class(**self.video_processor_dict)
@@ -239,10 +240,6 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
 
     def test_nested_input(self):
         """Tests that the processor can work with nested list where each video is a list of arrays"""
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-
         for video_processing_class in self.video_processor_list:
             video_processing = video_processing_class(**self.video_processor_dict)
             video_inputs = self.video_processor_tester.prepare_video_inputs(
@@ -296,10 +293,6 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
             # self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
 
     def test_call_sample_frames(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-
         for video_processing_class in self.video_processor_list:
             video_processing = video_processing_class(**self.video_processor_dict)
 

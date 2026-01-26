@@ -52,7 +52,10 @@ from paddleformers.transformers import (
     Llama3Tokenizer,
     LlamaTokenizer,
 )
-from paddleformers.transformers.configuration_utils import LlmMetaConfig
+from paddleformers.transformers.configuration_utils import (
+    LlmMetaConfig,
+    QuantizationConfig,
+)
 from paddleformers.utils.import_utils import is_paddlefleet_available
 from paddleformers.utils.log import logger
 
@@ -218,9 +221,19 @@ def run_sft(
     else:
         dtype = "float32"
 
+    if finetuning_args.weight_quantize_algo is not None:
+        quantization_config = dict(
+            weight_quantize_algo=finetuning_args.weight_quantize_algo,
+            ignore_modules=[".*out_linear.*"],
+        )
+    else:
+        quantization_config = dict(weight_quantize_algo=finetuning_args.weight_quantize_algo)
+    quantization_config = QuantizationConfig.from_dict(quantization_config)
+
     model_config = AutoConfig.from_pretrained(
         model_args.model_name_or_path,
         dtype=dtype,
+        quantization_config=quantization_config,
     )
 
     architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
@@ -563,14 +576,10 @@ def create_peft_model(model_args, training_args, dtype, model):
                 lora_alpha=2 * model_args.lora_rank if not model_args.rslora else 4,
                 rslora=model_args.rslora,
                 lora_plus_scale=model_args.lora_plus_scale,
-                pissa=model_args.pissa,
                 merge_weights=False,
                 tensor_model_parallel_size=training_args.tensor_model_parallel_size,
                 dtype=dtype,
                 base_model_name_or_path=model_args.model_name_or_path,
-                use_quick_lora=model_args.use_quick_lora,
-                lora_use_mixer=model_args.lora_use_mixer,
-                use_mora=model_args.use_mora,
             )
             model = LoRAModel(model, lora_config)
         else:

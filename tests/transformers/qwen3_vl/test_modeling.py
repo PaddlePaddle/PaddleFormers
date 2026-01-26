@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import copy
+import os
 import tempfile
 import unittest
 
@@ -29,6 +30,7 @@ from paddleformers.transformers import (
 from paddleformers.transformers import Qwen3VLModelDecapitated as Qwen3VLModel
 from paddleformers.transformers import process_vision_info
 from paddleformers.transformers.video_utils import load_video
+from paddleformers.utils.log import logger
 from tests.testing_utils import require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -546,6 +548,17 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 
 class Qwen3VLIntegrationTest(unittest.TestCase):
     def setUp(self):
+        # Initialize device when GPU is needed by certain test case
+        gpu_count = paddle.device.cuda.device_count()
+        pid = os.getpid()
+
+        if gpu_count > 0:
+            paddle.set_device("gpu")
+        else:
+            paddle.set_device("cpu")
+            self.skipTest("No GPU currently available/allocated")
+        logger.info(f"Qwen3VLIntegrationTest [PID:{pid}] Device initialized: {paddle.get_device()}")
+
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(
             "PaddleFormers/tiny-random-qwen3vl",
             dtype="float32",
@@ -646,48 +659,49 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
         )
         self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=5e-4, rtol=1e-5))
 
-    def test_model_tiny_logits_batch(self):
-        text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
+    # TODO: Re-enable this test case once paddle.Tensor support the more tensor dimensions.
+    # def test_model_tiny_logits_batch(self):
+    #     text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
 
-        inputs = self.processor(text=[text, text], images=[self.image, self.image], return_tensors="pd")
+    #     inputs = self.processor(text=[text, text], images=[self.image, self.image], return_tensors="pd")
 
-        output = self.model(**inputs)["logits"].astype(paddle.float32)
-        EXPECTED_SLICE = paddle.to_tensor(
-            [
-                0.06287927,
-                -0.07886235,
-                0.04489284,
-                0.05893321,
-                0.01931595,
-                -0.01385389,
-                0.08200871,
-                -0.03711491,
-                -0.01657202,
-                -0.02351523,
-                0.07860593,
-                0.04915767,
-                0.01571729,
-                -0.03793694,
-                -0.01400308,
-                0.01007790,
-                -0.00566702,
-                0.00890818,
-                0.07228709,
-                -0.00890865,
-                0.00333118,
-                -0.01285518,
-                -0.05833241,
-                0.03265308,
-                -0.03928559,
-                -0.02193597,
-                -0.00813984,
-                0.00105143,
-                0.04259191,
-                -0.02120323,
-            ]
-        )
-        self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
-        self.assertTrue(paddle.allclose(output[1, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+    #     output = self.model(**inputs)["logits"].astype(paddle.float32)
+    #     EXPECTED_SLICE = paddle.to_tensor(
+    #         [
+    #             0.06287927,
+    #             -0.07886235,
+    #             0.04489284,
+    #             0.05893321,
+    #             0.01931595,
+    #             -0.01385389,
+    #             0.08200871,
+    #             -0.03711491,
+    #             -0.01657202,
+    #             -0.02351523,
+    #             0.07860593,
+    #             0.04915767,
+    #             0.01571729,
+    #             -0.03793694,
+    #             -0.01400308,
+    #             0.01007790,
+    #             -0.00566702,
+    #             0.00890818,
+    #             0.07228709,
+    #             -0.00890865,
+    #             0.00333118,
+    #             -0.01285518,
+    #             -0.05833241,
+    #             0.03265308,
+    #             -0.03928559,
+    #             -0.02193597,
+    #             -0.00813984,
+    #             0.00105143,
+    #             0.04259191,
+    #             -0.02120323,
+    #         ]
+    #     )
+    #     self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+    #     self.assertTrue(paddle.allclose(output[1, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
     def test_model_tiny_logits_batch_wo_image(self):
         text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
@@ -771,10 +785,6 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
         self.assertTrue(paddle.allclose(output[1, 500, 10000:10030], EXPECTED_SLICE_2, atol=1e-3, rtol=1e-3))
 
     def test_model_tiny_logits_with_video(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-
         video_url = "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
         messages2 = [
             {

@@ -6,6 +6,12 @@ max_seq_len: 8192
 mix_strategy: concat
 input_dir: "1.0 /home/.cache/glm45/data/pre-training/llama_openwebtext_100k"
 split: "998,1,1"
+packing: true
+truncate_packing: true
+mix_strategy: concat
+dataloader_shuffle: false
+dataloader_num_workers: 24
+prefetch_factor: 24
 
 ### modelv
 model_name_or_path: /home/.cache/glm45/GLM-4.5-Air
@@ -39,9 +45,17 @@ warmup_steps: 0
 learning_rate: 1.0e-5
 
 # performance
-
+recompute_granularity: full
+recompute_method: block
+recompute_num_layers: 1
 sharding: stage1
 split_param: true
+stage1_overlap: true
+
+
+# tp
+tp_delay_scale_loss: true
+
 
 amp_master_grad: true
 bf16: true
@@ -50,14 +64,15 @@ fp16_opt_level: O2
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
 continue_training: false
-dataloader_shuffle: false
 
 benchmark: true
 moe_router_force_load_balancing: true
 moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
 num_hidden_layers: 2
-apply_rope_fusion: False
+apply_rope_fusion: true
+fuse_rms_norm: true
+fp32_residual_connection: false
 moe_router_fusion: True
 router_aux_loss_coef: 1e-4
 

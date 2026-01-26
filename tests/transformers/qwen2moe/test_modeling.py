@@ -348,6 +348,36 @@ class Qwen2MoeIntegrationTest(unittest.TestCase):
                                            0.40330163, -0.14736551, 0.22067304, -1.53130245, -0.71701866])  # fmt: skip
         self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
+    def test_fd_fallback(self):
+        input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
+        model = Qwen2MoeForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-qwen2moev2",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
+            fd_fallback=False,
+        )
+        model_fd_fallback = Qwen2MoeForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-qwen2moev2",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
+            fd_fallback=True,
+        )
+        model_fd_fallback_fused_ffn = Qwen2MoeForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-qwen2moev2",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
+            fd_fallback=True,
+            fuse_attention_ffn=True,
+        )
+        input_ids = paddle.to_tensor([input_ids])
+        with paddle.no_grad():
+            out = model(input_ids, return_dict=True).logits
+            out_fd_fallback = model_fd_fallback(input_ids, return_dict=True).logits
+            out_fd_fallback_fused_ffn = model_fd_fallback_fused_ffn(input_ids, return_dict=True).logits
+
+        self.assertTrue(paddle.allclose(out_fd_fallback, out, atol=1e-3, rtol=1e-3))
+        self.assertTrue(paddle.allclose(out_fd_fallback_fused_ffn, out, atol=1e-3, rtol=1e-3))
+
 
 class Qwen2MoeGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
     internal_testing_model = "PaddleFormers/tiny-random-qwen2moev2"

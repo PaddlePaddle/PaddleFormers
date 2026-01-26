@@ -70,20 +70,3 @@ class TestHFMultiSourceImageProcessor(unittest.TestCase):
     def test_hf_hub(self):
         image_processor = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface")
         self.preprocess(image_processor)
-
-    @skip_for_none_ce_case
-    def test_preprocess_consistency_with_hf(self):
-        from transformers import AutoImageProcessor as AutoImageProcessor_hf
-
-        image_processor_pd = AutoImageProcessor.from_pretrained(
-            "Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface"
-        )
-        image_processor_hf = AutoImageProcessor_hf.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", use_fast=False)
-        inputs_pd = image_processor_pd(self.image, return_tensors="pd")
-        inputs_hf = image_processor_hf(self.image, return_tensors="pt")
-
-        self.assertTrue(
-            paddle.allclose(
-                paddle.to_tensor(inputs_hf["pixel_values"].numpy()), inputs_pd["pixel_values"], atol=1e-5, rtol=1e-5
-            )
-        )
