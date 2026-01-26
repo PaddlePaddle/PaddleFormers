@@ -2955,6 +2955,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                             if "quant_weight" in key:
                                 quantization_linear_list.append(key[:-13])
 
+                model.config["quantization_config"].quantization_linear_list = quantization_linear_list
+
                 new_state_dict = convert_to_quantize_state_dict(
                     new_state_dict,
                     quantization_linear_list,

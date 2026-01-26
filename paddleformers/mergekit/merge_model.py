@@ -620,6 +620,26 @@ class MergeModel:
         base_state_dict = self.get_model_state_dict(
             self.merge_config.base_model_path, file_type_list[1], key_list=key_list, file=file
         )
+        try:
+            print("before: base_state_dict['model.layers.0.mlp.down_proj.weight']: ", base_state_dict['model.layers.0.mlp.down_proj.weight'])
+            print("dtype = ", base_state_dict['model.layers.0.mlp.down_proj.weight'].dtype)
+            print("class = ", base_state_dict['model.layers.0.mlp.down_proj.weight'].__class__)
+        except:
+            pass
+        # exit()
+        if 0:
+            from paddleformers.quantization.quantization_utils import convert_to_quantize_dequantize_state_dict
+            from paddleformers.transformers.configuration_utils import QuantizationConfig
+            lora_base_config = PretrainedConfig.get_config_dict(self.merge_config.lora_model_path)[0]
+            quantization_config = lora_base_config["quantization_config"]
+            quantization_config = QuantizationConfig.from_dict(quantization_config)
+            quantization_linear_list = quantization_config.quantization_linear_list
+            base_state_dict = convert_to_quantize_dequantize_state_dict(base_state_dict, quantization_linear_list, quantization_config, "bfloat16")
+        try:
+            print("after: base_state_dict['model.layers.0.mlp.down_proj.weight']: ", base_state_dict['model.layers.0.mlp.down_proj.weight'])
+        except:
+            pass
+        # exit()
         logger.info("Load model weight successfully.")
         lora_state_dict = self.split_fuse_lora_state_dict(base_state_dict, lora_state_dict)
         if not lora_config.rslora:
@@ -638,7 +658,7 @@ class MergeModel:
                 lora_A_tensor = None
                 if lora_state_dict is not None and lora_A_key in lora_state_dict.keys():
                     lora_A_tensor, lora_B_tensor = lora_state_dict.pop(lora_A_key), lora_state_dict.pop(lora_B_key)
-                    is_bf16 = str(tensor.dtype) in ["uint16", "bfloat16"]
+                    is_bf16 = str(tensor.dtype) in ["uint16", "bfloat16", "paddle.uint16", "paddle.bfloat16"]
                     if self.is_xpu:
                         if str(tensor.dtype) == "bfloat16":
                             tensor = tensor.view("uint16")
