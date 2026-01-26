@@ -24,10 +24,12 @@ tar -xf glm45_fleet.12-18.tar # glm45_fleet
 cd $root_dir/glm45_fleet
 export cur_dir=$(pwd)
 
-config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_pt.yaml
-export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
-
-yq eval '.expert_model_parallel_size = 1
+step=$1
+if [[ ${step} == "pt" ]]; then
+  echo "Run GLM4.5 pretrain test"
+  config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_pt.yaml
+  export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
+  yq eval '.expert_model_parallel_size = 1
     | .num_hidden_layers = 2
     | .per_device_train_batch_size = 1
     | .use_expert_parallel = false
@@ -38,7 +40,59 @@ yq eval '.expert_model_parallel_size = 1
     | .logging_dir = strenv(cur_dir) + "/vdl_log"
     | .output_dir = strenv(cur_dir) + "/checkpoints/pretrain"' \
   $config_yaml > ${config_yaml}.tmp
-mv ${config_yaml}.tmp $config_yaml
+  mv ${config_yaml}.tmp $config_yaml
+elif [[ ${step} == "sft" ]]; then
+  echo "Run GLM4.5 sft test"
+  config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_sft.yaml
+  export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
+  yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+    | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
+    | .model_name_or_path = strenv(cur_dir) + "/checkpoints/pretrain"
+    | .logging_dir = strenv(cur_dir) + "/glm_full_pp_vdl_log"
+    | .num_empty_layers_add_in_head = 0
+    | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"' \
+   $config_yaml > ${config_yaml}.tmp
+  mv ${config_yaml}.tmp $config_yaml
+elif [[ ${step} == "lora" ]]; then
+  echo "Run GLM4.5 multi lora test"
+  config_lora_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_lora.yaml
+
+  export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
+
+  yq '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+      | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
+      | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
+      | .logging_dir = strenv(cur_dir) + "/glm_full_single_lora_log"
+      | .output_dir = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"' \
+    $config_lora_yaml > ${config_lora_yaml}.tmp
+  mv ${config_lora_yaml}.tmp $config_lora_yaml
+elif [[ ${step} == "dpo" ]]; then
+  echo "Run GLM4.5 dpo test"
+  config_dpo_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_dpo.yaml
+  export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/dpo
+  yq '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+      | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
+      | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
+      | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_vdl_log"
+      | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_ckpts"' \
+    $config_dpo_yaml > ${config_dpo_yaml}.tmp
+  mv ${config_dpo_yaml}.tmp $config_dpo_yaml
+elif [[ ${step} == "grouped_gemm" ]]; then
+  echo "Run GLM4.5 grouped_gemm test"
+  export config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_pt_grouped_gemm.yaml
+  export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
+  yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+      | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
+      | .model_name_or_path = strenv(CACHE_DIR) + "/glm45/GLM-4.5-Air"
+      | .per_device_train_batch_size = 1
+      | .num_hidden_layers = 2
+      | .use_expert_parallel = false
+      | .stage1_overlap = false
+      | .logging_dir = strenv(data_dir) + "/vdl_log"
+      | .output_dir = strenv(data_dir) + "/checkpoints"' \
+    $config_yaml > ${config_yaml}.tmp
+  mv ${config_yaml}.tmp $config_yaml
+fi
 
 rm -rf checkpoints/
 rm -rf vdl_log/
@@ -50,8 +104,8 @@ unset http_proxy https_proxy
 export FLAGS_embedding_deterministic=1
 export FLAGS_cudnn_deterministic=1
 
-log_file=glm45_pt_a100.txt
-gt_loss_file=glm45_pt_multi_card_a100_gt_loss.txt
+log_file=glm45_${step}_a100.txt
+gt_loss_file=glm45_${step}_multi_card_a100_gt_loss.txt
 
 set +e
 FLAGS_use_stride_compute_kernel=False NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./${log_file}
