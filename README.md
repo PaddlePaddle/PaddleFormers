@@ -136,65 +136,75 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 
 **安装依赖（GPU）**
 
-* 基于 Docker 容器的方式（**推荐**）
+<details>
+  <summary>基于 Docker 容器的方式（<b>推荐</b>）</summary>
 
-为了避免本地环境存在较多冲突，我们建议使用 PaddleFormers 的预置镜像来准备环境，容器中已经拉取了 PaddleFormers 仓库并完成了安装：
+------
+> 为了避免本地环境存在较多冲突，我们建议使用 PaddleFormers 的预置镜像来准备环境，容器中已经拉取了 PaddleFormers 仓库并完成了安装：
+>
+> ```shell
+> # 以cuda12.6为例
+> docker run --gpus all --name paddleformers-work -v $(pwd):/work  \
+>     -w=/work --shm-size=512G --network=host -it \
+>     ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:3.3.0-gpu-cuda12.6-cudnn9.5 /bin/bash
+>
+> # cuda12.9镜像：ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:3.3.0-gpu-cuda12.9-cudnn9.9
+> # cuda13.0镜像：ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:3.3.0-gpu-cuda13.0-cudnn9.13
+> ```
+------
 
-```shell
-# 以cuda12.6为例
-docker run --gpus all --name paddleformers-work -v $(pwd):/work  \
-    -w=/work --shm-size=512G --network=host -it \
-    ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:3.3.0-gpu-cuda12.6-cudnn9.5 /bin/bash
+</details>
 
-# cuda12.9镜像：ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:3.3.0-gpu-cuda12.9-cudnn9.9
-# cuda13.0镜像：ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:3.3.0-gpu-cuda13.0-cudnn9.13
-```
-* 基于 pip/源码的安装方式
+<details>
+  <summary>基于 pip/源码的安装方式</summary>
 
-我们推荐使用 `conda` / `venv` / `uv` 等虚拟环境工具管理 python 环境。
-
-```shell
-# conda
-conda create -n paddleformers-work python=3.10 #支持python3.10～3.13
-conda activate paddleformers-work
-# venv
-python -m venv .paddleformers-work
-source .paddleformers-work/bin/activate
-# uv
-uv venv .paddleformers-work
-source .paddleformers-work/bin/activate
-```
-如果您无需使用 PaddleFormers 的训练功能（只使用 tokenizer 或者 processor），可以通过以下命令安装，这种情况下不会安装训练相关的依赖。
-
-```shell
-python -m pip install paddleformers
-```
-
-如果您需要 PaddleFormers 提供的训练能力，需要同时安装 PaddleFormers 和 PaddleFleet。
-
-```shell
-# Install via pip
-# cuda12.6
-python -m pip install paddleformers[paddlefleet] --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
-# cuda12.9
-# python -m pip install paddleformers[paddlefleet] --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
-# cuda13.0
-# python -m pip install paddleformers[paddlefleet] --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
-```
-
-如果您需要 PaddleFormers 提供的训练能力以及仓库中的样例配置（用于快速体验），建议拉取源码后安装。
-
-```shell
-# Install development version
-git clone https://github.com/PaddlePaddle/PaddleFormers.git
-cd PaddleFormers
-# cuda12.6
-python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
-# cuda12.9
-# python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
-# cuda13.0
-# python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
-```
+------
+> 我们推荐使用 `conda` / `venv` / `uv` 等虚拟环境工具管理 python 环境。
+>
+> ```shell
+> # conda
+> conda create -n paddleformers-work python=3.10 #支持python3.10～3.13
+> conda activate paddleformers-work
+> # venv
+> python -m venv .paddleformers-work
+> source .paddleformers-work/bin/activate
+> # uv
+> uv venv .paddleformers-work
+> source .paddleformers-work/bin/activate
+> ```
+>
+> 安装方案一：拉取拉取源码安装
+>
+> ```shell
+> # Install development version
+> git clone https://github.com/PaddlePaddle/PaddleFormers.git
+> cd PaddleFormers
+> # cuda12.6
+> python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+> # cuda12.9
+> # python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+> # cuda13.0
+> # python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
+> ```
+------
+> 安装方案二：如果您不想拉取源码，可以基于下面的命令安装 PaddleFormers 和 PaddleFleet。
+>
+> ```shell
+> # Install via pip
+> # cuda12.6
+> python -m pip install paddleformers[paddlefleet] --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+> # cuda12.9
+> # python -m pip install paddleformers[paddlefleet] --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+> # cuda13.0
+> # python -m pip install paddleformers[paddlefleet] --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
+> ```
+------
+> 安装方案三：如果您只需使用 tokenizer 或者 processor，可以通过以下命令安装，这种情况下不会安装训练相关的依赖，安装速度更加快。
+>
+> ```shell
+> python -m pip install paddleformers
+> ```
+------
 
  **安装依赖（XPU & ILUVATAR-GPU & Metax GPU）**
 
@@ -211,8 +221,10 @@ PaddleFormers 在 API 设计上与 Hugging Face Transformers 保持了高度一�
 ```python
 from paddleformers.transformers import AutoTokenizer
 
-tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
-tokenizer.encode("中华人民共和国")
+tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B-Base")
+print(tokenizer.encode("中华人民共和国"))
+# 中华人民共和国将会被编码为两个token：
+# [105492, 104773]
 ```
 
 **文本生成**
@@ -220,8 +232,8 @@ tokenizer.encode("中华人民共和国")
 ```python
 from paddleformers.transformers import AutoTokenizer, AutoModelForCausalLM
 
-tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
-model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-0.6B", dtype="bfloat16").eval()
+tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B-Base")
+model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-0.6B-Base", dtype="bfloat16").eval()
 
 input_features = tokenizer("请给我一段大模型的简短介绍：", return_tensors="pd")
 outputs = model.generate(**input_features, max_new_tokens=128)
@@ -264,15 +276,23 @@ paddleformers-cli train ./examples/config/sft/full.yaml
 
 ## ➕其他
 * [如何下载模型](./docs/zh/how_to_download_model.md)
+* [常见问题处理](https://github.com/PaddlePaddle/PaddleFormers/issues/3699)
 
-## 💬社区交流
+## 💬社区相关
+
+**贡献代码**
+
+* 欢迎社区用户为 PaddleFormers 贡献代码，详情请参考 [贡献指南](CONTRIBUTING.md)。
+
+**和我们交流**
+
 * 微信扫描二维码并填写问卷，即可加入交流群与众多社区开发者以及官方团队深度交流.
 
 <div align="center">
   <img src="https://github.com/user-attachments/assets/9f0a736c-b047-4912-a70f-8b1ea772c3eb" width="300" alt="qrcode">
 </div>
 
-## 🙏**致谢**
+## 🙏致谢
 我们借鉴了 Hugging Face 的[Transformers](https://github.com/huggingface/transformers)🤗关于预训练模型使用的优秀设计，在此对 Hugging Face 作者及其开源社区表示感谢。
 
 ## 📜许可证
