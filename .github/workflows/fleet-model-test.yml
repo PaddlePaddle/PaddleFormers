@@ -578,29 +578,29 @@ jobs:
           fi
           '
 
-      # - name: Qwen pre-train
-      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-      #   run: |
-      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
-      #     source /root/proxy
-      #     timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh pt
-      #     '
+      - name: Qwen pre-train
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh pt
+          '
         
-      # - name: Qwen sft
-      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-      #   run: |
-      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
-      #     source /root/proxy
-      #     timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh sft
-      #     '
+      - name: Qwen sft
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh sft
+          '
 
-      # - name: Qwen lora
-      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-      #   run: |
-      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
-      #     source /root/proxy
-      #     timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh lora
-      #     '
+      - name: Qwen lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh lora
+          '
 
       - name: Terminate and delete the container
         if: ${{ always() }}

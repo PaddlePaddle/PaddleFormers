@@ -21,7 +21,7 @@ fi
 
 if [ ! -d "$root_dir/glm45_fleet" ]; then
   wget -q --tries=5 --no-proxy https://xly-devops.cdn.bcebos.com/PaddleFleet/glm45/glm45_fleet.12-18.tar --no-check-certificate
-  ar -xf glm45_fleet.12-18.tar
+  tar -xf glm45_fleet.12-18.tar
 fi
 
 cd $root_dir/glm45_fleet
