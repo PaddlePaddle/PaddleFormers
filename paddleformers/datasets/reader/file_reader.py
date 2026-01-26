@@ -33,7 +33,13 @@ class BaseReader(IterableDataset):
     """Basic data reader implement."""
 
     def __init__(
-        self, file_path, file_type, file_samplenum, shuffle_file=True, split_multi_turn=False, template_backend="jinja"
+        self,
+        file_path,
+        file_type,
+        file_samplenum=None,
+        shuffle_file=True,
+        split_multi_turn=False,
+        template_backend="jinja",
     ):
         self._file_path = file_path
         self._file_type = file_type  # erniekit, alpaca, ...
@@ -56,7 +62,13 @@ class BaseReader(IterableDataset):
 
 class FileReader(BaseReader):
     def __init__(
-        self, file_path, file_type, file_samplenum, shuffle_file=True, split_multi_turn=False, template_backend="jinja"
+        self,
+        file_path,
+        file_type,
+        file_samplenum=None,
+        shuffle_file=True,
+        split_multi_turn=False,
+        template_backend="jinja",
     ):
         super().__init__(
             file_path=file_path,
@@ -211,7 +223,13 @@ class FileReader(BaseReader):
 
 class FileListReader(BaseReader):
     def __init__(
-        self, file_path, file_type, file_samplenum, shuffle_file=True, split_multi_turn=False, template_backend="jinja"
+        self,
+        file_path,
+        file_type,
+        file_samplenum=None,
+        shuffle_file=True,
+        split_multi_turn=False,
+        template_backend="jinja",
     ):
         if not os.path.isdir(file_path):
             raise ValueError(f"Directory not found: {file_path}")
@@ -228,7 +246,12 @@ class FileListReader(BaseReader):
         for file_path in self._get_files():
             # all files under the path must be of the same data type
             reader = FileReader(
-                file_path, self._file_type, self._shuffle_file, self._split_multi_turn, self._template_backend
+                file_path,
+                self._file_type,
+                self._file_samplenum,
+                self._shuffle_file,
+                self._split_multi_turn,
+                self._template_backend,
             )
             yield from reader
 
