@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Pytest configuration and fixtures for XPU CI tests.
+Pytest configuration and fixtures for iluvatar CI tests.
 """
 import sys
 from pathlib import Path

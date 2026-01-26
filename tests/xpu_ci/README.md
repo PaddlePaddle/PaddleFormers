@@ -278,10 +278,10 @@ def test_with_preprocessing(project_root, base_value_dir, log_file):
 
 ### 日志解析
 
-`utils/log_analyzer.py` 提供两个核心函数：
+`tests/ci_utils/log_analyzer.py` 提供两个核心函数：
 
 ```python
-from utils.log_analyzer import parse_loss_values, compare_with_baseline
+from ci_utils.log_analyzer import parse_loss_values, compare_with_baseline
 
 # 从日志中提取 loss 值
 losses = parse_loss_values(log_content)
@@ -300,7 +300,7 @@ passed, details = compare_with_baseline(losses, baseline_path, tolerance=1e-6)
 loss: 7.11594725 learning_rate: 5e-07 global_step: 1 ...
 ```
 
-如果格式不同，需要修改 `utils/log_analyzer.py` 中的正则表达式。
+如果格式不同，需要修改 `tests/ci_utils/log_analyzer.py` 中的正则表达式。
 
 ### Q: 如何调整容差？
 **A:** 在创建 runner 时传入 `tolerance` 参数：
@@ -341,7 +341,7 @@ runner = training_runner(..., tolerance=1e-5)  # 更宽松
 
 如果需要支持新的日志格式或比较逻辑：
 
-1. 修改 `utils/log_analyzer.py` 中的解析函数
+1. 修改 `tests/ci_utils/log_analyzer.py` 中的解析函数
 2. 扩展 `TrainingTestRunner` 类添加新功能
 3. 更新本文档
 
