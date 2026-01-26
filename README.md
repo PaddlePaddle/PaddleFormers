@@ -172,8 +172,8 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 > uv venv .paddleformers-work
 > source .paddleformers-work/bin/activate
 > ```
->
-> **安装方案一：** 拉取拉取源码安装
+------
+> **安装方案一：** 拉取源码安装
 >
 > ```shell
 > # Install development version
