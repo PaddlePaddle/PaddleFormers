@@ -1630,7 +1630,6 @@ class Glm4MoeModel(Glm4MoePreTrainedModel):
             last_hidden_state=hidden_states,
             past_key_values=next_cache,
             hidden_states=all_hidden_states,
-            attentions=all_self_attns,
             mtp_outputs=mtp_outputs,
         )
 
