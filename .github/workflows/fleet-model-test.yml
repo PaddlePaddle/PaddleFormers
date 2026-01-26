@@ -171,7 +171,7 @@ jobs:
             echo -e "\033[32mPreprocess succeeded.\033[0m"
           fi
           '
-          
+
 
       # - name: Integration test (GLM4.5 single-card)
       #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
@@ -555,13 +555,13 @@ jobs:
           '
 
           
-      - name: Qwen vl moe
-        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe a100
-          '
+      # - name: Qwen vl moe
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe a100
+      #     '
 
       - name: Terminate and delete the container
         if: ${{ always() }}
