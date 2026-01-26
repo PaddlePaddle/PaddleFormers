@@ -173,7 +173,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 > source .paddleformers-work/bin/activate
 > ```
 >
-> 安装方案一：拉取拉取源码安装
+> **安装方案一：** 拉取拉取源码安装
 >
 > ```shell
 > # Install development version
@@ -187,7 +187,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 > # python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
 > ```
 ------
-> 安装方案二：如果您不想拉取源码，可以基于下面的命令安装 PaddleFormers 和 PaddleFleet。
+> **安装方案二：** 如果您不想拉取源码，可以基于下面的命令安装 PaddleFormers 和 PaddleFleet。
 >
 > ```shell
 > # Install via pip
@@ -199,7 +199,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 > # python -m pip install paddleformers[paddlefleet] --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
 > ```
 ------
-> 安装方案三：如果您只需使用 tokenizer 或者 processor，可以通过以下命令安装，这种情况下不会安装训练相关的依赖，安装速度更加快。
+> **安装方案三：** 如果您只需使用 tokenizer 或者 processor，可以通过以下命令安装，这种情况下不会安装训练相关的依赖，安装速度更加快。
 >
 > ```shell
 > python -m pip install paddleformers
