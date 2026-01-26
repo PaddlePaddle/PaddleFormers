@@ -553,6 +553,7 @@ jobs:
           timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 a100
           '
 
+          
       - name: Qwen vl moe
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
