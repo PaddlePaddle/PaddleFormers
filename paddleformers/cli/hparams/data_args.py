@@ -147,3 +147,7 @@ class DataArguments:
         default=True,
         metadata={"help": "Whether to truncate data in packing (only valid in pretrain online dataflow)."},
     )
+    estimate_steps_before_train: bool = field(
+        default=True,
+        metadata={"help": "Whether to estimate max_steps before start training"},
+    )

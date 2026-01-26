@@ -1384,9 +1384,11 @@ class Trainer:
             num_examples = total_train_batch_size * args.max_steps
             num_train_samples = args.max_steps * total_train_batch_size
         else:
-            raise ValueError(
-                f"args.max_steps must be set to a positive value if dataloader does not have a length, was {args.max_steps}"
-            )
+            max_steps = -1
+            num_train_epochs = args.num_train_epochs
+            num_update_steps_per_epoch = -1
+            num_examples = -1
+            num_train_samples = -1
 
         logger.info(f"{self.runtime_timer.log()}")
         logger.info("***** Running training *****")
@@ -1891,9 +1893,14 @@ class Trainer:
                     logger.info(f"Set DistributedBatchSampler consumed_samples to {consumed_samples}")
 
         epoch_iterator = train_dataloader
-        steps_in_epoch = (
-            len(epoch_iterator) if len_dataloader is not None else args.max_steps * args.gradient_accumulation_steps
-        )
+        if args.max_steps == -1:
+            steps_in_epoch = (
+                len(epoch_iterator)
+                if len_dataloader is not None
+                else args.max_steps * args.gradient_accumulation_steps
+            )
+        else:
+            steps_in_epoch = None
         if len_dataloader is not None:
             if self.args.gradient_accumulation_steps > len(epoch_iterator):
                 logger.warning(
@@ -1992,7 +1999,8 @@ class Trainer:
 
                     if (step_control + 1) % self.args.gradient_accumulation_steps == 0 or (
                         # last step in epoch but step is always smaller than gradient_accumulation_steps
-                        steps_in_epoch <= args.gradient_accumulation_steps
+                        steps_in_epoch is not None
+                        and steps_in_epoch <= args.gradient_accumulation_steps
                         and (step + 1) == steps_in_epoch
                     ):
                         # update current global step and skip step
@@ -2000,7 +2008,10 @@ class Trainer:
                         self._skip_global_steps += 1
                         self._skip_steps_since_last_logged += 1
 
-                        self.state.epoch = epoch + (step + 1) / steps_in_epoch
+                        if steps_in_epoch:
+                            self.state.epoch = epoch + (step + 1) / steps_in_epoch
+                        else:
+                            self.state.epoch = epoch
 
                         # For ZCC EMA
                         if self.args.enable_zero_cost_checkpoint or self.args.zcc_save_ema_coef is not None:
@@ -2126,7 +2137,8 @@ class Trainer:
 
                     if (step_control + 1) % args.gradient_accumulation_steps == 0 or (
                         # last step in epoch but step is always smaller than gradient_accumulation_steps
-                        steps_in_epoch <= args.gradient_accumulation_steps
+                        steps_in_epoch is not None
+                        and steps_in_epoch <= args.gradient_accumulation_steps
                         and (step + 1) == steps_in_epoch
                         or disable_accumulation
                     ):
@@ -2218,7 +2230,10 @@ class Trainer:
                         )
 
                         self.state.global_step += 1
-                        self.state.epoch = epoch + (step + 1) / steps_in_epoch
+                        if steps_in_epoch:
+                            self.state.epoch = epoch + (step + 1) / steps_in_epoch
+                        else:
+                            self.state.epoch = epoch
                         self.state.consumed_samples = (
                             self.state.global_step
                             * args.per_device_train_batch_size
@@ -3036,9 +3051,13 @@ class Trainer:
         Args:
             num_training_steps (int): The number of training steps to do.
         """
+        if self.args.warmup_steps < 0 and num_training_steps < 0:
+            raise ValueError("warmup_steps must be positive when num_training_steps is negative")
         warmup = (
             self.args.warmup_steps if self.args.warmup_steps > 0 else int(self.args.warmup_ratio * num_training_steps)
         )
+        if getattr(self.args, "decay_steps", None) and self.args.decay_steps < 0 and num_training_steps < 0:
+            raise ValueError("decay_steps must be positive when num_training_steps is negative")
         decay_steps = num_training_steps
         if getattr(self.args, "decay_steps", None) and self.args.decay_steps > 0:
             decay_steps = self.args.decay_steps

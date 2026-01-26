@@ -33,6 +33,7 @@ from paddleformers.datasets.template.template import get_template_and_fix_tokeni
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
+    DefaultFlowCallback,
     IntervalStrategy,
     MoECorrectionBiasAdjustCallback,
     MoeExpertsGradScaleCallback,
@@ -436,7 +437,7 @@ def run_sft(
                 padding_free=data_args.padding_free,
             )
 
-    if training_args.max_steps == -1:
+    if data_args.estimate_steps_before_train and training_args.max_steps == -1:
         if data_args.mix_strategy == "random":
             raise ValueError(
                 "When using 'random' mix_strategy, max_steps must be explicitly set (cannot be -1). "
@@ -474,9 +475,6 @@ def run_sft(
     if training_args.decay_steps is None:
         training_args.decay_steps = training_args.max_steps
 
-    if training_args.save_strategy == IntervalStrategy.EPOCH:
-        training_args.save_strategy = IntervalStrategy.STEPS
-        training_args.save_steps = int(training_args.max_steps / training_args.num_train_epochs)
     if training_args.evaluation_strategy == IntervalStrategy.EPOCH:
         training_args.evaluation_strategy = IntervalStrategy.STEPS
         training_args.eval_steps = int(training_args.max_steps / training_args.num_train_epochs)
@@ -493,6 +491,9 @@ def run_sft(
 
     if training_args.sequence_parallel and not model_args.lora:
         callbacks += [MoEGateSpGradSyncCallBack()]
+
+    if training_args.save_strategy == "epoch":
+        callbacks += [DefaultFlowCallback()]
 
     print("callbacks:", callbacks, flush=True)
     trainer = SFTTrainer(

@@ -504,7 +504,7 @@ class DefaultFlowCallback(TrainerCallback):
             control.should_save = True
 
         # End training
-        if state.global_step >= state.max_steps:
+        if state.max_steps != -1 and state.global_step >= state.max_steps:
             control.should_training_stop = True
 
         # Save hf

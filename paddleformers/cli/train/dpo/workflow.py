@@ -297,7 +297,7 @@ def run_dpo(
             "template_instance": template_instance,
         }
     )
-    if training_args.max_steps == -1:
+    if data_args.estimate_steps_before_train and training_args.max_steps == -1:
         if data_args.mix_strategy == "random":
             raise ValueError(
                 "When using 'random' mix_strategy, max_steps must be explicitly set (cannot be -1). "

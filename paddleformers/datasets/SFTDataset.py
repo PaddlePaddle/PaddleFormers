@@ -741,11 +741,7 @@ class IteratorSFTDataset(BaseSFTDataset, IterableDataset):
         super().__init__(**dataset_config)
 
     def __iter__(self):
-        if self.is_valid:
-            yield from self._generate_sequences()
-        else:
-            while True:
-                yield from self._generate_sequences()
+        yield from self._generate_sequences()
 
 
 class MapSFTDataset(BaseSFTDataset, Dataset):
