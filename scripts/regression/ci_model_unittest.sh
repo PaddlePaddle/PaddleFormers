@@ -96,7 +96,7 @@ else
     done
 fi
 }
-install_requirements
+
 get_diff_TO_case
 set_env
 if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
