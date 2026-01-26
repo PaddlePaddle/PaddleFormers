@@ -2028,6 +2028,11 @@ class Glm4MoeLMHeadPipe(GeneralLMHead):
         hidden_states, _, _, _, _ = parse_args(args)
         logits = super().forward(hidden_states)
         return logits
+    
+    @property
+    def embedding_weight(self):
+        """Return the LM head embedding weights"""
+        return get_attr(self, "weight")
 
 class Glm4MoeCriterionPipe(CriterionLayerPipe):
     def forward(self, logits, labels):
