@@ -31,7 +31,7 @@ jobs:
           ls
           cd ERNIE-4.5-21B-A3B-PT
           ls -l
-          getent hosts oversea-website-proxy.aistudio.public
+          # getent hosts oversea-website-proxy.aistudio.public
           curl -v --proxy http://oversea-website-proxy.aistudio.public:8888 https://www.github.com
           cat /etc/resolv.conf
 
