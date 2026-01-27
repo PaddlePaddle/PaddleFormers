@@ -108,7 +108,9 @@ jobs:
           python -m pip install pytest-timeout
 
           echo "============================Start running tests============================"
+          mkdir -p baidu
           cp -r ${MODEL_PATH}/ERNIE-4.5-21B-A3B-PT baidu/
+          ls -l baidu/
           ls -l baidu/ERNIE-4.5-21B-A3B-PT
           export CUDA_VISIBLE_DEVICES="0,1,2,3"
           python -m pytest -v -s --tb=short tests/iluvatar_ci/
