@@ -243,7 +243,6 @@ def run_dpo(
                 tensor_model_parallel_size=training_args.tensor_model_parallel_size,
                 dtype=dtype,
                 base_model_name_or_path=model_args.model_name_or_path,
-                use_quick_lora=model_args.use_quick_lora,
             )
             model = LoRAModel(model, lora_config)
         else:

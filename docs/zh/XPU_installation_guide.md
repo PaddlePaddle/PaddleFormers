@@ -86,7 +86,7 @@ docker run -it --privileged=true  --net host --shm-size '256gb' --device=/dev/xp
 
 ```shell
 # 推荐使用 Paddle 3.3.0 版本
-python -m pip install paddlepaddle-xpu==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/xpu-p800/
+python -m pip install https://paddle-qa.bj.bcebos.com/PaddleFormers/xpu_whl/paddlepaddle_xpu-3.3.0.dev20260122-cp310-cp310-linux_x86_64.whl
 # 如果想用 nightly 的 PaddlePaddle：
 python -m pip install --pre paddlepaddle-xpu -i https://www.paddlepaddle.org.cn/packages/nightly/xpu-p800/
 ```
