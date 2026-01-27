@@ -77,7 +77,7 @@ class QuantizationConfig:
         dense_quant_type="",
         moe_quant_type="",
         quantization="",
-        quantization_linear_list=None,
+        quantization_linear_list=[],
         **kwargs,
     ):
         if weight_quantize_algo is not None:

@@ -246,17 +246,12 @@ def convert_to_quantize_state_dict(state_dict, quantization_linear_list, quantiz
 
 
 def convert_to_weight_quantize_dequantize_state_dict(state_dict, name, quantization_config, weight_quantize_algo):
-
     weight_name = name + ".weight"
     if weight_name in state_dict:
         # gpu weight_quantize will fix in future
         tensor = state_dict.pop(weight_name)
         origin_dtype = tensor.dtype
-        # target_weight = paddle.to_tensor(tensor, dtype=origin_dtype).cuda()
         target_weight = paddle.to_tensor(tensor).cuda()
-        # if weight_name == 'model.layers.0.mlp.down_proj.weight':
-        #     print("target_weight.dtype: ", target_weight.dtype)
-        # exit()
 
         if weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
             quant_weight, weight_scale = quantize(
@@ -273,76 +268,81 @@ def convert_to_weight_quantize_dequantize_state_dict(state_dict, name, quantizat
                 algo=weight_quantize_algo,
                 group_size=quantization_config.group_size,
             )
+
         quant_dequant_weight = dequant_weight(
             quant_weight,
             quantization_config,
             weight_quantize_algo,
-            origin_dtype,
+            str(origin_dtype),
             weight_scale,
             None,
             None,
-        )#.numpy().astype(origin_dtype)
-        # if weight_name == 'model.layers.0.mlp.down_proj.weight':
-        #     print("quant_dequant_weight.dtype: ", quant_dequant_weight.dtype)
-        #     exit()
-        del target_weight
+        )
         state_dict[weight_name] = quant_dequant_weight
+        del target_weight
     return state_dict
 
 
-def convert_to_qlora_dequantize_state_dict(state_dict, name, quantization_config, dtype, weight_quantize_algo):
-    # if qlora_weight_quantize is None:
-    #     raise ImportError(
-    #         "Please run the following commands to install qlora related package first: \n"
-    #         "1) git clone https://github.com/PaddlePaddle/PaddleSlim \n"
-    #         "2) cd PaddleSlim \n"
-    #         "3) python ./csrc/setup_cuda.py install"
-    #     )
-    # weight_name = name + ".weight"
-    # quant_weight_name = name + ".quant_weight"
-    # quant_name_list = [quant_weight_name]
-    # if not quantization_config.qlora_weight_double_quant:
-    #     weight_scale_name = name + ".weight_scale"
-    #     quant_name_list += [weight_scale_name]
-    # else:
-    #     qweight_scale_name = name + ".qweight_scale"
-    #     double_weight_scale_name = name + ".double_weight_scale"
-    #     quant_sacle_offset_name = name + ".weight_scale_offset"
-    #     quant_name_list += [qweight_scale_name, double_weight_scale_name, quant_sacle_offset_name]
+def convert_to_qlora_dequantize_state_dict(state_dict, name, quantization_config, weight_quantize_algo):
+    if qlora_weight_quantize is None:
+        raise ImportError(
+            "Please run the following commands to install qlora related package first: \n"
+            "1) git clone https://github.com/PaddlePaddle/PaddleSlim \n"
+            "2) cd PaddleSlim \n"
+            "3) python ./csrc/setup_cuda.py install"
+        )
+    weight_name = name + ".weight"
+    quant_weight_name = name + ".quant_weight"
+    if not quantization_config.qlora_weight_double_quant:
+        weight_scale_name = name + ".weight_scale"
+    else:
+        qweight_scale_name = name + ".qweight_scale"
+        double_weight_scale_name = name + ".double_weight_scale"
+        quant_sacle_offset_name = name + ".weight_scale_offset"
 
-    # if all(quant_name in state_dict for quant_name in quant_name_list):
-    #     return state_dict
-    # elif weight_name in state_dict:
-    #     target_weight = state_dict.pop(weight_name).cast(dtype).cuda()
-    #     qlora_state_dict = qlora_weight_quantize(
-    #         weight=target_weight,
-    #         quant_algo=weight_quantize_algo,
-    #         double_quant=quantization_config.qlora_weight_double_quant,
-    #         block_size=quantization_config.qlora_weight_blocksize,
-    #         double_quant_block_size=quantization_config.qlora_weight_double_quant_block_size,
-    #         linear_name=name,
-    #         return_dict=True,
-    #     )
-    #     state_dict.update(qlora_state_dict)
-    #     del target_weight
+    if weight_name in state_dict:
+        tensor = state_dict.pop(weight_name)
+        origin_dtype = tensor.dtype
+        origin_shape = tensor.shape
+        target_weight = paddle.to_tensor(tensor).cuda()
+        
+        qlora_state_dict = qlora_weight_quantize(
+            weight=target_weight,
+            quant_algo=weight_quantize_algo,
+            double_quant=quantization_config.qlora_weight_double_quant,
+            block_size=quantization_config.qlora_weight_blocksize,
+            double_quant_block_size=quantization_config.qlora_weight_double_quant_block_size,
+            linear_name=name,
+            return_dict=True,
+        )
+        
+        quant_weight = qlora_state_dict[quant_weight_name]
+        if quantization_config.qlora_weight_double_quant:
+            qweight_scale = qlora_state_dict[qweight_scale_name]
+            double_weight_scale = qlora_state_dict[double_weight_scale_name]
+            quant_sacle_offset = qlora_state_dict[quant_sacle_offset_name]
+            quant_state = (qweight_scale, double_weight_scale, quant_sacle_offset)
+            weight_scale = None
+        else:
+            quant_state = None
+            weight_scale = qlora_state_dict[weight_scale_name]
     
-    # quant_dequant_weight = (
-    #     qlora_weight_dequantize(
-    #         quant_weight=quant_weight,
-    #         quant_algo=weight_quantize_algo,
-    #         state=quant_state if quantization_config.qlora_weight_double_quant else weight_scale,
-    #         double_quant=quantization_config.qlora_weight_double_quant,
-    #         block_size=quantization_config.qlora_weight_blocksize,
-    #         double_quant_block_size=quantization_config.qlora_weight_double_quant_block_size,
-    #     )
-    #     .reshape([input_shape[-1], -1])
-    #     .cast(dtype)
-    # )
+        quant_dequant_weight = dequant_weight(
+                quant_weight,
+                quantization_config,
+                weight_quantize_algo,
+                str(origin_dtype),
+                weight_scale,
+                quant_state,
+                [origin_shape[0]],
+            )
 
+        state_dict[weight_name] = quant_dequant_weight
+        del target_weight
     return state_dict
 
 
-def convert_to_quantize_dequantize_state_dict(state_dict, quantization_linear_list, quantization_config, dtype):
+def convert_to_quantize_dequantize_state_dict(state_dict, quantization_linear_list, quantization_config):
     for name in quantization_linear_list:
         # Get quantization algorithm
         weight_quantize_algo = parse_weight_quantize_algo(quantization_config, name)
@@ -359,8 +359,7 @@ def convert_to_quantize_dequantize_state_dict(state_dict, quantization_linear_li
         ]:
             convert_to_weight_quantize_dequantize_state_dict(state_dict, name, quantization_config, weight_quantize_algo)
         elif weight_quantize_algo in ["fp4", "nf4"]:
-            continue
-            # convert_to_qlora_dequantize_state_dict(state_dict, name, quantization_config, dtype, weight_quantize_algo)
+            convert_to_qlora_dequantize_state_dict(state_dict, name, quantization_config, weight_quantize_algo)
         else:
             raise NotImplementedError(
                 f"Please check the quantization_config.weight_quantize_algo: {quantization_config.weight_quantize_algo}"
