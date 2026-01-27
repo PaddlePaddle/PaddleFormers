@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import copy
-import os
 import tempfile
 import unittest
 
@@ -30,8 +29,7 @@ from paddleformers.transformers import (
 from paddleformers.transformers import Qwen3VLModelDeprecated as Qwen3VLModel
 from paddleformers.transformers import process_vision_info
 from paddleformers.transformers.video_utils import load_video
-from paddleformers.utils.log import logger
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -547,18 +545,9 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 
 
 class Qwen3VLIntegrationTest(unittest.TestCase):
+    # Use GPU 0 to prevent CUDA illegal memory access during resize
+    @gpu_device_initializer(log_prefix="Qwen3VLIntegrationTest", gpu_id=0)
     def setUp(self):
-        # Initialize device when GPU is needed by certain test case
-        gpu_count = paddle.device.cuda.device_count()
-        pid = os.getpid()
-
-        if gpu_count > 0:
-            paddle.set_device("gpu")
-        else:
-            paddle.set_device("cpu")
-            self.skipTest("No GPU currently available/allocated")
-        logger.info(f"Qwen3VLIntegrationTest [PID:{pid}] Device initialized: {paddle.get_device()}")
-
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(
             "PaddleFormers/tiny-random-qwen3vl",
             dtype="float32",

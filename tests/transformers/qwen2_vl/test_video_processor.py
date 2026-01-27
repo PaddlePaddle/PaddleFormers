@@ -15,7 +15,6 @@
 # limitations under the License.
 from __future__ import annotations
 
-import os
 import unittest
 
 import numpy as np
@@ -29,7 +28,7 @@ from paddleformers.transformers.image_utils import (
     get_image_size,
 )
 from paddleformers.transformers.qwen2_vl.video_processor import smart_resize
-from paddleformers.utils import logger
+from tests.testing_utils import gpu_device_initializer
 
 from ..test_video_processing_common import (
     VideoProcessingTestMixin,
@@ -127,19 +126,9 @@ class Qwen2VLVideoProcessingTester:
 class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
     fast_video_processing_class = Qwen2VLVideoProcessor
 
+    @gpu_device_initializer(log_prefix="Qwen2VLVideoProcessingTest")
     def setUp(self):
         super().setUp()
-        # Initialize device when GPU is needed by certain test case
-        gpu_count = paddle.device.cuda.device_count()
-        pid = os.getpid()
-
-        if gpu_count > 0:
-            paddle.set_device(f"gpu:{pid % gpu_count}")
-        else:
-            paddle.set_device("cpu")
-            self.skipTest("No GPU currently available/allocated")
-        logger.info(f"Qwen2VLVideoProcessingTest [PID:{pid}] Device initialized: {paddle.get_device()}")
-
         self.video_processor_tester = Qwen2VLVideoProcessingTester(self)
 
     @property
@@ -167,7 +156,6 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
             self.assertEqual(video_processor.min_pixels, 256 * 256)
             self.assertEqual(video_processor.max_pixels, 640 * 640)
 
-    @unittest.skip("Skipping due to some issues with Qwen2-VL Video Processor")
     def test_call_pil(self):
         for video_processing_class in self.video_processor_list:
             # Initialize video_processing
@@ -190,7 +178,6 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
             # expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(video_inputs)
             # self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
 
-    @unittest.skip("Skipping due to some issues with Qwen2-VL Video Processor")
     def test_call_numpy(self):
         for video_processing_class in self.video_processor_list:
             # Initialize video_processing
@@ -212,7 +199,6 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
             # expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(video_inputs)
             # self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
 
-    @unittest.skip("Skipping due to some issues with Qwen2-VL Video Processor")
     def test_call_paddle(self):
         for video_processing_class in self.video_processor_list:
             # Initialize video_processing
