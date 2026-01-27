@@ -1210,6 +1210,7 @@ class Trainer:
                 model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
             # NOTE(xingmingyyj) When saving model states only in float32 format, we assume that users
             # will not use AOA to change the mapping relationships among these float32 weights.
+
             dist.load_state_dict(
                 model_sharded_state_dict,
                 model_states_path,
@@ -4430,7 +4431,11 @@ class Trainer:
             model = self.model_wrapped
             if _prepare_pipeline_inputs_func is not None:
                 model._prepare_pipeline_inputs_func = _prepare_pipeline_inputs_func
-        elif is_paddlefleet_available() and isinstance(self.model, GPTModel):
+        elif (
+            is_paddlefleet_available()
+            and isinstance(self.model, GPTModel)
+            or (isinstance(self.model, LoRAModel) and isinstance(self.model.model, GPTModel))
+        ):
             model = self.model_wrapped
         else:
             model = self.model

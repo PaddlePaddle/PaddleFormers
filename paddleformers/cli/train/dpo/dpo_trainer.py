@@ -18,6 +18,7 @@ import paddle.nn.functional as F
 from paddle.distributed import fleet
 
 from paddleformers.nn.criterion import CriterionLayer
+from paddleformers.peft import LoRAModel
 from paddleformers.peft.lora.lora_model import AVAILABLE_LAYERS
 from paddleformers.trainer import Trainer
 from paddleformers.transformers.model_utils import unwrap_model
@@ -227,8 +228,14 @@ class DPOTrainer(Trainer):
 
     def _wrap_model(self, model, training=True):
         """Wrap model."""
-        if is_paddlefleet_available() and isinstance(model, PaddleFleetPipelineLayer):
-            model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
+        if is_paddlefleet_available() and (
+            isinstance(model, PaddleFleetPipelineLayer)
+            or (isinstance(model, LoRAModel) and isinstance(model.model, PaddleFleetPipelineLayer))
+        ):
+            if isinstance(model, LoRAModel):
+                model.model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
+            else:
+                model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
             model = super()._wrap_model(model, training)
             return model
 
@@ -351,7 +358,8 @@ class DPOTrainer(Trainer):
                     with self.autocast_smart_context_manager():
                         model.eval_batch(data=[inputs, labels], compute_loss=True)
                 self.enable_lora(model)
-                model._p2p_helper.clear_meta_cache()
+                if hasattr(model, "_p2p_helper"):
+                    model._p2p_helper.clear_meta_cache()
                 model.train()
             else:
                 ref_model = self.ref_model_wrapped
@@ -367,8 +375,9 @@ class DPOTrainer(Trainer):
         else:
             reference_chosen_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
             reference_rejected_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
-        if ref_model.is_pipeline_last_stage(ignore_virtual=ref_model._layers._num_virtual_pipeline_stages > 1):
-            if is_paddlefleet_available() and isinstance(ref_model, PaddleFleetParallelBase):
+
+        if model.is_pipeline_last_stage(ignore_virtual=model._layers._num_virtual_pipeline_stages > 1):
+            if is_paddlefleet_available() and isinstance(model, PaddleFleetParallelBase):
                 labels = fleet_merge_dpo_labels(labels, (reference_chosen_logps, reference_rejected_logps))
             else:
                 labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)
@@ -567,7 +576,8 @@ class DPOTrainer(Trainer):
                     with self.autocast_smart_context_manager():
                         model.eval_batch(data=[inputs, labels], compute_loss=True)
                 self.enable_lora(model)
-                model._p2p_helper.clear_meta_cache()
+                if hasattr(model, "_p2p_helper"):
+                    model._p2p_helper.clear_meta_cache()
                 model.train()
             else:
                 ref_model = self.ref_model_wrapped
