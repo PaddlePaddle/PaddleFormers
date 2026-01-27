@@ -36,10 +36,10 @@ except:
 from ..utils.log import logger
 from .qat_utils import quantize
 from .quantization_linear import (
-    dequant_weight,
     ColumnParallelQuantizationLinear,
     QuantizationLinear,
     RowParallelQuantizationLinear,
+    dequant_weight,
 )
 
 LINEAR_CLASSES = [
@@ -305,7 +305,7 @@ def convert_to_qlora_dequantize_state_dict(state_dict, name, quantization_config
         origin_dtype = tensor.dtype
         origin_shape = tensor.shape
         target_weight = paddle.to_tensor(tensor).cuda()
-        
+
         qlora_state_dict = qlora_weight_quantize(
             weight=target_weight,
             quant_algo=weight_quantize_algo,
@@ -315,7 +315,7 @@ def convert_to_qlora_dequantize_state_dict(state_dict, name, quantization_config
             linear_name=name,
             return_dict=True,
         )
-        
+
         quant_weight = qlora_state_dict[quant_weight_name]
         if quantization_config.qlora_weight_double_quant:
             qweight_scale = qlora_state_dict[qweight_scale_name]
@@ -326,16 +326,16 @@ def convert_to_qlora_dequantize_state_dict(state_dict, name, quantization_config
         else:
             quant_state = None
             weight_scale = qlora_state_dict[weight_scale_name]
-    
+
         quant_dequant_weight = dequant_weight(
-                quant_weight,
-                quantization_config,
-                weight_quantize_algo,
-                str(origin_dtype),
-                weight_scale,
-                quant_state,
-                [origin_shape[0]],
-            )
+            quant_weight,
+            quantization_config,
+            weight_quantize_algo,
+            str(origin_dtype),
+            weight_scale,
+            quant_state,
+            [origin_shape[0]],
+        )
 
         state_dict[weight_name] = quant_dequant_weight
         del target_weight
@@ -357,7 +357,9 @@ def convert_to_quantize_dequantize_state_dict(state_dict, quantization_linear_li
             "a8w4linear",
             "fp8linear",
         ]:
-            convert_to_weight_quantize_dequantize_state_dict(state_dict, name, quantization_config, weight_quantize_algo)
+            convert_to_weight_quantize_dequantize_state_dict(
+                state_dict, name, quantization_config, weight_quantize_algo
+            )
         elif weight_quantize_algo in ["fp4", "nf4"]:
             convert_to_qlora_dequantize_state_dict(state_dict, name, quantization_config, weight_quantize_algo)
         else:

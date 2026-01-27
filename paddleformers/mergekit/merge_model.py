@@ -27,11 +27,11 @@ from safetensors.numpy import save_file
 from tqdm.auto import tqdm
 
 from ..peft import LoRAConfig
+from ..quantization.quantization_utils import convert_to_quantize_dequantize_state_dict
 from ..transformers import PretrainedConfig
 from ..transformers.auto.modeling import get_name_mapping
 from ..transformers.configuration_utils import QuantizationConfig
 from ..transformers.conversion_utils import ConversionMixin
-from ..quantization.quantization_utils import convert_to_quantize_dequantize_state_dict
 from ..utils import device_guard
 from ..utils.env import (
     LORA_WEIGHTS_NAME,
@@ -629,7 +629,9 @@ class MergeModel:
             if quantization_config:
                 quantization_config = QuantizationConfig.from_dict(quantization_config)
                 quantization_linear_list = quantization_config.quantization_linear_list
-                base_state_dict = convert_to_quantize_dequantize_state_dict(base_state_dict, quantization_linear_list, quantization_config)
+                base_state_dict = convert_to_quantize_dequantize_state_dict(
+                    base_state_dict, quantization_linear_list, quantization_config
+                )
                 logger.info("Quantize_dequantize base-model weight successfully.")
             else:
                 logger.info("Don't find quantization_config in config.json, skip quantize-dequantize base model.")
