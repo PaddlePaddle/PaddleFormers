@@ -58,7 +58,7 @@ elif [[ ${step} == "sft" ]]; then
   mv ${config_yaml}.tmp $config_yaml
 elif [[ ${step} == "lora" ]]; then
   echo "Run GLM4.5 multi lora test"
-  config_lora_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_lora.yaml
+  config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_lora.yaml
 
   export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
 
@@ -67,19 +67,19 @@ elif [[ ${step} == "lora" ]]; then
       | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
       | .logging_dir = strenv(cur_dir) + "/glm_full_single_lora_log"
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"' \
-    $config_lora_yaml > ${config_lora_yaml}.tmp
-  mv ${config_lora_yaml}.tmp $config_lora_yaml
+    $config_yaml > ${config_yaml}.tmp
+  mv ${config_yaml}.tmp $config_yaml
 elif [[ ${step} == "dpo" ]]; then
   echo "Run GLM4.5 dpo test"
-  config_dpo_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_dpo.yaml
+  config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_dpo.yaml
   export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/dpo
   yq '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
       | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
       | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
       | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_vdl_log"
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_ckpts"' \
-    $config_dpo_yaml > ${config_dpo_yaml}.tmp
-  mv ${config_dpo_yaml}.tmp $config_dpo_yaml
+    $config_yaml > ${config_yaml}.tmp
+  mv ${config_yaml}.tmp $config_yaml
 elif [[ ${step} == "grouped_gemm" ]]; then
   echo "Run GLM4.5 grouped_gemm test"
   export config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_pt_grouped_gemm.yaml
@@ -90,13 +90,13 @@ elif [[ ${step} == "grouped_gemm" ]]; then
       | .per_device_train_batch_size = 1
       | .num_hidden_layers = 2
       | .stage1_overlap = false
+      | .moe_grouped_gemm = false
       | .logging_dir = strenv(data_dir) + "/vdl_log"
       | .output_dir = strenv(data_dir) + "/checkpoints"' \
     $config_yaml > ${config_yaml}.tmp
   mv ${config_yaml}.tmp $config_yaml
 fi
 
-rm -rf checkpoints/
 rm -rf vdl_log/
 master=$(hostname -i)
 port=36677
