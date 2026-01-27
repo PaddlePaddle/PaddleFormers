@@ -62,7 +62,7 @@ jobs:
         run: |
           set -e
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          python -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+          pip config unset global.proxy
           python -m pip install -r requirements.txt
 
           echo "Install PaddlePaddle..."
