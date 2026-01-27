@@ -20,10 +20,20 @@ jobs:
       env:
         LD_LIBRARY_PATH: /usr/local/corex/lib
         LIBRARY_PATH: /usr/local/corex/lib
+        http_proxy: http://oversea-website-proxy.aistudio.public:8888
+        https_proxy: http://oversea-website-proxy.aistudio.public:8888
+
     steps:
       - name: Print current runner name
         run: |
           echo "Current runner name: ${{ runner.name }}"
+          cd /aistudio/paddle_ci
+          ls
+          cd ERNIE-4.5-21B-A3B-PT
+          ll
+          getent hosts oversea-website-proxy.aistudio.public
+          curl -v --proxy http://oversea-website-proxy.aistudio.public:8888 https://www.github.com
+          cat /etc/resolv.conf
 
       - name: Checkout code
         uses: actions/checkout@v4
