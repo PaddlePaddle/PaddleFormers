@@ -65,7 +65,7 @@ jobs:
           pip config unset global.proxy
           python -m pip install -r requirements.txt
 
-          echo "Install PaddlePaddle..."
+          echo "Uninstall PaddlePaddle and PaddleFormers beforehand..."
           python -m pip uninstall paddlepaddle paddle-iluvatar-gpu paddleformers -y
 
           unset http_proxy
@@ -73,6 +73,7 @@ jobs:
 
           retry_count=0
           max_retries=3
+          echo "Install PaddlePaddle..."
           while [ $retry_count -lt $max_retries ]; do
             if python -m pip install --pre paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/; then
               echo "PaddlePaddle installation successful"
