@@ -1791,7 +1791,7 @@ class Glm4MoeMTPLayerPipe(Glm4MoeMTPLayer):
             ) + args[4:]
         else:
             # Only for RL, load mtp weight but skip mtp calculation
-            return args[0]
+            return args
 
         hidden_states, attention_mask, position_ids, position_embeddings, nbatch_pack_offset = parse_args(args)
 
