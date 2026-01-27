@@ -34,7 +34,7 @@ max_steps: 10
 eval_steps: 100000
 evaluation_strategy: steps
 #pipeline_model_parallel_size: 1
-continue_training: false
+continue_training: true
 save_steps: 100000
 save_strategy: steps
 logging_steps: 1
@@ -68,4 +68,5 @@ partial_send_recv: false
 #use_cpu_initialization: true
 fuse_attention_qkv: true
 fuse_attention_ffn: true
-num_empty_layers_add_in_head: 1
+
+num_empty_layers_add_in_tail: 1

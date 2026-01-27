@@ -64,4 +64,4 @@ load_checkpoint_format: flex_checkpoint
 save_checkpoint_format: flex_checkpoint
 
 moe_router_force_load_balancing: true
-num_empty_layers_add_in_head: 1
+num_empty_layers_add_in_tail: 1

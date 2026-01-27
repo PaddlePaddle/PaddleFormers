@@ -1,0 +1,78 @@
+name: PaddleFormers Code Clone
+description: "PaddleFormers clone and upload"
+
+on:
+  workflow_call:
+    inputs:
+        bos_dir:
+          type: string
+          required: false
+          default: 'PaddleFormers'
+    outputs:
+      repo_archive_url:
+        description: "Compressed source code archive."
+        value: ${{ jobs.code-clone.outputs.repo_archive_url }}
+jobs:
+  code-clone:
+    runs-on:
+      group: HK-Clone
+    outputs:
+      repo_archive_url: ${{ steps.set_output.outputs.repo_archive_url }}
+    steps:
+      - name: Clone PaddleFormers
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request'
+                && github.event.pull_request.base.ref
+                || github.ref_name }}
+          submodules: 'recursive'
+          fetch-depth: 1000
+
+      - name: Merge PR (if needed)
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          git config --global user.name "PaddleFormersCI"
+          git config --global user.email "paddleformers_ci@example.com"
+          echo "Fetching and merging PR..."
+          git fetch origin pull/${{ github.event.pull_request.number }}/head:pr/${{ github.event.pull_request.number }}
+          git merge --no-ff pr/${{ github.event.pull_request.number }}
+          echo "PR Branch log "
+          git log --oneline -n 5 pr/${{ github.event.pull_request.number }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Code Info Show and Upload
+        id: set_output
+        env:
+          AK: paddle
+          SK: paddle
+        run: |
+          git config --unset http.https://github.com/.extraheader
+          git submodule foreach --recursive sh -c "git config --local --unset-all 'http.https://github.com/.extraheader'"
+          git submodule foreach --recursive sh -c "git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'"
+          echo "Current HEAD Log:"
+          git log --oneline -n 5
+          ls
+          cd ..
+          tar -zcf PaddleFormers.tar.gz PaddleFormers
+          if [[ "${{ github.event_name }}" == "pull_request" ]];then
+            commit_id=${{ github.event.pull_request.head.sha }}
+            pr_num=${{ github.event.pull_request.number }}
+            target_path=paddle-github-action/PR/PaddleFormers/${pr_num}/${commit_id}
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            commit_id=${{ github.sha }}
+            tag_name=${{ github.ref_name }}
+            target_path=paddle-github-action/TAG/PaddleFormers/${tag_name}/${commit_id}
+          else
+            commit_id=${{ github.sha }}
+            branch_name=${{ github.ref_name }}
+            target_path=paddle-github-action/BRANCH/PaddleFormers/${branch_name}/${commit_id}
+          fi
+          wget -O bos_tools.py -q --no-proxy --no-check-certificate https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddlePaddle/PaddleTest/tools/bos_tools.py
+          push_file=$(realpath bos_tools.py)
+          python -m pip install bce-python-sdk==0.9.29
+          ls
+          python ${push_file} PaddleFormers.tar.gz ${target_path}
+          target_path_stripped="${target_path#paddle-github-action/}"
+          REPO_ARCHIVE_URL=https://paddle-github-action.bj.bcebos.com/${target_path_stripped}/PaddleFormers.tar.gz
+          echo "repo_archive_url=${REPO_ARCHIVE_URL}" >> $GITHUB_OUTPUT

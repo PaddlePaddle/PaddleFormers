@@ -22,6 +22,9 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     ReduceScatterOp,
     mark_as_sequence_parallel_parameter,
 )
+from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+    build_sharded_state_dict,
+)
 
 from ...quantization.quantization_linear import quant_weight_linear
 from ...utils.log import logger
@@ -123,6 +126,13 @@ class QuantizationLoRALinear(QuantizationLoRABaseLinear):
             result += (self.lora_dropout(x) @ self.lora_A @ self.lora_B) * self.scaling
         return result
 
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        state_dict = self.state_dict(structured_name_prefix="")
+        return build_sharded_state_dict(state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix)
+
 
 class ColumnParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
     """
@@ -199,6 +209,13 @@ class ColumnParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
         else:
             output = output_parallel
         return output
+
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        state_dict = self.state_dict(structured_name_prefix="")
+        return build_sharded_state_dict(state_dict, {"weight": 1, "bias": 0, "lora_B": 1}, structured_name_prefix)
 
 
 class RowParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
@@ -281,3 +298,10 @@ class RowParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
             delta = (input_a_parallel @ self.lora_B) * self.scaling
             output += delta
         return output
+
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        state_dict = self.state_dict(structured_name_prefix="")
+        return build_sharded_state_dict(state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix)

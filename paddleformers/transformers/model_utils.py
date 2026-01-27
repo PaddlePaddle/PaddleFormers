@@ -2878,7 +2878,26 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # 3. init the model
         init_args = config["init_args"] or ()
         with ContextManagers(init_contexts):
+            if (
+                config.quantization_config.is_weight_quantize() and load_checkpoint_format == "flex_checkpoint"
+            ):  # flex_checkpoint need a extra model in cpu to initialize weights
+                copied_config = copy.deepcopy(config)
+                copied_init_args = copy.deepcopy(init_args)
+                copied_model_kwargs = copy.deepcopy(model_kwargs)
+                copied_model = cls(copied_config, *copied_init_args, **copied_model_kwargs)
             model = cls(config, *init_args, **model_kwargs)
+
+        if (
+            config.quantization_config.is_weight_quantize() and load_checkpoint_format == "flex_checkpoint"
+        ):  # flex_checkpoint need initialized weights
+            for name, param in model.named_parameters():
+                with paddle.device_guard("cpu"):
+                    value = paddle.normal(
+                        mean=0.0,
+                        std=0.02,
+                        shape=param.shape,
+                    ).astype(param.dtype)
+                param.set_value(value)
 
         if load_checkpoint_format == "flex_checkpoint":
             if not hasattr(cls, "_gen_aoa_config"):
@@ -2918,6 +2937,40 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             for v in sharded_state_dict.values():
                 if hasattr(v.local_tensor, "target_tensor"):
                     del v.local_tensor.target_tensor
+
+            if config.quantization_config.is_weight_quantize():
+                new_state_dict = copy.deepcopy(model.state_dict())
+                del model
+                model = copied_model
+
+                quantization_linear_list = None
+                if config.quantization_config.is_weight_quantize():
+                    with ContextManagers(quantization_init_contexts):
+                        replace_with_quantization_linear(
+                            model=model,
+                            quantization_config=config.quantization_config,
+                        )
+                        quantization_linear_list = []
+                        for key in model.state_dict().keys():
+                            if "quant_weight" in key:
+                                quantization_linear_list.append(key[:-13])
+
+                new_state_dict = convert_to_quantize_state_dict(
+                    new_state_dict,
+                    quantization_linear_list,
+                    config.quantization_config,
+                    dtype,
+                )
+
+                model_state_dict = model.state_dict()
+                set_state_dict = {}
+                for param_name, param in new_state_dict.items():
+                    with paddle.no_grad():
+                        set_state_dict[param_name] = param.cuda()
+                        model_state_dict[param_name].get_tensor()._share_data_with(
+                            set_state_dict[param_name].value().get_tensor()
+                        )
+                    param.value().get_tensor()._clear()
 
             return model
 
@@ -3877,12 +3930,16 @@ def replace_name_and_gen_index(path, total_size, save_peft=False):
         start_idx.append(acc)
         acc += files_num
 
+    # NOTE(xingmingyyj) If PADDLE_LOCAL_SIZE is not set, assume PADDLE_LOCAL_SIZE=8.
     env_local_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
     env_local_rank = dist.get_rank() % env_local_size
     assert env_local_rank >= 0, f"expected positive local rank, got {env_local_rank}"
 
-    cur_file_index = start_idx[cur_rank] // env_local_size
-    total_files_num = total_files_num // env_local_size
+    if paddle.distributed.get_world_size() > 1:
+        cur_file_index = start_idx[cur_rank] // env_local_size
+        total_files_num = total_files_num // env_local_size
+    else:
+        cur_file_index = 0
 
     index_mapping = {}
     if env_local_rank == 0:

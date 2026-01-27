@@ -149,7 +149,7 @@ class ErniePretrainingCriterionPipe(ErniePretrainingCriterion):
         if (
             config.recompute_modules is not None
             and "loss_fn" in config.recompute_modules
-            or config.use_sparse_head_and_loss_fn
+            or config.use_filtered_label_loss
         ):
             config = deepcopy(config)
             config.sequence_parallel = False  # Do GatherOp in LMHead
@@ -167,7 +167,7 @@ class ErniePretrainingCriterionPipe(ErniePretrainingCriterion):
         if (
             self.config.recompute_modules is not None
             and "loss_fn" in self.config.recompute_modules
-            or self.config.use_sparse_head_and_loss_fn
+            or self.config.use_filtered_label_loss
         ):
             token_type_ids, logits_text, logits_image, logits_audio, *head_and_bias = logits
             # token_type_ids, logits_text, logits_image, *head_and_bias = logits
@@ -293,7 +293,7 @@ class ErnieMoELMHeadPipe(Ernie4_5_MoeVLHead):
         if (
             self.config.recompute_modules is not None
             and "loss_fn" in self.config.recompute_modules
-            or self.config.use_sparse_head_and_loss_fn
+            or self.config.use_filtered_label_loss
         ):
             mm_head_weight = self.mm_head.weight if self.mm_head is not None else None
             mm_head_bias = self.mm_head.bias if self.mm_head is not None else None

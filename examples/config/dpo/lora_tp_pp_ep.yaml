@@ -42,6 +42,7 @@ eval_accumulation_steps: 16
 # train
 warmup_steps: 20
 learning_rate: 1.0e-4
+loss_type: sigmoid  # choices: [sigmoid (dpo), hinge, simpo, ipo, dpop, kto_pair, sppo_hard, nca_pair, or, orpo]
 
 # performance
 tensor_model_parallel_size: 2

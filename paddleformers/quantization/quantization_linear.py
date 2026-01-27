@@ -22,6 +22,9 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     AllGatherOp,
     ReduceScatterOp,
 )
+from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+    build_sharded_state_dict,
+)
 from paddle.nn.quant import llm_int8_linear, weight_dequantize, weight_only_linear
 
 from ..utils import infohub
@@ -402,6 +405,13 @@ class QuantizationLinear(nn.Layer):
             self.state += 1
         return output
 
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        state_dict = self.state_dict(structured_name_prefix="")
+        return build_sharded_state_dict(state_dict, {"quant_weight": 1, "weight_scale": 0}, structured_name_prefix)
+
 
 class ColumnParallelQuantizationLinear(nn.Layer):
     """Quantization Linear layer with mp parallelized(column).
@@ -618,6 +628,13 @@ class ColumnParallelQuantizationLinear(nn.Layer):
         else:
             output = output_parallel
         return output
+
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        state_dict = self.state_dict(structured_name_prefix="")
+        return build_sharded_state_dict(state_dict, {"quant_weight": 0, "weight_scale": 0}, structured_name_prefix)
 
 
 class RowParallelQuantizationLinear(nn.Layer):
@@ -856,3 +873,10 @@ class RowParallelQuantizationLinear(nn.Layer):
             self.state += 1
 
         return output
+
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        state_dict = self.state_dict(structured_name_prefix="")
+        return build_sharded_state_dict(state_dict, {"quant_weight": 1, "weight_scale": 0}, structured_name_prefix)

@@ -44,7 +44,6 @@ from ...transformers.mc2_parallel_linear import (
     MC2RowParallelCoreLinear,
     MC2RowSeqParallelCoreLinear,
 )
-from .lora_quick_layers import quick_lora
 from .utils import rng_ctx
 
 
@@ -57,13 +56,8 @@ class LoRALinear(nn.Linear):
         r: int = 0,
         lora_alpha: int = 1,
         lora_dropout: float = 0.0,
-        use_quick_lora: bool = False,
         rslora: bool = False,
         lora_plus_scale: float = 1.0,
-        pissa: bool = False,
-        lora_use_mixer: bool = False,
-        use_mora: bool = False,
-        lorapro: bool = False,
         mp_moe: bool = False,
         is_distributed: bool = False,
         **kwargs
@@ -71,7 +65,6 @@ class LoRALinear(nn.Linear):
         nn.Linear.__init__(self, in_features, out_features, **kwargs)
         if not isinstance(r, int) or r <= 0:
             raise ValueError("Lora rank r should be a positive integer")
-        self.use_mora = use_mora
         self.r = r
         self.lora_alpha = lora_alpha
         # Optional dropout
@@ -81,93 +74,35 @@ class LoRALinear(nn.Linear):
             self.lora_dropout = lambda x: x
         # Mark the weight as unmerged
         self.merged = False
-        self.pissa = pissa
-        self.lora_use_mixer = lora_use_mixer
-        self.lorapro = lorapro
 
         # Actual trainable parameters
-        if use_mora:  # reset the rank and create high rank matrix
-            self.in_features = in_features
-            self.out_features = out_features
-            new_r = int(math.sqrt((in_features + out_features) * r) + 0.5)
-            new_r = new_r // 2 * 2
-            self.r = new_r
-            self.lora_A = self.create_parameter(
-                shape=[self.r, self.r],
-                dtype=self._dtype,
-                is_bias=False,
-                default_initializer=nn.initializer.Constant(value=0.0),
-            )
-            self.cos = None
-            self.sin = None
-            # Count the number of tiles
-            self.rb1 = self.in_features // self.r if self.in_features % self.r == 0 else self.in_features // self.r + 1
-            self.rb2 = (
-                self.out_features // self.r if self.out_features % self.r == 0 else self.out_features // self.r + 1
-            )
-            self.rope_init()
-        else:
-            self.lora_A = self.create_parameter(
-                shape=[in_features, r],
-                dtype=self._dtype,
-                is_bias=False,
-                default_initializer=nn.initializer.KaimingUniform(
-                    negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
-                ),
-            )
-            if self.lora_use_mixer:
-                self.lora_AB = self.create_parameter(
-                    shape=[r, r],
-                    dtype=self._dtype,
-                    is_bias=False,
-                    default_initializer=nn.initializer.KaimingUniform(
-                        negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
-                    ),
-                )
-            self.lora_B = self.create_parameter(
-                shape=[r, out_features],
-                dtype=self._dtype,
-                is_bias=False,
-                attr=paddle.ParamAttr(
-                    initializer=paddle.nn.initializer.Constant(value=0.0),
-                    learning_rate=lora_plus_scale,
-                ),
-            )
-        self.apply_pissa = False
-        if use_mora or pissa:
-            self.scaling = 1.0
-        elif not rslora:
+        self.lora_A = self.create_parameter(
+            shape=[in_features, r],
+            dtype=self._dtype,
+            is_bias=False,
+            default_initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu"),
+        )
+        self.lora_B = self.create_parameter(
+            shape=[r, out_features],
+            dtype=self._dtype,
+            is_bias=False,
+            attr=paddle.ParamAttr(
+                initializer=paddle.nn.initializer.Constant(value=0.0),
+                learning_rate=lora_plus_scale,
+            ),
+        )
+        if not rslora:
             self.scaling = self.lora_alpha / self.r
         else:
             self.scaling = self.lora_alpha / math.sqrt(self.r)
 
         # Freezing the pre-trained weight matrix
         self.weight.stop_gradient = True
-        self._use_quick_lora = use_quick_lora and lora_dropout == 0.0
         self.disable_lora = False
         if mp_moe or is_distributed:
             for p in self.parameters():
                 p.is_distributed = is_distributed
                 p.mp_moe = mp_moe
-
-    def pissa_init(self, rank):
-        weight = self.weight
-        dtype = weight.dtype
-        if dtype != paddle.float32:
-            weight = weight.astype(paddle.float32)
-
-        U, S, Vh = paddle.linalg.svd(weight.data, full_matrices=False)
-        Ur = U[:, :rank]
-        Sr = S[:rank]
-        Vhr = Vh[:rank]
-
-        lora_A = Ur @ paddle.diag(paddle.sqrt(Sr))
-        lora_B = paddle.diag(paddle.sqrt(Sr)) @ Vhr
-        self.lora_A.set_value(lora_A.astype(dtype))
-        self.lora_B.set_value(lora_B.astype(dtype))
-        res = weight.data - lora_A @ lora_B
-        weight = res.astype(dtype)
-        self.weight.set_value(weight)
 
     def rope_init(self):
         if self.cos is None or self.sin is None:
@@ -178,79 +113,11 @@ class LoRALinear(nn.Linear):
             self.cos = paddle.unsqueeze(paddle.cos(emb), axis=0).astype(self._dtype)
             self.sin = paddle.unsqueeze(paddle.sin(emb), axis=0).astype(self._dtype)
 
-    @property
-    def use_quick_lora(self):
-        return self._use_quick_lora and self.training and not self.merged
-
-    def _apply_mora(self, x):
-        r = self.r
-
-        # Calculate grouping
-        sum_inter = self.in_features // r
-
-        # padding
-        if self.in_features % r != 0:
-            pad_size = r - self.in_features % r
-            x = paddle.cat([x, x[..., :pad_size]], axis=-1)
-            sum_inter += 1
-
-        # reshape the input to apply RoPE
-        in_x = x.reshape([*x.shape[:-1], sum_inter, r])
-
-        # apply RoPE rotation
-        rh_in_x = paddle.cat([-in_x[..., r // 2 :], in_x[..., : r // 2]], axis=-1)
-        in_x = in_x * self.cos + rh_in_x * self.sin
-
-        # matmul with high rank matrix
-        out_x = in_x @ self.lora_A
-
-        # reshape the output
-        out_x = out_x.reshape([*x.shape[:-1], -1])[..., : self.out_features]
-        if out_x.shape[-1] < self.out_features:
-            repeat_time = self.out_features // out_x.shape[-1]
-            if self.out_features % out_x.shape[-1] != 0:
-                repeat_time += 1
-            out_x = paddle.cat([out_x] * repeat_time, axis=-1)[..., : self.out_features]
-
-        return out_x
-
-    def get_delta_weight(self, lora_A=None, lora_B=None, lora_AB=None):
+    def get_delta_weight(self, lora_A=None, lora_B=None):
         # compute the delta weight，which is used to merge weights
-        if self.lora_use_mixer:
-            lora_A = lora_A if lora_A is not None else self.lora_A
-            lora_B = lora_B if lora_B is not None else self.lora_B
-            lora_AB = lora_AB if lora_AB is not None else self.lora_AB
-            delta_weight = lora_A @ lora_AB @ lora_B * self.scaling
-        elif self.use_mora:
-            lora_A = lora_A if lora_A is not None else self.lora_A
-            r = self.r
-            # compute padding
-            pad_size = r - self.in_features % r if self.in_features % r != 0 else 0
-            # initialize weights
-            w = paddle.zeros([self.in_features + pad_size, self.in_features], dtype=lora_A.dtype)
-
-            # create the weights after rotation
-            aw2 = paddle.cat([lora_A[:, r // 2 :], -lora_A[:, : r // 2]], axis=-1)
-            # apply RoPE
-            for i in range(self.rb1 - 1):
-                w[i * r : (i + 1) * r, i * r : (i + 1) * r] = aw2 * self.sin[:, i] + lora_A * self.cos[:, i]
-            # Process the last chunk that may be incomplete
-            i = self.rb1 - 1
-            w[i * r :, i * r :] = (aw2 * self.sin[:, i] + lora_A * self.cos[:, i])[:, : r - pad_size]
-            # padding
-            if pad_size > 0:
-                w[i * r :, :pad_size] = (aw2 * self.sin[:, i] + lora_A * self.cos[:, i])[:, r - pad_size :]
-            # reshape the weights
-            if self.in_features < self.out_features:
-                w = paddle.cat([w] * self.rb2, axis=0)[: self.out_features]
-            else:
-                w = w[: self.out_features]
-            final_weight = w
-            delta_weight = final_weight.T
-        else:
-            lora_A = lora_A if lora_A is not None else self.lora_A
-            lora_B = lora_B if lora_B is not None else self.lora_B
-            delta_weight = lora_A @ lora_B * self.scaling
+        lora_A = lora_A if lora_A is not None else self.lora_A
+        lora_B = lora_B if lora_B is not None else self.lora_B
+        delta_weight = lora_A @ lora_B * self.scaling
 
         return delta_weight
 
@@ -269,25 +136,11 @@ class LoRALinear(nn.Linear):
             self.merged = False
 
     def forward(self, input: paddle.Tensor, *args, **kwargs):
-        if not self.apply_pissa and self.pissa:
-            self.pissa_init(self.r)
-            self.apply_pissa = True
         if self.disable_lora or self.merged:
             result = F.linear(x=input, weight=self.weight, bias=self.bias, name=self.name)
-        elif self.use_quick_lora:
-            # Use the quick lora implementation
-            result = quick_lora(input, self.lora_A, self.lora_B, self.weight, self.bias, self.scaling)
-        elif self.use_mora:
-            result = F.linear(x=input, weight=self.weight, bias=self.bias, name=self.name)
-            input = self.lora_dropout(input)
-            mora_out = self._apply_mora(input)
-            result += mora_out
         else:
             result = F.linear(x=input, weight=self.weight, bias=self.bias, name=self.name)
-            if self.lora_use_mixer:
-                result += (self.lora_dropout(input) @ self.lora_A @ self.lora_AB @ self.lora_B) * self.scaling
-            else:
-                result += (self.lora_dropout(input) @ self.lora_A @ self.lora_B) * self.scaling
+            result += (self.lora_dropout(input) @ self.lora_A @ self.lora_B) * self.scaling
         return result
 
     def extra_repr(self):
@@ -318,17 +171,11 @@ class RowParallelLoRALinear(RowParallelLinear):
         lora_dropout: float = 0.0,
         rslora: bool = False,
         lora_plus_scale: float = 1.0,
-        use_quick_lora: bool = False,
-        pissa: bool = False,
-        use_mora: bool = False,
         **kwargs
     ):
         RowParallelLinear.__init__(self, in_features, out_features, **kwargs)
         if not isinstance(r, int) or r <= 0:
             raise ValueError("Lora rank r should be a positive integer")
-
-        if pissa or use_mora:
-            raise ValueError("Pissa or Mora is not supported in model parallel by now")
 
         self.r = r
         self.lora_alpha = lora_alpha
@@ -373,7 +220,6 @@ class RowParallelLoRALinear(RowParallelLinear):
 
         # Freezing the pre-trained weight matrix
         self.weight.stop_gradient = True
-        self._use_quick_lora = use_quick_lora and lora_dropout == 0.0
         self.disable_lora = False
 
     def sharded_state_dict(
@@ -383,19 +229,24 @@ class RowParallelLoRALinear(RowParallelLinear):
         state_dict = self.state_dict(structured_name_prefix="")
         return build_sharded_state_dict(state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix)
 
-    @property
-    def use_quick_lora(self):
-        return self._use_quick_lora and self.training and not self.merged
+    def get_delta_weight(self, lora_A=None, lora_B=None):
+        lora_A = lora_A if lora_A is not None else self.lora_A
+        lora_B = lora_B if lora_B is not None else self.lora_B
+        delta_weight = lora_A @ lora_B * self.scaling
+
+        return delta_weight
 
     def unmerge(self):
         if self.merged:
-            new_weight = self.weight - self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight - delta_weight
             self.weight.set_value(new_weight)
             self.merged = False
 
     def merge(self):
         if not self.merged:
-            new_weight = self.weight + self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight + delta_weight
             self.weight.set_value(new_weight)
             self.merged = True
 
@@ -417,25 +268,6 @@ class RowParallelLoRALinear(RowParallelLinear):
             else:
                 output = MC2RowParallelCoreLinear.apply(input_mp, self.weight, self.model_parallel_group)
             output = output + self.bias if self.bias is not None else output
-        elif self.use_quick_lora:
-            # Use the quick lora implementation
-            result_mp = quick_lora(
-                input_mp,
-                self.lora_A,
-                self.lora_B,
-                self.weight,
-                self.bias,
-                self.scaling,
-                is_row=True,
-                group=self.model_parallel_group,
-                world_size=self.world_size,
-            )
-            output = mp_ops._mp_allreduce(
-                result_mp,
-                group=self.model_parallel_group,
-                use_calc_stream=True,
-                use_model_parallel=True,
-            )
         else:
             # x @ W : [bz, in_f / ws] ===> [bz, out_f]
             if MC2RowParallelCoreLinear is None:
@@ -492,7 +324,6 @@ class RowSequenceParallelLoRALinear(RowSequenceParallelLinear):
         lora_dropout: float = 0.0,
         rslora: bool = False,
         lora_plus_scale: float = 1.0,
-        use_quick_lora: bool = False,
         **kwargs
     ):
         RowSequenceParallelLinear.__init__(self, in_features, out_features, **kwargs)
@@ -542,7 +373,6 @@ class RowSequenceParallelLoRALinear(RowSequenceParallelLinear):
 
         # Freezing the pre-trained weight matrix
         self.weight.stop_gradient = True
-        self._use_quick_lora = use_quick_lora and lora_dropout == 0.0
         self.disable_lora = False
 
     def sharded_state_dict(
@@ -552,20 +382,24 @@ class RowSequenceParallelLoRALinear(RowSequenceParallelLinear):
         state_dict = self.state_dict(structured_name_prefix="")
         return build_sharded_state_dict(state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix)
 
-    @property
-    def use_quick_lora(self):
-        # TODO(@gexiao): support qlora
-        return False  # self._use_quick_lora and self.training and not self.merged
+    def get_delta_weight(self, lora_A=None, lora_B=None):
+        lora_A = lora_A if lora_A is not None else self.lora_A
+        lora_B = lora_B if lora_B is not None else self.lora_B
+        delta_weight = lora_A @ lora_B * self.scaling
+
+        return delta_weight
 
     def unmerge(self):
         if self.merged:
-            new_weight = self.weight - self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight - delta_weight
             self.weight.set_value(new_weight)
             self.merged = False
 
     def merge(self):
         if not self.merged:
-            new_weight = self.weight + self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight + delta_weight
             self.weight.set_value(new_weight)
             self.merged = True
 
@@ -624,17 +458,11 @@ class ColumnParallelLoRALinear(ColumnParallelLinear):
         rslora: bool = False,
         lora_plus_scale: float = 1.0,
         lora_A_weight_attr: Optional[paddle.ParamAttr] = None,
-        use_quick_lora: bool = False,
-        pissa: bool = False,
-        use_mora: bool = False,
         **kwargs
     ):
         ColumnParallelLinear.__init__(self, in_features, out_features, **kwargs)
         if not isinstance(r, int) or r <= 0:
             raise ValueError("Lora rank r should be a positive integer")
-
-        if pissa or use_mora:
-            raise ValueError("Pissa or Mora is not supported in model parallel by now")
 
         self.r = r
         self.lora_alpha = lora_alpha
@@ -677,7 +505,6 @@ class ColumnParallelLoRALinear(ColumnParallelLinear):
 
         # Freezing the pre-trained weight matrix
         self.weight.stop_gradient = True
-        self._use_quick_lora = use_quick_lora and lora_dropout == 0.0
         self.disable_lora = False
 
     def sharded_state_dict(
@@ -687,21 +514,26 @@ class ColumnParallelLoRALinear(ColumnParallelLinear):
         state_dict = self.state_dict(structured_name_prefix="")
         return build_sharded_state_dict(state_dict, {"weight": 1, "bias": 0, "lora_B": 1}, structured_name_prefix)
 
-    @property
-    def use_quick_lora(self):
-        return self._use_quick_lora and self.training and not self.merged
+    def get_delta_weight(self, lora_A=None, lora_B=None):
+        lora_A = lora_A if lora_A is not None else self.lora_A
+        lora_B = lora_B if lora_B is not None else self.lora_B
+        delta_weight = lora_A @ lora_B * self.scaling
+
+        return delta_weight
 
     def unmerge(self):
         if self.merged:
             # Make sure that the weights are not merged
-            new_weight = self.weight - self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight - delta_weight
             self.weight.set_value(new_weight)
             self.merged = False
 
     def merge(self):
         if not self.merged:
             # Merge the weights and mark it
-            new_weight = self.weight + self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight + delta_weight
             self.weight.set_value(new_weight)
             self.merged = True
 
@@ -713,21 +545,6 @@ class ColumnParallelLoRALinear(ColumnParallelLinear):
             else:
                 res_mp = MC2ColumnParallelCoreLinear.apply(input, self.weight, self.model_parallel_group)
                 result_mp = (res_mp + self.bias) if self.bias is not None else res_mp
-
-        elif self.use_quick_lora:
-            # Use the quick lora implementation
-            input_mp = mp_ops._c_identity(input, group=self.model_parallel_group) if self.is_mp else input
-            result_mp = quick_lora(
-                input_mp,
-                self.lora_A,
-                self.lora_B,
-                self.weight,
-                self.bias,
-                self.scaling,
-                is_column=True,
-                group=self.model_parallel_group,
-                world_size=self.world_size,
-            )
         else:
             if MC2ColumnParallelCoreLinear is None:
                 input_mp = mp_ops._c_identity(input, group=self.model_parallel_group)
@@ -780,7 +597,6 @@ class ColumnSequenceParallelLoRALinear(ColumnSequenceParallelLinear):
         rslora: bool = False,
         lora_plus_scale: float = 1.0,
         lora_A_weight_attr: Optional[paddle.ParamAttr] = None,
-        use_quick_lora: bool = False,
         **kwargs
     ):
         ColumnSequenceParallelLinear.__init__(self, in_features, out_features, **kwargs)
@@ -829,7 +645,6 @@ class ColumnSequenceParallelLoRALinear(ColumnSequenceParallelLinear):
 
         # Freezing the pre-trained weight matrix
         self.weight.stop_gradient = True
-        self._use_quick_lora = use_quick_lora and lora_dropout == 0.0
         self.disable_lora = False
 
     def sharded_state_dict(
@@ -839,20 +654,24 @@ class ColumnSequenceParallelLoRALinear(ColumnSequenceParallelLinear):
         state_dict = self.state_dict(structured_name_prefix="")
         return build_sharded_state_dict(state_dict, {"weight": 1, "bias": 0, "lora_B": 1}, structured_name_prefix)
 
-    @property
-    def use_quick_lora(self):
-        # TODO(@gexiao): support qlora
-        return False  # self._use_quick_lora and self.training and not self.merged
+    def get_delta_weight(self, lora_A=None, lora_B=None):
+        lora_A = lora_A if lora_A is not None else self.lora_A
+        lora_B = lora_B if lora_B is not None else self.lora_B
+        delta_weight = lora_A @ lora_B * self.scaling
+
+        return delta_weight
 
     def unmerge(self):
         if self.merged:
-            new_weight = self.weight - self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight - delta_weight
             self.weight.set_value(new_weight)
             self.merged = False
 
     def merge(self):
         if not self.merged:
-            new_weight = self.weight + self.lora_A @ self.lora_B * self.scaling
+            delta_weight = self.get_delta_weight()
+            new_weight = self.weight + delta_weight
             self.weight.set_value(new_weight)
             self.merged = True
 
@@ -958,24 +777,30 @@ class LoRAConv2D(nn.Conv2D):
             self.bias.stop_gradient = True
         self.disable_lora = False
 
+    def get_delta_weight(self, lora_A=None, lora_B=None):
+        weight_A = (lora_A if lora_A else self.lora_A).cast(dtype=self.weight.dtype)
+        weight_B = (lora_B if lora_B else self.lora_B).cast(dtype=self.weight.dtype)
+
+        if self.weight.shape[2:4] == [1, 1]:
+            # conv2d 1x1
+            delta_weight = (weight_B.squeeze(3).squeeze(2) @ weight_A.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(
+                3
+            ) * self.scaling
+        else:
+            # conv2d 3x3
+            delta_weight = (
+                F.conv2d(
+                    weight_A.transpose([1, 0, 2, 3]),
+                    weight_B,
+                ).transpose([1, 0, 2, 3])
+                * self.scaling
+            )
+
+        return delta_weight
+
     def unmerge(self):
         if self.merged:
-            weight_A = self.lora_A.cast(dtype=self.weight.dtype)
-            weight_B = self.lora_B.cast(dtype=self.weight.dtype)
-            if self.weight.shape[2:4] == [1, 1]:
-                # conv2d 1x1
-                delta_weight = (weight_B.squeeze(3).squeeze(2) @ weight_A.squeeze(3).squeeze(2)).unsqueeze(
-                    2
-                ).unsqueeze(3) * self.scaling
-            else:
-                # conv2d 3x3
-                delta_weight = (
-                    F.conv2d(
-                        weight_A.transpose([1, 0, 2, 3]),
-                        weight_B,
-                    ).transpose([1, 0, 2, 3])
-                    * self.scaling
-                )
+            delta_weight = self.get_delta_weight()
             # Make sure that the weights are not merged
             new_weight = self.weight - delta_weight
             self.weight.set_value(new_weight)
@@ -983,22 +808,7 @@ class LoRAConv2D(nn.Conv2D):
 
     def merge(self):
         if not self.merged:
-            weight_A = self.lora_A.cast(dtype=self.weight.dtype)
-            weight_B = self.lora_B.cast(dtype=self.weight.dtype)
-            if self.weight.shape[2:4] == [1, 1]:
-                # conv2d 1x1
-                delta_weight = (weight_B.squeeze(3).squeeze(2) @ weight_A.squeeze(3).squeeze(2)).unsqueeze(
-                    2
-                ).unsqueeze(3) * self.scaling
-            else:
-                # conv2d 3x3
-                delta_weight = (
-                    F.conv2d(
-                        weight_A.transpose([1, 0, 2, 3]),
-                        weight_B,
-                    ).transpose([1, 0, 2, 3])
-                    * self.scaling
-                )
+            delta_weight = self.get_delta_weight()
             # Merge the weights and mark it
             new_weight = self.weight + delta_weight
             self.weight.set_value(new_weight)

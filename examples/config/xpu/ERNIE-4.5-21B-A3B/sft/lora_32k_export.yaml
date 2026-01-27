@@ -1,0 +1,6 @@
+### model
+fine_tuning: LoRA
+model_name_or_path: baidu/ERNIE-4.5-21B-A3B-PT
+output_dir: checkpoints/ernie-21b-sft-lora-32k
+
+device: xpu
