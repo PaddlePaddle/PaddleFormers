@@ -797,7 +797,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
     config_class = Glm4MoeConfig
     base_model_prefix = "model"
     _keep_in_fp32_modules = ["mlp.gate.weight", "e_score_correction_bias"]
-    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "eh_proj"]
+    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config: Glm4MoeConfig, is_split=True):
@@ -830,8 +830,6 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         ]
 
         EXPERT_LAYER_ROWWISE = ["down_proj.weight"]
-
-        # MTP_LAYER_COLWISE = ["eh_proj.weight"]
 
         BIAS_KEYS = [
             "self_attn.q_proj.bias",
@@ -972,13 +970,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                                 for b in FUSE_BIAS_KEYS
                             }
                         )
-            # for mtp_layer_idx in range(config.num_hidden_layers, config.num_hidden_layers + config.num_nextn_predict_layers):
-            #     actions.update(
-            #         {
-            #             f"{cls.base_model_prefix}.layers.{mtp_layer_idx}.{k}": partial(fn, is_column=False)
-            #             for k in MTP_LAYER_COLWISE
-            #         }
-            #     )
+
             return actions
 
         mappings = make_base_actions()
