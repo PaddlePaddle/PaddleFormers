@@ -43,7 +43,7 @@ install_requirements() {
     python -m pip uninstall paddlepaddle paddlepaddle_gpu torch -y
     python -m pip install paddlepaddle-gpu==3.2.2 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
     #python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
-    python -m pip install torch
+    python -m pip install torch==2.8.0
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
     python setup.py bdist_wheel > /dev/null
     python -m pip install  dist/p****.whl
