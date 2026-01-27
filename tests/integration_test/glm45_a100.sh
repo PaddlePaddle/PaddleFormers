@@ -59,9 +59,7 @@ elif [[ ${step} == "sft" ]]; then
 elif [[ ${step} == "lora" ]]; then
   echo "Run GLM4.5 multi lora test"
   config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_lora.yaml
-
   export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
-
   yq '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
       | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
       | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
@@ -78,7 +76,7 @@ elif [[ ${step} == "dpo" ]]; then
       | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
       | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
       | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_vdl_log"
-      | .moe_token_dispatcher_type: "deepep"
+      | .num_empty_layers_add_in_tail = 0
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_ckpts"' \
     $config_yaml > ${config_yaml}.tmp
   mv ${config_yaml}.tmp $config_yaml
