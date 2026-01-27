@@ -427,6 +427,7 @@ jobs:
       #     timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh lora
       #     '
 
+      
       - name: Qwen vl sft
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
