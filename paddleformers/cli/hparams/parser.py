@@ -83,7 +83,23 @@ def read_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> Union[
     r"""Get arguments from the command line or a config file."""
     if args is not None:
         return args
-
+    
+    if "custom_register_path" in sys.argv:
+        custom_idx = sys.argv.index("custom_register_path")
+        if custom_idx + 1 < len(sys.argv):
+            custom_path = sys.argv[custom_idx + 1]
+            try:
+                import importlib.util
+                spec = importlib.util.spec_from_file_location("custom_template", custom_path)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                print(f"Successfully loaded custom templates from {custom_path}")
+            except Exception as e:
+                print(f"Failed to load custom templates from {custom_path}: {e}")
+        # Remove custom register args to avoid conflict with main arg parsing
+        sys.argv.pop(custom_idx)
+        sys.argv.pop(custom_idx)
+        
     assert len(sys.argv) > 2, "Missing configuration files."
 
     if sys.argv[2].endswith(".yaml") or sys.argv[2].endswith(".yml"):

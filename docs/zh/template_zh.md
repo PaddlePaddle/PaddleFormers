@@ -2,7 +2,8 @@
 
 ## 1.1. 注册方法
 
-在 paddleformers/datasets/template/template.py 文件中实现模型 chat template 的注册，如：
+### 1.1.1 源代码修改（适用于 git clone 安装用户）
+在 `paddleformers/datasets/template/template.py` 文件中实现模型 chat template 的注册，如：
 ```python
 register_template(
     name="ernie",
@@ -14,6 +15,16 @@ register_template(
     stop_words=["<|im_end|>"],
 )
 ```
+### 1.1.2 运行时外挂（适用于 pip 安装用户）
+可通过`--custom_register_path`参数指定一个Python文件来注册自定义对话模板。该文件应包含类似以下代码：
+```python
+from paddleformers.datasets.template.template import *
+
+register_template(
+    ...同上
+)
+```
+
 
 ## 1.2. 参数说明
 
@@ -61,13 +72,37 @@ register_template(
 ```
 
 # 2. 注册 mm_plugin
-多模模型需要实现自己的多模数据处理方法，包括图片处理、视频处理、音频处理、获取处理后的 tokens 数量来填充占位符
-可以参考 Qwen2VLPlugin 类，类实现后在下面注册：
+## 2.1. 注册方法
+### 2.1.1 源代码修改（适用于 git clone 安装用户）
+多模态模型需要实现自己的多模数据处理方法，包括图片处理、视频处理、音频处理、获取处理后的 tokens 数量来填充占位符
+可以参考 Qwen2VLPlugin 类，类实现后在 `paddleformers/datasets/template/mm_plugin.py` 中注册：
 ```python
+@dataclass
+class MyCustomPlugin(BasePlugin):
+    ...
 PLUGINS = {
     "base": BasePlugin,
     "qwen2_vl": Qwen2VLPlugin,
     "qwen3_vl": Qwen3VLPlugin,
     "glm4v": GLM4VPlugin,
 }
+```
+### 2.1.2 运行时外挂（适用于 pip 安装用户）
+可通过`--custom_register_path`参数指定一个Python文件来注册自定义 mm_plugin。该文件应包含类似以下代码：
+```python
+from paddleformers.datasets.template.template import *
+from paddleformers.datasets.template.mm_plugin import *
+
+@dataclass
+class MyCustomPlugin(BasePlugin):
+    ...
+register_mm_plugin(
+    name = "myplugin",
+    plugin_class = MyCustomPlugin,
+)
+register_template(
+    name="mytemplate",
+    mm_plugin=get_mm_plugin(name="myplugin"...),
+    ...
+)
 ```
