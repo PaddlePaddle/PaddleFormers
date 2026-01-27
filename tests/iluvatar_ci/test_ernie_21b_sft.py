@@ -33,7 +33,7 @@ def test_ernie_21b_sft_training(project_root, base_value_dir, log_file):
         baseline_path=base_value_dir / "ERNIE-21B-SFT-LOSS.json",
         log_file=log_file,
         working_dir=project_root,
-        tolerance=2e-2,
+        tolerance=1e-6,
         timeout=600,
     )
 
