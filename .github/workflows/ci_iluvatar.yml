@@ -62,14 +62,14 @@ jobs:
         run: |
           set -e
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          pip config unset global.proxy
+          
+          unset http_proxy
+          unset https_proxy
+
           python -m pip install -r requirements.txt
 
           echo "Uninstall PaddlePaddle and PaddleFormers beforehand..."
           python -m pip uninstall paddlepaddle paddle-iluvatar-gpu paddleformers -y
-
-          unset http_proxy
-          unset https_proxy
 
           retry_count=0
           max_retries=3
