@@ -408,7 +408,7 @@ class DeepseekV2TopkRouter(nn.Layer):
         )
         group_idx = paddle.topk(group_scores, k=self.topk_group, dim=-1, sorted=False)[1]
         group_mask = paddle.zeros_like(group_scores)
-        group_mask.scatter_(1, group_idx, 1)
+        group_mask.put_along_axis_(values=1.0, indices=group_idx, axis=1)
         score_mask = (
             group_mask.unsqueeze(-1)
             .expand(-1, self.n_group, self.n_routed_experts // self.n_group)
@@ -425,7 +425,7 @@ class DeepseekV2TopkRouter(nn.Layer):
 
             scores = router_logits.sigmoid().cast(paddle.float32)
         topk_indices = self.get_topk_indices(scores)
-        topk_weights = scores.gather(1, topk_indices)
+        topk_weights = paddle.take_along_axis(scores, indices=topk_indices, axis=1)
         if self.norm_topk_prob:
             denominator = topk_weights.sum(dim=-1, keepdim=True) + 1e-20
             topk_weights /= denominator
