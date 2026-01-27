@@ -1809,7 +1809,7 @@ class EMAStateAssembler:
         if len(set(steps)) != 1:
             latest_step = max(steps)
         else:
-            if not self._is_already_handled(ckpt_dir):
+            if (ckpt_dir is not None) and (not self._is_already_handled(ckpt_dir)):
                 self._handle_naive_checkpoint(ckpt_dir, max_step)
             latest_step = max_step
 
