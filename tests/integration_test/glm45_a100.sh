@@ -66,7 +66,8 @@ elif [[ ${step} == "lora" ]]; then
       | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
       | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
       | .logging_dir = strenv(cur_dir) + "/glm_full_single_lora_log"
-      | .output_dir = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"' \
+      | .output_dir = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"
+      | del(.moe_token_dispatcher_type)' \
     $config_yaml > ${config_yaml}.tmp
   mv ${config_yaml}.tmp $config_yaml
 elif [[ ${step} == "dpo" ]]; then
@@ -77,6 +78,7 @@ elif [[ ${step} == "dpo" ]]; then
       | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
       | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
       | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_vdl_log"
+      | .moe_token_dispatcher_type: "deepep"
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_ckpts"' \
     $config_yaml > ${config_yaml}.tmp
   mv ${config_yaml}.tmp $config_yaml
