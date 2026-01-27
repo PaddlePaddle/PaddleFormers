@@ -31,7 +31,7 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     ScatterOp,
     mark_as_sequence_parallel_parameter,
 )
-from paddle.incubate.nn.functional import swiglu as fused_swiglu
+from paddle.nn.functional import swiglu as fused_swiglu
 
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding

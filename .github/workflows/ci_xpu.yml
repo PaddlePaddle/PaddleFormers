@@ -1,0 +1,44 @@
+name: CI_XPU
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [develop, release/**]
+permissions: read-all
+
+concurrency:
+  group: ${{ github.event.pull_request.number }}-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  clone:
+    name: Clone-Linux
+    uses: ./.github/workflows/_clone_linux.yml
+
+  xpu_test:
+    name: xpu_test
+    needs: [clone]
+    uses: ./.github/workflows/_xpu_ci_test.yml
+    with:
+      PADDLEFORMERS_ARCHIVE_URL: ${{ needs.clone.outputs.repo_archive_url }}
+      DOCKER_IMAGE: registry.baidubce.com/device/paddle-xpu:ubuntu20-x86_64-gcc84-py310
+      MODEL_PATH: /ssd3/model
+  # xpu_4cards_case_test:
+  #   name: xpu_4cards_case_test
+  #   needs: [clone, xpu_build_test]
+  #   uses: ./.github/workflows/_xpu_4cards_case_test.yml
+  #   with:
+  #     FASTDEPLOY_ARCHIVE_URL: ${{ needs.clone.outputs.repo_archive_url }}
+  #     DOCKER_IMAGE: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/fastdeploy-xpu:ci
+  #     FASTDEPLOY_WHEEL_URL: ${{ needs.xpu_build_test.outputs.wheel_path }}
+  #     MODEL_PATH: /ssd3/model
+
+  # xpu_8cards_case_test:
+  #   name: xpu_8cards_case_test
+  #   needs: [clone, xpu_build_test]
+  #   uses: ./.github/workflows/_xpu_8cards_case_test.yml
+  #   with:
+  #     FASTDEPLOY_ARCHIVE_URL: ${{ needs.clone.outputs.repo_archive_url }}
+  #     DOCKER_IMAGE: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/fastdeploy-xpu:ci
+  #     FASTDEPLOY_WHEEL_URL: ${{ needs.xpu_build_test.outputs.wheel_path }}
+  #     MODEL_PATH: /ssd3/model

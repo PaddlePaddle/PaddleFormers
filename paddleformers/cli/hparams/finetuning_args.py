@@ -21,6 +21,8 @@ from paddleformers.trainer import TrainingArguments
 from paddleformers.transformers.configuration_utils import llmmetaclass
 from paddleformers.utils.log import logger
 
+DEFAULT_QUANTIZE_LAYERS = [".*mlp.*", ".*self_attn.*"]
+
 
 @dataclass
 class PreTrainingArguments(TrainingArguments):
@@ -302,19 +304,29 @@ class FinetuningArguments(
             self.bf16 = False
             self.fp16 = True
             self.weight_quantize_algo = None
-        elif self.compute_type == "fp8":
-            self.weight_quantize_algo = "fp8linear"
-            self.optim = "adamw_custom"
-            self.use_lowprecision_moment = True
-            self.tensorwise_offload_optimizer = True
-            self.optim_shard_num = 8
-            self.unified_checkpoint_config = "ignore_merge_optimizer"
+        elif self.compute_type == "wint4":
+            self.weight_quantize_algo = {"weight_only_int4": DEFAULT_QUANTIZE_LAYERS}
         elif self.compute_type == "wint8":
-            self.weight_quantize_algo = "weight_only_int8"
-        elif self.compute_type == "wint4/8":
-            self.weight_quantize_algo = "weight_only_mix"
+            self.weight_quantize_algo = {"weight_only_int8": DEFAULT_QUANTIZE_LAYERS}
+        # TODO: @bosspi to support wint4/8
+        # elif self.compute_type == "wint4/8":
+        #     # self.weight_quantize_algo = "weight_only_mix"
+        #     self.weight_quantize_algo = {
+        #         "weight_only_int4": [".*mlp.experts.*"],
+        #         "weight_only_int8": [
+        #             ".*self_attn.qkv_proj.*",
+        #             ".*self_attn.q_proj.*",
+        #             ".*self_attn.k_proj.*",
+        #             ".*self_attn.v_proj.*",
+        #             ".*self_attn.o_proj.*",
+        #             ".*mlp.up_gate_proj.*",
+        #             ".*mlp.up_proj.*",
+        #             ".*mlp.gate_proj.*",
+        #             ".*mlp.down_proj.*",
+        #         ],
+        #     }
         elif self.compute_type == "nf4":
-            self.weight_quantize_algo = "nf4"
+            self.weight_quantize_algo = {"nf4": DEFAULT_QUANTIZE_LAYERS}
         else:
             raise ValueError(f"Unknown compute_type: {self.compute_type}")
 

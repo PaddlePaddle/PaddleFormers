@@ -18,7 +18,7 @@ Fusion operators.
 import paddle
 from paddle.incubate.nn.functional import fused_rms_norm_ext
 from paddle.incubate.nn.functional import fused_rotary_position_embedding as fused_rope
-from paddle.incubate.nn.functional import swiglu as fused_swiglu
+from paddle.nn.functional import swiglu as fused_swiglu
 
 from .common_fusion_ops import Linear, matmul
 

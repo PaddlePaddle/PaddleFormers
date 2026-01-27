@@ -13,11 +13,19 @@ num_samples_each_epoch: 6000000
 packing: true
 mix_strategy: concat
 
+
+truncate_packing: true
+dataloader_shuffle: false
+dataloader_num_workers: 24
+prefetch_factor: 24
+
+
 ### model
 model_name_or_path: ./Qwen3-30B-A3B
 gated_linear_unit: true
 attn_impl: flashmask
 num_hidden_layers: 4
+use_qk_norm: true
 
 ### finetuning
 # base
@@ -46,32 +54,43 @@ continue_training: false
 warmup_steps: 10
 learning_rate: 1.0e-5
 
+
+# recompute
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
+
 # performance
-recompute_granularity: ""
 apply_rope_fusion: true
 moe_router_fusion: false
 moe_router_force_load_balancing: true
-# moe_grouped_gemm: true
+moe_grouped_gemm: true
 
 sharding: "stage1"
 split_param: true
+stage1_overlap: true
+sd_release_grads: true
 tensor_model_parallel_size: 4
 sequence_parallel: true
 pipeline_model_parallel_size: 1
 use_expert_parallel: true
 expert_model_parallel_size: 8
 
+
+tp_delay_scale_loss: True
+
 optim: adamw
 bf16: true
 fp16_opt_level: O2
 amp_master_grad: true
+
+
 fuse_attention_qkv: true
 fuse_attention_ffn: true
 fuse_swiglu: true
 fuse_rms_norm: true
 fuse_linear: true
 use_paddlefleet: true
-use_qk_norm: true
 
 # unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"
