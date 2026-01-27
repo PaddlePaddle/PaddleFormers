@@ -487,7 +487,6 @@ jobs:
           pip install bce-python-sdk==0.8.74
           pip install coverage==7.6.1
           pip install librosa==0.11.0
-          pip install torchcodec
           '
 
       - name: GLM4.5 pre-train
