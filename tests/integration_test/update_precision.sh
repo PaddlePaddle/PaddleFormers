@@ -19,9 +19,14 @@ response=$(curl -L \
 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
 -H "X-GitHub-Api-Version: 2022-11-28" \
 https://api.github.com/repos/PaddlePaddle/${repo_name}/commits/${COMMIT_ID}/pulls)
-pr_number=$(echo $response | jq -r '.[0].url' | awk -F'/' '{print $NF}')
+if [ $repo_name == "PaddleFormers" ]; then
+    pr_number=$(echo "$response" | jq -r '.[] | select(.url | contains("PaddlePaddle/PaddleFormers")) | .number')
+else
+    pr_number=$(echo $response | jq -r '.[0].url' | awk -F'/' '{print $NF}')
+fi
 
-wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}_latest/precision_list.txt
+# wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}_latest/precision_list.txt
+wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/PaddleFleet_latest/precision_list.txt
 pr_precision_url_base="https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${repo_name}/${pr_number}"
 while IFS= read -r fname || [ -n "$fname" ]; do
     [ -z "$fname" ] && continue

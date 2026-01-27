@@ -13,11 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import unittest
 
 import paddle
 
 from paddleformers.transformers import AutoVideoProcessor
+from paddleformers.utils.log import logger
 from tests.testing_utils import skip_for_none_ce_case
 
 
@@ -35,9 +37,16 @@ class TestHFMultiSourceVideoProcessor(unittest.TestCase):
         cls.video_url = VIDEO_URL  # load by url (only for ce)
 
     def preprocess(self, video_processor):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
+        # Initialize device when GPU is needed by certain test case
+        gpu_count = paddle.device.cuda.device_count()
+        pid = os.getpid()
+
+        if gpu_count > 0:
+            paddle.set_device(f"gpu:{pid % gpu_count}")
+        else:
+            paddle.set_device("cpu")
             self.skipTest("No GPU currently available/allocated")
+        logger.info(f"TestHFMultiSourceVideoProcessor [PID:{pid}] Device initialized: {paddle.get_device()}")
 
         inputs = video_processor(self.video, return_tensors="pd")
         EXPECTED_PIXEL_VALUES_MEAN = paddle.to_tensor(0.2922638059)

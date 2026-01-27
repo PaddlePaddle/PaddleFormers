@@ -107,7 +107,7 @@ except (ImportError, ModuleNotFoundError):
     fused_rope = None
 
 try:
-    from paddle.incubate.nn.functional import swiglu as fused_swiglu
+    from paddle.nn.functional import swiglu as fused_swiglu
 except (ImportError, ModuleNotFoundError):
     fused_swiglu = None
 

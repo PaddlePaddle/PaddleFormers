@@ -12,7 +12,11 @@ eval_iters: 10
 max_seq_len: 4096
 num_samples_each_epoch: 6000000
 packing: true
+truncate_packing: true
 mix_strategy: concat
+dataloader_shuffle: false
+dataloader_num_workers: 24
+prefetch_factor: 24
 
 ### model
 model_name_or_path: ./checkpoints/qwen3-30b-a3b-pt
@@ -47,20 +51,41 @@ continue_training: true
 warmup_steps: 10
 learning_rate: 1.0e-5
 
+
+# args
+router_aux_loss_coef: 0.0001
+
+
 # performance
-recompute_granularity: ""
+recompute_granularity: full
+recompute_method: block
+recompute_num_layers: 1
 apply_rope_fusion: true
 moe_router_fusion: false
 moe_router_force_load_balancing: true
-# moe_grouped_gemm: true
+moe_grouped_gemm: true
 
 sharding: stage1
 split_param: true
+stage1_overlap: true
 tensor_model_parallel_size: 2
 sequence_parallel: true
 pipeline_model_parallel_size: 2
 use_expert_parallel: true
 expert_model_parallel_size: 4
+
+
+
+# pp
+pp_delay_scale_loss: true
+overlap_p2p_comm: true
+variable_seq_lengths: true
+best_unbalanced_scheduler: true
+pp_release_grads: true
+
+# tp
+tp_delay_scale_loss: true
+
 
 optim: adamw
 bf16: true
@@ -73,6 +98,7 @@ fuse_rms_norm: true
 fuse_linear: true
 use_paddlefleet: true
 use_qk_norm: true
+fp32_residual_connection: false
 
 # unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"

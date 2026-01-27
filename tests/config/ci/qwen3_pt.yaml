@@ -1,4 +1,4 @@
-## data
+# data
 dataset_type: "pretrain"
 input_dir: "1.0 ./data/pre-training/llama_openwebtext_100k"
 split: "998,1,1"
@@ -10,9 +10,15 @@ num_samples_each_epoch: 6000000
 packing: true
 mix_strategy: concat
 
+truncate_packing: true
+dataloader_shuffle: false
+dataloader_num_workers: 24
+prefetch_factor: 24
+
 ### model
 model_name_or_path: ./Qwen3-30B-A3B-Base
 attn_impl: flashmask
+use_qk_norm: true
 
 ### finetuning
 # base
@@ -42,12 +48,25 @@ warmup_steps: 10
 learning_rate: 1.0e-5
 
 # performance
-recompute_granularity: ""
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
 tensor_model_parallel_size: 1
 pipeline_model_parallel_size: 1
 expert_model_parallel_size: 1
 sequence_parallel: false
 use_expert_parallel: false
+
+# compute 
+moe_grouped_gemm: true
+apply_rope_fusion: true
+fuse_rms_norm: true
+moe_router_fusion: true
+
+# 
+moe_ep_barrier: false
+moe_router_force_load_balancing: false
+
 
 optim: adamw
 bf16: true
@@ -56,7 +75,6 @@ amp_master_grad: true
 fuse_attention_qkv: true
 fuse_attention_ffn: true
 fuse_swiglu: true
-use_qk_norm: true
 
 # unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"

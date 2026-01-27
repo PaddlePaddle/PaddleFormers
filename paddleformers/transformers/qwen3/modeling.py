@@ -37,6 +37,7 @@ from ...nn.mlp import MLP as Qwen3MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
+from ...utils.masking_utils import _gen_from_sparse_attn_mask_indices
 from ..cache_utils import Cache, DynamicCache
 from ..contrastive_loss import SimpleContrastiveLoss
 from ..embedding_utils import dist_gather_tensor_with_gradient
@@ -69,6 +70,52 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed.astype(q.dtype), k_embed.astype(k.dtype)
+
+
+def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
+    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
+    if n_rep == 1:
+        return hidden_states
+    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
+    return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
+
+
+def eager_attention_forward(
+    module: nn.Layer,
+    query: paddle.Tensor,
+    key: paddle.Tensor,
+    value: paddle.Tensor,
+    attention_mask: Optional[paddle.Tensor],
+    scaling: float,
+    dropout: float = 0.0,
+    **kwargs,
+):
+    key_states = repeat_kv(key, module.num_key_value_groups)
+    value_states = repeat_kv(value, module.num_key_value_groups)
+
+    if attention_mask is None and kwargs.get("attn_mask_startend_row_indices", None) is not None:
+        attn_mask_startend_row_indices = kwargs["attn_mask_startend_row_indices"]
+        if attn_mask_startend_row_indices.ndim == 3:
+            attn_mask_startend_row_indices = attn_mask_startend_row_indices.unsqueeze(-1)
+        if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 1:
+            is_causal = True
+        if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 4:
+            is_causal = False
+
+        attention_mask = _gen_from_sparse_attn_mask_indices(attn_mask_startend_row_indices, query.dtype, is_causal)
+
+    attn_weights = paddle.matmul(query, key_states.transpose(2, 3)) * scaling
+
+    if attention_mask is not None:
+        causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
+        attn_weights = attn_weights + causal_mask
+
+    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=paddle.float32).to(query.dtype)
+    attn_weights = nn.functional.dropout(attn_weights, p=dropout, training=module.training)
+    attn_output = paddle.matmul(attn_weights, value_states)
+    attn_output = attn_output.transpose(1, 2).contiguous()
+
+    return attn_output, attn_weights
 
 
 class Qwen3Attention(nn.Layer):
@@ -227,7 +274,9 @@ class Qwen3Attention(nn.Layer):
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface = eager_attention_forward
+        if self.config._attn_implementation != "eager":
+            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -244,6 +293,7 @@ class Qwen3Attention(nn.Layer):
         # else their shape are [bs, q_len, num_head * head_dim], n is mp parallelism.
         if self.config.sequence_parallel:
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
+        attn_output = attn_output.reshape(*hidden_states.shape[:-1], -1).contiguous()
         attn_output = self.o_proj(attn_output)
 
         return attn_output, attn_weights

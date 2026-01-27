@@ -75,34 +75,13 @@ class LoRAConfig:
     )
     do_qat: bool = field(default=False, metadata={"help": "Whether the lora model would do quant-aware training"})
     rslora: bool = field(default=False, metadata={"help": "Whether to use RsLoRA"})
-    pissa: bool = field(default=False, metadata={"help": "Whether to use Pissa: https://arxiv.org/pdf/2404.02948.pdf"})
     loraga: bool = field(default=False, metadata={"help": "Whether to LoRA-GA"})
-    use_mora: bool = field(
-        default=False, metadata={"help": "Whether to use MoRA: https://arxiv.org/pdf/2405.12130.pdf"}
-    )
     lora_plus_scale: float = field(default=1.0, metadata={"help": "Lora B scale in LoRA+"})
     base_model_name_or_path: Optional[str] = field(
         default=None, metadata={"help": "The name of the base model to use."}
     )
-    use_quick_lora: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether to use quick lora, The use of Quick LoRa will only take effect when lora_dropout is set to 0."
-        },
-    )
-    lora_use_mixer: bool = field(
-        default=False,
-        metadata={"help": "Whether to use mos lora."},
-    )
-    lorapro: bool = field(default=False, metadata={"help": "Whether to use LoRA-PRO"})
 
     def __post_init__(self):
-        if self.use_quick_lora and self.lora_dropout > 0:
-            logger.warning(
-                "Quick LoRa is enabled, but lora_dropout is set to a non-zero value. "
-                "We will automatically set `use_quick_lora` to `False` to avoid potential inconsistencies."
-            )
-            self.use_quick_lora = False
         if self.merge_weights:
             logger.error(
                 "'merge_weights' is deprecated and will be removed in a future version. "
@@ -111,10 +90,8 @@ class LoRAConfig:
 
     @property
     def scaling(self):
-        if not self.rslora and not self.pissa:
+        if not self.rslora:
             return self.lora_alpha / self.r
-        elif self.pissa:
-            return 1.0
         else:
             return self.lora_alpha / math.sqrt(self.r)
 
