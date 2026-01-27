@@ -26,9 +26,9 @@ from parameterized import parameterized
 
 from paddleformers.transformers import AutoProcessor, Qwen3VLMoeConfig
 from paddleformers.transformers import (
-    Qwen3VLMoeForConditionalGenerationDecapitated as Qwen3VLMoeForConditionalGeneration,
+    Qwen3VLMoeForConditionalGenerationDeprecated as Qwen3VLMoeForConditionalGeneration,
 )
-from paddleformers.transformers import Qwen3VLMoeModelDecapitated as Qwen3VLMoeModel
+from paddleformers.transformers import Qwen3VLMoeModelDeprecated as Qwen3VLMoeModel
 from paddleformers.transformers import process_vision_info
 from paddleformers.transformers.video_utils import load_video
 from tests.testing_utils import gpu_device_initializer, require_package
@@ -953,7 +953,7 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
 
         # 2. forward the paddle model
         from paddleformers.transformers import (
-            Qwen3VLMoeForConditionalGenerationDecapitated as Qwen3VLMoeForConditionalGeneration,
+            Qwen3VLMoeForConditionalGenerationDeprecated as Qwen3VLMoeForConditionalGeneration,
         )
 
         paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
@@ -990,7 +990,7 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
 
             # 2. forward the paddle model
             from paddleformers.transformers import (
-                Qwen3VLMoeForConditionalGenerationDecapitated as Qwen3VLMoeForConditionalGeneration,
+                Qwen3VLMoeForConditionalGenerationDeprecated as Qwen3VLMoeForConditionalGeneration,
             )
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
@@ -1031,7 +1031,7 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-            paddle_model_class = getattr(transformers, class_name + "Decapitated")
+            paddle_model_class = getattr(transformers, class_name + "Deprecated")
             paddle_model = paddle_model_class.from_pretrained(
                 tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
             ).eval()
