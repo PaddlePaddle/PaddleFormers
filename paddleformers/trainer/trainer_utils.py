@@ -1799,7 +1799,7 @@ class EMAStateAssembler:
             self._handle_naive_checkpoint(next_step, next_ckpt_dir)
 
     def _set_latest_processed_checkpoint_step(self):
-        max_step, _ = self._find_checkpoint(mode="max")
+        max_step, ckpt_dir = self._find_checkpoint(mode="max")
         if max_step is None:
             max_step = -1
 
@@ -1807,12 +1807,13 @@ class EMAStateAssembler:
         dist.all_gather_object(steps, max_step)
 
         if len(set(steps)) != 1:
-            raise AssertionError(
-                f"[EMAStateAssembler] Detected inconsistent maximum checkpoint step across ranks. "
-                f"Please check each trainer's checkpoints. The gathered maximum steps are: {set(steps)}"
-            )
+            latest_step = max(steps)
+        else:
+            if not self._is_already_handled(ckpt_dir):
+                self._handle_naive_checkpoint(ckpt_dir, max_step)
+            latest_step = max_step
 
-        self.latest_processed_checkpoint_step = steps[0]
+        self.latest_processed_checkpoint_step = latest_step
         logger.info(f"[EMAStateAssembler] Start working from checkpoint step {self.latest_processed_checkpoint_step}!")
 
     def _find_checkpoint(self, mode: str = "next") -> Tuple[Optional[int], Optional[Path]]:
