@@ -20,15 +20,6 @@ import numpy as np
 import paddle
 import paddle.distributed as dist
 import paddle.nn.functional as F
-from models.comm_utils import profile
-from models.moe.token_dispatcher.fp8_utils import (
-    ExpertsGroupGemmContiguousNode,
-    ExpertsGroupGemmNode,
-    ExpertsGroupGemmWLCHNode,
-)
-from models.moe.token_dispatcher.moe_utils import UnZipNode, ZipNode
-from models.sequence_parallel_utils import ScatterOp
-from models.utils import manual_backward
 from paddle import framework, nn
 from paddle.autograd import PyLayer
 from paddle.distributed import fleet
@@ -40,13 +31,30 @@ from paddle.incubate.nn.functional import (
     moe_gate_dispatch_permute,
 )
 
+from paddleformers.cli.train.ernie_pretrain.models.comm_utils import profile
+from paddleformers.cli.train.ernie_pretrain.models.moe.token_dispatcher.fp8_utils import (
+    ExpertsGroupGemmContiguousNode,
+    ExpertsGroupGemmNode,
+    ExpertsGroupGemmWLCHNode,
+)
+from paddleformers.cli.train.ernie_pretrain.models.moe.token_dispatcher.moe_utils import (
+    UnZipNode,
+    ZipNode,
+)
+from paddleformers.cli.train.ernie_pretrain.models.sequence_parallel_utils import (
+    ScatterOp,
+)
+from paddleformers.cli.train.ernie_pretrain.models.utils import manual_backward
+
 try:
     from paddle.incubate.nn.functional import moe_gate_dispatch_and_quant
 except ImportError:
     moe_gate_dispatch_and_quant = None
 
 try:
-    from src.utils.misc import global_training_logs
+    from paddleformers.cli.train.ernie_pretrain.src.utils.misc import (
+        global_training_logs,
+    )
 except ModuleNotFoundError:
     global_training_logs = {}
 

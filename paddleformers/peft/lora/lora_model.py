@@ -211,11 +211,6 @@ class LoRAModel(nn.Layer):
             if isinstance(self.model, PaddleFleetPipelineLayer):
                 self.use_paddlefleet = True
 
-        if (self.lora_config.tensor_model_parallel_size > 1 or self.is_pipelinemodel) and (
-            self.lora_config.lora_use_mixer or self.lora_config.use_mora
-        ):
-            raise NotImplementedError("lora_use_mixer or mora is not supported in tensor parallel mode.")
-
         if self.lora_config.tensor_model_parallel_size != self.model.config.tensor_model_parallel_size:
             self.lora_config.tensor_model_parallel_size = self.model.config.tensor_model_parallel_size
             logger.warning(
@@ -685,14 +680,9 @@ class LoRAModel(nn.Layer):
                 lora_dropout=lora_config.lora_dropout,
                 rslora=lora_config.rslora,
                 lora_plus_scale=lora_config.lora_plus_scale,
-                pissa=lora_config.pissa,
                 bias_attr=False if module.bias is None else None,
-                use_quick_lora=lora_config.use_quick_lora,
-                lora_use_mixer=lora_config.lora_use_mixer,
-                use_mora=lora_config.use_mora,
                 mp_moe=getattr(module.weight, "mp_moe", False),
                 is_distributed=getattr(module.weight, "is_distributed", False),
-                lorapro=lora_config.lorapro,
             )
         elif isinstance(module, nn.Conv2D):
             lora_module = LoRAConv2D(
@@ -723,11 +713,9 @@ class LoRAModel(nn.Layer):
                 lora_dropout=lora_config.lora_dropout,
                 rslora=lora_config.rslora,
                 lora_plus_scale=lora_config.lora_plus_scale,
-                pissa=lora_config.pissa,
                 lora_A_weight_attr=paddle.ParamAttr(
                     initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu")
                 ),
-                use_quick_lora=lora_config.use_quick_lora,
             )
             # Lora column parallel will spilt lora B matrix
             self.add_lora_split_mapping(module_name + ".lora_B", is_column=True)
@@ -749,8 +737,6 @@ class LoRAModel(nn.Layer):
                 lora_dropout=lora_config.lora_dropout,
                 rslora=lora_config.rslora,
                 lora_plus_scale=lora_config.lora_plus_scale,
-                pissa=lora_config.pissa,
-                use_quick_lora=lora_config.use_quick_lora,
             )
             # Lora column parallel will spilt lora A matrix
             self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
@@ -776,7 +762,6 @@ class LoRAModel(nn.Layer):
                 lora_A_weight_attr=paddle.ParamAttr(
                     initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu")
                 ),
-                use_quick_lora=lora_config.use_quick_lora,
             )
             # Lora column parallel will spilt lora B matrix
             self.add_lora_split_mapping(module_name + ".lora_B", is_column=True)
@@ -798,7 +783,6 @@ class LoRAModel(nn.Layer):
                 lora_dropout=lora_config.lora_dropout,
                 rslora=lora_config.rslora,
                 lora_plus_scale=lora_config.lora_plus_scale,
-                use_quick_lora=lora_config.use_quick_lora,
             )
             # Lora column parallel will spilt lora A matrix
             self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
@@ -821,14 +805,9 @@ class LoRAModel(nn.Layer):
                     lora_dropout=lora_config.lora_dropout,
                     rslora=lora_config.rslora,
                     lora_plus_scale=lora_config.lora_plus_scale,
-                    pissa=lora_config.pissa,
                     bias_attr=False if module.bias is None else None,
-                    use_quick_lora=lora_config.use_quick_lora,
-                    lora_use_mixer=lora_config.lora_use_mixer,
-                    use_mora=lora_config.use_mora,
                     mp_moe=getattr(module.weight, "mp_moe", False),
                     is_distributed=getattr(module.weight, "is_distributed", False),
-                    lorapro=lora_config.lorapro,
                 )
             elif isinstance(module, FleetRowParallelLinear):
                 # recover the original output_features
@@ -844,7 +823,6 @@ class LoRAModel(nn.Layer):
                         lora_dropout=lora_config.lora_dropout,
                         rslora=lora_config.rslora,
                         lora_plus_scale=lora_config.lora_plus_scale,
-                        use_quick_lora=lora_config.use_quick_lora,
                     )
                 else:
                     lora_module = FleetRowParallelLoRALinear(
@@ -858,8 +836,6 @@ class LoRAModel(nn.Layer):
                         lora_dropout=lora_config.lora_dropout,
                         rslora=lora_config.rslora,
                         lora_plus_scale=lora_config.lora_plus_scale,
-                        pissa=lora_config.pissa,
-                        use_quick_lora=lora_config.use_quick_lora,
                     )
                 # Lora column parallel will spilt lora A matrix
                 self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
@@ -889,7 +865,6 @@ class LoRAModel(nn.Layer):
                                 negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
                             )
                         ),
-                        use_quick_lora=lora_config.use_quick_lora,
                     )
                 else:
                     lora_module = FleetColumnParallelLoRALinear(
@@ -903,13 +878,11 @@ class LoRAModel(nn.Layer):
                         lora_dropout=lora_config.lora_dropout,
                         rslora=lora_config.rslora,
                         lora_plus_scale=lora_config.lora_plus_scale,
-                        pissa=lora_config.pissa,
                         lora_A_weight_attr=paddle.ParamAttr(
                             initializer=nn.initializer.KaimingUniform(
                                 negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
                             )
                         ),
-                        use_quick_lora=lora_config.use_quick_lora,
                     )
                 # Lora column parallel will spilt lora B matrix
                 self.add_lora_split_mapping(module_name + ".lora_B", is_column=True)

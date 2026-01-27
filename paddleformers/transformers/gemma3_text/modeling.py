@@ -37,7 +37,7 @@ from ..masking_utils import (
     create_sliding_window_causal_mask_and_row_indices,
 )
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
-from ..model_utils import PretrainedModel
+from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import Gemma3Config, Gemma3TextConfig
 
@@ -433,7 +433,7 @@ class Gemma3PreTrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_aoa_config(cls, config: Gemma3TextConfig):
-        model_prefix = "" if cls == cls.base_model_prefix else "model."
+        model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_config = {
             "aoa_statements": [
                 # load tied weight
@@ -445,6 +445,8 @@ class Gemma3PreTrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"model.layers.$LAYER_ID.pre_feedforward_layernorm.weight -> {model_prefix}layers.$LAYER_ID.pre_feedforward_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_feedforward_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_feedforward_layernorm.weight",
+                f"model.layers.$LAYER_ID.self_attn.q_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"model.layers.$LAYER_ID.self_attn.k_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
                 # do transpose
                 f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
@@ -457,11 +459,19 @@ class Gemma3PreTrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
             ]
+            if config.attention_bias:
+                aoa_config["aoa_statements"] += [
+                    f"model.layers.$LAYER_ID.self_attn.{x}_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias"
+                    for x in ("q", "k", "v")
+                ]
         else:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
-                f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
             ]
+            if config.attention_bias:
+                aoa_config["aoa_statements"] += [
+                    f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                ]
 
         # FFN
         if not config.fuse_attention_ffn:
@@ -479,7 +489,7 @@ class Gemma3PreTrainedModel(PretrainedModel):
     # NOTE: These aoa_config items will be removed later. The subsequent AOA parsing module will automatically generate the reverse AOA based on the forward (from_pretrained) AOA.
     @classmethod
     def _gen_inv_aoa_config(cls, config: Gemma3TextConfig):
-        model_prefix = "" if cls == cls.base_model_prefix else "model."
+        model_prefix = "" if cls == cls.base_model_class else "model."
         aoa_statements = [
             # ignore tied weights
             "lm_head.weight -> _",
@@ -493,6 +503,8 @@ class Gemma3PreTrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.pre_feedforward_layernorm.weight -> model.layers.$LAYER_ID.pre_feedforward_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_feedforward_layernorm.weight -> model.layers.$LAYER_ID.post_feedforward_layernorm.weight",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.layers.$LAYER_ID.self_attn.q_norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.layers.$LAYER_ID.self_attn.k_norm.weight",
         ]
 
         if not config.fuse_attention_qkv:
@@ -500,16 +512,24 @@ class Gemma3PreTrainedModel(PretrainedModel):
                 f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
                 for x in ("q", "k", "v")
             ]
+            if config.attention_bias:
+                aoa_statements += [
+                    f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias -> model.layers.$LAYER_ID.self_attn.{x}_proj.bias"
+                    for x in ("q", "k", "v")
+                ]
         else:
             aoa_statements += [
-                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
-                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}"
             ]
             aoa_statements += [
                 f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight"
                 for layer_id in range(config.num_hidden_layers)
                 for x in ("q", "k", "v")
             ]
+            if config.attention_bias:
+                aoa_statements += [
+                    f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                ]
 
         if not config.fuse_attention_ffn:
             aoa_statements += [
@@ -527,6 +547,7 @@ class Gemma3PreTrainedModel(PretrainedModel):
         return aoa_config
 
 
+@register_base_model
 class Gemma3TextModel(Gemma3PreTrainedModel):
     config_class = Gemma3TextConfig
 

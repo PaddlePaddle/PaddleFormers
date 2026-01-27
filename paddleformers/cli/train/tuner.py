@@ -55,7 +55,7 @@ def _training_function(config: dict[str, Any]) -> None:
         with paddle.amp.auto_cast(enable=False):
             run_dpo(model_args, data_args, generating_args, finetuning_args)
     elif model_args.stage == "dsv3_pretrain":
-        from .pretrain import run_dsv3_pretrain
+        from .deepseek_v3_pretrain import run_dsv3_pretrain
 
         run_dsv3_pretrain(model_args, data_args, generating_args, finetuning_args)
     elif model_args.stage == "ernie_pretrain":

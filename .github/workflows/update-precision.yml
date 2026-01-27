@@ -22,7 +22,7 @@ jobs:
           -H "Authorization: Bearer ${{ github.token }}" \
           -H "X-GitHub-Api-Version: 2022-11-28" \
           https://api.github.com/repos/PaddlePaddle/PaddleFormers/commits/${{ github.sha }}/pulls)
-          pr_number=$(echo $response | jq -r '.[0].url' | awk -F'/' '{print $NF}')
+          pr_number=$(echo "$response" | jq -r '.[] | select(.url | contains("PaddlePaddle/PaddleFormers")) | .number')
           set +e
           wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/PaddleFormers/${pr_number}/precision_list.txt
           if [ $? -eq 0 ]; then
