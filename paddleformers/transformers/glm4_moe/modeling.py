@@ -981,10 +981,6 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 ]
             else:
                 if config.get("fd_fallback", False):
-                    if not config.fuse_attention_ffn:
-                        aoa_config["aoa_statements"] += [
-                            f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
-                        ]
                     ep_weight1 = []
                     ep_weight2 = []
                     for expert_id in range(num_experts):

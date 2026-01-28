@@ -478,7 +478,6 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
             download_hub="aistudio",
             load_checkpoint_format="flex_checkpoint",
             fd_fallback=True,
-            fuse_attention_ffn=True,
         )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
