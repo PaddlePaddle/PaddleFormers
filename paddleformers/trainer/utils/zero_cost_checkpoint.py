@@ -1066,6 +1066,11 @@ class ZeroCostCheckpointWorker:
 
         # Step3: dump save signals
         saved_signal_path = os.path.join(output_dir, f"{saved_signal_prefix}_{self.global_rank}")
+        potential_signal_path = os.path.join(output_dir, f"saved_signal_{self.global_rank}")
+        if os.path.exists(potential_signal_path):
+            logger.info("[ZCC worker] dump save signal done.")
+            return
+
         with open(saved_signal_path, mode="w+") as f:
             f.write("1")
         logger.info("[ZCC worker] dump save signal done.")

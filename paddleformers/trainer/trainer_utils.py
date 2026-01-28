@@ -1681,6 +1681,7 @@ class EMAStateAssembler:
         self.output_dir = Path(output_dir)
         self.save_checkpoint_format = save_checkpoint_format
         self.save_hf_steps = save_hf_steps
+        self.save_steps = save_steps
         if save_hf_steps > 0 and save_hf_steps % save_steps != 0:
             raise ValueError("[EMAStateAssembler] save_hf_steps must be a multiple of save_steps.")
 
@@ -1748,6 +1749,7 @@ class EMAStateAssembler:
                 if self._is_already_handled(next_ckpt_dir):
                     # Already processed, skip. It may enter here during the first warm start.
                     self.latest_processed_checkpoint_step = next_step
+                    self._update_expected_next_save_ckpt_step()
                     logger.info(
                         f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
                         "already been handled. Skipping."
@@ -1771,6 +1773,7 @@ class EMAStateAssembler:
             if not is_hf_save_step and next_ckpt_dir is not None:
                 if self._is_already_handled(next_ckpt_dir):
                     self.latest_processed_checkpoint_step = next_step
+                    self._update_expected_next_save_ckpt_step()
                     logger.info(
                         f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
                         "already been handled. Skipping."
@@ -1787,6 +1790,7 @@ class EMAStateAssembler:
         # If the checkpoint has already been processed, skip it.
         if self._is_already_handled(next_ckpt_dir):
             self.latest_processed_checkpoint_step = next_step
+            self._update_expected_next_save_ckpt_step()
             logger.info(
                 f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
                 "already been handled. Skipping."
@@ -1801,7 +1805,7 @@ class EMAStateAssembler:
             self._handle_naive_checkpoint(next_step, next_ckpt_dir)
 
     def _update_expected_next_save_ckpt_step(self):
-        self.expected_next_save_ckpt_step += self.save_steps
+        self.expected_next_save_ckpt_step = self.latest_processed_checkpoint_step + self.save_steps
         logger.info(
             f"[EMAStateAssembler] [Rank {self.rank}] Update the expected next save ckpt step to {self.expected_next_save_ckpt_step}!"
         )
@@ -1833,7 +1837,7 @@ class EMAStateAssembler:
                                 target_ckpt_path = item
                     else:
                         raise ValueError("mode must be 'max' or 'next'")
-        if target_step > self.expected_next_save_ckpt_step:
+        if (target_step is not None) and (target_step > self.expected_next_save_ckpt_step):
             return None, None
         return target_step, target_ckpt_path
 
