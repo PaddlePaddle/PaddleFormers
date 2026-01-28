@@ -137,7 +137,7 @@ def append_version_py(filename="paddleformers/__init__.py"):
 
 append_version_py(filename="paddleformers/__init__.py")
 
-extras = {}
+
 REQUIRED_PACKAGES = read_requirements_file("requirements.txt")
 
 
@@ -179,6 +179,12 @@ def get_console_scripts() -> list[str]:
     return console_scripts
 
 
+import sys
+
+major = sys.version_info.major
+minor = sys.version_info.minor
+ver_str = f"{major}{minor}"
+
 if commit != "unknown":
     write_version_py(filename="paddleformers/version/__init__.py")
 
@@ -203,7 +209,11 @@ try:
         setup_requires=["cython", "numpy"],
         install_requires=REQUIRED_PACKAGES,
         entry_points={"console_scripts": get_console_scripts()},
-        extras_require=extras,
+        extras_require={
+            "paddlefleet": [
+                f"paddlefleet @ https://paddle-github-action.bj.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp{ver_str}-cp{ver_str}-linux_x86_64.whl"
+            ],
+        },
         python_requires=">=3.8",
         classifiers=[
             "Programming Language :: Python :: 3",
