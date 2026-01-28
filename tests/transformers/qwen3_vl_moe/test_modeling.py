@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import copy
 import gc
-import os
 import shutil
 import tempfile
 import unittest
@@ -27,13 +26,12 @@ from parameterized import parameterized
 
 from paddleformers.transformers import AutoProcessor, Qwen3VLMoeConfig
 from paddleformers.transformers import (
-    Qwen3VLMoeForConditionalGenerationDecapitated as Qwen3VLMoeForConditionalGeneration,
+    Qwen3VLMoeForConditionalGenerationDeprecated as Qwen3VLMoeForConditionalGeneration,
 )
-from paddleformers.transformers import Qwen3VLMoeModelDecapitated as Qwen3VLMoeModel
+from paddleformers.transformers import Qwen3VLMoeModelDeprecated as Qwen3VLMoeModel
 from paddleformers.transformers import process_vision_info
 from paddleformers.transformers.video_utils import load_video
-from paddleformers.utils.log import logger
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -581,18 +579,9 @@ class Qwen3VLMoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
 
 
 class Qwen3VLMoeIntegrationTest(unittest.TestCase):
+    # Use GPU 0 to prevent CUDA illegal memory access during resize
+    @gpu_device_initializer(log_prefix="Qwen3VLMoeIntegrationTest", gpu_id=0)
     def setUp(self):
-        # Initialize device when GPU is needed by certain test case
-        gpu_count = paddle.device.cuda.device_count()
-        pid = os.getpid()
-
-        if gpu_count > 0:
-            paddle.set_device("gpu")
-        else:
-            paddle.set_device("cpu")
-            self.skipTest("No GPU currently available/allocated")
-        logger.info(f"Qwen3VLMoeIntegrationTest [PID:{pid}] Device initialized: {paddle.get_device()}")
-
         self.model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
             "PaddleFormers/tiny-random-qwen3vlmoev2",
             dtype="float32",
@@ -964,7 +953,7 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
 
         # 2. forward the paddle model
         from paddleformers.transformers import (
-            Qwen3VLMoeForConditionalGenerationDecapitated as Qwen3VLMoeForConditionalGeneration,
+            Qwen3VLMoeForConditionalGenerationDeprecated as Qwen3VLMoeForConditionalGeneration,
         )
 
         paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
@@ -1001,7 +990,7 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
 
             # 2. forward the paddle model
             from paddleformers.transformers import (
-                Qwen3VLMoeForConditionalGenerationDecapitated as Qwen3VLMoeForConditionalGeneration,
+                Qwen3VLMoeForConditionalGenerationDeprecated as Qwen3VLMoeForConditionalGeneration,
             )
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
@@ -1042,7 +1031,7 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-            paddle_model_class = getattr(transformers, class_name + "Decapitated")
+            paddle_model_class = getattr(transformers, class_name + "Deprecated")
             paddle_model = paddle_model_class.from_pretrained(
                 tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
             ).eval()

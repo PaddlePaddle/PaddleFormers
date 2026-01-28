@@ -22,7 +22,7 @@ import paddle
 
 from paddleformers.transformers import Glm4MoeConfig
 from paddleformers.transformers import (
-    Glm4MoeForCausalLMDecapitated as Glm4MoeForCausalLM,
+    Glm4MoeForCausalLMDeprecated as Glm4MoeForCausalLM,
 )
 from paddleformers.transformers import Glm4MoeModel
 from tests.testing_utils import require_package
@@ -493,7 +493,7 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
 
         # 3. forward the paddle model
         from paddleformers.transformers import (
-            Glm4MoeForCausalLMDecapitated as Glm4MoeForCausalLM,
+            Glm4MoeForCausalLMDeprecated as Glm4MoeForCausalLM,
         )
 
         paddle_model = Glm4MoeForCausalLM.from_pretrained(
@@ -528,7 +528,7 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
 
             # 3. forward the paddle model
             from paddleformers.transformers import (
-                Glm4MoeForCausalLMDecapitated as Glm4MoeForCausalLM,
+                Glm4MoeForCausalLMDeprecated as Glm4MoeForCausalLM,
             )
 
             paddle_model = Glm4MoeForCausalLM.from_pretrained(

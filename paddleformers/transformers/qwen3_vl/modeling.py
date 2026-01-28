@@ -1463,7 +1463,7 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
 
 
 @register_base_model
-class Qwen3VLModelDecapitated(Qwen3VLPretrainedModel):
+class Qwen3VLModelDeprecated(Qwen3VLPretrainedModel):
     base_model_prefix = "model"
     _checkpoint_conversion_mapping = {}
     config: Qwen3VLConfig
@@ -1827,7 +1827,7 @@ class Qwen3VLCausalLMOutputWithPast(ModelOutput):
     rope_deltas: Optional[paddle.Tensor] = None
 
 
-class Qwen3VLForConditionalGenerationDecapitated(Qwen3VLPretrainedModel):
+class Qwen3VLForConditionalGenerationDeprecated(Qwen3VLPretrainedModel):
     _checkpoint_conversion_mapping = {
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
@@ -1837,7 +1837,7 @@ class Qwen3VLForConditionalGenerationDecapitated(Qwen3VLPretrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        self.model = Qwen3VLModelDecapitated(config)
+        self.model = Qwen3VLModelDeprecated(config)
         self.lm_head = GeneralLMHead(config.text_config)
         self.criterion = CriterionLayer(config.text_config)
         self.tie_weights()
@@ -2181,8 +2181,8 @@ class Qwen3VLForConditionalGenerationDecapitated(Qwen3VLPretrainedModel):
 
 
 __all__ = [
-    "Qwen3VLForConditionalGenerationDecapitated",
-    "Qwen3VLModelDecapitated",
+    "Qwen3VLForConditionalGenerationDeprecated",
+    "Qwen3VLModelDeprecated",
     "Qwen3VLModelPipe",
     "Qwen3VLForCausalLMPipe",
     "Qwen3VLPretrainedModel",
