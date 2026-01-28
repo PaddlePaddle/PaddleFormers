@@ -42,7 +42,7 @@ warmup_steps: 20
 learning_rate: 1.0e-5
 
 # performance
-tensor_model_parallel_size: 1
+tensor_model_parallel_size: 8
 pipeline_model_parallel_size: 1
 sharding: stage3
 recompute_granularity: full

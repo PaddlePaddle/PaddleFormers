@@ -218,14 +218,6 @@ jobs:
           fi
           '
 
-      - name: Qwen3-vl-8k-single-card-fsdp
-        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft_single_card.sh fsdp
-          '
-
 
       - name: Terminate and delete the container
         if: ${{ always() }}
@@ -444,7 +436,13 @@ jobs:
           timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe h20
           '
       
-
+      - name: Qwen3-vl-8k-fsdp
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
+          '
 
       - name: Terminate and delete the container
         if: ${{ always() }}
@@ -563,6 +561,14 @@ jobs:
   #         source /root/proxy
   #         timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe a100
   #         '
+
+    # - name: Qwen3-vl-8k-fsdp
+    #       if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+    #       run: |
+    #         docker exec -t ${{ env.container_name }} /bin/bash -ce '
+    #         source /root/proxy
+    #         timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
+    #         '
 
   #     - name: Terminate and delete the container
   #       if: ${{ always() }}
