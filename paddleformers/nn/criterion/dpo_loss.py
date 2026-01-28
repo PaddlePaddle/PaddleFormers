@@ -240,7 +240,7 @@ def dpo_logps(
         rejected_response_length = response_indexs[:, 3] - response_indexs[:, 2]
         chosen_logps *= avg_response_length / chosen_response_length.astype("float32")
         rejected_logps *= avg_response_length / rejected_response_length.astype("float32")
-    
+
     return chosen_logps, rejected_logps, sft_loss * self.dpo_config.sft_loss_ratio
 
 
