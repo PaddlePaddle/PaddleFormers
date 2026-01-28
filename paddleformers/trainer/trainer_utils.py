@@ -1772,6 +1772,7 @@ class EMAStateAssembler:
         optimizer_name_suffix,
         model,
         optimizer,
+        start_step,
     ):
         self.output_dir = Path(output_dir)
         self.save_checkpoint_format = save_checkpoint_format
@@ -1823,7 +1824,8 @@ class EMAStateAssembler:
         self.num_splits = moe_sharding_group.nranks
         self.shard_idx = moe_sharding_rank
         self.expert_id_offset = (n_routed_experts // moe_group.nranks) * moe_group.rank
-        self._set_latest_processed_checkpoint_step()
+        self._set_latest_processed_checkpoint_step(start_step)
+        self.expected_next_save_ckpt_step = self.latest_processed_checkpoint_step + save_steps
 
     def run(self):
         if self.save_hf_steps < 0:
@@ -1894,22 +1896,15 @@ class EMAStateAssembler:
         else:
             self._handle_naive_checkpoint(next_step, next_ckpt_dir)
 
-    def _set_latest_processed_checkpoint_step(self):
-        max_step, ckpt_dir = self._find_checkpoint(mode="max")
-        if max_step is None:
-            max_step = -1
+    def _update_expected_next_save_ckpt_step(self):
+        self.expected_next_save_ckpt_step += self.save_steps
+        logger.info(
+            f"[EMAStateAssembler] [Rank {self.rank}] Update the expected next save ckpt step to {self.expected_next_save_ckpt_step}!"
+        )
 
-        steps = []
-        dist.all_gather_object(steps, max_step)
+    def _set_latest_processed_checkpoint_step(self, start_step):
 
-        if len(set(steps)) != 1:
-            latest_step = max(steps)
-        else:
-            if (ckpt_dir is not None) and (not self._is_already_handled(ckpt_dir)):
-                self._handle_naive_checkpoint(ckpt_dir, max_step)
-            latest_step = max_step
-
-        self.latest_processed_checkpoint_step = latest_step
+        self.latest_processed_checkpoint_step = start_step
         logger.info(f"[EMAStateAssembler] Start working from checkpoint step {self.latest_processed_checkpoint_step}!")
 
     def _find_checkpoint(self, mode: str = "next") -> Tuple[Optional[int], Optional[Path]]:
@@ -1934,6 +1929,8 @@ class EMAStateAssembler:
                                 target_ckpt_path = item
                     else:
                         raise ValueError("mode must be 'max' or 'next'")
+        if target_step > self.expected_next_save_ckpt_step:
+            return None, None
         return target_step, target_ckpt_path
 
     def _is_already_handled(self, checkpoint_dir: Path) -> bool:
@@ -1963,6 +1960,7 @@ class EMAStateAssembler:
             except OSError as e:
                 logger.warning(f"[EMAStateAssembler] Failed to remove temp signal file {temp_signal_file}: {e}")
         self.latest_processed_checkpoint_step = step
+        self._update_expected_next_save_ckpt_step()
 
     def _handle_checkpoint_with_ema(self, step: int, checkpoint_dir: Path):
         if self._check_all_ranks_saved(checkpoint_dir):
