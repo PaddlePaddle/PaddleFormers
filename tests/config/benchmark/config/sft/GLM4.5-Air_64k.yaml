@@ -16,7 +16,7 @@ padding_free: true
 
 ### model
 model_name_or_path: /root/paddlejob/gpfs/efficient_benchmark/huggingface/GLM-4.5-Air
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base

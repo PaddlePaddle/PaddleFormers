@@ -252,20 +252,22 @@ def run_sft(
         model_config.ignore_index = -100
 
     avaible_attn_impl = AttentionInterface._global_mapping.keys()
-    if model_args.attn_impl not in avaible_attn_impl:
-        raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
+    if model_args._attn_implementation not in avaible_attn_impl:
+        raise ValueError(
+            f"Invalid _attn_implementation: {model_args._attn_implementation}, available _attn_implementation: {avaible_attn_impl}"
+        )
 
     model_config.pp_seg_method = model_args.pp_seg_method
     model_config.seq_length = data_args.max_seq_len
     model_config.max_sequence_length = data_args.max_seq_len
-    model_config._attn_implementation = model_args.attn_impl
+    model_config._attn_implementation = model_args._attn_implementation
     model_config.is_lora = model_args.lora
 
     # Sync arguments to MLLM sub_config
     if getattr(model_config, "text_config", None) is not None:
         model_config.text_config.max_sequence_length = data_args.max_seq_len
     if getattr(model_config, "vision_config", None) is not None:
-        model_config.vision_config._attn_implementation = model_args.attn_impl
+        model_config.vision_config._attn_implementation = model_args._attn_implementation
         model_config.vision_config.recompute_granularity = model_config.recompute_granularity
         model_config.vision_config.recompute_method = model_config.recompute_method
         model_config.vision_config.recompute_num_layers = model_config.recompute_num_layers

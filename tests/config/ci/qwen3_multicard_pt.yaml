@@ -23,7 +23,7 @@ prefetch_factor: 24
 ### model
 model_name_or_path: ./Qwen3-30B-A3B
 gated_linear_unit: true
-attn_impl: flashmask
+_attn_implementation: flashmask
 num_hidden_layers: 4
 use_qk_norm: true
 

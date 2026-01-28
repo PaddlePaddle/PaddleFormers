@@ -155,4 +155,4 @@ class DPOModelArgument:
     use_quick_lora: bool = field(default=True, metadata={"help": "quick lora"})
 
     # Attention
-    attn_impl: str = field(default="flashmask", metadata={"help": "Attention implementation"})
+    _attn_implementation: str = field(default="flashmask", metadata={"help": "Attention implementation"})

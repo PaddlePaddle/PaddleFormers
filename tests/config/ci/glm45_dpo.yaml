@@ -11,8 +11,8 @@ mix_strategy: concat
 
 ### model
 model_name_or_path: zai-org/GLM-4.5-Air-Base/
-#attn_impl: sdpa
-attn_impl: flashmask
+#_attn_implementation: sdpa
+_attn_implementation: flashmask
 
 ### finetuning
 # base

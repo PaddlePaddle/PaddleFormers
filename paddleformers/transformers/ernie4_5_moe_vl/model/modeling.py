@@ -748,10 +748,7 @@ class Ernie4_5_Attention(nn.Layer):
         Selects between flash/core attention.
         """
         config = self.config
-        if config.use_flash_attention:
-            self.attn_func = self._flash_attention_wrapper
-        else:
-            self.attn_func = self.core_attn
+        self.attn_func = self._flash_attention_wrapper
 
         if config.cachekv_quant:
             from paddleslim.common.wrapper_function import FuncWrapper

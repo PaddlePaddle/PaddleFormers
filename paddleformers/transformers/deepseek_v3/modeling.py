@@ -300,7 +300,7 @@ class MoEGate(PretrainedMoEGate):
         with paddle.amp.auto_cast(False):
             hidden_states = hidden_states.cast(self.weight.dtype)
 
-            if hasattr(self.config, "using_fake_gate") and self.config.using_fake_gate:
+            if hasattr(self.config, "moe_router_force_load_balancing") and self.config.moe_router_force_load_balancing:
                 logits = FakeGate.apply(hidden_states, self.weight)
             else:
                 logits = F.linear(hidden_states, self.weight, None)
@@ -488,7 +488,7 @@ class DeepseekV3MoEFlexToken(MoEFlexTokenLayer):
             if self.is_mp_moe or self.is_ep_moe:
                 p.is_distributed = True
 
-        self.alpha = config.aux_loss_alpha
+        self.alpha = config.router_aux_loss_coef
         if config.n_shared_experts is not None:
             intermediate_size = config.moe_intermediate_size * config.n_shared_experts
             self.shared_experts = DeepseekV3MLP(config=config, intermediate_size=intermediate_size)

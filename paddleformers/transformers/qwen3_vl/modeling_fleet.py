@@ -336,7 +336,6 @@ class Qwen3VLTextProvider(GPTModelProvider):
     max_sequence_length: int = 262144
     multimodal_embedding: bool = False
     _save_to_hf: bool = False
-    use_flash_attention: bool = True
     use_fused_linear_cross_entropy: bool = True
     high_precision_rope: bool = True
     moe_grouped_gemm: bool = True
@@ -393,7 +392,6 @@ class Qwen3VLVisionProvider(TransformerConfig):
     class_token_len: int = 1
     high_precision_rope: bool = True
     # _save_to_hf: bool = False
-    # use_flash_attention: bool = True
     # use_fused_linear_cross_entropy: bool = True
     # fuse_linear: bool = True
     # transform_rules: dict = field(default_factory=lambda: {

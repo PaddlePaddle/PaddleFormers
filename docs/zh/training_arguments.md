@@ -283,7 +283,7 @@
   --expert_model_parallel_size
                         专家并行的并行度。(`int`, 可选)
 
-  --aux_loss_alpha
+  --router_aux_loss_coef
                         MoE 模型的辅助损失（Auxiliary loss）权重系数。(`float`, 可选, 默认为 0.0001)
 
   --expert_max_capacity
