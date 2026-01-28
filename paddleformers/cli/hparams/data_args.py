@@ -152,3 +152,7 @@ class DataArguments:
         default_factory=list,
         metadata={"help": "Additional special tokens."},
     )
+    custom_register_path: str = field(
+        default=None,
+        metadata={"help": "Register python file path for custom templates and mm_plugin."},
+    )
