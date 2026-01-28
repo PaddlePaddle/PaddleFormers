@@ -17,6 +17,7 @@ import unittest
 import paddle
 
 from paddleformers.transformers import AutoTokenizer, Qwen2Tokenizer
+from tests.testing_utils import slow
 
 
 class TestHFMultiSourceTokenizer(unittest.TestCase):
@@ -32,12 +33,14 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
         tokenizer = Qwen2Tokenizer.from_pretrained("ModelHub/Qwen2.5-7B-Instruct", download_hub="aistudio")
         self.encode(tokenizer)
 
+    @slow
     def test_model_scope(self):
         tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="modelscope")
         self.encode(tokenizer)
         tokenizer = Qwen2Tokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="modelscope")
         self.encode(tokenizer)
 
+    @slow
     def test_hf_hub(self):
         tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="huggingface")
         self.encode(tokenizer)
@@ -45,11 +48,12 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
         self.encode(tokenizer)
 
     def test_default(self):
-        tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct")
+        tokenizer = AutoTokenizer.from_pretrained("PaddleFormers/tiny-random-qwen3")
         self.encode(tokenizer)
-        tokenizer = Qwen2Tokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct")
+        tokenizer = Qwen2Tokenizer.from_pretrained("PaddleFormers/tiny-random-qwen3")
         self.encode(tokenizer)
 
+    @slow
     def test_ernie_4_5_tokenizer(self):
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT", download_hub="huggingface")
         input_text = "hello world, 你好"

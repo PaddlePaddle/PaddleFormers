@@ -59,6 +59,7 @@ class AutoConfigTest(unittest.TestCase):
             auto_config = AutoConfig.from_pretrained(tempdir)
             self.assertEqual(auto_config.hidden_size, number)
 
+    @slow
     def test_from_hf_hub(self):
         config = AutoConfig.from_pretrained("dfargveazd/tiny-random-llama-paddle-safe", download_hub="huggingface")
         self.assertEqual(config.hidden_size, 16)
