@@ -147,3 +147,7 @@ class DataArguments:
         default=True,
         metadata={"help": "Whether to truncate data in packing (only valid in pretrain online dataflow)."},
     )
+    dataset_output_dir: str = field(
+        default="./dataset_output",
+        metadata={"help": "output path of offline sft datasets"},
+    )

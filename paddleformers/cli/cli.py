@@ -58,11 +58,13 @@ def main():
     """cli main process"""
     from . import launcher
     from .export.export import run_export
+    from .make_data.create_sft_data import run_make_sftdata
     from .train.tuner import run_tuner
 
     COMMAND_MAP = {
         "train": run_tuner,
         "export": run_export,
+        "build": run_make_sftdata,
         "version": partial(print, WELCOME),
         "help": partial(print, USAGE),
     }

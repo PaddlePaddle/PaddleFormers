@@ -29,6 +29,7 @@ from paddleformers.data.causal_dataset import (
 from paddleformers.datasets.collate import collate_fn, mm_collate_fn
 from paddleformers.datasets.data_utils import estimate_training
 from paddleformers.datasets.loader import create_dataset as create_dataset_sft
+from paddleformers.datasets.loader import create_indexed_dataset
 from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
@@ -386,6 +387,12 @@ def run_sft(
         train_dataset, eval_dataset, test_dataset, data_collator = create_pretrained_dataset(
             training_args, data_args, model_args
         )
+    elif data_args.dataset_type == "offline":
+        train_file_path = os.path.join(data_args.input_dir, "train")
+        train_dataset = create_indexed_dataset(data_file_prefix=train_file_path)
+        if training_args.do_eval:
+            eval_file_path = os.path.join(data_args.input_dir, "eval")
+            eval_dataset = create_indexed_dataset(data_file_prefix=eval_file_path)
     else:
         if training_args.should_load_dataset:
             train_dataset = create_dataset_sft(
