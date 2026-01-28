@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass, field
+from typing import List
 
 
 @dataclass
@@ -146,6 +147,10 @@ class DataArguments:
     truncate_packing: bool = field(
         default=True,
         metadata={"help": "Whether to truncate data in packing (only valid in pretrain online dataflow)."},
+    )
+    additional_special_tokens: List[str] = field(
+        default_factory=list,
+        metadata={"help": "Additional special tokens."},
     )
     custom_register_path: str = field(
         default=None,
