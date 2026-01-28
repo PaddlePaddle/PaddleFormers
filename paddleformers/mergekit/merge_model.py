@@ -27,8 +27,10 @@ from safetensors.numpy import save_file
 from tqdm.auto import tqdm
 
 from ..peft import LoRAConfig
+from ..quantization.quantization_utils import convert_to_quantize_dequantize_state_dict
 from ..transformers import PretrainedConfig
 from ..transformers.auto.modeling import get_name_mapping
+from ..transformers.configuration_utils import QuantizationConfig
 from ..transformers.conversion_utils import ConversionMixin
 from ..utils import device_guard
 from ..utils.env import (
@@ -621,6 +623,18 @@ class MergeModel:
             self.merge_config.base_model_path, file_type_list[1], key_list=key_list, file=file
         )
         logger.info("Load model weight successfully.")
+        if self.merge_config.merge_with_qdq_base_model:
+            lora_base_config = PretrainedConfig.get_config_dict(self.merge_config.lora_model_path)[0]
+            quantization_config = lora_base_config.get("quantization_config", None)
+            if quantization_config:
+                quantization_config = QuantizationConfig.from_dict(quantization_config)
+                quantization_linear_list = quantization_config.quantization_linear_list
+                base_state_dict = convert_to_quantize_dequantize_state_dict(
+                    base_state_dict, quantization_linear_list, quantization_config
+                )
+                logger.info("Quantize_dequantize base-model weight successfully.")
+            else:
+                logger.info("Don't find quantization_config in config.json, skip quantize-dequantize base model.")
         lora_state_dict = self.split_fuse_lora_state_dict(base_state_dict, lora_state_dict)
         if not lora_config.rslora:
             scaling = lora_config.lora_alpha / lora_config.r
@@ -638,7 +652,7 @@ class MergeModel:
                 lora_A_tensor = None
                 if lora_state_dict is not None and lora_A_key in lora_state_dict.keys():
                     lora_A_tensor, lora_B_tensor = lora_state_dict.pop(lora_A_key), lora_state_dict.pop(lora_B_key)
-                    is_bf16 = str(tensor.dtype) in ["uint16", "bfloat16"]
+                    is_bf16 = str(tensor.dtype) in ["uint16", "bfloat16", "paddle.uint16", "paddle.bfloat16"]
                     if self.is_xpu:
                         if str(tensor.dtype) == "bfloat16":
                             tensor = tensor.view("uint16")

@@ -33,6 +33,7 @@ from paddleformers.datasets.template.template import get_template_and_fix_tokeni
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
+    FP8QuantWeightCallback,
     IntervalStrategy,
     MoECorrectionBiasAdjustCallback,
     MoeExpertsGradScaleCallback,
@@ -52,7 +53,10 @@ from paddleformers.transformers import (
     Llama3Tokenizer,
     LlamaTokenizer,
 )
-from paddleformers.transformers.configuration_utils import LlmMetaConfig
+from paddleformers.transformers.configuration_utils import (
+    LlmMetaConfig,
+    QuantizationConfig,
+)
 from paddleformers.utils.import_utils import is_paddlefleet_available
 from paddleformers.utils.log import logger
 
@@ -218,9 +222,19 @@ def run_sft(
     else:
         dtype = "float32"
 
+    if finetuning_args.weight_quantize_algo is not None:
+        quantization_config = dict(
+            weight_quantize_algo=finetuning_args.weight_quantize_algo,
+            ignore_modules=[".*out_linear.*"],
+        )
+    else:
+        quantization_config = dict(weight_quantize_algo=finetuning_args.weight_quantize_algo)
+    quantization_config = QuantizationConfig.from_dict(quantization_config)
+
     model_config = AutoConfig.from_pretrained(
         model_args.model_name_or_path,
         dtype=dtype,
+        quantization_config=quantization_config,
     )
 
     architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
@@ -492,6 +506,9 @@ def run_sft(
 
     if training_args.sequence_parallel and not model_args.lora:
         callbacks += [MoEGateSpGradSyncCallBack()]
+
+    if not model_args.lora:
+        callbacks += [FP8QuantWeightCallback()]
 
     print("callbacks:", callbacks, flush=True)
     trainer = SFTTrainer(

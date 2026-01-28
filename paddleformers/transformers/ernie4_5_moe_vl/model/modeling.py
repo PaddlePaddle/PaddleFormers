@@ -1690,6 +1690,7 @@ class Ernie4_5_LMHead(nn.Layer):
             )
 
         if self.config.tensor_model_parallel_size > 1:
+            axis = 0 if self.config.tie_word_embeddings else 1
             state_dict = self.state_dict(structured_name_prefix="")
-            return build_sharded_state_dict(state_dict, {"weight": 0, "bias": 0}, structured_name_prefix)
+            return build_sharded_state_dict(state_dict, {"weight": axis, "bias": 0}, structured_name_prefix)
         return super().sharded_state_dict(structured_name_prefix)

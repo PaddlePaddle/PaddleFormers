@@ -452,6 +452,7 @@ class Qwen3RotaryEmbedding(nn.Layer):
     @staticmethod
     def compute_default_rope_parameters(
         config: Optional[Qwen3Config] = None,
+        device: str = "cpu",
         seq_len: Optional[int] = None,
     ) -> tuple["paddle.Tensor", float]:
         """
@@ -471,7 +472,9 @@ class Qwen3RotaryEmbedding(nn.Layer):
         attention_factor = 1.0  # Unused in this type of RoPE
 
         # Compute the inverse frequencies
-        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        inv_freq = 1.0 / (
+            base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32).to(device) / dim)
+        )
         return inv_freq, attention_factor
 
     @dynamic_rope_update
