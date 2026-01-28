@@ -135,8 +135,8 @@ class QuantizationLoRALinear(QuantizationLoRABaseLinear):
 
 
 class FleetQuantizationLoRALinear(QuantizationLoRALinear):
-    def __init__(self, in_features, out_features, skip_bias_add, **kwargs):
-        super().__init__(in_features, out_features, **kwargs)
+    def __init__(self, layer, skip_bias_add, lora_config):
+        super().__init__(layer, lora_config)
         self.skip_bias_add = skip_bias_add
 
     def forward(self, input: paddle.Tensor):
@@ -232,8 +232,8 @@ class ColumnParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
 
 
 class FleetColumnParallelQuantizationLoRALinear(ColumnParallelQuantizationLoRALinear):
-    def __init__(self, in_features, out_features, skip_bias_add, **kwargs):
-        super().__init__(in_features, out_features, **kwargs)
+    def __init__(self, layer, skip_bias_add, lora_config):
+        super().__init__(layer, lora_config)
         self.skip_bias_add = skip_bias_add
 
     def forward(self, input: paddle.Tensor):
@@ -334,8 +334,8 @@ class RowParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
 
 
 class FleetRowParallelQuantizationLoRALinear(RowParallelQuantizationLoRALinear):
-    def __init__(self, in_features, out_features, skip_bias_add, **kwargs):
-        super().__init__(in_features, out_features, **kwargs)
+    def __init__(self, layer, skip_bias_add, lora_config):
+        super().__init__(layer, lora_config)
         self.skip_bias_add = skip_bias_add
 
     def forward(self, input: paddle.Tensor):
