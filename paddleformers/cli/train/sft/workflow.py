@@ -33,6 +33,7 @@ from paddleformers.datasets.template.template import get_template_and_fix_tokeni
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
+    FP8QuantWeightCallback,
     IntervalStrategy,
     MoECorrectionBiasAdjustCallback,
     MoeExpertsGradScaleCallback,
@@ -505,6 +506,9 @@ def run_sft(
 
     if training_args.sequence_parallel and not model_args.lora:
         callbacks += [MoEGateSpGradSyncCallBack()]
+
+    if not model_args.lora:
+        callbacks += [FP8QuantWeightCallback()]
 
     print("callbacks:", callbacks, flush=True)
     trainer = SFTTrainer(
