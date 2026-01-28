@@ -230,7 +230,7 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
             grid_h, grid_w = resized_height // patch_size, resized_width // patch_size
 
             patches = patches.view(
-                grid_t,
+                batch_size * grid_t,
                 temporal_patch_size,
                 channel,
                 grid_h // merge_size,

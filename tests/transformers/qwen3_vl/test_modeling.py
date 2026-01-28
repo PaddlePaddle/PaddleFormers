@@ -648,49 +648,48 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
         )
         self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=5e-4, rtol=1e-5))
 
-    # TODO: Re-enable this test case once paddle.Tensor support the more tensor dimensions.
-    # def test_model_tiny_logits_batch(self):
-    #     text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
+    def test_model_tiny_logits_batch(self):
+        text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
 
-    #     inputs = self.processor(text=[text, text], images=[self.image, self.image], return_tensors="pd")
+        inputs = self.processor(text=[text, text], images=[self.image, self.image], return_tensors="pd")
 
-    #     output = self.model(**inputs)["logits"].astype(paddle.float32)
-    #     EXPECTED_SLICE = paddle.to_tensor(
-    #         [
-    #             0.06287927,
-    #             -0.07886235,
-    #             0.04489284,
-    #             0.05893321,
-    #             0.01931595,
-    #             -0.01385389,
-    #             0.08200871,
-    #             -0.03711491,
-    #             -0.01657202,
-    #             -0.02351523,
-    #             0.07860593,
-    #             0.04915767,
-    #             0.01571729,
-    #             -0.03793694,
-    #             -0.01400308,
-    #             0.01007790,
-    #             -0.00566702,
-    #             0.00890818,
-    #             0.07228709,
-    #             -0.00890865,
-    #             0.00333118,
-    #             -0.01285518,
-    #             -0.05833241,
-    #             0.03265308,
-    #             -0.03928559,
-    #             -0.02193597,
-    #             -0.00813984,
-    #             0.00105143,
-    #             0.04259191,
-    #             -0.02120323,
-    #         ]
-    #     )
-    #     self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
-    #     self.assertTrue(paddle.allclose(output[1, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+        output = self.model(**inputs)["logits"].astype(paddle.float32)
+        EXPECTED_SLICE = paddle.to_tensor(
+            [
+                0.06287927,
+                -0.07886235,
+                0.04489284,
+                0.05893321,
+                0.01931595,
+                -0.01385389,
+                0.08200871,
+                -0.03711491,
+                -0.01657202,
+                -0.02351523,
+                0.07860593,
+                0.04915767,
+                0.01571729,
+                -0.03793694,
+                -0.01400308,
+                0.01007790,
+                -0.00566702,
+                0.00890818,
+                0.07228709,
+                -0.00890865,
+                0.00333118,
+                -0.01285518,
+                -0.05833241,
+                0.03265308,
+                -0.03928559,
+                -0.02193597,
+                -0.00813984,
+                0.00105143,
+                0.04259191,
+                -0.02120323,
+            ]
+        )
+        self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+        self.assertTrue(paddle.allclose(output[1, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
     def test_model_tiny_logits_batch_wo_image(self):
         text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
