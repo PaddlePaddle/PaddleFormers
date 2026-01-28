@@ -35,14 +35,14 @@ defaults:
 
 jobs:
   check_skip:
-    name: Check skip-fleet-models-ci label
+    name: Check skip-unittest-ci label
     runs-on: ubuntu-latest
 
     outputs:
       skip: ${{ steps.check_skip.outputs.skip }}
 
     steps:
-      - name: Check skip-fleet-models-ci label
+      - name: Check skip-unittest-ci label
         id: check_skip
         shell: bash
         run: |
@@ -50,7 +50,7 @@ jobs:
             labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
             echo "PR labels: $labels"
 
-            if echo "$labels" | grep -q "skip-fleet-models-ci"; then
+            if echo "$labels" | grep -q "skip-unittest-ci"; then
               echo "skip=true" >> "$GITHUB_OUTPUT"
             else
               echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -62,7 +62,7 @@ jobs:
       - name: Skip CI but mark success
         if: steps.check_skip.outputs.skip == 'true'
         run: |
-          echo "skip-fleet-models-ci label found"
+          echo "skip-unittest-ci label found"
           echo "Downstream GPU jobs will be skipped"
 
   unittest-gpu-ci:

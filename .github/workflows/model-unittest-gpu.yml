@@ -32,34 +32,44 @@ defaults:
     shell: bash
 
 jobs:
-  model-unittest-gpu-ci:
-    name: model-unittest-gpu-ci
-    runs-on: ${{ inputs.runner || 'ernie-8gpu' || 'distrbute' }}
+  check_skip:
+    name: Check skip-models-ci label
+    runs-on: ubuntu-latest
+
+    outputs:
+      skip: ${{ steps.check_skip.outputs.skip }}
+
     steps:
       - name: Check skip-models-ci label
         id: check_skip
+        shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
             echo "PR labels: $labels"
+
             if echo "$labels" | grep -q "skip-models-ci"; then
-              echo "skip=true" >> $GITHUB_OUTPUT
+              echo "skip=true" >> "$GITHUB_OUTPUT"
             else
-              echo "skip=false" >> $GITHUB_OUTPUT
+              echo "skip=false" >> "$GITHUB_OUTPUT"
             fi
           else
-            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Skip CI but mark success
         if: steps.check_skip.outputs.skip == 'true'
         run: |
-          echo "skip-models-ci label found, skip GPU unittest"
-          echo "CI exits successfully"
-          exit 0
+          echo "skip-models-ci label found"
+          echo "Downstream GPU jobs will be skipped"
 
+  model-unittest-gpu-ci:
+    needs: check_skip
+    if: needs.check_skip.outputs.skip == 'false'
+    name: model-unittest-gpu-ci
+    runs-on: ${{ inputs.runner || 'ernie-8gpu' || 'distrbute' }}
+    steps:
       - name: Determine Image Name
-        if: steps.check_skip.outputs.skip == 'false'
         env:
           IMAGE_NAME: ${{ inputs.image_name }}
         run: |
@@ -69,7 +79,6 @@ jobs:
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
           fi
       - name: Run Container
-        if: steps.check_skip.outputs.skip == 'false'
         env:
           work_dir: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
@@ -111,7 +120,6 @@ jobs:
             -w /workspace --privileged ${IMAGE_NAME}
             
       - name: Download Code
-        if: steps.check_skip.outputs.skip == 'false'
         run: |
           docker exec -t $container_name /bin/bash -c '
             rm -rf * .[^.]*
@@ -143,7 +151,6 @@ jobs:
             '
 
       - name: Test
-        if: steps.check_skip.outputs.skip == 'false'
         run: |
           docker exec -t $container_name /bin/bash -c '
           ldconfig
@@ -161,7 +168,7 @@ jobs:
           '
           
       - name: Upload Products
-        if: steps.check_skip.outputs.skip == 'false'
+        if: always()
         env:
           home_path: ${{ github.workspace }}/../../..
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
