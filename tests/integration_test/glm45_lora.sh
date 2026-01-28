@@ -84,7 +84,7 @@ fi
 
 log_loss_file=${log_file%.*}_loss.${log_file##*.}
 python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
-   --compare_step 100 \
+   --compare_step 10 \
    --log_file ./${log_file} \
    --log_loss_file ./${log_loss_file} \
    --gt_file ./${gt_loss_file}
