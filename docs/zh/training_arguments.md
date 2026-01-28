@@ -89,6 +89,8 @@
   --remove_unused_columns
                         是否在使用 `datasets.Dataset` 时自动移除模型 `forward` 方法未使用的列。
                         默认为 `True`。(`bool`, 可选)
+  --custom_register_path
+                        自定义注册路径，用于加载自定义 template 和 mm_plugin。若不指定，则只注册默认部分。 (`str`, 可选)
 ```
 
 # 2. 优化器与学习率调度

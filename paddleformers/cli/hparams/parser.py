@@ -16,6 +16,7 @@
 # Copyright (c) 2025 LLaMA-Factory
 # Licensed under the Apache License - https://github.com/hiyouga/LLaMA-Factory/blob/main/LICENSE
 
+import importlib.util
 import json
 import os
 import sys
@@ -81,14 +82,12 @@ _SERVER_CLS = tuple[ModelArguments, GeneratingArguments, FinetuningArguments, Se
 
 def _load_custom_template(custom_path):
     try:
-        import importlib.util
-
         spec = importlib.util.spec_from_file_location("custom_template", custom_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         print(f"Successfully loaded custom templates from {custom_path}")
     except Exception as e:
-        print(f"Failed to load custom templates from {custom_path}: {e}")
+        raise RuntimeError(f"Failed to load custom templates from {custom_path}: {e}")
 
 
 def read_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> Union[dict[str, Any], list[str]]:
