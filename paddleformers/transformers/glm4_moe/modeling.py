@@ -294,7 +294,7 @@ class Glm4MoeAttention(nn.Layer):
 
 
 class Glm4MoeTopkFlexRouter(PretrainedMoEGate):
-    def __init__(self, config, num_experts, expert_hidden_size, **kwargs):
+    def __init__(self, config, num_experts, expert_hidden_size, layer_idx, **kwargs):
         super().__init__(config, num_experts, expert_hidden_size, **kwargs)
         self.config = config
 
@@ -313,6 +313,7 @@ class Glm4MoeTopkFlexRouter(PretrainedMoEGate):
 
         # weight and e_score_correction_bias do not need to be cast to low precision
         self._cast_to_low_precision = False
+        self.layer_idx = layer_idx
 
     def forward(self, hidden_states):
         """
@@ -485,8 +486,9 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
     A mixed expert module containing shared experts for expert_model_parallel_size > 1 with deepep mode
     """
 
-    def __init__(self, config):
+    def __init__(self, config, layer_idx):
         self.config = config
+        self.layer_idx = layer_idx
         gate = Glm4MoeTopkFlexRouter(
             config=config,
             num_experts=config.n_routed_experts,
@@ -497,6 +499,7 @@ class Glm4MoeFlexMoE(MoEFlexTokenLayer):
             topk_group=config.topk_group,
             norm_topk_prob=config.norm_topk_prob,
             routed_scaling_factor=config.routed_scaling_factor,
+            layer_idx=layer_idx,
         )
 
         hcg = fleet.get_hybrid_communicate_group()
@@ -582,7 +585,7 @@ class Glm4MoeDecoderLayer(nn.Layer):
                         transpose_gate_weight=True,
                     )
                     if config.use_unified_moe
-                    else Glm4MoeFlexMoE(config)
+                    else Glm4MoeFlexMoE(config, layer_idx=layer_idx)
                 )
             )
         else:
