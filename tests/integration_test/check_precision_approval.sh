@@ -18,7 +18,7 @@ fi
 set -x
 PADDLE_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}")/../../" && pwd )"
 
-approval_line=`curl -H "Authorization: token ${GITHUB_TOKEN}" https://api.github.com/repos/PaddlePaddle/${repo_name}/pulls/${PR_ID}/reviews?per_page=10000`
+approval_line=`curl -H "Authorization: token ${GITHUB_TOKEN}" https://api.github.com/repos/PaddlePaddle/${REPO_NAME}/pulls/${PR_ID}/reviews?per_page=10000`
 # git_files=`git diff --numstat upstream/$BRANCH| wc -l`
 # git_count=`git diff --numstat upstream/$BRANCH| awk '{sum+=$1}END{print sum}'`
 failed_num=1
