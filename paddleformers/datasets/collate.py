@@ -80,7 +80,7 @@ def dpo_collate_fn(
     #     [Sequence2, Sequence3]   # sequences2, when packing = True, the sequences contains >= 1 samples
     # ]
 
-   # 1.max_seq_len
+    # 1.max_seq_len
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(sequence.token_ids) for sequences in batch for sequence in sequences)
@@ -147,7 +147,7 @@ def dpo_collate_fn(
                     axis=0,
                 )
             )
-            
+
         # 3.3 response_index & score_delta
         sequence_sum = 0
         for sequence in sequences:
@@ -182,7 +182,7 @@ def dpo_collate_fn(
             input_dict[key] = np.array(input_dict[key], dtype=np.int32)[..., None]
         else:
             input_dict[key] = np.array(input_dict[key])
-    
+
     return input_dict
 
 

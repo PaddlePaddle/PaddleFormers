@@ -251,7 +251,6 @@ class DPOTrainer(Trainer):
         return super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
 
     def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None):
-
         """prediction_step"""
         if is_paddlefleet_available() and isinstance(model, PaddleFleetParallelBase):
             inputs = self._prepare_inputs(inputs)

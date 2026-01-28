@@ -195,10 +195,10 @@ class DPODataSet(IterableDataset):
         Args:
             example: Raw training example containing:
                 - messages: Original conversation messages
-                - chosen_response: Preferred response continuation  
+                - chosen_response: Preferred response continuation
                 - rejected_response: Dispreferred response continuation
                 - other parameters
-                
+
         Returns:
             example: Processed DPO training example with newly added parameters:
                 - chosen: Complete conversation sequence with chosen response
@@ -330,7 +330,7 @@ class DPODataSet(IterableDataset):
         if cur_len > self.max_seq_len:
             logger.warning(f"[SKIP] Example is too long: {example}")
             return (None,) * 5
-        
+
         # chosen_encoded_messages = [
         #     ([s1, q1, q2, q3], [a1, a2]),  # system and knowledge QA pairs
         #     ...
@@ -341,11 +341,11 @@ class DPODataSet(IterableDataset):
         #     ([s1, q1, q2, q3], [a1, a2]),  # system and knowledge QA pairs
         #     ...
         #     ([p1, p2, p3], [r1, r2, r3, EOS])   # rejected response section + EOS
-        # ]        
+        # ]
         # prompt_token_ids = [s1, q1, q2, q3, a1, a2,..., p1, p2, p3]
         # response_token_ids_list = [
         #     [c1, c2, c3, p4, p5, c4, c5, EOS],   # chosen response
-        #     [r1, r2, r3, EOS]                    # rejected response  
+        #     [r1, r2, r3, EOS]                    # rejected response
         # ]
         # response_len_list = [8, 4]
         # cur_len = len(prompt_token_ids) + len(response_token_ids_list[0]) + len(response_token_ids_list[1])
@@ -369,11 +369,16 @@ class DPODataSet(IterableDataset):
         # The sequnece is too long, just return None
         if prompt_token_ids is None:
             return None
-        
+
         # 1.concat all tokens
         # 1.1 input_ids
         # [p1, p2, p3, p4], [c1, c2, c3, EOS], [r1, r2, r3, EOS]  ->  [p1, p2, p3, p4, c1, c2, c3, p4, r1, r2, r3]
-        input_ids = prompt_token_ids + response_token_ids_list[0][:-1] + [prompt_token_ids[-1]] + response_token_ids_list[1][:-1]
+        input_ids = (
+            prompt_token_ids
+            + response_token_ids_list[0][:-1]
+            + [prompt_token_ids[-1]]
+            + response_token_ids_list[1][:-1]
+        )
         cur_len -= 1
         if cur_len != len(input_ids):
             logger.warning(f"[SKIP] code bug: {example}")
@@ -421,14 +426,17 @@ class DPODataSet(IterableDataset):
         #  [ True  True  True False False False False  True  True  True  True]]
         if self.use_attn_mask_startend_row_indices:
             attn_mask_startend_row_indices = (
-                [cur_len] * prompt_len + [prompt_len + chosen_len - 1] * (chosen_len - 1) + [cur_len] + [cur_len] * (rejected_len - 1)
+                [cur_len] * prompt_len
+                + [prompt_len + chosen_len - 1] * (chosen_len - 1)
+                + [cur_len]
+                + [cur_len] * (rejected_len - 1)
             )
             attention_mask = None
         else:
             attention_mask = np.tri(cur_len, cur_len, dtype=bool)
             attention_mask[
                 (prompt_len + chosen_len - 1) :,
-                (prompt_len - 1): (prompt_len + chosen_len - 1),
+                (prompt_len - 1) : (prompt_len + chosen_len - 1),
             ] = False
             attn_mask_startend_row_indices = None
 
