@@ -46,11 +46,12 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
         self.encode(tokenizer)
         tokenizer = Qwen2Tokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="huggingface")
         self.encode(tokenizer)
-
+    
+    @slow
     def test_default(self):
         tokenizer = AutoTokenizer.from_pretrained("PaddleFormers/tiny-random-qwen3")
         self.encode(tokenizer)
-        tokenizer = Qwen2Tokenizer.from_pretrained("PaddleFormers/tiny-random-qwen3")
+        tokenizer = Qwen2Tokenizer.from_pretrained("PaddleFormers/tiny-random-qwen2")
         self.encode(tokenizer)
 
     @slow
