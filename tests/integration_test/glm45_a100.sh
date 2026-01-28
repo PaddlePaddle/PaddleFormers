@@ -65,6 +65,7 @@ elif [[ ${step} == "lora" ]]; then
       | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
       | .logging_dir = strenv(cur_dir) + "/glm_full_single_lora_log"
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"
+      | .num_empty_layers_add_in_tail = 0
       | del(.moe_token_dispatcher_type)' \
     $config_yaml > ${config_yaml}.tmp
   mv ${config_yaml}.tmp $config_yaml
