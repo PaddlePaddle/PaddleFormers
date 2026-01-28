@@ -25,6 +25,9 @@ if [[ "$step" == "moe" ]]; then
     export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
     export model_name_or_path=$CACHE_DIR/qwen3vl/tiny-random-qwen3vlmoev2
     export output_dir=$root_dir/checkpoints/qwen3vl-moe
+    if [ $machine == "a100" ]; then
+        export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft_moe_a100.yaml
+    fi
 elif [[ "$step" == "tp8" ]]; then
     export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft.yaml
     export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
