@@ -1576,7 +1576,7 @@ class TrainingArguments:
     moe_use_pfcc_deepep: bool = field(
         default=False,
         metadata={
-            "help": "Whether to use PFCC DeepEP for MoE, default use paddle DeepEP. Only works when moe_token_dispatcher_type == 'deepep'."
+            "help": "Whether to use PFCC DeepEP for MoE, by default uses paddle DeepEP. Only works when moe_token_dispatcher_type == 'deepep'."
         },
     )
 
