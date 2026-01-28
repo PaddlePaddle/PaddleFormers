@@ -61,7 +61,6 @@ recompute_granularity: full
 recompute_method: block
 recompute_num_layers: 1
 
-fuse_rms_norm: true
 fp32_residual_connection: false
 
 

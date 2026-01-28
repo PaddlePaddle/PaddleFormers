@@ -229,7 +229,6 @@ def llmmetaclass(cls):
 class LlmMetaConfig:
     op_fusion_attributes = [
         # name, type, default_value, comment
-        ("fuse_rms_norm", bool, False, "Whether to fuse RMSNorm for efficiency"),
         ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
         ("apply_rope_fusion", bool, False, "Whether to fuse RoPE operation"),
         ("fuse_swiglu", bool, False, "Whether to fuse SwiGLU operations"),

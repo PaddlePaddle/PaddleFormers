@@ -567,7 +567,6 @@ def main():
         # config.using_flex_token = True
         # config.num_nextn_predict_layers = 1
         # config.moe_router_force_load_balancing = True
-        # config.fuse_rms_norm = True
         # config.fuse_attention_ffn = True
         # config.apply_rope_fusion = True
         # config.token_drop_steps = 0

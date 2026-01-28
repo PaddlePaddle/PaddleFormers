@@ -78,7 +78,7 @@ class Ernie4_5_Config(PretrainedConfig):
         use_var_len_flash_attn=False,
         recompute_use_reentrant=False,
         use_rmsnorm=True,
-        fuse_rms_norm=False,
+        fuse_rms_norm=True,
         fuse_ln=False,
         pad_token_id=0,
         bos_token_id=1,

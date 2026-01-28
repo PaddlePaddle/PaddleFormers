@@ -151,7 +151,6 @@ class AutoConfigTest(unittest.TestCase):
             "tensor_parallel_output": True,
             "tie_word_embeddings": False,
             "transformers_version": "4.28.1",
-            "fuse_rms_norm": False,
             "apply_rope_fusion": False,
             "use_recompute": False,
             "virtual_pipeline_model_parallel_size": 1,

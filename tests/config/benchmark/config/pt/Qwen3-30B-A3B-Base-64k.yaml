@@ -75,7 +75,6 @@ split_param: true
 stage1_overlap: true
 
 apply_rope_fusion: true
-fuse_rms_norm: true
 moe_deep_gemm: true
 moe_grouped_gemm: true
 moe_router_fusion: true
