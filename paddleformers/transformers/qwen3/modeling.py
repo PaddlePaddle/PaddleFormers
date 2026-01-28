@@ -452,8 +452,8 @@ class Qwen3RotaryEmbedding(nn.Layer):
     @staticmethod
     def compute_default_rope_parameters(
         config: Optional[Qwen3Config] = None,
-        device: str = "cpu",
         seq_len: Optional[int] = None,
+        device: str = "cpu",
     ) -> tuple["paddle.Tensor", float]:
         """
         Computes the inverse frequencies according to the original RoPE implementation
@@ -462,6 +462,8 @@ class Qwen3RotaryEmbedding(nn.Layer):
                 The model configuration.
             seq_len (`int`, *optional*):
                 The current sequence length. Unused for this type of RoPE.
+            device (`str`, *optional*):
+                The current device.
         Returns:
             Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
             post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
