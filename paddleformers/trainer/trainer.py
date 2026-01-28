@@ -115,7 +115,10 @@ if is_paddlefleet_available():
 else:
     get_batch_on_this_cp_rank = None
 if TYPE_CHECKING:
-    from transformers.tokenization_utils import PreTrainedTokenizer
+    try:
+        from transformers.tokenization_python import PreTrainedTokenizer
+    except ImportError:
+        from transformers.tokenization_utils import PreTrainedTokenizer
 
 from paddle.framework.recall_error import LOSS_INF_ERROR, LOSS_NAN_ERROR
 
