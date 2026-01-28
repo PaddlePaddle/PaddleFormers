@@ -36,6 +36,8 @@ defaults:
 jobs:
   unittest-gpu-ci:
     name: unittest-gpu-ci
+    if: |
+      github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'skip-unittest-ci')
     runs-on: ${{ inputs.runner || 'ernie-8gpu' || 'distrbute' }}
     outputs:  
       pytest_execute_flag: ${{ steps.set_pytest_flag.outputs.pytest_execute_flag }}

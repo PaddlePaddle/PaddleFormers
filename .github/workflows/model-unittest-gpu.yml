@@ -34,6 +34,8 @@ defaults:
 jobs:
   model-unittest-gpu-ci:
     name: model-unittest-gpu-ci
+    if: |
+      github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'skip-models-ci')
     runs-on: ${{ inputs.runner || 'ernie-8gpu' || 'distrbute' }}
     steps:
       - name: Determine Image Name
