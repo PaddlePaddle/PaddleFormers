@@ -414,6 +414,12 @@ class LlmMetaConfig:
             False,
             "Whether to use SonicMoE as the computation backend for the moelayer.",
         ),
+        (
+            "moe_use_pfcc_deepep",
+            bool,
+            False,
+            "Whether to use PFCC DeepEP for MoE for the moelayer.",
+        ),
     ]
 
     mtp_attributes = [
