@@ -22,7 +22,7 @@ import paddle
 
 from paddleformers.transformers import Qwen3MoeConfig
 from paddleformers.transformers import (
-    Qwen3MoeForCausalLMDecapitated as Qwen3MoeForCausalLM,
+    Qwen3MoeForCausalLMDeprecated as Qwen3MoeForCausalLM,
 )
 from paddleformers.transformers import Qwen3MoeModel
 from tests.testing_utils import require_package
@@ -417,7 +417,7 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
 
         # 3. forward the paddle model
         from paddleformers.transformers import (
-            Qwen3MoeForCausalLMDecapitated as Qwen3MoeForCausalLM,
+            Qwen3MoeForCausalLMDeprecated as Qwen3MoeForCausalLM,
         )
 
         paddle_model = Qwen3MoeForCausalLM.from_pretrained(
@@ -454,7 +454,7 @@ class Qwen3MoeCompatibilityTest(unittest.TestCase):
             # 3. forward the paddle model with fc
             from paddleformers.transformers import Qwen3MoeConfig
             from paddleformers.transformers import (
-                Qwen3MoeForCausalLMDecapitated as Qwen3MoeForCausalLM,
+                Qwen3MoeForCausalLMDeprecated as Qwen3MoeForCausalLM,
             )
 
             paddle_model = Qwen3MoeForCausalLM.from_pretrained(

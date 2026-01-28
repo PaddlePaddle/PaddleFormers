@@ -307,31 +307,30 @@ class ProcessorTesterMixin:
         self.assertLessEqual(inputs[self.images_input_name][0][0].mean(), 0)
         self.assertEqual(inputs[self.text_input_name].shape[-1], 76)
 
-    # TODO: Re-enable this test case once paddle.Tensor support the more tensor dimensions.
-    # def test_unstructured_kwargs_batched(self):
-    #     if "image_processor" not in self.processor_class.attributes:
-    #         self.skipTest(f"image_processor attribute not present in {self.processor_class}")
-    #     processor_components = self.prepare_components()
-    #     processor_kwargs = self.prepare_processor_dict()
-    #     processor = self.processor_class(**processor_components, **processor_kwargs)
+    def test_unstructured_kwargs_batched(self):
+        if "image_processor" not in self.processor_class.attributes:
+            self.skipTest(f"image_processor attribute not present in {self.processor_class}")
+        processor_components = self.prepare_components()
+        processor_kwargs = self.prepare_processor_dict()
+        processor = self.processor_class(**processor_components, **processor_kwargs)
 
-    #     input_str = self.prepare_text_inputs(batch_size=2, modalities="image")
-    #     image_input = self.prepare_image_inputs(batch_size=2)
-    #     inputs = processor(
-    #         text=input_str,
-    #         images=image_input,
-    #         return_tensors="pd",
-    #         do_rescale=True,
-    #         rescale_factor=-1.0,
-    #         padding="longest",
-    #         max_length=76,
-    #     )
+        input_str = self.prepare_text_inputs(batch_size=2, modalities="image")
+        image_input = self.prepare_image_inputs(batch_size=2)
+        inputs = processor(
+            text=input_str,
+            images=image_input,
+            return_tensors="pd",
+            do_rescale=True,
+            rescale_factor=-1.0,
+            padding="longest",
+            max_length=76,
+        )
 
-    #     self.assertLessEqual(inputs[self.images_input_name][0][0].mean(), 0)
-    #     self.assertTrue(
-    #         len(inputs[self.text_input_name][0]) == len(inputs[self.text_input_name][1])
-    #         and len(inputs[self.text_input_name][1]) < 76
-    #     )
+        self.assertLessEqual(inputs[self.images_input_name][0][0].mean(), 0)
+        self.assertTrue(
+            len(inputs[self.text_input_name][0]) == len(inputs[self.text_input_name][1])
+            and len(inputs[self.text_input_name][1]) < 76
+        )
 
     def test_doubly_passed_kwargs(self):
         if "image_processor" not in self.processor_class.attributes:
@@ -509,32 +508,31 @@ class ProcessorTesterMixin:
         self.assertLessEqual(inputs[self.videos_input_name][0].mean(), 0)
         self.assertEqual(inputs[self.text_input_name].shape[-1], 176)
 
-    # TODO: Re-enable this test case once paddle.Tensor support the more tensor dimensions.
-    # def test_unstructured_kwargs_batched_video(self):
-    #     if "video_processor" not in self.processor_class.attributes:
-    #         self.skipTest(f"video_processor attribute not present in {self.processor_class}")
-    #     processor_components = self.prepare_components()
-    #     processor_kwargs = self.prepare_processor_dict()
-    #     processor = self.processor_class(**processor_components, **processor_kwargs)
+    def test_unstructured_kwargs_batched_video(self):
+        if "video_processor" not in self.processor_class.attributes:
+            self.skipTest(f"video_processor attribute not present in {self.processor_class}")
+        processor_components = self.prepare_components()
+        processor_kwargs = self.prepare_processor_dict()
+        processor = self.processor_class(**processor_components, **processor_kwargs)
 
-    #     input_str = self.prepare_text_inputs(batch_size=2, modalities="video")
-    #     video_input = self.prepare_video_inputs(batch_size=2)
-    #     inputs = processor(
-    #         text=input_str,
-    #         videos=video_input,
-    #         do_sample_frames=False,
-    #         return_tensors="pd",
-    #         do_rescale=True,
-    #         rescale_factor=-1.0,
-    #         padding="longest",
-    #         max_length=176,
-    #     )
+        input_str = self.prepare_text_inputs(batch_size=2, modalities="video")
+        video_input = self.prepare_video_inputs(batch_size=2)
+        inputs = processor(
+            text=input_str,
+            videos=video_input,
+            do_sample_frames=False,
+            return_tensors="pd",
+            do_rescale=True,
+            rescale_factor=-1.0,
+            padding="longest",
+            max_length=176,
+        )
 
-    #     self.assertLessEqual(inputs[self.videos_input_name][0].mean(), 0)
-    #     self.assertTrue(
-    #         len(inputs[self.text_input_name][0]) == len(inputs[self.text_input_name][1])
-    #         and len(inputs[self.text_input_name][1]) < 176
-    #     )
+        self.assertLessEqual(inputs[self.videos_input_name][0].mean(), 0)
+        self.assertTrue(
+            len(inputs[self.text_input_name][0]) == len(inputs[self.text_input_name][1])
+            and len(inputs[self.text_input_name][1]) < 176
+        )
 
     def test_doubly_passed_kwargs_video(self):
         if "video_processor" not in self.processor_class.attributes:

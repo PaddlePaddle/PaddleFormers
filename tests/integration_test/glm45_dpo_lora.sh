@@ -22,17 +22,21 @@ fi
 cd $root_dir/glm45_fleet
 export cur_dir=$(pwd)
 
-config_lora_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_lora.yaml
+# prepare dpo data
+wget https://paddle-qa.bj.bcebos.com/fleet/fleet_dpo.tar
+tar -xf fleet_dpo.tar
 
-export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
+config_dpo_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_dpo_lora.yaml
 
-yq '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
-    | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
-    | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
-    | .logging_dir = strenv(cur_dir) + "/glm_full_single_lora_log"
-    | .output_dir = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"' \
-   $config_lora_yaml > ${config_lora_yaml}.tmp
-mv ${config_lora_yaml}.tmp $config_lora_yaml
+config_json=$CACHE_DIR/glm45/GLM-4.5-Air/config.json
+
+yq '.train_dataset_path = strenv(cur_dir) + "/dpo_data/dpo_train.jsonl"
+    | .eval_dataset_path = strenv(cur_dir) + "/dpo_data/dpo_eval.jsonl"
+    | .model_name_or_path = strenv(CACHE_DIR) + "/zai-org/GLM-4.5-Air-Base"
+    | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_lora_vdl_log"
+    | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_lora_ckpts"' \
+   $config_dpo_yaml > ${config_dpo_yaml}.tmp
+mv ${config_dpo_yaml}.tmp $config_dpo_yaml
 
 rm -rf ./outputs
 rm -rf paddleformers_dist_log
@@ -47,29 +51,25 @@ unset http_proxy https_proxy
 export FLAGS_embedding_deterministic=1
 export FLAGS_cudnn_deterministic=1
 
-log_file=glm45_lora.txt
-gt_loss_file=glm45_lora_multi_card_gt_loss.txt
+log_file=glm45_dpo_lora.txt
+gt_loss_file=glm45_dpo_lora_multi_card_gt_loss.txt
 
 set +e
-NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_lora_yaml 2>&1 | tee ./${log_file}
-
-lora_exit_code=$?
-if [ $lora_exit_code -ne 0 ]; then
+NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_dpo_yaml 2>&1 | tee ./${log_file}
+sft_exit_code=$?
+if [ $sft_exit_code -ne 0 ]; then
    echo "GLM4.5 multi-cards training failed, try to check the log file"
-   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./${log_file} "***** train metrics *****"
-   lora_check_exit_code=$?
-   if [ $lora_check_exit_code -ne 0 ]; then
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./${log_file} "***** eval metrics *****"
+   sft_check_exit_code=$?
+   if [ $sft_check_exit_code -ne 0 ]; then
      echo "Failed to find 'Training completed' in log file."
      exit 1
    else
      echo "Log check passed."
    fi
-else
-    echo "LORA Test passed."
 fi
 
-# export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
-export repo_name=PaddleFleet
+export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
 # if [[ "${PP}" == "rel" ]]; then
 #   export pppatch="_PPrel"
 # fi

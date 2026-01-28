@@ -28,7 +28,11 @@ from huggingface_hub.utils import (
     RepositoryNotFoundError,
     RevisionNotFoundError,
 )
-from paddle import __version__
+
+try:
+    from paddle import __version__
+except:
+    __version__ = ""
 from requests import HTTPError
 
 from ..log import logger

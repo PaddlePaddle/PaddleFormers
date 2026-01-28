@@ -1725,7 +1725,7 @@ class Qwen3VLMoeTextModel(Qwen3VLMoePretrainedModel):
         )
 
 
-class Qwen3VLMoeModelDecapitated(Qwen3VLMoePretrainedModel):
+class Qwen3VLMoeModelDeprecated(Qwen3VLMoePretrainedModel):
     base_model_prefix = "model"
     _checkpoint_conversion_mapping = {}
     config: Qwen3VLMoeConfig
@@ -2172,7 +2172,7 @@ class Qwen3VLMoeCausalLMOutputWithPast(ModelOutput):
     aux_loss: Optional[paddle.Tensor] = None
 
 
-class Qwen3VLMoeForConditionalGenerationDecapitated(Qwen3VLMoePretrainedModel):
+class Qwen3VLMoeForConditionalGenerationDeprecated(Qwen3VLMoePretrainedModel):
     _checkpoint_conversion_mapping = {
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
@@ -2182,7 +2182,7 @@ class Qwen3VLMoeForConditionalGenerationDecapitated(Qwen3VLMoePretrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        self.model = Qwen3VLMoeModelDecapitated(config)
+        self.model = Qwen3VLMoeModelDeprecated(config)
         self.lm_head = GeneralLMHead(config.text_config)
         self.criterion = CriterionLayer(config.text_config)
         self.tie_weights()
@@ -2688,8 +2688,8 @@ class Qwen3VLMoeForConditionalGeneration(Qwen3VLMoePretrainedModelFleet):
 
 
 __all__ = [
-    "Qwen3VLMoeModelDecapitated",
-    "Qwen3VLMoeForConditionalGenerationDecapitated",
+    "Qwen3VLMoeModelDeprecated",
+    "Qwen3VLMoeForConditionalGenerationDeprecated",
     "Qwen3VLMoeForConditionalGeneration",
     "Qwen3VLMoeModel",
     "Qwen3VLMoePretrainedModel",

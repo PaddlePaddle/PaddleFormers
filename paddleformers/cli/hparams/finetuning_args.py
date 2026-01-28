@@ -270,6 +270,10 @@ class FinetuningArguments(
         default=None,
         metadata={"help": "Model weight quantization algorithm including 'nf4'(qlora), 'weight_only_int8'."},
     )
+    merge_with_qdq_base_model: bool = field(
+        default=False,
+        metadata={"help": "Whether to merge model with quantize_dequantized base-model weights."},
+    )
     # fp8
     use_fp8: bool = field(
         default=False,
