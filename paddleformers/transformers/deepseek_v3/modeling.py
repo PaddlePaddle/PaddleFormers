@@ -469,13 +469,19 @@ class DeepseekV3MoE(nn.Layer):
         else:
             self.experts = nn.LayerList(
                 [
-                    DeepseekV3MLP(new_config, intermediate_size=config.moe_intermediate_size)
+                    DeepseekV3MLP(
+                        new_config,
+                        intermediate_size=config.moe_intermediate_size,
+                        fuse_up_gate=config.fuse_attention_ffn,
+                    )
                     for _ in range(config.n_routed_experts)
                 ]
             )
         self.gate = DeepseekV3TopkRouter(config)
         self.shared_experts = DeepseekV3MLP(
-            config=config, intermediate_size=config.moe_intermediate_size * config.n_shared_experts
+            config=config,
+            intermediate_size=config.moe_intermediate_size * config.n_shared_experts,
+            fuse_up_gate=config.fuse_attention_ffn,
         )
 
     def moe(self, hidden_states: paddle.Tensor, topk_indices: paddle.Tensor, topk_weights: paddle.Tensor):
@@ -564,7 +570,9 @@ class DeepseekV3MoEFlexToken(MoEFlexTokenLayer):
         self.alpha = config.aux_loss_alpha
         if config.n_shared_experts is not None:
             intermediate_size = config.moe_intermediate_size * config.n_shared_experts
-            self.shared_experts = DeepseekV3MLP(config=config, intermediate_size=intermediate_size)
+            self.shared_experts = DeepseekV3MLP(
+                config=config, intermediate_size=intermediate_size, fuse_up_gate=config.fuse_attention_ffn
+            )
 
     def forward(self, hidden_states):
         final_hidden_states, l_aux, l_zloss = super().forward(hidden_states)
@@ -867,7 +875,7 @@ class DeepseekV3DecoderLayer(nn.Layer):
                 and layer_idx >= config.first_k_dense_replace
                 and layer_idx % config.moe_layer_freq == 0
             )
-            else DeepseekV3MLP(config)
+            else DeepseekV3MLP(config, fuse_up_gate=config.fuse_attention_ffn)
         )
 
         self.input_layernorm = GeneralNorm.create(
@@ -1272,7 +1280,7 @@ class DeepseekV3PretrainedModel(PretrainedModel):
                 aoa_config["aoa_statements"] += [
                     f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
                 ]
-            for layer_idx in range(1, config.num_hidden_layers):
+            for layer_idx in range(2, config.num_hidden_layers):
                 src_prefix = f"model.layers.{layer_idx}"
                 tgt_prefix = f"{model_prefix}layers.{layer_idx}"
                 ep_weight1 = []

@@ -459,7 +459,7 @@ class GLm4MoeNaiveMoe(nn.Module):
         hidden_states: paddle.Tensor,
         top_k_index: paddle.Tensor,
         top_k_weights: paddle.Tensor,
-    ) -> paddle.Tenosr:
+    ) -> paddle.Tensor:
         final_hidden_states = paddle.zeros_like(hidden_states)
 
         with paddle.no_grad():
@@ -1045,7 +1045,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 if config.get("fd_fallback", False):
                     if not config.fuse_attention_ffn:
                         aoa_config["aoa_statements"] += [
-                            f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
+                            f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
                         ]
                     ep_weight1 = []
                     ep_weight2 = []
