@@ -40,8 +40,14 @@ install_requirements() {
     python -m pip install -r requirements.txt
     python -m pip install -r requirements-dev.txt
     python -m pip install -r tests/requirements.txt
-    python -m pip uninstall paddlepaddle paddlepaddle_gpu -y
-    python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
+    python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
+    python setup.py bdist_wheel > /dev/null
+    uv cache clean paddlefleet
+    export UV_SKIP_WHEEL_FILENAME_CHECK=1
+    uv pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" --system --prerelease=allow -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --index-strategy unsafe-best-match
+    python -m pip install torch==2.8.0
+    echo "paddlefleet commit:"
+    python -c "import paddlefleet; print(paddlefleet.version.commit)"
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
     python setup.py bdist_wheel > /dev/null
     python -m pip install  dist/p****.whl
