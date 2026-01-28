@@ -651,8 +651,8 @@ class ColumnParallelQuantizationLinear(nn.Layer):
 
 
 class FleetColumnParallelQuantizationLinear(ColumnParallelQuantizationLinear):
-    def __init__(self, in_features, out_features, skip_bias_add, **kwargs):
-        super().__init__(in_features, out_features, **kwargs)
+    def __init__(self, in_features, output_size_per_partition, skip_bias_add, **kwargs):
+        super().__init__(in_features, output_size_per_partition, **kwargs)
         self.skip_bias_add = skip_bias_add
 
     def forward(self, input: paddle.Tensor):
@@ -909,8 +909,8 @@ class RowParallelQuantizationLinear(nn.Layer):
 
 
 class FleetRowParallelQuantizationLinear(RowParallelQuantizationLinear):
-    def __init__(self, in_features, out_features, skip_bias_add, **kwargs):
-        super().__init__(in_features, out_features, **kwargs)
+    def __init__(self, input_size_per_partition, out_features, skip_bias_add, **kwargs):
+        super().__init__(input_size_per_partition, out_features, **kwargs)
         self.skip_bias_add = skip_bias_add
 
     def forward(self, input: paddle.Tensor):
