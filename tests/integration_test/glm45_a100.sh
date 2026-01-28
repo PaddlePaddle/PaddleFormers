@@ -93,7 +93,7 @@ elif [[ ${step} == "grouped_gemm" ]]; then
       | .stage1_overlap = false
       | .moe_grouped_gemm = false
       | .logging_dir = strenv(data_dir) + "/vdl_log"
-      | .output_dir = strenv(data_dir) + "/checkpoints"' \
+      | .output_dir = strenv(data_dir) + "/checkpoints/grouped_gemm"' \
     $config_yaml > ${config_yaml}.tmp
   mv ${config_yaml}.tmp $config_yaml
 fi

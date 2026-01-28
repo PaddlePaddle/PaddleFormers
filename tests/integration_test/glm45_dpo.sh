@@ -27,7 +27,7 @@ config_dpo_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_dpo.yaml
 export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/dpo
 yq '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
     | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
-    | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"
+    | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
     | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_vdl_log"
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_ckpts"' \
    $config_dpo_yaml > ${config_dpo_yaml}.tmp
