@@ -337,8 +337,8 @@ def normalize(image: paddle.Tensor, mean: list[float], std: list[float], inplace
         std = std.view(-1, 1, 1)
 
     if inplace:
-        image = image.sub_(mean)
+        image = image.subtract_(mean)
     else:
-        image = image.sub(mean)
+        image = image.subtract(mean)
 
     return image.div_(std)
