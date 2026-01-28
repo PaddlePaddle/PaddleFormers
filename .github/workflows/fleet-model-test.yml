@@ -425,7 +425,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 h20
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 h20
           '
 
       - name: Qwen vl moe
@@ -433,7 +433,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe h20
+          timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe h20
           '
       
       - name: Qwen3-vl-8k-fsdp
@@ -441,7 +441,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
+          timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
           '
 
       - name: Terminate and delete the container
@@ -550,7 +550,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 a100
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 a100
           '
 
           
@@ -559,7 +559,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe a100
+          timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe a100
           '
 
       - name: Qwen3-vl-8k-fsdp
@@ -567,7 +567,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 20m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
+          timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
           '
 
       - name: Terminate and delete the container
