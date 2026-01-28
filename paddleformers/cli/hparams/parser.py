@@ -79,6 +79,18 @@ _SERVER_ARGS = [
 _SERVER_CLS = tuple[ModelArguments, GeneratingArguments, FinetuningArguments, ServerArguments]
 
 
+def _load_custom_template(custom_path):
+    try:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("custom_template", custom_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        print(f"Successfully loaded custom templates from {custom_path}")
+    except Exception as e:
+        print(f"Failed to load custom templates from {custom_path}: {e}")
+
+
 def read_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> Union[dict[str, Any], list[str]]:
     r"""Get arguments from the command line or a config file."""
     if args is not None:
@@ -120,6 +132,10 @@ def _parse_args(
     """
 
     args = read_args(args)
+
+    if isinstance(args, dict) and "custom_register_path" in args:
+        _load_custom_template(args.pop("custom_register_path"))
+
     if isinstance(args, dict):
         return parser.parse_dict(args)
 
