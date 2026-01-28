@@ -15,27 +15,13 @@
 set -exo pipefail
 export root_dir=$(pwd)
 
-step=$1
-machine=$2
+machine=$1
 
 
+export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_lora.yaml
+export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
+export model_name_or_path=$root_dir/checkpoints/qwen3vl-lora
 
-if [[ "$step" == "moe" ]]; then
-    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft_moe.yaml
-    export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
-    export model_name_or_path=$CACHE_DIR/qwen3vl/tiny-random-qwen3vlmoev2
-    export output_dir=$root_dir/checkpoints/qwen3vl-moe
-elif [[ "$step" == "tp8" ]]; then
-    export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft.yaml
-    export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
-    export model_name_or_path=$CACHE_DIR/qwen3vl/tiny-random-qwen3vlv2
-    export output_dir=$root_dir/checkpoints/qwen3vl-sft
-elif [ $step == "fsdp" ]; then
-  export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft_fsdp.yaml
-  export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
-  export model_name_or_path=$CACHE_DIR/qwen3vl/tiny-random-qwen3vlv2
-  export output_dir=$root_dir/checkpoints/qwen3vl-fsdp
-fi
 
 if [[ ! -d $data_dir/DoclingMatix ]]; then
   wget https://paddleformers.bj.bcebos.com/datasets/DoclingMatix.tar.gz
@@ -58,12 +44,11 @@ port=36677
 export FLAGS_embedding_deterministic=1
 export FLAGS_cudnn_deterministic=1
 export FLAGS_use_stride_compute_kernel=False
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 
 unset http_proxy https_proxy
 
-log_file=qwen_$machine_$step.txt
-gt_loss_file=qwen_$machine_${step}_multi_card_gt_loss.txt
+log_file=qwen_lora_${machine}.txt
+gt_loss_file=qwen_lora_${machine}_multi_card_gt_loss.txt
 
 set +e
 NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./${log_file}
