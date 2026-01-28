@@ -20,7 +20,8 @@ machine=$1
 
 export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_lora.yaml
 export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft-vl
-export model_name_or_path=$root_dir/checkpoints/qwen3vl-lora
+export model_name_or_path=$root_dir/checkpoints/qwen3vl-sft
+export output_dir=$root_dir/checkpoints/qwen3vl-lora
 
 
 if [[ ! -d $data_dir/DoclingMatix ]]; then
