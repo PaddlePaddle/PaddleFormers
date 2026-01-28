@@ -142,7 +142,7 @@ jobs:
           pip install -e "."
           wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           pip uninstall paddlefleet -y
-          pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
+          pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           wget -q --no-proxy --no-check-certificate https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
           pip uninstall paddlepaddle-gpu -y
@@ -277,7 +277,7 @@ jobs:
           pip install -e "."
           wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           pip uninstall paddlefleet -y
-          pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
+          pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           wget -q --no-proxy --no-check-certificate https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
           pip uninstall paddlepaddle-gpu -y
@@ -495,7 +495,7 @@ jobs:
           pip install -e "."
           wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           pip uninstall paddlefleet -y
-          pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
+          pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           wget -q --no-proxy --no-check-certificate https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda129-Cudnn99-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
           pip uninstall paddlepaddle-gpu -y
