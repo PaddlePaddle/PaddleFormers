@@ -116,7 +116,6 @@ class DPODataArgument(DataConfig):
     max_prompt_len: int = field(default=2048, metadata={"help": "Maximum prompt length."})
     num_samples_each_epoch: int = field(default=6000000, metadata={"help": "Number of sample per training epoch."})
     buffer_size: int = field(default=1000, metadata={"help": "Preloading buffer capacity."})
-    mask_out_eos_token: bool = field(default=True, metadata={"help": "EOS loss masking."})
 
 
 @dataclass

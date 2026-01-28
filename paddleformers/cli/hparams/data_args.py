@@ -75,10 +75,6 @@ class DataArguments:
         default=2048,
         metadata={"help": "Maximum prompt length."},
     )
-    mask_out_eos_token: bool = field(
-        default=False,
-        metadata={"help": "Mask out eos token"},
-    )
     random_shuffle: bool = field(
         default=True,
         metadata={"help": "Whether to enable authorize code for privatization. Defaults to False."},
