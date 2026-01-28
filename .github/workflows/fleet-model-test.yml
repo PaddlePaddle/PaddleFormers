@@ -44,7 +44,9 @@ jobs:
         with:
           python-version: '3.10'
       - name: git diff and check
-        id: check_files
+        id: check_fils
+        if: |
+          github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'fleet-models-ci')
         run: |
           changed_files=$(git diff origin/${{ github.event.pull_request.base.ref }}...HEAD --name-only)
           echo "Changed files: $changed_files"
