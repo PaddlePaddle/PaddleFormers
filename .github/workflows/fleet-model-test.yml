@@ -569,7 +569,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh pt
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3_a100.sh pt
           '
         
       - name: Qwen sft
@@ -577,7 +577,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh sft
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3_a100.sh sft
           '
 
       - name: Qwen lora
@@ -585,7 +585,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh lora
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3_a100.sh lora
           '
 
       - name: Terminate and delete the container
