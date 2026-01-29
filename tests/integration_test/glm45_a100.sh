@@ -91,7 +91,6 @@ elif [[ ${step} == "grouped_gemm" ]]; then
       | .per_device_train_batch_size = 1
       | .num_hidden_layers = 2
       | .stage1_overlap = false
-      | .moe_grouped_gemm = false
       | .logging_dir = strenv(data_dir) + "/vdl_log"
       | .output_dir = strenv(data_dir) + "/checkpoints/grouped_gemm"' \
     $config_yaml > ${config_yaml}.tmp
