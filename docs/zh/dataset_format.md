@@ -277,9 +277,11 @@ paddleformers-cli build examples/config/sft/full.yaml
 
 训练的时候需要指定`dataset_type`为`offline`，`input_dir`为数据集路径，例如：
 ```bash
+# 流式数据流dataloader_shuffle不生效，非流式生效，如果要保持一致建议设置dataloader_shuffle=false
 paddleformers-cli train examples/config/sft/full.yaml \
     input_dir="dataset_output" \
-    dataset_type=offline
+    dataset_type=offline \
+    dataloader_shuffle=false
 ```
 
 ## 2.3. 直接偏好优化（DPO）数据格式
