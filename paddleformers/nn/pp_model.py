@@ -442,7 +442,12 @@ def make_decoder_layer_pipe(decoder_layer):
             tuple_position_embeddings = None
 
         has_gradient = not hidden_states.stop_gradient
-        if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+        if (
+            self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+            and has_gradient
+        ):
             hidden_states = recompute(
                 decoder_layer.forward,
                 self,
@@ -666,11 +671,10 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         )
 
     def get_loss_fn(self, config):
-        CriterionPipeCls = self._criterion_pipe_cls if self._criterion_pipe_cls is not None else CriterionLayerPipe
-
         if config.get("dpo_config", None) is not None:
-            loss_fn = CriterionPipeCls(config, use_infohub=True)
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
         else:
+            CriterionPipeCls = self._criterion_pipe_cls if self._criterion_pipe_cls is not None else CriterionLayerPipe
             loss_fn = CriterionPipeCls(config)
 
         return loss_fn
