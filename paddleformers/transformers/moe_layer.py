@@ -27,6 +27,9 @@ from paddle.distributed.communication.group import Group
 from .moe_gate import PretrainedMoEGate
 from .token_dispatcher import MoEFlexTokenDispatcher
 
+# To avoid repeated imports and backend switching
+_PFCC_DEEP_EP_BACKEND_SET = False
+
 
 def dispatching(x, dispatch_mask, scatter_index, num_experts, capacity):
     """
@@ -181,7 +184,7 @@ class MoELayer(nn.Layer):
             elif moe_group == "expert":
                 self.moe_group = dist.fleet.get_hybrid_communicate_group().get_expert_parallel_group()
             else:
-                assert NotImplementedError("moe_group can only be data or expert, but given {}".format(self.moe_group))
+                assert NotImplementedError(f"moe_group can only be data or expert, but given {self.moe_group}")
             self.moe_rank = dist.get_rank(self.moe_group)
             self.moe_rank = 0 if self.moe_rank < 0 else self.moe_rank
             self.expert_model_parallel_size = dist.get_world_size(self.moe_group)
@@ -340,7 +343,6 @@ class MoELayer(nn.Layer):
 
 class MoEFlexTokenLayer(nn.Layer):
     def __init__(self, config, moe_num_experts, expert_class, expert_kwargs, gate, moe_group):
-
         super().__init__()
         self.config = config
         self.moe_group = moe_group
@@ -365,6 +367,13 @@ class MoEFlexTokenLayer(nn.Layer):
             else:
                 self.experts.append(None)
         self.gate = gate
+        global _PFCC_DEEP_EP_BACKEND_SET
+        if config.moe_use_pfcc_deepep and not _PFCC_DEEP_EP_BACKEND_SET:
+            from .fused_a2a import set_pfcc_deep_ep_backend
+
+            set_pfcc_deep_ep_backend()
+            _PFCC_DEEP_EP_BACKEND_SET = True
+
         self._post_init()
 
     def _post_init(self):

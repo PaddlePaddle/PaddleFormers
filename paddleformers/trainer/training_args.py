@@ -1218,6 +1218,13 @@ class TrainingArguments:
         metadata={"help": "Whether to save replicas cross files in distributed save load system."},
     )
 
+    moe_use_pfcc_deepep: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to use PFCC DeepEP for MoE, by default uses paddle DeepEP. Only works when moe_token_dispatcher_type == 'deepep'."
+        },
+    )
+
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
         if in_auto_parallel_align_mode():
@@ -1351,7 +1358,6 @@ class TrainingArguments:
 
         # use_hybrid_parallel
         if self.use_hybrid_parallel:
-
             if ShardingOption.OFFLOAD in self.sharding:
                 warnings.warn("`offload` is not supported NOW!")
 

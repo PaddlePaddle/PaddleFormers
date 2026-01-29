@@ -323,6 +323,12 @@ class LlmMetaConfig:
             0.0,
             "Scaling factor for MoE expert capacity (controls maximum tokens per expert). Defaults to 0.0 (no dropping tokens).",
         ),
+        (
+            "moe_use_pfcc_deepep",
+            bool,
+            False,
+            "Whether to use PFCC DeepEP for MoE for the moelayer.",
+        ),
     ]
 
     mtp_attributes = [
@@ -531,6 +537,8 @@ class PretrainedConfig:
             The number of tokens in a subbatch for MoE.
         ep_communication_type (`str`, *optional*, defaults to `deepep`):
             Communication type for expert parallel. Can be one of `deepep`, `alltoall`.
+        moe_use_pfcc_deepep (`bool`, *optional*, defaults to `False`):
+            Whether to use PFCC DeepEP for MoE for the moelayer. If set to False, the default Paddle DeepEP will be used.
         use_unified_moe (`bool`, *optional*, defaults to `False`):
             Whether to use unified MoE.
         > Parameters for general components
@@ -680,6 +688,7 @@ class PretrainedConfig:
         self.kto_config = kwargs.pop("kto_config", None)
 
         self.ep_communication_type = kwargs.pop("ep_communication_type", "deepep")
+        self.moe_use_pfcc_deepep = kwargs.pop("moe_use_pfcc_deepep", False)
         self.use_unified_moe = kwargs.pop("use_unified_moe", False)
         self.using_fake_gate = kwargs.pop("using_fake_gate", False)
 

@@ -35,6 +35,9 @@ from .moe_loss_instance import get_global_loss_registry
 logger = logging.getLogger(__name__)
 global_loss_registry = get_global_loss_registry()
 
+# To avoid repeated imports and backend switching
+_PFCC_DEEP_EP_BACKEND_SET = False
+
 
 class ModularMoELayer(nn.Layer):
     def __init__(
@@ -162,6 +165,12 @@ class ModularMoELayer(nn.Layer):
 
         if self.ep_communication_type == "deepep":
             self.communication = DeepEPMoECommunication()
+            global _PFCC_DEEP_EP_BACKEND_SET
+            if pretrained_config.moe_use_pfcc_deepep and not _PFCC_DEEP_EP_BACKEND_SET:
+                from ...transformers.fused_a2a import set_pfcc_deep_ep_backend
+
+                set_pfcc_deep_ep_backend()
+                _PFCC_DEEP_EP_BACKEND_SET = True
         elif self.ep_communication_type == "alltoall":
             self.communication = AllToAllMoECommunication()
         else:
