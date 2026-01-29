@@ -118,6 +118,8 @@ class Glm4MoeConfig(PretrainedConfig):
             Whether to use query-key normalization in the attention
         disable_ffn_model_parallel (`bool`, *optional*, defaults to `False`):
             Whether to use tp in the moe
+        fd_fallback (`bool`, *optional*, defaults to `False`):
+            Whether fastdeploy fallback.
     """
 
     model_type = "glm4_moe"
@@ -160,6 +162,7 @@ class Glm4MoeConfig(PretrainedConfig):
         using_flex_token=True,
         moe_subbatch_token_num_before_dispatch=0,
         sliding_window=None,
+        fd_fallback=False,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -180,6 +183,7 @@ class Glm4MoeConfig(PretrainedConfig):
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
         self.sliding_window = sliding_window
+        self.fd_fallback = fd_fallback
         # Validate the correctness of rotary position embeddings parameters
         # BC: if there is a 'type' field, move it to 'rope_type'.
         if self.rope_scaling is not None and "type" in self.rope_scaling:

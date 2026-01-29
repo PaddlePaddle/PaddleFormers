@@ -87,6 +87,7 @@ fi
 
 # export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
 export repo_name=PaddleFleet
+export REPO_NAME=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
 # if [[ "${PP}" == "rel" ]]; then
 #   export pppatch="_PPrel"
 # fi

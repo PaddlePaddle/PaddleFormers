@@ -1406,6 +1406,25 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
 
         return aoa_config
 
+    @classmethod
+    def _gen_lora_inv_aoa_config(cls, config: Qwen3VLConfig):
+        aoa_statements = [
+            state
+            for layer_id in range(config.text_config.num_hidden_layers)
+            for state in (
+                f"model.language_model.{layer_id + 1}.mlp.down_proj.lora_A -> model.language_model.layers.{layer_id}.mlp.down_proj.lora_A",
+                f"model.language_model.{layer_id + 1}.mlp.down_proj.lora_B -> model.language_model.layers.{layer_id}.mlp.down_proj.lora_B",
+                f"model.language_model.{layer_id + 1}.mlp.up_gate_proj.lora_A -> model.language_model.layers.{layer_id}.mlp.up_gate_proj.lora_A",
+                f"model.language_model.{layer_id + 1}.mlp.up_gate_proj.lora_B -> model.language_model.layers.{layer_id}.mlp.up_gate_proj.lora_B",
+                f"model.language_model.{layer_id + 1}.self_attn.o_proj.lora_A -> model.language_model.layers.{layer_id}.self_attn.o_proj.lora_A",
+                f"model.language_model.{layer_id + 1}.self_attn.o_proj.lora_B -> model.language_model.layers.{layer_id}.self_attn.o_proj.lora_B",
+                f"model.language_model.{layer_id + 1}.self_attn.qkv_proj.lora_A -> model.language_model.layers.{layer_id}.self_attn.qkv_proj.lora_A",
+                f"model.language_model.{layer_id + 1}.self_attn.qkv_proj.lora_B -> model.language_model.layers.{layer_id}.self_attn.qkv_proj.lora_B",
+            )
+        ]
+
+        return aoa_statements
+
 
 class Qwen3VLModel(Qwen3VLPretrainedModelFleet):
     config_class = Qwen3VLConfig

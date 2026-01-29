@@ -1,0 +1,58 @@
+### data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: ./tests/fixtures/dummy/sft/train.jsonl
+train_dataset_prob: "1.0"
+eval_dataset_path: ./tests/fixtures/dummy/sft/eval.jsonl
+eval_dataset_prob: "1.0"
+max_seq_len: 8192
+packing: true
+mix_strategy: concat
+template_backend: custom
+template: ernie_nothink
+
+### model
+model_name_or_path: baidu/ERNIE-4.5-21B-A3B-PT
+attn_impl: eager
+num_hidden_layers: 4
+
+### finetuning
+# base
+stage: SFT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: true
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 5
+max_steps: 10
+eval_steps: 100
+evaluation_strategy: steps
+save_steps: 100
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 1
+logging_dir: ./vdl_log
+output_dir: ./checkpoints/ernie-21B-sft-full-tp-pp
+disable_tqdm: true
+eval_accumulation_steps: 1
+
+# train
+warmup_steps: 20
+learning_rate: 1.0e-5
+
+# performance
+tensor_model_parallel_size: 2
+pipeline_model_parallel_size: 2
+sequence_parallel: true
+sharding: stage1
+offload_optim: true
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
+bf16: true
+fp16_opt_level: O2
+unified_checkpoint: false
+
+device: iluvatar_gpu
