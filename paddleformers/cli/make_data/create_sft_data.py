@@ -36,7 +36,7 @@ from ..hparams import get_train_args, read_args
 from .make_data_utils import DataGenerator
 
 
-def run_make_sft_data(args: Optional[dict[str, Any]] = None) -> None:
+def run_make_sftdata(args: Optional[dict[str, Any]] = None) -> None:
     """
     Convert the dataset to the MapDataset format that can be used by the SFT training.
     """
