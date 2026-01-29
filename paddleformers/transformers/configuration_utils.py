@@ -436,6 +436,16 @@ class LlmMetaConfig:
         ),
     ]
 
+    model_conf = [
+        ("num_hidden_layers", int, None, "Number of hidden layers in the model."),
+        ("num_attention_heads", int, None, "Number of attention heads in the model."),
+        ("num_key_value_heads", int, None, "Number of key/value heads in the model (for GQA/MQA)."),
+        ("num_experts_per_tok", int, None, "Number of experts to activate per token (for MoE models)."),
+        ("hidden_size", int, None, "Hidden size/dimension of the model."),
+        ("intermediate_size", int, None, "Intermediate size in the feed-forward network."),
+        ("n_routed_experts", int, None, "Number of routed experts in the model (for MoE models)."),
+    ]
+
     model_attributes = [
         (
             "multi_latent_attention",
@@ -513,6 +523,7 @@ class LlmMetaConfig:
             cls.mtp_attributes,
             cls.fp8_attributes,
             cls.model_attributes,
+            cls.model_conf,
         ]:
             for attr in attrs:
                 # return dict of key and default values
@@ -530,6 +541,7 @@ class LlmMetaConfig:
             cls.moe_attributes,
             cls.fp8_attributes,
             cls.model_attributes,
+            cls.model_conf,
         ]:
             for attr in attrs:
                 # return dict of key and default values
