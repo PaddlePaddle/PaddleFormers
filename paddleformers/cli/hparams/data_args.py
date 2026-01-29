@@ -160,3 +160,7 @@ class DataArguments:
         default=None,
         metadata={"help": "Register python file path for custom templates and mm_plugin."},
     )
+    make_offline_data: bool = field(
+        default=False,
+        metadata={"help": "Make offline data for SFT training."},
+    )
