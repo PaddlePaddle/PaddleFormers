@@ -49,7 +49,7 @@ except ImportError:
 from transformers.utils.generic import ExplicitEnum
 
 from ..utils import is_paddle_available
-from ..utils.download import DownloadSource, resolve_file_path
+from ..utils.download import resolve_file_path
 from ..utils.log import logger
 
 if is_paddle_available():
@@ -291,14 +291,6 @@ class PaddleTokenizerMixin:
         if download_hub is None:
             download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
         logger.info(f"Using download source: {download_hub}")
-
-        # If downloaded from hf, use the native hf from pretrained
-        if download_hub == DownloadSource.HUGGINGFACE:
-            return super().from_pretrained(
-                pretrained_model_name_or_path,
-                *args,
-                **kwargs,
-            )
 
         cache_dir = kwargs.pop("cache_dir", None)
         subfolder = kwargs.pop("subfolder", "")
