@@ -25,7 +25,7 @@ from paddleformers.transformers import (
     Qwen3MoeForCausalLMDeprecated as Qwen3MoeForCausalLM,
 )
 from paddleformers.transformers import Qwen3MoeModel
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -272,6 +272,7 @@ class Qwen3MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
     all_model_classes = (Qwen3MoeModel, Qwen3MoeForCausalLM)
     all_generative_model_classes = {Qwen3MoeForCausalLM: (Qwen3MoeModel, "qwen3_moe")}
 
+    @gpu_device_initializer(log_prefix="Qwen3MoeModelTest")
     def setUp(self):
         super().setUp()
 

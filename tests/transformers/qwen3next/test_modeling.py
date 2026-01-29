@@ -27,7 +27,7 @@ from paddleformers.transformers import (
     Qwen3NextForCausalLM,
     Qwen3NextModel,
 )
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -233,6 +233,7 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
     all_model_classes = (Qwen3NextModel, Qwen3NextForCausalLM)
     all_generative_model_classes = {Qwen3NextForCausalLM: (Qwen3NextModel, "qwen3_next")}
 
+    @gpu_device_initializer(log_prefix="Qwen3NextModelTest")
     def setUp(self):
         super().setUp()
 

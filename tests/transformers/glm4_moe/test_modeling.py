@@ -25,7 +25,7 @@ from paddleformers.transformers import (
     Glm4MoeForCausalLMDeprecated as Glm4MoeForCausalLM,
 )
 from paddleformers.transformers import Glm4MoeModel
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -301,6 +301,7 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     all_model_classes = (Glm4MoeModel, Glm4MoeForCausalLM)
     all_generative_model_classes = {Glm4MoeForCausalLM: (Glm4MoeModel, "Glm4Moe")}
 
+    @gpu_device_initializer(log_prefix="Glm4MoeModelTest")
     def setUp(self):
         super().setUp()
 

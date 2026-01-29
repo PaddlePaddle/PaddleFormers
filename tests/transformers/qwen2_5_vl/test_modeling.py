@@ -174,6 +174,8 @@ class Qwen2_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
     all_generative_model_classes = {Qwen2_5_VLForConditionalGeneration: {Qwen2_5_VLModel, "qwen2_5_vl"}}
     max_new_tokens = 3
 
+    # Use GPU 0 to prevent CUDA illegal memory access during resize
+    @gpu_device_initializer(log_prefix="Qwen2_5_VLModelTest", gpu_id=0)
     def setUp(self):
         self.model_tester = Qwen2_5_VLVisionText2TextModelTester(self)
         self.config_tester = ConfigTester(self, config_class=Qwen2_5_VLConfig, has_text_modality=False)

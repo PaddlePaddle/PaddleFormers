@@ -25,7 +25,7 @@ from paddleformers.transformers import (
     DeepseekV3ForCausalLM,
     DeepseekV3Model,
 )
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -300,6 +300,7 @@ class DeepseekV3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
     all_model_classes = (DeepseekV3Model, DeepseekV3ForCausalLM)
     all_generative_model_classes = {DeepseekV3ForCausalLM: (DeepseekV3Model, "deepseek_v3")}
 
+    @gpu_device_initializer(log_prefix="DeepseekV3ModelTest")
     def setUp(self):
         super().setUp()
 

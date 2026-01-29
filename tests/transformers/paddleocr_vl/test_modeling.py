@@ -30,6 +30,7 @@ from paddleformers.transformers import (
     PaddleOCRVLConfig,
     PaddleOCRVLForConditionalGeneration,
 )
+from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import ModelTesterMixin, floats_tensor
@@ -185,6 +186,7 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
     }
     max_new_tokens = 3
 
+    @gpu_device_initializer(log_prefix="PaddleOCRVLModelTest")
     def setUp(self):
         self.model_tester = PaddleOCRVLModelTester(self)
         self.config_tester = ConfigTester(self, config_class=PaddleOCRVLConfig)

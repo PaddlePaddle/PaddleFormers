@@ -25,7 +25,7 @@ from paddleformers.transformers import (
     Ernie4_5ForCausalLM,
     Ernie4_5Model,
 )
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 
 # from tests.testing_utils import slow
 from tests.transformers.test_configuration_common import ConfigTester
@@ -307,6 +307,7 @@ class Ernie4_5ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
     all_model_classes = (Ernie4_5Model, Ernie4_5ForCausalLM)
     all_generative_model_classes = {Ernie4_5ForCausalLM: (Ernie4_5Model, "ernie4_5")}
 
+    @gpu_device_initializer(log_prefix="Ernie4_5ModelTest")
     def setUp(self):
         super().setUp()
 

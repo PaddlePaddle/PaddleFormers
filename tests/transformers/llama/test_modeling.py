@@ -21,7 +21,7 @@ import numpy as np
 import paddle
 
 from paddleformers.transformers import LlamaConfig, LlamaForCausalLM, LlamaModel
-from tests.testing_utils import require_package, slow
+from tests.testing_utils import gpu_device_initializer, require_package, slow
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -295,6 +295,7 @@ class LlamaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
     all_model_classes = (LlamaModel, LlamaForCausalLM)
     all_generative_model_classes = {LlamaForCausalLM: (LlamaModel, "llama")}
 
+    @gpu_device_initializer(log_prefix="LlamaModelTest")
     def setUp(self):
         super().setUp()
 
