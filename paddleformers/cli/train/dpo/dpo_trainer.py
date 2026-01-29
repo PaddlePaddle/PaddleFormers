@@ -62,7 +62,6 @@ class DPOTrainer(Trainer):
         disable_dropout: bool = True,
         padding_value: int = 0,
         model_with_dpo_criterion: bool = False,
-        ignore_eos_token: bool = False,
         **kwargs
     ):
         super().__init__(model, data_collator=data_collator, **kwargs)
@@ -72,7 +71,7 @@ class DPOTrainer(Trainer):
             self.dpo_config = dpo_config
         if not model_with_dpo_criterion:
             if dpo_criterion is None:
-                self.dpo_criterion = CriterionLayer(self.model.config, ignore_eos_token=ignore_eos_token)
+                self.dpo_criterion = CriterionLayer(self.model.config)
             elif isinstance(dpo_criterion, CriterionLayer):
                 self.dpo_criterion = dpo_criterion
             else:
