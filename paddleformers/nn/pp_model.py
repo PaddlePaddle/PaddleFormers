@@ -281,6 +281,7 @@ class EmbeddingPipe(nn.Layer):
             position_embeddings = None
         else:
             position_embeddings = paddle.stack(self.rotary_emb(emb, position_ids))  # cos and sin
+
         if num_nextn_predict_layers > 0:
             if enable_mtp_magic_send:
                 emb = emb[:, :-num_nextn_predict_layers, :]
@@ -612,7 +613,7 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 LayerDesc(
                     EmptyLayer,
                 ),
-                f"empty.layers.{i+config.num_hidden_layers}",
+                f"empty.layers.{i + config.num_hidden_layers}",
             )
 
         self.add_sequential_layer(
@@ -676,7 +677,6 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         else:
             CriterionPipeCls = self._criterion_pipe_cls if self._criterion_pipe_cls is not None else CriterionLayerPipe
             loss_fn = CriterionPipeCls(config)
-
         return loss_fn
 
     @classmethod
