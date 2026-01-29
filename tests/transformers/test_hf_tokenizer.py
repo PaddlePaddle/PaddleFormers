@@ -17,6 +17,7 @@ import unittest
 import paddle
 
 from paddleformers.transformers import AutoTokenizer, Qwen2Tokenizer
+from tests.testing_utils import slow
 
 
 class TestHFMultiSourceTokenizer(unittest.TestCase):
@@ -38,6 +39,7 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
         tokenizer = Qwen2Tokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="modelscope")
         self.encode(tokenizer)
 
+    @slow
     def test_hf_hub(self):
         tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="huggingface")
         self.encode(tokenizer)
