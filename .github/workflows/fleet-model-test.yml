@@ -461,6 +461,7 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 h20
+          '
       
       - name: Qwen vl lora
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
