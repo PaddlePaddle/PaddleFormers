@@ -1056,12 +1056,17 @@ class ZeroCostCheckpointWorker:
         self._dump_args_and_state(output_dir)
 
         if self.save_hf_steps > 0 and self.ema_coef is not None:
-            saved_signal_prefix = "_save_done_tmp"
+            saved_signal_prefix = "save_signal_TMP"
         else:
             saved_signal_prefix = "saved_signal"
 
         # Step3: dump save signals
         saved_signal_path = os.path.join(output_dir, f"{saved_signal_prefix}_{self.global_rank}")
+        potential_signal_path = os.path.join(output_dir, f"saved_signal_{self.global_rank}")
+        if os.path.exists(potential_signal_path):
+            logger.info("[ZCC worker] dump save signal done.")
+            return
+
         with open(saved_signal_path, mode="w+") as f:
             f.write("1")
         logger.info("[ZCC worker] dump save signal done.")

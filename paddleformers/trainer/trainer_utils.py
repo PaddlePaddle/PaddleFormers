@@ -1772,10 +1772,12 @@ class EMAStateAssembler:
         optimizer_name_suffix,
         model,
         optimizer,
+        start_step,
     ):
         self.output_dir = Path(output_dir)
         self.save_checkpoint_format = save_checkpoint_format
         self.save_hf_steps = save_hf_steps
+        self.save_steps = save_steps
         if save_hf_steps > 0 and save_hf_steps % save_steps != 0:
             raise ValueError("[EMAStateAssembler] save_hf_steps must be a multiple of save_steps.")
 
@@ -1823,7 +1825,8 @@ class EMAStateAssembler:
         self.num_splits = moe_sharding_group.nranks
         self.shard_idx = moe_sharding_rank
         self.expert_id_offset = (n_routed_experts // moe_group.nranks) * moe_group.rank
-        self._set_latest_processed_checkpoint_step()
+        self._set_latest_processed_checkpoint_step(start_step)
+        self.expected_next_save_ckpt_step = self.latest_processed_checkpoint_step + save_steps
 
     def run(self):
         if self.save_hf_steps < 0:
@@ -1842,6 +1845,7 @@ class EMAStateAssembler:
                 if self._is_already_handled(next_ckpt_dir):
                     # Already processed, skip. It may enter here during the first warm start.
                     self.latest_processed_checkpoint_step = next_step
+                    self._update_expected_next_save_ckpt_step()
                     logger.info(
                         f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
                         "already been handled. Skipping."
@@ -1865,6 +1869,7 @@ class EMAStateAssembler:
             if not is_hf_save_step and next_ckpt_dir is not None:
                 if self._is_already_handled(next_ckpt_dir):
                     self.latest_processed_checkpoint_step = next_step
+                    self._update_expected_next_save_ckpt_step()
                     logger.info(
                         f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
                         "already been handled. Skipping."
@@ -1881,6 +1886,7 @@ class EMAStateAssembler:
         # If the checkpoint has already been processed, skip it.
         if self._is_already_handled(next_ckpt_dir):
             self.latest_processed_checkpoint_step = next_step
+            self._update_expected_next_save_ckpt_step()
             logger.info(
                 f"[EMAStateAssembler] [Rank {self.rank}] Checkpoint at step {next_step} has "
                 "already been handled. Skipping."
@@ -1894,21 +1900,15 @@ class EMAStateAssembler:
         else:
             self._handle_naive_checkpoint(next_step, next_ckpt_dir)
 
-    def _set_latest_processed_checkpoint_step(self):
-        max_step, _ = self._find_checkpoint(mode="max")
-        if max_step is None:
-            max_step = -1
+    def _update_expected_next_save_ckpt_step(self):
+        self.expected_next_save_ckpt_step = self.latest_processed_checkpoint_step + self.save_steps
+        logger.info(
+            f"[EMAStateAssembler] [Rank {self.rank}] Update the expected next save ckpt step to {self.expected_next_save_ckpt_step}!"
+        )
 
-        steps = []
-        dist.all_gather_object(steps, max_step)
+    def _set_latest_processed_checkpoint_step(self, start_step):
 
-        if len(set(steps)) != 1:
-            raise AssertionError(
-                f"[EMAStateAssembler] Detected inconsistent maximum checkpoint step across ranks. "
-                f"Please check each trainer's checkpoints. The gathered maximum steps are: {set(steps)}"
-            )
-
-        self.latest_processed_checkpoint_step = steps[0]
+        self.latest_processed_checkpoint_step = start_step
         logger.info(f"[EMAStateAssembler] Start working from checkpoint step {self.latest_processed_checkpoint_step}!")
 
     def _find_checkpoint(self, mode: str = "next") -> Tuple[Optional[int], Optional[Path]]:
@@ -1933,6 +1933,8 @@ class EMAStateAssembler:
                                 target_ckpt_path = item
                     else:
                         raise ValueError("mode must be 'max' or 'next'")
+        if (target_step is not None) and (target_step > self.expected_next_save_ckpt_step):
+            return None, None
         return target_step, target_ckpt_path
 
     def _is_already_handled(self, checkpoint_dir: Path) -> bool:
@@ -1940,7 +1942,7 @@ class EMAStateAssembler:
         return final_signal_file.exists()
 
     def _check_all_ranks_saved(self, checkpoint_dir: Path) -> bool:
-        temp_signal_file = checkpoint_dir / f"_save_done_tmp_{self.rank}"
+        temp_signal_file = checkpoint_dir / f"save_signal_TMP_{self.rank}"
 
         local_rank_is_saved = temp_signal_file.exists()
 
@@ -1955,13 +1957,14 @@ class EMAStateAssembler:
         with open(final_signal_file, "w") as f:
             f.write("1")
 
-        temp_signal_file = checkpoint_dir / f"_save_done_tmp_{self.rank}"
+        temp_signal_file = checkpoint_dir / f"save_signal_TMP_{self.rank}"
         if temp_signal_file.exists():
             try:
                 temp_signal_file.unlink()
             except OSError as e:
                 logger.warning(f"[EMAStateAssembler] Failed to remove temp signal file {temp_signal_file}: {e}")
         self.latest_processed_checkpoint_step = step
+        self._update_expected_next_save_ckpt_step()
 
     def _handle_checkpoint_with_ema(self, step: int, checkpoint_dir: Path):
         if self._check_all_ranks_saved(checkpoint_dir):
@@ -1987,7 +1990,7 @@ class EMAStateAssembler:
 
     def _handle_naive_checkpoint(self, step: int, checkpoint_dir: Path):
         logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Processing a no need merge EMA checkpoint.")
-        temp_signal_file = checkpoint_dir / f"_save_done_tmp_{self.rank}"
+        temp_signal_file = checkpoint_dir / f"save_signal_TMP_{self.rank}"
 
         if not temp_signal_file.exists():
             logger.warning(
