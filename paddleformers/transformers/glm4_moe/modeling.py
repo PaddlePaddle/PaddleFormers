@@ -1029,7 +1029,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                         f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
                     ]
 
-            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe):
+            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(num_experts):
@@ -1145,7 +1145,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
             prefix = f"model.layers.{layer_idx}"
 
-            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe):
+            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):

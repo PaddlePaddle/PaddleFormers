@@ -78,6 +78,12 @@ from paddleformers.cli.utils import (
 )
 
 
+def add_new_special_tokens(tokenizer, new_special_tokens):
+    num_new_tokens = tokenizer.add_special_tokens({"additional_special_tokens": new_special_tokens})
+    if num_new_tokens > 0:
+        logger.info(f"Added {num_new_tokens} new additional special tokens.")
+
+
 def create_pretrained_dataset(training_args, data_args, model_args):
     assert data_args.input_dir is not None and len(data_args.input_dir.split()) > 1
 
@@ -331,6 +337,7 @@ def run_sft(
 
     # Load tokenizer & processor & dataset
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
+    add_new_special_tokens(tokenizer, data_args.additional_special_tokens)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
