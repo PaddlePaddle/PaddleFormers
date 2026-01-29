@@ -147,14 +147,14 @@ def get_paddleformers_tokenizer_config(
 
 
 def tokenizer_class_from_name(class_name: str) -> Union[type[Any], None]:
-    for module_name, tokenizers in TOKENIZER_MAPPING_NAMES.items():
-        if class_name in tokenizers:
+    for module_name, tokenizer_class in TOKENIZER_MAPPING_NAMES.items():
+        if tokenizer_class == class_name:
             module_name = model_type_to_module_name(module_name)
 
-            module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
             try:
+                module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
                 return getattr(module, class_name)
-            except AttributeError:
+            except (ModuleNotFoundError, AttributeError):
                 continue
 
     for tokenizers in TOKENIZER_MAPPING._extra_content.values():
@@ -334,20 +334,19 @@ class AutoTokenizer(hf.AutoTokenizer):
         )
 
         if config_tokenizer_class is not None:
-            tokenizer_class = None
-            if use_fast and not config_tokenizer_class.endswith("Fast"):
+            tokenizer_class_candidate = config_tokenizer_class
+            tokenizer_class = tokenizer_class_from_name_hf(tokenizer_class_candidate)
+            # Not found in Transformers, try local PaddleFormers registry
+            if tokenizer_class is None:
+                tokenizer_class = tokenizer_class_from_name(tokenizer_class_candidate)
+
+            if tokenizer_class is None and not config_tokenizer_class.endswith("Fast"):
                 tokenizer_class_candidate = f"{config_tokenizer_class}Fast"
                 tokenizer_class = tokenizer_class_from_name_hf(tokenizer_class_candidate)
                 # Not found in Transformers, try local PaddleFormers registry
                 if tokenizer_class is None:
                     tokenizer_class = tokenizer_class_from_name(tokenizer_class_candidate)
 
-            if tokenizer_class is None:
-                tokenizer_class_candidate = config_tokenizer_class
-                tokenizer_class = tokenizer_class_from_name_hf(tokenizer_class_candidate)
-                # Not found in Transformers, try local PaddleFormers registry
-                if tokenizer_class is None:
-                    tokenizer_class = tokenizer_class_from_name(tokenizer_class_candidate)
             if tokenizer_class is None:
                 raise ValueError(
                     f"Tokenizer class {tokenizer_class_candidate} does not exist or is not currently imported."
