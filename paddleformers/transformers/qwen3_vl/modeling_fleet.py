@@ -1294,8 +1294,8 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
         # language model
         aoa_config = {
             "aoa_statements": [
-                f"{llm_prefix}.embedding.embed_tokens.weight -> model.language_model.embed_tokens.weight",
-                f"{llm_prefix}.norm.weight -> model.language_model.norm.weight",
+                f"{llm_prefix}embedding.embed_tokens.weight -> model.language_model.embed_tokens.weight",
+                f"{llm_prefix}norm.weight -> model.language_model.norm.weight",
             ]
         }
 
