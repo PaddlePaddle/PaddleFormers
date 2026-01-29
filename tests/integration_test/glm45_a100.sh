@@ -118,6 +118,7 @@ unset http_proxy https_proxy
 
 export FLAGS_embedding_deterministic=1
 export FLAGS_cudnn_deterministic=1
+export FLAGS_use_stride_compute_kernel=False
 
 log_file=glm45_${step}_a100.txt
 gt_loss_file=glm45_${step}_multi_card_a100_gt_loss.txt
