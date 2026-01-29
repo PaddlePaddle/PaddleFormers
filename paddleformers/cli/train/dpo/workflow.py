@@ -385,7 +385,6 @@ def run_dpo(
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
             packing=data_args.packing,
         ),
-        ignore_eos_token=dpo_config.ignore_eos_token,
         model_with_dpo_criterion=model_args.model_with_dpo_criterion,
         callbacks=callbacks,
     )
