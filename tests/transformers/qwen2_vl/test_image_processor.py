@@ -13,14 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import tempfile
 import unittest
 
 import paddle
 
 from paddleformers.transformers import AutoImageProcessor
-from paddleformers.utils.log import logger
+from tests.testing_utils import gpu_device_initializer
 
 
 class Qwen2VLImageProcessorTest(unittest.TestCase):
@@ -50,18 +49,8 @@ class Qwen2VLImageProcessorTest(unittest.TestCase):
                 paddle.to_tensor(inputs_hf["pixel_values"].numpy())._md5sum() == inputs_pd["pixel_values"]._md5sum()
             )
 
+    @gpu_device_initializer(log_prefix="Qwen2VLImageProcessorTest")
     def test_fast_image_processor_consistency_with_hf(self):
-        # Initialize device when GPU is needed by certain test case
-        gpu_count = paddle.device.cuda.device_count()
-        pid = os.getpid()
-
-        if gpu_count > 0:
-            paddle.set_device(f"gpu:{pid % gpu_count}")
-        else:
-            paddle.set_device("cpu")
-            self.skipTest("No GPU currently available/allocated")
-        logger.info(f"Qwen2VLImageProcessorTest [PID:{pid}] Device initialized: {paddle.get_device()}")
-
         with tempfile.TemporaryDirectory() as tempdir:
             image_processor_pd = AutoImageProcessor.from_pretrained(
                 "PaddleFormers/tiny-random-qwen25vlv2", use_fast=True

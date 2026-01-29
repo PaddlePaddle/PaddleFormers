@@ -144,6 +144,8 @@ class Qwen3NextConfig(PretrainedConfig):
             If `mlp_only_layers` is empty, `decoder_sparse_step` is used to determine the sparsity.
         layer_types (`list[str]`, *optional*):
             Types of each layer (attention or linear).
+        fd_fallback (`bool`, *optional*, defaults to `False`):
+            Whether fastdeploy fallback.
 
     ```python
     >>> from transformers import Qwen3NextModel, Qwen3NextConfig
@@ -197,6 +199,7 @@ class Qwen3NextConfig(PretrainedConfig):
         router_aux_loss_coef=0.001,
         mlp_only_layers=[],
         layer_types=None,
+        fd_fallback=False,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -216,6 +219,7 @@ class Qwen3NextConfig(PretrainedConfig):
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
         self.head_dim = head_dim
+        self.fd_fallback = fd_fallback
 
         self.layer_types = layer_types
         if self.layer_types is None:

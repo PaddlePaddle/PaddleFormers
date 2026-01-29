@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import copy
+import functools
 import gc
 import inspect
 import json
@@ -23,6 +24,7 @@ import sys
 import unittest
 from collections.abc import Mapping
 from contextlib import contextmanager
+from typing import Optional, Union
 
 import numpy as np
 import paddle
@@ -32,6 +34,7 @@ import yaml
 from paddleformers.trainer.argparser import strtobool
 from paddleformers.utils.download import DownloadSource
 from paddleformers.utils.import_utils import is_package_available, is_paddle_available
+from paddleformers.utils.log import logger
 
 __all__ = ["get_vocab_list", "stable_softmax", "cross_entropy"]
 
@@ -602,6 +605,51 @@ def set_proxy(download_hub: DownloadSource = None):
                         os.environ.pop(key, None)
                     else:
                         os.environ[key] = old_value
+
+        return wrapper
+
+    return decorator
+
+
+def gpu_device_initializer(
+    skip_if_no_gpu: bool = True,
+    log_prefix: Optional[str] = None,
+    gpu_id: Optional[Union[int, str]] = None,
+):
+    """
+    Initialize device when GPU is needed by certain test case.
+    """
+
+    def decorator(test_method):
+        @functools.wraps(test_method)
+        def wrapper(self, *args, **kwargs):
+            gpu_count = paddle.device.cuda.device_count()
+            pid = os.getpid()
+
+            if gpu_count > 0:
+                if gpu_id is None or gpu_id == "auto":
+                    device_id = pid % gpu_count
+                elif isinstance(gpu_id, int):
+                    if gpu_id >= gpu_count:
+                        self.skipTest(f"GPU {gpu_id} not available (total: {gpu_count})")
+                        return
+                    device_id = gpu_id
+                else:
+                    device_id = pid % gpu_count
+
+                paddle.set_device(f"gpu:{device_id}")
+                actual_device = f"gpu:{device_id}"
+            else:
+                paddle.set_device("cpu")
+                actual_device = "cpu"
+                if skip_if_no_gpu:
+                    self.skipTest("No GPU currently available/allocated")
+                    return
+
+            prefix = log_prefix or self.__class__.__name__
+            logger.info(f"{prefix} [PID:{pid}] Device: {actual_device}")
+
+            return test_method(self, *args, **kwargs)
 
         return wrapper
 

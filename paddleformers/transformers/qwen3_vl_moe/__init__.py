@@ -21,9 +21,9 @@ from ...utils.lazy_import import _LazyModule
 import_structure = {
     "configuration": ["Qwen3VLMoeConfig", "Qwen3VLMoeTextConfig"],
     "modeling": [
-        "Qwen3VLMoeForConditionalGenerationDecapitated",
+        "Qwen3VLMoeForConditionalGenerationDeprecated",
         "Qwen3VLMoeForConditionalGeneration",
-        "Qwen3VLMoeDecapitated",
+        "Qwen3VLMoeDeprecated",
         "Qwen3VLMoeModel",
         "Qwen3VLMoePretrainedModel",
         "Qwen3VLMoeTextModel",

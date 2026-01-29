@@ -69,4 +69,5 @@ partial_send_recv: false
 fuse_attention_qkv: true
 fuse_attention_ffn: true
 
+num_hidden_layers: 3
 num_empty_layers_add_in_tail: 1

@@ -19,7 +19,6 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from .utils.lazy_import import _LazyModule
-from .utils.tools import compare_version
 
 PADDLEFORMERS_STABLE_VERSION = "PADDLEFORMERS_STABLE_VERSION"
 from paddleformers.utils.log import logger
@@ -28,6 +27,16 @@ try:
     from importlib import metadata
 except ImportError:
     import importlib_metadata as metadata
+
+
+def compare_version(v1, v2):
+    for a, b in zip(v1.split("."), v2.split(".")):
+        if a.isnumeric() and b.isnumeric():
+            if a != b:
+                return 1 if int(a) > int(b) else -1
+        else:
+            return 1 if a.isnumeric() else -1
+    return 0
 
 
 def _check_dependency_versions():
@@ -55,7 +64,7 @@ with suppress(Exception):
 
 # this version is used for develop and test.
 # release version will be added fixed version by setup.py.
-__version__ = "1.0.0.post"
+__version__ = "1.0.1.post"
 if os.getenv(PADDLEFORMERS_STABLE_VERSION):
     __version__ = __version__.replace(".post", "")
 else:

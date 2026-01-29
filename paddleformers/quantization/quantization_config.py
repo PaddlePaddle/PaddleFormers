@@ -77,6 +77,7 @@ class QuantizationConfig:
         dense_quant_type="",
         moe_quant_type="",
         quantization="",
+        quantization_linear_list=[],
         **kwargs,
     ):
         if weight_quantize_algo is not None:
@@ -161,6 +162,7 @@ class QuantizationConfig:
         self.dense_quant_type = dense_quant_type
         self.moe_quant_type = moe_quant_type
         self.quantization = quantization
+        self.quantization_linear_list = quantization_linear_list
 
     @property
     def fp8_format(self):
