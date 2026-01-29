@@ -851,15 +851,13 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
 
         if self.criterion.loss_type == "dpo":
             logits = self.lm_head(hidden_states)
-            chosen_labels = kwargs.get("chosen_labels", None)
-            rejected_labels = kwargs.get("rejected_labels", None)
+            response_labels = kwargs.get("response_labels", None)
             response_indexs = kwargs.get("response_indexs", None)
             score_deltas = kwargs.get("score_deltas", None)
             reference_chosen_logps = kwargs.get("reference_chosen_logps", None)
             reference_rejected_logps = kwargs.get("reference_rejected_logps", None)
             labels = (
-                chosen_labels,
-                rejected_labels,
+                response_labels,
                 response_indexs,
                 score_deltas,
                 reference_chosen_logps,
