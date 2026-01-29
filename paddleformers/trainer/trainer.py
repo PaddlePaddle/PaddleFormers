@@ -4970,6 +4970,10 @@ class Trainer:
         logger.debug("{:^40}".format("{} Configuration Arguments".format(key)))
         logger.debug("{:30}: {}".format("paddle commit id", paddle.version.commit))
         logger.debug("{:30}: {}".format("paddleformers commit id", paddleformers.version.commit))
+        if is_paddlefleet_available():
+            import paddlefleet
+
+            logger.debug("{:30}: {}".format("paddlefleet commit id", paddlefleet.version.commit))
 
         for a in dir(args):
             if a[:2] != "__":  # don't print double underscore methods
