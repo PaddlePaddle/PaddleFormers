@@ -19,6 +19,7 @@ from functools import partial
 
 import paddle
 
+from paddleformers.cli.utils.process import add_new_special_tokens
 from paddleformers.datasets.collate import dpo_collate_fn as collate_fn
 from paddleformers.datasets.loader import create_dataset
 from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
@@ -211,6 +212,7 @@ def run_dpo(
         tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
     else:
         tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
+    add_new_special_tokens(tokenizer, data_args.new_special_tokens_path)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 

@@ -22,6 +22,7 @@ from functools import partial
 import numpy as np
 import paddle
 
+from paddleformers.cli.utils.process import add_new_special_tokens
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
     check_data_split,
@@ -76,12 +77,6 @@ from paddleformers.cli.utils import (
     get_lora_target_modules,
     get_multimodel_lora_target_modules,
 )
-
-
-def add_new_special_tokens(tokenizer, new_special_tokens):
-    num_new_tokens = tokenizer.add_special_tokens({"additional_special_tokens": new_special_tokens})
-    if num_new_tokens > 0:
-        logger.info(f"Added {num_new_tokens} new additional special tokens.")
 
 
 def create_pretrained_dataset(training_args, data_args, model_args):
@@ -337,7 +332,7 @@ def run_sft(
 
     # Load tokenizer & processor & dataset
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
-    add_new_special_tokens(tokenizer, data_args.additional_special_tokens)
+    add_new_special_tokens(tokenizer, data_args.new_special_tokens_path)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
