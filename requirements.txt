@@ -20,5 +20,6 @@ ml_dtypes
 omegaconf
 modelscope
 transformers>=5.0.0
+huggingface_hub>=1.3.0
 GPUtil
 importlib_metadata
