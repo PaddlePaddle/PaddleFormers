@@ -440,6 +440,14 @@ def run_sft(
                     else training_args.estimation_output_file
                 )
                 training_args.max_steps = estimate_training(train_dataset, data_args, training_args, model_args)
+                del train_dataset
+                gc.collect()
+                train_dataset = create_dataset_sft(
+                    task_group=data_args.train_dataset_path,
+                    task_group_prob=data_args.train_dataset_prob,
+                    sub_dataset_type=data_args.train_dataset_type,
+                    **dataset_config,
+                )
 
             train_samples = training_args.max_steps * global_batch_size
             logger.info(f"train_samples : {train_samples}")
@@ -492,7 +500,13 @@ def run_sft(
                 eval_builder.end_document()
             eval_builder.finalize(eval_output_idx_files)
             logger.info(f"{runtime_timer.log()}")
-
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.barrier()
+            max_steps = paddle.to_tensor([training_args.max_steps])
+            paddle.distributed.broadcast(max_steps, src=0)
+            training_args.max_steps = int(max_steps.item())
+        if training_args.max_steps <= 0:
+            raise ValueError(f"Invalid max_steps: {training_args.max_steps}. Please check your dataset")
         logger.info("Make SFT Offline DataSet Done.")
         return
 

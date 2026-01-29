@@ -265,7 +265,7 @@ mkdir -p data/sft && tar -xf sft_online_data_erniekit.tar.gz -C data/sft/
 
 离线数据流需要按下面脚本生成离线比特数据流：
 ```bash
-paddleformers-cli build examples/config/sft/full.yaml
+paddleformers-cli train examples/config/sft/full.yaml make_offline_data=true
 ```
 
 * 制作离线数据集时，建议使用真实训练的 yaml 配置文件，另外需要注意以下参数：
