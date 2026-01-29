@@ -23,25 +23,15 @@ import paddle
 from PIL import Image
 
 from paddleformers.transformers.qwen2_vl import vision_process
-from paddleformers.utils.log import logger
+from tests.testing_utils import gpu_device_initializer
 
 
 class TestQwenVisionProcessing(unittest.TestCase):
     """Test cases for Qwen vision processing functions."""
 
+    @gpu_device_initializer(log_prefix="TestQwenVisionProcessing")
     def setUp(self):
         """Set up test fixtures."""
-        # Initialize device when GPU is needed by certain test case
-        gpu_count = paddle.device.cuda.device_count()
-        pid = os.getpid()
-
-        if gpu_count > 0:
-            paddle.set_device(f"gpu:{pid % gpu_count}")
-        else:
-            paddle.set_device("cpu")
-            self.skipTest("No GPU currently available/allocated")
-        logger.info(f"TestQwenVisionProcessing [PID:{pid}] Device initialized: {paddle.get_device()}")
-
         # Create test image
         self.test_image = Image.new("RGB", (100, 100), color="red")
 

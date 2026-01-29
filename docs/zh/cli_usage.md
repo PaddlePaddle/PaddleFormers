@@ -92,7 +92,7 @@ paddleformers-cli export examples/config/run_export.yaml
 #### 方式一
 
 ```shell
-NNODES={num_nodes} MASTER_ADDR={your_master_addr} MASTER_PORT={your_master_port} CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train examples/config/sft_full.yaml
+NNODES={num_nodes} MASTER_ADDR={your_master_addr} MASTER_PORT={your_master_port} RANK={rank} CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train examples/config/sft_full.yaml
 ```
 
 #### 方式二 (mpirun)
@@ -100,7 +100,7 @@ NNODES={num_nodes} MASTER_ADDR={your_master_addr} MASTER_PORT={your_master_port}
 先写一个脚本，例如`scripts/train_96_gpus.sh`，内容为：
 
 ```shell
-NNODES={num_nodes} MASTER_ADDR={your_master_addr} MASTER_PORT={your_master_port} CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train examples/config/sft_full.yaml
+NNODES={num_nodes} MASTER_ADDR={your_master_addr} MASTER_PORT={your_master_port} RANK={rank} CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train examples/config/sft_full.yaml
 ```
 
 然后：

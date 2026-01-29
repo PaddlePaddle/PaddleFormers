@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass, field
+from typing import List
 
 
 @dataclass
@@ -150,4 +151,12 @@ class DataArguments:
     dataset_output_dir: str = field(
         default="./dataset_output",
         metadata={"help": "output path of offline sft datasets"},
+    )
+    additional_special_tokens: List[str] = field(
+        default_factory=list,
+        metadata={"help": "Additional special tokens."},
+    )
+    custom_register_path: str = field(
+        default=None,
+        metadata={"help": "Register python file path for custom templates and mm_plugin."},
     )

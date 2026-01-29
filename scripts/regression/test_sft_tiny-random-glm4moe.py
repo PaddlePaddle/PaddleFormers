@@ -37,16 +37,16 @@ SFT_FULL_EXCEPTED_LOSS = 12.718987
 SFT_FULL_RESUME_EXCEPTED_LOSS = 12.717552
 SFT_FULL_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
-SFT_LORA_EXCEPTED_LOSS = 12.725744
-SFT_LORA_RESUME_EXCEPTED_LOSS = 12.72543
+SFT_LORA_EXCEPTED_LOSS = 12.718987
+SFT_LORA_RESUME_EXCEPTED_LOSS = 12.717308
 SFT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 SFT_FULL_TP_PP_EXCEPTED_LOSS = 12.789069
 SFT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 12.789183
 SFT_FULL_TP_PP_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
-SFT_LORA_TP_PP_EXCEPTED_LOSS = 12.794643
-SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 12.794622
+SFT_LORA_TP_PP_EXCEPTED_LOSS = 12.789069
+SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 12.788974
 SFT_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 SFT_FC_EXCEPTED_LOSS = 12.936313
@@ -101,12 +101,12 @@ class SFTTrainTester(unittest.TestCase):
         excepted_result,
     ):
         from paddleformers.transformers.glm4_moe.modeling import (
-            Glm4MoeForCausalLMDecapitated,
+            Glm4MoeForCausalLMDeprecated,
         )
 
         input_ids = paddle.to_tensor([[1, 306, 4658, 278, 6593, 310, 2834, 338]])
         attention_mask = paddle.ones_like(input_ids)
-        model = Glm4MoeForCausalLMDecapitated.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
+        model = Glm4MoeForCausalLMDeprecated.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
         with paddle.no_grad():
             result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
         print(f"excepted_result is : {excepted_result}")

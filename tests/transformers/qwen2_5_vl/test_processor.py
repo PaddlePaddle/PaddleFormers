@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import inspect
-import os
 import shutil
 import tempfile
 import unittest
@@ -25,7 +24,7 @@ import numpy as np
 import paddle
 
 from paddleformers.transformers import AutoProcessor, Qwen2_5_VLProcessor
-from paddleformers.utils import logger
+from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_processing_common import ProcessorTesterMixin
 
 
@@ -41,17 +40,10 @@ class Qwen2_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         processor.save_pretrained(cls.tmpdir)
         cls.image_token = processor.image_token
 
+    # Use GPU 0 to prevent CUDA illegal memory access during resize
+    @gpu_device_initializer(log_prefix="Qwen2_5_VLProcessorTest", gpu_id=0)
     def setUp(self):
-        # Initialize device when GPU is needed by certain test case
-        gpu_count = paddle.device.cuda.device_count()
-        pid = os.getpid()
-
-        if gpu_count > 0:
-            paddle.set_device(f"gpu:{pid % gpu_count}")
-        else:
-            paddle.set_device("cpu")
-            self.skipTest("No GPU currently available/allocated")
-        logger.info(f"Qwen2_5_VLProcessorTest [PID:{pid}] Device initialized: {paddle.get_device()}")
+        pass
 
     def get_tokenizer(self, **kwargs):
         return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).tokenizer
