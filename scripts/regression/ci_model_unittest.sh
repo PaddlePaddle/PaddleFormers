@@ -25,6 +25,7 @@ mkdir -p $log_path
 AGILE_COMPILE_BRANCH=$3
 
 install_requirements() {
+    start_ts=$(date +%s)
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
@@ -42,6 +43,8 @@ install_requirements() {
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
     python -m pip list >> ${log_path}/commit_info.txt
+    end_ts=$(date +%s)
+    echo -e "\033[32m install requirements cost $((end_ts - start_ts))s \033[0m"
 }
 
 set_env() {
