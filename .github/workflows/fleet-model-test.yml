@@ -148,7 +148,7 @@ jobs:
           # pip uninstall paddlepaddle-gpu -y
           # pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           cd ..
-          git clone git clone https://github.com/PaddlePaddle/PaddleFleet.git -b develop
+          git clone https://github.com/PaddlePaddle/PaddleFleet.git -b develop
           cd PaddleFleet
           git status
           git config --global --add safe.directory /workspace/PaddleFleet
@@ -321,7 +321,7 @@ jobs:
           # pip uninstall paddlepaddle-gpu -y
           # pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           cd ..
-          git clone git clone https://github.com/PaddlePaddle/PaddleFleet.git -b develop
+          git clone  https://github.com/PaddlePaddle/PaddleFleet.git -b develop
           cd PaddleFleet
           git status
           git config --global --add safe.directory /workspace/PaddleFleet
@@ -609,7 +609,7 @@ jobs:
           # pip uninstall paddlepaddle-gpu -y
           # pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           cd ..
-          git clone git clone https://github.com/PaddlePaddle/PaddleFleet.git -b develop
+          git clone https://github.com/PaddlePaddle/PaddleFleet.git -b develop
           cd PaddleFleet
           git status
           git config --global --add safe.directory /workspace/PaddleFleet
