@@ -160,7 +160,6 @@ def dpo_logps(
 
     # 3.choose & reject logps
     offset = 1 if self.ignore_eos_token else 0
-    print("offset: ", offset)
     if self.use_filtered_label_loss:
         chosen_logps = paddle.stack(
             [
