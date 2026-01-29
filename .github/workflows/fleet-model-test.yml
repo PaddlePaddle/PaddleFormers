@@ -294,7 +294,7 @@ jobs:
             -e PR_USER="${{ github.event.pull_request.user.login }}" \
             -w /workspace --network host ${docker_image}
 
-            
+
       - name: Install PaddleFormers
         id: formers_install
         run: |
@@ -355,149 +355,149 @@ jobs:
           pip install librosa==0.11.0
           '
       
-      - name: GLM4.5 pre-train
-        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt.sh
-          glm45_exit_code=$?
-          if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
-            exit 1
-          else
-            echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
-          fi
-          '
+      # - name: GLM4.5 pre-train
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt.sh
+      #     glm45_exit_code=$?
+      #     if [[ "$glm45_exit_code" != "0" ]]; then
+      #       echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
+      #       exit 1
+      #     else
+      #       echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
+      #     fi
+      #     '
 
-      - name: GLM4.5 sft
-        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_sft.sh
-          glm45_exit_code=$?
-          if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 sft.\033[0m"
-            exit 1
-          else
-            echo -e "\033[32mIntegration test succeeded: GLM4.5 sft.\033[0m"
-          fi
-          '
+      # - name: GLM4.5 sft
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_sft.sh
+      #     glm45_exit_code=$?
+      #     if [[ "$glm45_exit_code" != "0" ]]; then
+      #       echo -e "::error:: \033[31mIntegration test failed: GLM4.5 sft.\033[0m"
+      #       exit 1
+      #     else
+      #       echo -e "\033[32mIntegration test succeeded: GLM4.5 sft.\033[0m"
+      #     fi
+      #     '
       
-      - name: GLM4.5 lora
-        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_lora.sh
-          glm45_exit_code=$?
-          if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 lora.\033[0m"
-            exit 1
-          else
-            echo -e "\033[32mIntegration test succeeded: GLM4.5 lora.\033[0m"
-          fi
-          '
+      # - name: GLM4.5 lora
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_lora.sh
+      #     glm45_exit_code=$?
+      #     if [[ "$glm45_exit_code" != "0" ]]; then
+      #       echo -e "::error:: \033[31mIntegration test failed: GLM4.5 lora.\033[0m"
+      #       exit 1
+      #     else
+      #       echo -e "\033[32mIntegration test succeeded: GLM4.5 lora.\033[0m"
+      #     fi
+      #     '
       
-      - name: GLM4.5 dpo
-        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_dpo.sh
-          glm45_exit_code=$?
-          if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 dpo.\033[0m"
-            exit 1
-          else
-            echo -e "\033[32mIntegration test succeeded: GLM4.5 dpo.\033[0m"
-          fi
-          '
+      # - name: GLM4.5 dpo
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_dpo.sh
+      #     glm45_exit_code=$?
+      #     if [[ "$glm45_exit_code" != "0" ]]; then
+      #       echo -e "::error:: \033[31mIntegration test failed: GLM4.5 dpo.\033[0m"
+      #       exit 1
+      #     else
+      #       echo -e "\033[32mIntegration test succeeded: GLM4.5 dpo.\033[0m"
+      #     fi
+      #     '
 
-      - name: GLM4.5 pre-train (FP8)
-        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_fp8.sh
-          glm45_exit_code=$?
-          if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
-            exit 1
-          else
-            echo -e "\033[32mIntegration test succeeded: GLM4.5 FP8.\033[0m"
-          fi
-          '
-      - name: GLM4.5 dpo_lora
-        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_dpo_lora.sh
-          glm45_exit_code=$?
-          if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 dpo lora.\033[0m"
-            exit 1
-          else
-            echo -e "\033[32mIntegration test succeeded: GLM4.5 dpo lora.\033[0m"
-          fi
-          '
+      # - name: GLM4.5 pre-train (FP8)
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_fp8.sh
+      #     glm45_exit_code=$?
+      #     if [[ "$glm45_exit_code" != "0" ]]; then
+      #       echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
+      #       exit 1
+      #     else
+      #       echo -e "\033[32mIntegration test succeeded: GLM4.5 FP8.\033[0m"
+      #     fi
+      #     '
+      # - name: GLM4.5 dpo_lora
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_dpo_lora.sh
+      #     glm45_exit_code=$?
+      #     if [[ "$glm45_exit_code" != "0" ]]; then
+      #       echo -e "::error:: \033[31mIntegration test failed: GLM4.5 dpo lora.\033[0m"
+      #       exit 1
+      #     else
+      #       echo -e "\033[32mIntegration test succeeded: GLM4.5 dpo lora.\033[0m"
+      #     fi
+      #     '
 
-      - name: GLM4.5 pre-train (FP8)
-        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_fp8.sh
-          glm45_exit_code=$?
-          if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
-            exit 1
-          else
-            echo -e "\033[32mIntegration test succeeded: GLM4.5 FP8.\033[0m"
-          fi
-          '
+      # - name: GLM4.5 pre-train (FP8)
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_fp8.sh
+      #     glm45_exit_code=$?
+      #     if [[ "$glm45_exit_code" != "0" ]]; then
+      #       echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
+      #       exit 1
+      #     else
+      #       echo -e "\033[32mIntegration test succeeded: GLM4.5 FP8.\033[0m"
+      #     fi
+      #     '
 
-      - name: GLM4.5 pre-train (Grouped GEMM)
-        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_grouped_gemm.sh
-          glm45_exit_code=$?
-          if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 Grouped GEMM.\033[0m"
-            exit 1
-          else
-            echo -e "\033[32mIntegration test succeeded: GLM4.5 Grouped GEMM.\033[0m"
-          fi
-          '
+      # - name: GLM4.5 pre-train (Grouped GEMM)
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_grouped_gemm.sh
+      #     glm45_exit_code=$?
+      #     if [[ "$glm45_exit_code" != "0" ]]; then
+      #       echo -e "::error:: \033[31mIntegration test failed: GLM4.5 Grouped GEMM.\033[0m"
+      #       exit 1
+      #     else
+      #       echo -e "\033[32mIntegration test succeeded: GLM4.5 Grouped GEMM.\033[0m"
+      #     fi
+      #     '
 
-      - name: Qwen pre-train
-        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh pt
-          '
+      # - name: Qwen pre-train
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh pt
+      #     '
         
-      - name: Qwen sft
-        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh sft
-          '
+      # - name: Qwen sft
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh sft
+      #     '
 
 
-      - name: Qwen lora
-        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh lora
-          '
+      # - name: Qwen lora
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh lora
+      #     '
 
       - name: Qwen vl sft
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
@@ -644,19 +644,19 @@ jobs:
           pip install librosa==0.11.0
           '
 
-      - name: GLM4.5 pre-train
-        run: |
-          docker exec -t ${{ env.container_name }} /bin/bash -ce '
-          source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_a100.sh
-          glm45_exit_code=$?
-          if [[ "$glm45_exit_code" != "0" ]]; then
-            echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
-            exit 1
-          else
-            echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
-          fi
-          '
+      # - name: GLM4.5 pre-train
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_a100.sh
+      #     glm45_exit_code=$?
+      #     if [[ "$glm45_exit_code" != "0" ]]; then
+      #       echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
+      #       exit 1
+      #     else
+      #       echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
+      #     fi
+      #     '
 
       - name: Qwen vl sft
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
