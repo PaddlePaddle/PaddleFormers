@@ -19,8 +19,8 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "create_sft_data": [],
-    "make_data_utils": [],
+    "create_sft_data": ["run_make_sftdata"],
+    "make_data_utils": ["DataGenerator"],
 }
 
 if TYPE_CHECKING:
