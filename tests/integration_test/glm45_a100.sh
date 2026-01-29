@@ -96,6 +96,17 @@ elif [[ ${step} == "grouped_gemm" ]]; then
       | .output_dir = strenv(data_dir) + "/checkpoints/grouped_gemm"' \
     $config_yaml > ${config_yaml}.tmp
   mv ${config_yaml}.tmp $config_yaml
+elif [[ ${step} == "dpo_lora" ]]; then
+  export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/dpo
+config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_dpo_lora.yaml
+config_json=$CACHE_DIR/glm45/GLM-4.5-Air/config.json
+yq '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+    | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
+    | .model_name_or_path = strenv(CACHE_DIR) + "/zai-org/GLM-4.5-Air-Base"
+    | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_lora_vdl_log"
+    | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_lora_ckpts"' \
+   $config_yaml > ${config_yaml}.tmp
+mv ${config_yaml}.tmp $config_yaml
 fi
 
 rm -rf vdl_log/
