@@ -23,6 +23,7 @@ from functools import partial
 import numpy as np
 import paddle
 
+from paddleformers.cli.make_data.make_data_utils import DataGenerator
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
     check_data_split,
@@ -65,7 +66,6 @@ from paddleformers.transformers.configuration_utils import (
 from paddleformers.utils.import_utils import is_paddlefleet_available
 from paddleformers.utils.log import logger
 
-from .make_data_utils import DataGenerator
 from .sft_trainer import SFTTrainer
 
 # Fine-tune Environment Variables to support sharding stage1 overlap optimization.
@@ -417,7 +417,12 @@ def run_sft(
         logger.info(f"training_args.sharding_parallel_size: {training_args.sharding_parallel_size}")
         logger.info(f"global_batch_size: {global_batch_size}")
 
-        if training_args.do_train and data_args.train_dataset_path:
+        if (
+            training_args.do_train
+            and data_args.train_dataset_path
+            and training_args.should_load_dataset
+            and paddle.distributed.get_rank() == 0
+        ):
             runtime_timer.start("Create SFT Train MapDataset")
             os.makedirs(os.path.join(data_args.dataset_output_dir, "train"), exist_ok=True)
 
@@ -457,7 +462,12 @@ def run_sft(
             train_builder.finalize(train_output_idx_files)
             logger.info(f"{runtime_timer.log()}")
 
-        if training_args.do_eval and data_args.eval_dataset_path:
+        if (
+            training_args.do_eval
+            and data_args.eval_dataset_path
+            and training_args.should_load_dataset
+            and paddle.distributed.get_rank() == 0
+        ):
             runtime_timer.start("Create SFT Eval MapDataset")
             os.makedirs(os.path.join(data_args.dataset_output_dir, "eval"), exist_ok=True)
 
