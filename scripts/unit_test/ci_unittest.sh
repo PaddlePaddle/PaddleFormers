@@ -125,7 +125,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     timeout --foreground --signal=TERM --kill-after=30s 10m \
     python -X faulthandler -m pytest -v -s -n 8 \
         --dist no \
-        --maxfail=5 \
+        --maxfail=10 \
         --retries 3 --retry-delay 1 \
         --timeout 200 --durations 20 \
         --alluredir=result \

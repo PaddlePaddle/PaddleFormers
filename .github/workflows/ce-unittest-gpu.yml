@@ -122,7 +122,7 @@ jobs:
           cp -r ${work_dir}/../../../models ./models
           echo "Check whether the local model file exists:"
           ls -l ./models
-          timeout 40m bash scripts/unit_test/ci_unittest.sh ${paddle_whl} true
+          bash scripts/unit_test/ci_unittest.sh ${paddle_whl} true
           '
           
       - name: Upload Allure-reports & Logs
