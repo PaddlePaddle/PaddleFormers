@@ -23,7 +23,6 @@ from functools import partial
 import numpy as np
 import paddle
 
-from paddleformers.cli.make_data.make_data_utils import DataGenerator
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
     check_data_split,
@@ -66,6 +65,7 @@ from paddleformers.transformers.configuration_utils import (
 from paddleformers.utils.import_utils import is_paddlefleet_available
 from paddleformers.utils.log import logger
 
+from .make_data_utils import DataGenerator
 from .sft_trainer import SFTTrainer
 
 # Fine-tune Environment Variables to support sharding stage1 overlap optimization.
