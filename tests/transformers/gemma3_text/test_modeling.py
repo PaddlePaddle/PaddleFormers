@@ -449,6 +449,10 @@ class Gemma3TextIntegrationTest(unittest.TestCase):
     base_model_class = Gemma3TextModel
     test_dtype = "float32"  # "bfloat16"
 
+    @gpu_device_initializer(log_prefix="Gemma3TextIntegrationTest")
+    def setUp(self):
+        pass
+
     def test_inference_no_attention(self):
         model = Gemma3TextModel.from_pretrained(
             "PaddleFormers/tiny-random-gemma3",

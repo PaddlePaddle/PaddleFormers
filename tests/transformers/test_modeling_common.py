@@ -39,7 +39,7 @@ from paddleformers.transformers.configuration_utils import PretrainedConfig
 from paddleformers.transformers.model_utils import PretrainedModel
 from paddleformers.utils.env import CONFIG_NAME, LEGACY_CONFIG_NAME  # MODEL_HOME,
 
-from ..testing_utils import slow
+from ..testing_utils import gpu_device_initializer, slow
 
 
 def _config_zero_init(config):
@@ -221,6 +221,10 @@ class ModelTesterMixin:
     is_encoder_decoder = False
     has_attentions = True
     model_split_percents = [0.5, 0.7, 0.9]
+
+    @gpu_device_initializer(log_prefix="ModelTesterMixin")
+    def setUp(self):
+        pass
 
     def _prepare_for_class(self, inputs_dict, model_class):
         inputs_dict = copy.deepcopy(inputs_dict)
