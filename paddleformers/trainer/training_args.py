@@ -1641,6 +1641,19 @@ class TrainingArguments:
         if self.disable_tqdm is None:
             self.disable_tqdm = False  # logger.getEffectiveLevel() > logging.WARN
 
+        # XPU Device Data Loading Strategy:
+        # - XPU does not support concurrent access from multiple threads on the same device.
+        # - When num_workers=0, DataLoader uses a background thread that may conflict with
+        #   the main training thread accessing XPU.
+        # - Setting num_workers>=1 spawns separate subprocess(es) for data loading on CPU,
+        #   which avoids XPU device contention between data loading and model training.
+        if self.dataloader_num_workers == 0 and self.device == "xpu":
+            self.dataloader_num_workers = 1
+            logger.info(
+                "XPU device detected: automatically setting dataloader_num_workers=1 "
+                "to use subprocess for data loading and avoid device contention."
+            )
+
         self.evaluation_strategy = IntervalStrategy(self.evaluation_strategy)
         self.logging_strategy = IntervalStrategy(self.logging_strategy)
         self.save_strategy = IntervalStrategy(self.save_strategy)
