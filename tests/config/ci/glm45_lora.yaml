@@ -11,7 +11,7 @@ mix_strategy: concat
 
 ### model
 model_name_or_path: ../zai-org/GLM-4.5-Air
-attn_impl: flashmask
+_attn_implementation: flashmask
 lora: true
 lora_rank: 8
 
@@ -42,8 +42,6 @@ warmup_steps: 20
 learning_rate: 1.0e-4
 
 # performance
-fuse_attention_qkv: true
-fuse_attention_ffn: true
 moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
 tensor_model_parallel_size: 4
@@ -65,3 +63,5 @@ save_checkpoint_format: flex_checkpoint
 
 moe_router_force_load_balancing: true
 num_empty_layers_add_in_tail: 1
+
+router_aux_loss_coef: 0.0

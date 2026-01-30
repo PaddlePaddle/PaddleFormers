@@ -25,7 +25,7 @@ from paddleformers.transformers import (
     Gemma3TextConfig,
     Gemma3TextModel,
 )
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -324,8 +324,6 @@ class Gemma3TextModelTester:
             Gemma3ForCausalLM(config)
 
     def create_and_check_fuse_attn(self, config, input_ids, input_mask, *args):
-        config.fuse_attention_qkv = True
-        config.fuse_attention_ffn = True
         model = Gemma3ForCausalLM(config)
         model.eval()
 
@@ -350,6 +348,7 @@ class Gemma3TextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
     all_model_classes = (Gemma3TextModel, Gemma3ForCausalLM)
     all_generative_model_classes = {Gemma3ForCausalLM: {Gemma3TextModel, "Gemma3"}}
 
+    @gpu_device_initializer(log_prefix="Gemma3TextModelTest")
     def setUp(self):
         super().setUp()
         self.model_tester = Gemma3TextModelTester(self)

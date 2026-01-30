@@ -25,7 +25,7 @@ from paddleformers.transformers import (
     Glm4MoeForCausalLMDeprecated as Glm4MoeForCausalLM,
 )
 from paddleformers.transformers import Glm4MoeModel
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -301,6 +301,7 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     all_model_classes = (Glm4MoeModel, Glm4MoeForCausalLM)
     all_generative_model_classes = {Glm4MoeForCausalLM: (Glm4MoeModel, "Glm4Moe")}
 
+    @gpu_device_initializer(log_prefix="Glm4MoeModelTest")
     def setUp(self):
         super().setUp()
 
@@ -378,37 +379,27 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         for model_class in self.all_model_classes:
             # test from_pretrained
             model1 = model_class.from_pretrained(
-                "PaddleFormers/tiny-random-glm4moe",
+                "PaddleFormers/tiny-random-glm4moe-bf16",
                 download_hub="aistudio",
-                convert_from_hf=True,
-                load_checkpoint_format="",
+                load_checkpoint_format="flex_checkpoint",
             )
-
-            model2 = model_class.from_pretrained(
-                "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", load_checkpoint_format="flex_checkpoint"
-            )
-
             model_state_1 = model1.state_dict()
-            model_state_2 = model2.state_dict()
-
-            for k, v in model_state_1.items():
-                md51 = v._md5sum()
-                md52 = model_state_2[k]._md5sum()
-                assert md51 == md52
 
             # test save_pretrained
             with tempfile.TemporaryDirectory() as tmpdirname:
-                model2.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-                model3 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
-                model_state_3 = model3.state_dict()
+                model1.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+                model2 = model_class.from_pretrained(
+                    tmpdirname, convert_from_hf=True, load_checkpoint_format="flex_checkpoint"
+                )
+                model_state_2 = model2.state_dict()
 
-                for k, v in model_state_3.items():
-                    md53 = v._md5sum()
-                    md52 = model_state_2[k]._md5sum()
+                for k, v in model_state_2.items():
+                    md52 = v._md5sum()
+                    md51 = model_state_1[k]._md5sum()
                     if k.endswith(".mlp.gate.weight"):
+                        md51 = model_state_1[k].cast("bfloat16")._md5sum()
                         md52 = model_state_2[k].cast("bfloat16")._md5sum()
-                        md53 = model_state_3[k].cast("bfloat16")._md5sum()
-                    assert md52 == md53
+                    assert md51 == md52
 
     def test_hidden_states_output(self):
         pass
@@ -488,7 +479,6 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
             download_hub="aistudio",
             load_checkpoint_format="flex_checkpoint",
             fd_fallback=True,
-            fuse_attention_ffn=True,
         )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():

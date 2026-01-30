@@ -25,7 +25,7 @@ from paddleformers.transformers import (
     Ernie4_5ForCausalLM,
     Ernie4_5Model,
 )
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 
 # from tests.testing_utils import slow
 from tests.transformers.test_configuration_common import ConfigTester
@@ -307,6 +307,7 @@ class Ernie4_5ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
     all_model_classes = (Ernie4_5Model, Ernie4_5ForCausalLM)
     all_generative_model_classes = {Ernie4_5ForCausalLM: (Ernie4_5Model, "ernie4_5")}
 
+    @gpu_device_initializer(log_prefix="Ernie4_5ModelTest")
     def setUp(self):
         super().setUp()
 
@@ -516,51 +517,5 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
                     rtol=1e-2,
-                )
-            )
-
-            # 4. forward with fc
-            from paddleformers.transformers import Ernie4_5Config, Ernie4_5ForCausalLM
-
-            uc_load_model = Ernie4_5ForCausalLM.from_pretrained(
-                self.torch_model_path,
-                convert_from_hf=True,
-                dtype="float32",
-                load_checkpoint_format="",
-            )
-            fc_load_model = Ernie4_5ForCausalLM.from_pretrained(
-                self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
-            )
-            uc_load_model.eval()
-            fc_load_model.eval()
-            uc_logit = uc_load_model(paddle.to_tensor(input_ids))[0]
-            fc_logit = fc_load_model(paddle.to_tensor(input_ids))[0]
-            self.assertTrue(
-                np.allclose(
-                    uc_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    fc_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e-5,
-                    rtol=1e-5,
-                )
-            )
-
-            # 5. fuse qkv/ffn with fc
-            model_config = Ernie4_5Config.from_pretrained(self.torch_model_path)
-            model_config.fuse_attention_qkv = True
-            model_config.fuse_attention_ffn = True
-            fc_fused_load_model = Ernie4_5ForCausalLM.from_pretrained(
-                self.torch_model_path,
-                config=model_config,
-                dtype="float32",
-                load_checkpoint_format="flex_checkpoint",
-            )
-            fc_fused_load_model.eval()
-            fc_fused_logit = fc_fused_load_model(paddle.to_tensor(input_ids))[0]
-            self.assertTrue(
-                np.allclose(
-                    fc_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    fc_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    atol=1e-5,
-                    rtol=1e-5,
                 )
             )

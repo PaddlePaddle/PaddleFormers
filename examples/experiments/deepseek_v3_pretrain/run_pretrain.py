@@ -566,9 +566,7 @@ def main():
 
         # config.using_flex_token = True
         # config.num_nextn_predict_layers = 1
-        # config.using_fake_gate = True
-        # config.fuse_rms_norm = True
-        # config.fuse_attention_ffn = True
+        # config.moe_router_force_load_balancing = True
         # config.apply_rope_fusion = True
         # config.token_drop_steps = 0
         model = model_class.from_config(config, dtype=dtype)
@@ -626,8 +624,8 @@ def main():
         callbacks += [MoeExpertsGradScaleCallback(training_args)]
 
     if getattr(config, "topk_method", None) == "noaux_tc":
-        aux_loss_free_gamma = getattr(config, "aux_loss_free_gamma", 0.001)
-        callbacks += [MoECorrectionBiasAdjustCallback(aux_loss_free_gamma)]
+        moe_router_bias_update_rate = getattr(config, "moe_router_bias_update_rate", 0.001)
+        callbacks += [MoECorrectionBiasAdjustCallback(moe_router_bias_update_rate)]
 
     def resume_from_custom_func(model):
         if training_args.resume_from_huggingface_ckpt:
