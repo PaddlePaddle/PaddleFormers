@@ -275,7 +275,9 @@ class VisionRotaryEmbedding(nn.Layer):
             theta (float, optional): the frequency factor. Defaults to 10000.0.
         """
         super().__init__()
-        self.inv_freq = 1.0 / theta ** (paddle.arange(start=0, end=dim, step=2, dtype="float32") / dim)
+        self.inv_freq = 1.0 / theta ** (
+            paddle.arange(start=0, end=dim, step=2, dtype="float32").to(device="cpu") / dim
+        )
 
     def forward(self, seqlen: int) -> paddle.Tensor:
         """

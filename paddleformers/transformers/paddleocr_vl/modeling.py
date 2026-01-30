@@ -432,7 +432,7 @@ class PaddleOCRVisionRotaryEmbedding(nn.Layer):
         self.rope_init()
 
     def rope_init(self):
-        arange = paddle.arange(0, self.dim, 2, dtype="float32")
+        arange = paddle.arange(0, self.dim, 2, dtype="float32").to(device="cpu")
         inv_freq = 1.0 / (self.theta ** (arange / self.dim))
         self.register_buffer("inv_freq", inv_freq, persistable=False)
 

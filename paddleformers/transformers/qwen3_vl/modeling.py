@@ -123,7 +123,7 @@ class Qwen3VLVisionRotaryEmbedding(nn.Layer):
 
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
         super().__init__()
-        inv_freq = 1.0 / (theta ** (paddle.arange(0, dim, 2, dtype=paddle.float32) / dim))
+        inv_freq = 1.0 / (theta ** (paddle.arange(0, dim, 2, dtype=paddle.float32).to(device="cpu") / dim))
         self.register_buffer("inv_freq", inv_freq, persistable=False)
 
     def forward(self, seqlen: int) -> paddle.Tensor:

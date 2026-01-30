@@ -156,7 +156,7 @@ class Qwen3VLMoeVisionRotaryEmbedding(nn.Layer):
     def __init__(self, dim: int, theta: float = 10000.0) -> None:
         super().__init__()
         self.dim = dim
-        inv_freq = 1.0 / (theta ** (paddle.arange(0, dim, 2, dtype=paddle.float32) / dim))
+        inv_freq = 1.0 / (theta ** (paddle.arange(0, dim, 2, dtype=paddle.float32).to(device="cpu") / dim))
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.theta = theta
 
@@ -580,7 +580,9 @@ class Qwen3VLMoePretrainedModel(PretrainedModel):
             normal_init(module.gate_up_proj)
             normal_init(module.down_proj)
         elif isinstance(module, Qwen3VLMoeVisionRotaryEmbedding):
-            inv_freq = 1.0 / (module.theta ** (paddle.arange(0, module.dim, 2, dtype=paddle.float) / module.dim))
+            inv_freq = 1.0 / (
+                module.theta ** (paddle.arange(0, module.dim, 2, dtype=paddle.float).to(device="cpu") / module.dim)
+            )
             module.inv_freq.set_value(inv_freq)
 
     @classmethod
