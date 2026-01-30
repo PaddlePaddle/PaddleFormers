@@ -900,16 +900,6 @@ class LoRAModel(nn.Layer):
                     self.add_lora_split_mapping(module_name + ".weight_quanter._scale", is_column=True)
                     self.add_lora_split_mapping(module_name + ".activation_quanter._scale", is_column=False)
                     self.add_lora_split_mapping(module_name + ".activation_quanter.quanter._scale", is_column=False)
-        elif isinstance(module, QuantizationLinear):
-            lora_module = QuantizationLoRALinear(module, lora_config)
-        elif isinstance(module, ColumnParallelQuantizationLinear):
-            lora_module = ColumnParallelQuantizationLoRALinear(module, lora_config)
-            # Lora column parallel will spilt lora B matrix
-            self.add_lora_split_mapping(module_name + ".lora_B", is_column=True)
-        elif isinstance(module, RowParallelQuantizationLinear):
-            lora_module = RowParallelQuantizationLoRALinear(module, lora_config)
-            # Lora row parallel will spilt lora A matrix
-            self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
         elif is_paddlefleet_available() and isinstance(module, FleetQuantizationLinear):
             lora_module = FleetQuantizationLoRALinear(module, module.skip_bias_add, lora_config)
         elif is_paddlefleet_available() and isinstance(module, FleetColumnParallelQuantizationLinear):
@@ -918,6 +908,16 @@ class LoRAModel(nn.Layer):
             self.add_lora_split_mapping(module_name + ".lora_B", is_column=True)
         elif is_paddlefleet_available() and isinstance(module, FleetRowParallelQuantizationLinear):
             lora_module = FleetRowParallelQuantizationLoRALinear(module, module.skip_bias_add, lora_config)
+            # Lora row parallel will spilt lora A matrix
+            self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
+        elif isinstance(module, QuantizationLinear):
+            lora_module = QuantizationLoRALinear(module, lora_config)
+        elif isinstance(module, ColumnParallelQuantizationLinear):
+            lora_module = ColumnParallelQuantizationLoRALinear(module, lora_config)
+            # Lora column parallel will spilt lora B matrix
+            self.add_lora_split_mapping(module_name + ".lora_B", is_column=True)
+        elif isinstance(module, RowParallelQuantizationLinear):
+            lora_module = RowParallelQuantizationLoRALinear(module, lora_config)
             # Lora row parallel will spilt lora A matrix
             self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
         if lora_module is None:
@@ -992,6 +992,15 @@ class LoRAModel(nn.Layer):
                 or (
                     RowParallelQuantizationLoRALinear is not None
                     and isinstance(layer, RowParallelQuantizationLoRALinear)
+                )
+                or (FleetQuantizationLoRALinear is not None and isinstance(layer, FleetQuantizationLoRALinear))
+                or (
+                    FleetColumnParallelQuantizationLoRALinear is not None
+                    and isinstance(layer, FleetColumnParallelQuantizationLoRALinear)
+                )
+                or (
+                    FleetRowParallelQuantizationLoRALinear is not None
+                    and isinstance(layer, FleetRowParallelQuantizationLoRALinear)
                 )
             ):
                 for name, weight in layer.state_dict().items():

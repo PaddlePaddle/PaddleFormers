@@ -82,6 +82,8 @@ LINEAR_CLASSES = [
     RowParallelLinear,
     ColumnSequenceParallelLinear,
     RowSequenceParallelLinear,
+    FleetColumnParallelLinear,
+    FleetRowParallelLinear,
 ]
 
 
@@ -177,6 +179,10 @@ def replace_with_quantization_linear(model, quantization_config, llm_int8_thresh
                 isinstance(child, FleetColumnParallelLinear) or isinstance(child, FleetRowParallelLinear)
             ):
                 if child.world_size == 1:
+                    if getattr(child.weight, "transpose_weight", False):
+                        out_feature, in_features = child.weight.shape[0], child.weight.shape[1]
+                    else:
+                        in_features, out_feature = child.weight.shape[0], child.weight.shape[1]
                     quant_linear = FleetQuantizationLinear(
                         in_features=in_features,
                         out_features=out_feature,
