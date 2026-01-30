@@ -29,31 +29,6 @@ if [ -f 'PaddleFleet/.venv/bin/activate' ]; then
 fi
 
 if [[ "$step" == "pt" ]]; then
-    pushd $root_dir/PaddleFormers
-    git reset --hard HEAD
-    popd
-    python <<EOF
-infile = '$root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py'
-print(infile)
-outfile = infile + '.new'
-with open(infile) as fin:
-    lines = fin.readlines()
-with open(outfile, 'w') as fout:
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        pad = line[:len(line)-len(line.lstrip())]
-        if line.lstrip().startswith('config.fuse_rms_norm = True'):
-            fout.write(pad + 'config.fuse_rms_norm = True\n')
-            fout.write(pad + 'config.router_aux_loss_coef = None\n')
-        else:
-            fout.write(line)
-        i += 1
-EOF
-    mv $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py
-fi
-
-if [[ "$step" == "pt" ]]; then
     export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_multicard_pt.yaml
     export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
     export model_name_or_path=$CACHE_DIR/Qwen3-30B-A3B
