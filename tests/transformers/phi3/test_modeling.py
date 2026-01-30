@@ -411,6 +411,10 @@ class Phi3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
 
 
 class Phi3IntegrationTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Phi3IntegrationTest")
+    def setUp(self):
+        pass
+
     def test_model_tiny_logits(self):
         input_ids = [[1, 306, 4658, 278, 6593, 310, 2834, 338]]
 
@@ -474,6 +478,10 @@ class Phi3GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
 
 
 class Phi3CompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Phi3CompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
