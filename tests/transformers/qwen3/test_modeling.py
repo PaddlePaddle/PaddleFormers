@@ -27,7 +27,7 @@ from paddleformers.transformers import (
     Qwen3ForTokenClassification,
     Qwen3Model,
 )
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -275,6 +275,7 @@ class Qwen3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
         "zero-shot": Qwen3ForSequenceClassification,
     }
 
+    @gpu_device_initializer(log_prefix="Qwen3ModelTest")
     def setUp(self):
         super().setUp()
         self.model_tester = Qwen3ModelTester(self)
@@ -484,8 +485,6 @@ class Qwen3CompatibilityTest(unittest.TestCase):
 
             # 4. fuse qkv/ffn with fc
             model_config = Qwen3Config.from_pretrained(tempdir)
-            model_config.fuse_attention_qkv = True
-            model_config.fuse_attention_ffn = True
             paddle_model_fused = Qwen3ForCausalLM.from_pretrained(
                 tempdir,
                 config=model_config,

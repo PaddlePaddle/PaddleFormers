@@ -154,4 +154,4 @@ class DPOModelArgument:
     rslora_plus: bool = field(default=False, metadata={"help": "Strengthen lora performance"})
 
     # Attention
-    attn_impl: str = field(default="flashmask", metadata={"help": "Attention implementation"})
+    _attn_implementation: str = field(default="flashmask", metadata={"help": "Attention implementation"})

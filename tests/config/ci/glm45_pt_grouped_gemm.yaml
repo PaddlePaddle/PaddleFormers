@@ -16,7 +16,7 @@ prefetch_factor: 24
 
 ### model
 model_name_or_path: ./GLM-4.5-Air
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -75,12 +75,9 @@ moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
 num_hidden_layers: 3
 apply_rope_fusion: true
-fuse_rms_norm: true
 fp32_residual_connection: false
 moe_router_fusion: true
 router_aux_loss_coef: 0.001
-fuse_attention_qkv: true
-fuse_attention_ffn: true
 
 # grouped gemm
 moe_grouped_gemm: true

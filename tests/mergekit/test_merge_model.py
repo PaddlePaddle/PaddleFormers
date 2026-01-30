@@ -145,8 +145,6 @@ class TestMergeModel(unittest.TestCase):
             from paddleformers.transformers import Qwen3Config, Qwen3ForCausalLM
 
             model_config = Qwen3Config.from_pretrained(torch_model_path)
-            model_config.fuse_attention_qkv = True
-            model_config.fuse_attention_ffn = True
             fused_base_model = Qwen3ForCausalLM.from_pretrained(
                 torch_model_path,
                 config=model_config,
@@ -199,6 +197,25 @@ class TestMergeModel(unittest.TestCase):
 
             base_model_path = os.path.join(tempdir, "base_model")
 
+            model_config = Qwen3Config(
+                hidden_size=64,
+                intermediate_size=640,
+                num_hidden_layers=2,
+                num_attention_heads=4,
+                num_key_value_heads=2,
+                torch_dtype="bfloat16",
+            )
+            base_model = Qwen3ForCausalLM(model_config)
+            base_model.save_pretrained(base_model_path)
+            # save base model with bfloat16
+            base_model = Qwen3ForCausalLM.from_pretrained(
+                base_model_path,
+                config=model_config,
+                convert_from_hf=True,
+                dtype="bfloat16",
+                load_checkpoint_format="flex_checkpoint",
+            )
+
             quantization_config = {
                 "ignore_modules": [".*out_linear.*"],
                 "quantization_linear_list": [
@@ -214,25 +231,7 @@ class TestMergeModel(unittest.TestCase):
                 "weight_quantize_algo": {"weight_only_int8": [".*mlp.*", ".*self_attn.*"]},
             }
             quantization_config = QuantizationConfig.from_dict(quantization_config)
-            model_config = Qwen3Config(
-                hidden_size=64,
-                intermediate_size=640,
-                num_hidden_layers=2,
-                num_attention_heads=4,
-                num_key_value_heads=2,
-                torch_dtype="bfloat16",
-                quantization_config=quantization_config,
-            )
-            base_model = Qwen3ForCausalLM(model_config)
-            base_model.save_pretrained(base_model_path)
-            # save base model with bfloat16
-            base_model = Qwen3ForCausalLM.from_pretrained(
-                base_model_path,
-                config=model_config,
-                convert_from_hf=True,
-                dtype="bfloat16",
-                load_checkpoint_format="flex_checkpoint",
-            )
+            base_model.config["quantization_config"] = quantization_config
             base_model.save_pretrained(base_model_path)
 
             # create lora model

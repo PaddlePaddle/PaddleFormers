@@ -23,7 +23,6 @@ expert_model_parallel_size: 32
 sharding: "stage1"
 virtual_pipeline_model_parallel_size: 1
 sequence_parallel: 0
-use_flash_attention: true
 max_seq_len: 4097
 learning_rate: 0.000022
 min_lr: 0.00000073333
@@ -48,8 +47,6 @@ distributed_dataloader: 1
 unified_checkpoint: true
 save_total_limit: 2
 skip_profile_timer: false
-fuse_rms_norm: true
-fuse_attention_ffn: true
 apply_rope_fusion: true
 save_sharded_model: false
 load_sharded_model: false
@@ -58,7 +55,7 @@ unified_checkpoint_config: "ignore_merge_optimizer"
 offload_optim: true
 reorder_pipeline_priority: true
 num_nextn_predict_layers: 1
-using_fake_gate: false
+moe_router_force_load_balancing: false
 hidden_dropout_prob: 0.1
 attention_probs_dropout_prob: 0.1
 pre_alloc_memory: 61

@@ -21,7 +21,7 @@ prefetch_factor: 24
 ### model
 model_name_or_path: ./checkpoints/qwen3-30b-a3b-pt
 gated_linear_unit: true
-attn_impl: flashmask
+_attn_implementation: flashmask
 num_hidden_layers: 4
 
 ### finetuning
@@ -91,10 +91,7 @@ optim: adamw
 bf16: true
 fp16_opt_level: O2
 amp_master_grad: true
-fuse_attention_qkv: true
-fuse_attention_ffn: true
 fuse_swiglu: true
-fuse_rms_norm: true
 fuse_linear: true
 use_paddlefleet: true
 use_qk_norm: true

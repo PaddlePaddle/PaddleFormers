@@ -134,7 +134,7 @@ template: paddleocr_vl
 
 ### model
 model_name_or_path: PaddlePaddle/PaddleOCR-VL
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -207,7 +207,7 @@ template: paddleocr_vl
 
 ### model
 model_name_or_path: PaddlePaddle/PaddleOCR-VL
-attn_impl: flashmask
+_attn_implementation: flashmask
 lora: true
 lora_rank: 8
 
@@ -728,7 +728,7 @@ CUDA_VISIBLE_DEVICES=0 paddleformers-cli train examples/best_practices/PaddleOCR
                         per_device_train_batch_size=2 \
                         per_device_eval_batch_size=2 \
                         gradient_accumulation_steps=32 \
-                        attn_impl=sdpa \
+                        _attn_implementation=sdpa \
                         pre_alloc_memory=18 \
                         device=iluvatar_gpu
 ```
