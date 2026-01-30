@@ -388,7 +388,15 @@ class SFTDataSet(IterableDataset):
                     objects,
                 )
                 mm_inputs = self.template.mm_plugin.get_mm_inputs(
-                    images, videos, audios, [len(images)], [len(videos)], [len(audios)], None, self.processor
+                    images,
+                    videos,
+                    audios,
+                    self.processor,
+                    imglens=[len(images)],
+                    vidlens=[len(videos)],
+                    audlens=[len(audios)],
+                    batch_ids=None,
+                    messages=messages,
                 )
                 messages = self.template.mm_plugin.process_messages(
                     messages, images, videos, audios, mm_inputs, self.processor
