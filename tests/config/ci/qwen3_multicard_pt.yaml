@@ -92,3 +92,5 @@ use_paddlefleet: true
 # unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
+
+router_aux_loss_coef: 0.0

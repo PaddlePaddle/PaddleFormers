@@ -19,25 +19,6 @@ if [ -f 'PaddleFleet/.venv/bin/activate' ]; then
    source PaddleFleet/.venv/bin/activate
 fi
 
-python -c "
-infile = '$root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py'
-print(infile)
-outfile = infile + '.new'
-with open(infile) as fin:
-    lines = fin.readlines()
-with open(outfile, 'w') as fout:
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        pad = line[:len(line)-len(line.lstrip())]
-        if line.lstrip().startswith('config.fuse_rms_norm = True'):
-            fout.write(pad + 'config.fuse_rms_norm = False\n')
-        else:
-            fout.write(line)
-        i += 1
-"
-mv $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
-
 cd $root_dir/glm45_fleet
 export cur_dir=$(pwd)
 

@@ -77,3 +77,5 @@ fuse_swiglu: true
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
 moe_router_fusion: false
+
+router_aux_loss_coef: 0.0
