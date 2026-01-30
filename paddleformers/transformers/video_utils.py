@@ -379,6 +379,7 @@ def read_video_paddlecodec(
             f"    Try prioritizing Conda libraries by running: `LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH python your_script.py`\n"
             f"  - Original Error: {e}"
         )
+        raise
 
     logger.info("Loading video with paddlecodec backend.")
     PADDLECODEC_NUM_THREADS = int(os.environ.get("PADDLECODEC_NUM_THREADS", 0))

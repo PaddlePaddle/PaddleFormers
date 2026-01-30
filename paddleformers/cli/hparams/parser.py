@@ -16,6 +16,7 @@
 # Copyright (c) 2025 LLaMA-Factory
 # Licensed under the Apache License - https://github.com/hiyouga/LLaMA-Factory/blob/main/LICENSE
 
+import importlib.util
 import json
 import os
 import sys
@@ -79,6 +80,16 @@ _SERVER_ARGS = [
 _SERVER_CLS = tuple[ModelArguments, GeneratingArguments, FinetuningArguments, ServerArguments]
 
 
+def _load_custom_template(custom_path):
+    try:
+        spec = importlib.util.spec_from_file_location("custom_template", custom_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        print(f"Successfully loaded custom templates from {custom_path}")
+    except Exception as e:
+        raise RuntimeError(f"Failed to load custom templates from {custom_path}: {e}")
+
+
 def read_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> Union[dict[str, Any], list[str]]:
     r"""Get arguments from the command line or a config file."""
     if args is not None:
@@ -120,6 +131,10 @@ def _parse_args(
     """
 
     args = read_args(args)
+
+    if isinstance(args, dict) and "custom_register_path" in args:
+        _load_custom_template(args.pop("custom_register_path"))
+
     if isinstance(args, dict):
         return parser.parse_dict(args)
 
@@ -225,8 +240,8 @@ def get_train_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _
         os.environ["FLAGS_call_stack_level"] = "2"
         os.environ["FLAGS_eager_communication_connection"] = "0"
 
-    if data_args.padding_free:
-        data_args.packing = False
+    if data_args.split_multi_turn and data_args.template_backend != "jinja":
+        raise ValueError("data_args.template_backend must be jinja when split_multi_turn is True")
 
     return model_args, data_args, preprocess_args, generating_args, finetuning_args
 

@@ -18,9 +18,9 @@ import numpy as np
 import paddle
 
 try:
-    import TokenDispatcherUtils as TDU
+    import paddlefleet as paddlefleet
 except ImportError:
-    TDU = None
+    paddlefleet = None
 
 from paddleformers.transformers.fp8_utils import FP8LinearFunctionBase
 
@@ -385,7 +385,7 @@ def tokens_zip_unique_add_with_subbatch(zipped, unzipped, index_unzipped, zipped
     tokens_zip_unique_add_with_subbatch
     """
     if subbatch_rows is None or subbatch_rows <= 0 or zipped_rows <= 0:
-        return TDU.tokens_zip_unique_add(zipped, unzipped, index_unzipped, zipped_rows)
+        return paddlefleet.extensions.ops.tokens_zip_unique_add(zipped, unzipped, index_unzipped, zipped_rows)
     else:
         if isinstance(zipped, paddle.Tensor):
             num_split = (zipped_rows + subbatch_rows - 1) // subbatch_rows
@@ -401,7 +401,9 @@ def tokens_zip_unique_add_with_subbatch(zipped, unzipped, index_unzipped, zipped
                 zipped = [paddle.zeros([r, hidden_size], dtype=dtype) for r in rows]
             else:
                 zipped = paddle.split(zipped, rows, axis=0)
-        return TDU.tokens_zip_unique_add_subbatch(zipped, unzipped, index_unzipped, zipped_rows, subbatch_rows)
+        return paddlefleet.extensions.ops.tokens_zip_unique_add_subbatch(
+            zipped, unzipped, index_unzipped, zipped_rows, subbatch_rows
+        )
 
 
 def merge_subbatch_cast(x, dtype):
@@ -410,7 +412,7 @@ def merge_subbatch_cast(x, dtype):
             x = x[0]
             return x.cast(dtype) if x.dtype != dtype else x
         else:
-            return TDU.merge_subbatch_cast(x, dtype)
+            return paddlefleet.extensions.ops.merge_subbatch_cast(x, dtype)
     else:
         return x.cast(dtype) if x.dtype != dtype else x
 

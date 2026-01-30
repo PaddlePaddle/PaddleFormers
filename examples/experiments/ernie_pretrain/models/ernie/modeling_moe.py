@@ -83,7 +83,7 @@ from paddleformers.transformers.model_utils import PretrainedModel, register_bas
 from paddleformers.utils.tools import get_env_device
 
 try:
-    from paddle.incubate.nn.functional import swiglu as fused_swiglu
+    from paddle.nn.functional import swiglu as fused_swiglu
 except (ImportError, ModuleNotFoundError):
     fused_swiglu = None
 
@@ -795,7 +795,7 @@ class ErnieMoEAttention(ErnieAttention):
         self.use_rms_qkv_recompute = config.use_rms_qkv_recompute
         if config.use_rms_qkv_recompute is True:
 
-            assert config.use_rmsnorm is True and config.fuse_rms_norm is True
+            assert config.use_rmsnorm is True
             assert config.fuse_linear is True and config.use_bias is False
 
             assert self.fuse_attn is True
@@ -1012,7 +1012,7 @@ class ErnieDecoderLayer(nn.Layer):
         if self.use_linear_residual_norm_recompute is True:
             assert config.hidden_dropout_prob == 0.0
             assert config.fuse_linear is True and config.use_bias is False
-            assert config.use_rmsnorm is True and config.fuse_rms_norm is True
+            assert config.use_rmsnorm is True
             self.fused_linear_add_norm = FusedLinearAddNorm(self.hidden_size, config.rms_norm_eps)
             del self.self_attn.o_proj
         else:

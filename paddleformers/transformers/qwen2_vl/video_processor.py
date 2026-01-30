@@ -33,12 +33,12 @@ from transformers.image_utils import (
     SizeDict,
     get_image_size,
 )
-from transformers.models.qwen2_vl.image_processing_qwen2_vl import smart_resize
 
 from ..image_processing_utils import BatchFeature
 from ..processing_utils import VideosKwargs
 from ..video_processing_utils import BaseVideoProcessor
 from ..video_utils import VideoMetadata, group_videos_by_shape, reorder_videos
+from .image_processor_fast import smart_resize
 
 
 class Qwen2VLVideoProcessorInitKwargs(VideosKwargs, total=False):
@@ -221,7 +221,7 @@ class Qwen2VLVideoProcessor(BaseVideoProcessor):
             grid_h, grid_w = resized_height // patch_size, resized_width // patch_size
 
             patches = patches.view(
-                grid_t,
+                batch_size * grid_t,
                 temporal_patch_size,
                 channel,
                 grid_h // merge_size,
@@ -250,6 +250,7 @@ class Qwen2VLVideoProcessor(BaseVideoProcessor):
 
         return BatchFeature(
             data={"pixel_values_videos": pixel_values_videos, "video_grid_thw": video_grid_thw},
+            tensor_type=return_tensors,
         )
 
     def get_num_of_video_patches(self, num_frames: int, height: int, width: int, videos_kwargs=None):

@@ -983,7 +983,7 @@ class Ernie4_5_Model(Ernie4_5_PretrainedModel):
                 [Norm(config) for _ in range(self.config.num_nextn_predict_layers)]
             )
 
-            LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else paddle.nn.Linear
+            LinearFN = paddle.nn.Linear
             self.mtp_linear_proj = paddle.nn.LayerList(
                 [
                     LinearFN(
@@ -1542,9 +1542,7 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_PretrainedModel):
 
     def prepare_attention_mask_for_generation(self, input_ids, pad_token_id, eos_token_id):
         """Avoid using attention_mask with flash_attn on generation."""
-        if self.config.use_flash_attention:
-            return None
-        return super().prepare_attention_mask_for_generation(input_ids, pad_token_id, eos_token_id)
+        return None
 
     def prepare_inputs_for_generation(
         self,

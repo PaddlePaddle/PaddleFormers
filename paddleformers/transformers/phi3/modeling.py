@@ -13,7 +13,6 @@
 # limitations under the License.
 """Paddle Phi3 model."""
 
-from functools import partial
 from typing import Optional, Tuple, Union
 
 import paddle
@@ -284,7 +283,7 @@ class Phi3RotaryEmbedding(nn.Layer):
             post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
         """
         base = config.rope_parameters["rope_theta"]
-        partial_rotary_factor = config.rope_parameters.get("partial_rotary_factor", 1.0)
+        partial_rotary_factor = config.get("partial_rotary_factor", 1.0)
         head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
         dim = int(head_dim * partial_rotary_factor)
 
@@ -297,21 +296,19 @@ class Phi3RotaryEmbedding(nn.Layer):
     @dynamic_rope_update
     @paddle.no_grad()
     def forward(self, x, position_ids):
-        inv_freq_expanded = (
-            self.inv_freq.unsqueeze(0)
-            .unsqueeze(-1)
-            .cast(paddle.float32)
-            .expand([position_ids.shape[0], -1, 1])
-            .to(x.place)
-        )
-        position_ids_expanded = position_ids.unsqueeze(1).cast(paddle.float32)
+        with paddle.amp.auto_cast(enable=False):
+            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
-        freqs = paddle.matmul(inv_freq_expanded, position_ids_expanded).transpose([0, 2, 1])
-        emb = paddle.cat((freqs, freqs), axis=-1)
-        cos = paddle.cos(emb) * self.attention_scaling
-        sin = paddle.sin(emb) * self.attention_scaling
+            position_ids_expanded = position_ids[:, None, :].float()
 
-        return cos.cast(dtype=x.dtype), sin.cast(dtype=x.dtype)
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+
+            emb = paddle.concat((freqs, freqs), axis=-1)
+
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 class Phi3PreTrainedModel(PretrainedModel):
@@ -319,39 +316,6 @@ class Phi3PreTrainedModel(PretrainedModel):
     config_class = Phi3Config
     base_model_prefix = "model"
     transpose_weight_keys = ["qkv_proj", "o_proj", "gate_up_proj", "down_proj"]
-
-    @classmethod
-    def _get_tensor_parallel_mappings(cls, config, is_split=False):
-        from ..conversion_utils import split_or_merge_func
-
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_model_parallel_size=config.tensor_model_parallel_size,
-            tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
-        )
-
-        def make_base_actions():
-            actions = {
-                "lm_head.weight": partial(fn, is_column=False),
-                f"{cls.base_model_prefix}.embed_tokens.weight": partial(fn, is_column=False),
-            }
-            for layer_idx in range(config.num_hidden_layers):
-                prefix = f"{cls.base_model_prefix}.layers.{layer_idx}"
-                actions[f"{prefix}.self_attn.qkv_proj.weight"] = partial(
-                    fn,
-                    is_column=True,
-                    is_naive_3fuse=True,
-                    num_kv_groups=config.num_attention_heads // config.num_key_value_heads,
-                )
-                actions[f"{prefix}.self_attn.o_proj.weight"] = partial(fn, is_column=False)
-                actions[f"{prefix}.mlp.gate_up_proj.weight"] = partial(fn, is_column=True, is_naive_2fuse=True)
-                actions[f"{prefix}.mlp.down_proj.weight"] = partial(fn, is_column=False)
-
-            return actions
-
-        mappings = make_base_actions()
-        return mappings
 
     @classmethod
     def _gen_aoa_config(cls, config: Phi3Config):

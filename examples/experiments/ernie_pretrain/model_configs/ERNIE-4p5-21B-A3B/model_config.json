@@ -26,7 +26,6 @@
   "use_recompute_moe": false,
   "use_recompute_loss_fn": false,
   "use_rmsnorm": true,
-  "fuse_rms_norm": true,
   "use_bias": false,
   "use_fast_ln": true,
   "fuse_attn_ffn": true,

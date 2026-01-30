@@ -113,7 +113,7 @@ def show():
 
 # only use this file to contral the version
 
-__version__ = "0.4.0.post"
+__version__ = "1.0.1.post"
 
 if os.getenv(PADDLEFORMERS_STABLE_VERSION):
     __version__ = __version__.replace(".post", "")
@@ -137,7 +137,7 @@ def append_version_py(filename="paddleformers/__init__.py"):
 
 append_version_py(filename="paddleformers/__init__.py")
 
-extras = {}
+
 REQUIRED_PACKAGES = read_requirements_file("requirements.txt")
 
 
@@ -200,10 +200,12 @@ try:
         package_data={
             "paddleformers": ["datasets/reader/data_info.json"],
         },
-        setup_requires=["cython", "numpy"],
+        setup_requires=["numpy"],
         install_requires=REQUIRED_PACKAGES,
         entry_points={"console_scripts": get_console_scripts()},
-        extras_require=extras,
+        extras_require={
+            "paddlefleet": ["paddlefleet==0.1.0.post20260128+10acae9ee51"],
+        },
         python_requires=">=3.8",
         classifiers=[
             "Programming Language :: Python :: 3",

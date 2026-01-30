@@ -40,6 +40,10 @@ def check_download_repo(model_name_or_path, download_hub=None):
             if "torch_dtype" in config_dict:
                 print("Loading local model which contains torch dtype.")
     else:
+        # check repo id
+        if download_hub is None:
+            download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
+            logger.info(f"Using download source: {download_hub}")
         model_name_or_path = check_repo(model_name_or_path, download_hub)
 
     return model_name_or_path
@@ -131,6 +135,7 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
         config["output_path"] = os.path.join(finetuning_args.output_dir, "export")
         config["convert_from_hf"] = finetuning_args.convert_from_hf
         config["save_to_hf"] = finetuning_args.save_to_hf
+        config["merge_with_qdq_base_model"] = finetuning_args.merge_with_qdq_base_model
 
         if export_args.copy_tokenizer:
             config["copy_file_list"] = [
@@ -138,7 +143,10 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
                 "tokenizer_config.json",
                 "special_tokens_map.json",
                 "tokenizer.json",
-                "chat_template.jinja"
+                "chat_template.jinja",
+                "chat_template.json",
+                "generation_config.json",
+                "vocab.json"
                 # "config.json",
             ]
 

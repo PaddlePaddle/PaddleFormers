@@ -20,7 +20,11 @@ from typing import List, Optional
 import numpy as np
 from paddle.io import IterableDataset
 
-from paddleformers.datasets.data_utils import postprocess_fc_sequence, print_debug_info
+from paddleformers.datasets.data_utils import (
+    get_worker_sliced_iterator,
+    postprocess_fc_sequence,
+    print_debug_info,
+)
 from paddleformers.datasets.reader.mix_datasets import create_dataset_instance
 from paddleformers.datasets.reader.multi_source_datasets import MultiSourceDataset
 from paddleformers.utils.env import NONE_CHAT_TEMPLATE
@@ -59,6 +63,8 @@ class DPODataSet(IterableDataset):
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
         self.buffer_size = dataset_config.get("buffer_size", 500)
+        self.efficient_eos = True if not self.template else getattr(self.template, "efficient_eos", True)
+        self.use_filtered_label_loss = dataset_config.get("use_filtered_label_loss", False)
 
         # data loader + multisource dataset mix
         if self.is_valid:
@@ -85,7 +91,7 @@ class DPODataSet(IterableDataset):
 
         # prepare epoch data
         batch_sequence, cur_len = [], 0
-        dataset_iterator = iter(self.mix_datasets)
+        dataset_iterator = get_worker_sliced_iterator(self.mix_datasets)
 
         if not self.packing:
             for _ in range(len(self.mix_datasets)):
@@ -244,6 +250,16 @@ class DPODataSet(IterableDataset):
                 self.tokenizer, rejected_messages, system, tools
             )
 
+        if self.template_backend == "custom":
+            suffix_ids = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
+        else:
+            suffix_ids = [self.tokenizer.eos_token_id]
+        if self.efficient_eos:
+            if len(chosen_encoded_messages) > 0 and len(chosen_encoded_messages[-1]) > 1:
+                chosen_encoded_messages[-1][1].extend(suffix_ids)
+            if len(rejected_encoded_messages) > 0 and len(rejected_encoded_messages[-1]) > 1:
+                rejected_encoded_messages[-1][1].extend(suffix_ids)
+
         # chosen/rejected response
         response_token_ids_list = []
         response_label_ids_list = []
@@ -322,8 +338,6 @@ class DPODataSet(IterableDataset):
         )
 
     def _postprocess_sequence(self, example):
-        if self.template_backend == "jinja" and example.get("system", None):
-            example["messages"].insert(0, {"role": "system", "content": example["system"]})
         example = self._preprocess_dpo_example(example)
         # sequence: system + knowledge_tokens + prompt + chosen + reject
         (
@@ -359,8 +373,14 @@ class DPODataSet(IterableDataset):
         rejected_labels = [0] * (prompt_len - 1) + [0] * len(response_token_ids_list[0]) + response_label_ids_list[1]
 
         # 1.4 response index
-        # support use_sparse_head_and_loss_fn only
-        response_index = [0, response_len_list[0], sum(response_len_list)]
+        if self.use_filtered_label_loss:
+            response_index = [0, response_len_list[0], sum(response_len_list)]
+        else:
+            response_index = [
+                prompt_len,
+                prompt_len + len(response_token_ids_list[0]),
+                prompt_len + sum(response_len_list),  # end
+            ]
 
         # 1.5 attention mask
         if self.use_attn_mask_startend_row_indices:

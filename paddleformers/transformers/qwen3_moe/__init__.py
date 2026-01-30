@@ -26,6 +26,7 @@ import_structure = {
         "Qwen3MoePretrainedModel",
         "Qwen3MoeForCausalLM",
         "Qwen3MoeForCausalLMPipe",
+        "Qwen3MoeForCausalLMDeprecated",
     ],
 }
 if TYPE_CHECKING:

@@ -19,13 +19,7 @@ from functools import partial
 
 import paddle
 
-is_sm90 = (
-    paddle.base.core.is_compiled_with_cuda()
-    and paddle.device.cuda.get_device_capability()[0] == 9
-    and paddle.device.cuda.get_device_capability()[1] == 0
-)
-if is_sm90:
-    os.environ["FLAGS_flash_attn_version"] = "3"
+from paddleformers.cli.utils.process import add_new_special_tokens
 from paddleformers.datasets.collate import dpo_collate_fn as collate_fn
 from paddleformers.datasets.loader import create_dataset
 from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
@@ -78,8 +72,10 @@ def run_dpo(
     set_seed(training_args.seed)
 
     avaible_attn_impl = AttentionInterface._global_mapping.keys()
-    if model_args.attn_impl not in avaible_attn_impl:
-        raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
+    if model_args._attn_implementation not in avaible_attn_impl:
+        raise ValueError(
+            f"Invalid _attn_implementation: {model_args._attn_implementation}, available _attn_implementation: {avaible_attn_impl}"
+        )
 
     if training_args.loss_type == "orpo":
         training_args.reference_free = True
@@ -103,6 +99,9 @@ def run_dpo(
         if training_args.tensor_model_parallel_size <= 1:
             training_args.sequence_parallel = False
             logger.info("tensor_model_parallel_size = 1. Set sequence_parallel to False.")
+    if is_paddlefleet_available() and model_args.lora and training_args.moe_token_dispatcher_type == "deepep":
+        logger.warning("For PaddleFleet, moe_use_fusion_node should False when using LoRA.")
+        training_args.moe_use_fusion_node = False
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
     training_args.print_config(training_args, "Train")
@@ -152,10 +151,11 @@ def run_dpo(
         model_args.model_name_or_path,
         dtype=dtype,
     )
-    model_config._attn_implementation = model_args.attn_impl
+    model_config._attn_implementation = model_args._attn_implementation
     model_config.pp_seg_method = model_args.pp_seg_method
     model_config.max_sequence_length = data_args.max_seq_len
     model_config.seq_length = data_args.max_seq_len
+    model_config.is_lora = model_args.lora
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
 
@@ -167,7 +167,7 @@ def run_dpo(
         ref_model_config.pp_seg_method = model_args.pp_seg_method
         ref_model_config.max_sequence_length = data_args.max_seq_len
         ref_model_config.seq_length = data_args.max_seq_len
-        ref_model_config._attn_implementation = model_args.attn_impl
+        ref_model_config._attn_implementation = model_args._attn_implementation
 
         LlmMetaConfig.set_llm_config(ref_model_config, training_args)
 
@@ -214,6 +214,7 @@ def run_dpo(
         tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
     else:
         tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
+    add_new_special_tokens(tokenizer, data_args.new_special_tokens_path)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
@@ -246,12 +247,16 @@ def run_dpo(
                 tensor_model_parallel_size=training_args.tensor_model_parallel_size,
                 dtype=dtype,
                 base_model_name_or_path=model_args.model_name_or_path,
-                use_quick_lora=model_args.use_quick_lora,
             )
             model = LoRAModel(model, lora_config)
         else:
-            model = LoRAModel.from_pretrained(model=model, lora_path=model_args.lora_path)
-
+            model = LoRAModel.from_pretrained(
+                model=model,
+                lora_path=model_args.lora_path,
+                load_checkpoint_format=training_args.load_checkpoint_format,
+            )
+        if hasattr(model, "_set_pipeline_name_mapping"):
+            model._set_pipeline_name_mapping()
         model.print_trainable_parameters()
 
     logger.info("Start to create dataset")
@@ -274,6 +279,7 @@ def run_dpo(
         "encode_one_turn": data_args.encode_one_turn,
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
+        "use_filtered_label_loss": False,
     }
 
     dataset_config.update(
@@ -356,14 +362,19 @@ def run_dpo(
 
     logger.info(f"callbacks: {callbacks}")
     # padding to the maximum seq length in batch data when max_seq_len is None
-    max_seq_len = data_args.max_seq_len if (data_args.packing or training_args.sequence_parallel) else None
+    max_seq_len = (
+        data_args.max_seq_len + model_config.num_nextn_predict_layers
+        if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
+        else None
+    )
+    logger.info(f"Setting max_seq_len to {max_seq_len} using PaddleFormers Model.")
     trainer = DPOTrainer(
         model=model,
         ref_model=ref_model,
         dpo_config=dpo_config,
         args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
+        train_dataset=(train_dataset if training_args.do_train and training_args.should_load_dataset else None),
+        eval_dataset=(eval_dataset if training_args.do_eval and training_args.should_load_dataset else None),
         tokenizer=tokenizer,
         data_collator=partial(
             collate_fn,
@@ -371,8 +382,9 @@ def run_dpo(
             training_args=training_args,
             max_seq_len=max_seq_len,
             padding_free=data_args.padding_free,
-            use_sparse_head_and_loss_fn=model_config.use_sparse_head_and_loss_fn,
+            use_filtered_label_loss=False,
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
+            packing=data_args.packing,
         ),
         ignore_eos_token=dpo_config.ignore_eos_token,
         model_with_dpo_criterion=model_args.model_with_dpo_criterion,

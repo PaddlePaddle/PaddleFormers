@@ -29,6 +29,7 @@ import_structure = {
     ],
     "modeling": [
         "Ernie4_5_VLMoeForConditionalGenerationModel",
+        "Ernie4_5_VLMoeForConditionalGeneration",
         "Ernie4_5_VLMoeForConditionalGenerationPipe",
     ],
     "vision_process": [

@@ -13,7 +13,6 @@
 # limitations under the License.
 """Paddle Qwen3-Next model."""
 
-from functools import partial
 from typing import Any, List, Optional
 
 import paddle
@@ -235,7 +234,7 @@ class Qwen3NextRotaryEmbedding(nn.Layer):
             post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
         """
         base = config.rope_parameters["rope_theta"]
-        partial_rotary_factor = config.rope_parameters.get("partial_rotary_factor", 1.0)
+        partial_rotary_factor = config.get("partial_rotary_factor", 1.0)
         head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
         dim = int(head_dim * partial_rotary_factor)
 
@@ -248,12 +247,15 @@ class Qwen3NextRotaryEmbedding(nn.Layer):
     @dynamic_rope_update
     @paddle.no_grad()
     def forward(self, x, position_ids):
-        inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
-        position_ids_expanded = position_ids[:, None, :].float()
+        with paddle.amp.auto_cast(enable=False):
+            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
-        with paddle.amp.auto_cast(False):  # Force float32
+            position_ids_expanded = position_ids[:, None, :].float()
+
             freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
-            emb = paddle.cat((freqs, freqs), dim=-1)
+
+            emb = paddle.concat((freqs, freqs), axis=-1)
+
             cos = emb.cos() * self.attention_scaling
             sin = emb.sin() * self.attention_scaling
 
@@ -286,9 +288,12 @@ class Qwen3NextRMSNorm(nn.Layer):
 class Qwen3NextAttention(Qwen3MoeAttention):
     def __init__(self, config: Qwen3NextConfig, layer_idx: int):
         super().__init__(config, layer_idx)
-        self.q_proj = GeneralLinear.create(
+        kv_hidden_size = self.config.num_key_value_heads * self.head_dim
+        q_hidden_size = self.config.num_attention_heads * self.head_dim * 2
+
+        self.qkv_proj = GeneralLinear.create(
             config.hidden_size,
-            config.num_attention_heads * self.head_dim * 2,
+            q_hidden_size + 2 * kv_hidden_size,
             has_bias=config.attention_bias,
             config=config,
             tp_plan="colwise",
@@ -313,16 +318,26 @@ class Qwen3NextAttention(Qwen3MoeAttention):
         cache_position: Optional[Tensor] = None,
         **kwargs,
     ) -> tuple[Tensor, Optional[Tensor]]:
-        query_states = self.q_proj(hidden_states)
-        key_states = self.k_proj(hidden_states)
-        value_states = self.v_proj(hidden_states)
-
+        mix_layer = self.qkv_proj(hidden_states)
         if self.sequence_parallel:
             max_sequence_length = self.config.max_sequence_length
             bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
             q_len = max_sequence_length
+            target_shape = [
+                bsz,
+                q_len,
+                self.num_key_value_heads,
+                (self.num_key_value_groups * 2 + 2) * self.head_dim,
+            ]
         else:
             bsz, q_len, _ = hidden_states.shape
+            target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups * 2 + 2) * self.head_dim]
+        mix_layer = paddle.reshape_(mix_layer, target_shape)
+        query_states, key_states, value_states = paddle.split(
+            mix_layer,
+            num_or_sections=[self.num_key_value_groups * self.head_dim * 2, self.head_dim, self.head_dim],
+            axis=-1,
+        )
 
         query_states, gate = paddle.chunk(query_states.view(bsz, q_len, -1, self.head_dim * 2), chunks=2, dim=-1)
         gate = gate.reshape(bsz, q_len, -1)
@@ -913,109 +928,93 @@ class Qwen3NextPretrainedModel(PretrainedModel):
     ]
 
     @classmethod
-    def _get_tensor_parallel_mappings(cls, config: Qwen3NextConfig, is_split=True):
-        """Generate tensor parallel mappings for model conversion."""
-        from ..conversion_utils import split_or_merge_func
-
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_model_parallel_size=config.tensor_model_parallel_size,
-            tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
-        )
-
-        LAYER_COLWISE = [
-            "self_attn.q_proj.weight",
-            "self_attn.k_proj.weight",
-            "self_attn.v_proj.weight",
+    def _gen_aoa_config(cls, config: Qwen3NextConfig):
+        model_prefix = "" if cls == cls.base_model_class else "model."
+        aoa_statements = [
+            f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
+            f"model.norm.weight -> {model_prefix}norm.weight",
+            f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
+            f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+            # gate
+            f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
+            f"model.layers.$LAYER_ID.mlp.shared_expert_gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_expert_gate.weight",
+            # linear_attn
+            f"model.layers.$LAYER_ID.linear_attn.A_log -> {model_prefix}layers.$LAYER_ID.linear_attn.A_log",
+            f"model.layers.$LAYER_ID.linear_attn.conv1d.weight -> {model_prefix}layers.$LAYER_ID.linear_attn.conv1d.weight",
+            f"model.layers.$LAYER_ID.linear_attn.dt_bias -> {model_prefix}layers.$LAYER_ID.linear_attn.dt_bias",
+            f"model.layers.$LAYER_ID.linear_attn.in_proj_ba.weight^T -> {model_prefix}layers.$LAYER_ID.linear_attn.in_proj_ba.weight",
+            f"model.layers.$LAYER_ID.linear_attn.in_proj_qkvz.weight^T -> {model_prefix}layers.$LAYER_ID.linear_attn.in_proj_qkvz.weight",
+            f"model.layers.$LAYER_ID.linear_attn.norm.weight -> {model_prefix}layers.$LAYER_ID.linear_attn.norm.weight",
+            f"model.layers.$LAYER_ID.linear_attn.out_proj.weight^T -> {model_prefix}layers.$LAYER_ID.linear_attn.out_proj.weight",
+            f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
+            f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+            f"model.layers.$LAYER_ID.mlp.shared_expert.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_expert.down_proj.weight",
         ]
 
-        LAYER_ROWWISE = ["self_attn.o_proj.weight"]
+        # attention qkv
+        aoa_statements += [
+            f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
+        ]
+        if config.attention_bias:
+            aoa_statements += [
+                f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+            ]
 
-        EXPERT_LAYER_COLWISE = [
-            "up_proj.weight",
-            "gate_proj.weight",
+        aoa_statements += [
+            f"model.layers.$LAYER_ID.self_attn.{x}_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_norm.weight"
+            for x in ("q", "k")
         ]
 
-        EXPERT_LAYER_ROWWISE = ["down_proj.weight"]
-
-        BIAS_KEYS = [
-            "self_attn.q_proj.bias",
-            "self_attn.k_proj.bias",
-            "self_attn.v_proj.bias",
+        # experts
+        aoa_statements += [
+            f"model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_expert.up_gate_proj.weight, fused_ffn",
+            f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
         ]
 
-        def make_base_actions():
-            actions = {
-                "lm_head.weight": partial(fn, is_column=False),
-                "embed_tokens.weight": partial(fn, is_column=False),
-            }
-            for layer_idx in range(config.num_hidden_layers):
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
-                        for k in LAYER_COLWISE
-                    }
-                )
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
-                        for k in LAYER_ROWWISE
-                    }
-                )
-                try:
-                    moe_group = fleet.get_hybrid_communicate_group().get_expert_parallel_group()
-                except Exception:
-                    moe_group = None
-                expert_model_parallel_size = dist.get_world_size(moe_group) if moe_group is not None else 1
-                if expert_model_parallel_size <= 1:
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
-                                fn, is_column=True
-                            )
-                            for e in range(config.num_experts)
-                            for k in EXPERT_LAYER_COLWISE
-                        }
-                    )
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.experts.{e}.{k}": partial(
-                                fn, is_column=False
-                            )
-                            for e in range(config.num_experts)
-                            for k in EXPERT_LAYER_ROWWISE
-                        }
-                    )
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_expert.{k}": partial(
-                            fn, is_column=True
-                        )
-                        for k in EXPERT_LAYER_COLWISE
-                    }
-                )
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.mlp.shared_expert.{k}": partial(
-                            fn, is_column=False
-                        )
-                        for k in EXPERT_LAYER_ROWWISE
-                    }
-                )
-                # bias
-                if config.attention_bias:
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
-                            for b in BIAS_KEYS
-                        }
-                    )
+        return {"aoa_statements": aoa_statements}
 
-            return actions
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: Qwen3NextConfig):
+        model_prefix = "" if cls == cls.base_model_class else "model."
+        aoa_statements = [
+            f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+            f"{model_prefix}norm.weight -> model.norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
+            f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
+            # gate
+            f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
+            f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert_gate.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert_gate.weight",
+            # linear_attn
+            f"{model_prefix}layers.$LAYER_ID.linear_attn.A_log -> model.layers.$LAYER_ID.linear_attn.A_log",
+            f"{model_prefix}layers.$LAYER_ID.linear_attn.conv1d.weight -> model.layers.$LAYER_ID.linear_attn.conv1d.weight",
+            f"{model_prefix}layers.$LAYER_ID.linear_attn.dt_bias -> model.layers.$LAYER_ID.linear_attn.dt_bias",
+            f"{model_prefix}layers.$LAYER_ID.linear_attn.in_proj_ba.weight^T -> model.layers.$LAYER_ID.linear_attn.in_proj_ba.weight",
+            f"{model_prefix}layers.$LAYER_ID.linear_attn.in_proj_qkvz.weight^T -> model.layers.$LAYER_ID.linear_attn.in_proj_qkvz.weight",
+            f"{model_prefix}layers.$LAYER_ID.linear_attn.norm.weight -> model.layers.$LAYER_ID.linear_attn.norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.linear_attn.out_proj.weight^T -> model.layers.$LAYER_ID.linear_attn.out_proj.weight",
+        ]
 
-        mappings = make_base_actions()
-        return mappings
+        # self_attn
+        aoa_statements += [
+            f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+            for x in ("q", "k", "v", "o")
+        ]
+        aoa_statements += [
+            f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_norm.weight -> model.layers.$LAYER_ID.self_attn.{x}_norm.weight"
+            for x in ("q", "k")
+        ]
+
+        # experts
+        aoa_statements += [
+            f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{x}_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{x}_proj.weight"
+            for x in ("gate", "up", "down")
+        ]
+        aoa_statements += [
+            f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.{x}_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert.{x}_proj.weight"
+            for x in ("gate", "up", "down")
+        ]
+
+        return {"aoa_statements": aoa_statements}
 
     def _init_weights(self, module):
         if isinstance(module, Qwen3NextGatedDeltaNet):
@@ -1244,3 +1243,5 @@ class Qwen3NextForCausalLMPipe(GeneralModelForCausalLMPipe):
     _keep_in_fp32_modules = Qwen3NextModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Qwen3NextModel.transpose_weight_keys
+    _gen_aoa_config = Qwen3NextPretrainedModel._gen_aoa_config
+    _gen_inv_aoa_config = Qwen3NextPretrainedModel._gen_inv_aoa_config

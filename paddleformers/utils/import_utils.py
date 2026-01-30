@@ -16,6 +16,11 @@ from __future__ import annotations
 import builtins
 import functools
 import importlib.util
+
+try:
+    from importlib import metadata
+except ImportError:
+    import importlib_metadata as metadata
 import os
 import shutil
 import site
@@ -116,8 +121,8 @@ def _is_package_available(pkg_name: str, return_version: bool = False) -> Union[
     if package_exists:
         try:
             # Primary method to get the package version
-            package_version = importlib.metadata.version(pkg_name)
-        except importlib.metadata.PackageNotFoundError:
+            package_version = metadata.version(pkg_name)
+        except metadata.PackageNotFoundError:
             # Fallback method: Only for "torch" and versions containing "dev"
             if pkg_name == "torch":
                 try:
@@ -146,8 +151,8 @@ _sentencepiece_available = _is_package_available("sentencepiece")
 _sklearn_available = importlib.util.find_spec("sklearn") is not None
 if _sklearn_available:
     try:
-        importlib.metadata.version("scikit-learn")
-    except importlib.metadata.PackageNotFoundError:
+        metadata.version("scikit-learn")
+    except metadata.PackageNotFoundError:
         _sklearn_available = False
 
 
@@ -159,8 +164,8 @@ def _is_package_available(pkg_name: str, return_version: bool = False) -> Union[
     if package_exists:
         try:
             # Primary method to get the package version
-            package_version = importlib.metadata.version(pkg_name)
-        except importlib.metadata.PackageNotFoundError:
+            package_version = metadata.version(pkg_name)
+        except metadata.PackageNotFoundError:
             # Fallback method: Only for "torch" and versions containing "dev"
             if pkg_name == "torch":
                 try:
@@ -189,8 +194,8 @@ _sentencepiece_available = _is_package_available("sentencepiece")
 _sklearn_available = importlib.util.find_spec("sklearn") is not None
 if _sklearn_available:
     try:
-        importlib.metadata.version("scikit-learn")
-    except importlib.metadata.PackageNotFoundError:
+        metadata.version("scikit-learn")
+    except metadata.PackageNotFoundError:
         _sklearn_available = False
 
 

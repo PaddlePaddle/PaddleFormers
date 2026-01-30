@@ -394,7 +394,9 @@ class ModelIntegrationTest(unittest.TestCase):
         Verifies that DynamicCache is used by default and populated correctly.
         """
         tokenizer = AutoTokenizer.from_pretrained(self.model_id)
-        model = AutoModelForCausalLM.from_pretrained(self.model_id, convert_from_hf=True, return_dict=True)
+        model = AutoModelForCausalLM.from_pretrained(
+            self.model_id, convert_from_hf=True, return_dict=True, load_checkpoint_format=""
+        )
         model.to(self.device)
         model.eval()
 
@@ -466,7 +468,9 @@ class CacheOffloadingTest(unittest.TestCase):
         """
         model_id = "PaddleFormers/tiny-random-qwen3"
         tokenizer = AutoTokenizer.from_pretrained(model_id)
-        model = AutoModelForCausalLM.from_pretrained(model_id, convert_from_hf=True, return_dict=True)
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id, convert_from_hf=True, return_dict=True, load_checkpoint_format=""
+        )
         model.to(self.device)
         model.eval()
 

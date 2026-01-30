@@ -47,6 +47,7 @@ import_structure = {
         "AutoGenerator",
         "AutoDiscriminator",
         "AutoModelForConditionalGeneration",
+        "AutoModelForConditionalGenerationPipe",
     ],
     "factory": [],
     "image_processing": ["get_image_processor_config", "AutoImageProcessor", "IMAGE_PROCESSOR_MAPPING"],

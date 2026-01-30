@@ -28,6 +28,7 @@ from paddleformers.transformers.image_utils import (
     get_image_size,
 )
 from paddleformers.transformers.qwen3_vl.video_processor import smart_resize
+from tests.testing_utils import gpu_device_initializer
 
 from ..test_video_processing_common import (
     VideoProcessingTestMixin,
@@ -136,6 +137,7 @@ class Qwen3VLVideoProcessingTester:
 class Qwen3VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
     fast_video_processing_class = Qwen3VLVideoProcessor
 
+    @gpu_device_initializer(log_prefix="Qwen3VLVideoProcessingTest")
     def setUp(self):
         super().setUp()
         self.video_processor_tester = Qwen3VLVideoProcessingTester(self)
@@ -175,10 +177,6 @@ class Qwen3VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
         """
         Tests processing Paddle tensor inputs.
         """
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-
         for video_processing_class in self.video_processor_list:
             video_processing = video_processing_class(**self.video_processor_dict)
             video_inputs = self.video_processor_tester.prepare_video_inputs(
@@ -203,10 +201,6 @@ class Qwen3VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
         """
         Tests processing Numpy array inputs.
         """
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-
         for video_processing_class in self.video_processor_list:
             video_processing = video_processing_class(**self.video_processor_dict)
             video_inputs = self.video_processor_tester.prepare_video_inputs(
@@ -227,10 +221,6 @@ class Qwen3VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
         """
         Tests processing nested lists of inputs.
         """
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-
         for video_processing_class in self.video_processor_list:
             video_processing = video_processing_class(**self.video_processor_dict)
             video_inputs = self.video_processor_tester.prepare_video_inputs(
@@ -246,10 +236,6 @@ class Qwen3VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
         """
         Tests frame sampling functionality.
         """
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-
         for video_processing_class in self.video_processor_list:
             video_processing = video_processing_class(**self.video_processor_dict)
 

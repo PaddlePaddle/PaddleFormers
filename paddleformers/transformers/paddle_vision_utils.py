@@ -16,11 +16,31 @@
 API for image and video processing, serving as a backend for PaddlePaddle processors.
 """
 
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
+import numpy as np
 import paddle
 from paddle.nn.functional import interpolate
 from paddle.nn.functional import pad as paddle_pad
+from PIL import Image
+
+
+def get_image_num_channels(img: Any) -> int:
+    if isinstance(img, Image.Image):
+        if hasattr(img, "getbands"):
+            return len(img.getbands())
+        else:
+            return img.channels
+    raise TypeError(f"Unexpected type {type(img)}")
+
+
+def pil_to_tensor(pic: Any) -> paddle.Tensor:
+    """Convert a ``PIL Image`` to a tensor of the same type."""
+    img = paddle.as_tensor(np.array(pic, copy=True))
+    img = img.view(pic.size[1], pic.size[0], get_image_num_channels(pic))
+    # put it from HWC to CHW format
+    img = img.permute((2, 0, 1))
+    return img
 
 
 def _pad_symmetric(img: paddle.Tensor, padding: list[int]) -> paddle.Tensor:

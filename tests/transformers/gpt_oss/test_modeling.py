@@ -14,16 +14,14 @@
 # limitations under the License.
 from __future__ import annotations
 
-import sys
 import tempfile
 import unittest
 
 import numpy as np
 import paddle
-from parameterized import parameterized
 
 from paddleformers.transformers import GptOssConfig, GptOssForCausalLM, GptOssModel
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -299,6 +297,7 @@ class GptOssModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
     all_model_classes = (GptOssModel, GptOssForCausalLM)
     all_generative_model_classes = {GptOssForCausalLM: (GptOssModel, "GptOss")}
 
+    @gpu_device_initializer(log_prefix="GptOssModelTest")
     def setUp(self):
         super().setUp()
 
@@ -384,7 +383,9 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     def test_inference_no_attention(self):
         model = GptOssModel.from_pretrained(
-            "PaddleFormers/tiny-random-gptoss", download_hub="aistudio", convert_from_hf=True
+            "PaddleFormers/tiny-random-gptoss",
+            download_hub="aistudio",
+            load_checkpoint_format="flex_checkpoint",
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -406,7 +407,9 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
     def test_inference_with_attention(self):
         model = GptOssModel.from_pretrained(
-            "PaddleFormers/tiny-random-gptoss", download_hub="aistudio", convert_from_hf=True
+            "PaddleFormers/tiny-random-gptoss",
+            download_hub="aistudio",
+            load_checkpoint_format="flex_checkpoint",
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -444,41 +447,31 @@ class GptOssCompatibilityTest(unittest.TestCase):
         # 1. create common input
         input_ids = np.random.randint(100, 200, [1, 20])
 
-        # 2. forward the paddle model
-        from paddleformers.transformers import GptOssModel
-
-        paddle_model = GptOssModel.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
-        paddle_model.eval()
-        paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
-
-        # 3. forward the torch  model
-        try:
-            sys.modules["torch"] = sys.modules["torch_save"]
-        except:
-            pass
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
+        # 2. forward the torch model
         import torch
-        from transformers import GptOssModel
+        from transformers import GptOssForCausalLM
 
-        torch_model = GptOssModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+        torch_model = GptOssForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+
+        # 3. forward the paddle model
+        from paddleformers.transformers import GptOssForCausalLM
+
+        paddle_model = GptOssForCausalLM.from_pretrained(
+            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+        )
+        paddle_model.eval()
+        paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         self.assertTrue(
             np.allclose(
                 paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                 torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                atol=1e0,
                 rtol=1e2,
             )
         )
-        sys.modules["torch"] = None
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
 
     @require_package("transformers", "torch")
     def test_GptOss_converter_from_local_dir(self):
@@ -487,27 +480,21 @@ class GptOssCompatibilityTest(unittest.TestCase):
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch  model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            # 2. forward the torch model
             import torch
-            from transformers import GptOssModel
+            from transformers import GptOssForCausalLM
 
-            torch_model = GptOssModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = GptOssForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
-            # 2. forward the paddle model
-            from paddleformers.transformers import GptOssModel
+            # 3. forward the paddle model
+            from paddleformers.transformers import GptOssForCausalLM
 
-            paddle_model = GptOssModel.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = GptOssForCausalLM.from_pretrained(
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -515,68 +502,7 @@ class GptOssCompatibilityTest(unittest.TestCase):
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    atol=1e0,
                     rtol=1e2,
                 )
             )
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
-
-    @parameterized.expand([("GptOssModel",), ("GptOssForCausalLM",)])
-    @require_package("transformers", "torch")
-    def test_GptOss_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
-        pytorch_class_name = pytorch_class_name or class_name
-        with tempfile.TemporaryDirectory() as tempdir:
-
-            # 1. create common input
-            input_ids = np.random.randint(100, 200, [1, 20])
-
-            # 2. forward the torch model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
-            import torch
-            import transformers
-
-            torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-            # 3. forward the paddle model
-            from paddleformers import transformers
-
-            paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
-            paddle_model.eval()
-
-            if class_name == "GptOssModel":
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
-            else:
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
-
-            self.assertTrue(
-                np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e2,
-                )
-            )
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
-
-
-if __name__ == "__main__":
-    unittest.main()

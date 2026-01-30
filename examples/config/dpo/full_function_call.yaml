@@ -14,8 +14,8 @@ split_multi_turn: False
 
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B-Base
-attn_impl: flashmask
-use_fused_head_and_loss_fn: true
+_attn_implementation: flashmask
+use_fused_head_and_loss_fn: false
 loss_subbatch_sequence_length: 8192
 
 ### finetuning
@@ -43,14 +43,18 @@ eval_accumulation_steps: 16
 # train
 warmup_steps: 20
 learning_rate: 1.0e-6
+loss_type: sigmoid  # choices: [sigmoid (dpo), hinge, simpo, ipo, dpop, kto_pair, sppo_hard, nca_pair, or, orpo]
+reference_free: false  # True only supports loss types of or, orpo, simpo, sigmoid, hinge, and ipo. When loss_type is or, orpo and simpo, automatically set to True.
 
 # performance
 tensor_model_parallel_size: 1
 pipeline_model_parallel_size: 1
-sharding: stage2
+sharding: stage1
 recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
-unified_checkpoint: true
+unified_checkpoint: false
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint

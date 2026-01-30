@@ -22,15 +22,14 @@ import numpy as np
 import paddle
 from parameterized import parameterized
 
+from paddleformers.transformers import AutoProcessor, Qwen3VLConfig
 from paddleformers.transformers import (
-    AutoProcessor,
-    Qwen3VLConfig,
-    Qwen3VLForConditionalGeneration,
-    Qwen3VLModel,
-    process_vision_info,
+    Qwen3VLForConditionalGenerationDeprecated as Qwen3VLForConditionalGeneration,
 )
+from paddleformers.transformers import Qwen3VLModelDeprecated as Qwen3VLModel
+from paddleformers.transformers import process_vision_info
 from paddleformers.transformers.video_utils import load_video
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -186,6 +185,8 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     all_generative_model_classes = {Qwen3VLForConditionalGeneration: {Qwen3VLModel, "qwen3_vl"}}
     max_new_tokens = 3
 
+    # Use GPU 0 to prevent CUDA illegal memory access during resize
+    @gpu_device_initializer(log_prefix="Qwen3VLModelTest", gpu_id=0)
     def setUp(self):
         self.model_tester = Qwen3VLVisionText2TextModelTester(self)
         self.config_tester = ConfigTester(self, config_class=Qwen3VLConfig, has_text_modality=False)
@@ -546,9 +547,13 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 
 
 class Qwen3VLIntegrationTest(unittest.TestCase):
+    # Use GPU 0 to prevent CUDA illegal memory access during resize
+    @gpu_device_initializer(log_prefix="Qwen3VLIntegrationTest", gpu_id=0)
     def setUp(self):
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(
-            "PaddleFormers/tiny-random-qwen3vl", convert_from_hf=True
+            "PaddleFormers/tiny-random-qwen3vl",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
         )
 
         self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen3vl")
@@ -770,10 +775,6 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
         self.assertTrue(paddle.allclose(output[1, 500, 10000:10030], EXPECTED_SLICE_2, atol=1e-3, rtol=1e-3))
 
     def test_model_tiny_logits_with_video(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-
         video_url = "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
         messages2 = [
             {
@@ -904,17 +905,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
 
     @require_package("transformers", "torch")
     def test_Qwen3VL_converter(self):
-
-        # 1. forward the paddle model
-        from paddleformers.transformers import Qwen3VLForConditionalGeneration
-
-        paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-        paddle_model = Qwen3VLForConditionalGeneration.from_pretrained(
-            self.torch_model_path, convert_from_hf=True, dtype="float32"
-        ).eval()
-        paddle_logit = paddle_model(**paddle_inputs)["logits"]
-
-        # 2. forward the torch  model
+        # 1. forward the torch model
         import torch
         from transformers import Qwen3VLForConditionalGeneration
 
@@ -923,6 +914,17 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
             self.torch_model_path, torch_dtype=torch.float32
         ).eval()
         torch_logit = torch_model(**torch_inputs)["logits"]
+
+        # 2. forward the paddle model
+        from paddleformers.transformers import (
+            Qwen3VLForConditionalGenerationDeprecated as Qwen3VLForConditionalGeneration,
+        )
+
+        paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
+        paddle_model = Qwen3VLForConditionalGeneration.from_pretrained(
+            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+        ).eval()
+        paddle_logit = paddle_model(**paddle_inputs)["logits"]
 
         # 3. compare the result between paddle and torch
         self.assertTrue(
@@ -938,7 +940,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
     def test_Qwen3VL_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
 
-            # 1. forward the torch  model
+            # 1. forward the torch model
             import torch
             from transformers import Qwen3VLForConditionalGeneration
 
@@ -951,11 +953,13 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
             torch_logit = torch_model(**torch_inputs)["logits"]
 
             # 2. forward the paddle model
-            from paddleformers.transformers import Qwen3VLForConditionalGeneration
+            from paddleformers.transformers import (
+                Qwen3VLForConditionalGenerationDeprecated as Qwen3VLForConditionalGeneration,
+            )
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
             paddle_model = Qwen3VLForConditionalGeneration.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32"
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
             paddle_logit = paddle_model(**paddle_inputs)["logits"]
@@ -991,13 +995,14 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-            paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32").eval()
+            paddle_model_class = getattr(transformers, class_name + "Deprecated")
+            paddle_model = paddle_model_class.from_pretrained(
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            ).eval()
+
             paddle_model_fused = paddle_model_class.from_pretrained(
                 tempdir,
                 dtype="float32",
-                fuse_attention_qkv=True,
-                fuse_attention_ffn=True,
                 load_checkpoint_format="flex_checkpoint",
             ).eval()
 
@@ -1017,6 +1022,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
+
             # 4.compare the result between paddle and paddle_fused
             self.assertTrue(
                 np.allclose(

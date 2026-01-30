@@ -21,6 +21,8 @@ from paddleformers.trainer import TrainingArguments
 from paddleformers.transformers.configuration_utils import llmmetaclass
 from paddleformers.utils.log import logger
 
+DEFAULT_QUANTIZE_LAYERS = [".*mlp.*", ".*self_attn.*"]
+
 
 @dataclass
 class PreTrainingArguments(TrainingArguments):
@@ -59,6 +61,46 @@ class PreTrainingArguments(TrainingArguments):
     )
     pp_need_data: bool = field(default=False, metadata={"help": "pipline need fetch data"})
     balanced_image_preprocess: bool = field(default=False, metadata={"help": "balanced image preprocess"})
+    decay_function: str = field(
+        default="half_life",
+        metadata={"help": "The decay function for WSD LR scheduler. support half_life(default), 1-sqrt"},
+    )
+    gc_interval: int = field(default=0, metadata={"help": "gc time"})
+    global_batch_size: int = field(default=-1, metadata={"help": "global batch size"})
+    global_logging_interval: int = field(
+        default=1,
+        metadata={"help": "the logging interval of global_training_logs"},
+    )
+    multi_token_pred_depth: Optional[int] = field(
+        default=0,
+        metadata={},
+    )
+    num_consecutive: int = field(
+        default=1,
+        metadata={"help": "H5 file consecutive num."},
+    )
+    same_data: Optional[bool] = field(
+        default=None,
+        metadata={"help": "when resume from checkpoint, keey data same with the ckpt"},
+    )
+    use_ortho_loss_callback: bool = field(default=False, metadata={"help": "Use orthogonal loss callback or not"})
+    moe_with_send_router_loss: bool = field(default=True, metadata={"help": "Whether use send router loss"})
+    log_global_grad_norm: Optional[bool] = field(
+        default=False,
+        metadata={"help": "print global grad-norm"},
+    )
+    moe_gate_lr_ratio: float = field(
+        default=None,
+        metadata={"help": ("special handle the lr for gate/router")},
+    )
+    log_global_grad_norm: Optional[bool] = field(
+        default=False,
+        metadata={"help": "print global grad-norm"},
+    )
+    shuffle_consecutive: Optional[bool] = field(
+        default=False,
+        metadata={"help": "shuffle num_consecutive or not"},
+    )
 
     @property
     def need_data(self):
@@ -228,6 +270,10 @@ class FinetuningArguments(
         default=None,
         metadata={"help": "Model weight quantization algorithm including 'nf4'(qlora), 'weight_only_int8'."},
     )
+    merge_with_qdq_base_model: bool = field(
+        default=False,
+        metadata={"help": "Whether to merge model with quantize_dequantized base-model weights."},
+    )
     # fp8
     use_fp8: bool = field(
         default=False,
@@ -262,19 +308,29 @@ class FinetuningArguments(
             self.bf16 = False
             self.fp16 = True
             self.weight_quantize_algo = None
-        elif self.compute_type == "fp8":
-            self.weight_quantize_algo = "fp8linear"
-            self.optim = "adamw_custom"
-            self.use_lowprecision_moment = True
-            self.tensorwise_offload_optimizer = True
-            self.optim_shard_num = 8
-            self.unified_checkpoint_config = "ignore_merge_optimizer"
+        elif self.compute_type == "wint4":
+            self.weight_quantize_algo = {"weight_only_int4": DEFAULT_QUANTIZE_LAYERS}
         elif self.compute_type == "wint8":
-            self.weight_quantize_algo = "weight_only_int8"
-        elif self.compute_type == "wint4/8":
-            self.weight_quantize_algo = "weight_only_mix"
+            self.weight_quantize_algo = {"weight_only_int8": DEFAULT_QUANTIZE_LAYERS}
+        # TODO: @bosspi to support wint4/8
+        # elif self.compute_type == "wint4/8":
+        #     # self.weight_quantize_algo = "weight_only_mix"
+        #     self.weight_quantize_algo = {
+        #         "weight_only_int4": [".*mlp.experts.*"],
+        #         "weight_only_int8": [
+        #             ".*self_attn.qkv_proj.*",
+        #             ".*self_attn.q_proj.*",
+        #             ".*self_attn.k_proj.*",
+        #             ".*self_attn.v_proj.*",
+        #             ".*self_attn.o_proj.*",
+        #             ".*mlp.up_gate_proj.*",
+        #             ".*mlp.up_proj.*",
+        #             ".*mlp.gate_proj.*",
+        #             ".*mlp.down_proj.*",
+        #         ],
+        #     }
         elif self.compute_type == "nf4":
-            self.weight_quantize_algo = "nf4"
+            self.weight_quantize_algo = {"nf4": DEFAULT_QUANTIZE_LAYERS}
         else:
             raise ValueError(f"Unknown compute_type: {self.compute_type}")
 
@@ -288,27 +344,15 @@ class FinetuningArguments(
         self.max_gradient_accumulation_steps = self.gradient_accumulation_steps
 
         if self.pipeline_model_parallel_size > 1:
-            self.per_device_eval_batch_size = self.per_device_train_batch_size * self.gradient_accumulation_steps
-            logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size} in Pipeline Parallel!")
+            # self.per_device_eval_batch_size = self.per_device_train_batch_size * self.gradient_accumulation_steps
+            # logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size} in Pipeline Parallel!")
             user_defined_strategy = fleet.fleet._user_defined_strategy
             user_defined_strategy.strategy.pipeline_configs.accumulate_steps = self.gradient_accumulation_steps
-            if self.pp_need_data and not self.pp_need_data_degree:
-                self.pp_need_data_degree = self.pipeline_model_parallel_size
-            if self.pp_need_data_degree:
-                assert self.gradient_accumulation_steps % self.pp_need_data_degree == 0, (
-                    f"gradient_accumulation_steps[{self.gradient_accumulation_steps}] should be divisible by "
-                    f"pp_need_data_degree[{self.pp_need_data_degree}]"
-                )
-
-                self.gradient_accumulation_steps = self.gradient_accumulation_steps // self.pp_need_data_degree
-                logger.info(
-                    f"pp-need-data hack args.gradient_accumulation_steps to - {self.gradient_accumulation_steps}"
-                )
             self.max_gradient_accumulation_steps = self.gradient_accumulation_steps
             logger.info(f"fixing pp configs: {user_defined_strategy.pipeline_configs}")
-        else:
-            self.per_device_eval_batch_size = self.per_device_train_batch_size
-            logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size}")
+        # else:
+        #     self.per_device_eval_batch_size = self.per_device_train_batch_size
+        #     logger.warning(f"eval_batch_size set to {self.per_device_eval_batch_size}")
 
         if self.sharding_parallel_size > 1:
             sharding_comm_overlap_non_pp = (

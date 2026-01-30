@@ -30,7 +30,7 @@ from paddleformers.transformers import (
     process_vision_info,
 )
 from paddleformers.transformers.video_utils import load_video
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -174,6 +174,8 @@ class Qwen2_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
     all_generative_model_classes = {Qwen2_5_VLForConditionalGeneration: {Qwen2_5_VLModel, "qwen2_5_vl"}}
     max_new_tokens = 3
 
+    # Use GPU 0 to prevent CUDA illegal memory access during resize
+    @gpu_device_initializer(log_prefix="Qwen2_5_VLModelTest", gpu_id=0)
     def setUp(self):
         self.model_tester = Qwen2_5_VLVisionText2TextModelTester(self)
         self.config_tester = ConfigTester(self, config_class=Qwen2_5_VLConfig, has_text_modality=False)
@@ -500,43 +502,15 @@ class Qwen2_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
             else:
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
-    def test_save_load_flex_checkpoint(self):
-        for model_class in self.all_model_classes:
-            with tempfile.TemporaryDirectory() as tmpdirname:
-                tiny_vision_config = {
-                    "depth": 4,
-                    "intermediate_size": 64,
-                    "hidden_size": 64,
-                    "out_hidden_size": 128,
-                    "fullatt_block_indexes": [1],
-                }
-                config = Qwen2_5_VLConfig(
-                    num_hidden_layers=4,
-                    intermediate_size=256,
-                    hidden_size=128,
-                    tie_word_embedding=False,
-                    vision_config=tiny_vision_config,
-                )
-                model = model_class(config)
-                model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-
-                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
-
-                model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
-
-                model_state_1 = model1.state_dict()
-                model_state_2 = model2.state_dict()
-
-                for k, v in model_state_1.items():
-                    md51 = v._md5sum()
-                    md52 = model_state_2[k]._md5sum()
-                    assert md51 == md52
-
 
 class Qwen2_5_VLIntegrationTest(unittest.TestCase):
+    # Use GPU 0 to prevent CUDA illegal memory access during resize
+    @gpu_device_initializer(log_prefix="Qwen2_5_VLIntegrationTest", gpu_id=0)
     def setUp(self):
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            "PaddleFormers/tiny-random-qwen25vlv2", dtype="float32", convert_from_hf=True
+            "PaddleFormers/tiny-random-qwen25vlv2",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
         )
 
         self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2")
@@ -758,10 +732,6 @@ class Qwen2_5_VLIntegrationTest(unittest.TestCase):
         self.assertTrue(paddle.allclose(output[1, 1000, 10000:10030], EXPECTED_SLICE_2, atol=1e-3, rtol=1e-3))
 
     def test_model_tiny_logits_with_video(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-
         video_url = "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
         messages2 = [
             {
@@ -865,23 +835,22 @@ class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
 
     @require_package("transformers", "torch")
     def test_Qwen2_5_VL_converter(self):
-
-        # 1. forward the paddle model
-        from paddleformers.transformers import Qwen2_5_VLModel
-
-        paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-        paddle_model = Qwen2_5_VLModel.from_pretrained(
-            self.torch_model_path, convert_from_hf=True, dtype="float32"
-        ).eval()
-        paddle_logit = paddle_model(**paddle_inputs)[0]
-
-        # 2. forward the torch  model
+        # 1. forward the torch model
         import torch
         from transformers import Qwen2_5_VLModel
 
         torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
         torch_model = Qwen2_5_VLModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32).eval()
         torch_logit = torch_model(**torch_inputs)[0]
+
+        # 2. forward the paddle model
+        from paddleformers.transformers import Qwen2_5_VLModel
+
+        paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
+        paddle_model = Qwen2_5_VLModel.from_pretrained(
+            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+        ).eval()
+        paddle_logit = paddle_model(**paddle_inputs)[0]
 
         # 3. compare the result between paddle and torch
         self.assertTrue(
@@ -897,7 +866,7 @@ class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
     def test_Qwen2_5_VL_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
 
-            # 1. forward the torch  model
+            # 1. forward the torch model
             import torch
             from transformers import Qwen2_5_VLModel
 
@@ -911,7 +880,9 @@ class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
             from paddleformers.transformers import Qwen2_5_VLModel
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-            paddle_model = Qwen2_5_VLModel.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = Qwen2_5_VLModel.from_pretrained(
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
             paddle_model.eval()
             paddle_logit = paddle_model(**paddle_inputs)[0]
 
@@ -947,13 +918,12 @@ class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
             paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32").eval()
+            paddle_model = paddle_model_class.from_pretrained(
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            ).eval()
             paddle_model_fused = paddle_model_class.from_pretrained(
                 tempdir,
-                convert_from_hf=True,
                 dtype="float32",
-                fuse_attention_qkv=True,
-                fuse_attention_ffn=True,
                 load_checkpoint_format="flex_checkpoint",
             ).eval()
 

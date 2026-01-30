@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import paddle.nn as nn
-from paddle.incubate.nn import FusedLinear
 
 from ..transformers.configuration_utils import PretrainedConfig
 from ..transformers.linear_utils import (
@@ -30,7 +29,6 @@ __all__ = ["Linear"]
 class Linear(GeneralInterface):
     _global_mapping = {
         "default": nn.Linear,
-        "fuse_linear": FusedLinear,
         "colwise": ColumnParallelLinear,
         "rowwise": RowParallelLinear,
         "sequence_colwise": ColumnSequenceParallelLinear,
@@ -49,7 +47,6 @@ class Linear(GeneralInterface):
         config: PretrainedConfig = None,
         gather_output: bool = False,
         input_is_parallel: bool = True,
-        fuse_matmul_bias: bool = False,
     ):
         if linear_type is None and config is None:
             raise ValueError("linear_type or config must be specified")
@@ -58,16 +55,13 @@ class Linear(GeneralInterface):
             linear_type = self.get_linear_type(config, tp_plan)
 
         linear_cls = self._global_mapping[linear_type]
-        kwargs = self.get_linear_kwargs(linear_type, has_bias, gather_output, input_is_parallel, fuse_matmul_bias)
+        kwargs = self.get_linear_kwargs(linear_type, has_bias, gather_output, input_is_parallel)
         return linear_cls(in_features=in_features, out_features=out_features, weight_attr=weight_attr, **kwargs)
 
     @classmethod
-    def get_linear_type(self, config: PretrainedConfig, tp_plan=None):
+    def get_linear_type(self, config: PretrainedConfig, tp_plan: str = None):
         if config.tensor_model_parallel_size <= 1:
-            if config.get("fuse_linear", False):
-                return "fuse_linear"
-            else:
-                return "default"
+            return "default"
         linear_type = tp_plan
 
         if config.sequence_parallel:
@@ -75,31 +69,24 @@ class Linear(GeneralInterface):
         return linear_type
 
     @classmethod
-    def get_linear_kwargs(
-        self, linear_type, has_bias=False, gather_output=False, input_is_parallel=True, fuse_matmul_bias=False
-    ):
+    def get_linear_kwargs(self, linear_type, has_bias=False, gather_output=False, input_is_parallel=True):
         ALL_LINEAR_KWARGS = {
             "default": {"bias_attr": has_bias},
-            "fuse_linear": {"bias_attr": has_bias},
             "colwise": {
                 "has_bias": has_bias,
                 "gather_output": gather_output,
-                "fuse_matmul_bias": fuse_matmul_bias,
             },
             "rowwise": {
                 "has_bias": has_bias,
                 "input_is_parallel": input_is_parallel,
-                "fuse_matmul_bias": fuse_matmul_bias,
             },
             "sequence_colwise": {
                 "has_bias": has_bias,
                 "gather_output": gather_output,
-                "fuse_matmul_bias": fuse_matmul_bias,
             },
             "sequence_rowwise": {
                 "has_bias": has_bias,
                 "input_is_parallel": input_is_parallel,
-                "fuse_matmul_bias": fuse_matmul_bias,
             },
         }
 

@@ -221,7 +221,7 @@ class MMPluginMixin:
                 video_reader = self._video_download(video)
                 sample_indices = self._get_video_sample_indices(video_reader, **kwargs)
                 try:
-                    frames = video_reader.get_batch(sample_indices).asnumpy()
+                    frames = video_reader.get_batch(sample_indices)
                     video_reader.seek(0)
                 except Exception:
                     logger.info(f"get {sample_indices} frames error")
@@ -742,6 +742,8 @@ class Qwen2VLPlugin(BasePlugin):
 
             regularized_frames = []
             for frame in frames:
+                if isinstance(frame, np.ndarray):
+                    frame = Image.fromarray(frame, "RGB")
                 regularized_frames.append(self._preprocess_image(frame, **kwargs))
             results.append(regularized_frames)
 

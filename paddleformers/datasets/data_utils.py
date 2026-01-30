@@ -15,9 +15,11 @@
 """Useful data utility."""
 
 import json
+from itertools import islice
 from typing import List, Tuple
 
 import numpy as np
+import paddle
 
 from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 
@@ -27,24 +29,6 @@ from ..utils.log import logger
 def round_up_to_multiple_of_8(n):
     """round up to multiple of 8"""
     return (n + 7) & ~7
-
-
-def fix_start_with_zero(lst):
-    if not lst:
-        return lst
-
-    try:
-        first_zero = lst.index(0)
-    except ValueError:
-        # zero is not existing in lst
-        return list(range(len(lst)))
-
-    if lst[0] == 0:
-        return lst
-
-    first_segment_len = first_zero
-    new_first_segment = list(range(first_segment_len))
-    return new_first_segment + lst[first_zero:]
 
 
 def print_debug_info(tokenizer, data, label):
@@ -214,14 +198,6 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
     train_dataset.estimate = True
     logger.info("Start to estimate max training steps...")
 
-    train_dataset_path_list = [path for path in str(data_args.train_dataset_path).replace(" ", "").split(",")]
-    if len(train_dataset_path_list) > 1:
-        logger.warning("Suggest to use max_steps instead of num_train_epochs for multi source dataset.")
-        logger.info(
-            "Multi source dataset detected, number of samples will be estimated by following rule. "
-            "num_samples = (source1_num_samples * prob1 + source2_num_samples * prob2 + ...) * epochs"
-        )
-
     max_samples = train_dataset.max_estimate_samples
 
     if training_args.max_estimate_samples != -1:
@@ -316,3 +292,35 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
 
         logger.error("No valid data found, please check your dataset format.")
         return 0
+
+
+def get_worker_sliced_iterator(dataset):
+    """
+    Splits the dataset iterator based on the current Paddle worker information.
+
+    This function is designed to distribute data across multiple processes
+    (when dataloader_num_workers > 0) for an IterableDataset.
+
+    Args:
+        dataset: An iterable dataset object.
+
+    Returns:
+        Iterator: An iterator yielding data specific to the current worker.
+    """
+    # 1. Get the full original iterator
+    # Ensure the input is converted to an iterator so islice works correctly
+    dataset_iterator = iter(dataset)
+
+    # 2. Retrieve Paddle worker information
+    worker_info = paddle.io.get_worker_info()
+
+    # 3. Apply strided slicing (sharding) if running in multi-worker mode
+    if worker_info is not None:
+        dataset_iterator = islice(
+            dataset_iterator,
+            worker_info.id,  # Start: Offset by the current Worker ID
+            None,  # Stop: None means iterate until the end
+            worker_info.num_workers,  # Step: Jump by the total number of workers
+        )
+
+    return dataset_iterator

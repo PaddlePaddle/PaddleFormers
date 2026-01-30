@@ -48,6 +48,7 @@ __all__ = [
     "AutoGenerator",
     "AutoDiscriminator",
     "AutoModelForConditionalGeneration",
+    "AutoModelForConditionalGenerationPipe",
 ]
 
 MAPPING_NAMES = OrderedDict(
@@ -55,7 +56,7 @@ MAPPING_NAMES = OrderedDict(
         ("DeepseekV3", "deepseek_v3"),
         ("Ernie4_5", "ernie4_5"),
         ("Ernie4_5_Moe", "ernie4_5_moe"),
-        ("Ernie4_5_VLMoeForConditionalGeneration", "ernie4_5_moe_vl"),
+        ("Ernie4_5_VLMoe", "ernie4_5_moe_vl"),
         ("PaddleOCRVL", "paddleocr_vl"),
         ("Llama", "llama"),
         ("Qwen2", "qwen2"),
@@ -65,6 +66,7 @@ MAPPING_NAMES = OrderedDict(
         ("Qwen3Moe", "qwen3_moe"),
         ("Qwen3Next", "qwen3_next"),
         ("Qwen3VL", "qwen3_vl"),
+        ("Qwen3VLMoe", "qwen3_vl_moe"),
         ("Glm4Moe", "glm4_moe"),
         ("GptOss", "gpt_oss"),
         ("Phi3", "phi3"),
@@ -73,11 +75,9 @@ MAPPING_NAMES = OrderedDict(
 )
 
 MAPPING_SPACIAL_KEY = OrderedDict(
-    [
-        ("Gemma3", "Gemma3Text"),
-    ]
+    [("Gemma3", "Gemma3Text"), ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration")]
 )
-
+CONFIGURATION_MODEL_MAPPING = OrderedDict([((), "Gemma3TextModel")])
 
 MAPPING_TASKS = OrderedDict(
     [
@@ -96,6 +96,7 @@ MAPPING_TASKS = OrderedDict(
         ("Generator", "AutoGenerator"),
         ("Discriminator", "AutoDiscriminator"),
         ("ForConditionalGeneration", "AutoModelForConditionalGeneration"),
+        ("ForConditionalGenerationPipe", "AutoModelForConditionalGenerationPipe"),
     ]
 )
 
@@ -133,27 +134,6 @@ def get_task_name(model_class):
     return None
 
 
-def get_init_configurations():
-    CONFIGURATION_MODEL_MAPPING = OrderedDict()
-    for key, class_name in MAPPING_NAMES.items():
-        import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
-
-        if key in MAPPING_SPACIAL_KEY:
-            model_name = getattr(import_class, MAPPING_SPACIAL_KEY[key] + "Model")
-        else:
-            model_name = getattr(import_class, key + "Model")
-        if key == "ErnieGen":
-            name = tuple(model_name.ernie_gen_pretrained_init_configuration.keys())
-        else:
-            name = tuple(model_name.pretrained_init_configuration.keys())
-        if key in MAPPING_SPACIAL_KEY:
-            CONFIGURATION_MODEL_MAPPING[name] = MAPPING_SPACIAL_KEY[key] + "Model"
-        else:
-            CONFIGURATION_MODEL_MAPPING[name] = key + "Model"
-
-    return CONFIGURATION_MODEL_MAPPING
-
-
 class _BaseAutoModelClass:
     # Base class for auto models.
     _pretrained_model_dict = None
@@ -170,7 +150,7 @@ class _BaseAutoModelClass:
 
     # TODO: Refactor into AutoConfig when available
     @classmethod
-    def _get_model_class_from_config(cls, pretrained_model_name_or_path, config_file_path, config=None):
+    def _get_model_class_from_config(cls, pretrained_model_name_or_path, config_file_path, config=None, is_lora=False):
         if config is None:
             with io.open(config_file_path, encoding="utf-8") as f:
                 config = json.load(f)
@@ -213,33 +193,58 @@ class _BaseAutoModelClass:
         init_class = cls._name_mapping[model_name + "_Import_Class"]
         class_name = cls._name_mapping[init_class]
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
-        try:
-            model_class = getattr(import_class, init_class)
-            return model_class
-        except AttributeError:
-            model_class = getattr(import_class, init_class + "Fleet")
-            return model_class
-        except AttributeError as err:
+        if is_lora and class_name in ["qwen3_vl_moe"]:
             try:
-                new_import_class = importlib.import_module(f"paddleformers.transformers.{class_name}")
-                model_class = getattr(new_import_class, init_class)
+                model_class = getattr(import_class, init_class + "Deprecated")
                 return model_class
             except AttributeError:
-                logger.error(err)
-                all_model_classes = import_class.__all__
-                all_tasks = {get_task_name(m) for m in all_model_classes if get_task_name(m) is not None}
-                raise AttributeError(
-                    f"module '{import_class.__name__}' only supports the following classes: "
-                    + ", ".join(m for m in all_model_classes)
-                    + "\n"
-                    "Hint: you can use interface "
-                    + " or ".join(task + ".from_pretrained" for task in all_tasks)
-                    + f" to load '{pretrained_model_name_or_path}'\n"
-                )
+                model_class = getattr(import_class, init_class)
+                return model_class
+            except AttributeError as err:
+                try:
+                    new_import_class = importlib.import_module(f"paddleformers.transformers.{class_name}")
+                    model_class = getattr(new_import_class, init_class)
+                    return model_class
+                except AttributeError:
+                    logger.error(err)
+                    all_model_classes = import_class.__all__
+                    all_tasks = {get_task_name(m) for m in all_model_classes if get_task_name(m) is not None}
+                    raise AttributeError(
+                        f"module '{import_class.__name__}' only supports the following classes: "
+                        + ", ".join(m for m in all_model_classes)
+                        + "\n"
+                        "Hint: you can use interface "
+                        + " or ".join(task + ".from_pretrained" for task in all_tasks)
+                        + f" to load '{pretrained_model_name_or_path}'\n"
+                    )
+        else:
+            try:
+                model_class = getattr(import_class, init_class)
+                return model_class
+            except AttributeError:
+                model_class = getattr(import_class, init_class + "Deprecated")
+                return model_class
+            except AttributeError as err:
+                try:
+                    new_import_class = importlib.import_module(f"paddleformers.transformers.{class_name}")
+                    model_class = getattr(new_import_class, init_class)
+                    return model_class
+                except AttributeError:
+                    logger.error(err)
+                    all_model_classes = import_class.__all__
+                    all_tasks = {get_task_name(m) for m in all_model_classes if get_task_name(m) is not None}
+                    raise AttributeError(
+                        f"module '{import_class.__name__}' only supports the following classes: "
+                        + ", ".join(m for m in all_model_classes)
+                        + "\n"
+                        "Hint: you can use interface "
+                        + " or ".join(task + ".from_pretrained" for task in all_tasks)
+                        + f" to load '{pretrained_model_name_or_path}'\n"
+                    )
 
     @classmethod
     def from_config(cls, config, **kwargs):
-        model_class = cls._get_model_class_from_config(None, None, config)
+        model_class = cls._get_model_class_from_config(None, None, config, is_lora=config.get("is_lora", False))
         return model_class._from_config(config, **kwargs)
 
     @classmethod
@@ -300,8 +305,13 @@ class _BaseAutoModelClass:
             cache_dir=cache_dir,
             download_hub=download_hub,
         )
+
         if config_file is not None and os.path.exists(config_file):
-            model_class = cls._get_model_class_from_config(pretrained_model_name_or_path, config_file)
+            if kwargs.get("config") is not None:
+                is_lora = kwargs.get("config").get("is_lora", False)
+            else:
+                is_lora = False
+            model_class = cls._get_model_class_from_config(pretrained_model_name_or_path, config_file, is_lora=is_lora)
             logger.info(f"We are using {model_class} to load '{pretrained_model_name_or_path}'.")
             return model_class.from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
         else:
@@ -337,7 +347,6 @@ class AutoBackbone(_BaseAutoModelClass):
     AutoBackbone.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("Backbone")
 
@@ -383,7 +392,6 @@ class AutoModel(_BaseAutoModelClass):
     when created with the from_pretrained() classmethod.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("Model")
     _task_choice = True
@@ -452,7 +460,6 @@ class AutoModelForPretraining(_BaseAutoModelClass):
     AutoModelForPretraining.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForPretraining")
 
@@ -499,7 +506,6 @@ class AutoModelForSequenceClassification(_BaseAutoModelClass):
     AutoModelForSequenceClassification.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForSequenceClassification")
 
@@ -546,7 +552,6 @@ class AutoModelForTokenClassification(_BaseAutoModelClass):
     AutoModelForTokenClassification.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForTokenClassification")
 
@@ -593,7 +598,6 @@ class AutoModelForQuestionAnswering(_BaseAutoModelClass):
     AutoModelForQuestionAnswering.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForQuestionAnswering")
 
@@ -640,7 +644,6 @@ class AutoModelForMultipleChoice(_BaseAutoModelClass):
     AutoModelForMultipleChoice.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForMultipleChoice")
 
@@ -687,7 +690,6 @@ class AutoModelForMaskedLM(_BaseAutoModelClass):
     AutoModelForMaskedLM.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForMaskedLM")
 
@@ -734,7 +736,6 @@ class AutoModelForCausalLM(_BaseAutoModelClass):
     AutoModelForCausalLM.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForCausalLM")
 
@@ -781,7 +782,6 @@ class AutoModelForCausalLMPipe(_BaseAutoModelClass):
     Pipeline model for AutoModelForCausalLM.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForCausalLMPipe")
 
@@ -795,7 +795,6 @@ class AutoEncoder(_BaseAutoModelClass):
     AutoEncoder.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("Encoder")
 
@@ -837,7 +836,6 @@ class AutoDecoder(_BaseAutoModelClass):
     AutoDecoder.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("Decoder")
 
@@ -879,7 +877,6 @@ class AutoGenerator(_BaseAutoModelClass):
     AutoGenerator.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("Generator")
 
@@ -926,7 +923,6 @@ class AutoDiscriminator(_BaseAutoModelClass):
     AutoDiscriminator.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("Discriminator")
 
@@ -973,7 +969,6 @@ class AutoModelForConditionalGeneration(_BaseAutoModelClass):
     AutoModelForConditionalGeneration.
     """
 
-    CONFIGURATION_MODEL_MAPPING = get_init_configurations()
     _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
     _name_mapping = get_name_mapping("ForConditionalGeneration")
 
@@ -1008,4 +1003,17 @@ class AutoModelForConditionalGeneration(_BaseAutoModelClass):
                 print(type(model))
                 # <class 'paddleformers.transformers.bart.modeling.BartForConditionalGeneration'>
         """
+        return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+
+
+class AutoModelForConditionalGenerationPipe(_BaseAutoModelClass):
+    """
+    Pipeline model for AutoModelForCausalLM.
+    """
+
+    _pretrained_model_dict = CONFIGURATION_MODEL_MAPPING
+    _name_mapping = get_name_mapping("ForConditionalGenerationPipe")
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
         return cls._from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)

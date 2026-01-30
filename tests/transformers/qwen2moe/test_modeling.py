@@ -14,20 +14,18 @@
 # limitations under the License.
 from __future__ import annotations
 
-import sys
 import tempfile
 import unittest
 
 import numpy as np
 import paddle
-from parameterized import parameterized
 
 from paddleformers.transformers import (
     Qwen2MoeConfig,
     Qwen2MoeForCausalLM,
     Qwen2MoeModel,
 )
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -274,6 +272,7 @@ class Qwen2MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
     all_model_classes = (Qwen2MoeModel, Qwen2MoeForCausalLM)
     all_generative_model_classes = {Qwen2MoeForCausalLM: (Qwen2MoeModel, "qwen2_moe")}
 
+    @gpu_device_initializer(log_prefix="Qwen2MoeModelTest")
     def setUp(self):
         super().setUp()
 
@@ -327,7 +326,9 @@ class Qwen2MoeIntegrationTest(unittest.TestCase):
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
         model = Qwen2MoeForCausalLM.from_pretrained(
-            "PaddleFormers/tiny-random-qwen2moe", dtype="float32", convert_from_hf=True
+            "PaddleFormers/tiny-random-qwen2moev2",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
         )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
@@ -335,22 +336,51 @@ class Qwen2MoeIntegrationTest(unittest.TestCase):
 
         # Expected mean on dim = -1
         EXPECTED_MEAN = paddle.to_tensor(
-            [[0.00013129, 0.00055262, 0.00041001, 0.00103886, 0.00101127, 0.00109748, 0.00117971, 0.001671118]]
+            [[0.00230097, -0.00209159, -0.00056597, 0.00108483, 0.00164669, 0.00009250, -0.00098530, -0.00089257]]
         )
         self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-3, rtol=1e-3))
 
         # slicing logits[0, 0, 0:30]
-        EXPECTED_SLICE = paddle.to_tensor([-0.05819187, -0.22854444, -0.01670399, -0.21067668, 0.09893159,
-                                           0.07734174, -0.20733158, -0.07557553, -0.15745537, -0.15629001,
-                                           0.17131621, 0.02966851, 0.20745607, 0.18703115, 0.04797143,
-                                           -0.05834797, -0.49455544, 0.00927463, 0.36364549, -0.11451467,
-                                           0.58765817, -0.16567171, 0.44204327, 0.35513058, 0.14218493,
-                                           0.00553618, 0.15461002, -0.20002352, -0.05449944, -0.10040712])  # fmt: skip
+        EXPECTED_SLICE = paddle.to_tensor([-2.15590882, 1.96645832, 0.44322225, 0.62240279, 1.17198837,
+                                           2.42908263, 1.64257479, -0.79476559, -0.43128195, 1.21178246,
+                                           1.14647794, 1.13491976, -0.89493817, -0.35646826, -2.16936016,
+                                           -0.10455732, 1.54941761, 1.27962112, 1.17168379, 1.15605032,
+                                           -2.49571681, -0.84657890, 0.47780198, -0.20940560, -0.17023659,
+                                           0.40330163, -0.14736551, 0.22067304, -1.53130245, -0.71701866])  # fmt: skip
         self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+
+    def test_fd_fallback(self):
+        input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
+        model = Qwen2MoeForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-qwen2moev2",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
+            fd_fallback=False,
+        )
+        model_fd_fallback = Qwen2MoeForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-qwen2moev2",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
+            fd_fallback=True,
+        )
+        model_fd_fallback_fused_ffn = Qwen2MoeForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-qwen2moev2",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
+            fd_fallback=True,
+        )
+        input_ids = paddle.to_tensor([input_ids])
+        with paddle.no_grad():
+            out = model(input_ids, return_dict=True).logits
+            out_fd_fallback = model_fd_fallback(input_ids, return_dict=True).logits
+            out_fd_fallback_fused_ffn = model_fd_fallback_fused_ffn(input_ids, return_dict=True).logits
+
+        self.assertTrue(paddle.allclose(out_fd_fallback, out, atol=1e-3, rtol=1e-3))
+        self.assertTrue(paddle.allclose(out_fd_fallback_fused_ffn, out, atol=1e-3, rtol=1e-3))
 
 
 class Qwen2MoeGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
-    internal_testing_model = "PaddleFormers/tiny-random-qwen2moe"
+    internal_testing_model = "PaddleFormers/tiny-random-qwen2moev2"
 
 
 class Qwen2MoeCompatibilityTest(unittest.TestCase):
@@ -380,28 +410,22 @@ class Qwen2MoeCompatibilityTest(unittest.TestCase):
         # 1. create common input
         input_ids = np.random.randint(100, 200, [1, 20])
 
-        # 2. forward the paddle model
-        from paddleformers.transformers import Qwen2MoeModel
-
-        paddle_model = Qwen2MoeModel.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
-        paddle_model.eval()
-        paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
-
-        # 3. forward the torch  model
-        try:
-            sys.modules["torch"] = sys.modules["torch_save"]
-        except:
-            pass
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
+        # 2. forward the torch model
         import torch
-        from transformers import Qwen2MoeModel
+        from transformers import Qwen2MoeForCausalLM
 
-        torch_model = Qwen2MoeModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+        torch_model = Qwen2MoeForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+
+        # 3. forward the paddle model
+        from paddleformers.transformers import Qwen2MoeForCausalLM
+
+        paddle_model = Qwen2MoeForCausalLM.from_pretrained(
+            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+        )
+        paddle_model.eval()
+        paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         self.assertTrue(
             np.allclose(
@@ -411,11 +435,6 @@ class Qwen2MoeCompatibilityTest(unittest.TestCase):
                 rtol=1e-2,
             )
         )
-        sys.modules["torch"] = None
-        try:
-            del sys.modules["transformers"]
-        except:
-            pass
 
     @require_package("transformers", "torch")
     def test_Qwen2Moe_converter_from_local_dir(self):
@@ -424,15 +443,7 @@ class Qwen2MoeCompatibilityTest(unittest.TestCase):
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch  model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
+            # 2. forward the torch model
             import torch
             from transformers import Qwen2MoeForCausalLM
 
@@ -441,11 +452,11 @@ class Qwen2MoeCompatibilityTest(unittest.TestCase):
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
-            # 2. forward the paddle model with fc
+            # 3. forward the paddle model with fc
             from paddleformers.transformers import Qwen2MoeConfig, Qwen2MoeForCausalLM
 
             paddle_model = Qwen2MoeForCausalLM.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format="flex_checkpoint"
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
@@ -459,14 +470,11 @@ class Qwen2MoeCompatibilityTest(unittest.TestCase):
                 )
             )
 
-            # 3. fuse qkv/ffn with fc
+            # 4. fuse qkv/ffn with fc
             model_config = Qwen2MoeConfig.from_pretrained(tempdir)
-            model_config.fuse_attention_qkv = True
-            model_config.fuse_attention_ffn = True
             paddle_model_fused = Qwen2MoeForCausalLM.from_pretrained(
                 tempdir,
                 config=model_config,
-                convert_from_hf=True,
                 dtype="float32",
                 load_checkpoint_format="flex_checkpoint",
             )
@@ -481,62 +489,3 @@ class Qwen2MoeCompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
-
-    @parameterized.expand([("Qwen2MoeModel",), ("Qwen2MoeForCausalLM",)])
-    @require_package("transformers", "torch")
-    def test_Qwen2Moe_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
-        pytorch_class_name = pytorch_class_name or class_name
-        with tempfile.TemporaryDirectory() as tempdir:
-
-            # 1. create common input
-            input_ids = np.random.randint(100, 200, [1, 20])
-
-            # 2. forward the torch model
-            try:
-                sys.modules["torch"] = sys.modules["torch_save"]
-            except:
-                pass
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass
-            import torch
-            import transformers
-
-            torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-            # 3. forward the paddle model
-            from paddleformers import transformers
-
-            paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
-            paddle_model.eval()
-
-            if class_name == "Qwen2MoeModel":
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
-            else:
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
-
-            self.assertTrue(
-                np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e-2,
-                    rtol=1e-2,
-                )
-            )
-            sys.modules["torch"] = None
-            try:
-                del sys.modules["transformers"]
-            except:
-                pass

@@ -1,36 +1,69 @@
-name: Check Requirements Changes
+name: Check Requirements Need Approval
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'requirements.txt'
+  pull_request_review:
+    types: [submitted]
 
 jobs:
-  review_request:
+  check-review:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Detect changes in requirements.txt
+      - name: Check if requirements.txt changed
         id: check_diff
         run: |
-          git fetch origin ${{ github.base_ref }} --depth=1
-          git diff origin/${{ github.base_ref }} -- requirements.txt > diff.txt
-          if [ -s diff.txt ]; then
+          git fetch origin ${{ github.base_ref }}
+          if git diff origin/${{ github.base_ref }} --name-only | grep -q '^requirements.txt$'; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Add reviewers if requirements changed
-        if: steps.check_diff.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v5
-        with:
-          reviewers: |
-            nepeplwu
-            lugimzzz
-            zjjlivein
-            huanghengheng
+      - name: Skip if requirements.txt not changed
+        if: steps.check_diff.outputs.changed == 'false'
+        run: |
+          echo "requirements.txt not changed, skip approval check"
 
+      - name: Check required reviewer approval
+        if: steps.check_diff.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const required = [
+              "nepeplwu",
+              "lugimzzz",
+              "zjjlivein"
+            ];
+
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+
+            const approved = new Set();
+            for (const r of reviews) {
+              if (
+                required.includes(r.user.login) &&
+                r.state === "APPROVED"
+              ) {
+                approved.add(r.user.login);
+              }
+            }
+
+            if (approved.size === 0) {
+              core.setFailed(
+                `requirements.txt changed: need approval from one of ${required.join(", ")}`
+              );
+            } else {
+              core.info(`Approved by: ${Array.from(approved).join(", ")}`);
+            }

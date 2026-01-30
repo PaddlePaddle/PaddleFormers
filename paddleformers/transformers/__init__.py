@@ -52,6 +52,7 @@ import_structure = {
     "processing_utils": ["ProcessorMixin"],
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
     "image_processing_utils": ["PaddleImageProcessingMixin", "ImageProcessingMixin", "BaseImageProcessor"],
+    "image_processing_utils_fast": ["BaseImageProcessorFast"],
     "video_processing_utils": ["BaseVideoProcessor"],
     "moe_gate": ["PretrainedMoEGate", "MoEGateMixin"],
     "token_dispatcher": ["_DispatchManager"],
@@ -80,6 +81,7 @@ import_structure = {
         "AutoGenerator",
         "AutoDiscriminator",
         "AutoModelForConditionalGeneration",
+        "AutoModelForConditionalGenerationPipe",
     ],
     "tokenizer_utils_base": [
         "PaddingStrategy",
@@ -129,22 +131,7 @@ import_structure = {
         "DeepseekV3PretrainedModelAuto",
     ],
     "deepseek_v3.mfu_utils": ["DeepSeekProjection"],
-    "deepseek_v3.kernel": [
-        "act_quant",
-        "weight_dequant",
-        "fp8_gemm",
-        "weight_dequant_kernel",
-        "act_quant_kernel",
-        "fp8_gemm_kernel",
-    ],
     "deepseek_v3.tokenizer_fast": ["DeepseekTokenizerFast"],
-    "deepseek_v3.fp8_linear": [
-        "Linear",
-        "ColumnParallelLinear",
-        "RowParallelLinear",
-        "ColumnSequenceParallelLinear",
-        "RowSequenceParallelLinear",
-    ],
     "ernie4_5.configuration": ["Ernie4_5Config"],
     "ernie4_5.modeling": [
         "Ernie4_5Model",
@@ -157,6 +144,7 @@ import_structure = {
     "ernie4_5_moe_vl.configuration": ["Ernie4_5_VLConfig"],
     "ernie4_5_moe_vl.modeling": [
         "Ernie4_5_VLMoeForConditionalGenerationModel",
+        "Ernie4_5_VLMoeForConditionalGeneration",
         "Ernie4_5_VLMoeForConditionalGenerationPipe",
     ],
     "ernie4_5_moe_vl.tokenizer": ["Ernie4_5_VLTokenizer"],
@@ -208,12 +196,24 @@ import_structure = {
     "qwen3_vl.configuration": ["Qwen3VLConfig", "Qwen3VLTextConfig"],
     "qwen3_vl.modeling": [
         "Qwen3VLForConditionalGeneration",
+        "Qwen3VLForConditionalGenerationDeprecated",
         "Qwen3VLModel",
+        "Qwen3VLModelDeprecated",
         "Qwen3VLPretrainedModel",
         "Qwen3VLTextModel",
+        "Qwen3VLModelFleet",
     ],
     "qwen3_vl.processor": ["Qwen3VLProcessor"],
     "qwen3_vl.video_processor": ["Qwen3VLVideoProcessor"],
+    "qwen3_vl_moe.configuration": ["Qwen3VLMoeConfig", "Qwen3VLMoeTextConfig"],
+    "qwen3_vl_moe.modeling": [
+        "Qwen3VLMoeForConditionalGeneration",
+        "Qwen3VLMoeForConditionalGenerationDeprecated",
+        "Qwen3VLMoeModelDeprecated",
+        "Qwen3VLMoeModel",
+        "Qwen3VLMoePretrainedModel",
+        "Qwen3VLMoeTextModel",
+    ],
     "qwen2_moe.configuration": ["Qwen2MoeConfig"],
     "qwen2_moe.modeling": [
         "Qwen2MoeModel",
@@ -223,6 +223,7 @@ import_structure = {
         "Qwen2MoePretrainingCriterion",
     ],
     "qwen2_vl.image_processor": ["Qwen2VLImageProcessor"],
+    "qwen2_vl.image_processor_fast": ["Qwen2VLImageProcessorFast"],
     "qwen2_vl.processor": ["Qwen2VLProcessor"],
     "qwen2_vl.video_processor": ["Qwen2VLVideoProcessor"],
     "qwen2_vl.vision_process": ["process_vision_info"],
@@ -244,6 +245,7 @@ import_structure = {
         "Qwen3MoeForCausalLM",
         "Qwen3MoeForCausalLMPipe",
         "Qwen3MoePretrainingCriterion",
+        "Qwen3MoeForCausalLMDeprecated",
     ],
     "qwen3_next.configuration": ["Qwen3NextConfig"],
     "qwen3_next.modeling": [
@@ -263,12 +265,15 @@ import_structure = {
     "paddleocr_vl": [],
     "qwen2_5_vl": [],
     "qwen3_vl": [],
+    "qwen3_vl_moe": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
     "qwen3_next": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
-    "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM"],
+    "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
+    "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
+    "glm4v_moe.image_processor_fast": ["Glm4vImageProcessorFast"],
     "auto": ["AutoModelForCausalLM"],
     "legacy.tokenizer_utils_base": ["EncodingFast"],
     "legacy": [],
@@ -296,6 +301,7 @@ if TYPE_CHECKING:
     from .processing_utils import ProcessorMixin
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
     from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
+    from .image_processing_utils_fast import BaseImageProcessorFast
     from .video_processing_utils import BaseVideoProcessor
     from .attention_utils import create_bigbird_rand_mask_idx_list
     from .sequence_parallel_utils import AllGatherVarlenOp, sequence_parallel_sparse_mask_labels
@@ -337,7 +343,9 @@ if TYPE_CHECKING:
     from .qwen3_moe import *
     from .qwen3_next import *
     from .qwen3_vl import *
+    from .qwen3_vl_moe import *
     from .glm4_moe import *
+    from .glm4v_moe import *
     from .gpt_oss import *
     from .phi3 import *
     from .gemma3_text import *

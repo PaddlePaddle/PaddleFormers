@@ -15,7 +15,7 @@
 
 import json
 import os
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from copy import deepcopy
 from functools import partial
 from typing import Any, Optional, Union
@@ -35,26 +35,9 @@ from transformers.utils import (
 from ..utils.download import resolve_file_path
 from ..utils.log import logger
 from .feature_extraction_utils import BatchFeature
-from .image_processing_utils import BaseImageProcessor
-from .image_transforms import (
-    get_resize_output_image_size,
-    get_size_with_aspect_ratio,
-    group_images_by_shape,
-    reorder_images,
-)
-from .image_utils import (
-    ChannelDimension,
-    PILImageResampling,
-    SizeDict,
-    get_image_size_for_max_height_width,
-    pil_paddle_interpolation_mapping,
-    validate_kwargs,
-)
-from .paddle_vision_utils import crop as paddle_crop
-from .paddle_vision_utils import grayscale_to_rgb
-from .paddle_vision_utils import normalize as paddle_normalize
-from .paddle_vision_utils import pad as paddle_pad
-from .paddle_vision_utils import resize as paddle_resize
+from .image_processing_utils_fast import BaseImageProcessorFast
+from .image_utils import ChannelDimension, validate_kwargs
+from .paddle_vision_utils import grayscale_to_rgb, pil_to_tensor
 from .processing_utils import Unpack, VideosKwargs
 from .video_utils import (
     VideoInput,
@@ -67,24 +50,6 @@ from .video_utils import (
     make_batched_videos,
     reorder_videos,
 )
-
-
-def max_across_indices(values: Iterable[Any]) -> list[Any]:
-    """
-    Return the maximum value across all indices of an iterable of values.
-    """
-    return [max(values_i) for values_i in zip(*values)]
-
-
-def get_max_height_width(images: list["paddle.Tensor"]) -> tuple[int, ...]:
-    """
-    Get the maximum height and width across all images in a batch.
-    """
-
-    _, max_height, max_width = max_across_indices([img.shape for img in images])
-
-    return (max_height, max_width)
-
 
 BASE_VIDEO_PROCESSOR_DOCSTRING = r"""
     Args:
@@ -158,7 +123,7 @@ BASE_VIDEO_PROCESSOR_DOCSTRING = r"""
     "Constructs a base VideoProcessor.",
     BASE_VIDEO_PROCESSOR_DOCSTRING,
 )
-class BaseVideoProcessor(BaseImageProcessor):
+class BaseVideoProcessor(BaseImageProcessorFast):
     _auto_class = None
 
     resample = None
@@ -170,8 +135,6 @@ class BaseVideoProcessor(BaseImageProcessor):
     crop_size = None
     do_resize = None
     do_center_crop = None
-    do_pad = None
-    pad_size = None
     do_rescale = None
     rescale_factor = 1 / 255
     do_normalize = None
@@ -181,15 +144,11 @@ class BaseVideoProcessor(BaseImageProcessor):
     num_frames = None
     video_metadata = None
     return_metadata = False
-    return_tensors = None
-    data_format = ChannelDimension.FIRST
-    input_data_format = None
     valid_kwargs = VideosKwargs
     model_input_names = ["pixel_values_videos"]
-    unused_kwargs = None
     video_backend = "paddlecodec"
 
-    def __init__(self, **kwargs: Unpack[VideosKwargs]):
+    def __init__(self, **kwargs: Unpack[VideosKwargs]) -> None:
         super().__init__()
 
         # Dynamically wraps class methods to add Paddle tensor return support.
@@ -226,51 +185,10 @@ class BaseVideoProcessor(BaseImageProcessor):
     def __call__(self, videos, **kwargs) -> BatchFeature:
         return self.preprocess(videos, **kwargs)
 
-    def center_crop(
-        self,
-        image: "paddle.Tensor",
-        size: SizeDict,
-        **kwargs,
-    ) -> "paddle.Tensor":
-        """
-        Note: have the same behavior as the slow processor.
-        Center crop an image to `(size["height"], size["width"])`. If the input size is smaller than `crop_size` along
-        any edge, the image is padded with 0's and then center cropped.
-
-        Args:
-            image (`"paddle.Tensor"`):
-                Image to center crop.
-            size (`dict[str, int]`):
-                Size of the output image.
-
-        Returns:
-            `paddle.Tensor`: The center cropped image.
-        """
-        if size.height is None or size.width is None:
-            raise ValueError(f"The size dictionary must have keys 'height' and 'width'. Got {size.keys()}")
-        image_height, image_width = image.shape[-2:]
-        crop_height, crop_width = size.height, size.width
-
-        if crop_width > image_width or crop_height > image_height:
-            padding_ltrb = [
-                (crop_width - image_width) // 2 if crop_width > image_width else 0,
-                (crop_height - image_height) // 2 if crop_height > image_height else 0,
-                (crop_width - image_width + 1) // 2 if crop_width > image_width else 0,
-                (crop_height - image_height + 1) // 2 if crop_height > image_height else 0,
-            ]
-            image = paddle_pad(image, padding_ltrb, fill=0)  # PIL uses fill value 0
-            image_height, image_width = image.shape[-2:]
-            if crop_width == image_width and crop_height == image_height:
-                return image
-
-        crop_top = int((image_height - crop_height) / 2.0)
-        crop_left = int((image_width - crop_width) / 2.0)
-        return paddle_crop(image, crop_top, crop_left, crop_height, crop_width)
-
     def convert_to_rgb(
         self,
         video: "paddle.Tensor",
-    ):
+    ) -> VideoInput:
         """
         Converts a video to RGB format.
         """
@@ -364,7 +282,7 @@ class BaseVideoProcessor(BaseImageProcessor):
             if isinstance(videos[0], list):
                 # Videos sometimes are passed as a list of image URLs, especially through templates
                 videos = [
-                    paddle.stack([paddle.vision.transforms.to_tensor(image) for image in images], dim=0)
+                    paddle.stack([pil_to_tensor(image) for image in images], dim=0)
                     for images in self.fetch_images(videos)
                 ]
                 if do_sample_frames:
@@ -380,7 +298,7 @@ class BaseVideoProcessor(BaseImageProcessor):
         self,
         videos: VideoInput,
         input_data_format: Optional[Union[str, ChannelDimension]] = None,
-    ):
+    ) -> list["paddle.Tensor"]:
         """
         Prepare the input videos for processing.
         """
@@ -401,11 +319,14 @@ class BaseVideoProcessor(BaseImageProcessor):
             processed_videos.append(video)
         return processed_videos
 
+    @add_start_docstrings(
+        BASE_VIDEO_PROCESSOR_DOCSTRING,
+    )
     def preprocess(
         self,
         videos: VideoInput,
         **kwargs: Unpack[VideosKwargs],
-    ):
+    ) -> BatchFeature:
         validate_kwargs(
             captured_kwargs=kwargs.keys(),
             valid_processor_keys=list(self.valid_kwargs.__annotations__.keys()) + ["return_tensors"],
@@ -460,7 +381,7 @@ class BaseVideoProcessor(BaseImageProcessor):
         image_std,
         return_tensors=None,
         **kwargs,
-    ):
+    ) -> BatchFeature:
         # Group videos by size for batched resizing
         grouped_videos, grouped_videos_index = group_videos_by_shape(videos)
         resized_videos_grouped = {}
@@ -488,7 +409,7 @@ class BaseVideoProcessor(BaseImageProcessor):
         processed_videos = reorder_videos(processed_videos_grouped, grouped_videos_index)
         processed_videos = paddle.stack(processed_videos, dim=0) if return_tensors else processed_videos
 
-        return BatchFeature(data={"pixel_values_videos": processed_videos})
+        return BatchFeature(data={"pixel_values_videos": processed_videos}, tensor_type=return_tensors)
 
     @classmethod
     def from_pretrained(
@@ -674,235 +595,6 @@ class BaseVideoProcessor(BaseImageProcessor):
         """
         with open(json_file_path, "w", encoding="utf-8") as writer:
             writer.write(self.to_json_string())
-
-    def _further_process_kwargs(
-        self,
-        size: Optional[SizeDict] = None,
-        crop_size: Optional[SizeDict] = None,
-        pad_size: Optional[SizeDict] = None,
-        default_to_square: Optional[bool] = None,
-        image_mean: Optional[Union[float, list[float]]] = None,
-        image_std: Optional[Union[float, list[float]]] = None,
-        data_format: Optional[ChannelDimension] = None,
-        **kwargs,
-    ) -> dict:
-        """
-        Update kwargs that need further processing before being validated
-        Can be overridden by subclasses to customize the processing of kwargs.
-        """
-        if kwargs is None:
-            kwargs = {}
-        if size is not None:
-            size = SizeDict(**get_size_dict(size=size, default_to_square=default_to_square))
-        if crop_size is not None:
-            crop_size = SizeDict(**get_size_dict(crop_size, param_name="crop_size"))
-        if pad_size is not None:
-            pad_size = SizeDict(**get_size_dict(size=pad_size, param_name="pad_size"))
-        if isinstance(image_mean, list):
-            image_mean = tuple(image_mean)
-        if isinstance(image_std, list):
-            image_std = tuple(image_std)
-        if data_format is None:
-            data_format = ChannelDimension.FIRST
-
-        kwargs["size"] = size
-        kwargs["crop_size"] = crop_size
-        kwargs["pad_size"] = pad_size
-        kwargs["image_mean"] = image_mean
-        kwargs["image_std"] = image_std
-        kwargs["data_format"] = data_format
-
-        resample = kwargs.pop("resample")
-        kwargs["interpolation"] = (
-            pil_paddle_interpolation_mapping[resample] if isinstance(resample, (PILImageResampling, int)) else resample
-        )
-
-        return kwargs
-
-    def rescale(
-        self,
-        image: paddle.Tensor,
-        scale: float,
-        **kwargs,
-    ) -> paddle.Tensor:
-        """
-        Rescale an image by a scale factor. image = image * scale.
-
-        Args:
-            image (paddle.Tensor): Image to rescale.
-            scale (float): The scaling factor to rescale pixel values by.
-
-        Returns:
-            paddle.Tensor: The rescaled image.
-        """
-        return image * scale
-
-    def normalize(
-        self,
-        image: paddle.Tensor,
-        mean: Union[float, Iterable[float], np.ndarray, paddle.Tensor],
-        std: Union[float, Iterable[float], np.ndarray, paddle.Tensor],
-        **kwargs,
-    ) -> paddle.Tensor:
-        """
-        Normalize an image. image = (image - mean) / std.
-
-        Args:
-            image (paddle.Tensor): Image to normalize.
-            mean (float, Iterable[float], np.ndarray or paddle.Tensor): Image mean.
-            std (float, Iterable[float], np.ndarray or paddle.Tensor): Image std.
-
-        Returns:
-            paddle.Tensor: Normalized image.
-        """
-        return paddle_normalize(image, mean, std)
-
-    def _fuse_mean_std_and_rescale_factor(
-        self,
-        do_normalize: Optional[bool] = None,
-        image_mean: Optional[Union[float, list[float]]] = None,
-        image_std: Optional[Union[float, list[float]]] = None,
-        do_rescale: Optional[bool] = None,
-        rescale_factor: Optional[float] = None,
-    ) -> tuple:
-        if do_rescale and do_normalize:
-            # Fused rescale and normalize
-            image_mean = paddle.to_tensor(image_mean) * (1.0 / rescale_factor)
-            image_std = paddle.to_tensor(image_std) * (1.0 / rescale_factor)
-            do_rescale = False
-        return image_mean, image_std, do_rescale
-
-    def rescale_and_normalize(
-        self,
-        images: paddle.Tensor,
-        do_rescale: bool,
-        rescale_factor: float,
-        do_normalize: bool,
-        image_mean: Union[float, list[float]],
-        image_std: Union[float, list[float]],
-    ):
-        """
-        Rescale and normalize images.
-        """
-        image_mean, image_std, do_rescale = self._fuse_mean_std_and_rescale_factor(
-            do_normalize=do_normalize,
-            image_mean=image_mean,
-            image_std=image_std,
-            do_rescale=do_rescale,
-            rescale_factor=rescale_factor,
-        )
-        # if/elif as we use fused rescale and normalize if both are set to True
-        if do_normalize:
-            images = self.normalize(images.astype("float32"), image_mean, image_std)
-        elif do_rescale:
-            images = self.rescale(images, rescale_factor)
-
-        return images
-
-    def pad(
-        self,
-        images: list["paddle.Tensor"],
-        pad_size: SizeDict = None,
-        fill_value: Optional[int] = 0,
-        padding_mode: Optional[str] = "constant",
-        return_mask: bool = False,
-        disable_grouping: Optional[bool] = False,
-        **kwargs,
-    ) -> Union[tuple["paddle.Tensor", "paddle.Tensor"], "paddle.Tensor"]:
-        """
-        Pads images to `(pad_size["height"], pad_size["width"])` or to the largest size in the batch.
-
-        Args:
-            images (`list[paddle.Tensor]`):
-                Images to pad.
-            pad_size (`SizeDict`, *optional*):
-                Dictionary in the format `{"height": int, "width": int}` specifying the size of the output image.
-            fill_value (`int`, *optional*, defaults to `0`):
-                The constant value used to fill the padded area.
-            padding_mode (`str`, *optional*, defaults to "constant"):
-                The padding mode to use. Can be any of the modes supported by
-                `paddle.nn.functional.pad` (e.g. constant, reflection, replication).
-            return_mask (`bool`, *optional*, defaults to `False`):
-                Whether to return a pixel mask to denote padded regions.
-            disable_grouping (`bool`, *optional*, defaults to `False`):
-                Whether to disable grouping of images by size.
-
-        Returns:
-            `Union[tuple[paddle.Tensor, paddle.Tensor], paddle.Tensor]`: The padded images and pixel masks if `return_mask` is `True`.
-        """
-        if pad_size is not None:
-            if not (pad_size.height and pad_size.width):
-                raise ValueError(f"Pad size must contain 'height' and 'width' keys only. Got pad_size={pad_size}.")
-            pad_size = (pad_size.height, pad_size.width)
-        else:
-            pad_size = get_max_height_width(images)
-
-        grouped_images, grouped_images_index = group_images_by_shape(images, disable_grouping=disable_grouping)
-        processed_images_grouped = {}
-        processed_masks_grouped = {}
-        for shape, stacked_images in grouped_images.items():
-            image_size = stacked_images.shape[-2:]
-            padding_height = pad_size[0] - image_size[0]
-            padding_width = pad_size[1] - image_size[1]
-            if padding_height < 0 or padding_width < 0:
-                raise ValueError(
-                    f"Padding dimensions are negative. Please make sure that the `pad_size` is larger than the "
-                    f"image size. Got pad_size={pad_size}, image_size={image_size}."
-                )
-            if image_size != pad_size:
-                padding = (0, 0, padding_width, padding_height)
-                stacked_images = paddle_pad(stacked_images, padding, fill=fill_value, padding_mode=padding_mode)
-            processed_images_grouped[shape] = stacked_images
-
-            if return_mask:
-                # keep only one from the channel dimension in pixel mask
-                stacked_masks = paddle.zeros_like(stacked_images, dtype=paddle.int64)[..., 0, :, :]
-                stacked_masks[..., : image_size[0], : image_size[1]] = 1
-                processed_masks_grouped[shape] = stacked_masks
-
-        processed_images = reorder_images(processed_images_grouped, grouped_images_index)
-        if return_mask:
-            processed_masks = reorder_images(processed_masks_grouped, grouped_images_index)
-            return processed_images, processed_masks
-
-        return processed_images
-
-    def resize(
-        self,
-        image: "paddle.Tensor",
-        size: SizeDict,
-        interpolation: Optional[str] = None,
-        antialias: bool = True,
-        **kwargs,
-    ):
-
-        interpolation = interpolation if interpolation is not None else "bilinear"
-        if size.shortest_edge and size.longest_edge:
-            # Resize the image so that the shortest edge or the longest edge is of the given size
-            # while maintaining the aspect ratio of the original image.
-            new_size = get_size_with_aspect_ratio(
-                image.shape[-2:],
-                size.shortest_edge,
-                size.longest_edge,
-            )
-        elif size.shortest_edge:
-            new_size = get_resize_output_image_size(
-                image,
-                size=size.shortest_edge,
-                default_to_square=False,
-                input_data_format=ChannelDimension.FIRST,
-            )
-        elif size.max_height and size.max_width:
-            new_size = get_image_size_for_max_height_width(image.size()[-2:], size.max_height, size.max_width)
-        elif size.height and size.width:
-            new_size = (size.height, size.width)
-        else:
-            raise ValueError(
-                "Size must contain 'height' and 'width' keys, or 'max_height' and 'max_width', or 'shortest_edge' key. Got"
-                f" {size}."
-            )
-
-        return paddle_resize(image, new_size, interpolation=interpolation, antialias=antialias)
 
     def fetch_videos(
         self, video_url_or_urls: Union[str, list[str], list[list[str]]], sample_indices_fn=None, **kwargs
