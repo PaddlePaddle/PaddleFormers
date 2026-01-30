@@ -1867,18 +1867,13 @@ class TrainingArguments:
                         raise ValueError("overlap has accuracy issue")  # TODO: fix `overalap` + `delay_scale` issue
 
                     if self.do_eval:
-                        if (
-                            self.per_device_train_batch_size * self.gradient_accumulation_steps
-                            != self.per_device_eval_batch_size
-                        ):
+                        if self.per_device_train_batch_size != self.per_device_eval_batch_size:
                             logger.warning(
                                 "In pipeline model, the evaluation also shares same setting with training. "
-                                "We will enforce that per_device_eval_batch_size=per_device_train_batch_size * gradient_accumulation_steps."
+                                "We will enforce that per_device_eval_batch_size=per_device_train_batch_size."
                             )
 
-                            self.per_device_eval_batch_size = (
-                                self.per_device_train_batch_size * self.gradient_accumulation_steps
-                            )
+                            self.per_device_eval_batch_size = self.per_device_train_batch_size
 
                 if self.tensor_model_parallel_size > 1:
                     strategy.tensor_parallel_configs = {"tensor_init_seed": self.seed}
@@ -2286,17 +2281,12 @@ class TrainingArguments:
                 logger.info(f"PP configs:{strategy.pipeline}, use master_grad: {self.amp_master_grad}")
 
                 if self.do_eval:
-                    if (
-                        self.per_device_train_batch_size * self.gradient_accumulation_steps
-                        != self.per_device_eval_batch_size
-                    ):
+                    if self.per_device_train_batch_size != self.per_device_eval_batch_size:
                         logger.warning(
                             "In pipeline model, the evaluation also shares same setting with training. "
-                            "We will enforce that per_device_eval_batch_size=per_device_train_batch_size * gradient_accumulation_steps."
+                            "We will enforce that per_device_eval_batch_size=per_device_train_batch_size."
                         )
-                        self.per_device_eval_batch_size = (
-                            self.per_device_train_batch_size * self.gradient_accumulation_steps
-                        )
+                        self.per_device_eval_batch_size = self.per_device_train_batch_size
 
             elif self.gradient_accumulation_steps > 1:
                 gradient_merge = strategy.gradient_merge

@@ -319,11 +319,12 @@ class SFTTrainer(Trainer):
         inputs,
         prediction_loss_only: bool,
         ignore_keys=None,
+        step=-1,
     ):
         if prediction_loss_only or self.args.pipeline_model_parallel_size > 1:
-            return super().prediction_step(model, inputs, prediction_loss_only, ignore_keys)
+            return super().prediction_step(model, inputs, prediction_loss_only, ignore_keys, step)
         elif not self.do_generation:
-            loss, logits, labels = super().prediction_step(model, inputs, prediction_loss_only, ignore_keys)
+            loss, logits, labels = super().prediction_step(model, inputs, prediction_loss_only, ignore_keys, step)
             # argmax here to avoid gather all logits, which is too memory-consuming.
             # keepdim in order to maintain the same shape as logits
             if isinstance(logits, (list, tuple)):
