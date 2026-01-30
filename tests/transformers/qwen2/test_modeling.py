@@ -369,6 +369,10 @@ class Qwen2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
 
 
 class Qwen2IntegrationTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Qwen2IntegrationTest")
+    def setUp(self):
+        pass
+
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
         model = Qwen2ForCausalLM.from_pretrained(
@@ -401,6 +405,10 @@ class Qwen2GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
 
 
 class Qwen2CompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Qwen2CompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:

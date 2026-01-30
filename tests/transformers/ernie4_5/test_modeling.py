@@ -444,6 +444,10 @@ class Ernie4_5GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
 class Ernie4_5CompatibilityTest(unittest.TestCase):
     test_model_id = "hf-internal-testing/tiny-random-Ernie4_5Model"
 
+    @gpu_device_initializer(log_prefix="Ernie4_5CompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:

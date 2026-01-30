@@ -408,6 +408,10 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
     base_model_class = Glm4MoeModel
 
+    @gpu_device_initializer(log_prefix="Glm4MoeModelIntegrationTest")
+    def setUp(self):
+        pass
+
     def test_inference_no_attention(self):
         model = Glm4MoeModel.from_pretrained(
             "PaddleFormers/tiny-random-glm4moe",
@@ -491,6 +495,10 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
 
 
 class Glm4MoeCompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Glm4MoeCompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:

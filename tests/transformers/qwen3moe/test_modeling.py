@@ -323,6 +323,10 @@ class Qwen3MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
 
 
 class Qwen3MoeIntegrationTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Qwen3MoeIntegrationTest")
+    def setUp(self):
+        pass
+
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
         model = Qwen3MoeForCausalLM.from_pretrained(
@@ -383,6 +387,10 @@ class Qwen3MoeGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
 
 
 class Qwen3MoeCompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Qwen3MoeCompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:

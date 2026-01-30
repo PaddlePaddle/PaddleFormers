@@ -831,6 +831,10 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
 
 
 class Qwen3VLCompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Qwen3VLCompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
