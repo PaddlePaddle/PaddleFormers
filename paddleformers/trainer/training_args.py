@@ -1092,7 +1092,7 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Enable MoE (Mixture of Experts) expert parallel training"},
     )
-    aux_loss_alpha: Optional[float] = field(
+    router_aux_loss_coef: Optional[float] = field(
         default=0.0001,
         metadata={"help": "MoE (Mixture of Experts) Auxiliary loss weight coefficient"},
     )
@@ -1570,6 +1570,13 @@ class TrainingArguments:
         default=False,
         metadata={
             "help": "When enabled, the computation part of the moelayer will use the implementation provided by SonicMoE."
+        },
+    )
+
+    moe_use_pfcc_deepep: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to use PFCC DeepEP for MoE, by default uses paddle DeepEP. Only works when moe_token_dispatcher_type == 'deepep'."
         },
     )
 

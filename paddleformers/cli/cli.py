@@ -71,6 +71,7 @@ def main():
     distributed_funcs = ["train", "export"]
     paddleformers_dist_log = os.getenv("PADDLEFORMERS_DIST_LOG", "paddleformers_dist_log")
     nnodes = os.getenv("NNODES", "1")
+    rank = os.getenv("RANK", "0")
     master_ip = os.getenv("MASTER_ADDR", "127.0.0.1")
     master_port = os.getenv("MASTER_PORT", "8080")
     current_device = detect_device()
@@ -154,7 +155,7 @@ def main():
         command = (
             f"python -m paddle.distributed.launch --log_dir {paddleformers_dist_log} "
             f"--{current_device}s {visible_cards} --master {master_ip}:{master_port} "
-            f"--nnodes {nnodes} {launcher.__file__} {args_to_pass}"
+            f"--nnodes {nnodes} --rank {rank} --run_mode=collective {launcher.__file__} {args_to_pass}"
         )
         command = shlex.split(command)
         process = subprocess.Popen(

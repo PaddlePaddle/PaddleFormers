@@ -147,3 +147,11 @@ class DataArguments:
         default=True,
         metadata={"help": "Whether to truncate data in packing (only valid in pretrain online dataflow)."},
     )
+    new_special_tokens_path: str = field(
+        default=None,
+        metadata={"help": "The path of the new special tokens."},
+    )
+    custom_register_path: str = field(
+        default=None,
+        metadata={"help": "Register python file path for custom templates and mm_plugin."},
+    )

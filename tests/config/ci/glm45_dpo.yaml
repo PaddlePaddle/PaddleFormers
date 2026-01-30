@@ -11,8 +11,8 @@ mix_strategy: concat
 
 ### model
 model_name_or_path: zai-org/GLM-4.5-Air-Base/
-#attn_impl: sdpa
-attn_impl: flashmask
+#_attn_implementation: sdpa
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -66,7 +66,7 @@ moe_router_force_load_balancing: true
 clear_every_step_cache: true
 partial_send_recv: false
 #use_cpu_initialization: true
-fuse_attention_qkv: true
-fuse_attention_ffn: true
 
 num_empty_layers_add_in_tail: 1
+
+router_aux_loss_coef: 0.0

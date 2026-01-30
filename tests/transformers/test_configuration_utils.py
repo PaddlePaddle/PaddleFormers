@@ -89,8 +89,6 @@ class ConfigurationUtilsTest(unittest.TestCase):
     def test_model_config_save(self):
         # 1. single config
         config = FakeSimplePretrainedModelConfig(a=10, b=11, c=12)
-        config.fuse_attention_qkv = True
-        config.fuse_rms_norm = True
         config.tensor_model_parallel_size = 8
         config.tensor_parallel_output = True
 
@@ -107,8 +105,6 @@ class ConfigurationUtilsTest(unittest.TestCase):
             import json
 
             loaded_config = json.load(open(os.path.join(tp, "config.json"), "r"))
-            assert "fuse_attention_qkv" in loaded_config, "fuse qkv is need to save"
-            assert "fuse_rms_norm" not in loaded_config, "fuse_rms_norm don't need to save"
             assert "tensor_model_parallel_size" in loaded_config, "tensor_model_parallel_size need to save"
             assert "paddleformers_version" in loaded_config, "always save paddleformers_version"
             assert (

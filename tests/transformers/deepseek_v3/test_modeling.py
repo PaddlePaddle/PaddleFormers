@@ -25,7 +25,7 @@ from paddleformers.transformers import (
     DeepseekV3ForCausalLM,
     DeepseekV3Model,
 )
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -72,7 +72,7 @@ class DeepseekV3ModelTester:
         num_labels=3,
         num_choices=4,
         pad_token_id=0,
-        aux_loss_alpha=0.001,
+        router_aux_loss_coef=0.001,
         first_k_dense_replace=1,
         hidden_act="silu",
         scope=None,
@@ -104,7 +104,7 @@ class DeepseekV3ModelTester:
         self.num_experts_per_tok = num_experts_per_tok
         self.first_k_dense_replace = first_k_dense_replace
         self.norm_topk_prob = norm_topk_prob
-        self.aux_loss_alpha = aux_loss_alpha
+        self.router_aux_loss_coef = router_aux_loss_coef
         self.hidden_act = hidden_act
         self.max_position_embeddings = max_position_embeddings
         self.initializer_range = initializer_range
@@ -166,7 +166,7 @@ class DeepseekV3ModelTester:
             num_experts_per_tok=self.num_experts_per_tok,
             first_k_dense_replace=self.first_k_dense_replace,
             norm_topk_prob=self.norm_topk_prob,
-            aux_loss_alpha=self.aux_loss_alpha,
+            router_aux_loss_coef=self.router_aux_loss_coef,
             hidden_act=self.hidden_act,
             max_position_embeddings=self.max_position_embeddings,
             initializer_range=self.initializer_range,
@@ -300,6 +300,7 @@ class DeepseekV3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
     all_model_classes = (DeepseekV3Model, DeepseekV3ForCausalLM)
     all_generative_model_classes = {DeepseekV3ForCausalLM: (DeepseekV3Model, "deepseek_v3")}
 
+    @gpu_device_initializer(log_prefix="DeepseekV3ModelTest")
     def setUp(self):
         super().setUp()
 
@@ -425,6 +426,36 @@ class DeepseekV3IntegrationTest(unittest.TestCase):
             ]
         )
         self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-2, rtol=1e-2))
+
+    def test_fd_fallback(self):
+        input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
+        model = DeepseekV3ForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-deepseek-v3",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
+            fd_fallback=False,
+        )
+        model_fd_fallback = DeepseekV3ForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-deepseek-v3",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
+            fd_fallback=True,
+        )
+        model_fd_fallback_fused_ffn = DeepseekV3ForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-deepseek-v3",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
+            fd_fallback=True,
+        )
+
+        input_ids = paddle.to_tensor([input_ids])
+        with paddle.no_grad():
+            out = model(input_ids, return_dict=True).logits
+            out_fd_fallback = model_fd_fallback(input_ids, return_dict=True).logits
+            out_fd_fallback_fused_ffn = model_fd_fallback_fused_ffn(input_ids, return_dict=True).logits
+
+        self.assertTrue(paddle.allclose(out_fd_fallback, out, atol=1e-3, rtol=1e-3))
+        self.assertTrue(paddle.allclose(out_fd_fallback_fused_ffn, out, atol=1e-3, rtol=1e-3))
 
 
 class DeepseekV3CompatibilityTest(unittest.TestCase):

@@ -1855,7 +1855,8 @@ class Trainer:
                     "batches in the first epoch. If this takes a lot of time, you can add the `--ignore_data_skip` "
                     "flag to your launch command, but you will resume the training on data already seen by your model."
                 )
-                if self.is_local_process_zero() and not args.disable_tqdm:
+                # tqdm of skip data progress
+                if self.is_local_process_zero():
                     steps_trained_progress_bar = tqdm(total=steps_trained_in_current_epoch)
                     steps_trained_progress_bar.set_description("Skipping the first batches")
             if not args.ignore_data_skip:
@@ -4440,7 +4441,11 @@ class Trainer:
             model = self.model_wrapped
             if _prepare_pipeline_inputs_func is not None:
                 model._prepare_pipeline_inputs_func = _prepare_pipeline_inputs_func
-        elif is_paddlefleet_available() and isinstance(self.model, GPTModel):
+        elif (
+            is_paddlefleet_available()
+            and isinstance(self.model, GPTModel)
+            or (isinstance(self.model, LoRAModel) and isinstance(self.model.model, GPTModel))
+        ):
             model = self.model_wrapped
         else:
             model = self.model
@@ -4965,6 +4970,10 @@ class Trainer:
         logger.debug("{:^40}".format("{} Configuration Arguments".format(key)))
         logger.debug("{:30}: {}".format("paddle commit id", paddle.version.commit))
         logger.debug("{:30}: {}".format("paddleformers commit id", paddleformers.version.commit))
+        if is_paddlefleet_available():
+            import paddlefleet
+
+            logger.debug("{:30}: {}".format("paddlefleet commit id", paddlefleet.version.commit))
 
         for a in dir(args):
             if a[:2] != "__":  # don't print double underscore methods

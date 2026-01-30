@@ -70,7 +70,7 @@ class DeepseekV3Config(PretrainedConfig):
             Whether to normalize the weights of the routed experts.
         scoring_func (`str`, *optional*, defaults to 'softmax'):
             Method of computing expert weights.
-        aux_loss_alpha (`float`, *optional*, defaults to 0.001):
+        router_aux_loss_coef (`float`, *optional*, defaults to 0.001):
             Auxiliary loss weight coefficient.
         seq_aux = (`bool`, *optional*, defaults to True):
             Whether to compute the auxiliary loss for each individual sample.
@@ -119,6 +119,8 @@ class DeepseekV3Config(PretrainedConfig):
             The dropout ratio for the attention probabilities.
         speculate_model_type (`str`, defaults to `None`, *optional*, defaults to `False`):
             The model type for speculate. Support ['eagle', 'mtp'] Now.
+        fd_fallback (`bool`, *optional*, defaults to `False`):
+            Whether fastdeploy fallback.
 
     ```python
     >>> from paddleformers.transformers import DeepseekV3Model, DeepseekV3Config
@@ -161,7 +163,7 @@ class DeepseekV3Config(PretrainedConfig):
         first_k_dense_replace=0,
         norm_topk_prob=False,
         scoring_func="softmax",
-        aux_loss_alpha=0.0001,
+        router_aux_loss_coef=0.0001,
         seq_aux=True,
         hidden_act="silu",
         max_position_embeddings=2048,
@@ -178,6 +180,7 @@ class DeepseekV3Config(PretrainedConfig):
         rope_scaling=None,
         attention_bias=False,
         attention_dropout=0.0,
+        fd_fallback=False,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -208,8 +211,9 @@ class DeepseekV3Config(PretrainedConfig):
         self.first_k_dense_replace = first_k_dense_replace
         self.norm_topk_prob = norm_topk_prob
         self.scoring_func = scoring_func
-        self.aux_loss_alpha = aux_loss_alpha
+        self.router_aux_loss_coef = router_aux_loss_coef
         self.seq_aux = seq_aux
+        self.fd_fallback = fd_fallback
         # for backward compatibility
         if num_key_value_heads is None:
             num_key_value_heads = num_attention_heads

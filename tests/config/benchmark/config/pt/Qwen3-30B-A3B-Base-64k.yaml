@@ -22,7 +22,7 @@ prefetch_factor: 24
 
 ### model
 model_name_or_path: /root/paddlejob/gpfs/huangjiyi/Models/Qwen3-30B-A3B
-attn_impl: flashmask
+_attn_implementation: flashmask
 use_qk_norm: true
 
 ### finetuning
@@ -75,7 +75,6 @@ split_param: true
 stage1_overlap: true
 
 apply_rope_fusion: true
-fuse_rms_norm: true
 moe_deep_gemm: true
 moe_grouped_gemm: true
 moe_router_fusion: true
@@ -97,9 +96,6 @@ tp_delay_scale_loss: True
 amp_master_grad: true
 bf16: true
 fp16_opt_level: O2
-
-fuse_attention_qkv: true
-fuse_attention_ffn: true
 
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"

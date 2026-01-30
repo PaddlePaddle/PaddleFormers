@@ -258,7 +258,6 @@ class DeepseekV2MLP(nn.Layer):
         self.config = config
         self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
         self.intermediate_size = config.intermediate_size if intermediate_size is None else intermediate_size
-        self.fuse_attention_ffn = config.fuse_attention_ffn
         Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear_
 
         def linear_dtype_gaurd():
@@ -295,20 +294,13 @@ class DeepseekV2MLP(nn.Layer):
                     has_bias=False,
                 )
             else:
-                if config.fuse_attention_ffn:
-                    self.gate_up_fused_proj = Linear(self.hidden_size, self.intermediate_size * 2, bias_attr=False)
-                else:
-                    self.gate_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)
-                    self.up_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)
+                self.gate_up_fused_proj = Linear(self.hidden_size, self.intermediate_size * 2, bias_attr=False)
                 self.down_proj = Linear(self.intermediate_size, self.hidden_size, bias_attr=False)
 
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(self, x):
-        if self.fuse_attention_ffn:
-            x = swiglu(self.gate_up_fused_proj(x))
-        else:
-            x = swiglu(self.gate_proj(x), self.up_proj(x))
+        x = swiglu(self.gate_up_fused_proj(x))
         out = self.down_proj(x)
         return out
 
@@ -370,7 +362,7 @@ class MoEGate(PretrainedMoEGate):
         # compute gating score
         if self.using_post_norm_recompute:
             logits, norm_out = FusedNormGateFunc.apply(hidden_states, self.norm_weight, self.weight, self.norm_eps)
-            if hasattr(self.config, "using_fake_gate") and self.config.using_fake_gate:
+            if hasattr(self.config, "moe_router_force_load_balancing") and self.config.moe_router_force_load_balancing:
                 logits = FakeGate.apply(
                     hidden_states,
                     self.weight,
@@ -380,7 +372,10 @@ class MoEGate(PretrainedMoEGate):
         else:
             with paddle.amp.auto_cast(False):
                 hidden_states = hidden_states.cast(self.weight.dtype)
-                if hasattr(self.config, "using_fake_gate") and self.config.using_fake_gate:
+                if (
+                    hasattr(self.config, "moe_router_force_load_balancing")
+                    and self.config.moe_router_force_load_balancing
+                ):
                     logits = FakeGate.apply(
                         hidden_states,
                         self.weight,
@@ -473,7 +468,7 @@ class DeepseekV2MoE(MoELayer):
                 p.expert = not self.is_mp_moe
                 logger.info(f"expert no-sync={p.no_sync}-{p.name}")
 
-        self.alpha = config.aux_loss_alpha
+        self.alpha = config.router_aux_loss_coef
         if config.n_shared_experts is not None:
             intermediate_size = config.moe_intermediate_size * config.n_shared_experts
             if self.using_post_norm_recompute:
@@ -1658,8 +1653,7 @@ class DeepseekV2ModelFast(DeepseekV2PretrainedModelFast):
             attention_mask = self._prepare_decoder_attention_mask(
                 attention_mask, (batch_size, seq_length), past_key_values_length, inputs_embeds.dtype
             )  # [bs, 1, seq_len, seq_len]
-            if self.config.use_flash_attention:
-                attention_mask = None if is_casual_mask(attention_mask) else attention_mask
+            attention_mask = None if is_casual_mask(attention_mask) else attention_mask
 
         if self.config.num_nextn_predict_layers > 0:
             inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]  # [B, S, D]
@@ -1982,7 +1976,7 @@ class DeepseekV2RMSNorm(nn.Layer):
             mark_as_sequence_parallel_parameter(self.weight)
 
     def forward(self, hidden_states):
-        if self.config.fuse_rms_norm:
+        if True:
             return RmsNormFunction.apply(hidden_states, self.weight, self.variance_epsilon)
 
         with paddle.amp.auto_cast(False):

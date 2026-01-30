@@ -25,7 +25,7 @@ from paddleformers.transformers import (
     Qwen2MoeForCausalLM,
     Qwen2MoeModel,
 )
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -272,6 +272,7 @@ class Qwen2MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
     all_model_classes = (Qwen2MoeModel, Qwen2MoeForCausalLM)
     all_generative_model_classes = {Qwen2MoeForCausalLM: (Qwen2MoeModel, "qwen2_moe")}
 
+    @gpu_device_initializer(log_prefix="Qwen2MoeModelTest")
     def setUp(self):
         super().setUp()
 
@@ -367,7 +368,6 @@ class Qwen2MoeIntegrationTest(unittest.TestCase):
             dtype="float32",
             load_checkpoint_format="flex_checkpoint",
             fd_fallback=True,
-            fuse_attention_ffn=True,
         )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
@@ -472,8 +472,6 @@ class Qwen2MoeCompatibilityTest(unittest.TestCase):
 
             # 4. fuse qkv/ffn with fc
             model_config = Qwen2MoeConfig.from_pretrained(tempdir)
-            model_config.fuse_attention_qkv = True
-            model_config.fuse_attention_ffn = True
             paddle_model_fused = Qwen2MoeForCausalLM.from_pretrained(
                 tempdir,
                 config=model_config,

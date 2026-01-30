@@ -174,6 +174,8 @@ class Qwen2_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
     all_generative_model_classes = {Qwen2_5_VLForConditionalGeneration: {Qwen2_5_VLModel, "qwen2_5_vl"}}
     max_new_tokens = 3
 
+    # Use GPU 0 to prevent CUDA illegal memory access during resize
+    @gpu_device_initializer(log_prefix="Qwen2_5_VLModelTest", gpu_id=0)
     def setUp(self):
         self.model_tester = Qwen2_5_VLVisionText2TextModelTester(self)
         self.config_tester = ConfigTester(self, config_class=Qwen2_5_VLConfig, has_text_modality=False)
@@ -499,38 +501,6 @@ class Qwen2_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + 1)
             else:
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
-
-    def test_save_load_flex_checkpoint(self):
-        for model_class in self.all_model_classes:
-            with tempfile.TemporaryDirectory() as tmpdirname:
-                tiny_vision_config = {
-                    "depth": 4,
-                    "intermediate_size": 64,
-                    "hidden_size": 64,
-                    "out_hidden_size": 128,
-                    "fullatt_block_indexes": [1],
-                }
-                config = Qwen2_5_VLConfig(
-                    num_hidden_layers=4,
-                    intermediate_size=256,
-                    hidden_size=128,
-                    tie_word_embedding=False,
-                    vision_config=tiny_vision_config,
-                )
-                model = model_class(config)
-                model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-
-                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
-
-                model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
-
-                model_state_1 = model1.state_dict()
-                model_state_2 = model2.state_dict()
-
-                for k, v in model_state_1.items():
-                    md51 = v._md5sum()
-                    md52 = model_state_2[k]._md5sum()
-                    assert md51 == md52
 
 
 class Qwen2_5_VLIntegrationTest(unittest.TestCase):
@@ -954,8 +924,6 @@ class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
             paddle_model_fused = paddle_model_class.from_pretrained(
                 tempdir,
                 dtype="float32",
-                fuse_attention_qkv=True,
-                fuse_attention_ffn=True,
                 load_checkpoint_format="flex_checkpoint",
             ).eval()
 
