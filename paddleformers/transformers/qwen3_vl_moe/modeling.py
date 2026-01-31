@@ -448,7 +448,6 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
         return aoa_config
 
     @classmethod
-    @classmethod
     def _gen_inv_aoa_config(cls, config: Qwen3VLMoeConfig):
         mapping = cls._checkpoint_conversion_mapping
         llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
