@@ -148,6 +148,94 @@ class LoRALinear(nn.Linear):
         return f"in_features={self.weight.shape[0]}, out_features={self.weight.shape[1]}, rank={self.r}{name}"
 
 
+class ParamWrapper(nn.Layer):
+    def __init__(
+        self,
+        base_layer,
+        parameter_name: str,
+        r: int = 0,
+        lora_alpha: int = 1,
+        lora_dropout: float = 0.0,
+        rslora: bool = False,
+        lora_plus_scale: float = 1.0,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.base_layer = base_layer
+        self.parameter_name = parameter_name
+        self.r = r
+        self.lora_alpha = lora_alpha
+        self.merged = False
+        self.disable_lora = False
+
+        param = self.get_param()
+        param.stop_gradient = True
+
+        if param.ndim == 3:
+            num_experts, in_features, out_features = param.shape
+        else:
+            num_experts, in_features, out_features = 1, param.shape[0], param.shape[1]
+
+        self.lora_A = self.create_parameter(
+            shape=[num_experts, in_features, r],
+            dtype=paddle.get_default_dtype(),
+            is_bias=False,
+            default_initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu"),
+        )
+        self.lora_B = self.create_parameter(
+            shape=[num_experts, r, out_features],
+            dtype=paddle.get_default_dtype(),
+            is_bias=False,
+            attr=paddle.ParamAttr(
+                initializer=paddle.nn.initializer.Constant(value=0.0),
+                learning_rate=lora_plus_scale,
+            ),
+        )
+
+        if not rslora:
+            self.scaling = self.lora_alpha / self.r
+        else:
+            self.scaling = self.lora_alpha / math.sqrt(self.r)
+
+    def get_base_layer(self):
+        base_layer = self
+        while hasattr(base_layer, "base_layer"):
+            base_layer = base_layer.base_layer
+        return base_layer
+
+    def get_param(self):
+        param = getattr(self.get_base_layer(), self.parameter_name)
+        return param
+
+    def get_delta_weight(self, lora_A=None, lora_B=None):
+        lora_A = lora_A if lora_A is not None else self.lora_A
+        lora_B = lora_B if lora_B is not None else self.lora_B
+        delta_weight = lora_A @ lora_B * self.scaling
+
+        return delta_weight
+
+    def merge(self):
+        if not self.merged:
+            param = self.get_param()
+            delta_weight = self.get_delta_weight()
+            param.data += delta_weight
+            self.merged = True
+
+    def unmerge(self):
+        if self.merged:
+            param = self.get_param()
+            delta_weight = self.get_delta_weight()
+            param.data -= delta_weight
+            self.merged = False
+
+    def forward(self, input: paddle.Tensor, *args, **kwargs):
+        if self.disable_lora or self.merged:
+            result = self.base_layer(input, *args, **kwargs)
+        else:
+            result = self.base_layer(input, *args, **kwargs)
+        return result
+
+
 class FleetLoRALinear(LoRALinear):
     def __init__(self, in_features, out_features, skip_bias_add, **kwargs):
         super().__init__(in_features, out_features, **kwargs)

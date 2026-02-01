@@ -108,7 +108,7 @@ def get_lora_layers():
                 XPURowSequenceParallelLoRALinear as RowSequenceParallelLoRALinear,
             )
 
-            from .lora_layers import LoRAConv2D
+            from .lora_layers import LoRAConv2D, ParamWrapper
         else:
             raise ImportError  # Force to use the fallback if not XPU
     except ImportError:
@@ -122,6 +122,7 @@ def get_lora_layers():
             FleetRowSequenceParallelLoRALinear,
             LoRAConv2D,
             LoRALinear,
+            ParamWrapper,
             RowParallelLoRALinear,
             RowSequenceParallelLoRALinear,
         )
@@ -131,6 +132,7 @@ def get_lora_layers():
         "ColumnSequenceParallelLoRALinear": ColumnSequenceParallelLoRALinear,
         "LoRAConv2D": LoRAConv2D,
         "LoRALinear": LoRALinear,
+        "ParamWrapper": ParamWrapper,
         "RowParallelLoRALinear": RowParallelLoRALinear,
         "RowSequenceParallelLoRALinear": RowSequenceParallelLoRALinear,
         "FleetLoRALinear": FleetLoRALinear,
@@ -145,6 +147,7 @@ lora_layers = get_lora_layers()
 ColumnParallelLoRALinear = lora_layers["ColumnParallelLoRALinear"]
 ColumnSequenceParallelLoRALinear = lora_layers["ColumnSequenceParallelLoRALinear"]
 LoRAConv2D = lora_layers["LoRAConv2D"]
+ParamWrapper = lora_layers["ParamWrapper"]
 LoRALinear = lora_layers["LoRALinear"]
 RowParallelLoRALinear = lora_layers["RowParallelLoRALinear"]
 RowSequenceParallelLoRALinear = lora_layers["RowSequenceParallelLoRALinear"]
@@ -666,14 +669,24 @@ class LoRAModel(nn.Layer):
                     model_config_to_save.tensor_model_parallel_size = -1
                 model_config_to_save.save_pretrained(save_directory)
 
-    def _find_and_replace_module(self, model, module_name, lora_config):
+    def _find_and_replace_module(self, model, module_name, lora_config, parameter_name=None):
         parent_module = model
         attribute_chain = module_name.split(".")
         for name in attribute_chain[:-1]:
             parent_module = getattr(parent_module, name)
         module = getattr(parent_module, attribute_chain[-1])
         lora_module = None
-        if isinstance(module, nn.Linear) or isinstance(module, FusedLinear):
+        if parameter_name is not None:
+            lora_module = ParamWrapper(
+                module,
+                parameter_name=parameter_name,
+                r=lora_config.r,
+                lora_alpha=lora_config.lora_alpha,
+                lora_dropout=lora_config.lora_dropout,
+                rslora=lora_config.rslora,
+                lora_plus_scale=lora_config.lora_plus_scale,
+            )
+        elif isinstance(module, nn.Linear) or isinstance(module, FusedLinear):
             lora_module = LoRALinear(
                 in_features=module.weight.shape[0],
                 out_features=module.weight.shape[1],
@@ -1004,12 +1017,33 @@ class LoRAModel(nn.Layer):
             return model
         if isinstance(lora_config.target_modules, str):
             lora_config.target_modules = [lora_config.target_modules]
-        for i in model.named_sublayers():
-            module_name = i[0]
+        if lora_config.target_parameters is not None:
+            unsorted_target_names = set(lora_config.target_parameters)
+            target_parameters = sorted(unsorted_target_names)
+        for module_name, module in model.named_sublayers():
             for target_module in lora_config.target_modules:
                 if re.fullmatch(target_module, module_name):
                     self._find_and_replace_module(model, module_name, lora_config)
                     break
+            if lora_config.target_parameters is not None:
+                unwrapped_module_name = module_name
+                for param_name, param in module.named_parameters(recurse=False):
+                    key = f"{unwrapped_module_name}.{param_name}"
+                    if (key in target_parameters) or any(
+                        key.endswith(f".{target_key}") for target_key in target_parameters
+                    ):
+                        self._find_and_replace_module(
+                            model, module_name, lora_config, parameter_name=param_name.rpartition(".")[-1]
+                        )
+        # if lora_config.target_parameters is not None:
+        #     unsorted_target_names = set(peft_config.target_parameters)
+        #     target_names = sorted(unsorted_target_names)
+        #     for module_name, module in model.named_modules():
+        #         unwrapped_module_name = module_name
+        #         for param_name, param in module.named_parameters(recurse=False):
+        #             key = f"{unwrapped_module_name}.{param_name}"
+        #             if (key in target_names) or any(key.endswith(f".{target_key}") for target_key in target_names):
+        #                 create_and_replace_param(module_name, key, param_name)
         return model
 
     def restore_original_model(self):
