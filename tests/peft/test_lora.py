@@ -87,7 +87,7 @@ class TestLoraLayer(unittest.TestCase):
 class TestLoraModel(unittest.TestCase):
     def test_lora_model_restore(self):
         lora_config = LoRAConfig(
-            target_modules=[".*q_proj.*", ".*v_proj.*"],
+            target_modules=[".*qkv_proj.*"],
             r=4,
             lora_alpha=8,
             enable_lora_list=[None, [True, False]],
@@ -109,7 +109,7 @@ class TestLoraModel(unittest.TestCase):
     @parameterized.expand([(None,), ("all",), ("lora",)])
     def test_lora_model_constructor(self, bias):
         lora_config = LoRAConfig(
-            target_modules=[".*q_proj.*", ".*v_proj.*"],
+            target_modules=[".*qkv_proj.*"],
             r=4,
             lora_alpha=8,
             enable_lora_list=[None, [True, False]],
@@ -149,7 +149,7 @@ class TestLoraModel(unittest.TestCase):
         with TemporaryDirectory() as tempdir:
             input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
             lora_config = LoRAConfig(
-                target_modules=[".*q_proj.*", ".*v_proj.*"],
+                target_modules=[".*qkv_proj.*"],
                 r=4,
                 lora_alpha=8,
             )
@@ -182,7 +182,7 @@ class TestLoraModel(unittest.TestCase):
             LoRAModel(model, lora_config)
 
     def test_lora_get_merge_state_dict(self):
-        lora_config = LoRAConfig(target_modules=[".*q_proj.*", ".*v_proj.*"], r=4, lora_alpha=8)
+        lora_config = LoRAConfig(target_modules=[".*qkv_proj.*"], r=4, lora_alpha=8)
         model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
         model.eval()
         lora_model = LoRAModel(model, lora_config)
@@ -201,7 +201,7 @@ class TestLoraModel(unittest.TestCase):
 
             self.assertIsInstance(merged_weight, paddle.Tensor)
 
-            if any(target in k for target in ["q_proj", "v_proj"]):
+            if any(target in k for target in ["qkv_proj"]):
                 lora_A_key = k.replace("weight", "lora_A")
                 lora_B_key = k.replace("weight", "lora_B")
 
@@ -230,12 +230,15 @@ class TestLoraModelFC(unittest.TestCase):
         with TemporaryDirectory() as tempdir:
             input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
             lora_config = LoRAConfig(
-                target_modules=[".*q_proj.*", ".*v_proj.*"],
+                target_modules=[".*qkv_proj.*"],
                 r=4,
                 lora_alpha=8,
             )
             model = Glm4MoeModel.from_pretrained(
-                "PaddleFormers/tiny-random-glm4moe", download_hub="aistudio", convert_from_hf=True
+                "PaddleFormers/tiny-random-glm4moe-bf16",
+                download_hub="aistudio",
+                convert_from_hf=True,
+                dtype="float32",
             )
             lora_model = LoRAModel(model, lora_config)
             lora_model.eval()

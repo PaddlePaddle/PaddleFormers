@@ -16,7 +16,7 @@ prefetch_factor: 24
 
 ### model
 model_name_or_path: ./GLM-4.5-Air
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -61,7 +61,6 @@ recompute_granularity: full
 recompute_method: block
 recompute_num_layers: 1
 
-fuse_rms_norm: true
 fp32_residual_connection: false
 
 
@@ -88,6 +87,3 @@ gated_linear_unit: true
 num_hidden_layers: 3
 apply_rope_fusion: true
 moe_router_fusion: true
-
-fuse_attention_qkv: true
-fuse_attention_ffn: true

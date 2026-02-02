@@ -207,11 +207,17 @@ def mtp_sft_loss_forward(
 
     if num_nextn_predict_layers > 0:
         mtp_loss_res = []
+        mtp_loss_res_sum = []
         for depth in range(num_nextn_predict_layers):
             logtis_cur_depth = mtp_logits[depth]
             labels_cur_depth = labels_ori[:, (depth + 1) : (depth + 1 + seq_length)]
-            res_cur_depth = sft_loss_forward(logtis_cur_depth, labels_cur_depth, loss_mask)
+            res_cur_depth = sft_loss_forward(self, logtis_cur_depth, labels_cur_depth, loss_mask)
+            if self.return_tuple:
+                res_cur_depth, res_cur_depth_sum = res_cur_depth
+            else:
+                res_cur_depth, res_cur_depth_sum = res_cur_depth, None
             mtp_loss_res.append(res_cur_depth)
+            mtp_loss_res_sum.append(res_cur_depth_sum)
 
     def add_loss(main_loss, loss):
         return main_loss + loss - loss.detach()
@@ -224,11 +230,13 @@ def mtp_sft_loss_forward(
     if num_nextn_predict_layers > 0:
         loss = add_loss(
             loss,
-            multi_token_pred_lambda * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
+            multi_token_pred_lambda * sum([x for x in mtp_loss_res]) / len(mtp_loss_res),
         )
 
     if loss_sum is not None:
-        loss_sum = loss_sum + multi_token_pred_lambda * sum([x[1].detach() for x in mtp_loss_res]) / len(mtp_loss_res)
+        loss_sum = loss_sum + multi_token_pred_lambda * sum([x.detach() for x in mtp_loss_res_sum]) / len(
+            mtp_loss_res_sum
+        )
 
     if router_loss is not None and isinstance(router_loss, paddle.Tensor):
         loss = loss + router_loss - router_loss.detach()

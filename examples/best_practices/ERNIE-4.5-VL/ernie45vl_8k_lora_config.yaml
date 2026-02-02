@@ -11,7 +11,7 @@ random_shuffle: false
 
 ### model
 model_name_or_path: baidu/ERNIE-4.5-VL-28B-A3B-Thinking
-attn_impl: flashmask
+_attn_implementation: flashmask
 lora: true
 lora_rank: 32
 
@@ -57,7 +57,6 @@ recompute_num_layers: 1
 recompute_modules: ["loss_fn"]
 recompute_use_reentrant: true
 
-use_flash_attention: true
 sequence_parallel: true
 pp_seg_method: layer:Ernie4_5_DecoderLayer|ErnieDecoderLayer|EmptyLayer
 offload_queue: true

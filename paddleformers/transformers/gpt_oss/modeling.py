@@ -590,20 +590,14 @@ class GptOssPreTrainedModel(PretrainedModel):
         }
 
         # attention qkv
-        if not config.fuse_attention_qkv:
-            aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
-                for x in ("q", "k", "v")
-            ]
-            aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.self_attn.{x}_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias"
-                for x in ("q", "k", "v")
-            ]
-        else:
-            aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
-                f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
-            ]
+        aoa_config["aoa_statements"] += [
+            f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
+            for x in ("q", "k", "v")
+        ]
+        aoa_config["aoa_statements"] += [
+            f"model.layers.$LAYER_ID.self_attn.{x}_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias"
+            for x in ("q", "k", "v")
+        ]
 
         return aoa_config
 
@@ -628,25 +622,14 @@ class GptOssPreTrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.mlp.experts.down_proj_bias -> model.layers.$LAYER_ID.mlp.experts.down_proj_bias",
         ]
 
-        if not config.fuse_attention_qkv:
-            aoa_statements += [
-                f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
-                for x in ("q", "k", "v")
-            ]
-            aoa_statements += [
-                f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias -> model.layers.$LAYER_ID.self_attn.{x}_proj.bias"
-                for x in ("q", "k", "v")
-            ]
-        else:
-            aoa_statements += [
-                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
-                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
-            ]
-            aoa_statements += [
-                f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight"
-                for layer_id in range(config.num_hidden_layers)
-                for x in ("q", "k", "v")
-            ]
+        aoa_statements += [
+            f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+            for x in ("q", "k", "v")
+        ]
+        aoa_statements += [
+            f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias -> model.layers.$LAYER_ID.self_attn.{x}_proj.bias"
+            for x in ("q", "k", "v")
+        ]
 
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config

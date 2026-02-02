@@ -122,7 +122,7 @@ def get_pp_vp_split_layers(config, skip_recompute_num=-1):
         config (Config): Model configuration object containing:
             - num_hidden_layers (int): Total number of transformer layers
             - virtual_pipeline_model_parallel_size (int): Virtual pipeline parallelism degree
-            - add_tail_layers (int): Additional tail layers to append
+            - num_empty_layers_add_in_tail (int): Additional tail layers to append
         skip_recompute_num (int): Number of layers per virtual pipeline stage
             to exclude from recomputation. Defaults to -1 (auto-configure).
     Returns:
@@ -139,7 +139,7 @@ def get_pp_vp_split_layers(config, skip_recompute_num=-1):
     assert pp_size > 1, (
         "Only support pipeline parallel, " f"pp_size must be greater than 1, but got pp_size: {pp_size}"
     )
-    layer_num = config.num_hidden_layers + config.add_tail_layers
+    layer_num = config.num_hidden_layers + config.num_empty_layers_add_in_tail
 
     if skip_recompute_num == -1:
         # select all layers to skip recompute
@@ -310,7 +310,7 @@ class EmbeddingPipe(nn.Layer):
                         inputs_embeds_mtp = ScatterOp.apply(inputs_embeds_mtp)
 
                     mtp_emb_res.append(inputs_embeds_mtp)
-                res = paddle.cat(mtp_emb_res)
+                res = paddle.concat(mtp_emb_res, axis=-1)
                 ret = (res,)
         else:
             if self.sequence_parallel:
@@ -499,10 +499,10 @@ class CriterionLayerPipe(CriterionLayer):
         super().__init__(*args, **kwargs)
         self.return_tuple = False  # loss_func only return loss, no loss_sum
 
-    def forward(self, logits, labels):
+    def forward(self, logits, labels, mtp_logits=None):
         if isinstance(labels, tuple) and "sft" in self.loss_type:
             labels, loss_mask = labels
-        loss = super().forward(logits, labels)
+        loss = super().forward(logits, labels, mtp_logits=mtp_logits)
         return loss
 
 
@@ -608,13 +608,8 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 ),
                 f"model.layers.{i}",
             )
-        for i in range(config.num_nextn_predict_layers):
-            if MTPLayerPipeCls is not None:
-                self.add_sequential_layer(
-                    LayerDesc(MTPLayerPipeCls, config=config, layer_idx=config.num_hidden_layers + i),
-                    f"model.layers.{config.num_hidden_layers + i}",
-                )
-        for i in range(config.add_tail_layers):
+
+        for i in range(config.num_empty_layers_add_in_tail):
             self.add_sequential_layer(
                 LayerDesc(
                     EmptyLayer,
@@ -626,6 +621,13 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             LayerDesc(RMSNormPipeCls if self._norm_cls == "rms_norm" else LayerNormPipe, config=config),
             "model.norm",
         )
+
+        for i in range(config.num_nextn_predict_layers):
+            if MTPLayerPipeCls is not None:
+                self.add_sequential_layer(
+                    LayerDesc(MTPLayerPipeCls, config=config, layer_idx=config.num_hidden_layers + i),
+                    f"model.layers.{config.num_hidden_layers + i}",
+                )
 
         if config.tie_word_embeddings:
             self.add_sequential_layer(
@@ -651,7 +653,9 @@ class GeneralModelForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
 
         if (
             seg_method == "layer:DecoderLayer|EmptyLayer"
-            and (config.num_hidden_layers + config.add_tail_layers) % get_hcg().topology().get_dim_size("pipe") != 0
+            and (config.num_hidden_layers + config.num_empty_layers_add_in_tail)
+            % get_hcg().topology().get_dim_size("pipe")
+            != 0
         ):
             seg_method = "uniform"
         logger.info(f"using recompute_interval={recompute_interval}, seg_method={seg_method}")

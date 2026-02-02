@@ -641,8 +641,8 @@ def main():
         callbacks += [MoeExpertsGradScaleCallback(training_args)]
 
     if getattr(config, "topk_method", None) == "noaux_tc":
-        aux_loss_free_gamma = getattr(config, "aux_loss_free_gamma", 0.001)
-        callbacks += [MoECorrectionBiasAdjustCallback(aux_loss_free_gamma)]
+        moe_router_bias_update_rate = getattr(config, "moe_router_bias_update_rate", 0.001)
+        callbacks += [MoECorrectionBiasAdjustCallback(moe_router_bias_update_rate)]
 
     def resume_from_custom_func(model):
         if training_args.resume_from_huggingface_ckpt:
