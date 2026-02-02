@@ -67,7 +67,7 @@ mix_strategy: concat
 
 ### model
 model_name_or_path: baidu/ERNIE-4.5-0.3B-Base-PT
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -124,7 +124,7 @@ mix_strategy: concat
 
 ### model
 model_name_or_path: baidu/ERNIE-4.5-0.3B-Base-PT
-attn_impl: flashmask
+_attn_implementation: flashmask
 lora: true
 lora_rank: 8
 
@@ -175,7 +175,7 @@ load_checkpoint_format: flex_checkpoint
 
 `model_name_or_path`：模型本地路径或 HuggingFace 仓库对应的名称，如`baidu/ERNIE-4.5-0.3B-Base-PT`
 
-`attn_impl`：模型 Attention Mask 实现方式，推荐使用 `flashmask`，是一种针对 FlashAttention 的一种核心优化技术。
+`_attn_implementation`：模型 Attention Mask 实现方式，推荐使用 `flashmask`，是一种针对 FlashAttention 的一种核心优化技术。
 
 `lora`：Bool 类型，是否 lora 训练，默认`False`。
 

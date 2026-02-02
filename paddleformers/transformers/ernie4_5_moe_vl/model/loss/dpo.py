@@ -37,24 +37,23 @@ class ErnieDPOCriterion(DPOCriterion):
     def dpo_logps(
         self,
         logits,
-        chosen_labels,
-        rejected_labels,
+        response_labels,
         response_indexs,
         average_log_prob=False,
     ):
         """DPO logprobs"""
-        labels = chosen_labels + rejected_labels
+        labels = response_labels
         hidden_states, weight, bias, transpose_y = logits
 
         if self.config.use_filtered_label_loss:
             if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel:
-                labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, 0)
+                labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, -100)
 
                 hidden_states = paddle.gather(hidden_states, sparse_tgt_idx, axis=0)
                 hidden_states = AllGatherVarlenOp.apply(hidden_states)
             else:
                 labels = labels.flatten()
-                sparse_tgt_idx = paddle.nonzero(labels != 0).flatten()
+                sparse_tgt_idx = paddle.nonzero(labels != -100).flatten()
                 labels = paddle.gather(labels, sparse_tgt_idx, axis=0)
 
                 hidden_states = hidden_states.reshape([-1, hidden_states.shape[-1]])
@@ -84,7 +83,7 @@ class ErnieDPOCriterion(DPOCriterion):
                 False,
                 LOOP_CHUNK_SIZE,
                 return_token_loss=True,
-                ignore_index=0,
+                ignore_index=-100,
             )
         else:
             logits = parallel_matmul(
@@ -162,7 +161,8 @@ class ErnieDPOCriterion(DPOCriterion):
                 ],
                 axis=0,
             )
-        sft_loss = -chosen_logps.sum() / (chosen_labels != 0).sum()
+        chosen_response_lengths = response_indexs[:, 2] - response_indexs[:, 1]
+        sft_loss = -chosen_logps.sum() / chosen_response_lengths.sum()
         if average_log_prob:
             chosen_response_length = response_indexs[:, 2] - response_indexs[:, 1]
             rejected_response_length = response_indexs[:, 3] - response_indexs[:, 2]
@@ -273,8 +273,7 @@ class ErnieDPOCriterion(DPOCriterion):
         """Forward"""
         if self.dpo_config.offset_alpha > 0:
             (
-                chosen_labels,
-                rejected_labels,
+                response_labels,
                 response_indexs,
                 score_deltas,
                 reference_chosen_logps,
@@ -282,8 +281,7 @@ class ErnieDPOCriterion(DPOCriterion):
             ) = labels
         else:
             (
-                chosen_labels,
-                rejected_labels,
+                response_labels,
                 response_indexs,
                 reference_chosen_logps,
                 reference_rejected_logps,
@@ -296,7 +294,7 @@ class ErnieDPOCriterion(DPOCriterion):
             average_log_prob = False
         if reference_chosen_logps is None or reference_rejected_logps is None:
             reference_chosen_logps, reference_rejected_logps, sft_loss = self.dpo_logps(
-                logits, chosen_labels, rejected_labels, response_indexs, average_log_prob
+                logits, response_labels, response_indexs, average_log_prob
             )
             if self.use_infohub:
                 infohub.reference_chosen_logps.append(reference_chosen_logps)
@@ -306,7 +304,7 @@ class ErnieDPOCriterion(DPOCriterion):
             else:
                 return reference_chosen_logps, reference_rejected_logps
         policy_chosen_logps, policy_rejected_logps, sft_loss = self.dpo_logps(
-            logits, chosen_labels, rejected_labels, response_indexs, average_log_prob
+            logits, response_labels, response_indexs, average_log_prob
         )
         dpo_loss = self.dpo_loss(
             policy_chosen_logps, policy_rejected_logps, reference_chosen_logps, reference_rejected_logps, score_deltas

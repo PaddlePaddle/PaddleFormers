@@ -288,9 +288,12 @@ class Qwen3NextRMSNorm(nn.Layer):
 class Qwen3NextAttention(Qwen3MoeAttention):
     def __init__(self, config: Qwen3NextConfig, layer_idx: int):
         super().__init__(config, layer_idx)
-        self.q_proj = GeneralLinear.create(
+        kv_hidden_size = self.config.num_key_value_heads * self.head_dim
+        q_hidden_size = self.config.num_attention_heads * self.head_dim * 2
+
+        self.qkv_proj = GeneralLinear.create(
             config.hidden_size,
-            config.num_attention_heads * self.head_dim * 2,
+            q_hidden_size + 2 * kv_hidden_size,
             has_bias=config.attention_bias,
             config=config,
             tp_plan="colwise",
@@ -315,16 +318,26 @@ class Qwen3NextAttention(Qwen3MoeAttention):
         cache_position: Optional[Tensor] = None,
         **kwargs,
     ) -> tuple[Tensor, Optional[Tensor]]:
-        query_states = self.q_proj(hidden_states)
-        key_states = self.k_proj(hidden_states)
-        value_states = self.v_proj(hidden_states)
-
+        mix_layer = self.qkv_proj(hidden_states)
         if self.sequence_parallel:
             max_sequence_length = self.config.max_sequence_length
             bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
             q_len = max_sequence_length
+            target_shape = [
+                bsz,
+                q_len,
+                self.num_key_value_heads,
+                (self.num_key_value_groups * 2 + 2) * self.head_dim,
+            ]
         else:
             bsz, q_len, _ = hidden_states.shape
+            target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups * 2 + 2) * self.head_dim]
+        mix_layer = paddle.reshape_(mix_layer, target_shape)
+        query_states, key_states, value_states = paddle.split(
+            mix_layer,
+            num_or_sections=[self.num_key_value_groups * self.head_dim * 2, self.head_dim, self.head_dim],
+            axis=-1,
+        )
 
         query_states, gate = paddle.chunk(query_states.view(bsz, q_len, -1, self.head_dim * 2), chunks=2, dim=-1)
         gate = gate.reshape(bsz, q_len, -1)
@@ -933,13 +946,20 @@ class Qwen3NextPretrainedModel(PretrainedModel):
             f"model.layers.$LAYER_ID.linear_attn.in_proj_qkvz.weight^T -> {model_prefix}layers.$LAYER_ID.linear_attn.in_proj_qkvz.weight",
             f"model.layers.$LAYER_ID.linear_attn.norm.weight -> {model_prefix}layers.$LAYER_ID.linear_attn.norm.weight",
             f"model.layers.$LAYER_ID.linear_attn.out_proj.weight^T -> {model_prefix}layers.$LAYER_ID.linear_attn.out_proj.weight",
+            f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
+            f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+            f"model.layers.$LAYER_ID.mlp.shared_expert.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_expert.down_proj.weight",
         ]
 
-        # self_attn
+        # attention qkv
         aoa_statements += [
-            f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
-            for x in ("q", "k", "v", "o")
+            f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
         ]
+        if config.attention_bias:
+            aoa_statements += [
+                f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+            ]
+
         aoa_statements += [
             f"model.layers.$LAYER_ID.self_attn.{x}_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_norm.weight"
             for x in ("q", "k")
@@ -947,12 +967,8 @@ class Qwen3NextPretrainedModel(PretrainedModel):
 
         # experts
         aoa_statements += [
-            f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{x}_proj.weight"
-            for x in ("gate", "up", "down")
-        ]
-        aoa_statements += [
-            f"model.layers.$LAYER_ID.mlp.shared_expert.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_expert.{x}_proj.weight"
-            for x in ("gate", "up", "down")
+            f"model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_expert.up_gate_proj.weight, fused_ffn",
+            f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
         ]
 
         return {"aoa_statements": aoa_statements}
