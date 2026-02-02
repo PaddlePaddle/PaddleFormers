@@ -143,6 +143,10 @@ class DataArguments:
         default=True,
         metadata={"help": "Whether to truncate data in packing (only valid in pretrain online dataflow)."},
     )
+    dataset_output_dir: str = field(
+        default="./dataset_output",
+        metadata={"help": "output path of offline sft datasets"},
+    )
     new_special_tokens_path: str = field(
         default=None,
         metadata={"help": "The path of the new special tokens."},
@@ -154,4 +158,8 @@ class DataArguments:
     processor_use_fast: bool = field(
         default=None,
         metadata={"help": "Whether to use fast processor."},
+    )
+    make_offline_data: bool = field(
+        default=False,
+        metadata={"help": "Make offline data for SFT training."},
     )

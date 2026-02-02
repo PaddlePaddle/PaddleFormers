@@ -32,6 +32,16 @@ from paddleformers.utils.log import logger
 
 
 @dataclass
+class TextSequence:
+    """Encapsulated text sequence class."""
+
+    token_ids: List[int]
+    position_ids: List[int]
+    labels: List[int]
+    num_examples: int
+
+
+@dataclass
 class Sequence:
     """Encapsulated sequence class."""
 
