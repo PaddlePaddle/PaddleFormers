@@ -44,7 +44,6 @@ ERNIE_PRETRAINED_INIT_CONFIGURATION = {
         "pad_token_id": 0,
         "use_cache": False,
         "recompute": False,
-        "use_flash_attention": True,
         "use_pure_fp16": False,
     },
 }
@@ -75,12 +74,11 @@ class Ernie4_5_Config(PretrainedConfig):
         initializer_range=0.02,  # no use
         rms_norm_eps=1e-6,
         use_cache=False,
-        use_flash_attention=True,
         use_sparse_flash_attn=True,
         use_var_len_flash_attn=False,
         recompute_use_reentrant=False,
         use_rmsnorm=True,
-        fuse_rms_norm=False,
+        fuse_rms_norm=True,
         fuse_ln=False,
         pad_token_id=0,
         bos_token_id=1,
@@ -93,7 +91,7 @@ class Ernie4_5_Config(PretrainedConfig):
         weight_share_add_bias=True,
         max_sequence_length=None,
         ignored_index=-100,
-        add_tail_layers=False,
+        num_empty_layers_add_in_tail=False,
         attention_probs_dropout_prob=0.0,
         hidden_dropout_prob=0.0,
         compression_ratio: float = 1.0,
@@ -120,7 +118,6 @@ class Ernie4_5_Config(PretrainedConfig):
             num_attention_heads (int): Number of attention heads for each attention layer
             rms_norm_eps (float): The epsilon used by the RMS normalization layers
             use_cache (bool): Whether to use caching for faster generation (decoding)
-            use_flash_attention (bool): Whether to use FlashAttention for optimized attention computation
             use_sparse_flash_attn (bool): Whether to use sparse FlashAttention
             use_var_len_flash_attn (bool): Whether to use variable-length FlashAttention
             recompute_use_reentrant (bool): Whether to use reentrant checkpointing
@@ -137,7 +134,7 @@ class Ernie4_5_Config(PretrainedConfig):
             weight_share_add_bias (bool): Whether to share bias weights in certain layers
             max_sequence_length (int): Maximum sequence length for positional embeddings
             ignored_index (int): Target value that is ignored during loss computation
-            add_tail_layers (int): Whether to add additional layers at the end
+            num_empty_layers_add_in_tail (int): Whether to add additional layers at the end
             attention_probs_dropout_prob (float): Dropout probability for attention weights
             hidden_dropout_prob (float): Dropout probability for hidden layers
             compression_ratio (float): Ratio for KV cache compression (1.0 = no compression)
@@ -172,7 +169,6 @@ class Ernie4_5_Config(PretrainedConfig):
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
-        self.use_flash_attention = use_flash_attention
         self.use_sparse_flash_attn = use_sparse_flash_attn
         self.recompute_use_reentrant = recompute_use_reentrant
         self.use_var_len_flash_attn = use_var_len_flash_attn
@@ -193,7 +189,7 @@ class Ernie4_5_Config(PretrainedConfig):
         self.fuse_softmax_mask = fuse_softmax_mask
 
         self.ignored_index = ignored_index
-        self.add_tail_layers = add_tail_layers
+        self.num_empty_layers_add_in_tail = num_empty_layers_add_in_tail
 
         self.skip_recompute_ops = dict()
         self.attention_probs_dropout_prob = attention_probs_dropout_prob

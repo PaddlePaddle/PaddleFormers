@@ -34,23 +34,23 @@ MAX_STEPS = 2
 SAVE_STEPS = 2
 
 SFT_FULL_EXCEPTED_LOSS = 12.718987
-SFT_FULL_RESUME_EXCEPTED_LOSS = 12.717552
+SFT_FULL_RESUME_EXCEPTED_LOSS = 12.717634
 SFT_FULL_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
 SFT_LORA_EXCEPTED_LOSS = 12.718987
 SFT_LORA_RESUME_EXCEPTED_LOSS = 12.717308
 SFT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
-SFT_FULL_TP_PP_EXCEPTED_LOSS = 12.789069
-SFT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 12.789183
+SFT_FULL_TP_PP_EXCEPTED_LOSS = 12.789046
+SFT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 12.78921
 SFT_FULL_TP_PP_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
 SFT_LORA_TP_PP_EXCEPTED_LOSS = 12.789069
-SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 12.788974
+SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 12.788975
 SFT_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 SFT_FC_EXCEPTED_LOSS = 12.936313
-SFT_FC_RESUME_EXCEPTED_LOSS = 12.937099
+SFT_FC_RESUME_EXCEPTED_LOSS = 12.936989
 SFT_FC_EXCEPTED_RESULT = [[10564, 10564, 10564, 138932, 102954, 47231, 47231, 47231, 47231, 47231]]
 
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
@@ -132,8 +132,6 @@ class SFTTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
-            "fuse_attention_qkv": "true",
-            "fuse_attention_ffn": "true",
             "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
@@ -184,8 +182,6 @@ class SFTTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
-            "fuse_attention_qkv": "true",
-            "fuse_attention_ffn": "true",
             "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
@@ -244,8 +240,6 @@ class SFTTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
-            "fuse_attention_qkv": "true",
-            "fuse_attention_ffn": "true",
             "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
@@ -296,8 +290,6 @@ class SFTTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
-            "fuse_attention_qkv": "true",
-            "fuse_attention_ffn": "true",
             "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
@@ -358,8 +350,6 @@ class SFTTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
-            "fuse_attention_qkv": "true",
-            "fuse_attention_ffn": "true",
             "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "full_function_call.yaml")

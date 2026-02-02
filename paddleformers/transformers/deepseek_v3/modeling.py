@@ -304,7 +304,7 @@ class MoEGate(PretrainedMoEGate):
         with paddle.amp.auto_cast(False):
             hidden_states = hidden_states.cast(self.weight.dtype)
 
-            if hasattr(self.config, "using_fake_gate") and self.config.using_fake_gate:
+            if hasattr(self.config, "moe_router_force_load_balancing") and self.config.moe_router_force_load_balancing:
                 logits = FakeGate.apply(hidden_states, self.weight)
             else:
                 logits = F.linear(hidden_states, self.weight, None)
@@ -472,7 +472,7 @@ class DeepseekV3MoE(nn.Layer):
                     DeepseekV3MLP(
                         new_config,
                         intermediate_size=config.moe_intermediate_size,
-                        fuse_up_gate=config.fuse_attention_ffn,
+                        fuse_up_gate=False,
                     )
                     for _ in range(config.n_routed_experts)
                 ]
@@ -481,7 +481,7 @@ class DeepseekV3MoE(nn.Layer):
         self.shared_experts = DeepseekV3MLP(
             config=config,
             intermediate_size=config.moe_intermediate_size * config.n_shared_experts,
-            fuse_up_gate=config.fuse_attention_ffn,
+            fuse_up_gate=False,
         )
 
     def moe(self, hidden_states: paddle.Tensor, topk_indices: paddle.Tensor, topk_weights: paddle.Tensor):
@@ -567,12 +567,10 @@ class DeepseekV3MoEFlexToken(MoEFlexTokenLayer):
             if self.is_mp_moe or self.is_ep_moe:
                 p.is_distributed = True
 
-        self.alpha = config.aux_loss_alpha
+        self.alpha = config.router_aux_loss_coef
         if config.n_shared_experts is not None:
             intermediate_size = config.moe_intermediate_size * config.n_shared_experts
-            self.shared_experts = DeepseekV3MLP(
-                config=config, intermediate_size=intermediate_size, fuse_up_gate=config.fuse_attention_ffn
-            )
+            self.shared_experts = DeepseekV3MLP(config=config, intermediate_size=intermediate_size, fuse_up_gate=False)
 
     def forward(self, hidden_states):
         final_hidden_states, l_aux, l_zloss = super().forward(hidden_states)
@@ -875,7 +873,7 @@ class DeepseekV3DecoderLayer(nn.Layer):
                 and layer_idx >= config.first_k_dense_replace
                 and layer_idx % config.moe_layer_freq == 0
             )
-            else DeepseekV3MLP(config, fuse_up_gate=config.fuse_attention_ffn)
+            else DeepseekV3MLP(config, fuse_up_gate=False)
         )
 
         self.input_layernorm = GeneralNorm.create(
@@ -1214,7 +1212,6 @@ class DeepseekV3PretrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
             ]
         }
-
         if config.q_lora_rank:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.self_attn.q_{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.q_{x}_proj.weight"
@@ -1223,13 +1220,11 @@ class DeepseekV3PretrainedModel(PretrainedModel):
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.self_attn.q_a_layernorm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_a_layernorm.weight"
             ]
-
         aoa_config["aoa_statements"] += [
             f"model.layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.weight",
             f"model.layers.$LAYER_ID.self_attn.kv_b_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.kv_b_proj.weight",
             f"model.layers.$LAYER_ID.self_attn.kv_a_layernorm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.kv_a_layernorm.weight",
         ]
-
         if config.attention_bias:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.self_attn.q_a_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.q_a_proj.bias",
@@ -1237,49 +1232,35 @@ class DeepseekV3PretrainedModel(PretrainedModel):
             ]
 
         # attention qkv
-        if not config.fuse_attention_qkv:
-            aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
-                for x in ("q", "k", "v")
-            ]
-            aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.self_attn.{x}_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias"
-                for x in ("q", "k", "v")
-            ]
-        else:
-            aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
-                f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
-            ]
+        aoa_config["aoa_statements"] += [
+            f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
+            for x in ("q", "k", "v")
+        ]
+        aoa_config["aoa_statements"] += [
+            f"model.layers.$LAYER_ID.self_attn.{x}_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias"
+            for x in ("q", "k", "v")
+        ]
 
         # FFN
-        if not config.fuse_attention_ffn:
-            aoa_config["aoa_statements"] += (
-                [
-                    f"model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight"
-                    for p in ("gate", "up")
-                ]
-                + [
-                    f"model.layers.$LAYER_ID.mlp.shared_experts.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.{p}_proj.weight"
-                    for p in ("gate", "up")
-                ]
-                + [
-                    f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{p}_proj.weight"
-                    for p in ("gate", "up")
-                ]
-            )
-        else:
-            aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.mlp.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
-                f"model.layers.$LAYER_ID.mlp.shared_experts.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.shared_experts.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
-                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
+        aoa_config["aoa_statements"] += (
+            [
+                f"model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight"
+                for p in ("gate", "up")
             ]
+            + [
+                f"model.layers.$LAYER_ID.mlp.shared_experts.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.{p}_proj.weight"
+                for p in ("gate", "up")
+            ]
+            + [
+                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{p}_proj.weight"
+                for p in ("gate", "up")
+            ]
+        )
 
         if config.get("fd_fallback", False):
-            if not config.fuse_attention_ffn:
-                aoa_config["aoa_statements"] += [
-                    f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
-                ]
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
+            ]
             for layer_idx in range(2, config.num_hidden_layers):
                 src_prefix = f"model.layers.{layer_idx}"
                 tgt_prefix = f"{model_prefix}layers.{layer_idx}"
@@ -1319,7 +1300,6 @@ class DeepseekV3PretrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias",
         ]
-
         if config.q_lora_rank:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.q_{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.q_{x}_proj.weight"
@@ -1328,129 +1308,70 @@ class DeepseekV3PretrainedModel(PretrainedModel):
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.q_a_layernorm.weight -> model.layers.$LAYER_ID.self_attn.q_a_layernorm.weight"
             ]
-
         aoa_statements += [
             f"{model_prefix}layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.weight^T -> model.layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.weight",
             f"{model_prefix}layers.$LAYER_ID.self_attn.kv_b_proj.weight^T -> model.layers.$LAYER_ID.self_attn.kv_b_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.self_attn.kv_a_layernorm.weight -> model.layers.$LAYER_ID.self_attn.kv_a_layernorm.weight",
         ]
-
         if config.attention_bias:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.q_a_proj.bias -> model.layers.$LAYER_ID.self_attn.q_a_proj.bias",
                 f"{model_prefix}layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.bias -> model.layers.$LAYER_ID.self_attn.kv_a_proj_with_mqa.bias",
             ]
 
-        if not config.fuse_attention_qkv:
-            aoa_statements += [
-                f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
-                for x in ("q", "k", "v")
-            ]
-            aoa_statements += [
-                f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias -> model.layers.$LAYER_ID.self_attn.{x}_proj.bias"
-                for x in ("q", "k", "v")
-            ]
-        else:
-            aoa_statements += [
-                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
-                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
-            ]
-            aoa_statements += [
-                f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight"
-                for layer_id in range(config.num_hidden_layers)
-                for x in ("q", "k", "v")
-            ]
+        aoa_statements += [
+            f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+            for x in ("q", "k", "v")
+        ]
+        aoa_statements += [
+            f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias -> model.layers.$LAYER_ID.self_attn.{x}_proj.bias"
+            for x in ("q", "k", "v")
+        ]
 
-        if not config.fuse_attention_ffn:
-            if config.get("fd_fallback", False):
-                for layer_id in range(config.num_hidden_layers):
-                    ep_weight1 = []
-                    ep_weight2 = []
-                    for expert_id in range(num_experts):
-                        ep_weight1.append(
-                            f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight"
-                        )
-                        ep_weight2.append(f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight")
-                    group1 = ",".join(ep_weight1)
-                    group2 = ",".join(ep_weight2)
-                    aoa_statements += [
-                        f"{model_prefix}layers.{layer_id}.mlp.experts.up_gate_proj -> {group1}, axis=0"
-                        f"{model_prefix}layers.{layer_id}.mlp.experts.down_proj -> {group2}, axis=0"
-                    ]
+        if config.get("fd_fallback", False):
+            for layer_id in range(config.num_hidden_layers):
+                ep_weight1 = []
+                ep_weight2 = []
+                for expert_id in range(num_experts):
+                    ep_weight1.append(f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight")
+                    ep_weight2.append(f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight")
+                group1 = ",".join(ep_weight1)
+                group2 = ",".join(ep_weight2)
                 aoa_statements += [
-                    f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert.{y}_proj.weight"
-                    for y in ("gate", "up")
+                    f"{model_prefix}layers.{layer_id}.mlp.experts.up_gate_proj -> {group1}, axis=0"
+                    f"{model_prefix}layers.{layer_id}.mlp.experts.down_proj -> {group2}, axis=0"
                 ]
-                for layer_id in range(config.num_hidden_layers):
-                    for expert_id in range(num_experts):
-                        aoa_statements += [
-                            f"{model_prefix}layers.$LAYER_ID.mlp.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{y}_proj.weight"
-                            for y in ("gate", "up")
-                        ] + [
-                            f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.{y}_proj.weight"
-                            for y in ("gate", "up")
-                        ]
-                        aoa_statements += [
-                            f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight",
-                            f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight",
-                            f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight",
-                        ]
-            else:
-                aoa_statements += (
-                    [
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert.{y}_proj.weight"
+                for y in ("gate", "up")
+            ]
+            for layer_id in range(config.num_hidden_layers):
+                for expert_id in range(num_experts):
+                    aoa_statements += [
                         f"{model_prefix}layers.$LAYER_ID.mlp.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{y}_proj.weight"
                         for y in ("gate", "up")
-                    ]
-                    + [
+                    ] + [
                         f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.{y}_proj.weight"
                         for y in ("gate", "up")
                     ]
-                    + [
-                        f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight"
-                        for y in ("gate", "up")
-                    ]
-                )
-        else:
-            if config.get("fd_fallback", False):
-                for layer_id in range(config.num_hidden_layers):
-                    ep_weight1 = []
-                    ep_weight2 = []
-                    for expert_id in range(num_experts):
-                        ep_weight1.append(
-                            f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight"
-                        )
-                        ep_weight2.append(f"{model_prefix}layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight")
-                    group1 = ",".join(ep_weight1)
-                    group2 = ",".join(ep_weight2)
                     aoa_statements += [
-                        f"{model_prefix}layers.{layer_id}.mlp.experts.up_gate_proj -> {group1}, axis=0"
-                        f"{model_prefix}layers.{layer_id}.mlp.experts.down_proj -> {group2}, axis=0"
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight",
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight",
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight",
                     ]
-            aoa_statements += [
-                f"{model_prefix}layers.0.mlp.up_gate_proj.weight^T -> model.layers.0.mlp.gate_proj.weight, model.layers.0.mlp.up_proj.weight, fused_ffn",
-                f"{model_prefix}layers.0.mlp.gate_proj.weight^T -> model.layers.0.mlp.gate_proj.weight",
-                f"{model_prefix}layers.0.mlp.up_proj.weight^T -> model.layers.0.mlp.up_proj.weight",
-                f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.up_gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_experts.up_proj.weight, fused_ffn",
-                f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
-            ]
+        else:
             aoa_statements += (
                 [
-                    f"model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight"
-                    for layer_id in range(1, config.num_hidden_layers)
+                    f"{model_prefix}layers.$LAYER_ID.mlp.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{y}_proj.weight"
+                    for y in ("gate", "up")
                 ]
                 + [
-                    f"model.layers.{layer_id}.mlp.shared_experts.up_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.up_proj.weight"
-                    for layer_id in range(1, config.num_hidden_layers)
+                    f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.{y}_proj.weight"
+                    for y in ("gate", "up")
                 ]
                 + [
-                    f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight"
-                    for layer_id in range(1, config.num_hidden_layers)
-                    for expert_id in range(config.n_routed_experts)
-                ]
-                + [
-                    f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight"
-                    for layer_id in range(1, config.num_hidden_layers)
-                    for expert_id in range(config.n_routed_experts)
+                    f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.{y}_proj.weight"
+                    for y in ("gate", "up")
                 ]
             )
         aoa_config = {"aoa_statements": aoa_statements}
