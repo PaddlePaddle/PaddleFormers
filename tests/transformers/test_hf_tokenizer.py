@@ -101,8 +101,9 @@ class TestHFTokenizer(unittest.TestCase):
 
     def test_single_apply_chat_template(self):
         input_text = "hello world, this is paddle format checker"
-        true_chat_str = self.tokenizer.apply_chat_template(input_text, tokenize=False)
-        output = self.tokenizer.apply_chat_template(input_text, return_tensors="pd")
+        chat = [{"role": "user", "content": input_text}]
+        true_chat_str = self.tokenizer.apply_chat_template(chat, tokenize=False)
+        output = self.tokenizer.apply_chat_template(chat, return_tensors="pd")
         decode_str = self.tokenizer.decode(output["input_ids"][0])
         self.assertEqual(true_chat_str, decode_str)
 
