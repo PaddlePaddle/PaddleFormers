@@ -21,7 +21,7 @@ import numpy as np
 import paddle
 
 from paddleformers.transformers import GptOssConfig, GptOssForCausalLM, GptOssModel
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -297,6 +297,7 @@ class GptOssModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
     all_model_classes = (GptOssModel, GptOssForCausalLM)
     all_generative_model_classes = {GptOssForCausalLM: (GptOssModel, "GptOss")}
 
+    @gpu_device_initializer(log_prefix="GptOssModelTest")
     def setUp(self):
         super().setUp()
 
@@ -380,6 +381,10 @@ class GptOssModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
 class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
     base_model_class = GptOssModel
 
+    @gpu_device_initializer(log_prefix="GptOssModelIntegrationTest")
+    def setUp(self):
+        pass
+
     def test_inference_no_attention(self):
         model = GptOssModel.from_pretrained(
             "PaddleFormers/tiny-random-gptoss",
@@ -430,6 +435,10 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
 
 class GptOssCompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="GptOssCompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:

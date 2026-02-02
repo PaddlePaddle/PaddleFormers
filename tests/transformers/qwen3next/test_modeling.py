@@ -27,7 +27,7 @@ from paddleformers.transformers import (
     Qwen3NextForCausalLM,
     Qwen3NextModel,
 )
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -233,6 +233,7 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
     all_model_classes = (Qwen3NextModel, Qwen3NextForCausalLM)
     all_generative_model_classes = {Qwen3NextForCausalLM: (Qwen3NextModel, "qwen3_next")}
 
+    @gpu_device_initializer(log_prefix="Qwen3NextModelTest")
     def setUp(self):
         super().setUp()
 
@@ -311,6 +312,10 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
 
 
 class Qwen3NextIntegrationTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Qwen3NextIntegrationTest")
+    def setUp(self):
+        pass
+
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
         model = Qwen3NextForCausalLM.from_pretrained(
@@ -343,6 +348,10 @@ class Qwen3NextGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
 
 
 class Qwen3NextCompatibilityTest:
+    @gpu_device_initializer(log_prefix="Qwen3NextCompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:

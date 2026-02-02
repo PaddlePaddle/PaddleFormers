@@ -39,7 +39,7 @@ DPO_FULL_RESUME_EXCEPTED_LOSS = 0.692832
 DPO_FULL_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
 DPO_LORA_EXCEPTED_LOSS = 0.693147
-DPO_LORA_RESUME_EXCEPTED_LOSS = 0.693106
+DPO_LORA_RESUME_EXCEPTED_LOSS = 0.6931
 DPO_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 DPO_FULL_TP_PP_EXCEPTED_LOSS = 0.693147
@@ -133,8 +133,6 @@ class DPOTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
-            "fuse_attention_qkv": "true",
-            "fuse_attention_ffn": "true",
             "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
@@ -185,8 +183,6 @@ class DPOTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
-            "fuse_attention_qkv": "true",
-            "fuse_attention_ffn": "true",
             "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
@@ -244,8 +240,6 @@ class DPOTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
-            "fuse_attention_qkv": "true",
-            "fuse_attention_ffn": "true",
             "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
@@ -297,8 +291,6 @@ class DPOTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
-            "fuse_attention_qkv": "true",
-            "fuse_attention_ffn": "true",
             "template": TEMPLATE,
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")

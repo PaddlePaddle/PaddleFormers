@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from dataclasses import dataclass, field
-from typing import List
 
 
 @dataclass
@@ -152,9 +151,9 @@ class DataArguments:
         default="./dataset_output",
         metadata={"help": "output path of offline sft datasets"},
     )
-    additional_special_tokens: List[str] = field(
-        default_factory=list,
-        metadata={"help": "Additional special tokens."},
+    new_special_tokens_path: str = field(
+        default=None,
+        metadata={"help": "The path of the new special tokens."},
     )
     custom_register_path: str = field(
         default=None,

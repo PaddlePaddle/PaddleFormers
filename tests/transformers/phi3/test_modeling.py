@@ -21,7 +21,7 @@ import numpy as np
 import paddle
 
 from paddleformers.transformers import Phi3Config, Phi3ForCausalLM, Phi3Model
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -303,6 +303,7 @@ class Phi3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
     return_dict = False
     use_labels = False
 
+    @gpu_device_initializer(log_prefix="Phi3ModelTest")
     def setUp(self):
         super().setUp()
         self.model_tester = Phi3ModelTester(self)
@@ -410,6 +411,10 @@ class Phi3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
 
 
 class Phi3IntegrationTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Phi3IntegrationTest")
+    def setUp(self):
+        pass
+
     def test_model_tiny_logits(self):
         input_ids = [[1, 306, 4658, 278, 6593, 310, 2834, 338]]
 
@@ -473,6 +478,10 @@ class Phi3GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
 
 
 class Phi3CompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Phi3CompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:

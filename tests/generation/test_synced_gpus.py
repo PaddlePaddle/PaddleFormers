@@ -21,7 +21,7 @@ import paddle
 
 from paddleformers.generation import GenerationConfig
 from paddleformers.trainer import PdArgumentParser, Trainer, TrainingArguments
-from paddleformers.transformers import AutoModelForCausalLM, AutoTokenizer
+from paddleformers.transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from tests.parallel_launch import TestMultipleGpus
@@ -35,9 +35,11 @@ class ShardingStage3Tester(TestMultipleGpus):
 
 
 if __name__ == "__main__":
+    model_config = AutoConfig.from_pretrained("Paddleformers/tiny-random-llama")
+    model_config.fuse_rms_norm = False
     tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-llama")
     model = AutoModelForCausalLM.from_pretrained(
-        "Paddleformers/tiny-random-llama", convert_from_hf=False, load_checkpoint_format=""
+        "Paddleformers/tiny-random-llama", config=model_config, convert_from_hf=False, load_checkpoint_format=""
     )
     model.config.eos_token_id = -1
     world_size = paddle.distributed.get_world_size()
