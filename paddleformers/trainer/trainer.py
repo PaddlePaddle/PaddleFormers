@@ -4526,7 +4526,9 @@ class Trainer:
                 batch_size = observed_batch_size
 
             # Prediction step
-            loss, logits, labels = self.prediction_step(model, inputs, prediction_loss_only, ignore_keys=ignore_keys)
+            loss, logits, labels = self.prediction_step(
+                model, inputs, prediction_loss_only, ignore_keys=ignore_keys, step=step
+            )
 
             # Update containers on host
             if loss is not None:
@@ -4688,13 +4690,23 @@ class Trainer:
         inputs: Dict[str, Union[paddle.Tensor, Any]],
         prediction_loss_only: bool,
         ignore_keys: Optional[List[str]] = None,
+        step: int = -1,
     ) -> Tuple[Optional[paddle.Tensor], Optional[paddle.Tensor], Optional[paddle.Tensor]]:
         """
         prediction_step function for pipeline parallel mode.
         """
+        # drop last
+        if step == 0 or not hasattr(self, "_pp_eval_data_buffer"):
+            self._pp_eval_data_buffer = []
+        self._pp_eval_data_buffer.append(inputs)
+        if len(self._pp_eval_data_buffer) != self.args.gradient_accumulation_steps:
+            return (None, None, None)
+        inputs = self._pp_eval_data_buffer
+        self._pp_eval_data_buffer = []
         if hasattr(model, "_prepare_pipeline_inputs_func"):
-            inputs, labels = model._prepare_pipeline_inputs_func(inputs)
-            has_labels = labels is not None
+            data_provider = model._prepare_pipeline_inputs_func(inputs)
+            labels = None
+            has_labels = True
         else:
             has_labels = all(inputs.get(k) is not None for k in self.label_names)
             inputs = self._prepare_inputs(inputs)
@@ -4706,6 +4718,7 @@ class Trainer:
             else:
                 labels = None
             inputs = inputs.pop("input_ids")
+            data_provider = [inputs, labels]
         # train & eval share the same p2p_helper, so clear it before and after each step
         if hasattr(model, "_p2p_helper"):
             model._p2p_helper.clear_meta_cache()
@@ -4725,7 +4738,7 @@ class Trainer:
                         and isinstance(model, PaddleFleetParallelBase)
                     ):
                         inputs = _prepare_inputs_for_fleet(inputs)
-                    loss = model.eval_batch([inputs, labels], compute_loss=True)
+                    loss = model.eval_batch(data_provider, compute_loss=True)
                     # loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
                 loss = loss.mean().detach()
             else:
@@ -4742,6 +4755,7 @@ class Trainer:
         inputs: Dict[str, Union[paddle.Tensor, Any]],
         prediction_loss_only: bool,
         ignore_keys: Optional[List[str]] = None,
+        step: int = -1,
     ) -> Tuple[Optional[paddle.Tensor], Optional[paddle.Tensor], Optional[paddle.Tensor]]:
         """
         Perform an evaluation step on `model` using `inputs`.
@@ -4773,7 +4787,7 @@ class Trainer:
         ):
             # hack for pipeline mode
             inputs = self._prepare_inputs(inputs)
-            return self.prediction_pipeline_step(model, inputs, prediction_loss_only, ignore_keys)
+            return self.prediction_pipeline_step(model, inputs, prediction_loss_only, ignore_keys, step)
 
         has_labels = all(inputs.get(k) is not None for k in self.label_names)
         inputs = self._prepare_inputs(inputs)
