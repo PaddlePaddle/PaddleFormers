@@ -13,15 +13,13 @@
 # limitations under the License.
 
 import unittest
-from tests.testing_utils import gpu_device_initializer
 
 import paddle
+
 from paddleformers.peft.lora import LoRAConfig, LoRAModel
-from paddleformers.transformers import (
-    AutoConfig,
-    AutoModelForCausalLM,
-)
+from paddleformers.transformers import AutoConfig, AutoModelForCausalLM
 from paddleformers.transformers.configuration_utils import QuantizationConfig
+from tests.testing_utils import gpu_device_initializer
 
 
 class TestQuantedModel(unittest.TestCase):
@@ -43,7 +41,7 @@ class TestQuantedModel(unittest.TestCase):
             config=model_config,
             load_checkpoint_format="flex_checkpoint",
         )
-        
+
     def test_quant_model(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
         input_ids = paddle.to_tensor([input_ids])
@@ -57,15 +55,15 @@ class TestQuantedModel(unittest.TestCase):
         self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-5, rtol=1e-5))
 
         # slicing logits[0, 0, 0:30]
-        EXPECTED_SLICE = paddle.to_tensor([ 0.06298828, -0.06176758,  0.06396484,  0.02416992, -0.13281250,
-                                            -0.02258301, -0.22656250,  0.09570312,  0.12500000, -0.04736328,
-                                            -0.07958984,  0.30468750,  0.01513672, -0.05932617,  0.05761719,
-                                            -0.08349609, -0.14160156, -0.25000000, -0.07861328, -0.31250000,
-                                            0.23144531,  0.29882812,  0.20214844,  0.27929688,  0.18847656,
-                                            -0.17773438, -0.00988770, -0.04248047,  0.04589844,  0.05737305])  # fmt: skip
+        EXPECTED_SLICE = paddle.to_tensor([0.06298828, -0.06176758, 0.06396484, 0.02416992, -0.13281250,
+                                          -0.02258301, -0.22656250, 0.09570312, 0.12500000, -0.04736328,
+                                          -0.07958984, 0.30468750, 0.01513672, -0.05932617, 0.05761719,
+                                          -0.08349609, -0.14160156, -0.25000000, -0.07861328, -0.31250000,
+                                           0.23144531, 0.29882812, 0.20214844, 0.27929688, 0.18847656,
+                                          -0.17773438, -0.00988770, -0.04248047, 0.04589844, 0.05737305])  # fmt: skip
         self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-5, rtol=1e-5))
 
-        self.assertTrue(type(self.model.model.layers[0].self_attn.qkv_proj).__name__ == 'QuantizationLinear')
+        self.assertTrue(type(self.model.model.layers[0].self_attn.qkv_proj).__name__ == "QuantizationLinear")
 
         lora_config = LoRAConfig(
             target_modules=[".*qkv_proj.*"],
@@ -73,7 +71,7 @@ class TestQuantedModel(unittest.TestCase):
             lora_alpha=8,
         )
         lora_model = LoRAModel(self.model, lora_config)
-        
+
         with paddle.no_grad():
             out = self.model(input_ids, return_dict=True).logits.float()
 
@@ -84,12 +82,12 @@ class TestQuantedModel(unittest.TestCase):
         self.assertTrue(paddle.allclose(out.mean(-1), EXPECTED_MEAN, atol=1e-5, rtol=1e-5))
 
         # slicing logits[0, 0, 0:30]
-        EXPECTED_SLICE = paddle.to_tensor([ 0.06298828, -0.06176758,  0.06396484,  0.02416992, -0.13281250,
-                                            -0.02258301, -0.22656250,  0.09570312,  0.12500000, -0.04736328,
-                                            -0.07958984,  0.30468750,  0.01513672, -0.05932617,  0.05761719,
-                                            -0.08349609, -0.14160156, -0.25000000, -0.07861328, -0.31250000,
-                                            0.23144531,  0.29882812,  0.20214844,  0.27929688,  0.18847656,
-                                            -0.17773438, -0.00988770, -0.04248047,  0.04589844,  0.05737305])  # fmt: skip
+        EXPECTED_SLICE = paddle.to_tensor([0.06298828, -0.06176758, 0.06396484, 0.02416992, -0.13281250,
+                                          -0.02258301, -0.22656250, 0.09570312, 0.12500000, -0.04736328,
+                                          -0.07958984, 0.30468750, 0.01513672, -0.05932617, 0.05761719,
+                                          -0.08349609, -0.14160156, -0.25000000, -0.07861328, -0.31250000,
+                                           0.23144531, 0.29882812, 0.20214844, 0.27929688, 0.18847656,
+                                          -0.17773438, -0.00988770, -0.04248047, 0.04589844, 0.05737305])  # fmt: skip
         self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-5, rtol=1e-5))
 
-        self.assertTrue(type(lora_model.model.model.layers[0].self_attn.qkv_proj).__name__ == 'QuantizationLoRALinear')
+        self.assertTrue(type(lora_model.model.model.layers[0].self_attn.qkv_proj).__name__ == "QuantizationLoRALinear")
