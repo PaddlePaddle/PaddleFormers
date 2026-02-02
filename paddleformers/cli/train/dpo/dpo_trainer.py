@@ -724,14 +724,6 @@ def prepare_pipeline_dpo_inputs_func(inputs):
 
     keys = list(inputs[0].keys())
     inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
-    # return [
-    #     inputs_batch,
-    #     first_stage_keys,
-    #     inputs_batch,
-    #     last_stage_keys,
-    # ]
-    # inputs_batch = {key: [data.pop(key) for data in inputs] for key in first_stage_keys}
-    # label_batch = {key: [data.pop(key) for data in inputs] for key in last_stage_keys}
     return [
         get_expected_keys(inputs_batch, first_stage_keys),
         get_expected_keys(inputs_batch, last_stage_keys),
