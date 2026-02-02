@@ -1124,6 +1124,13 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
             ]
 
+        # MTP
+        for mtp_layer_offset in range(config.num_nextn_predict_layers):
+            mtp_layer_id = config.num_hidden_layers + mtp_layer_offset
+            aoa_config["aoa_statements"] += [
+                f"model.layers.{mtp_layer_id}.eh_proj.weight^T -> {model_prefix}layers.{mtp_layer_id}.eh_proj.weight"
+            ]
+
         return aoa_config
 
     # NOTE: These aoa_config items will be removed later. The subsequent AOA parsing module will automatically generate the reverse AOA based on the forward (from_pretrained) AOA.
@@ -1204,6 +1211,14 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     for expert_id in range(config.n_routed_experts)
                 ]
             )
+
+        # MTP
+        for mtp_layer_offset in range(config.num_nextn_predict_layers):
+            mtp_layer_id = config.num_hidden_layers + mtp_layer_offset
+            aoa_statements += [
+                f"{model_prefix}layers.{mtp_layer_id}.eh_proj.weight^T -> model.layers.{mtp_layer_id}.eh_proj.weight"
+            ]
+
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config
 
