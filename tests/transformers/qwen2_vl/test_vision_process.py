@@ -260,6 +260,8 @@ class TestQwenVisionProcessing(unittest.TestCase):
         if not getattr(torchcodec, "__is_paddle_compatible_library__", None):
             raise RuntimeError("Could not import 'torchcodec'. Please ensure it is installed.")
 
+        print("testing ffmpeg install")
+
         self.assertIsInstance(result, paddle.Tensor)
 
     def test_fetch_video_with_frame_list(self):
