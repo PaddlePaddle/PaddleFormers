@@ -118,7 +118,6 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     python -c "import paddle; print(paddle.device.device_count())"
     export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
     export FLAGS_tcp_store_using_libuv0
-    export PYTHONFAULTHANDLER=1
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
     timeout --foreground --signal=TERM --kill-after=30s 30m \
