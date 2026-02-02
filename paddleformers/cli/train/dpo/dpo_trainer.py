@@ -261,7 +261,7 @@ class DPOTrainer(Trainer):
         if self.args.pipeline_model_parallel_size > 1:
             # hack for pipeline mode
             inputs = self._prepare_inputs(inputs)
-            return self.prediction_pipeline_step(self.ref_model_wrapped, model, inputs)
+            return self.prediction_pipeline_step(self.ref_model_wrapped, model, inputs, step)
         if ignore_keys is None:
             if hasattr(model, "config"):
                 ignore_keys = getattr(model.config, "keys_to_ignore_at_inference", [])
