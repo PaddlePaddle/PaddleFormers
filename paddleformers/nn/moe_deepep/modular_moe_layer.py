@@ -69,12 +69,12 @@ class ModularMoELayer(nn.Layer):
         self.sequence_parallel = pretrained_config.get("sequence_parallel", False)
         self.tensor_model_parallel_size = pretrained_config.get("tensor_model_parallel_size", 1)
         self.seq_length = pretrained_config.get("seq_length", pretrained_config.get("max_seq_len", 1024))
-        self.fuse_up_gate = pretrained_config.get("fuse_attention_ffn", False)
-        self.ep_communication_type = pretrained_config.get("ep_communication_type", "deepep")
+        self.fuse_up_gate = True
+        self.moe_token_dispatcher_type = pretrained_config.get("moe_token_dispatcher_type", "deepep")
         self.n_group = pretrained_config.get("n_group", 1)
         self.topk_group = pretrained_config.get("topk_group", 1)
         self.routed_scaling_factor = pretrained_config.get("routed_scaling_factor", 1.0)
-        self.aux_loss_alpha = pretrained_config.get("aux_loss_alpha", 0.0)
+        self.router_aux_loss_coef = pretrained_config.get("router_aux_loss_coef", 0.0)
         self.moe_subbatch_token_num_before_dispatch = pretrained_config.get(
             "moe_subbatch_token_num_before_dispatch", -1
         )
@@ -167,13 +167,13 @@ class ModularMoELayer(nn.Layer):
             self.shared_expert = self.expert_class(**shared_expert_args)
             self.shared_expert_gate = GeneralLinear.create(self.hidden_size, 1, has_bias=False, linear_type="default")
 
-        if self.ep_communication_type == "deepep":
+        if self.moe_token_dispatcher_type == "deepep":
             self.communication = DeepEPMoECommunication()
-        elif self.ep_communication_type == "alltoall":
+        elif self.moe_token_dispatcher_type == "alltoall":
             self.communication = AllToAllMoECommunication()
         else:
             raise ValueError(
-                f"Unsupported communication type: {self.ep_communication_type}, please choose from ['deepep', 'alltoall']"
+                f"Unsupported communication type: {self.moe_token_dispatcher_type}, please choose from ['deepep', 'alltoall']"
             )
 
         if hasattr(dist, "fleet") and dist.is_initialized() and self.expert_model_parallel_size > 1:
@@ -264,8 +264,8 @@ class ModularMoELayer(nn.Layer):
                 reshaped_input = hidden_states
             output = self._forward_traditional_moe(reshaped_input, topk_indices, topk_weights)
 
-        if self.training and self.aux_loss_alpha > 0.0:
-            aux_loss = aux_loss * self.aux_loss_alpha
+        if self.training and self.router_aux_loss_coef > 0.0:
+            aux_loss = aux_loss * self.router_aux_loss_coef
             output = AddAuxiliaryLoss.apply(output, aux_loss)
 
         if self.shared_experts is not None:

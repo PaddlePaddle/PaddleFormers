@@ -444,7 +444,7 @@ template: qwen2_vl
 
 ### model
 model_name_or_path: Qwen/Qwen2.5-VL-7B-Instruct
-attn_impl: flashmask
+_attn_implementation: flashmask
 lora: true
 lora_rank: 8
 lora_alpha: 32

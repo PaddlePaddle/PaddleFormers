@@ -267,7 +267,7 @@ mix_strategy: concat
 
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -408,7 +408,7 @@ mix_strategy: concat
 
 ### model
 model_name_or_path: ./checkpoints/paddleformers_qwen3_0p6b_sft_ckpts_emoji/
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base

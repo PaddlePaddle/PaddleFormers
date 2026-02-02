@@ -27,7 +27,7 @@ from paddleformers.transformers import (
     Qwen2ForTokenClassification,
     Qwen2Model,
 )
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -271,6 +271,7 @@ class Qwen2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
         "zero-shot": Qwen2ForSequenceClassification,
     }
 
+    @gpu_device_initializer(log_prefix="Qwen2ModelTest")
     def setUp(self):
         super().setUp()
         self.model_tester = Qwen2ModelTester(self)
@@ -368,6 +369,10 @@ class Qwen2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
 
 
 class Qwen2IntegrationTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Qwen2IntegrationTest")
+    def setUp(self):
+        pass
+
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
         model = Qwen2ForCausalLM.from_pretrained(
@@ -400,6 +405,10 @@ class Qwen2GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
 
 
 class Qwen2CompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Qwen2CompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
@@ -480,8 +489,6 @@ class Qwen2CompatibilityTest(unittest.TestCase):
 
             # 4. fuse qkv/ffn with fc
             model_config = Qwen2Config.from_pretrained(tempdir)
-            model_config.fuse_attention_qkv = True
-            model_config.fuse_attention_ffn = True
             paddle_model_fused = Qwen2ForCausalLM.from_pretrained(
                 tempdir,
                 config=model_config,

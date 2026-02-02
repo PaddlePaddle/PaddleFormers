@@ -188,7 +188,7 @@ template: qwen3
 
 ### model
 model_name_or_path: Qwen/Qwen3-0.6B
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base

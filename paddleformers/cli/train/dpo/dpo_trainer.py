@@ -251,7 +251,7 @@ class DPOTrainer(Trainer):
         self.model_wrapped = self._wrap_ref_model(self.model_wrapped)
         return super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
 
-    def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None):
+    def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None, step=-1):
 
         """prediction_step"""
         if is_paddlefleet_available() and isinstance(model, PaddleFleetParallelBase):

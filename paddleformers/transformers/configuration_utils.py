@@ -229,13 +229,9 @@ def llmmetaclass(cls):
 class LlmMetaConfig:
     op_fusion_attributes = [
         # name, type, default_value, comment
-        ("use_flash_attention", bool, False, "Only used in `ernie45_vl` and `deepseek_v3_pretrain`."),
-        ("fuse_rms_norm", bool, False, "Whether to fuse RMSNorm for efficiency"),
         ("use_fused_linear_cross_entropy", bool, False, "use fused `linear + cross_entropy` fuse op."),
         ("apply_rope_fusion", bool, False, "Whether to fuse RoPE operation"),
         ("fuse_swiglu", bool, False, "Whether to fuse SwiGLU operations"),
-        ("fuse_attention_qkv", bool, False, "Whether to fuse Attention QKV operations"),
-        ("fuse_attention_ffn", bool, False, "Whether to fuse Attention FFN operations"),
     ]
 
     hybrid_parallel_attributes = [
@@ -254,7 +250,7 @@ class LlmMetaConfig:
         ("context_parallel_size", int, 1, "context_parallel_size"),
         # pp refine recompute
         ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
-        ("add_tail_layers", int, 0, "Additional layers to append at the end"),
+        ("num_empty_layers_add_in_tail", int, 0, "Additional layers to append at the end"),
         # sep_parallel
         ("sep_parallel_size", int, 1, "sep_parallel_size"),
         ("context_parallel_size", int, 1, "context_parallel_size"),
@@ -302,8 +298,8 @@ class LlmMetaConfig:
             0,
             "The number of tokens in each subbatch for MoE model processing.",
         ),
-        ("using_fake_gate", bool, False, "Whether to fake gate."),
-        ("ep_communication_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
+        ("moe_router_force_load_balancing", bool, False, "Whether to fake gate."),
+        ("moe_token_dispatcher_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
         ("use_unified_moe", bool, False, "Whether to use unified moe."),
         (
             "moe_deepep_num_sms",
@@ -754,7 +750,7 @@ class PretrainedConfig:
             `"single_label_classification"` or `"multi_label_classification"`.
         moe_subbatch_token_num_before_dispatch (`int`, *optional*, defaults to 0):
             The number of tokens in a subbatch for MoE.
-        ep_communication_type (`str`, *optional*, defaults to `deepep`):
+        moe_token_dispatcher_type (`str`, *optional*, defaults to `deepep`):
             Communication type for expert parallel. Can be one of `deepep`, `alltoall`.
         use_unified_moe (`bool`, *optional*, defaults to `False`):
             Whether to use unified MoE.
@@ -835,8 +831,6 @@ class PretrainedConfig:
         llm_meta = LlmMetaConfig._get_init()
         self._unsavable_keys.update(LlmMetaConfig._get_unsavable_keys())
         self._unsavable_keys.remove("tensor_model_parallel_size")
-        self._unsavable_keys.remove("fuse_attention_qkv")
-        self._unsavable_keys.remove("fuse_attention_ffn")
         self._unsavable_keys.add("_attn_implementation")
 
         kwargs = set_expected_keys(self, llm_meta, kwargs)
@@ -858,10 +852,6 @@ class PretrainedConfig:
             self.tensor_model_parallel_size = 1
             self.sep_parallel_size = 1
             self.context_parallel_size = 1
-
-        # for transformers fuse
-        self.fuse_attention_qkv = kwargs.pop("fuse_attention_qkv", False)
-        self.fuse_attention_ffn = kwargs.pop("fuse_attention_ffn", False)
 
         # for general components
         self._attn_implementation = kwargs.pop("_attn_implementation", "eager")
@@ -911,9 +901,9 @@ class PretrainedConfig:
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
 
-        self.ep_communication_type = kwargs.pop("ep_communication_type", "deepep")
+        self.moe_token_dispatcher_type = kwargs.pop("moe_token_dispatcher_type", "deepep")
         self.use_unified_moe = kwargs.pop("use_unified_moe", False)
-        self.using_fake_gate = kwargs.pop("using_fake_gate", False)
+        self.moe_router_force_load_balancing = kwargs.pop("moe_router_force_load_balancing", False)
 
         # Tokenizer arguments TODO: eventually tokenizer and models should share the same config
         self.tokenizer_class = kwargs.pop("tokenizer_class", None)
