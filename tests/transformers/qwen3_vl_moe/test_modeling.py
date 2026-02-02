@@ -866,7 +866,7 @@ class Qwen3VLMoeIntegrationTest(unittest.TestCase):
 
 class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
     @gpu_device_initializer(log_prefix="Qwen3VLMoeCompatibilityTest")
-    def setUp(self) -> None:
+    def setUp(self):
         pass
 
     @classmethod

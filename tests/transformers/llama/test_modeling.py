@@ -380,6 +380,10 @@ class LlamaModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
 class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
     base_model_class = LlamaModel
 
+    @gpu_device_initializer(log_prefix="LlamaModelIntegrationTest")
+    def setUp(self):
+        pass
+
     @slow
     def test_inference_no_attention(self):
         model = LlamaModel.from_pretrained(
@@ -434,6 +438,10 @@ class LlamaModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
 class Llama3ModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
     base_model_class = LlamaModel
+
+    @gpu_device_initializer(log_prefix="Llama3ModelIntegrationTest")
+    def setUp(self):
+        pass
 
     @slow
     def test_inference_no_attention(self):
@@ -503,6 +511,10 @@ class Llama3GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
 
 class LlamaCompatibilityTest(unittest.TestCase):
     test_model_id = "hf-internal-testing/tiny-random-LlamaModel"
+
+    @gpu_device_initializer(log_prefix="LlamaCompatibilityTest")
+    def setUp(self):
+        pass
 
     @classmethod
     @require_package("transformers", "torch")

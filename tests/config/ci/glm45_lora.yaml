@@ -25,7 +25,7 @@ do_eval: true
 per_device_eval_batch_size: 1
 per_device_train_batch_size: 1
 num_train_epochs: 1
-max_steps: 100
+max_steps: 10
 eval_steps: 1000
 evaluation_strategy: steps
 save_steps: 50
@@ -64,4 +64,4 @@ save_checkpoint_format: flex_checkpoint
 moe_router_force_load_balancing: true
 num_empty_layers_add_in_tail: 1
 
-router_aux_loss_coef: 0.0
+router_aux_loss_coef: 0.001
