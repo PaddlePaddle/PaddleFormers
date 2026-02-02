@@ -45,7 +45,6 @@ class GptOssConfig(PretrainedConfig):
         rope_scaling={"rope_type": "yarn", "factor": 32.0, "beta_fast": 32.0, "beta_slow": 1.0, "truncate": False},
         attention_dropout: float = 0.0,
         num_experts_per_tok=4,
-        router_aux_loss_coef: float = 0.9,
         output_router_logits=False,
         use_cache=True,
         layer_types=None,
@@ -89,7 +88,6 @@ class GptOssConfig(PretrainedConfig):
 
         self.attention_bias = True
 
-        self.router_aux_loss_coef = router_aux_loss_coef
         self.output_router_logits = output_router_logits
         self.use_cache = use_cache
         self.use_bias = False
