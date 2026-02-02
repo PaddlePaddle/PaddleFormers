@@ -89,7 +89,6 @@ class Qwen3MoEModelProvider(GPTModelProvider):
 
     rope_scaling: float = 1.0
     bias_dropout_fusion: bool = True
-    router_aux_loss_coef: float = 0.001
     moe_grouped_gemm: bool = True
 
     n_shared_experts: int = 0
