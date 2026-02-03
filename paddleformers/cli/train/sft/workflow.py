@@ -307,7 +307,7 @@ def run_sft(
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 
-    if model_args.stage == "VL-SFT":
+    if "VL" in model_args.stage:
         model_class = AutoModelForConditionalGeneration
         if training_args.pipeline_model_parallel_size > 1:
             if data_args.eval_with_do_generation and training_args.do_eval:
@@ -380,7 +380,7 @@ def run_sft(
         "mix_strategy": data_args.mix_strategy,
         "encode_one_turn": data_args.encode_one_turn,
         "use_template": data_args.use_template,
-        "is_pretraining": True if model_args.stage.lower() == "pt" else False,
+        "is_pretraining": True if "pt" in model_args.stage.lower() else False,
         "truncate_packing": data_args.truncate_packing,
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
@@ -569,7 +569,7 @@ def run_sft(
         )
         logger.info(f"Setting max_seq_len to {max_seq_len} using PaddleFormers Model.")
     if data_args.dataset_type != "pretrain":
-        if model_args.stage == "VL-SFT":
+        if "VL" in model_args.stage:
             data_collator = partial(
                 mm_collate_fn,
                 template=template_instance,

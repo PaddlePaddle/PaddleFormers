@@ -138,7 +138,7 @@ class SFTDataSet(IterableDataset):
             for _ in range(len(self.mix_datasets)):
                 example = next(dataset_iterator)
                 try:
-                    tokens = self._encode_pretraining_example(example, actual_example_num)
+                    tokens = self._encode_pretraining_messages(example["messages"], actual_example_num)
                 except Exception as e:
                     print(f"Warning: Error processing example, skipping. Error: {str(e)}")
                     if self.estimate:
@@ -343,24 +343,79 @@ class SFTDataSet(IterableDataset):
                 yield from self.__iter_func()
 
     def _postprocess_pretraining_sequence(self, example, actual_example_num):
-        tokens = self._encode_pretraining_example(example, actual_example_num)
+
+        messages = example.get("messages", [])
+        images = example.get("images", [])
+        videos = example.get("videos", [])
+        audios = example.get("audios", [])
+
+        mm_inputs = self.template.mm_plugin.get_mm_inputs(
+            images,
+            videos,
+            audios,
+            self.processor,
+            imglens=[len(images)],
+            vidlens=[len(videos)],
+            audlens=[len(audios)],
+            batch_ids=None,
+            messages=messages,
+        )
+
+        messages = self.template.mm_plugin.process_messages(
+            messages, images, videos, audios, mm_inputs, self.processor
+        )
+
+        tokens = self._encode_pretraining_messages(messages, actual_example_num)
         if len(tokens) > self.max_seq_len + 1:
             # Truncate the sequence to the maximum length
             tokens = tokens[: self.max_seq_len + 1]
-        res_tokens = tokens[:-1]
-        res_labels = tokens[1:]
-        pos_ids = list(range(len(res_tokens)))
-        sequence = Sequence(
-            token_ids=res_tokens,
-            position_ids=pos_ids,
-            labels=res_labels,
-            num_examples=actual_example_num,
-        )
-        return sequence
 
-    def _encode_pretraining_example(self, example, actual_example_num):
+        labels = self.template.mm_plugin.process_tokens(tokens, self.processor)
+
+        # label shift
+        labels = labels[1:] + [-100]
+
+        pos_ids = list(range(len(tokens)))
+
+        if all(x == -100 for x in labels):
+            logger.warning(f"[SKIP] all labels set to 0: {example}")
+            return None
+
+        assert len(tokens) == len(labels), f"{len(tokens)}-{len(labels)}"
+
+        enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
+        if enable_dataset_debug:
+            logger.info("\n" + "=" * 50)
+            logger.info("[dataset debug] Debug mode enabled")
+            if hasattr(self, "tokenizer"):
+                print("========================================")
+                print("tokens: ", [tokens])
+                print_debug_info(self.tokenizer, tokens, "input")
+                print("========================================\n")
+
+                filtered_labels = [x for x in labels if x != -100]  # remove -100
+                print("========================================")
+                print("labels: ", [labels])
+                print_debug_info(self.tokenizer, filtered_labels, "labels")
+                print("========================================\n")
+            else:
+                logger.info("[dataset debug] Tokenizer not available")
+            logger.info("=" * 50 + "\n")
+
+        return Sequence(
+            token_ids=tokens,
+            position_ids=pos_ids,
+            labels=labels,
+            num_examples=actual_example_num,
+            images=images,
+            videos=videos,
+            audios=audios,
+            mm_inputs=mm_inputs,
+        )
+
+    def _encode_pretraining_messages(self, messages, actual_example_num):
         # tokens
-        content = example["messages"][0]["content"]
+        content = messages[0]["content"]
         tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(content))
         # Add an EOS token at the end of each sample
         tokens = tokens + [self.tokenizer.eos_token_id]

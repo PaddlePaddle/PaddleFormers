@@ -43,24 +43,6 @@ from .quantization_linear import (
     dequant_weight,
 )
 
-if is_paddlefleet_available():
-    from .quantization_linear import (
-        FleetColumnParallelQuantizationLinear,
-        FleetQuantizationLinear,
-        FleetRowParallelQuantizationLinear,
-    )
-else:
-
-    class FleetColumnParallelQuantizationLinear:
-        pass
-
-    class FleetQuantizationLinear:
-        pass
-
-    class FleetRowParallelQuantizationLinear:
-        pass
-
-
 # Conditionally import paddlefleet modules
 if is_paddlefleet_available():
     from paddlefleet.parallel_state import (
@@ -72,6 +54,12 @@ if is_paddlefleet_available():
         ColumnParallelLinear as FleetColumnParallelLinear,
     )
     from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
+
+    from .quantization_linear import (
+        FleetColumnParallelQuantizationLinear,
+        FleetQuantizationLinear,
+        FleetRowParallelQuantizationLinear,
+    )
 else:
     # Define mock objects or alternative implementations when paddlefleet is not available
     def get_tensor_model_parallel_group():
@@ -87,6 +75,15 @@ else:
         pass
 
     class FleetRowParallelLinear:
+        pass
+
+    class FleetColumnParallelQuantizationLinear:
+        pass
+
+    class FleetQuantizationLinear:
+        pass
+
+    class FleetRowParallelQuantizationLinear:
         pass
 
 

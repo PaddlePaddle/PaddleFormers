@@ -202,9 +202,7 @@ def run_dpo(
             ref_model = None
 
     if is_paddlefleet_available() and isinstance(model, GPTModel):
-        training_args.per_device_eval_batch_size = (
-            training_args.per_device_train_batch_size * training_args.gradient_accumulation_steps
-        )
+        training_args.per_device_eval_batch_size = training_args.per_device_train_batch_size
         logger.warning(f"eval_batch_size set to {training_args.per_device_eval_batch_size} in Pipeline Parallel!")
 
     if training_args.pipeline_model_parallel_size > 1:
