@@ -252,7 +252,7 @@ class MMPluginMixin:
         videos,
         audios,
         processor,
-        imglens=None,
+        **kwargs,
     ):
         mm_inputs = {}
         if len(images) != 0:
@@ -262,6 +262,7 @@ class MMPluginMixin:
                 image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
                 image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
             )["images"]
+            imglens = kwargs.get("imglens", None)
             if imglens is not None:  # if imglens are provided, make batched images
                 images = _make_batched_images(images, imglens)
 
@@ -321,15 +322,17 @@ class BasePlugin(MMPluginMixin):
         images,
         videos,
         audios,
-        imglens,
-        vidlens,
-        audlens,
-        batch_ids,
         processor,
+        **kwargs,
     ):
         r"""Build batched multimodal inputs for VLMs."""
+        # imglens = kwargs.get("imglens", None)
+        # vidlens = kwargs.get("vidlens", None)
+        # audlens = kwargs.get("audlens", None)
+        # batch_ids = kwargs.get("batch_ids", None)
+
         self._validate_input(processor, images, videos, audios)
-        return self._get_mm_inputs(images, videos, audios, processor)
+        return self._get_mm_inputs(images, videos, audios, processor, **kwargs)
 
 
 @dataclass
@@ -418,14 +421,15 @@ class PaddleOCRVLPlugin(BasePlugin):
         videos,
         audios,
         processor,
+        **kwargs,
     ):
         image_processor = getattr(processor, "image_processor", None)
         mm_inputs = {}
         if len(images) != 0:
             images = self._regularize_images(
                 images,
-                image_max_pixels=getattr(processor, "max_pixels", 2822400),
-                image_min_pixels=getattr(processor, "min_pixels", 147384),
+                image_max_pixels=getattr(image_processor, "max_pixels", 2822400),
+                image_min_pixels=getattr(image_processor, "min_pixels", 147384),
                 image_processor=image_processor,
             )["images"]
             mm_inputs.update(image_processor(images, return_tensors="pd"))
@@ -607,6 +611,7 @@ class ErnieVLPlugin(BasePlugin):
         videos,
         audios,
         processor,
+        **kwargs,
     ):
         image_processor = getattr(processor, "image_processor", None)
         mm_inputs = {}
@@ -756,6 +761,7 @@ class Qwen2VLPlugin(BasePlugin):
         videos,
         audios,
         processor,
+        **kwargs,
     ):
         image_processor = getattr(processor, "image_processor", None)
         mm_inputs = {}
@@ -844,6 +850,7 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
         videos,
         audios,
         processor,
+        **kwargs,
     ):
         image_processor = getattr(processor, "image_processor", None)
         video_processor = getattr(processor, "video_processor", None)
@@ -970,6 +977,7 @@ class GLM4VPlugin(Qwen2VLPlugin):
         videos,
         audios,
         processor,
+        **kwargs,
     ):
         image_processor = getattr(processor, "image_processor", None)
         video_processor = getattr(processor, "video_processor", None)
@@ -1083,14 +1091,11 @@ class GLM4VPlugin(Qwen2VLPlugin):
         images,
         videos,
         audios,
-        imglens,
-        vidlens,
-        audlens,
-        batch_ids,
         processor,
+        **kwargs,
     ):
         self._validate_input(processor, images, videos, audios)
-        mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
+        mm_inputs = self._get_mm_inputs(images, videos, audios, processor, **kwargs)
         mm_inputs.pop("timestamps", None)
         return mm_inputs
 
@@ -1141,14 +1146,11 @@ class Gemma3Plugin(BasePlugin):
         images,
         videos,
         audios,
-        imglens,
-        vidlens,
-        audlens,
-        batch_ids,
         processor,
+        **kwargs,
     ):
         self._validate_input(processor, images, videos, audios)
-        mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
+        mm_inputs = self._get_mm_inputs(images, videos, audios, processor, **kwargs)
         mm_inputs.pop("num_crops", None)
         return mm_inputs
 

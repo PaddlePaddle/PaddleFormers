@@ -134,6 +134,19 @@ class QuantizationLoRALinear(QuantizationLoRABaseLinear):
         return build_sharded_state_dict(state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix)
 
 
+class FleetQuantizationLoRALinear(QuantizationLoRALinear):
+    def __init__(self, layer, skip_bias_add, lora_config):
+        super().__init__(layer, lora_config)
+        self.skip_bias_add = skip_bias_add
+
+    def forward(self, input: paddle.Tensor):
+        out_bias = self.bias if self.skip_bias_add else None
+        if self.skip_bias_add:
+            self.bias = None
+        output = super().forward(input)
+        return output, out_bias
+
+
 class ColumnParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
     """
     Quantization lora Linear layer with mp parallelized(column).
@@ -216,6 +229,19 @@ class ColumnParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
     ):
         state_dict = self.state_dict(structured_name_prefix="")
         return build_sharded_state_dict(state_dict, {"weight": 1, "bias": 0, "lora_B": 1}, structured_name_prefix)
+
+
+class FleetColumnParallelQuantizationLoRALinear(ColumnParallelQuantizationLoRALinear):
+    def __init__(self, layer, skip_bias_add, lora_config):
+        super().__init__(layer, lora_config)
+        self.skip_bias_add = skip_bias_add
+
+    def forward(self, input: paddle.Tensor):
+        out_bias = self.bias if self.skip_bias_add else None
+        if self.skip_bias_add:
+            self.bias = None
+        output = super().forward(input)
+        return output, out_bias
 
 
 class RowParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
@@ -305,3 +331,16 @@ class RowParallelQuantizationLoRALinear(QuantizationLoRABaseLinear):
     ):
         state_dict = self.state_dict(structured_name_prefix="")
         return build_sharded_state_dict(state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix)
+
+
+class FleetRowParallelQuantizationLoRALinear(RowParallelQuantizationLoRALinear):
+    def __init__(self, layer, skip_bias_add, lora_config):
+        super().__init__(layer, lora_config)
+        self.skip_bias_add = skip_bias_add
+
+    def forward(self, input: paddle.Tensor):
+        out_bias = self.bias if self.skip_bias_add else None
+        if self.skip_bias_add:
+            self.bias = None
+        output = super().forward(input)
+        return output, out_bias

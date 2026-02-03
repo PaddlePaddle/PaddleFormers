@@ -23,7 +23,7 @@ dataloader_num_workers: 24
 prefetch_factor: 24
 
 ### model
-model_name_or_path: Qwen/Qwen3-30B-A3B-Base
+model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/huggingface/Qwen/Qwen3-30B-A3B
 _attn_implementation: flashmask
 use_qk_norm: true
 

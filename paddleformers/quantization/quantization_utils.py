@@ -33,14 +33,47 @@ except:
     qlora_weight_linear = None
     qlora_weight_quantize = None
 
+from ..utils.import_utils import is_paddlefleet_available
 from ..utils.log import logger
 from .qat_utils import quantize
 from .quantization_linear import (
     ColumnParallelQuantizationLinear,
+    FleetColumnParallelQuantizationLinear,
+    FleetQuantizationLinear,
+    FleetRowParallelQuantizationLinear,
     QuantizationLinear,
     RowParallelQuantizationLinear,
     dequant_weight,
 )
+
+# Conditionally import paddlefleet modules
+if is_paddlefleet_available():
+    from paddlefleet.parallel_state import (
+        get_tensor_model_parallel_group,
+        get_tensor_model_parallel_world_size,
+    )
+    from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
+    from paddlefleet.tensor_parallel import (
+        ColumnParallelLinear as FleetColumnParallelLinear,
+    )
+    from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
+else:
+    # Define mock objects or alternative implementations when paddlefleet is not available
+    def get_tensor_model_parallel_group():
+        return None
+
+    def get_tensor_model_parallel_world_size():
+        return 1
+
+    class PaddleFleetPipelineLayer:
+        pass
+
+    class FleetColumnParallelLinear:
+        pass
+
+    class FleetRowParallelLinear:
+        pass
+
 
 LINEAR_CLASSES = [
     nn.Linear,
@@ -49,6 +82,8 @@ LINEAR_CLASSES = [
     RowParallelLinear,
     ColumnSequenceParallelLinear,
     RowSequenceParallelLinear,
+    FleetColumnParallelLinear,
+    FleetRowParallelLinear,
 ]
 
 
@@ -140,6 +175,75 @@ def replace_with_quantization_linear(model, quantization_config, llm_int8_thresh
                     input_is_parallel=True,
                     sequence_parallel=True,
                 )
+            elif is_paddlefleet_available() and (
+                isinstance(child, FleetColumnParallelLinear) or isinstance(child, FleetRowParallelLinear)
+            ):
+                if child.world_size == 1:
+                    if getattr(child.weight, "transpose_weight", False):
+                        out_feature, in_features = child.weight.shape[0], child.weight.shape[1]
+                    else:
+                        in_features, out_feature = child.weight.shape[0], child.weight.shape[1]
+                    quant_linear = FleetQuantizationLinear(
+                        in_features=in_features,
+                        out_features=out_feature,
+                        skip_bias_add=child.skip_bias_add,
+                        quantization_config=quantization_config,
+                        weight_quantize_algo=weight_quantize_algo,
+                        dtype=child._dtype,
+                        bias_attr=bias_attr,
+                        mp_moe=getattr(child.weight, "mp_moe", False),
+                        is_distributed=getattr(child.weight, "is_distributed", False),
+                    )
+                elif isinstance(child, FleetRowParallelLinear):
+                    if child.sequence_parallel:
+                        quant_linear = FleetRowParallelQuantizationLinear(
+                            input_size_per_partition=child.weight.shape[0],
+                            out_features=child.weight.shape[1],
+                            skip_bias_add=child.skip_bias_add,
+                            quantization_config=quantization_config,
+                            weight_quantize_algo=weight_quantize_algo,
+                            dtype=child._dtype,
+                            bias_attr=bias_attr,
+                            input_is_parallel=True,
+                            sequence_parallel=True,
+                        )
+                    else:
+                        quant_linear = FleetRowParallelQuantizationLinear(
+                            input_size_per_partition=child.weight.shape[0],
+                            out_features=child.weight.shape[1],
+                            skip_bias_add=child.skip_bias_add,
+                            quantization_config=quantization_config,
+                            weight_quantize_algo=weight_quantize_algo,
+                            dtype=child._dtype,
+                            bias_attr=bias_attr,
+                            input_is_parallel=child.input_is_parallel,
+                            mp_skip_c_identity=child.mp_skip_c_identity,
+                        )
+                elif isinstance(child, FleetColumnParallelLinear):
+                    if child.sequence_parallel:
+                        quant_linear = FleetColumnParallelQuantizationLinear(
+                            in_features=child.weight.shape[0],
+                            output_size_per_partition=child.weight.shape[1],
+                            skip_bias_add=child.skip_bias_add,
+                            quantization_config=quantization_config,
+                            weight_quantize_algo=weight_quantize_algo,
+                            dtype=child._dtype,
+                            bias_attr=bias_attr,
+                            gather_output=False,
+                            sequence_parallel=True,
+                        )
+                    else:
+                        quant_linear = FleetColumnParallelQuantizationLinear(
+                            in_features=child.weight.shape[0],
+                            output_size_per_partition=child.weight.shape[1],
+                            skip_bias_add=child.skip_bias_add,
+                            quantization_config=quantization_config,
+                            weight_quantize_algo=weight_quantize_algo,
+                            dtype=child._dtype,
+                            bias_attr=bias_attr,
+                            gather_output=child.gather_output,
+                            mp_skip_c_identity=child.mp_skip_c_identity,
+                        )
             setattr(parent, last, quant_linear)
             del child
 
