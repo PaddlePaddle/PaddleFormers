@@ -103,6 +103,7 @@ jobs:
           fi
           echo "is_md_only: $(cat $GITHUB_OUTPUT | grep is_md_only || echo '未找到')"
     
+          
   integration-test-H20-single-card:
     needs: [check_documents_type, check_skip]
     if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check_skip.outputs.skip == 'false' }}
