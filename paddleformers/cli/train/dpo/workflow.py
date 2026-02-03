@@ -271,7 +271,6 @@ def run_dpo(
         "num_samples_each_epoch": data_args.num_samples_each_epoch,
         "buffer_size": data_args.buffer_size,
         "use_attn_mask_startend_row_indices": model_args.use_attn_mask_startend_row_indices,
-        "mask_out_eos_token": data_args.mask_out_eos_token,
         "random_shuffle": data_args.random_shuffle,
         "greedy_intokens": data_args.greedy_intokens,
         "packing": data_args.packing,
@@ -279,7 +278,7 @@ def run_dpo(
         "encode_one_turn": data_args.encode_one_turn,
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
-        "use_filtered_label_loss": False,
+        "use_filtered_label_loss": model_config.use_filtered_label_loss,
     }
 
     dataset_config.update(
@@ -382,11 +381,10 @@ def run_dpo(
             training_args=training_args,
             max_seq_len=max_seq_len,
             padding_free=data_args.padding_free,
-            use_filtered_label_loss=False,
+            use_filtered_label_loss=model_config.use_filtered_label_loss,
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
             packing=data_args.packing,
         ),
-        ignore_eos_token=dpo_config.ignore_eos_token,
         model_with_dpo_criterion=model_args.model_with_dpo_criterion,
         callbacks=callbacks,
     )

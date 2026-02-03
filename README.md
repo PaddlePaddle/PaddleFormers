@@ -132,7 +132,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 
 * python ≥ 3.10
 * CUDA ≥ 12.0
-* PaddleFleet ≥ 0.1（仅为 GPU 训练功能依赖）
+* PaddleFleet ≥ 0.2（仅为 GPU 训练功能依赖）
 
 **安装依赖（GPU）**
 

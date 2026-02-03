@@ -596,6 +596,8 @@ class Trainer:
             self.trained_effective_tokens = 0
             self.trained_tokens = 0
 
+        self.global_training_logs = {}
+
     def _wrap_amp_model(self, args, model):
         logger.info("Using half precision")
         self.enable_autocast_context_manager = True
@@ -2495,7 +2497,7 @@ class Trainer:
                         model_flops_per_token=model_flops_per_token,
                     )
                 )
-
+            logs.update(self.global_training_logs)
             self._total_loss_scalar += tr_loss_scalar
             self._globalstep_last_logged = self.state.global_step
             self._globalstep_last_start_time = time.time()
@@ -3084,9 +3086,39 @@ class Trainer:
 
             if fleet_env._user_defined_strategy.hybrid_configs["pp_configs"].sharding_comm_overlap:
                 hp_optim._sharding_enable = False
-            return hp_optim
+            dist_optimizer = hp_optim
         else:
-            return fleet.distributed_optimizer(optimizer)
+            dist_optimizer = fleet.distributed_optimizer(optimizer)
+        if isinstance(dist_optimizer, HybridParallelOptimizer) and self.args.max_grad_norm > 0:
+            gradclip = dist_optimizer._inner_opt._grad_clip
+            global_norm_func = gradclip._global_norm
+            training_logs = self.global_training_logs
+
+            @paddle.no_grad()
+            def new_global_norm_func(
+                self,
+                global_norm_var_dist,
+                global_norm_var_not_dist,
+                *args,
+            ):
+                if len(args) > 0:
+                    global_norm_func(global_norm_var_dist, global_norm_var_not_dist, *args)
+                    global_norm_var_dist_moe, global_norm_var_not_dist_moe = args
+                    global_norm_var_fp32 = paddle.sqrt(
+                        global_norm_var_dist
+                        + global_norm_var_not_dist
+                        + global_norm_var_dist_moe
+                        + global_norm_var_not_dist_moe
+                    )
+                else:
+                    global_norm_func(global_norm_var_dist, global_norm_var_not_dist)
+                    global_norm_var_fp32 = paddle.sqrt(global_norm_var_dist + global_norm_var_not_dist)
+                training_logs["global_norm"] = global_norm_var_fp32.item()
+
+            self.optimizer._inner_opt._grad_clip._global_norm = types.MethodType(
+                new_global_norm_func, dist_optimizer._inner_opt._grad_clip
+            )
+        return dist_optimizer
 
     def _wrap_model(self, model, training=True):
         if self.args.enable_auto_parallel:
