@@ -59,6 +59,7 @@ jobs:
           echo "skip-fleet-models-ci label found"
           echo "Downstream GPU jobs will be skipped"
   
+          
   check_documents_type:
     needs: check_skip
     if: ${{ needs.check_skip.outputs.skip == 'false' }}
