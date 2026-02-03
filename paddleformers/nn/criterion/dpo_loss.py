@@ -137,6 +137,8 @@ def dpo_logps(
             logits = logits[0]
         elif isinstance(logits, CausalLMOutputWithPast):
             logits = logits.logits
+        elif hasattr(logits, "logits"):
+            logits = logits.logits
 
         if logits.dim() == 2 and labels.dim() == 2:
             logits = logits.unsqueeze(0)
