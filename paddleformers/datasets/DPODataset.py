@@ -471,7 +471,11 @@ class IteratorDPODataset(BaseDPODataSet, IterableDataset):
         super().__init__(**dataset_config)
 
     def __iter__(self):
-        yield from self._generate_sequences()
+        if self.is_valid:
+            yield from self._generate_sequences()
+        else:
+            while True:
+                yield from self._generate_sequences()
 
 
 class MapDPODataset(BaseDPODataSet, Dataset):

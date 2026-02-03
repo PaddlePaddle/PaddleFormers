@@ -14,7 +14,7 @@
 
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List
 
 import numpy as np
 from paddle.io import Dataset, IterableDataset
@@ -80,8 +80,6 @@ class BaseSFTDataset:
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
         self.binpacking = dataset_config.get("binpacking", False)
         self.packing_interval = dataset_config.get("packing_interval", 128)
-        self.cyclic = dataset_config.get("cyclic", False)
-        self.strict = dataset_config.get("strict", False)
         self.placeholder_tokens = []
         if self.template and self.template.mm_plugin:
             for tok in [
@@ -275,7 +273,7 @@ class BaseSFTDataset:
                     accumulated_data = []
 
                     while True:
-                        batch_data, num_samples = self._process_batch(iterator, self.packing_interval)
+                        batch_data, num_samples = self._binpacking_process_batch(iterator, self.packing_interval)
                         finished = num_samples != self.packing_interval
 
                         accumulated_data += batch_data
@@ -449,7 +447,7 @@ class BaseSFTDataset:
         num_reserved_tokens_for_each_dialog = 1
         num_reserved_tokens_for_each_turn = 8
 
-        # cur_len = num_reserved_tokens_for_each_dialog
+        cur_len = num_reserved_tokens_for_each_dialog
 
         turn_index = len(encoded_pairs) - 1
 
@@ -460,21 +458,21 @@ class BaseSFTDataset:
             if len(tokens_target) == 0:
                 logger.warning(f"[SKIP] The length of encoded assistant tokens is 0: {example}")
                 return None
-            # if len(tokens_src) + len(tokens_target) > (
-            #     self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn
-            # ):
-            #     if len(images) != 0 or len(videos) != 0 or len(audios) != 0:
-            #         # If there is multimodal data, do not truncate it; just discard it directly.
-            #         sub_src = example["messages"][0]["content"].strip()[:50]
-            #         logger.warning(f"[SKIP] This data is too long: {sub_src}...")
-            #         return None
-            #     # If the source (src) exceeds length limit, discard this round of conversation data
-            #     # If the target (tgt) exceeds length limit, truncate it
-            #     if len(tokens_src) > self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn:
-            #         break
-            #     else:
-            #         reverse_len = self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn - len(tokens_src)
-            #         tokens_target = tokens_target[:reverse_len]
+            if len(tokens_src) + len(tokens_target) > (
+                self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn
+            ):
+                if len(images) != 0 or len(videos) != 0 or len(audios) != 0:
+                    # If there is multimodal data, do not truncate it; just discard it directly.
+                    sub_src = example["messages"][0]["content"].strip()[:50]
+                    logger.warning(f"[SKIP] This data is too long: {sub_src}...")
+                    return None
+                # If the source (src) exceeds length limit, discard this round of conversation data
+                # If the target (tgt) exceeds length limit, truncate it
+                if len(tokens_src) > self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn:
+                    break
+                else:
+                    reverse_len = self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn - len(tokens_src)
+                    tokens_target = tokens_target[:reverse_len]
 
             labels_src = [-100] * len(tokens_src)
 
@@ -497,7 +495,7 @@ class BaseSFTDataset:
 
             assert len(tokens) == len(labels), f"{len(tokens)}-{len(labels)}"
 
-            # cur_len = len(tokens)
+            cur_len = len(tokens)
 
             turn_index -= 1
 
@@ -527,27 +525,21 @@ class BaseSFTDataset:
                 if tokens[0] != self.begin_token_id:
                     tokens = [self.begin_token_id] + tokens
                     labels = [-100] + labels
-                    # if len(tokens) > self.max_seq_len:
-                    #     raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+                    if len(tokens) > self.max_seq_len:
+                        raise RuntimeError(f"token_ids is too long: {len(tokens)}")
             # Add EOS token at the end
             if self.efficient_eos:
                 tokens = tokens + suffix_ids
                 labels = labels + suffix_ids
-                # if len(tokens) > self.max_seq_len:
-                #     raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+                if len(tokens) > self.max_seq_len:
+                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
             # label shift
             labels = labels[1:] + [-100]
         else:
             # label shift
             labels = labels[1:] + [-100]
-            # if len(tokens) > self.max_seq_len:
-            #     raise RuntimeError(f"token_ids is too long: {len(tokens)}")
-
-        tokens, labels = self._encode_truncated(tokens, labels)
-        if not tokens:
-            sub_src = example["messages"][0]["content"].strip()[:50]
-            logger.warning(f"[SKIP] This data is too long: {sub_src}...")
-            return None
+            if len(tokens) > self.max_seq_len:
+                raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
         pos_ids = list(range(len(tokens)))
 
@@ -660,68 +652,13 @@ class BaseSFTDataset:
                 if length >= suffix_len and input_ids[start : start + suffix_len] == suffix_tokens_id:
                     labels[start : start + suffix_len] = suffix_tokens_id
 
-    @staticmethod
-    def _get_length(input_ids, labels):
-        # input_ids might be a tensor.
-        lengths = [0]
-        if input_ids is not None:
-            lengths.append(len(input_ids))
-        if labels is not None:
-            lengths.append(len(labels))
-        length = max(lengths)
-        return length
-
-    def _truncate(
-        self,
-        input_ids: List[int],
-        labels: Optional[List[int]],
-        truncation_strategy: Literal["left", "right"],
-    ):
-        max_len = self.max_seq_len
-        placeholder_set = set(self.placeholder_tokens)
-
-        is_placeholder = [tok in placeholder_set for tok in input_ids]
-        placeholder_idx = [i for i, v in enumerate(is_placeholder) if v]
-
-        if len(placeholder_idx) >= max_len:
-            keep_idx = placeholder_idx[:max_len]
-        else:
-            remain = max_len - len(placeholder_idx)
-            non_placeholder_idx = [i for i, v in enumerate(is_placeholder) if not v]
-
-            if truncation_strategy == "left":
-                extra_idx = non_placeholder_idx[-remain:]
-            else:
-                extra_idx = non_placeholder_idx[:remain]
-
-            keep_idx = sorted(placeholder_idx + extra_idx)
-
-        input_ids = [input_ids[i] for i in keep_idx]
-        labels = [labels[i] for i in keep_idx]
-
-        return input_ids, labels
-
-    def _encode_truncated(self, input_ids, labels):
-        length = self._get_length(input_ids, labels)
-        if self.max_seq_len is not None and length > self.max_seq_len:
-            if self.truncation_strategy == "delete":
-                return None, None
-            if self.truncation_strategy in {"right", "left"}:
-                input_ids, labels = self._truncate(input_ids, labels, truncation_strategy=self.truncation_strategy)
-                length = self._get_length(input_ids, labels)
-            elif self.truncation_strategy == "raise":
-                raise ValueError(
-                    f"Current length of row({length}) is larger" f" than the max_length({self.max_length})."
-                )
-        return input_ids, labels
-
-    def _process_batch(self, iterator, batch_size):
+    def _binpacking_process_batch(self, iterator, batch_size):
         batch = []
         count = 0
         for _ in range(batch_size):
             try:
                 example = next(iterator)
-                encoded = self._encode_data(example)
+                encoded = self._binpacking_encode_data(example)
                 if encoded:
                     batch.append((encoded, len(encoded.token_ids)))
                 count += 1
@@ -729,7 +666,7 @@ class BaseSFTDataset:
                 break
         return batch, count
 
-    def _encode_data(self, example):
+    def _binpacking_encode_data(self, example):
         actual_example_num = 1
         try:
             if self.is_pretraining:
@@ -748,7 +685,11 @@ class IteratorSFTDataset(BaseSFTDataset, IterableDataset):
         super().__init__(**dataset_config)
 
     def __iter__(self):
-        yield from self._generate_sequences()
+        if self.is_valid:
+            yield from self._generate_sequences()
+        else:
+            while True:
+                yield from self._generate_sequences()
 
 
 class MapSFTDataset(BaseSFTDataset, Dataset):
