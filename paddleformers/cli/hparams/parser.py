@@ -28,6 +28,7 @@ from omegaconf import OmegaConf
 
 from paddleformers.trainer import PdArgumentParser
 
+from ...utils.log import logger
 from ..utils.process import (
     is_env_enabled,
     remove_paddle_shm_files,
@@ -85,7 +86,7 @@ def _load_custom_template(custom_path):
         spec = importlib.util.spec_from_file_location("custom_template", custom_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        print(f"Successfully loaded custom templates from {custom_path}")
+        logger.info(f"Successfully loaded custom templates from {custom_path}")
     except Exception as e:
         raise RuntimeError(f"Failed to load custom templates from {custom_path}: {e}")
 

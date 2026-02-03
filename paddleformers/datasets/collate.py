@@ -70,24 +70,30 @@ def dpo_collate_fn(
         Dict[str, np.ndarray]: Processed tensor dictionary containing:
             - input_ids (int32): Padded token ids [batch_size, max_seq_len]
             - position_ids (int32): Position ids [batch_size, max_seq_len]
-            - chosen_labels (int32): Preferred response labels [batch_size, max_seq_len]
-            - rejected_labels (int32): Unpreferred response labels [batch_size, max_seq_len]
+            - response_labels (int32): Response labels [batch_size, max_seq_len]
             - response_indexs (int32): Response span indices [batch_size, 4]
             - attention_mask (float32, optional): Attention mask matrix [batch_size, 1, max_seq_len, max_seq_len]
             - attn_mask_startend_row_indices (int32, optional): Sparse attention row indices [batch_size, max_seq_len]
     """
+    # batch = [
+    #     [Sequence1],             # sequences1, when packing = False, the sequences contains only 1 sample
+    #     [Sequence2, Sequence3]   # sequences2, when packing = True, the sequences contains >= 1 samples
+    # ]
+
+    # 1.max_seq_len
     if padding_free:
         batch = [sum(batch, [])]
-        max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
+        max_seq_len = sum(len(sequence.token_ids) for sequences in batch for sequence in sequences)
+        # batch = [[Sequence1, Sequence2, Sequence3]]
     if not max_seq_len:
-        max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
+        max_seq_len = max(sum(len(sequence.token_ids) for sequence in sequences) for sequences in batch)
     max_seq_len = calc_padding_size(max_seq_len, training_args)
 
+    # 2.init input_dict
     input_dict = {
         "input_ids": [],
         "position_ids": [],
-        "chosen_labels": [],
-        "rejected_labels": [],
+        "response_labels": [],
         "response_indexs": [],
     }
     if use_response_score_delta:
@@ -102,20 +108,21 @@ def dpo_collate_fn(
         use_attn_mask_startend_row_indices = False
     else:
         raise ValueError("attention_mask and attn_mask_startend_row_indices are both None.")
+
+    # 3.iterate batch
     sequence_sum_flatten = 0
     for i, sequences in enumerate(batch):
+        # 3.1 padding
         difference = max_seq_len - sum([len(sequence.token_ids) for sequence in sequences])
-
         input_dict["input_ids"].append(sum([sequence.token_ids for sequence in sequences], []) + [0] * difference)
         input_dict["position_ids"].append(
             sum([sequence.position_ids for sequence in sequences], []) + [0] * difference
         )
-        input_dict["chosen_labels"].append(
-            sum([sequence.chosen_labels for sequence in sequences], []) + [0] * difference
+        input_dict["response_labels"].append(
+            sum([sequence.response_labels for sequence in sequences], []) + [-100] * difference
         )
-        input_dict["rejected_labels"].append(
-            sum([sequence.rejected_labels for sequence in sequences], []) + [0] * difference
-        )
+
+        # 3.2 attention mask
         if use_attn_mask_startend_row_indices:
             start_row_indices = []
             sequence_sum = 0
@@ -140,10 +147,13 @@ def dpo_collate_fn(
                     axis=0,
                 )
             )
+
+        # 3.3 response_index & score_delta
         sequence_sum = 0
         for sequence in sequences:
             # bs, chosen_response_start_index, rejeted_response_start_index, rejeted_response_end_index + 1
             if use_filtered_label_loss:
+                # per_token_logps will be [batch_size * seq_len], the response_index is the absolute index of the batch
                 response_index = [
                     i,
                     sequence.response_index[0] + sequence_sum_flatten,
@@ -152,6 +162,7 @@ def dpo_collate_fn(
                 ]
                 sequence_sum_flatten += sequence.response_index[2]
             else:
+                # per_token_logps will be [batch_size, seq_len], the response_index is the relative index of the sequences
                 response_index = [
                     i,
                     sequence.response_index[0] + sequence_sum,
@@ -163,6 +174,7 @@ def dpo_collate_fn(
             if use_response_score_delta:
                 input_dict["score_deltas"].append(sequence.score_delta)
 
+    # 4.convert to np.array
     for key in input_dict:
         if key == "attention_mask":
             input_dict[key] = np.array(input_dict[key], dtype=np.float32)
@@ -170,6 +182,7 @@ def dpo_collate_fn(
             input_dict[key] = np.array(input_dict[key], dtype=np.int32)[..., None]
         else:
             input_dict[key] = np.array(input_dict[key])
+
     return input_dict
 
 

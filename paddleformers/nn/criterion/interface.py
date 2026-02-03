@@ -38,7 +38,7 @@ ALL_LOSS_FUNCTIONS = LossInterface()
 
 
 class CriterionLayer(nn.Layer):
-    def __init__(self, config, return_tuple=True, ignore_eos_token=False, use_infohub=False, **kwargs):
+    def __init__(self, config, return_tuple=True, use_infohub=False, **kwargs):
         super().__init__()
         self.config = config
         self.dpo_config = copy.deepcopy(config.dpo_config) if hasattr(config, "dpo_config") else None
@@ -58,7 +58,6 @@ class CriterionLayer(nn.Layer):
         self.return_tuple = return_tuple
         self.tie_word_embeddings = config.get("tie_word_embeddings", False)
         self.use_infohub = use_infohub
-        self.ignore_eos_token = ignore_eos_token
 
         if self.enable_parallel_cross_entropy:
             logger.info("using parallel cross entroy, take care")

@@ -56,8 +56,7 @@ def loss_impl(self, logits, labels):
 def dpo_logps(
     self: nn.Layer,
     logits,
-    chosen_labels,
-    rejected_labels,
+    response_labels,
     response_indexs,
     average_log_prob=False,
     hidden_states=None,
@@ -71,10 +70,10 @@ def dpo_logps(
     bias = lm_head_bias
     if transpose_y is None:
         transpose_y = self.tie_word_embeddings
-    labels = chosen_labels + rejected_labels
-    ignore_index = kwargs.pop("ignore_index", 0)  # default is 0
+    labels = response_labels
+    ignore_index = kwargs.pop("ignore_index", -100)  # default is -100
 
-    # drop ignored index token
+    # 1.hidden_states, drop ignored index token
     if self.use_filtered_label_loss:
         if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel and logits is None:
             labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, ignore_index)
@@ -84,7 +83,7 @@ def dpo_logps(
                 hidden_states = AllGatherVarlenOp.apply(hidden_states)
         else:
             labels = labels.flatten()
-            sparse_tgt_idx = paddle.nonzero(labels != 0).flatten()
+            sparse_tgt_idx = paddle.nonzero(labels != -100).flatten()
             labels = paddle.take_along_axis(labels, sparse_tgt_idx, axis=0)
 
             if hidden_states is not None:
@@ -104,9 +103,10 @@ def dpo_logps(
                 ]
             )
 
-    #   bsz,seq_len,hidden_size or seq_len,hidden_size
+    # bsz,seq_len,hidden_size or seq_len,hidden_size
     seq_len = labels.shape[1] if labels.ndim == 2 else labels.shape[0]
 
+    # 2.per_token_logps
     if self.use_fused_head_and_loss_fn and self.use_subbatch and seq_len > self.loss_subbatch_sequence_length:
         per_token_logps = -fused_head_and_loss_fn(
             hidden_states,
@@ -158,15 +158,15 @@ def dpo_logps(
     if len(response_indexs.shape) == 3:
         response_indexs = response_indexs[0]
 
-    offset = 1 if self.ignore_eos_token else 0
-
+    # 3.choose & reject logps
+    offset = 1 if self.dpo_config.ignore_eos_token else 0
     if self.use_filtered_label_loss:
         chosen_logps = paddle.stack(
             [
                 (
                     paddle.gather(
                         per_token_logps.reshape([-1]),
-                        paddle.arange(response_index[1], response_index[2], dtype=paddle.int32),
+                        paddle.arange(response_index[1], response_index[2] - offset, dtype=paddle.int32),
                         axis=0,
                     ).sum()
                     if response_index[3] != 0
@@ -181,7 +181,7 @@ def dpo_logps(
                 (
                     paddle.gather(
                         per_token_logps.reshape([-1]),
-                        paddle.arange(response_index[2] + offset, response_index[3], dtype=paddle.int32),
+                        paddle.arange(response_index[2], response_index[3] - offset, dtype=paddle.int32),
                         axis=0,
                     ).sum()
                     if response_index[3] != 0
@@ -197,7 +197,7 @@ def dpo_logps(
                 (
                     paddle.gather(
                         paddle.gather(per_token_logps, response_index[0], axis=0),
-                        paddle.arange(response_index[1], response_index[2], dtype=paddle.int32),
+                        paddle.arange(response_index[1], response_index[2] - offset, dtype=paddle.int32),
                         axis=0,
                     ).sum()
                     if response_index[3] != 0
@@ -212,7 +212,7 @@ def dpo_logps(
                 (
                     paddle.gather(
                         paddle.gather(per_token_logps, response_index[0], axis=0),
-                        paddle.arange(response_index[2] + offset, response_index[3], dtype=paddle.int32),
+                        paddle.arange(response_index[2], response_index[3] - offset, dtype=paddle.int32),
                         axis=0,
                     ).sum()
                     if response_index[3] != 0
@@ -223,7 +223,11 @@ def dpo_logps(
             axis=0,
         )
 
-    sft_loss = -chosen_logps.sum() / (chosen_labels != 0).sum()
+    # 4.sft_loss
+    chosen_response_lengths = response_indexs[:, 2] - response_indexs[:, 1] - offset
+    sft_loss = -chosen_logps.sum() / chosen_response_lengths.sum()
+
+    # 5.average & normalize
     if average_log_prob:
         chosen_response_length = response_indexs[:, 2] - response_indexs[:, 1]
         rejected_response_length = response_indexs[:, 3] - response_indexs[:, 2]
@@ -235,6 +239,7 @@ def dpo_logps(
         rejected_response_length = response_indexs[:, 3] - response_indexs[:, 2]
         chosen_logps *= avg_response_length / chosen_response_length.astype("float32")
         rejected_logps *= avg_response_length / rejected_response_length.astype("float32")
+
     return chosen_logps, rejected_logps, sft_loss * self.dpo_config.sft_loss_ratio
 
 
@@ -334,10 +339,9 @@ def dpo_loss_forward(
         self, logits, labels
     )
 
-    if self.dpo_config.offset_alpha > 0 or len(labels) == 6:
+    if self.dpo_config.offset_alpha > 0 or len(labels) == 5:
         (
-            chosen_labels,
-            rejected_labels,
+            response_labels,
             response_indexs,
             score_deltas,
             reference_chosen_logps,
@@ -345,8 +349,7 @@ def dpo_loss_forward(
         ) = labels
     else:
         (
-            chosen_labels,
-            rejected_labels,
+            response_labels,
             response_indexs,
             reference_chosen_logps,
             reference_rejected_logps,
@@ -361,8 +364,7 @@ def dpo_loss_forward(
         reference_chosen_logps, reference_rejected_logps, sft_loss = dpo_logps(
             self,
             logits,
-            chosen_labels,
-            rejected_labels,
+            response_labels,
             response_indexs,
             average_log_prob,
             hidden_states,
@@ -382,8 +384,7 @@ def dpo_loss_forward(
     policy_chosen_logps, policy_rejected_logps, sft_loss = dpo_logps(
         self,
         logits,
-        chosen_labels,
-        rejected_labels,
+        response_labels,
         response_indexs,
         average_log_prob,
         hidden_states,

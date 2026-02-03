@@ -1733,16 +1733,14 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_PretrainedModel):
                 None,
                 self.config.tie_word_embeddings,
             )
-            chosen_labels = kwargs.get("chosen_labels", None)
-            rejected_labels = kwargs.get("rejected_labels", None)
+            response_labels = kwargs.get("response_labels", None)
             response_indexs = kwargs.get("response_indexs", None)
             score_deltas = kwargs.get("score_deltas", None)
             reference_chosen_logps = kwargs.get("reference_chosen_logps", None)
             reference_rejected_logps = kwargs.get("reference_rejected_logps", None)
             if score_deltas:
                 labels = (
-                    chosen_labels,
-                    rejected_labels,
+                    response_labels,
                     response_indexs,
                     score_deltas,
                     reference_chosen_logps,
@@ -1750,8 +1748,7 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_PretrainedModel):
                 )
             else:
                 labels = (
-                    chosen_labels,
-                    rejected_labels,
+                    response_labels,
                     response_indexs,
                     reference_chosen_logps,
                     reference_rejected_logps,
