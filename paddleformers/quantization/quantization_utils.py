@@ -38,13 +38,28 @@ from ..utils.log import logger
 from .qat_utils import quantize
 from .quantization_linear import (
     ColumnParallelQuantizationLinear,
-    FleetColumnParallelQuantizationLinear,
-    FleetQuantizationLinear,
-    FleetRowParallelQuantizationLinear,
     QuantizationLinear,
     RowParallelQuantizationLinear,
     dequant_weight,
 )
+
+if is_paddlefleet_available():
+    from .quantization_linear import (
+        FleetColumnParallelQuantizationLinear,
+        FleetQuantizationLinear,
+        FleetRowParallelQuantizationLinear,
+    )
+else:
+
+    class FleetColumnParallelQuantizationLinear:
+        pass
+
+    class FleetQuantizationLinear:
+        pass
+
+    class FleetRowParallelQuantizationLinear:
+        pass
+
 
 # Conditionally import paddlefleet modules
 if is_paddlefleet_available():
