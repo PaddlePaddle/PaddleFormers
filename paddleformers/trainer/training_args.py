@@ -434,11 +434,6 @@ class TrainingArguments:
             Whether to load a checkpoint in the HuggingFace format.
             Defaults to False.
 
-        flex_ckpt_comm_method (str, optional):
-            Communication method used for checkpoint resharding.
-            Choices are "send_recv", "broadcast", "multi_group_broadcast", and "grouped_send_recv".
-            Defaults to "broadcast".
-
         replicate_saved_into_local (bool, optional):
             Whether to save checkpoint replicas into local files in a distributed save/load system.
             If set to True, replicas will be stored locally on each node/machine.
@@ -1273,16 +1268,6 @@ class TrainingArguments:
     load_from_hf: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to load a checkpoint in the HuggingFace format."},
-    )
-    flex_ckpt_comm_method: Optional[str] = field(
-        default="broadcast",
-        metadata={
-            "help": (
-                "Communication method used by FlexCheckpoint for checkpoint resharding. "
-                'Choices are "send_recv", "broadcast", "multi_group_broadcast", and "grouped_send_recv". '
-                'Default is "broadcast".'
-            )
-        },
     )
     deterministic_mode: bool = field(
         default=False,

@@ -2909,7 +2909,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             sharded_state_dict = model.sharded_state_dict()
             metadata_path = os.path.join(ckpt_path, FLEX_CKPT_AUTO_GENERATED_METADATA)
 
-            # delete the existing metadata file if it exists
+            # delete the metadata file if it exists
             try:
                 os.remove(metadata_path)
             except FileNotFoundError:
