@@ -41,8 +41,7 @@ class Sequence:
     position_ids: Optional[List[int]]
     attention_mask: Optional[List[List[int]]]
     attn_mask_startend_row_indices: Optional[List[int]]
-    chosen_labels: List[int]
-    rejected_labels: List[int]
+    response_labels: List[int]
     response_index: List[int]
     score_delta: float
 
@@ -54,7 +53,6 @@ class DPODataSet(IterableDataset):
         self.tokenizer = dataset_config.get("tokenizer", None)
         self.processor = dataset_config.get("processor", None)
         self.max_seq_len = dataset_config.get("max_seq_len", 8192)
-        self.mask_out_eos_token = dataset_config.get("mask_out_eos_token", True)
         self.template = dataset_config.get("template_instance", None)
         self.use_attn_mask_startend_row_indices = dataset_config.get("use_attn_mask_startend_row_indices", True)
         self.template_backend = dataset_config.get("template_backend", "jinja")
@@ -192,7 +190,22 @@ class DPODataSet(IterableDataset):
         return sequence_pack
 
     def _preprocess_dpo_example(self, example):
+        """Preprocess DPO training examples
 
+        Args:
+            example: Raw training example containing:
+                - messages: Original conversation messages
+                - chosen_response: Preferred response continuation
+                - rejected_response: Dispreferred response continuation
+                - other parameters
+
+        Returns:
+            example: Processed DPO training example with newly added parameters:
+                - chosen: Complete conversation sequence with chosen response
+                - rejected: Complete conversation sequence with rejected response
+                - session_start_index: Starting position of the response in multi-turn conversation
+                - score_delta: Score difference (fixed to 1.0)
+        """
         chosen_m, rejected_m = deepcopy(example["messages"]), deepcopy(example["messages"])
         if self.template_backend == "jinja":
             # The Jinja backend will concatenate the "system" separately and place it at the beginning.
@@ -216,9 +229,6 @@ class DPODataSet(IterableDataset):
 
     def __postprocess_before_concat(self, example):
         """Process multi-turn conversation data into tokenized sequences with dynamic truncation."""
-        prompt_token_ids = []
-
-        cur_len = 0
 
         system = example.get("system", None)
         tools = example.get("tools", None)
@@ -226,6 +236,7 @@ class DPODataSet(IterableDataset):
         videos = example.get("videos", [])
         audios = example.get("audios", [])
 
+        # 1.Encode chosen and rejected sequences
         if self.template_backend == "jinja":
             if not self.tokenizer.chat_template:
                 self.tokenizer.chat_template = NONE_CHAT_TEMPLATE
@@ -237,7 +248,14 @@ class DPODataSet(IterableDataset):
                 rejected_encoded_messages = self.tokenizer.encode_chat_inputs(example["rejected"])
         else:
             mm_inputs = self.template.mm_plugin.get_mm_inputs(
-                images, videos, audios, [len(images)], [len(videos)], [len(audios)], None, self.processor
+                images,
+                videos,
+                audios,
+                self.processor,
+                imglens=[len(images)],
+                vidlens=[len(videos)],
+                audlens=[len(audios)],
+                batch_ids=None,
             )
             chosen_messages = self.template.mm_plugin.process_messages(
                 example["chosen"]["messages"], images, videos, audios, mm_inputs, self.processor
@@ -250,6 +268,7 @@ class DPODataSet(IterableDataset):
                 self.tokenizer, rejected_messages, system, tools
             )
 
+        # 2.Add EOS at the end of the response section
         if self.template_backend == "custom":
             suffix_ids = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
         else:
@@ -260,9 +279,10 @@ class DPODataSet(IterableDataset):
             if len(rejected_encoded_messages) > 0 and len(rejected_encoded_messages[-1]) > 1:
                 rejected_encoded_messages[-1][1].extend(suffix_ids)
 
-        # chosen/rejected response
+        # 3.chosen/rejected response
+        prompt_token_ids = []
+        cur_len = 0
         response_token_ids_list = []
-        response_label_ids_list = []
         response_len_list = []
         split_index = example["session_start_index"] // 2
         for responses in [
@@ -270,35 +290,25 @@ class DPODataSet(IterableDataset):
             rejected_encoded_messages[split_index:],
         ]:
             responses_token_ids = []
-            responses_label_ids = []
             response_len = 0
             for i, response in enumerate(responses):
                 q, a = response
-                label_ids, res = [], []
 
                 if i != 0:
                     # prompt
-                    label_ids += [0] * (len(q) - 1)
-                    res += q
+                    response_len += len(q)
+                    responses_token_ids += q
 
                 # response
-                if self.mask_out_eos_token:
-                    label_ids += a[:-1] + [0, 0]
-                    response_len += len(a) - 1
-                    res += a
-                else:
-                    label_ids += a + [0]
-                    response_len += len(a)
-                    res += a
-                responses_token_ids += res
-                responses_label_ids += label_ids
+                response_len += len(a)
+                responses_token_ids += a
+
             response_token_ids_list.append(responses_token_ids)
-            response_label_ids_list.append(responses_label_ids)
             response_len_list.append(response_len)
 
         cur_len += sum(map(len, response_token_ids_list))
 
-        # create at least one turn
+        # 4.prompt
         turn_index = split_index
         while turn_index >= 0:
             if turn_index == split_index:
@@ -313,7 +323,7 @@ class DPODataSet(IterableDataset):
             cur_len += len(cur_turn_token)
             turn_index -= 1
 
-        # at least one turn
+        # 5.check if the sequence is too long
         if turn_index == split_index:
             sub_src = example["chosen"]["messages"][0]["content"].strip()[:5]
             global LOGGER_COUNT
@@ -324,15 +334,31 @@ class DPODataSet(IterableDataset):
                     f"even one turn, example_output:'{{'src':[{sub_src}, ……]}}'"
                 )
             return (None,) * 5
-
         if cur_len > self.max_seq_len:
             logger.warning(f"[SKIP] Example is too long: {example}")
             return (None,) * 5
 
+        # chosen_encoded_messages = [
+        #     ([s1, q1, q2, q3], [a1, a2]),  # system and knowledge QA pairs
+        #     ...
+        #     ([p1, p2, p3], [c1, c2, c3]),  # chosen response section + EOS
+        #     ([p4, p5], [c4, c5, EOS])
+        # ]
+        # rejected_encoded_messages = [
+        #     ([s1, q1, q2, q3], [a1, a2]),  # system and knowledge QA pairs
+        #     ...
+        #     ([p1, p2, p3], [r1, r2, r3, EOS])   # rejected response section + EOS
+        # ]
+        # prompt_token_ids = [s1, q1, q2, q3, a1, a2,..., p1, p2, p3]
+        # response_token_ids_list = [
+        #     [c1, c2, c3, p4, p5, c4, c5, EOS],   # chosen response
+        #     [r1, r2, r3, EOS]                    # rejected response
+        # ]
+        # response_len_list = [8, 4]
+        # cur_len = len(prompt_token_ids) + len(response_token_ids_list[0]) + len(response_token_ids_list[1])
         return (
             prompt_token_ids,
             response_token_ids_list,
-            response_label_ids_list,
             response_len_list,
             cur_len,
         )
@@ -343,7 +369,6 @@ class DPODataSet(IterableDataset):
         (
             prompt_token_ids,
             response_token_ids_list,
-            response_label_ids_list,
             response_len_list,
             cur_len,
         ) = self.__postprocess_before_concat(example)
@@ -351,48 +376,74 @@ class DPODataSet(IterableDataset):
         # The sequnece is too long, just return None
         if prompt_token_ids is None:
             return None
+
         # 1.concat all tokens
         # 1.1 input_ids
-        input_ids = prompt_token_ids + response_token_ids_list[0] + response_token_ids_list[1]
+        # [p1, p2, p3, p4], [c1, c2, c3, EOS], [r1, r2, r3, EOS]  ->  [p1, p2, p3, p4, c1, c2, c3, p4, r1, r2, r3]
+        input_ids = (
+            prompt_token_ids
+            + response_token_ids_list[0][:-1]
+            + [prompt_token_ids[-1]]
+            + response_token_ids_list[1][:-1]
+        )
+        cur_len -= 1
         if cur_len != len(input_ids):
             logger.warning(f"[SKIP] code bug: {example}")
             return None
 
         # 1.2. position_ids
+        # [p1, p2, p3, p4, c1, c2, c3, p4, r1, r2, r3]  ->  [0, 1, 2, 3, 4, 5, 6, 3, 4, 5, 6]
         prompt_len = len(prompt_token_ids)
-        chosen_len = len(response_token_ids_list[0])
-        rejected_len = len(response_token_ids_list[1])
+        chosen_len = response_len_list[0]
+        rejected_len = response_len_list[1]
         position_ids = (
             list(range(prompt_len))  # prompt
-            + list(range(prompt_len, prompt_len + chosen_len))  # chosen
-            + list(range(prompt_len, prompt_len + rejected_len))  # rejected
+            + list(range(prompt_len, prompt_len + chosen_len - 1))  # chosen - 1
+            + [prompt_len - 1]  # the last token of prompt
+            + list(range(prompt_len, prompt_len + rejected_len - 1))  # rejected - 1
         )
 
-        # 1.3 labels
-        chosen_labels = [0] * (prompt_len - 1) + response_label_ids_list[0] + [0] * len(response_token_ids_list[1])
-        rejected_labels = [0] * (prompt_len - 1) + [0] * len(response_token_ids_list[0]) + response_label_ids_list[1]
+        # 1.3 response_labels
+        # [p1, p2, p3, p4, c1, c2, c3, p4, r1, r2, r3]  ->  [-100, -100, -100, c1, c2, c3, EOS, r1, r2, r3, EOS]
+        response_labels = [-100] * (prompt_len - 1) + response_token_ids_list[0] + response_token_ids_list[1]
 
         # 1.4 response index
+        # [-100, -100, -100, c1, c2, c3, EOS, r1, r2, r3, EOS]  -> [0, 4, 8] / [3, 7, 11]
         if self.use_filtered_label_loss:
-            response_index = [0, response_len_list[0], sum(response_len_list)]
+            response_index = [0, chosen_len, chosen_len + rejected_len]
         else:
             response_index = [
-                prompt_len,
-                prompt_len + len(response_token_ids_list[0]),
-                prompt_len + sum(response_len_list),  # end
+                prompt_len - 1,
+                prompt_len - 1 + chosen_len,
+                prompt_len - 1 + chosen_len + rejected_len,  # end
             ]
 
         # 1.5 attention mask
+        # [    p1,   p2,   p3,   p4,   c1,   c2,   c3,   p4,   r1,   r2,   r3] ->
+        # [[ True False False False False False False False False False False]
+        #  [ True  True False False False False False False False False False]
+        #  [ True  True  True False False False False False False False False]
+        #  [ True  True  True  True False False False False False False False]
+        #  [ True  True  True  True  True False False False False False False]
+        #  [ True  True  True  True  True  True False False False False False]
+        #  [ True  True  True  True  True  True  True False False False False]
+        #  [ True  True  True False False False False  True False False False]
+        #  [ True  True  True False False False False  True  True False False]
+        #  [ True  True  True False False False False  True  True  True False]
+        #  [ True  True  True False False False False  True  True  True  True]]
         if self.use_attn_mask_startend_row_indices:
             attn_mask_startend_row_indices = (
-                [cur_len] * (prompt_len) + [prompt_len + chosen_len] * chosen_len + [cur_len] * rejected_len
+                [cur_len] * prompt_len
+                + [prompt_len + chosen_len - 1] * (chosen_len - 1)
+                + [cur_len]
+                + [cur_len] * (rejected_len - 1)
             )
             attention_mask = None
         else:
             attention_mask = np.tri(cur_len, cur_len, dtype=bool)
             attention_mask[
-                (prompt_len + chosen_len) :,
-                prompt_len : (prompt_len + chosen_len),
+                (prompt_len + chosen_len - 1) :,
+                (prompt_len - 1) : (prompt_len + chosen_len - 1),
             ] = False
             attn_mask_startend_row_indices = None
 
@@ -406,14 +457,9 @@ class DPODataSet(IterableDataset):
                 print_debug_info(self.tokenizer, input_ids, "input")
                 print("========================================\n")
 
-                filtered_labels = [x for x in chosen_labels if x != 0]  # remove -100
+                filtered_labels = [x for x in response_labels if x != -100]  # remove -100
                 print("========================================")
-                print_debug_info(self.tokenizer, filtered_labels, "chosen_labels")
-                print("========================================\n")
-
-                filtered_labels = [x for x in rejected_labels if x != 0]  # remove -100
-                print("========================================")
-                print_debug_info(self.tokenizer, filtered_labels, "rejected_labels")
+                print_debug_info(self.tokenizer, filtered_labels, "response_labels")
                 print("========================================\n")
             else:
                 logger.info("[dataset debug] Tokenizer not available")
@@ -425,8 +471,7 @@ class DPODataSet(IterableDataset):
             position_ids=position_ids,
             attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            chosen_labels=chosen_labels,
-            rejected_labels=rejected_labels,
+            response_labels=response_labels,
             response_index=response_index,
             score_delta=example["score_delta"],
         )

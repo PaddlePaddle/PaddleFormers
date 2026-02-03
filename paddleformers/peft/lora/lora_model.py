@@ -627,6 +627,8 @@ class LoRAModel(nn.Layer):
                         if n_replace > 0:
                             aoa_config["aoa_statements"].append(f"{key} -> {key_new}")
                             break
+            if hasattr(self.model, "_gen_lora_inv_aoa_config"):
+                aoa_config["aoa_statements"] += self.model._gen_lora_inv_aoa_config(self.model.config)
 
             HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(
                 save_directory, max_shard_size, save_peft=True

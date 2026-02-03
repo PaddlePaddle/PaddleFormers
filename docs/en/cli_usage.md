@@ -107,14 +107,14 @@ paddleformers-cli export examples/config/run_export.yaml
 #### 6.1. Method 1
 
 ```bash
-NNODES={num_nodes} MASTER_ADDR={your_master_addr} MASTER_PORT={your_master_port} CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train examples/config/sft_full.yaml
+NNODES={num_nodes} MASTER_ADDR={your_master_addr} MASTER_PORT={your_master_port} RANK={rank} CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train examples/config/sft_full.yaml
 ```
 
 #### 6.2. Method 2 (mpirun)
 
 First, write a script, such as `scripts/train_96_gpus.sh`, with the following content:
 ```bash
-NNODES={num_nodes} MASTER_ADDR={your_master_addr} MASTER_PORT={your_master_port} CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train examples/config/sft_full.yaml
+NNODES={num_nodes} MASTER_ADDR={your_master_addr} MASTER_PORT={your_master_port} RANK={rank} CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train examples/config/sft_full.yaml
 ```
 
 Then:

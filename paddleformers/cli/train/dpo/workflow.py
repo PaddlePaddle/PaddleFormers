@@ -19,6 +19,7 @@ from functools import partial
 
 import paddle
 
+from paddleformers.cli.utils.process import add_new_special_tokens
 from paddleformers.datasets.collate import dpo_collate_fn as collate_fn
 from paddleformers.datasets.loader import create_dataset
 from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
@@ -71,8 +72,10 @@ def run_dpo(
     set_seed(training_args.seed)
 
     avaible_attn_impl = AttentionInterface._global_mapping.keys()
-    if model_args.attn_impl not in avaible_attn_impl:
-        raise ValueError(f"Invalid attn_impl: {model_args.attn_impl}, available attn_impl: {avaible_attn_impl}")
+    if model_args._attn_implementation not in avaible_attn_impl:
+        raise ValueError(
+            f"Invalid _attn_implementation: {model_args._attn_implementation}, available _attn_implementation: {avaible_attn_impl}"
+        )
 
     if training_args.loss_type == "orpo":
         training_args.reference_free = True
@@ -148,7 +151,7 @@ def run_dpo(
         model_args.model_name_or_path,
         dtype=dtype,
     )
-    model_config._attn_implementation = model_args.attn_impl
+    model_config._attn_implementation = model_args._attn_implementation
     model_config.pp_seg_method = model_args.pp_seg_method
     model_config.max_sequence_length = data_args.max_seq_len
     model_config.seq_length = data_args.max_seq_len
@@ -164,7 +167,7 @@ def run_dpo(
         ref_model_config.pp_seg_method = model_args.pp_seg_method
         ref_model_config.max_sequence_length = data_args.max_seq_len
         ref_model_config.seq_length = data_args.max_seq_len
-        ref_model_config._attn_implementation = model_args.attn_impl
+        ref_model_config._attn_implementation = model_args._attn_implementation
 
         LlmMetaConfig.set_llm_config(ref_model_config, training_args)
 
@@ -211,6 +214,7 @@ def run_dpo(
         tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
     else:
         tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
+    add_new_special_tokens(tokenizer, data_args.new_special_tokens_path)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
@@ -267,7 +271,6 @@ def run_dpo(
         "num_samples_each_epoch": data_args.num_samples_each_epoch,
         "buffer_size": data_args.buffer_size,
         "use_attn_mask_startend_row_indices": model_args.use_attn_mask_startend_row_indices,
-        "mask_out_eos_token": data_args.mask_out_eos_token,
         "random_shuffle": data_args.random_shuffle,
         "greedy_intokens": data_args.greedy_intokens,
         "packing": data_args.packing,
@@ -275,7 +278,7 @@ def run_dpo(
         "encode_one_turn": data_args.encode_one_turn,
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
-        "use_filtered_label_loss": False,
+        "use_filtered_label_loss": model_config.use_filtered_label_loss,
     }
 
     dataset_config.update(
@@ -378,11 +381,10 @@ def run_dpo(
             training_args=training_args,
             max_seq_len=max_seq_len,
             padding_free=data_args.padding_free,
-            use_filtered_label_loss=False,
+            use_filtered_label_loss=model_config.use_filtered_label_loss,
             use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
             packing=data_args.packing,
         ),
-        ignore_eos_token=dpo_config.ignore_eos_token,
         model_with_dpo_criterion=model_args.model_with_dpo_criterion,
         callbacks=callbacks,
     )
