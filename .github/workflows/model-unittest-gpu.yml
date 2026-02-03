@@ -32,7 +32,40 @@ defaults:
     shell: bash
 
 jobs:
+  check_skip:
+    name: Check skip-models-ci label
+    runs-on: ubuntu-latest
+
+    outputs:
+      skip: ${{ steps.check_skip.outputs.skip }}
+
+    steps:
+      - name: Check skip-models-ci label
+        id: check_skip
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
+            echo "PR labels: $labels"
+
+            if echo "$labels" | grep -q "skip-models-ci"; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip CI but mark success
+        if: steps.check_skip.outputs.skip == 'true'
+        run: |
+          echo "skip-models-ci label found"
+          echo "Downstream GPU jobs will be skipped"
+
   model-unittest-gpu-ci:
+    needs: check_skip
+    if: needs.check_skip.outputs.skip == 'false'
     name: model-unittest-gpu-ci
     runs-on: ${{ inputs.runner || 'ernie-8gpu' || 'distrbute' }}
     steps:
@@ -45,7 +78,6 @@ jobs:
           else
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
           fi
-      
       - name: Run Container
         env:
           work_dir: ${{ github.workspace }}

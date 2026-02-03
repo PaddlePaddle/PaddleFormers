@@ -28,7 +28,40 @@ defaults:
     shell: bash
 
 jobs:
+  check_skip:
+    name: Check skip-fleet-models-ci label
+    runs-on: ubuntu-latest
+
+    outputs:
+      skip: ${{ steps.check_skip.outputs.skip }}
+
+    steps:
+      - name: Check skip-fleet-models-ci label
+        id: check_skip
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
+            echo "PR labels: $labels"
+
+            if echo "$labels" | grep -q "skip-fleet-models-ci"; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip CI but mark success
+        if: steps.check_skip.outputs.skip == 'true'
+        run: |
+          echo "skip-fleet-models-ci label found"
+          echo "Downstream GPU jobs will be skipped"
+  
   check_documents_type:
+    needs: check_skip
+    if: ${{ needs.check_skip.outputs.skip == 'false' }}
     name: check documents type for pull request
     runs-on: ubuntu-latest
     env:
@@ -43,8 +76,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: git diff and check
-        id: check_files
+      - name: git diff and check 
+        id: check_fils
+        if: |
+          github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'fleet-models-ci')
         run: |
           changed_files=$(git diff origin/${{ github.event.pull_request.base.ref }}...HEAD --name-only)
           echo "Changed files: $changed_files"
@@ -69,8 +104,8 @@ jobs:
           echo "is_md_only: $(cat $GITHUB_OUTPUT | grep is_md_only || echo '未找到')"
     
   integration-test-H20-single-card:
-    needs: check_documents_type
-    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' }}
+    needs: [check_documents_type, check_skip]
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check_skip.outputs.skip == 'false' }}
     name: Integration test (H20, single card)
     runs-on:
       group: Fleet-H-single-card
@@ -214,8 +249,8 @@ jobs:
 
 
   integration-test-H20-multi-card:
-    needs: check_documents_type
-    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' }}
+    needs: [check_documents_type, check_skip]
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check_skip.outputs.skip == 'false' }}
     name: Integration test (H20, multi-card)
     runs-on:
       group: Fleet-H-multi-card
@@ -429,8 +464,8 @@ jobs:
           docker rm -f ${{ env.container_name }}
 
   integration-test-a100:
-    needs: check_documents_type
-    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' }}
+    needs: [check_documents_type, check_skip]
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check_skip.outputs.skip == 'false' }}
     name: Integration test (A100)
     runs-on:
       group: Distribute

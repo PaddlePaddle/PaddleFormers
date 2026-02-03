@@ -315,23 +315,25 @@ class FinetuningArguments(
             self.weight_quantize_algo = {"weight_only_int4": DEFAULT_QUANTIZE_LAYERS}
         elif self.compute_type == "wint8":
             self.weight_quantize_algo = {"weight_only_int8": DEFAULT_QUANTIZE_LAYERS}
-        # TODO: @bosspi to support wint4/8
-        # elif self.compute_type == "wint4/8":
-        #     # self.weight_quantize_algo = "weight_only_mix"
-        #     self.weight_quantize_algo = {
-        #         "weight_only_int4": [".*mlp.experts.*"],
-        #         "weight_only_int8": [
-        #             ".*self_attn.qkv_proj.*",
-        #             ".*self_attn.q_proj.*",
-        #             ".*self_attn.k_proj.*",
-        #             ".*self_attn.v_proj.*",
-        #             ".*self_attn.o_proj.*",
-        #             ".*mlp.up_gate_proj.*",
-        #             ".*mlp.up_proj.*",
-        #             ".*mlp.gate_proj.*",
-        #             ".*mlp.down_proj.*",
-        #         ],
-        #     }
+        elif self.compute_type == "wint4/8":
+            self.weight_quantize_algo = {
+                "weight_only_int4": [
+                    ".*mlp.experts.*",
+                    ".*mlp.shared_expert.*",
+                    ".*mlp.shared_experts.*",
+                ],
+                "weight_only_int8": [
+                    ".*self_attn.qkv_proj.*",
+                    ".*self_attn.q_proj.*",
+                    ".*self_attn.k_proj.*",
+                    ".*self_attn.v_proj.*",
+                    ".*self_attn.o_proj.*",
+                    ".*mlp.up_gate_proj.*",
+                    ".*mlp.up_proj.*",
+                    ".*mlp.gate_proj.*",
+                    ".*mlp.down_proj.*",
+                ],
+            }
         elif self.compute_type == "nf4":
             self.weight_quantize_algo = {"nf4": DEFAULT_QUANTIZE_LAYERS}
         else:

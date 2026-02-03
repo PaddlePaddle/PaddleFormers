@@ -244,6 +244,17 @@ def run_sft(
         quantization_config=quantization_config,
     )
 
+    if (
+        model_config.tie_word_embeddings
+        and model_config.quantization_config.is_weight_quantize()
+        and training_args.pipeline_model_parallel_size > 1
+    ):
+        raise ValueError(
+            "Tie-weight model is not supported quantization in pipeline parallel mode. But got pipeline_model_parallel_size: {}".format(
+                training_args.pipeline_model_parallel_size
+            )
+        )
+
     architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
     if (
         any(architecture in str(model_config.architectures) for architecture in architectures_to_check)
@@ -654,9 +665,7 @@ def run_sft(
         data_args=data_args,
         callbacks=callbacks,
     )
-    trainable_parameters = [
-        p for p in model.parameters() if not p.stop_gradient or ("quantization_linear" in p.name and "w_1" in p.name)
-    ]
+    trainable_parameters = [p for p in model.parameters() if not p.stop_gradient]
     trainer.set_optimizer_grouped_parameters(trainable_parameters)
 
     # Train

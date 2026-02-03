@@ -36,7 +36,10 @@ from paddle.distributed import fleet
 from paddle.io import BatchSampler, DataLoader, DistributedBatchSampler
 
 if TYPE_CHECKING:
-    from transformers.tokenization_utils import PreTrainedTokenizer
+    try:
+        from transformers.tokenization_python import PreTrainedTokenizer
+    except ImportError:
+        from transformers.tokenization_utils import PreTrainedTokenizer
 
 from paddleformers.data import DataCollator, DataCollatorForSeq2Seq
 from paddleformers.trainer import Trainer

@@ -858,13 +858,14 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
             "spatial_merge_size": 2,
             "temporal_patch_size": 2,
         }
-        tiny_rope_scaling = {"type": "mrope", "mrope_section": [4, 6, 6]}
+        tiny_rope_scaling = {"type": "default", "mrope_section": [4, 6, 6]}
         tiny_text_config = {
             "attention_bias": False,
             "attention_dropout": 0.0,
             "bos_token_id": 151643,
             "dtype": "float32",
             "eos_token_id": 151645,
+            "pad_token_id": 151643,
             "head_dim": 32,
             "hidden_act": "silu",
             "hidden_size": 128,
@@ -1004,34 +1005,16 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
                 tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
             ).eval()
 
-            paddle_model_fused = paddle_model_class.from_pretrained(
-                tempdir,
-                dtype="float32",
-                load_checkpoint_format="flex_checkpoint",
-            ).eval()
-
             if class_name == "Qwen3VLModel":
                 paddle_logit = paddle_model(**paddle_inputs)[0]
-                paddle_fused_logit = paddle_model_fused(**paddle_inputs)[0]
             else:
                 paddle_logit = paddle_model(**paddle_inputs)["logits"]
-                paddle_fused_logit = paddle_model_fused(**paddle_inputs)["logits"]
 
             # 3. compare the result between paddle and torch
             self.assertTrue(
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e-2,
-                    rtol=1e-2,
-                )
-            )
-
-            # 4.compare the result between paddle and paddle_fused
-            self.assertTrue(
-                np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    paddle_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )

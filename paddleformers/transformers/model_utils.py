@@ -2840,10 +2840,15 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         config.dtype = dtype
 
+        if config.moe_grouped_gemm and config.is_lora:
+            logger.info("Lora doesn't support moe_grouped_gemm, moe_grouped_gemm is set to False.")
+            config.moe_grouped_gemm = False
+
         init_contexts = []
         if low_cpu_mem_usage or config.quantization_config.is_weight_quantize():
             # Instantiate model.
             init_contexts.append(no_init_weights(_enable=True))
+            config.perform_initialization = False
             if is_paddle_support_lazy_init():
                 init_contexts.append(paddle.LazyGuard())
 
@@ -2892,11 +2897,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         ):  # flex_checkpoint need initialized weights
             for name, param in model.named_parameters():
                 with paddle.device_guard("cpu"):
-                    value = paddle.normal(
-                        mean=0.0,
-                        std=0.02,
-                        shape=param.shape,
-                    ).astype(param.dtype)
+                    value = paddle.zeros(shape=param.shape, dtype=param.dtype)
                 param.set_value(value)
 
         if load_checkpoint_format == "flex_checkpoint":
@@ -2955,7 +2956,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                             if "quant_weight" in key:
                                 quantization_linear_list.append(key[:-13])
 
-                model.config["quantization_config"].quantization_linear_list = quantization_linear_list
+                if isinstance(model.config, dict):
+                    model.config["quantization_config"].quantization_linear_list = quantization_linear_list
+                else:  # model.config is instance of GPTProvider
+                    model.config.quantization_config.quantization_linear_list = quantization_linear_list
 
                 new_state_dict = convert_to_quantize_state_dict(
                     new_state_dict,
@@ -2967,6 +2971,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 model_state_dict = model.state_dict()
                 set_state_dict = {}
                 for param_name, param in new_state_dict.items():
+                    if config.tie_word_embeddings and "lm_head.weight" in param_name:
+                        continue
                     with paddle.no_grad():
                         set_state_dict[param_name] = param.cuda()
                         model_state_dict[param_name].get_tensor()._share_data_with(

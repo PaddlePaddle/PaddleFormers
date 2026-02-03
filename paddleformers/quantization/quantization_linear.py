@@ -413,6 +413,19 @@ class QuantizationLinear(nn.Layer):
         return build_sharded_state_dict(state_dict, {"quant_weight": 1, "weight_scale": 0}, structured_name_prefix)
 
 
+class FleetQuantizationLinear(QuantizationLinear):
+    def __init__(self, in_features, out_features, skip_bias_add, **kwargs):
+        super().__init__(in_features, out_features, **kwargs)
+        self.skip_bias_add = skip_bias_add
+
+    def forward(self, input: paddle.Tensor):
+        out_bias = self.bias if self.skip_bias_add else None
+        if self.skip_bias_add:
+            self.bias = None
+        output = super().forward(input)
+        return output, out_bias
+
+
 class ColumnParallelQuantizationLinear(nn.Layer):
     """Quantization Linear layer with mp parallelized(column).
     The code implementation refers to paddle.distributed.fleet.meta_parallel.ColumnParallelLinear.
@@ -635,6 +648,19 @@ class ColumnParallelQuantizationLinear(nn.Layer):
     ):
         state_dict = self.state_dict(structured_name_prefix="")
         return build_sharded_state_dict(state_dict, {"quant_weight": 0, "weight_scale": 0}, structured_name_prefix)
+
+
+class FleetColumnParallelQuantizationLinear(ColumnParallelQuantizationLinear):
+    def __init__(self, in_features, output_size_per_partition, skip_bias_add, **kwargs):
+        super().__init__(in_features, output_size_per_partition, **kwargs)
+        self.skip_bias_add = skip_bias_add
+
+    def forward(self, input: paddle.Tensor):
+        out_bias = self.bias if self.skip_bias_add else None
+        if self.skip_bias_add:
+            self.bias = None
+        output = super().forward(input)
+        return output, out_bias
 
 
 class RowParallelQuantizationLinear(nn.Layer):
@@ -880,3 +906,16 @@ class RowParallelQuantizationLinear(nn.Layer):
     ):
         state_dict = self.state_dict(structured_name_prefix="")
         return build_sharded_state_dict(state_dict, {"quant_weight": 1, "weight_scale": 0}, structured_name_prefix)
+
+
+class FleetRowParallelQuantizationLinear(RowParallelQuantizationLinear):
+    def __init__(self, input_size_per_partition, out_features, skip_bias_add, **kwargs):
+        super().__init__(input_size_per_partition, out_features, **kwargs)
+        self.skip_bias_add = skip_bias_add
+
+    def forward(self, input: paddle.Tensor):
+        out_bias = self.bias if self.skip_bias_add else None
+        if self.skip_bias_add:
+            self.bias = None
+        output = super().forward(input)
+        return output, out_bias

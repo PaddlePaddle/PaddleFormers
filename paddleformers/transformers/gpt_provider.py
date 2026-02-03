@@ -24,6 +24,7 @@ from typing import Any, Callable, Literal, Optional, Union
 
 import paddle
 
+from ..quantization.quantization_config import QuantizationConfig
 from ..utils.import_utils import is_paddlefleet_available
 
 # This module requires paddlefleet to be installed
@@ -144,6 +145,8 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
     # If True, restore the modelopt_state that contains quantization, sparsity, speculative decoding transformation state.
     # When resuming modelopt_state, we also change the transformer_layer_spec to `paddlefleet.post_training.modelopt.gpt.model_specs` which is a combination of local spec + TEDotProductAttention.
     restore_modelopt_state: bool = False
+
+    quantization_config: QuantizationConfig = QuantizationConfig()
 
     def provide(self, pre_process=None, post_process=None, vp_stage=None, loss_fn=None) -> GPTModel:
         """Configure and instantiate a PaddleFleet GPT model based on this configuration.

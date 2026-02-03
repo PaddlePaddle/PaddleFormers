@@ -943,6 +943,9 @@ class PretrainedConfig:
         self._save_to_hf = kwargs.pop("save_to_hf", True)
         self._unsavable_keys.add("_save_to_hf")
 
+        # Initialize model weight for fleet model
+        self.perform_initialization = kwargs.pop("perform_initialization", True)
+
         # Additional attributes without default values
         for key, value in kwargs.items():
             try:
