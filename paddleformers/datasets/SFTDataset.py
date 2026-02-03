@@ -73,12 +73,12 @@ class BaseSFTDataset:
         self.is_pretraining = dataset_config.get("is_pretraining", False)
         self.is_valid = dataset_config.get("is_valid", False)
         self.truncate_packing = dataset_config.get("truncate_packing", True)
-        self.truncation_strategy = dataset_config.get("truncation_strategy", "delete")
+        self.truncation_strategy = dataset_config.get("truncation_strategy", "right")
         if self.truncate_packing and not self.is_pretraining:
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
-        self.binpacking = dataset_config.get("binpacking", True)
+        self.binpacking = dataset_config.get("binpacking", False)
         self.packing_interval = dataset_config.get("packing_interval", 128)
         self.cyclic = dataset_config.get("cyclic", False)
         self.strict = dataset_config.get("strict", False)
@@ -274,25 +274,16 @@ class BaseSFTDataset:
                     iterator = get_worker_sliced_iterator(self.mix_datasets)
                     accumulated_data = []
 
-                    try:
-                        next(iterator)
-                    except StopIteration:
-                        return
-
                     while True:
-                        # 处理一批数据
                         batch_data, num_samples = self._process_batch(iterator, self.packing_interval)
                         finished = num_samples != self.packing_interval
 
-                        # 累加数据
                         accumulated_data += batch_data
 
-                        # 打包数据
                         sequences, accumulated_data = calculate_matched_group(
                             accumulated_data, self.max_seq_len, is_finished=finished
                         )
 
-                        # 输出打包好的序列
                         for row in sequences:
                             yield [r[0] for r in row]
 
@@ -725,7 +716,6 @@ class BaseSFTDataset:
         return input_ids, labels
 
     def _process_batch(self, iterator, batch_size):
-        """处理一批数据"""
         batch = []
         count = 0
         for _ in range(batch_size):
@@ -740,7 +730,6 @@ class BaseSFTDataset:
         return batch, count
 
     def _encode_data(self, example):
-        """编码单条数据"""
         actual_example_num = 1
         try:
             if self.is_pretraining:

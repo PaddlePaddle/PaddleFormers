@@ -278,6 +278,8 @@ def run_dpo(
         "template_backend": data_args.template_backend,
         "dataset_type": data_args.dataset_type,
         "use_filtered_label_loss": model_config.use_filtered_label_loss,
+        "binpacking": data_args.binpacking,
+        "truncation_strategy": data_args.truncation_strategy,
     }
 
     dataset_config.update(
@@ -298,7 +300,7 @@ def run_dpo(
             "template_instance": template_instance,
         }
     )
-    if data_args.estimate_steps_before_train and training_args.max_steps == -1:
+    if training_args.max_steps == -1:
         if data_args.mix_strategy == "random":
             raise ValueError(
                 "When using 'random' mix_strategy, max_steps must be explicitly set (cannot be -1). "

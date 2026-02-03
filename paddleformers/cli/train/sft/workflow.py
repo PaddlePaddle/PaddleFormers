@@ -38,7 +38,6 @@ from paddleformers.datasets.template.template import get_template_and_fix_tokeni
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
-    DefaultFlowCallback,
     FP8QuantWeightCallback,
     IntervalStrategy,
     MoECorrectionBiasAdjustCallback,
@@ -387,6 +386,8 @@ def run_sft(
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
         "dataset_type": data_args.dataset_type,
+        "binpacking": data_args.binpacking,
+        "truncation_strategy": data_args.truncation_strategy,
     }
 
     dataset_config.update(
@@ -631,6 +632,9 @@ def run_sft(
     if training_args.decay_steps is None:
         training_args.decay_steps = training_args.max_steps
 
+    if training_args.save_strategy == IntervalStrategy.EPOCH:
+        training_args.save_strategy = IntervalStrategy.STEPS
+        training_args.save_steps = int(training_args.max_steps / training_args.num_train_epochs)
     if training_args.evaluation_strategy == IntervalStrategy.EPOCH:
         training_args.evaluation_strategy = IntervalStrategy.STEPS
         training_args.eval_steps = int(training_args.max_steps / training_args.num_train_epochs)
@@ -647,9 +651,6 @@ def run_sft(
 
     if training_args.sequence_parallel and not model_args.lora:
         callbacks += [MoEGateSpGradSyncCallBack()]
-
-    if training_args.save_strategy == "epoch":
-        callbacks += [DefaultFlowCallback()]
 
     if not model_args.lora:
         callbacks += [FP8QuantWeightCallback()]

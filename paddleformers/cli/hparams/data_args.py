@@ -143,10 +143,6 @@ class DataArguments:
         default=True,
         metadata={"help": "Whether to truncate data in packing (only valid in pretrain online dataflow)."},
     )
-    estimate_steps_before_train: bool = field(
-        default=True,
-        metadata={"help": "Whether to estimate max_steps before start training"},
-    )
     dataset_output_dir: str = field(
         default="./dataset_output",
         metadata={"help": "output path of offline sft datasets"},
@@ -162,4 +158,12 @@ class DataArguments:
     make_offline_data: bool = field(
         default=False,
         metadata={"help": "Make offline data for SFT training."},
+    )
+    binpacking: bool = field(
+        default=False,
+        metadata={"help": "Whether to use binpacking strategy for packing."},
+    )
+    truncation_strategy: str = field(
+        default="right",
+        metadata={"help": "Truncation strategy for packing."},
     )
