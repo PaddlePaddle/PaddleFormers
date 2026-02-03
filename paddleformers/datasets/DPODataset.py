@@ -14,8 +14,8 @@
 
 import os
 from copy import deepcopy
-from dataclasses import dataclass
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 import numpy as np
 from paddle.io import IterableDataset
@@ -44,7 +44,10 @@ class Sequence:
     response_labels: List[int]
     response_index: List[int]
     score_delta: float
-
+    images: List[str] = field(default_factory=list)
+    videos: List[str] = field(default_factory=list)
+    audios: List[str] = field(default_factory=list)
+    mm_inputs: Dict = field(default_factory=dict)
 
 class DPODataSet(IterableDataset):
     def __init__(self, **dataset_config):
@@ -235,6 +238,7 @@ class DPODataSet(IterableDataset):
         images = example.get("images", [])
         videos = example.get("videos", [])
         audios = example.get("audios", [])
+        mm_inputs = None 
 
         # 1.Encode chosen and rejected sequences
         if self.template_backend == "jinja":
@@ -361,16 +365,19 @@ class DPODataSet(IterableDataset):
             response_token_ids_list,
             response_len_list,
             cur_len,
+            mm_inputs,
         )
 
     def _postprocess_sequence(self, example):
         example = self._preprocess_dpo_example(example)
+        
         # sequence: system + knowledge_tokens + prompt + chosen + reject
         (
             prompt_token_ids,
             response_token_ids_list,
             response_len_list,
             cur_len,
+            mm_inputs,
         ) = self.__postprocess_before_concat(example)
 
         # The sequnece is too long, just return None
@@ -474,4 +481,8 @@ class DPODataSet(IterableDataset):
             response_labels=response_labels,
             response_index=response_index,
             score_delta=example["score_delta"],
+            images=example["images"],
+            videos=example["videos"],
+            audios=example["audios"],
+            mm_inputs=mm_inputs,
         )
