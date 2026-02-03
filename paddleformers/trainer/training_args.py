@@ -1092,10 +1092,6 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Enable MoE (Mixture of Experts) expert parallel training"},
     )
-    router_aux_loss_coef: Optional[float] = field(
-        default=0.0,
-        metadata={"help": "MoE (Mixture of Experts) Auxiliary loss weight coefficient"},
-    )
     release_grads: Optional[bool] = field(
         default=False, metadata={"help": "Whether to release gradients during training. Default is `False`."}
     )

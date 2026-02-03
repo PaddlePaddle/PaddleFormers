@@ -63,7 +63,6 @@ class DPOTrainer(Trainer):
         disable_dropout: bool = True,
         padding_value: int = 0,
         model_with_dpo_criterion: bool = False,
-        ignore_eos_token: bool = False,
         **kwargs
     ):
         super().__init__(model, data_collator=data_collator, **kwargs)
@@ -73,7 +72,7 @@ class DPOTrainer(Trainer):
             self.dpo_config = dpo_config
         if not model_with_dpo_criterion:
             if dpo_criterion is None:
-                self.dpo_criterion = CriterionLayer(self.model.config, ignore_eos_token=ignore_eos_token)
+                self.dpo_criterion = CriterionLayer(self.model.config)
             elif isinstance(dpo_criterion, CriterionLayer):
                 self.dpo_criterion = dpo_criterion
             else:
@@ -136,8 +135,7 @@ class DPOTrainer(Trainer):
             dpo_inputs["attn_mask_startend_row_indices"] = batch["attn_mask_startend_row_indices"]
 
         if self.model_with_dpo_criterion:
-            dpo_inputs["chosen_labels"] = batch["chosen_labels"]
-            dpo_inputs["rejected_labels"] = batch["rejected_labels"]
+            dpo_inputs["response_labels"] = batch["response_labels"]
             dpo_inputs["response_indexs"] = batch["response_indexs"]
             if "score_deltas" in batch:
                 dpo_inputs["score_deltas"] = batch["score_deltas"]
@@ -159,7 +157,7 @@ class DPOTrainer(Trainer):
             dpo_inputs["reference_rejected_logps"] = reference_rejected_logps
             policy_chosen_logps, policy_rejected_logps, sft_loss, dpo_loss, loss = model(**dpo_inputs)
         else:
-            labels = (batch["chosen_labels"], batch["rejected_labels"], batch["response_indexs"], None, None)
+            labels = (batch["response_labels"], batch["response_indexs"], None, None)
             if self.dpo_config.reference_free:
                 reference_chosen_logps = paddle.zeros([1])
                 reference_rejected_logps = paddle.zeros([1])
@@ -702,8 +700,7 @@ def prepare_pipeline_dpo_inputs_func(inputs):
         ]
 
     last_stage_keys = [
-        "chosen_labels",
-        "rejected_labels",
+        "response_labels",
         "response_indexs",
         "score_deltas",
         "reference_chosen_logps",
@@ -743,8 +740,7 @@ def _prepare_pipeline_dpo_inputs_func_fleet(inputs):
     """
 
     last_stage_keys = [
-        "chosen_labels",
-        "rejected_labels",
+        "response_labels",
         "response_indexs",
         "score_deltas",
         "reference_chosen_logps",
