@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: messages
 eval_dataset_type: messages
-train_dataset_path: ./coco_grounding/train.jsonl
+train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/coco_grounding/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./coco_grounding/val.jsonl
+eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/coco_grounding/val.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: true
@@ -12,7 +12,7 @@ template_backend: custom
 template: qwen3_vl
 
 ### model
-model_name_or_path: ./model_8B
+model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/huggingface/Qwen/Qwen3-VL-8B
 _attn_implementation: flashmask
 
 ### finetuning
@@ -56,3 +56,5 @@ unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
 freeze_config: freeze_vision freeze_aligner
+
+benchmark: true

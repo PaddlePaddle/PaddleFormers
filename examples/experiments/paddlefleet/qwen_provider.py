@@ -60,7 +60,6 @@ class Qwen3MoEModelProvider(GPTModelProvider):
     # MoE specific parameters
     n_routed_experts: int = 128
     moe_router_load_balancing_type: str = "aux_loss"
-    router_aux_loss_coef: float = 1e-3
     num_experts_per_tok: int = 8
     moe_router_pre_softmax: bool = False
     moe_grouped_gemm: bool = False
