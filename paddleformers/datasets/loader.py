@@ -32,12 +32,12 @@ def create_dataset(**dataset_config: Dict[str, Any]):
     if dataset_config["stage"].lower() == "dpo":
         if dataset_config["dataset_type"].lower() == "map":
             train_dataset = MapDPODataset(**dataset_config)
-        elif dataset_config["dataset_type"].lower() == "iterable":
+        else:
             train_dataset = IteratorDPODataset(**dataset_config)
     else:
         if dataset_config["dataset_type"].lower() == "map":
             train_dataset = MapSFTDataset(**dataset_config)
-        elif dataset_config["dataset_type"].lower() == "iterable":
+        else:
             train_dataset = IteratorSFTDataset(**dataset_config)
 
     return train_dataset
