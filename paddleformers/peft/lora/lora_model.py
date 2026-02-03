@@ -108,7 +108,7 @@ def get_lora_layers():
                 XPURowSequenceParallelLoRALinear as RowSequenceParallelLoRALinear,
             )
 
-            from .lora_layers import LoRAConv2D, ParamWrapper
+            from .lora_layers import LoRAConv2D, LoRAExperts
         else:
             raise ImportError  # Force to use the fallback if not XPU
     except ImportError:
@@ -121,8 +121,8 @@ def get_lora_layers():
             FleetRowParallelLoRALinear,
             FleetRowSequenceParallelLoRALinear,
             LoRAConv2D,
+            LoRAExperts,
             LoRALinear,
-            ParamWrapper,
             RowParallelLoRALinear,
             RowSequenceParallelLoRALinear,
         )
@@ -132,7 +132,7 @@ def get_lora_layers():
         "ColumnSequenceParallelLoRALinear": ColumnSequenceParallelLoRALinear,
         "LoRAConv2D": LoRAConv2D,
         "LoRALinear": LoRALinear,
-        "ParamWrapper": ParamWrapper,
+        "LoRAExperts": LoRAExperts,
         "RowParallelLoRALinear": RowParallelLoRALinear,
         "RowSequenceParallelLoRALinear": RowSequenceParallelLoRALinear,
         "FleetLoRALinear": FleetLoRALinear,
@@ -147,7 +147,7 @@ lora_layers = get_lora_layers()
 ColumnParallelLoRALinear = lora_layers["ColumnParallelLoRALinear"]
 ColumnSequenceParallelLoRALinear = lora_layers["ColumnSequenceParallelLoRALinear"]
 LoRAConv2D = lora_layers["LoRAConv2D"]
-ParamWrapper = lora_layers["ParamWrapper"]
+LoRAExperts = lora_layers["LoRAExperts"]
 LoRALinear = lora_layers["LoRALinear"]
 RowParallelLoRALinear = lora_layers["RowParallelLoRALinear"]
 RowSequenceParallelLoRALinear = lora_layers["RowSequenceParallelLoRALinear"]
@@ -669,24 +669,14 @@ class LoRAModel(nn.Layer):
                     model_config_to_save.tensor_model_parallel_size = -1
                 model_config_to_save.save_pretrained(save_directory)
 
-    def _find_and_replace_module(self, model, module_name, lora_config, parameter_name=None):
+    def _find_and_replace_module(self, model, module_name, lora_config):
         parent_module = model
         attribute_chain = module_name.split(".")
         for name in attribute_chain[:-1]:
             parent_module = getattr(parent_module, name)
         module = getattr(parent_module, attribute_chain[-1])
         lora_module = None
-        if parameter_name is not None:
-            lora_module = ParamWrapper(
-                module,
-                parameter_name=parameter_name,
-                r=lora_config.r,
-                lora_alpha=lora_config.lora_alpha,
-                lora_dropout=lora_config.lora_dropout,
-                rslora=lora_config.rslora,
-                lora_plus_scale=lora_config.lora_plus_scale,
-            )
-        elif isinstance(module, nn.Linear) or isinstance(module, FusedLinear):
+        if isinstance(module, nn.Linear) or isinstance(module, FusedLinear):
             lora_module = LoRALinear(
                 in_features=module.weight.shape[0],
                 out_features=module.weight.shape[1],
@@ -917,6 +907,15 @@ class LoRAModel(nn.Layer):
             lora_module = RowParallelQuantizationLoRALinear(module, lora_config)
             # Lora row parallel will spilt lora A matrix
             self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
+        elif attribute_chain[-1] == "experts":
+            lora_module = LoRAExperts(
+                module,
+                r=lora_config.r,
+                lora_alpha=lora_config.lora_alpha,
+                lora_dropout=lora_config.lora_dropout,
+                rslora=lora_config.rslora,
+                lora_plus_scale=lora_config.lora_plus_scale,
+            )
         if lora_module is None:
             raise ValueError(
                 f"LoRA strategy only supports paddle.nn.Linear or paddle.distributed.fleet.meta_parallel.ColumnParallelLinear or paddleformers.transformers.sequence_utils. {module}({module_name} {type(module).__name__}) is not supported。"
@@ -981,6 +980,7 @@ class LoRAModel(nn.Layer):
                 or isinstance(layer, FleetColumnSequenceParallelLoRALinear)
                 or isinstance(layer, RowSequenceParallelLoRALinear)
                 or isinstance(layer, FleetRowSequenceParallelLoRALinear)
+                or isinstance(layer, LoRAExperts)
                 or (QuantizationLoRALinear is not None and isinstance(layer, QuantizationLoRALinear))
                 or (
                     ColumnParallelQuantizationLoRALinear is not None
@@ -1017,33 +1017,11 @@ class LoRAModel(nn.Layer):
             return model
         if isinstance(lora_config.target_modules, str):
             lora_config.target_modules = [lora_config.target_modules]
-        if lora_config.target_parameters is not None:
-            unsorted_target_names = set(lora_config.target_parameters)
-            target_parameters = sorted(unsorted_target_names)
         for module_name, module in model.named_sublayers():
             for target_module in lora_config.target_modules:
                 if re.fullmatch(target_module, module_name):
                     self._find_and_replace_module(model, module_name, lora_config)
                     break
-            if lora_config.target_parameters is not None:
-                unwrapped_module_name = module_name
-                for param_name, param in module.named_parameters(recurse=False):
-                    key = f"{unwrapped_module_name}.{param_name}"
-                    if (key in target_parameters) or any(
-                        key.endswith(f".{target_key}") for target_key in target_parameters
-                    ):
-                        self._find_and_replace_module(
-                            model, module_name, lora_config, parameter_name=param_name.rpartition(".")[-1]
-                        )
-        # if lora_config.target_parameters is not None:
-        #     unsorted_target_names = set(peft_config.target_parameters)
-        #     target_names = sorted(unsorted_target_names)
-        #     for module_name, module in model.named_modules():
-        #         unwrapped_module_name = module_name
-        #         for param_name, param in module.named_parameters(recurse=False):
-        #             key = f"{unwrapped_module_name}.{param_name}"
-        #             if (key in target_names) or any(key.endswith(f".{target_key}") for target_key in target_names):
-        #                 create_and_replace_param(module_name, key, param_name)
         return model
 
     def restore_original_model(self):

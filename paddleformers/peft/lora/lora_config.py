@@ -29,7 +29,6 @@ class LoRAConfig:
     Args:
         r (`int`): Lora attention dimension
         target_modules (`Union[List[str],str]`): The names of the modules to apply Lora to.
-        target_parameters (`List[str]`): The names of the parameters to apply Lora to.
         trainable_modules (`List[str]`): The names of the modules to train when applying Lora.
         lora_alpha (`float`): The alpha parameter for Lora scaling.
         lora_dropout (`float`): The dropout probability for Lora layers.
@@ -43,13 +42,6 @@ class LoRAConfig:
         metadata={
             "help": "List of module names or regex expression of the module names to replace with Lora."
             "For example, ['q', 'v'] or '.*decoder.*(SelfAttention|EncDecAttention).*(q|v)$' "
-        },
-    )
-    target_parameters: Optional[List[str]] = field(
-        default=None,
-        metadata={
-            "help": "List of parameters names to replace with Lora."
-            "As an example, for Qwen3-MoE, you can pass: ['mlp.experts.gate_up_proj', 'mlp.experts.down_proj]"
         },
     )
     trainable_modules: Optional[List[str]] = field(
