@@ -157,20 +157,46 @@ FleetColumnSequenceParallelLoRALinear = lora_layers["FleetColumnSequenceParallel
 
 from ...quantization.quantization_linear import (
     ColumnParallelQuantizationLinear,
-    FleetColumnParallelQuantizationLinear,
-    FleetQuantizationLinear,
-    FleetRowParallelQuantizationLinear,
     QuantizationLinear,
     RowParallelQuantizationLinear,
 )
 from .lora_quantization_layers import (
     ColumnParallelQuantizationLoRALinear,
-    FleetColumnParallelQuantizationLoRALinear,
-    FleetQuantizationLoRALinear,
-    FleetRowParallelQuantizationLoRALinear,
     QuantizationLoRALinear,
     RowParallelQuantizationLoRALinear,
 )
+
+if is_paddlefleet_available():
+    from ...quantization.quantization_linear import (
+        FleetColumnParallelQuantizationLinear,
+        FleetQuantizationLinear,
+        FleetRowParallelQuantizationLinear,
+    )
+    from .lora_quantization_layers import (
+        FleetColumnParallelQuantizationLoRALinear,
+        FleetQuantizationLoRALinear,
+        FleetRowParallelQuantizationLoRALinear,
+    )
+else:
+
+    class FleetColumnParallelQuantizationLinear:
+        pass
+
+    class FleetQuantizationLinear:
+        pass
+
+    class FleetRowParallelQuantizationLinear:
+        pass
+
+    class FleetColumnParallelQuantizationLoRALinear:
+        pass
+
+    class FleetQuantizationLoRALinear:
+        pass
+
+    class FleetRowParallelQuantizationLoRALinear:
+        pass
+
 
 AVAILABLE_LAYERS = [
     ColumnParallelLoRALinear,
