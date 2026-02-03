@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import os
 import tempfile
 import unittest
 
@@ -26,7 +25,7 @@ from paddleformers.transformers import (
     Ernie4_5_VLMoeForConditionalGenerationModel,
 )
 from paddleformers.transformers.configuration_utils import PretrainedConfig
-from paddleformers.utils.log import logger
+from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -375,19 +374,9 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
         )
         return model
 
+    @gpu_device_initializer(log_prefix="Ernie4_5_VLModelTest")
     def setUp(self):
         super().setUp()
-        # Initialize device when GPU is needed by certain test case
-        gpu_count = paddle.device.cuda.device_count()
-        pid = os.getpid()
-
-        if gpu_count > 0:
-            paddle.set_device(f"gpu:{pid % gpu_count}")
-        else:
-            paddle.set_device("cpu")
-            self.skipTest("No GPU currently available/allocated")
-        logger.info(f"Ernie4_5_VLModelTest [PID:{pid}] Device initialized: {paddle.get_device()}")
-
         self.model_tester = Ernie4_5_VLModelTester(self)
         self.config_tester = ConfigTester(self, config_class=Ernie4_5_VLConfig, hidden_size=37)
 
@@ -637,17 +626,9 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
 
 
 class Ernie4_5_MoE_VLIntegrationTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Ernie4_5_MoE_VLIntegrationTest")
     def setUp(self):
-        # Initialize device when GPU is needed by certain test case
-        gpu_count = paddle.device.cuda.device_count()
-        pid = os.getpid()
-
-        if gpu_count > 0:
-            paddle.set_device(f"gpu:{pid % gpu_count}")
-        else:
-            paddle.set_device("cpu")
-            self.skipTest("No GPU currently available/allocated")
-        logger.info(f"Ernie4_5_MoE_VLIntegrationTest [PID:{pid}] Device initialized: {paddle.get_device()}")
+        pass
 
     def test_model_tiny_logits(self):
 

@@ -15,7 +15,7 @@
 from typing import Any, Dict
 
 from .DPODataset import IteratorDPODataset, MapDPODataset
-from .SFTDataset import IteratorSFTDataset, MapSFTDataset, Sequence
+from .SFTDataset import IteratorSFTDataset, MapSFTDataset, TextSequence
 
 
 def create_dataset(**dataset_config: Dict[str, Any]):
@@ -58,6 +58,6 @@ def create_indexed_dataset(data_file_prefix):
 
     indexed_dataset = make_sft_indexed_dataset(
         path=data_file_prefix,
-        dataclass=Sequence,
+        dataclass=TextSequence,
     )
     return indexed_dataset

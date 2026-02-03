@@ -136,14 +136,14 @@ class Qwen3NextConfig(PretrainedConfig):
         output_router_logits (`bool`, *optional*, defaults to `False`):
             Whether or not the router logits should be returned by the model. Enabling this will also
             allow the model to output the auxiliary loss, including load balancing loss and router z-loss.
-        router_aux_loss_coef (`float`, *optional*, defaults to 0.001):
-            The aux loss factor for the total loss.
         mlp_only_layers (`list[int]`, *optional*, defaults to `[]`):
             Indicate which layers use Qwen3NextMLP rather than Qwen3NextSparseMoeBlock
             The list contains layer index, from 0 to num_layers-1 if we have num_layers layers
             If `mlp_only_layers` is empty, `decoder_sparse_step` is used to determine the sparsity.
         layer_types (`list[str]`, *optional*):
             Types of each layer (attention or linear).
+        fd_fallback (`bool`, *optional*, defaults to `False`):
+            Whether fastdeploy fallback.
 
     ```python
     >>> from transformers import Qwen3NextModel, Qwen3NextConfig
@@ -194,9 +194,9 @@ class Qwen3NextConfig(PretrainedConfig):
         num_experts=512,
         norm_topk_prob=True,
         output_router_logits=False,
-        router_aux_loss_coef=0.001,
         mlp_only_layers=[],
         layer_types=None,
+        fd_fallback=False,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -216,6 +216,7 @@ class Qwen3NextConfig(PretrainedConfig):
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
         self.head_dim = head_dim
+        self.fd_fallback = fd_fallback
 
         self.layer_types = layer_types
         if self.layer_types is None:
@@ -240,7 +241,6 @@ class Qwen3NextConfig(PretrainedConfig):
         self.num_experts = num_experts
         self.norm_topk_prob = norm_topk_prob
         self.output_router_logits = output_router_logits
-        self.router_aux_loss_coef = router_aux_loss_coef
         self.mlp_only_layers = mlp_only_layers
 
         self.rope_parameters = rope_scaling

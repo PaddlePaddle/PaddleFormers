@@ -80,4 +80,4 @@ mpirun bash run_dsv3_4k.sh
 * 在 MoE 模型中，专家间负载不均衡也可能引发 OOM 错误。为此，合理引入 AuxLoss 及其无辅助损失机制至关重要。以下是实验过程中总结的关键注意事项：
     * Gate 计算隔离：e_score_correction_bias 应仅用于门控权重计算，避免传递至后续 FFN 模块。
     * AuxLoss 计算适配：在 SP 或 Subbatch 等并行策略下，需注意 seq_len 的实际取值，确保损失计算正确。
-    * 配置调整：Hugging Face 所提供的部分配置（如 aux_loss_alpha）需结合具体训练场景进行针对性调优。
+    * 配置调整：Hugging Face 所提供的部分配置（如 router_aux_loss_coef）需结合具体训练场景进行针对性调优。

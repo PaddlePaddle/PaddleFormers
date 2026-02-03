@@ -8,8 +8,17 @@
 | `encode_one_turn` | str | 只在 `template_backend` 为 `jinja` 时生效）`True`表示将多轮对话进行拆分，分别对每一轮对话套用`apply_chat_template`，`False`表示直接对整段对话套用`apply_chat_template` |
 
 ## 自定义 template
+
+### 源代码修改方式
 在`paddleformers/datasets/template/template.py`文件中，通过`register_template`实现自定义 template
+
+### 运行时外挂方式
+可通过`--custom_register_path`参数指定一个 Python 文件来注册自定义对话模板。
 
 ## 多模 plugin 接入流程
 
+### 源代码修改方式
 在 `paddleformers/datasets/template/mm_plugin.py` 文件中实现各种多模预处理的处理，基类是`BasePlugin`，已经实现了各种图片、视频、音频的预处理操作，如果需要自定义 plugin，需要继承`BasePlugin`实现自定义的类，如`Qwen2VLPlugin`。在自定义的类中实现各种多模数据预处理的操作，并在`PLUGINS`里面注册 template 名字和类名的对应关系
+
+### 运行时外挂方式
+可通过`--custom_register_path`参数指定一个 Python 文件来注册自定义 mm_plugin。在重写 plugin 后，需要进行`register_mm_plugin`，并在`register_template`中通过`get_mm_plugin`获取对应的 plugin。

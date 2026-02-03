@@ -151,3 +151,19 @@ class DataArguments:
         default=True,
         metadata={"help": "Whether to estimate max_steps before start training"},
     )
+    dataset_output_dir: str = field(
+        default="./dataset_output",
+        metadata={"help": "output path of offline sft datasets"},
+    )
+    new_special_tokens_path: str = field(
+        default=None,
+        metadata={"help": "The path of the new special tokens."},
+    )
+    custom_register_path: str = field(
+        default=None,
+        metadata={"help": "Register python file path for custom templates and mm_plugin."},
+    )
+    make_offline_data: bool = field(
+        default=False,
+        metadata={"help": "Make offline data for SFT training."},
+    )

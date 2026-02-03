@@ -15,7 +15,7 @@ padding_free: true
 
 ### model
 model_name_or_path: /root/paddlejob/gpfs/efficient_benchmark/huggingface/GLM-4.5-Air
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -63,7 +63,6 @@ moe_grouped_gemm: true
 moe_deep_gemm: false
 
 apply_rope_fusion: true
-fuse_rms_norm: true
 moe_router_force_load_balancing: false
 
 sequence_parallel: true
@@ -98,7 +97,5 @@ benchmark: true
 dataloader_num_workers: 24
 prefetch_factor: 24
 
-fuse_attention_qkv: true
-fuse_attention_ffn: true
 fp32_residual_connection: false
 tensorwise_offload_optimizer: true

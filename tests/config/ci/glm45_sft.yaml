@@ -15,7 +15,7 @@ prefetch_factor: 24
 
 ### model
 model_name_or_path: ./zai-org/GLM-4.5-Air
-attn_impl: flashmask
+_attn_implementation: flashmask
 lora: true
 lora_rank: 8
 
@@ -49,8 +49,6 @@ warmup_steps: 20
 learning_rate: 1.0e-4
 
 # performance
-fuse_attention_qkv: true
-fuse_attention_ffn: true
 moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
 tensor_model_parallel_size: 4
@@ -73,14 +71,10 @@ save_to_hf: true
 load_checkpoint_format: flex_checkpoint
 save_checkpoint_format: flex_checkpoint
 
-
-
 moe_router_force_load_balancing: true
 split_param: true
 apply_rope_fusion: true
-fuse_rms_norm: true
 fp32_residual_connection: false
-
 
 # pp
 pp_delay_scale_loss: true

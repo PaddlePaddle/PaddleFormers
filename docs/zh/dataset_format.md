@@ -144,6 +144,8 @@ python -u examples/tools/create_pretraining_data.py \
 
 ## 2.2. 指令微调（SFT）数据格式
 
+### 2.2.1. 在线数据流
+
 <details>
   <summary><b>messages 格式（点击展开/收起）</b></summary>
 
@@ -257,6 +259,29 @@ mkdir -p data/sft && tar -xf sft_online_data_messages.tar.gz -C data/sft/
 # erniekit格式
 wget https://paddleformers.bj.bcebos.com/datasets/release/v1.0/sft_online_data_erniekit.tar.gz
 mkdir -p data/sft && tar -xf sft_online_data_erniekit.tar.gz -C data/sft/
+```
+
+### 2.2.2. 离线比特数据流
+
+离线数据流需要按下面脚本生成离线比特数据流：
+```bash
+paddleformers-cli train examples/config/sft/full.yaml make_offline_data=true
+```
+
+* 制作离线数据集时，建议使用真实训练的 yaml 配置文件，另外需要注意以下参数：
+
+|参数名|类型|说明|
+|-|-|-|
+|`dataset_output_dir`|string|制作的离线数据集输出目录|
+|`estimation_output_file`|string|训练步数估计结果输出文件路径|
+
+训练的时候需要指定`dataset_type`为`offline`，`input_dir`为数据集路径，例如：
+```bash
+# 流式数据流dataloader_shuffle不生效，非流式生效，如果要保持一致建议设置dataloader_shuffle=false
+paddleformers-cli train examples/config/sft/full.yaml \
+    input_dir="dataset_output" \
+    dataset_type=offline \
+    dataloader_shuffle=false
 ```
 
 ## 2.3. 直接偏好优化（DPO）数据格式

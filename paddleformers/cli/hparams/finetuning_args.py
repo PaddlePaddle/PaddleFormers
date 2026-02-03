@@ -164,6 +164,9 @@ class SFTTrainingArguments(TrainingArguments):
         default=1e5,
         metadata={"help": "Maximum number of samples used in estimation."},
     )
+    estimation_output_file: str = field(
+        default=None, metadata={"help": "The output file of max_steps estimation result"}
+    )
 
 
 @dataclass
@@ -269,6 +272,10 @@ class FinetuningArguments(
     weight_quantize_algo: str = field(
         default=None,
         metadata={"help": "Model weight quantization algorithm including 'nf4'(qlora), 'weight_only_int8'."},
+    )
+    merge_with_qdq_base_model: bool = field(
+        default=False,
+        metadata={"help": "Whether to merge model with quantize_dequantized base-model weights."},
     )
     # fp8
     use_fp8: bool = field(

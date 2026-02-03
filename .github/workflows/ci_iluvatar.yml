@@ -1,0 +1,117 @@
+name: CI_ILUVATAR
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [develop, release/**]
+permissions: read-all
+
+concurrency:
+  group: ${{ github.event.pull_request.number }}-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  iluvatar_test:
+    name: iluvatar_test
+    runs-on: iluvatar-gpu-2
+    timeout-minutes: 60
+    container:
+      image: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/device/paddle-ixuca:3.3.0
+      env:
+        LD_LIBRARY_PATH: /usr/local/corex/lib
+        LIBRARY_PATH: /usr/local/corex/lib
+        http_proxy: http://oversea-website-proxy.aistudio.public:8888
+        https_proxy: http://oversea-website-proxy.aistudio.public:8888
+
+    steps:
+      - name: Print current runner name
+        run: |
+          echo "Current runner name: ${{ runner.name }}"
+          env
+          curl -v --proxy http://oversea-website-proxy.aistudio.public:8888 https://www.github.com
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request'
+                && github.event.pull_request.base.ref
+                || github.ref_name }}
+          submodules: 'recursive'
+          fetch-depth: 1000
+
+      - name: Merge PR (if needed)
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global user.name "PaddleFormersCI"
+          git config --global user.email "paddleformers_ci@example.com"
+          echo "Fetching and merging PR..."
+          git fetch origin pull/${{ github.event.pull_request.number }}/head:pr/${{ github.event.pull_request.number }}
+          git merge --no-ff pr/${{ github.event.pull_request.number }}
+          echo "PR Branch log "
+          git log --oneline -n 5 pr/${{ github.event.pull_request.number }}
+
+      - name: Run CI unittest
+        env:
+          MODEL_PATH: /aistudio/paddle_ci
+        run: |
+          set -e
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          
+          unset http_proxy
+          unset https_proxy
+
+          python -m pip install -r requirements.txt
+
+          echo "Uninstall PaddlePaddle and PaddleFormers beforehand..."
+          python -m pip uninstall paddlepaddle paddle-iluvatar-gpu paddleformers -y
+
+          retry_count=0
+          max_retries=3
+          echo "Install PaddlePaddle..."
+          while [ $retry_count -lt $max_retries ]; do
+            if python -m pip install --pre paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/; then
+              echo "PaddlePaddle installation successful"
+              break
+            else
+              retry_count=$((retry_count + 1))
+              if [ $retry_count -lt $max_retries ]; then
+                echo "PaddlePaddle installation failed, retrying in 10 seconds... (Attempt $retry_count/$max_retries)"
+                sleep 10
+              else
+                echo "PaddlePaddle installation failed after $max_retries attempts, Please try rerun this job."
+                exit 1
+              fi
+            fi
+          done
+
+          retry_count=0
+          while [ $retry_count -lt $max_retries ]; do
+            if python -m pip install --pre paddle-iluvatar-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/ixuca/; then
+              echo "paddle-iluvatar-gpu installation successful"
+              break
+            else
+              retry_count=$((retry_count + 1))
+              if [ $retry_count -lt $max_retries ]; then
+                echo "paddle-iluvatar-gpu installation failed, retrying in 10 seconds... (Attempt $retry_count/$max_retries)"
+                sleep 10
+              else
+                echo "paddle-iluvatar-gpu installation failed after $max_retries attempts, Please try rerun this job."
+                exit 1
+              fi
+            fi
+          done
+
+          echo "Install PaddleFormers..."
+          python -m pip install -e .
+          python -m pip install pytest
+          python -m pip install pytest-timeout
+
+          echo "============================Start running tests============================"
+          mkdir -p baidu
+          cp -r ${MODEL_PATH}/ERNIE-4.5-21B-A3B-PT baidu/
+          ixsmi
+          python -m pytest -v -s --tb=short tests/iluvatar_ci/
+          echo "============================All tests passed============================"
+          rm -rf baidu/
+          

@@ -66,7 +66,6 @@ pretrain_arguments = {
     "sharding": "",
     "virtual_pipeline_model_parallel_size": 1,
     "sequence_parallel": 0,
-    "fuse_rms_norm": "false",
     "max_seq_len": 1024,
     "learning_rate": 3e-04,
     "min_learning_rate": 1e-05,
