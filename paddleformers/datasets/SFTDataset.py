@@ -421,6 +421,14 @@ class SFTDataSet(IterableDataset):
         tokens = tokens + [self.tokenizer.eos_token_id]
         return tokens
 
+    def _encode_pretraining_example(self, example, actual_example_num):
+        # tokens
+        content = example["messages"][0]["content"]
+        tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(content))
+        # Add an EOS token at the end of each sample
+        tokens = tokens + [self.tokenizer.eos_token_id]
+        return tokens
+
     def _postprocess_sequence(self, example, actual_example_num):
         """Process code completion examples into token sequences.
 
