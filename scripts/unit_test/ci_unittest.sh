@@ -35,6 +35,7 @@ AGILE_COMPILE_BRANCH=$4
 
 
 install_requirements() {
+    start_ts=$(date +%s)
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
@@ -52,6 +53,8 @@ install_requirements() {
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
     python -m pip list >> ${log_path}/commit_info.txt
+    end_ts=$(date +%s)
+    echo -e "\033[32m install requirements cost $((end_ts - start_ts))s \033[0m"
 }
 
 set_env() {
@@ -116,12 +119,14 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo ' Testing all unittest cases '
     unset http_proxy && unset https_proxy
     set +e
+    export PYTHONFAULTHANDLER=1
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
+    timeout 10m \
     python -m pytest -v -s -n 8 \
         --dist no \
-        --maxfail=5 \
+        --maxfail=10 \
         --retries 3 --retry-delay 1 \
         --timeout 200 --durations 20 \
         --alluredir=result \

@@ -164,7 +164,7 @@ jobs:
           cp -r ${work_dir}/../../../models ./models
           echo "Check whether the local model file exists:"
           ls -l ./models
-          timeout 35m bash -x scripts/regression/ci_model_unittest.sh ${paddle_whl} false ${AGILE_COMPILE_BRANCH}
+          bash -x scripts/regression/ci_model_unittest.sh ${paddle_whl} false ${AGILE_COMPILE_BRANCH}
           '
           
       - name: Upload Products
