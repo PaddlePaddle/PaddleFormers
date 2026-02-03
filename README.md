@@ -180,11 +180,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 > git clone https://github.com/PaddlePaddle/PaddleFormers.git
 > cd PaddleFormers
 > # cuda12.6
-> python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+> python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
 > # cuda12.9
-> # python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+> # python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
 > # cuda13.0
-> # python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
+> # python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
 > ```
 ------
 > **安装方案二：** 如果您不想拉取源码，可以基于下面的命令安装 PaddleFormers 和 PaddleFleet。
