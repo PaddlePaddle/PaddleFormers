@@ -342,6 +342,7 @@ class DFNRopeVisionTransformerPretrainedModel(PretrainedModel):
         Args:
             config (dict): model configuration
         """
+        print("DFNRopeVisionTransformerConfig", config)
         super().__init__(config)
         self.spatial_merge_size = config.spatial_merge_size
 

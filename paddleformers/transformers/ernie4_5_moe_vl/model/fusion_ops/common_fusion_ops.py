@@ -73,6 +73,8 @@ def _fusion_flash_attention(
     if attn_mask_start_row_indices is not None:
         if use_sparse_flash_attn:
             if rr_flash_attn is None:
+                print("zhui debug:", q.shape, k.shape, v.shape, attn_mask_start_row_indices.shape)
+                print(attn_mask_start_row_indices)
                 out = flashmask_attention(
                     q,
                     k,
@@ -90,8 +92,10 @@ def _fusion_flash_attention(
                     causal=True,
                 )
         else:
+            print("zhui debug attn_mask_start_row_indices", attn_mask_start_row_indices)
             attention_mask = _gen_from_sparse_attn_mask_indices(attn_mask_start_row_indices, q.dtype)
             if rr_flash_attn is None:
+                print("zhui debug 94", attention_mask.shape if attention_mask is not None else None)
                 out = F.scaled_dot_product_attention(
                     q,
                     k,
