@@ -324,7 +324,12 @@ class DPOTrainer(Trainer):
                     if response_index[0] in list(range(0, per_device_train_batch_size)):
                         concatenated_inputs["response_indexs"].append(response_index)
                 concatenated_inputs["response_indexs"] = paddle.stack(concatenated_inputs["response_indexs"])
-                if model._layers.config.use_filtered_label_loss:
+                use_filtered_label_loss = (
+                    model._layers.config.use_filtered_label_loss
+                    if hasattr(model, "_layers")
+                    else model.config.use_filtered_label_loss
+                )
+                if use_filtered_label_loss:
                     last_batch_response_length = concatenated_inputs["response_indexs"][0, 1]
                     concatenated_inputs["response_indexs"][:, 1:] -= last_batch_response_length
 
