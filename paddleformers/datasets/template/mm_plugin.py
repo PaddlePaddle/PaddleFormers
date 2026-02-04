@@ -865,6 +865,105 @@ class Qwen2VLPlugin(BasePlugin):
 
 
 @dataclass
+class Qwen2OmniPlugin(Qwen2VLPlugin):
+    audio_bos_token: str = "<|audio_start|>"
+    audio_eos_token: str = "<|audio_end|>"
+
+    @override
+    def _get_mm_inputs(
+        self,
+        processor,
+        images,
+        videos,
+        audios,
+    ) -> None:
+        # 获取多模态处理器
+        image_processor = getattr(processor, "image_processor", None)
+        video_processor = getattr(processor, "video_processor", None)
+        mm_inputs = {}
+        if len(images) != 0:
+            images = self._regularize_images(
+                images,
+                image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
+                image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
+            )["images"]
+            mm_inputs.update(image_processor(images, return_tensors="pd"))
+
+        if len(videos) != 0:
+            videos = self._regularize_videos(
+                videos,
+                image_max_pixels=getattr(processor, "video_max_pixels", 256 * 256),
+                image_min_pixels=getattr(processor, "video_min_pixels", 16 * 16),
+                video_fps=getattr(processor, "video_fps", 2.0),
+                video_maxlen=getattr(processor, "video_maxlen", 128),
+            )
+            video_metadata = [
+                {"fps": getattr(processor, "video_fps", 24.0), "duration": len(video), "total_num_frames": len(video)}
+                for video in videos["videos"]
+            ]
+            mm_inputs.update(
+                video_processor(videos=videos["videos"], video_metadata=video_metadata, return_metadata=True)
+            )
+            temporal_patch_size = getattr(image_processor, "temporal_patch_size", 2)
+            if "second_per_grid_ts" in processor.model_input_names:
+                mm_inputs["second_per_grid_ts"] = [temporal_patch_size / fps for fps in videos["fps_per_video"]]
+
+        return mm_inputs
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ) -> list[dict[str, str]]:
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        num_image_tokens, num_video_tokens = 0, 0
+        messages = deepcopy(messages)
+        image_processor = getattr(processor, "image_processor")
+
+        merge_length = getattr(image_processor, "merge_size") ** 2
+        if self.expand_mm_tokens:
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            video_grid_thw = mm_inputs.get("video_grid_thw", [])
+        else:
+            image_grid_thw = [None] * len(images)
+            video_grid_thw = [None] * len(videos)
+
+        for message in messages:
+            content = message["content"]
+            while IMAGE_PLACEHOLDER in content:
+                image_seqlen = (
+                    image_grid_thw[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                )
+                content = content.replace(
+                    IMAGE_PLACEHOLDER,
+                    f"{self.vision_bos_token}{self.image_token * image_seqlen}{self.vision_eos_token}",
+                    1,
+                )
+                num_image_tokens += 1
+
+            while VIDEO_PLACEHOLDER in content:
+                video_seqlen = (
+                    video_grid_thw[num_video_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                )
+                content = content.replace(
+                    VIDEO_PLACEHOLDER,
+                    f"{self.vision_bos_token}{self.video_token * video_seqlen}{self.vision_eos_token}",
+                    1,
+                )
+                num_video_tokens += 1
+
+            message["content"] = content
+
+        return messages
+
+
+@dataclass
 class Qwen3VLPlugin(Qwen2VLPlugin):
     @override
     def _get_mm_inputs(
@@ -1186,6 +1285,7 @@ PLUGINS = {
     "qwen3_vl": Qwen3VLPlugin,
     "glm4v": GLM4VPlugin,
     "gemma3": Gemma3Plugin,
+    "qwen2_omni": Qwen2OmniPlugin,
 }
 
 
