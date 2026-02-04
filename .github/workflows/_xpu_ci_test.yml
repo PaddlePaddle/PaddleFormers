@@ -95,6 +95,7 @@ jobs:
           docker run --rm --net=host --cap-add=SYS_PTRACE --privileged --shm-size=64G  \
           -v $(pwd):/workspace -w /workspace \
           -v "/home/suijiaxin/model:/model" \
+          -v "/home/suijiaxin/images:/images" \
           -e "MODEL_PATH=${model_path}" \
           -e "PADDLEFORMERS_ARCHIVE_URL=${formers_archive_url}" \
           -e "PADDLE_WHL_URL=${PADDLE_WHL_URL}" \
@@ -126,6 +127,7 @@ jobs:
           unset https_proxy
           echo "============================开始运行pytest测试============================"
           ln -s /model baidu
+          ln -s /images tests/fixtures/dummy/sft-vl/
           export XPU_VISIBLE_DEVICES="0,1,2,3"
           python -m pytest -v -s --tb=short scripts/xpu_ci/
           exit_code=$?
