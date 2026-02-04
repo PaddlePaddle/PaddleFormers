@@ -2123,13 +2123,13 @@ def select_flex_ckpt_comm_method():
     world_size = dist.get_world_size()
     if not support_parallel_broadcast:
         logger.info(
-            "Automatically selected 'broadcast' communication method for reshard "
+            "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
             "because the current version does not support 'parallel_broadcast'"
         )
         comm_method = _BROADCAST
     elif world_size <= 64:
         logger.info(
-            f"Automatically selected 'broadcast' communication method for reshard "
+            f"Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
             f"because the current 'world_size':{world_size} is less than or equal to 64"
         )
         comm_method = _BROADCAST
@@ -2139,13 +2139,13 @@ def select_flex_ckpt_comm_method():
             pp_group = hcg.get_pipe_parallel_group()
             if pp_group is None or pp_group.nranks < 1:
                 logger.info(
-                    "Automatically selected 'broadcast' communication method for reshard "
+                    "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
                     "because the current pipeline_parallel_group is empty"
                 )
                 comm_method = _BROADCAST
         except Exception:
             logger.info(
-                "Automatically selected 'broadcast' communication method for reshard "
+                "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
                 "because failed to get pipeline_parallel_group"
             )
             comm_method = _BROADCAST
@@ -2154,13 +2154,13 @@ def select_flex_ckpt_comm_method():
             moe_group = hcg.get_expert_parallel_group()
             if moe_group is None or moe_group.nranks < 1:
                 logger.info(
-                    "Automatically selected 'broadcast' communication method for reshard "
+                    "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
                     "because the current expert_parallel_group is empty"
                 )
                 comm_method = _BROADCAST
         except Exception:
             logger.info(
-                "Automatically selected 'broadcast' communication method for reshard "
+                "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
                 "because failed to get expert_parallel_group"
             )
             comm_method = _BROADCAST
@@ -2177,7 +2177,7 @@ def select_flex_ckpt_comm_method():
 
         if total_size != world_size:
             logger.info(
-                "Automatically selected 'broadcast' communication method for reshard "
+                "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
                 f"because the total_size of the selected communication groups: "
                 f"{total_size} does not equal 'world_size':{world_size}"
             )
@@ -2191,9 +2191,12 @@ def select_flex_ckpt_comm_method():
 
     if _BROADCAST in all_rank_comm_method:
         logger.info(
-            "Automatically selected 'broadcast' communication method for reshard "
+            "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
             "because some process selected 'broadcast'"
         )
         comm_method = _BROADCAST
+
+    if comm_method == _PARALLEL_BROADCAST:
+        logger.info("Selected 'parallel_broadcast' communication method for FlexCheckpoint reshard.")
 
     return comm_method
