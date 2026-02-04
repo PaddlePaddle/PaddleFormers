@@ -340,7 +340,7 @@ class LlmMetaConfig:
         (
             "router_aux_loss_coef",
             Optional[float],
-            None,
+            0.0,
             "Coefficient for MoE router auxiliary loss (encourages balanced expert usage). Defaults to 0.0 (disable auxiliary loss).",
         ),
         (
