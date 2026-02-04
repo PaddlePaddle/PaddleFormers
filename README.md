@@ -239,9 +239,9 @@ model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-0.6B-Base", dtype="bflo
 
 input_features = tokenizer("请给我一段大模型的简短介绍：", return_tensors="pd")
 outputs = model.generate(**input_features, max_new_tokens=256)
-output_ids = outputs[0].tolist()
+output_ids = outputs[0].tolist()[0]
 
-print(tokenizer.decode(output_ids[0], skip_special_tokens=True))
+print(tokenizer.decode(output_ids, skip_special_tokens=True))
 ```
 
 **模型训练**
