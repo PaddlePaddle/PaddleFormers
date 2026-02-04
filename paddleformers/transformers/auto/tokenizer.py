@@ -241,11 +241,11 @@ class AutoTokenizer(hf.AutoTokenizer):
                     f"{', '.join(c for c in TOKENIZER_MAPPING_NAMES)}."
                 )
 
-            tokenizer_class = tokenizer_class_from_name(tokenizer_class_name)
+            tokenizer_class = tokenizer_class_from_name_hf(tokenizer_class_name)
 
-            # Not found in PaddleFormers, try local Transformers registry
+            # Not found in Transformers, try local PaddleFormers registry
             if tokenizer_class is None:
-                tokenizer_class = tokenizer_class_from_name_hf(tokenizer_class_name)
+                tokenizer_class = tokenizer_class_from_name(tokenizer_class_name)
 
             if tokenizer_class is None:
                 raise ValueError(f"Tokenizer class {tokenizer_class_name} is not currently imported.")
@@ -327,10 +327,10 @@ class AutoTokenizer(hf.AutoTokenizer):
             try:
                 return TokenizersBackend.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
             except Exception:
-                tokenizer_class = tokenizer_class_from_name(tokenizer_config_class)
-                # Not found in PaddleFormers, try local Transformers registry
+                tokenizer_class = tokenizer_class_from_name_hf(tokenizer_config_class)
+                # Not found in Transformers, try local PaddleFormers registry
                 if tokenizer_class is None:
-                    tokenizer_class = tokenizer_class_from_name_hf(tokenizer_config_class)
+                    tokenizer_class = tokenizer_class_from_name(tokenizer_config_class)
                 return tokenizer_class.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
 
         if "_commit_hash" in tokenizer_config:
@@ -347,17 +347,17 @@ class AutoTokenizer(hf.AutoTokenizer):
 
         if tokenizer_config_class is not None:
             tokenizer_class_candidate = tokenizer_config_class
-            tokenizer_class = tokenizer_class_from_name(tokenizer_class_candidate)
-            # Not found in PaddleFormers, try local Transformers registry
+            tokenizer_class = tokenizer_class_from_name_hf(tokenizer_class_candidate)
+            # Not found in Transformers, try local PaddleFormers registry
             if tokenizer_class is None:
-                tokenizer_class = tokenizer_class_from_name_hf(tokenizer_class_candidate)
+                tokenizer_class = tokenizer_class_from_name(tokenizer_class_candidate)
 
             if tokenizer_class is None and not tokenizer_config_class.endswith("Fast"):
                 tokenizer_class_candidate = f"{tokenizer_config_class}Fast"
-                tokenizer_class = tokenizer_class_from_name(tokenizer_class_candidate)
-                # Not found in PaddleFormers, try local Transformers registry
+                tokenizer_class = tokenizer_class_from_name_hf(tokenizer_class_candidate)
+                # Not found in Transformers, try local PaddleFormers registry
                 if tokenizer_class is None:
-                    tokenizer_class = tokenizer_class_from_name_hf(tokenizer_class_candidate)
+                    tokenizer_class = tokenizer_class_from_name(tokenizer_class_candidate)
 
             if tokenizer_class is not None and tokenizer_class.__name__ == "PythonBackend":
                 tokenizer_class = TokenizersBackend
@@ -373,10 +373,10 @@ class AutoTokenizer(hf.AutoTokenizer):
             _class = config.tokenizer_class
             if "PreTrainedTokenizerFast" not in _class:
                 _class = _class.replace("Fast", "")
-            tokenizer_class = tokenizer_class_from_name(_class)
-            # Not found in PaddleFormers, try local Transformers registry
+            tokenizer_class = tokenizer_class_from_name_hf(_class)
+            # Not found in Transformers, try local PaddleFormers registry
             if tokenizer_class is None:
-                tokenizer_class = tokenizer_class_from_name_hf(_class)
+                tokenizer_class = tokenizer_class_from_name(_class)
             return tokenizer_class.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
 
         if has_remote_code:
@@ -435,16 +435,16 @@ class AutoTokenizer(hf.AutoTokenizer):
             if tokenizer_config_class != "TokenizersBackend" and "Fast" in tokenizer_config_class:
                 tokenizer_config_class = tokenizer_config_class[:-4]
 
-            tokenizer_class = tokenizer_class_from_name(tokenizer_config_class)
-            # Not found in PaddleFormers, try local Transformers registry
+            tokenizer_class = tokenizer_class_from_name_hf(tokenizer_config_class)
+            # Not found in Transformers, try local PaddleFormers registry
             if tokenizer_class is None:
-                tokenizer_class = tokenizer_class_from_name_hf(tokenizer_config_class)
+                tokenizer_class = tokenizer_class_from_name(tokenizer_config_class)
 
             if tokenizer_class is None and not tokenizer_config_class.endswith("Fast"):
-                tokenizer_class = tokenizer_class_from_name(tokenizer_config_class + "Fast")
-                # Not found in PaddleFormers, try local Transformers registry
+                tokenizer_class = tokenizer_class_from_name_hf(tokenizer_config_class + "Fast")
+                # Not found in Transformers, try local PaddleFormers registry
                 if tokenizer_class is None:
-                    tokenizer_class = tokenizer_class_from_name_hf(tokenizer_config_class + "Fast")
+                    tokenizer_class = tokenizer_class_from_name(tokenizer_config_class + "Fast")
             if tokenizer_class is not None and tokenizer_class.__name__ == "PythonBackend":
                 tokenizer_class = TokenizersBackend
             if tokenizer_class is None:
