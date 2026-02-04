@@ -209,6 +209,7 @@ class DPODataSet(IterableDataset):
                 - rejected: Complete conversation sequence with rejected response
                 - session_start_index: Starting position of the response in multi-turn conversation
                 - score_delta: Score difference (fixed to 1.0)
+                - has_mm: List indicating multimedia presence in "messages"+"chosen_response" and "messages"+"rejected_response"
         """
         chosen_m, rejected_m = deepcopy(example["messages"]), deepcopy(example["messages"])
         if self.template_backend == "jinja":
@@ -224,7 +225,7 @@ class DPODataSet(IterableDataset):
         chosen_m.extend(example["chosen_response"])
         rejected_m.extend(example["rejected_response"])
 
-        # Check if multimedia tags are included in "messages", "chosen_response", and "rejected_response"
+        # Check if multimedia tags are included in "messages"+"chosen_response", and "messages"+"rejected_response"
         def check_multimedia_tags(messages):
             for message in messages:
                 if isinstance(message, dict) and "content" in message:

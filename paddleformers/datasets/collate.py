@@ -49,9 +49,7 @@ def dpo_collate_fn(
     max_seq_len=None,
     padding_free=False,
     use_filtered_label_loss=True,
-    use_fused_head_and_loss_fn=True,
     use_response_score_delta=False,
-    packing=False,
 ):
     """Convert batch data into tensor for DPO.
 
@@ -61,10 +59,12 @@ def dpo_collate_fn(
         tokenizer (Tokenizer): Text tokenizer for processing sequence components.
         max_seq_len (int, optional): Maximum sequence length for padding/truncation.
             If None, will raise ValueError. Defaults to None.
+        padding_free (bool, optional): Whether to perform padding-free concatenation.
+            If True, concatenates sequences without explicit padding. Defaults to False.
         use_filtered_label_loss (bool, optional): Whether to use sparse indexing for loss calculation.
             Enables memory-efficient indexing for large sequences. Defaults to True.
-        use_fused_head_and_loss_fn (bool, optional): Whether to use fused kernel to calculate lm head and loss.
-            Optimizes for memory access patterns. Defaults to True.
+        use_response_score_delta (bool, optional): Whether to include response score deltas in the output.
+            If True, returns score deltas along with other tensors. Defaults to False.
 
     Returns:
         Dict[str, np.ndarray]: Processed tensor dictionary containing:
@@ -74,6 +74,7 @@ def dpo_collate_fn(
             - response_indexs (int32): Response span indices [batch_size, 4]
             - attention_mask (float32, optional): Attention mask matrix [batch_size, 1, max_seq_len, max_seq_len]
             - attn_mask_startend_row_indices (int32, optional): Sparse attention row indices [batch_size, max_seq_len]
+            - score_deltas (float32, optional): Response score deltas [batch_size, 1]. Only returned if use_response_score_delta is True.
     """
     # batch = [
     #     [Sequence1],             # sequences1, when packing = False, the sequences contains only 1 sample
@@ -192,9 +193,7 @@ def mm_dpo_collate_fn(
     max_seq_len=None,
     padding_free=False,
     use_filtered_label_loss=True,
-    use_fused_head_and_loss_fn=True,
     use_response_score_delta=False,
-    packing=False,
     model=None,
 ):
     """Convert batch data into tensor for DPO.
@@ -205,11 +204,16 @@ def mm_dpo_collate_fn(
         tokenizer (Tokenizer): Text tokenizer for processing sequence components.
         max_seq_len (int, optional): Maximum sequence length for padding/truncation.
             If None, will raise ValueError. Defaults to None.
+        padding_free (bool, optional): Whether to perform padding-free concatenation.
+            If True, concatenates sequences without explicit padding. Defaults to False.
         use_filtered_label_loss (bool, optional): Whether to use sparse indexing for loss calculation.
             Enables memory-efficient indexing for large sequences. Defaults to True.
-        use_fused_head_and_loss_fn (bool, optional): Whether to use fused kernel to calculate lm head and loss.
-            Optimizes for memory access patterns. Defaults to True.
-
+        use_response_score_delta (bool, optional): Whether to include response score deltas in the output.
+            If True, returns score deltas along with other tensors. Defaults to False.
+        model (Optional[Union[LoRAModel, None]], optional): The model instance, used for certain attribute checks.
+            If provided, checks for specific attributes like "get_rope_index" and "get_token_type_ids".
+            Defaults to None.
+          
     Returns:
         Dict[str, np.ndarray]: Processed tensor dictionary containing:
             - input_ids (int32): Padded token ids [batch_size, max_seq_len]
@@ -218,6 +222,11 @@ def mm_dpo_collate_fn(
             - response_indexs (int32): Response span indices [batch_size, 4]
             - attention_mask (float32, optional): Attention mask matrix [batch_size, 1, max_seq_len, max_seq_len]
             - attn_mask_startend_row_indices (int32, optional): Sparse attention row indices [batch_size, max_seq_len]
+            - score_deltas (float32, optional): Response score deltas [batch_size, 1]. Only returned if use_response_score_delta is True.
+            - pixel_values (np.ndarray): Image pixel values [batch_size, num_channels, height, width]
+            - image_grid_thw (List[List[int]]): Image grid dimensions [batch_size, 3] (time, height, width)
+            - pixel_values_videos (np.ndarray): Video pixel values [batch_size, num_frames, num_channels, height, width]
+            - video_grid_thw (List[List[int]]): Video grid dimensions [batch_size, 3] (time, height, width)
     """
     # batch = [
     #     [Sequence1],             # sequences1, when packing = False, the sequences contains only 1 sample
@@ -343,7 +352,7 @@ def mm_dpo_collate_fn(
             if use_response_score_delta:
                 input_dict["score_deltas"].append(sequence.score_delta)
 
-        # 3.4 vl-data & vl-position_ids
+        # 3.4 vl-parameters & vl-position_ids
         original_position_ids = []
         pixel_values = []
         image_grid_thw = []

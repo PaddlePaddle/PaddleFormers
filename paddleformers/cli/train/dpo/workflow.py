@@ -408,8 +408,6 @@ def run_dpo(
             max_seq_len=max_seq_len,
             padding_free=data_args.padding_free,
             use_filtered_label_loss=model_config.use_filtered_label_loss,
-            use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
-            packing=data_args.packing,
             model=model,
         )
     else:
@@ -420,8 +418,6 @@ def run_dpo(
             max_seq_len=max_seq_len,
             padding_free=data_args.padding_free,
             use_filtered_label_loss=model_config.use_filtered_label_loss,
-            use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
-            packing=data_args.packing,
         )
     trainer = DPOTrainer(
         model=model,
