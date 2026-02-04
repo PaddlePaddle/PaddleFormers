@@ -109,17 +109,13 @@ with open("new_tool_call_dataset_demo.jsonl", "w") as f:
 使用如下脚本进行模型的预测，我们在这条数据中提供了7种不同的工具，其中一种名为`search_recipe`的工具可以完成用户的需求：
 
 ```python
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from paddleformers.transformers import AutoModelForCausalLM, AutoTokenizer
 
 model_name = "Qwen/Qwen3-0.6B"
 
 # load the tokenizer and the model
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    dtype="auto",
-    device_map="auto"
-)
+model = AutoModelForCausalLM.from_pretrained(model_name)
 
 # prepare the model input
 prompt = "I have some chicken, broccoli, and cheese. Can you find me a recipe?"
@@ -142,15 +138,15 @@ text = tokenizer.apply_chat_template(
     tools=tools,
     enable_thinking=False # Switches between thinking and non-thinking modes. Default is True.
 )
-model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
+model_inputs = tokenizer([text], return_tensors="pd")
 
 # conduct text completion
-generated_ids = model.generate(
+outputs = model.generate(
     **model_inputs,
     do_sample=False,
     max_new_tokens=32768
 )
-output_ids = generated_ids[0][len(model_inputs.input_ids[0]):].tolist()
+output_ids = outputs[0].tolist()[0]
 
 content = tokenizer.decode(output_ids, skip_special_tokens=True).strip("\n")
 
@@ -190,6 +186,7 @@ content: Sure! Here's a recipe using chicken, broccoli, and cheese:
   3. Add the broccoli and cheese to the oven and cook for 15-20 minutes.
   4. Serve warm.
 
+Let me know if you need more details!
 ```
 
 模型并没有调用工具，而是产生了幻觉，直接回答了用户的问题。
