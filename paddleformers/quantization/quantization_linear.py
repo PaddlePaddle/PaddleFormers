@@ -405,13 +405,6 @@ class QuantizationLinear(nn.Layer):
             self.state += 1
         return output
 
-    def sharded_state_dict(
-        self,
-        structured_name_prefix: str = "",
-    ):
-        state_dict = self.state_dict(structured_name_prefix="")
-        return build_sharded_state_dict(state_dict, {"quant_weight": 1, "weight_scale": 0}, structured_name_prefix)
-
 
 class FleetQuantizationLinear(QuantizationLinear):
     def __init__(self, in_features, out_features, skip_bias_add, **kwargs):

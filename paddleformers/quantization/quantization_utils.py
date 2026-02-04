@@ -38,9 +38,6 @@ from ..utils.log import logger
 from .qat_utils import quantize
 from .quantization_linear import (
     ColumnParallelQuantizationLinear,
-    FleetColumnParallelQuantizationLinear,
-    FleetQuantizationLinear,
-    FleetRowParallelQuantizationLinear,
     QuantizationLinear,
     RowParallelQuantizationLinear,
     dequant_weight,
@@ -57,6 +54,12 @@ if is_paddlefleet_available():
         ColumnParallelLinear as FleetColumnParallelLinear,
     )
     from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
+
+    from .quantization_linear import (
+        FleetColumnParallelQuantizationLinear,
+        FleetQuantizationLinear,
+        FleetRowParallelQuantizationLinear,
+    )
 else:
     # Define mock objects or alternative implementations when paddlefleet is not available
     def get_tensor_model_parallel_group():
@@ -72,6 +75,15 @@ else:
         pass
 
     class FleetRowParallelLinear:
+        pass
+
+    class FleetColumnParallelQuantizationLinear:
+        pass
+
+    class FleetQuantizationLinear:
+        pass
+
+    class FleetRowParallelQuantizationLinear:
         pass
 
 

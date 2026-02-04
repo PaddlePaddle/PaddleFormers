@@ -317,6 +317,27 @@ class BasePlugin(MMPluginMixin):
         self._validate_input(processor, images, videos, audios)
         return messages
 
+    def process_tokens(self, tokens, processor):
+        r"""Pre-process input tokens for VLMs."""
+
+        labels = deepcopy(tokens)
+
+        tokenizer = getattr(processor, "tokenizer")
+
+        masked_tokens = getattr(self, "masked_tokens", None)
+        if masked_tokens:
+            masked_tokens_ids = tokenizer.convert_tokens_to_ids(masked_tokens)
+
+            if len(masked_tokens) != len(masked_tokens_ids):
+                raise ValueError(
+                    f"The number of masked tokens {masked_tokens} does not match the number of masked tokens ids {masked_tokens_ids} tokens."
+                )
+
+            # Mask tokens that should be ignored in loss calculation
+            for i, token in enumerate(labels):
+                if token in masked_tokens_ids:
+                    labels[i] = -100
+
     def get_mm_inputs(
         self,
         images,
@@ -472,6 +493,8 @@ class PaddleOCRVLPlugin(BasePlugin):
                 num_image_tokens += 1
 
             message["content"] = content
+
+        self.masked_tokens = [self.image_token, self.image_bos_token, self.image_eos_token]
 
         return messages
 

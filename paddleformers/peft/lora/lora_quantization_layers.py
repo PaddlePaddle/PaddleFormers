@@ -126,13 +126,6 @@ class QuantizationLoRALinear(QuantizationLoRABaseLinear):
             result += (self.lora_dropout(x) @ self.lora_A @ self.lora_B) * self.scaling
         return result
 
-    def sharded_state_dict(
-        self,
-        structured_name_prefix: str = "",
-    ):
-        state_dict = self.state_dict(structured_name_prefix="")
-        return build_sharded_state_dict(state_dict, {"weight": 0, "lora_A": 0}, structured_name_prefix)
-
 
 class FleetQuantizationLoRALinear(QuantizationLoRALinear):
     def __init__(self, layer, skip_bias_add, lora_config):
