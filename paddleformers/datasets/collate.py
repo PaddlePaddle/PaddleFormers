@@ -401,6 +401,9 @@ def mm_dpo_collate_fn(
             input_dict[key] = np.array(input_dict[key], dtype=np.float32)
         elif key == "attn_mask_startend_row_indices":
             input_dict[key] = np.array(input_dict[key], dtype=np.int32)[..., None]
+        elif key == "position_ids":
+            input_dict[key] = paddle.concat(input_dict[key], axis=bs_idx_in_rope)
+            input_dict[key] = np.array(input_dict[key])
         else:
             input_dict[key] = np.array(input_dict[key])
 
