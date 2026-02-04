@@ -48,7 +48,7 @@ export FLAGS_use_stride_compute_kernel=False
 
 unset http_proxy https_proxy
 
-log_file=qwen3vl_lora_${machine}.txt
+log_file=qwen3vl_lora_${machine}_multi_card.txt
 gt_loss_file=qwen3vl_lora_${machine}_multi_card_gt_loss.txt
 
 set +e

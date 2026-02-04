@@ -65,7 +65,7 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 
 unset http_proxy https_proxy
 
-log_file=qwen3vl_sft_${machine}_${step}.txt
+log_file=qwen3vl_sft_${machine}_${step}_multi_card.txt
 gt_loss_file=qwen3vl_sft__${machine}_${step}_multi_card_gt_loss.txt
 
 set +e
