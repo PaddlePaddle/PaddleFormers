@@ -186,6 +186,7 @@ def dpo_collate_fn(
 
     return input_dict
 
+
 def mm_dpo_collate_fn(
     batch,
     tokenizer,
@@ -213,7 +214,7 @@ def mm_dpo_collate_fn(
         model (Optional[Union[LoRAModel, None]], optional): The model instance, used for certain attribute checks.
             If provided, checks for specific attributes like "get_rope_index" and "get_token_type_ids".
             Defaults to None.
-          
+
     Returns:
         Dict[str, np.ndarray]: Processed tensor dictionary containing:
             - input_ids (int32): Padded token ids [batch_size, max_seq_len]
@@ -375,7 +376,7 @@ def mm_dpo_collate_fn(
                 rejected_input_ids = chosen_input_ids[:-chosen_len] + seq.token_ids[-rejected_len:]
                 func_params = inspect.signature(get_rope_func).parameters.keys()
                 filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
-                
+
                 res_position_ids = []
                 for i, input_ids in enumerate([chosen_input_ids, rejected_input_ids]):
                     if seq.has_mm[i]:
@@ -383,9 +384,13 @@ def mm_dpo_collate_fn(
                         res_position_ids.append(pos_ids)
                     else:
                         input_ids = paddle.to_tensor([input_ids])
-                        res_position_ids.append(paddle.arange(input_ids.shape[1]).view(1, 1, -1).expand(3, input_ids.shape[0], -1))
-                original_position_ids.append(paddle.concat([res_position_ids[0], res_position_ids[1][:, :, -rejected_len:]], axis=-1))
-        
+                        res_position_ids.append(
+                            paddle.arange(input_ids.shape[1]).view(1, 1, -1).expand(3, input_ids.shape[0], -1)
+                        )
+                original_position_ids.append(
+                    paddle.concat([res_position_ids[0], res_position_ids[1][:, :, -rejected_len:]], axis=-1)
+                )
+
         if len(original_position_ids) > 0:
             original_position_ids = paddle.concat(original_position_ids, axis=-1)
             padded_position_ids = paddle.nn.functional.pad(
@@ -413,7 +418,7 @@ def mm_dpo_collate_fn(
             input_dict["pixel_values"].append(pixel_values)
             input_dict["image_grid_thw"].append(image_grid_thw)
             input_dict["pixel_values_videos"].append(pixel_values_videos)
-            input_dict["video_grid_thw"].append(video_grid_thw)       
+            input_dict["video_grid_thw"].append(video_grid_thw)
 
     # 4.convert to np.array & concat position_ids
     for key in input_dict:
@@ -428,6 +433,7 @@ def mm_dpo_collate_fn(
             input_dict[key] = np.array(input_dict[key])
 
     return input_dict
+
 
 def collate_fn(
     batch: List[List[Sequence]], tokenizer, training_args, model_args, max_seq_len: int, padding_free: bool

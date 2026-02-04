@@ -173,8 +173,8 @@ def run_dpo(
         model_config.vision_config._attn_implementation = model_args._attn_implementation
         model_config.vision_config.recompute_granularity = model_config.recompute_granularity
         model_config.vision_config.recompute_method = model_config.recompute_method
-        model_config.vision_config.recompute_num_layers = model_config.recompute_num_layers    
-    
+        model_config.vision_config.recompute_num_layers = model_config.recompute_num_layers
+
     if not training_args.reference_free and not model_args.lora:
         ref_model_config = AutoConfig.from_pretrained(
             model_args.model_name_or_path,
@@ -194,7 +194,7 @@ def run_dpo(
             ref_model_config.vision_config._attn_implementation = model_args._attn_implementation
             ref_model_config.vision_config.recompute_granularity = model_config.recompute_granularity
             ref_model_config.vision_config.recompute_method = model_config.recompute_method
-            ref_model_config.vision_config.recompute_num_layers = model_config.recompute_num_layers        
+            ref_model_config.vision_config.recompute_num_layers = model_config.recompute_num_layers
 
     if model_args.stage == "VL-DPO":
         model_class = AutoModelForConditionalGeneration

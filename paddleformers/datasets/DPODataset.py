@@ -50,6 +50,7 @@ class Sequence:
     audios: List[str] = field(default_factory=list)
     mm_inputs: Dict = field(default_factory=dict)
 
+
 class DPODataSet(IterableDataset):
     def __init__(self, **dataset_config):
 
@@ -233,6 +234,7 @@ class DPODataSet(IterableDataset):
                     if "<image>" in content or "<audio>" in content or "<video>" in content:
                         return True
             return False
+
         has_mm = [check_multimedia_tags(chosen_m), check_multimedia_tags(rejected_m)]
 
         example["chosen"] = {"messages": chosen_m}
@@ -251,7 +253,7 @@ class DPODataSet(IterableDataset):
         images = example.get("images", [])
         videos = example.get("videos", [])
         audios = example.get("audios", [])
-        mm_inputs = None 
+        mm_inputs = None
 
         # 1.Encode chosen and rejected sequences
         if self.template_backend == "jinja":
