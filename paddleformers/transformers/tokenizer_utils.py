@@ -378,6 +378,14 @@ class PaddleTokenizerMixin:
             **kwargs,
         )
 
+    def save_pretrained(self, save_directory, **kwargs):
+        save_files = super().save_pretrained(save_directory, **kwargs)
+        # NOTE:
+        if self.__class__.__name__ == "LlamaTokenizer":
+            filename_prefix = kwargs.get("filename_prefix", None)
+            out_vocab_file = self.save_vocabulary(save_directory, filename_prefix)
+        return save_files + out_vocab_file
+
     def _encode_chat_inputs_openai_format(
         self,
         conversations: Dict[str, Any],
