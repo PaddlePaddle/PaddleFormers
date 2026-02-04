@@ -133,7 +133,7 @@ def get_lora_layers():
         "ColumnSequenceParallelLoRALinear": ColumnSequenceParallelLoRALinear,
         "LoRAConv2D": LoRAConv2D,
         "LoRALinear": LoRALinear,
-        "LoRAExperts": LoRAMoeExperts,
+        "LoRAMoeExperts": LoRAMoeExperts,
         "RowParallelLoRALinear": RowParallelLoRALinear,
         "RowSequenceParallelLoRALinear": RowSequenceParallelLoRALinear,
         "FleetLoRALinear": FleetLoRALinear,
@@ -148,7 +148,7 @@ lora_layers = get_lora_layers()
 ColumnParallelLoRALinear = lora_layers["ColumnParallelLoRALinear"]
 ColumnSequenceParallelLoRALinear = lora_layers["ColumnSequenceParallelLoRALinear"]
 LoRAConv2D = lora_layers["LoRAConv2D"]
-LoRAExperts = lora_layers["LoRAExperts"]
+LoRAMoeExperts = lora_layers["LoRAMoeExperts"]
 LoRALinear = lora_layers["LoRALinear"]
 RowParallelLoRALinear = lora_layers["RowParallelLoRALinear"]
 RowSequenceParallelLoRALinear = lora_layers["RowSequenceParallelLoRALinear"]
@@ -175,7 +175,7 @@ AVAILABLE_LAYERS = [
     ColumnSequenceParallelLoRALinear,
     LoRAConv2D,
     LoRALinear,
-    LoRAExperts,
+    LoRAMoeExperts,
     RowParallelLoRALinear,
     RowSequenceParallelLoRALinear,
     ColumnParallelQuantizationLoRALinear,
@@ -183,7 +183,7 @@ AVAILABLE_LAYERS = [
     RowParallelQuantizationLoRALinear,
 ]
 
-MOE_EXPERTS_LORA_MAPPING = {"MoeExperts": LoRAExperts}
+MOE_EXPERTS_LORA_MAPPING = {"MoeExperts": LoRAMoeExperts}
 
 
 class LoRAModel(nn.Layer):
@@ -912,7 +912,7 @@ class LoRAModel(nn.Layer):
             # Lora row parallel will spilt lora A matrix
             self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
         elif isinstance(module, MoeExpertsBase):
-            cls = MOE_EXPERTS_LORA_MAPPING.get(module.__class__.__name__, LoRAExperts)
+            cls = MOE_EXPERTS_LORA_MAPPING.get(module.__class__.__name__, LoRAMoeExperts)
             lora_module = cls(
                 module,
                 r=lora_config.r,
@@ -985,7 +985,7 @@ class LoRAModel(nn.Layer):
                 or isinstance(layer, FleetColumnSequenceParallelLoRALinear)
                 or isinstance(layer, RowSequenceParallelLoRALinear)
                 or isinstance(layer, FleetRowSequenceParallelLoRALinear)
-                or isinstance(layer, LoRAExperts)
+                or isinstance(layer, LoRAMoeExperts)
                 or (QuantizationLoRALinear is not None and isinstance(layer, QuantizationLoRALinear))
                 or (
                     ColumnParallelQuantizationLoRALinear is not None
