@@ -383,7 +383,7 @@ class PaddleTokenizerMixin:
 
         # NOTE: Compatibility fix for ERNIE tokenizer vocabulary saving
         if self.__class__.__name__ == "LlamaTokenizer":
-            out_vocab_file = self.save_vocabulary(save_directory, **kwargs)
+            out_vocab_file = self.save_vocabulary(save_directory, kwargs.get("filename_prefix"))
             save_files = save_files + out_vocab_file
 
         return save_files
