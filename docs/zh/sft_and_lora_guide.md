@@ -275,11 +275,11 @@ text = tokenizer.apply_chat_template(
 model_inputs = {
     "input_ids": paddle.to_tensor([tokenizer.encode(text)]),
 }
-generated_ids = model.generate(
+outputs = model.generate(
     **model_inputs,
     max_new_tokens=128,
 )
-output_ids = generated_ids[0].tolist()[0]
+output_ids = outputs[0].tolist()[0]
 
 # decode the generated ids
 generate_text = tokenizer.decode(output_ids, skip_special_tokens=True)
