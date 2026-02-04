@@ -25,15 +25,22 @@ mkdir -p $log_path
 AGILE_COMPILE_BRANCH=$3
 
 kill_process() {
-    echo -e "\033[32m print python/pytest/xdist processes \033[0m"
-    ps -aux | grep python
-    ps -aux | grep python | grep -E 'pytest|exec\(eval' | grep -v grep || true
-    
-    echo -e "\033[32m kill python/pytest/xdist processes \033[0m" 
+    echo -e "\033[32m===== print python / pytest / xdist processes =====\033[0m"
+
+    ps -o pid,ppid,tty,stat,etime,cmd -C python | \
+      grep -E 'pytest|exec\(eval|paddleformers|launcher\.py' || true
+
+    echo -e "\033[32m===== kill python / pytest / xdist processes =====\033[0m"
+
     TTY=$(tty | sed 's#/dev/##')
-    ps -aux | awk -v tty="$TTY" '$7==tty && $11 ~ /python/ {print $2}' | xargs -r kill -9
-    ps aux | grep paddleformers/cli/launcher.py | awk '{print $2}' | xargs kill -9
-    pkill -f paddleformers/cli/launcher.py
+
+    # kill pytest + xdist on current tty
+    ps -o pid=,tty=,cmd= -C python | \
+      awk -v tty="$TTY" '$2==tty && $3 ~ /pytest|exec\(eval/ {print $1}' | \
+      xargs -r kill -9 || true
+
+    # kill paddleformers launcher (distributed training)
+    pkill -9 -f paddleformers/cli/launcher.py || true
 }
 
 install_requirements() {
