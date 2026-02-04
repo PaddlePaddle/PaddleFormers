@@ -23,9 +23,14 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from tokenizers import AddedToken  # noqa: F401
 from transformers import BatchEncoding
-from transformers.tokenization_utils import (
-    PreTrainedTokenizer as PreTrainedTokenizer_tf,
-)
+
+try:
+    from transformers.tokenization_python import (
+        PreTrainedTokenizer as PreTrainedTokenizer_tf,
+    )
+except ImportError:
+    from transformers.tokenization_utils import PreTrainedTokenizer as PreTrainedTokenizer_tf
+
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase  # noqa: F401
 from transformers.tokenization_utils_base import (
     ADDED_TOKENS_FILE,
@@ -34,13 +39,17 @@ from transformers.tokenization_utils_base import (
     SPECIAL_TOKENS_MAP_FILE,
     TOKENIZER_CONFIG_FILE,
 )
-from transformers.tokenization_utils_fast import (
-    PreTrainedTokenizerFast as PreTrainedTokenizerFast_tf,
-)
+
+try:
+    from transformers.tokenization_utils_tokenizers import (
+        PreTrainedTokenizerFast as PreTrainedTokenizerFast_tf,
+    )
+except ImportError:
+    from transformers.tokenization_utils_fast import PreTrainedTokenizerFast as PreTrainedTokenizerFast_tf
 from transformers.utils.generic import ExplicitEnum
 
 from ..utils import is_paddle_available
-from ..utils.download import DownloadSource, resolve_file_path
+from ..utils.download import resolve_file_path
 from ..utils.log import logger
 
 if is_paddle_available():
@@ -91,7 +100,9 @@ class PaddleTokenizerMixin:
         Only methods that actually exist in the class will be wrapped.
         """
         methods_to_wrap = [
-            "__call__",
+            # "__call__",
+            "_encode_plus",
+            "_batch_encode_plus",
             "pad",
             "encode_plus",
             "batch_encode_plus",
@@ -160,6 +171,31 @@ class PaddleTokenizerMixin:
             return result
 
         setattr(self, method_name, wrapper)
+
+    def __call__(self, *args, **kwargs):
+        import paddle
+
+        return_tensors = kwargs.get("return_tensors", None)
+        if return_tensors == "pd":
+            kwargs.pop("return_tensors", None)
+        result = super().__call__(*args, **kwargs)
+        if return_tensors == "pd":
+
+            def convert(inputs):
+                if isinstance(inputs, list):
+                    if len(inputs) > 0 and isinstance(inputs[0], int):
+                        return paddle.to_tensor([inputs])
+                    return paddle.to_tensor(inputs)
+                elif isinstance(inputs, int):
+                    return paddle.to_tensor(inputs)
+                elif isinstance(inputs, BatchEncoding):
+                    for k, v in inputs.items():
+                        inputs[k] = convert(v)
+                    return inputs
+                return inputs
+
+            result = convert(result)
+        return result
 
     def apply_chat_template(
         self,
@@ -255,14 +291,6 @@ class PaddleTokenizerMixin:
         if download_hub is None:
             download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
         logger.info(f"Using download source: {download_hub}")
-
-        # If downloaded from hf, use the native hf from pretrained
-        if download_hub == DownloadSource.HUGGINGFACE:
-            return super().from_pretrained(
-                pretrained_model_name_or_path,
-                *args,
-                **kwargs,
-            )
 
         cache_dir = kwargs.pop("cache_dir", None)
         subfolder = kwargs.pop("subfolder", "")

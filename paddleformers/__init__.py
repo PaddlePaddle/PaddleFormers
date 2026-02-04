@@ -77,6 +77,7 @@ else:
 import os
 
 PADDLEFORMERS_TESTING = os.environ.get("PADDLEFORMERS_TESTING", False)
+sys.modules["torchcodec"] = None  # Explicitly disable torchcodec to prevent optional dependency issues
 if "torch" not in sys.modules and not PADDLEFORMERS_TESTING:
     sys.modules["torch"] = None
     sys.modules["torchvision"] = None

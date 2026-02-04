@@ -26,31 +26,14 @@ sys.modules["paddle"] = paddle_shadow
 
 
 class TestTokenizer(unittest.TestCase):
-    def test_slow_tokenizer_from_pretrained(self):
-        tokenizer = AutoTokenizer.from_pretrained("ModelHub/Qwen2-7B", use_fast=False)
-        if hasattr(tokenizer, "is_fast"):
-            self.assertFalse(tokenizer.is_fast)
-        else:
-            self.assertNotIn("Fast", tokenizer.__class__.__name__)
-
-    def test_slow_tokenizer_save_pretrained(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tokenizer = AutoTokenizer.from_pretrained("ModelHub/Qwen2-7B", use_fast=False)
-            special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}
-            tokenizer.add_special_tokens(special_tokens_dict)
-            tokenizer.add_tokens(["new_word", "another_word"])
-            tokenizer.model_max_length = 512
-            tokenizer.save_pretrained(tmpdir)
-            self.assertTrue(os.path.exists(os.path.join(tmpdir, "tokenizer_config.json")))
-
-    def test_fast_tokenizer_from_pretrained(self):
+    def test_tokenizer_from_pretrained(self):
         tokenizer = AutoTokenizer.from_pretrained("ModelHub/Qwen2-7B")
         if hasattr(tokenizer, "is_fast"):
             self.assertTrue(tokenizer.is_fast)
         else:
             self.assertIn("Fast", tokenizer.__class__.__name__)
 
-    def test_fast_tokenizer_save_pretrained(self):
+    def test_tokenizer_save_pretrained(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tokenizer = AutoTokenizer.from_pretrained("ModelHub/Qwen2-7B")
             special_tokens_dict = {"additional_special_tokens": ["[ENT_START]", "[ENT_END]"]}

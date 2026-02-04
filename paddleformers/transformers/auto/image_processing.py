@@ -53,6 +53,7 @@ IMAGE_PROCESSOR_MAPPING_NAMES.update(
     {
         "glm4v": (),
         "glm4v_moe": ("Glm4vImageProcessor", "Glm4vImageProcessorFast"),
+        "paddleocr_vl": (),
         "qwen2_5_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen2_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen3_vl": ("Qwen3VLImageProcessor", "Qwen3VLImageProcessorFast"),
@@ -72,10 +73,10 @@ def get_image_processor_class_from_name(class_name: str):
         if class_name in extractors:
             module_name = model_type_to_module_name(module_name)
 
-            module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
             try:
+                module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
                 return getattr(module, class_name)
-            except AttributeError:
+            except (ModuleNotFoundError, AttributeError):
                 continue
 
     for extractor in IMAGE_PROCESSOR_MAPPING._extra_content.values():

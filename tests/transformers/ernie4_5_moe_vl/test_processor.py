@@ -279,7 +279,7 @@ class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             add_generation_prompt=True,
         )
         expected_output = processor.tokenizer(formatted_prompt[0], return_tensors=None).input_ids
-        self.assertListEqual(expected_output, formatted_prompt_tokenized)
+        self.assertListEqual(expected_output, formatted_prompt_tokenized["input_ids"])
 
         text = processor.tokenizer.apply_chat_template(
             messages,
