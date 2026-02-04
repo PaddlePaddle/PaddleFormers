@@ -48,8 +48,8 @@ export FLAGS_use_stride_compute_kernel=False
 
 unset http_proxy https_proxy
 
-log_file=qwen_lora_${machine}.txt
-gt_loss_file=qwen_lora_${machine}_multi_card_gt_loss.txt
+log_file=qwen3vl_lora_${machine}_multi_card.txt
+gt_loss_file=qwen3vl_lora_${machine}_multi_card_gt_loss.txt
 
 set +e
 NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./${log_file}

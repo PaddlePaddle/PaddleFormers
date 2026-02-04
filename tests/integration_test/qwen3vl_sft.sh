@@ -65,8 +65,8 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 
 unset http_proxy https_proxy
 
-log_file=qwen_$machine_$step.txt
-gt_loss_file=qwen_$machine_${step}_multi_card_gt_loss.txt
+log_file=qwen3vl_sft_${machine}_${step}_multi_card.txt
+gt_loss_file=qwen3vl_sft_${machine}_${step}_multi_card_gt_loss.txt
 
 set +e
 NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./${log_file}
