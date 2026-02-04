@@ -44,6 +44,7 @@ class Sequence:
     response_labels: List[int]
     response_index: List[int]
     score_delta: float
+    has_mm: List[bool]
     images: List[str] = field(default_factory=list)
     videos: List[str] = field(default_factory=list)
     audios: List[str] = field(default_factory=list)
@@ -223,10 +224,21 @@ class DPODataSet(IterableDataset):
         chosen_m.extend(example["chosen_response"])
         rejected_m.extend(example["rejected_response"])
 
+        # Check if multimedia tags are included in "messages", "chosen_response", and "rejected_response"
+        def check_multimedia_tags(messages):
+            for message in messages:
+                if isinstance(message, dict) and "content" in message:
+                    content = message["content"]
+                    if "<image>" in content or "<audio>" in content or "<video>" in content:
+                        return True
+            return False
+        has_mm = [check_multimedia_tags(chosen_m), check_multimedia_tags(rejected_m)]
+
         example["chosen"] = {"messages": chosen_m}
         example["rejected"] = {"messages": rejected_m}
         example["session_start_index"] = session_start_index
         example["score_delta"] = 1.0
+        example["has_mm"] = has_mm
 
         return example
 
@@ -370,7 +382,6 @@ class DPODataSet(IterableDataset):
 
     def _postprocess_sequence(self, example):
         example = self._preprocess_dpo_example(example)
-        
         # sequence: system + knowledge_tokens + prompt + chosen + reject
         (
             prompt_token_ids,
@@ -481,6 +492,7 @@ class DPODataSet(IterableDataset):
             response_labels=response_labels,
             response_index=response_index,
             score_delta=example["score_delta"],
+            has_mm=example["has_mm"],
             images=example["images"],
             videos=example["videos"],
             audios=example["audios"],

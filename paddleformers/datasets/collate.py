@@ -360,19 +360,30 @@ def mm_dpo_collate_fn(
             if "video_grid_thw" in mm_inputs:
                 video_grid_thw.extend(mm_inputs["video_grid_thw"])
             if get_rope_func is not None:
+                chosen_len = seq.response_index[1] - seq.response_index[0]
+                rejected_len = seq.response_index[2] - seq.response_index[1]
+                chosen_input_ids = seq.token_ids[:-rejected_len]
+                rejected_input_ids = chosen_input_ids[:-chosen_len] + seq.token_ids[-rejected_len:]
                 func_params = inspect.signature(get_rope_func).parameters.keys()
                 filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
-                position_ids, rope_deltas = get_rope_func(input_ids=paddle.to_tensor([seq.token_ids]), **filtered_args)
-                original_position_ids.append(position_ids)
+                
+                res_position_ids = []
+                for i, input_ids in enumerate([chosen_input_ids, rejected_input_ids]):
+                    if seq.has_mm[i]:
+                        pos_ids, rope_deltas = get_rope_func(input_ids=paddle.to_tensor([input_ids]), **filtered_args)
+                        res_position_ids.append(pos_ids)
+                    else:
+                        input_ids = paddle.to_tensor([input_ids])
+                        res_position_ids.append(paddle.arange(input_ids.shape[1]).view(1, 1, -1).expand(3, input_ids.shape[0], -1))
+                original_position_ids.append(paddle.concat([res_position_ids[0], res_position_ids[1][:, :, -rejected_len:]], axis=-1))
+        
         if len(original_position_ids) > 0:
             original_position_ids = paddle.concat(original_position_ids, axis=-1)
-        if len(original_position_ids) > 0:
             padded_position_ids = paddle.nn.functional.pad(
                 original_position_ids, pad=[0, max_seq_len - original_position_ids.shape[2]]
             )
         else:
             padded_position_ids = []
-        
         if len(pixel_values) > 0:
             pixel_values = paddle.concat(pixel_values, axis=0)
         if len(pixel_values_videos) > 0:
@@ -395,7 +406,7 @@ def mm_dpo_collate_fn(
             input_dict["pixel_values_videos"].append(pixel_values_videos)
             input_dict["video_grid_thw"].append(video_grid_thw)       
 
-    # 4.convert to np.array 或许需要转换为tensor
+    # 4.convert to np.array & concat position_ids
     for key in input_dict:
         if key == "attention_mask":
             input_dict[key] = np.array(input_dict[key], dtype=np.float32)
