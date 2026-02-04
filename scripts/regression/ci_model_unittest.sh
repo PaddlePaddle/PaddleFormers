@@ -24,6 +24,18 @@ cd $nlp_dir
 mkdir -p $log_path
 AGILE_COMPILE_BRANCH=$3
 
+kill_process() {
+    echo -e "\033[32m print python/pytest/xdist processes \033[0m"
+    ps -aux | grep python
+    ps -aux | grep python | grep -E 'pytest|exec\(eval' | grep -v grep || true
+    
+    echo -e "\033[32m kill python/pytest/xdist processes \033[0m" 
+    TTY=$(tty | sed 's#/dev/##')
+    ps -aux | awk -v tty="$TTY" '$7==tty && $11 ~ /python/ {print $2}' | xargs -r kill -9
+    ps aux | grep paddleformers/cli/launcher.py | awk '{print $2}' | xargs kill -9
+    pkill -f paddleformers/cli/launcher.py
+}
+
 install_requirements() {
     start_ts=$(date +%s)
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
@@ -103,6 +115,7 @@ fi
 get_diff_TO_case
 set_env
 if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
+    kill_process
     install_requirements
     cd ${nlp_dir}
     echo ' Testing all model unittest cases '
