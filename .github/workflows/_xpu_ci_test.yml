@@ -7,7 +7,7 @@ on:
         description: "Build Images"
         required: true
         type: string
-        default: "registry.baidubce.com/device/paddle-xpu:ubuntu20-x86_64-gcc84-py310"
+        default: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleqa:xpu-ubuntu2204-x86_64-gcc123-py310"
       PADDLEFORMERS_ARCHIVE_URL:
         description: "URL of the compressed PaddleFormers code archive."
         required: true
