@@ -30,7 +30,7 @@ def test_ernie_28b_thinking_sft_training(project_root, base_value_dir, log_file)
     # Execute command and validate results
     passed, error_msg = run_command_and_validate(
         cmd=cmd,
-        baseline_path=base_value_dir / "ernie_21b_sft_loss.json",
+        baseline_path=base_value_dir / "ernie_28b_thinking_sft_loss.json",
         log_file=log_file,
         working_dir=project_root,
         tolerance=1e-6,
