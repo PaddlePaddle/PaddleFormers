@@ -517,7 +517,8 @@ class FP8LinearFunctionBase:
         d_norm_output = FP8LinearFunctionBase.fp8_mlp_bwd(do3, norm_output, w1, w2, True)
 
         # ===== compute norm grad =====
-        dx, d_rms_norm_weight = paddle._C_ops.fused_rms_norm_ext_grad(x, norm_w, invar, d_norm_output, norm_eps)
+        with paddle.amp.auto_cast(False):
+            dx, d_rms_norm_weight = paddle._C_ops.fused_rms_norm_ext_grad(x, norm_w, invar, d_norm_output, norm_eps)
         if hasattr(norm_w, "main_grad"):
             if norm_w.main_grad is None:
                 norm_w.main_grad = paddle.zeros(shape=norm_w.shape, dtype=paddle.float32)

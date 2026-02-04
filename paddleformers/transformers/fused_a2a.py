@@ -14,6 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 import paddle.distributed.communication.deep_ep as deep_ep
 
 HAVE_DEEP_EP = True
@@ -22,12 +24,17 @@ import paddle
 from paddle.autograd import PyLayer
 from paddle.distributed.communication.group import Group
 
+from ..trainer import strtobool
+
 _buffer = None
+
+g_barrier_ep = strtobool(os.getenv("BARRIER_EP", "True"))
 
 
 def barrier_ep(ep_group):
     """barrier_ep"""
-    paddle.distributed.barrier(ep_group)
+    if g_barrier_ep:
+        paddle.distributed.barrier(ep_group)
 
 
 def get_hidden_bytes(x: paddle.Tensor) -> int:

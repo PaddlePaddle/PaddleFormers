@@ -1945,7 +1945,8 @@ class RmsNormFunction(paddle.autograd.PyLayer):
     def backward(ctx, grad_output):
         x, scale, invar = ctx.saved_tensor()
         epsilon = ctx.epsilon
-        dx, dscale = paddle._C_ops.fused_rms_norm_ext_grad(x, scale, invar, grad_output, epsilon)
+        with paddle.amp.auto_cast(False):
+            dx, dscale = paddle._C_ops.fused_rms_norm_ext_grad(x, scale, invar, grad_output, epsilon)
         if ctx.x_stop_gradient and ctx.scale_stop_gradient:
             return None, None
         elif ctx.x_stop_gradient:
@@ -2098,7 +2099,10 @@ class FusedNormGateFunc(paddle.autograd.PyLayer):
         ), cast_if_needed(d_moe_gate_weight, moe_gate_weight.dtype)
 
         d_norm_output = d_norm_output + d_norm_output_linear
-        dx, d_rms_norm_weight = paddle._C_ops.fused_rms_norm_ext_grad(x, rms_norm_weight, invar, d_norm_output, eps)
+        with paddle.amp.auto_cast(False):
+            dx, d_rms_norm_weight = paddle._C_ops.fused_rms_norm_ext_grad(
+                x, rms_norm_weight, invar, d_norm_output, eps
+            )
 
         return dx, d_rms_norm_weight, d_moe_gate_weight
 
@@ -2216,6 +2220,16 @@ def rearrange_kv(kv, k_pe, qk_nope_head_dim, num_heads):
     return key_states, value_states
 
 
+@contextlib.contextmanager
+def enable_to_static(value):
+    old_value = paddle.jit.dy2static.program_translator.ProgramTranslator().enable_to_static
+    paddle.jit.enable_to_static(value)
+    try:
+        yield
+    finally:
+        paddle.jit.enable_to_static(old_value)
+
+
 def qkv_pre_process(
     q, kv, k_pe, rotary_emb, num_heads, q_head_dim, qk_nope_head_dim, v_head_dim, qk_rope_head_dim, position_ids
 ):
@@ -2253,61 +2267,10 @@ def qkv_pre_process(
     query_states = fused_partial_rope(q, cos, sin)
     k_pe = fused_partial_rope(k_pe, cos, sin)
 
-    key_states, value_states = rearrange_kv(kv, k_pe, qk_nope_head_dim, num_heads)
+    with enable_to_static(True):
+        key_states, value_states = rearrange_kv(kv, k_pe, qk_nope_head_dim, num_heads)
 
     return query_states, key_states, value_states
-
-
-def manul_fwd(
-    q_init,
-    kv_init,
-    q_ln_weight,
-    kv_ln_weight,
-    q_up_weight,
-    kv_up_weight,
-    rotary_emb,
-    num_heads,
-    q_head_dim,
-    qk_nope_head_dim,
-    v_head_dim,
-    qk_rope_head_dim,
-    position_ids,
-    eps,
-    kv_lora_rank,
-    softmax_scale,
-):
-
-    q_ln_t, q_ln_invar = paddle.incubate.nn.functional.fused_rms_norm_ext(q_init, q_ln_weight, eps)
-    q = paddle.matmul(q_ln_t, q_up_weight)
-
-    compressed_kv, k_pe = paddle.split(kv_init, [kv_lora_rank, qk_rope_head_dim], axis=-1)
-
-    kv_ln_t, kv_ln_invar = paddle.incubate.nn.functional.fused_rms_norm_ext(compressed_kv, kv_ln_weight, eps)
-
-    kv = paddle.matmul(kv_ln_t, kv_up_weight)
-
-    query_states, key_states, value_states = qkv_pre_process(
-        q, kv, k_pe, rotary_emb, num_heads, q_head_dim, qk_nope_head_dim, v_head_dim, qk_rope_head_dim, position_ids
-    )
-
-    q_head_dim = query_states.shape[-1]
-    softmax_scale = softmax_scale * (q_head_dim**0.5)
-    query_states = query_states * softmax_scale
-
-    attn_out, _, softmax_lse, seed_offset = _C_ops.flash_attn(
-        query_states,
-        key_states,
-        query_states,
-        None,
-        None,
-        0.0,
-        True,
-        False,
-        False,
-        "",
-    )
-
-    return attn_out
 
 
 class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
@@ -2770,9 +2733,10 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
         else:
             d_kv_ln_t, d_kv_up_weight = _C_ops.matmul_grad(kv_ln_t, kv_up_weight, d_kv, False, False)
 
-        d_compressed_kv, d_kv_ln_weight = paddle._C_ops.fused_rms_norm_ext_grad(
-            compressed_kv, kv_ln_weight, kv_ln_invar, d_kv_ln_t, eps
-        )
+        with paddle.amp.auto_cast(False):
+            d_compressed_kv, d_kv_ln_weight = paddle._C_ops.fused_rms_norm_ext_grad(
+                compressed_kv, kv_ln_weight, kv_ln_invar, d_kv_ln_t, eps
+            )
 
         d_kv_init = paddle.cat([d_compressed_kv, d_k_pe], axis=-1)
 
@@ -2815,7 +2779,10 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
         else:
             d_q_ln_t, d_q_up_weight = _C_ops.matmul_grad(q_ln_t, q_up_weight, d_q, False, False)
 
-        d_q_init, d_q_ln_weight = paddle._C_ops.fused_rms_norm_ext_grad(q_init, q_ln_weight, q_ln_invar, d_q_ln_t, eps)
+        with paddle.amp.auto_cast(False):
+            d_q_init, d_q_ln_weight = paddle._C_ops.fused_rms_norm_ext_grad(
+                q_init, q_ln_weight, q_ln_invar, d_q_ln_t, eps
+            )
 
         return d_q_init, d_kv_init, d_q_ln_weight, d_kv_ln_weight, d_q_up_weight, d_kv_up_weight
 
@@ -3001,7 +2968,8 @@ class FusedRMSLinearFunc(paddle.autograd.PyLayer):
             h_grad_0, d_q_down_weight = _C_ops.matmul_grad(hidden_states, q_down_weight, d_q, False, False)
             h_grad = h_grad + h_grad_0
 
-        dx, d_rms_norm_weight = paddle._C_ops.fused_rms_norm_ext_grad(x, rms_norm_weight, invar, h_grad, eps)
+        with paddle.amp.auto_cast(False):
+            dx, d_rms_norm_weight = paddle._C_ops.fused_rms_norm_ext_grad(x, rms_norm_weight, invar, h_grad, eps)
 
         return dx, d_rms_norm_weight, d_q_down_weight, d_kv_down_weight
 
@@ -3037,51 +3005,6 @@ class FusedRMSLinear(paddle.nn.Layer):
     def forward(self, x):
 
         return FusedRMSLinearFunc.apply(x, self.rms_norm_weight, self.q_down_weight, self.kv_down_weight, self.eps)
-
-
-class FusedRMSLinearSingleFunc(paddle.autograd.PyLayer):
-    @staticmethod
-    def forward(ctx, x, rms_norm_weight, linear_weight, eps):
-
-        hidden_states, invar = paddle.incubate.nn.functional.fused_rms_norm_ext(x, rms_norm_weight, eps)
-        q = paddle.matmul(hidden_states, linear_weight)
-
-        ctx.save_for_backward(x, rms_norm_weight, linear_weight, eps)
-        return q
-
-    @staticmethod
-    def backward(ctx, d_q, d_kv):
-        x, rms_norm_weight, linear_weight, eps = ctx.saved_tensor()
-        hidden_states, invar = paddle.incubate.nn.functional.fused_rms_norm_ext(x, rms_norm_weight, eps)
-
-        h_grad, d_linear_weight = _C_ops.matmul_grad(hidden_states, linear_weight, d_q, False, False)
-
-        dx, d_rms_norm_weight = paddle._C_ops.fused_rms_norm_ext_grad(x, rms_norm_weight, invar, h_grad, eps)
-
-        return dx, d_rms_norm_weight, d_linear_weight
-
-
-class FusedRMSLinearSingle(paddle.nn.Layer):
-    def __init__(self, hidden_size, q_out_dim, kv_outdim, eps=1e-6) -> None:
-        super().__init__()
-        self._dtype = self._helper.get_default_dtype()
-
-        self.rms_norm_weight = paddle.create_parameter(
-            shape=[hidden_size],
-            dtype=self._dtype,
-            default_initializer=nn.initializer.Constant(1.0),
-        )
-
-        self.linear_weight = self.create_parameter(
-            shape=[hidden_size, q_out_dim],
-            dtype=self._dtype,
-            is_bias=False,
-        )
-        self.eps = eps
-
-    def forward(self, x):
-
-        return FusedRMSLinearFunc.apply(x, self.rms_norm_weight, self.linear_weight, self.eps)
 
 
 class FastCrossEntropyFunction(paddle.autograd.PyLayer):
