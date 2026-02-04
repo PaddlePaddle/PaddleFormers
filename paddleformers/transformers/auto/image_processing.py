@@ -51,9 +51,9 @@ from .factory import _LazyAutoMapping
 
 IMAGE_PROCESSOR_MAPPING_NAMES.update(
     {
-        "glm4v": (),
+        "ernie4_5_moe_vl": ("Ernie4_5_VLImageProcessor"),
         "glm4v_moe": ("Glm4vImageProcessor", "Glm4vImageProcessorFast"),
-        "paddleocr_vl": (),
+        "paddleocr_vl": ("PaddleOCRVLImageProcessor"),
         "qwen2_5_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen2_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen3_vl": ("Qwen3VLImageProcessor", "Qwen3VLImageProcessorFast"),
