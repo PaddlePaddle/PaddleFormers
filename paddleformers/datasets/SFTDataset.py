@@ -750,13 +750,66 @@ class IteratorSFTDataset(BaseSFTDataset, IterableDataset):
 class MapSFTDataset(BaseSFTDataset, Dataset):
     def __init__(self, **dataset_config):
         super().__init__(**dataset_config)
-        self.new_data = []
-        for batch in self._generate_sequences():
-            self.new_data.append(batch)
-        logger.info(f"[SFTMapDataset] Total batches: {len(self.new_data)}")
+
+        if self.packing:
+            raise ValueError(
+                "[MapSFTDataset] packing=True is not supported for non-streaming (Map) dataset. "
+                "Please use IteratorSFTDataset instead or set packing=False."
+            )
+
+        self.raw_data = list(self.mix_datasets)
+        logger.info(f"[MapSFTDataset] Total samples: {len(self.raw_data)}")
+
+        self.n_try_fetch = min(10, len(self.raw_data))
+        self.random_state = np.random.RandomState(None)
+        self.traceback_limit = 10
+        self._traceback_counter = 0
+        self._idx = 0
+        self._idx_list = self.random_state.permutation(len(self.raw_data)).tolist()
 
     def __len__(self):
-        return len(self.new_data)
+        return len(self.raw_data)
 
     def __getitem__(self, idx):
-        return self.new_data[idx]
+        actual_example_num = 1
+
+        for i in range(self.n_try_fetch):
+            if i == 0:
+                current_idx = idx
+            else:
+                current_idx = self._idx_list[self._idx]
+                self._idx = (self._idx + 1) % len(self.raw_data)
+
+            example = self.raw_data[current_idx]
+            try:
+                if self.is_pretraining:
+                    sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
+                else:
+                    sequence = self._postprocess_sequence(example, actual_example_num)
+
+                if sequence is not None:
+                    return [sequence]
+
+                # sequence is None, try next
+                if self.traceback_limit is not None and self._traceback_counter < self.traceback_limit:
+                    logger.warning(
+                        f"[MapSFTDataset] Example at index {current_idx} returned None, "
+                        "another piece of data will be randomly selected."
+                    )
+                    self._traceback_counter += 1
+
+            except Exception:
+                if self.traceback_limit is not None and self._traceback_counter < self.traceback_limit:
+                    import traceback
+
+                    logger.info(traceback.format_exc())
+                    logger.warning(
+                        "[MapSFTDataset] There are errors in data processing, "
+                        "another piece of data will be randomly selected."
+                    )
+                    self._traceback_counter += 1
+
+        raise ValueError(
+            f"[MapSFTDataset] Failed to retrieve valid data after {self.n_try_fetch} attempts. "
+            "You can avoid this issue by checking your data quality."
+        )
