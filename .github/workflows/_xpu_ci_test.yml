@@ -126,7 +126,7 @@ jobs:
           echo "============================开始运行pytest测试============================"
           ln -s /model baidu
           export XPU_VISIBLE_DEVICES="0,1,2,3"
-          python -m pytest -v -s --tb=short tests/xpu_ci/
+          python -m pytest -v -s --tb=short scripts/xpu_ci/
           exit_code=$?
 
           if [ $exit_code -eq 0 ]; then
