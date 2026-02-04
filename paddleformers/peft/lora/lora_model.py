@@ -34,6 +34,7 @@ from paddle.distributed.fleet.meta_parallel import (
 )
 from paddle.incubate.nn import FusedLinear
 
+from ...nn.experts import MoeExpertsBase
 from ...transformers.model_utils import VLMS
 from ...utils.import_utils import is_paddlefleet_available
 
@@ -108,7 +109,7 @@ def get_lora_layers():
                 XPURowSequenceParallelLoRALinear as RowSequenceParallelLoRALinear,
             )
 
-            from .lora_layers import LoRAConv2D, LoRAExperts
+            from .lora_layers import LoRAConv2D, LoRAMoeExperts
         else:
             raise ImportError  # Force to use the fallback if not XPU
     except ImportError:
@@ -121,8 +122,8 @@ def get_lora_layers():
             FleetRowParallelLoRALinear,
             FleetRowSequenceParallelLoRALinear,
             LoRAConv2D,
-            LoRAExperts,
             LoRALinear,
+            LoRAMoeExperts,
             RowParallelLoRALinear,
             RowSequenceParallelLoRALinear,
         )
@@ -132,7 +133,7 @@ def get_lora_layers():
         "ColumnSequenceParallelLoRALinear": ColumnSequenceParallelLoRALinear,
         "LoRAConv2D": LoRAConv2D,
         "LoRALinear": LoRALinear,
-        "LoRAExperts": LoRAExperts,
+        "LoRAExperts": LoRAMoeExperts,
         "RowParallelLoRALinear": RowParallelLoRALinear,
         "RowSequenceParallelLoRALinear": RowSequenceParallelLoRALinear,
         "FleetLoRALinear": FleetLoRALinear,
@@ -174,12 +175,15 @@ AVAILABLE_LAYERS = [
     ColumnSequenceParallelLoRALinear,
     LoRAConv2D,
     LoRALinear,
+    LoRAExperts,
     RowParallelLoRALinear,
     RowSequenceParallelLoRALinear,
     ColumnParallelQuantizationLoRALinear,
     QuantizationLoRALinear,
     RowParallelQuantizationLoRALinear,
 ]
+
+MOE_EXPERTS_LORA_MAPPING = {"MoeExperts": LoRAExperts}
 
 
 class LoRAModel(nn.Layer):
@@ -907,8 +911,9 @@ class LoRAModel(nn.Layer):
             lora_module = RowParallelQuantizationLoRALinear(module, lora_config)
             # Lora row parallel will spilt lora A matrix
             self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
-        elif attribute_chain[-1] == "experts":
-            lora_module = LoRAExperts(
+        elif isinstance(module, MoeExpertsBase):
+            cls = MOE_EXPERTS_LORA_MAPPING.get(module.__class__.__name__, LoRAExperts)
+            lora_module = cls(
                 module,
                 r=lora_config.r,
                 lora_alpha=lora_config.lora_alpha,
@@ -1150,16 +1155,29 @@ class LoRAModel(nn.Layer):
         base_state_dict = self.model.state_dict()
         scaling = self.lora_config.lora_alpha / self.lora_config.r
 
+        lora_A_keys = [k for k in base_state_dict.keys() if "lora_A" in k]
+        weight_to_lora = {}
+        for lora_A_key in lora_A_keys:
+            if lora_A_key.endswith(".lora_A"):
+                weight_key = lora_A_key[: -len(".lora_A")]
+                lora_B_key = weight_key + ".lora_B"
+                if lora_B_key in base_state_dict:
+                    weight_to_lora[weight_key + ".weight"] = (lora_A_key, lora_B_key)
+            elif lora_A_key.endswith("_lora_A"):
+                weight_key = lora_A_key[: -len("_lora_A")]
+                lora_B_key = weight_key + "_lora_B"
+                if lora_B_key in base_state_dict:
+                    weight_to_lora[weight_key] = (lora_A_key, lora_B_key)
+
         model_key_list = list(base_state_dict.keys())
         for k in model_key_list:
             if "lora" in k:
                 continue
             tensor = base_state_dict.pop(k)
-            if "weight" in k:
-                lora_A_key, lora_B_key = k.replace("weight", "lora_A"), k.replace("weight", "lora_B")
-                if lora_A_key in base_state_dict.keys():
-                    lora_A_tensor, lora_B_tensor = base_state_dict.pop(lora_A_key), base_state_dict.pop(lora_B_key)
-                    tensor += lora_A_tensor @ lora_B_tensor * scaling
+            if k in weight_to_lora:
+                lora_A_key, lora_B_key = weight_to_lora[k]
+                lora_A_tensor, lora_B_tensor = base_state_dict.pop(lora_A_key), base_state_dict.pop(lora_B_key)
+                tensor += lora_A_tensor @ lora_B_tensor * scaling
 
             if offload:
                 tensor = tensor.pin_memory()

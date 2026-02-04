@@ -27,6 +27,7 @@ from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
     build_sharded_state_dict,
 )
 
+from ...nn.experts import MoeExpertsBase
 from ...transformers import linear_utils
 
 ColumnSequenceParallelLinear = linear_utils.ColumnSequenceParallelLinear
@@ -146,130 +147,6 @@ class LoRALinear(nn.Linear):
     def extra_repr(self):
         name = f", name={self.name}" if self.name else ""
         return f"in_features={self.weight.shape[0]}, out_features={self.weight.shape[1]}, rank={self.r}{name}"
-
-
-class LoRAExperts(nn.Layer):
-    def __init__(
-        self,
-        base_layer,
-        r: int = 0,
-        lora_alpha: int = 1,
-        lora_dropout: float = 0.0,
-        rslora: bool = False,
-        lora_plus_scale: float = 1.0,
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-        self.base_layer = base_layer
-        self.num_experts = base_layer.num_experts
-        self.act_fn = base_layer.act_fn
-        self.r = r
-        self.lora_alpha = lora_alpha
-        self.merged = False
-        self.disable_lora = False
-        self.lora_plus_scale = lora_plus_scale
-
-        self.gate_up_proj, self.gate_up_proj_lora_A, self.gate_up_proj_lora_B = self._init_lora("gate_up_proj")
-        self.down_proj, self.down_proj_lora_A, self.down_proj_lora_B = self._init_lora("down_proj")
-
-        if not rslora:
-            self.scaling = self.lora_alpha / self.r
-        else:
-            self.scaling = self.lora_alpha / math.sqrt(self.r)
-
-    def _init_lora(self, parameter_name: str):
-        if not hasattr(self.base_layer, parameter_name):
-            raise ValueError(f"Parameter '{parameter_name}' does not exist in the base layer.")
-
-        parameter = getattr(self.base_layer, parameter_name)
-        parameter.stop_gradient = True
-        num_experts, in_features, out_features = parameter.shape
-        lora_A = self.create_parameter(
-            shape=[num_experts, in_features, self.r],
-            dtype=paddle.get_default_dtype(),
-            is_bias=False,
-            default_initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu"),
-        )
-        lora_B = self.create_parameter(
-            shape=[num_experts, self.r, out_features],
-            dtype=paddle.get_default_dtype(),
-            is_bias=False,
-            attr=paddle.ParamAttr(
-                initializer=paddle.nn.initializer.Constant(value=0.0),
-                learning_rate=self.lora_plus_scale,
-            ),
-        )
-
-        return (parameter, lora_A, lora_B)
-
-    def get_delta_weight(self, lora_A=None, lora_B=None):
-        lora_A = lora_A if lora_A is not None else self.lora_A
-        lora_B = lora_B if lora_B is not None else self.lora_B
-        delta_weight = lora_A @ lora_B * self.scaling
-
-        return delta_weight
-
-    def merge(self):
-        if not self.merged:
-            delta_weight = self.get_delta_weight(self.gate_up_proj_lora_A, self.gate_up_proj_lora_B)
-            new_parameter = self.gate_up_proj + delta_weight
-            self.gate_up_proj.set_value(new_parameter)
-            delta_weight = self.get_delta_weight(self.down_proj_lora_A, self.down_proj_lora_B)
-            new_parameter = self.down_proj + delta_weight
-            self.down_proj.set_value(new_parameter)
-            self.merged = True
-
-    def unmerge(self):
-        if self.merged:
-            delta_weight = self.get_delta_weight(self.gate_up_proj_lora_A, self.gate_up_proj_lora_B)
-            new_parameter = self.gate_up_proj - delta_weight
-            self.gate_up_proj.set_value(new_parameter)
-            delta_weight = self.get_delta_weight(self.down_proj_lora_A, self.down_proj_lora_B)
-            new_parameter = self.down_proj - delta_weight
-            self.down_proj.set_value(new_parameter)
-            self.merged = False
-
-    def forward(self, hidden_states, top_k_index, top_k_weights):
-        final_hidden_states = paddle.zeros_like(hidden_states)
-        with paddle.no_grad():
-            expert_mask = paddle.nn.functional.one_hot(top_k_index, num_classes=self.num_experts)
-            expert_mask = expert_mask.permute(2, 1, 0)
-            expert_hit = paddle.greater(expert_mask.sum(dim=(-1, -2)), paddle.to_tensor(0, dtype="int32")).nonzero()
-
-        for expert_idx in expert_hit:
-            expert_idx = expert_idx[0]
-            if expert_idx == self.num_experts:
-                continue
-            top_k_pos, token_idx = paddle.where(expert_mask[expert_idx])
-            current_state = hidden_states[token_idx]
-            if not (self.disable_lora or self.merged):
-                delta_state = (
-                    current_state
-                    @ self.gate_up_proj_lora_A[expert_idx]
-                    @ self.gate_up_proj_lora_B[expert_idx]
-                    * self.scaling
-                )
-                current_state = nn.functional.linear(current_state, self.gate_up_proj[expert_idx]) + delta_state
-            else:
-                current_state = nn.functional.linear(current_state, self.gate_up_proj[expert_idx])
-            gate, up = current_state.chunk(2, dim=-1)
-            current_hidden_states = self.act_fn(gate) * up
-            if not (self.disable_lora or self.merged):
-                delta_states = (
-                    current_hidden_states
-                    @ self.down_proj_lora_A[expert_idx]
-                    @ self.down_proj_lora_B[expert_idx]
-                    * self.scaling
-                )
-                current_hidden_states = (
-                    nn.functional.linear(current_hidden_states, self.down_proj[expert_idx]) + delta_states
-                )
-            else:
-                current_hidden_states = nn.functional.linear(current_hidden_states, self.down_proj[expert_idx])
-            current_hidden_states = current_hidden_states * top_k_weights[token_idx, top_k_pos, None]
-            final_hidden_states.index_add_(0, token_idx, current_hidden_states.to(final_hidden_states.dtype))
-
-        return final_hidden_states
 
 
 class FleetLoRALinear(LoRALinear):
@@ -965,3 +842,124 @@ class LoRAConv2D(nn.Conv2D):
             main_str += ", groups={_groups}"
         main_str += ", data_format={_data_format}, rank={r}, alpha={lora_alpha}"
         return main_str.format(**self.__dict__)
+
+
+class LoRAMoeExperts(MoeExpertsBase):
+    def __init__(
+        self,
+        base_layer,
+        r: int = 0,
+        lora_alpha: int = 1,
+        lora_dropout: float = 0.0,
+        rslora: bool = False,
+        lora_plus_scale: float = 1.0,
+        **kwargs
+    ):
+        super().__init__()
+        self.num_experts = base_layer.num_experts
+        self.act_fn = base_layer.act_fn
+        self.r = r
+        self.lora_alpha = lora_alpha
+        self.merged = False
+        self.disable_lora = False
+        self.lora_plus_scale = lora_plus_scale
+
+        self.gate_up_proj, self.gate_up_proj_lora_A, self.gate_up_proj_lora_B = self._init_lora(
+            base_layer, "gate_up_proj"
+        )
+        self.down_proj, self.down_proj_lora_A, self.down_proj_lora_B = self._init_lora(base_layer, "down_proj")
+
+        if not rslora:
+            self.scaling = self.lora_alpha / self.r
+        else:
+            self.scaling = self.lora_alpha / math.sqrt(self.r)
+
+    def _init_lora(self, base_layer, parameter_name: str):
+        if not hasattr(base_layer, parameter_name):
+            raise ValueError(f"Parameter '{parameter_name}' does not exist in the base layer.")
+
+        parameter = getattr(base_layer, parameter_name)
+        parameter.stop_gradient = True
+        num_experts, in_features, out_features = parameter.shape
+        lora_A = self.create_parameter(
+            shape=[num_experts, in_features, self.r],
+            dtype=paddle.get_default_dtype(),
+            is_bias=False,
+            default_initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu"),
+        )
+        lora_B = self.create_parameter(
+            shape=[num_experts, self.r, out_features],
+            dtype=paddle.get_default_dtype(),
+            is_bias=False,
+            attr=paddle.ParamAttr(
+                initializer=paddle.nn.initializer.Constant(value=0.0),
+                learning_rate=self.lora_plus_scale,
+            ),
+        )
+
+        return (parameter, lora_A, lora_B)
+
+    def get_delta_weight(self, lora_A, lora_B):
+        return lora_A @ lora_B * self.scaling
+
+    def merge(self):
+        if not self.merged:
+            delta_weight = self.get_delta_weight(self.gate_up_proj_lora_A, self.gate_up_proj_lora_B)
+            new_parameter = self.gate_up_proj + delta_weight
+            self.gate_up_proj.set_value(new_parameter)
+            delta_weight = self.get_delta_weight(self.down_proj_lora_A, self.down_proj_lora_B)
+            new_parameter = self.down_proj + delta_weight
+            self.down_proj.set_value(new_parameter)
+            self.merged = True
+
+    def unmerge(self):
+        if self.merged:
+            delta_weight = self.get_delta_weight(self.gate_up_proj_lora_A, self.gate_up_proj_lora_B)
+            new_parameter = self.gate_up_proj - delta_weight
+            self.gate_up_proj.set_value(new_parameter)
+            delta_weight = self.get_delta_weight(self.down_proj_lora_A, self.down_proj_lora_B)
+            new_parameter = self.down_proj - delta_weight
+            self.down_proj.set_value(new_parameter)
+            self.merged = False
+
+    def forward(self, hidden_states, top_k_index, top_k_weights):
+        final_hidden_states = paddle.zeros_like(hidden_states)
+        with paddle.no_grad():
+            expert_mask = paddle.nn.functional.one_hot(top_k_index, num_classes=self.num_experts)
+            expert_mask = expert_mask.permute(2, 1, 0)
+            expert_hit = paddle.greater(expert_mask.sum(dim=(-1, -2)), paddle.to_tensor(0, dtype="int32")).nonzero()
+
+        for expert_idx in expert_hit:
+            expert_idx = expert_idx[0]
+            if expert_idx == self.num_experts:
+                continue
+            top_k_pos, token_idx = paddle.where(expert_mask[expert_idx])
+            current_state = hidden_states[token_idx]
+            if not (self.disable_lora or self.merged):
+                delta_state = (
+                    current_state
+                    @ self.gate_up_proj_lora_A[expert_idx]
+                    @ self.gate_up_proj_lora_B[expert_idx]
+                    * self.scaling
+                )
+                current_state = nn.functional.linear(current_state, self.gate_up_proj[expert_idx]) + delta_state
+            else:
+                current_state = nn.functional.linear(current_state, self.gate_up_proj[expert_idx])
+            gate, up = current_state.chunk(2, dim=-1)
+            current_hidden_states = self.act_fn(gate) * up
+            if not (self.disable_lora or self.merged):
+                delta_states = (
+                    current_hidden_states
+                    @ self.down_proj_lora_A[expert_idx]
+                    @ self.down_proj_lora_B[expert_idx]
+                    * self.scaling
+                )
+                current_hidden_states = (
+                    nn.functional.linear(current_hidden_states, self.down_proj[expert_idx]) + delta_states
+                )
+            else:
+                current_hidden_states = nn.functional.linear(current_hidden_states, self.down_proj[expert_idx])
+            current_hidden_states = current_hidden_states * top_k_weights[token_idx, top_k_pos, None]
+            final_hidden_states.index_add_(0, token_idx, current_hidden_states.to(final_hidden_states.dtype))
+
+        return final_hidden_states
