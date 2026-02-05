@@ -382,7 +382,7 @@ class PaddleTokenizerMixin:
         save_files = super().save_pretrained(save_directory, **kwargs)
 
         # NOTE: Compatibility fix for ERNIE tokenizer vocabulary saving
-        if self.__class__.__name__ == "LlamaTokenizer":
+        if self.__class__.__name__ == "LlamaTokenizer" and hasattr(self, "vocab_file"):
             out_vocab_file = self.save_vocabulary(save_directory, kwargs.get("filename_prefix"))
             save_files = save_files + out_vocab_file
 
