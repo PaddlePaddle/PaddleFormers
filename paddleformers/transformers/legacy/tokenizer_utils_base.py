@@ -1559,10 +1559,7 @@ class PretrainedTokenizerBase(SpecialTokensMixin):
 
         if hasattr(cls, "vocab_files_names") and len(cls.resource_files_names) == 0:
             cls.resource_files_names = copy.deepcopy(cls.vocab_files_names)
-            logger.error(
-                "The attribute 'vocab_files_names' is deprecated. Please use 'resource_files_names' instead.",
-                DeprecationWarning,
-            )
+            logger.error("The attribute 'vocab_files_names' is deprecated. Please use 'resource_files_names' instead.")
         vocab_files_target = {**cls.resource_files_names, **additional_files_names}
         # From HF Hub or AI Studio
         if (

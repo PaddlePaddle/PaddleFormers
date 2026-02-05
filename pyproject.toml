@@ -28,5 +28,4 @@ python_files = [
 ]
 filterwarnings = [
     "ignore::UserWarning",
-    'ignore::DeprecationWarning',
 ]
