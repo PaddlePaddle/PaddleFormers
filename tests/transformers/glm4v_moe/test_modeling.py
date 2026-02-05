@@ -361,8 +361,6 @@ class Glm4vMoeModelTester:
             Glm4vMoeForConditionalGeneration(config)
 
     def create_and_check_fuse_attn(self, config, input_ids, input_mask, *args):
-        config.text_config.fuse_attention_qkv = True
-        config.text_config.fuse_attention_ffn = True
         model = Glm4vMoeForConditionalGeneration(config)
         model.eval()
 
@@ -783,6 +781,7 @@ class Glm4vMoeCompatibilityTest(unittest.TestCase):
             rope_scaling=tiny_rope_scaling,
             num_attention_heads=4,
             num_key_value_heads=2,
+            tie_word_embeddings=True,
         )
 
         input_ids = np.random.randint(0, 200, [1, 20]).astype("int64")
@@ -800,15 +799,18 @@ class Glm4vMoeCompatibilityTest(unittest.TestCase):
         }
 
         model = Glm4vMoeForConditionalGeneration(config)
+        # lm_head.weight will not be saved although 'tie_word_embeddings' is False
         model.save_pretrained(cls.torch_model_path)
 
     @require_package("transformers", "torch")
     def test_Glm4vMoe_converter(self):
         # 1. forward the paddle model
-        from paddleformers.transformers import Glm4vMoeModel
+        from paddleformers.transformers import Glm4vMoeForConditionalGeneration
 
         paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-        paddle_model = Glm4vMoeModel.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
+        paddle_model = Glm4vMoeForConditionalGeneration.from_pretrained(
+            self.torch_model_path, convert_from_hf=True, dtype="float32"
+        ).model
         paddle_model.eval()
         paddle_logit = paddle_model(**paddle_inputs)[0]
 
@@ -839,12 +841,10 @@ class Glm4vMoeCompatibilityTest(unittest.TestCase):
 
             # 1. forward the torch model
             import torch
-            from transformers import Glm4vMoeForConditionalGeneration
+            from transformers import Glm4vMoeModel
 
             torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
-            torch_model = Glm4vMoeForConditionalGeneration.from_pretrained(
-                self.torch_model_path, torch_dtype=torch.float32
-            ).model
+            torch_model = Glm4vMoeModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(**torch_inputs)[0]

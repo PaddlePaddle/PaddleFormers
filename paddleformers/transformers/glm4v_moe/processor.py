@@ -39,7 +39,7 @@ from ..video_utils import VideoInput
 
 
 class Glm4vVideosProcessorKwargs(VideosKwargs, total=False):
-    fps: Union[list[float], float]
+    fps: Union[list[float], float, int]
 
 
 class Glm4vProcessorKwargs(ProcessingKwargs, total=False):
@@ -61,7 +61,7 @@ class Glm4vProcessor(ProcessorMixin):
     Args:
         image_processor ([`Glm4vProcessor`], *optional*):
             The image processor is a required input.
-        tokenizer ([`PreTrainedTokenizerFast`], *optional*):
+        tokenizer ([`PreTrainedTokenizer`], *optional*):
             The tokenizer is a required input.
         video_processor ([`Glm4vVideoProcessor`], *optional*):
             The video processor is a required input.
@@ -72,7 +72,7 @@ class Glm4vProcessor(ProcessorMixin):
     attributes = ["image_processor", "tokenizer", "video_processor"]
     image_processor_class = "AutoImageProcessor"
     video_processor_class = "AutoVideoProcessor"
-    tokenizer_class = ("PreTrainedTokenizer", "PreTrainedTokenizerFast")
+    tokenizer_class = "PreTrainedTokenizer"
 
     def __init__(self, image_processor=None, tokenizer=None, video_processor=None, chat_template=None, **kwargs):
         super().__init__(image_processor, tokenizer, video_processor, chat_template=chat_template)
@@ -98,7 +98,7 @@ class Glm4vProcessor(ProcessorMixin):
     ) -> BatchFeature:
         """
         Main method to prepare for the model one or several sequences(s) and image(s). This method forwards the `text`
-        and `kwargs` arguments to PreTrainedTokenizerFast's [`~PreTrainedTokenizerFast.__call__`] if `text` is not `None` to encode
+        and `kwargs` arguments to PreTrainedTokenizer's [`~PreTrainedTokenizer.__call__`] if `text` is not `None` to encode
         the text.
 
         Args:

@@ -268,9 +268,8 @@ class Glm4vMoeTextConfig(PretrainedConfig):
         initializer_range=0.02,
         rms_norm_eps=1e-5,
         use_cache=True,
-        tie_word_embeddings=False,
         rope_theta=10000.0,
-        rope_scaling=None,
+        rope_parameters=None,
         attention_bias=True,
         attention_dropout=0.0,
         moe_intermediate_size=1408,
@@ -315,8 +314,8 @@ class Glm4vMoeTextConfig(PretrainedConfig):
 
         # RoPE
         self.rope_theta = rope_theta
-        self.rope_scaling = rope_scaling
-        self.rope_parameters = rope_scaling if rope_scaling is not None else {}
+        default_rope_params = kwargs.setdefault("rope_scaling", {})
+        self.rope_parameters = rope_parameters if rope_parameters is not None else default_rope_params
 
         # Standardize and validate the correctness of rotary position embeddings parameters
         self.rope_parameters.setdefault("rope_theta", self.rope_theta)
@@ -327,7 +326,7 @@ class Glm4vMoeTextConfig(PretrainedConfig):
         standardize_rope_params(self)
         rope_config_validation(self, ignore_keys=ignore_keys_at_rope_validation)
 
-        super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
+        super().__init__(**kwargs)
 
 
 class Glm4vMoeConfig(PretrainedConfig):
@@ -386,6 +385,7 @@ class Glm4vMoeConfig(PretrainedConfig):
         image_end_token_id=151340,
         video_start_token_id=151341,
         video_end_token_id=151342,
+        tie_word_embeddings=False,
         **kwargs,
     ):
         if isinstance(vision_config, dict):
@@ -404,12 +404,8 @@ class Glm4vMoeConfig(PretrainedConfig):
         self.video_end_token_id = video_end_token_id
         self.image_start_token_id = image_start_token_id
         self.image_end_token_id = image_end_token_id
+        self.tie_word_embeddings = tie_word_embeddings
 
-        tie_word_embeddings = (
-            kwargs.pop("tie_word_embeddings", True)
-            and self.text_config.tie_word_embeddings
-            and self.vision_config.tie_word_embeddings
-        )
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
     def __setattr__(self, key, value):
