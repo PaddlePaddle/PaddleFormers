@@ -17,10 +17,38 @@ Audio processing functions to extract features from audio waveforms. This code i
 and remove unnecessary dependencies.
 """
 import warnings
-from typing import Optional, Union
+from typing import Optional, Union, Sequence
 
 import numpy as np
 
+AudioInput = Union[np.ndarray, "paddle.Tensor", Sequence[np.ndarray], Sequence["paddle.Tensor"]]
+
+def load_audio(audio: str | np.ndarray, sampling_rate=16000, timeout=None) -> np.ndarray:
+    """
+    Loads `audio` to an np.ndarray object.
+
+    Args:
+        audio (`str` or `np.ndarray`):
+            The audio to be loaded to the numpy array format.
+        sampling_rate (`int`, *optional*, defaults to 16000):
+            The sampling rate to be used when loading the audio. It should be same as the
+            sampling rate the model you will be using further was trained with.
+        timeout (`float`, *optional*):
+            The timeout value in seconds for the URL request.
+
+    Returns:
+        `np.ndarray`: A numpy array representing the audio.
+    """
+    if isinstance(audio, str):
+        if is_torchcodec_available() and version.parse("0.3.0") <= TORCHCODEC_VERSION:
+            audio = load_audio_torchcodec(audio, sampling_rate=sampling_rate)
+        else:
+            audio = load_audio_librosa(audio, sampling_rate=sampling_rate, timeout=timeout)
+    elif not isinstance(audio, np.ndarray):
+        raise TypeError(
+            "Incorrect format used for `audio`. Should be an url linking to an audio, a local path, or numpy array."
+        )
+    return audio
 
 def hertz_to_mel(freq: Union[float, np.ndarray], mel_scale: str = "htk") -> Union[float, np.ndarray]:
     """

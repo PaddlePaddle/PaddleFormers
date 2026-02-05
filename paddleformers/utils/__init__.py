@@ -133,7 +133,7 @@ if TYPE_CHECKING:
     from .log import logger
     from .memory_utils import empty_device_cache
     from .moe_hybrid_parallel_optimizer import MoEHybridParallelOptimizer
-
+    from .auto_docstring import *
     try:
         from .optimizer import *
     except:
