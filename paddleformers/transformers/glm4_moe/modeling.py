@@ -381,9 +381,6 @@ class Glm4MoeTopkRouter(nn.Layer):
 
 
 class GLm4MoeNaiveMoe(MoeExperts):
-    def __init__(self, config):
-        super().__init__(config)
-
     def sharded_state_dict(
         self,
         structured_name_prefix: str = "",
