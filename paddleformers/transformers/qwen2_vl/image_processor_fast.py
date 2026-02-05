@@ -242,7 +242,7 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
             )
             # Reorder dimensions to group grid and patch information for subsequent flattening.
             # (grid_t, grid_h, grid_w, merge_h, merge_w, channel, temp_patch_size, patch_h, patch_w)
-            patches = patches.permute(0, 3, 6, 4, 7, 2, 1, 5, 8)
+            patches = patches.permute(0, 3, 6, 4, 7, 2, 1, 5, 8).contiguous()
             flatten_patches = patches.reshape(
                 [
                     batch_size,
