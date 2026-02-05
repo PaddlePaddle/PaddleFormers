@@ -29,13 +29,14 @@ def create_dataset(**dataset_config: Dict[str, Any]):
     Returns:
         SequenceDataset: Configured sequence dataset
     """
+    dataset_type = dataset_config.get("dataset_type", "iterator").lower()
     if dataset_config["stage"].lower() == "dpo":
-        if dataset_config["dataset_type"].lower() == "map":
+        if dataset_type == "map":
             train_dataset = MapDPODataset(**dataset_config)
         else:
             train_dataset = IteratorDPODataset(**dataset_config)
     else:
-        if dataset_config["dataset_type"].lower() == "map":
+        if dataset_type == "map":
             train_dataset = MapSFTDataset(**dataset_config)
         else:
             train_dataset = IteratorSFTDataset(**dataset_config)
