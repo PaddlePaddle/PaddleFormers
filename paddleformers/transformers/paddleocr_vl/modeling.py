@@ -1996,14 +1996,13 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
                 sample_indices = paddle.repeat_interleave(paddle.arange(bs), sizes)
 
                 cum_sizes = paddle.cumsum(sizes, axis=0)
-                cu_seqlens = F.pad(cum_sizes, (1, 0), value=0, data_format="NCL")
-                cu_seqlens = cu_seqlens.astype("int64")
+                cu_seqlens = F.pad(cum_sizes, (1, 0), value=0, data_format="NCL").astype("int32")
 
-                global_range = paddle.arange(sizes.sum())
+                global_range = paddle.arange(sizes.sum(), dtype="int32")
                 offsets = cu_seqlens[:-1]
                 expanded_offsets = paddle.repeat_interleave(offsets, sizes)
                 local_indices = global_range - expanded_offsets
-                spatial_sizes = paddle.prod(image_grid_thw[:, 1:], axis=1)
+                spatial_sizes = paddle.prod(image_grid_thw[:, 1:], axis=1, dtype="int32")
                 expanded_spatial_sizes = paddle.repeat_interleave(spatial_sizes, sizes)
                 siglip_position_ids = local_indices % expanded_spatial_sizes
 
