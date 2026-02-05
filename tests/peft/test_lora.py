@@ -239,6 +239,7 @@ class TestLoraModelFC(unittest.TestCase):
                 download_hub="aistudio",
                 convert_from_hf=True,
                 dtype="float32",
+                num_nextn_predict_layers=0,
             )
             lora_model = LoRAModel(model, lora_config)
             lora_model.eval()
