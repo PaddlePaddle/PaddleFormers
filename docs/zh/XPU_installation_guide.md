@@ -4,11 +4,11 @@
 
 |Chip type|Driver version|
 |-|-|
-|KunlunxinP800|5.0.21.21|
+|KunlunxinP800|5.0.21.26|
 
 * **机器：** KunlunxinP800 96GB 8-card machine
-* **镜像：** ccr-2vdh3abv-pub.cnc.bj.baidubce.com/device/paddle-xpu:ubuntu20-x86_64-gcc84-py310
-* **GCC path：**  /usr/bin/gcc (8.4)
+* **镜像：** ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleqa:xpu-ubuntu2204-x86_64-gcc123-py310
+* **GCC path：**  /usr/bin/gcc (12.3)
 * **python version：** 3.10
 
 要验证 XPU 是否正常，可以使用`xpu_smi`命令
@@ -16,44 +16,44 @@
 ```shell
 xpu_smi
 #example：$ xpu_smi
-Wed Jun 25 19:45:10 2025
+Thu Feb  5 13:00:00 2026       
 +-----------------------------------------------------------------------------+
-| XPU-SMI               Driver Version: 5.0.21.21    XPU-RT Version: 5.0.21   |
+| XPU-SMI               Driver Version: 5.0.21.26    XPU-RT Version: 5.0.21   |
 |-------------------------------+----------------------+----------------------+
 | XPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
 | Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | XPU-Util  Compute M. |
 |                               |             L3-Usage |            SR-IOV M. |
 |===============================+======================+======================|
 |   0  P800 OAM           N/A   | 00000000:03:00.0 N/A |                    0 |
-| N/A   37C  N/A     88W / 400W |      0MiB / 98304MiB |      0%      Default |
+| N/A   37C  N/A     85W / 400W |      0MiB / 98304MiB |      0%      Default |
 |                               |      0MiB /    96MiB |             Disabled |
 +-------------------------------+----------------------+----------------------+
 |   1  P800 OAM           N/A   | 00000000:05:00.0 N/A |                    0 |
-| N/A   41C  N/A     90W / 400W |      0MiB / 98304MiB |      0%      Default |
+| N/A   41C  N/A     86W / 400W |      0MiB / 98304MiB |      0%      Default |
 |                               |      0MiB /    96MiB |             Disabled |
 +-------------------------------+----------------------+----------------------+
 |   2  P800 OAM           N/A   | 00000000:63:00.0 N/A |                    0 |
-| N/A   36C  N/A     89W / 400W |      0MiB / 98304MiB |      0%      Default |
+| N/A   34C  N/A     85W / 400W |      0MiB / 98304MiB |      0%      Default |
 |                               |      0MiB /    96MiB |             Disabled |
 +-------------------------------+----------------------+----------------------+
 |   3  P800 OAM           N/A   | 00000000:65:00.0 N/A |                    0 |
-| N/A   36C  N/A     89W / 400W |      0MiB / 98304MiB |      0%      Default |
+| N/A   39C  N/A     88W / 400W |      0MiB / 98304MiB |      0%      Default |
 |                               |      0MiB /    96MiB |             Disabled |
 +-------------------------------+----------------------+----------------------+
 |   4  P800 OAM           N/A   | 00000000:83:00.0 N/A |                    0 |
-| N/A   40C  N/A     88W / 400W |      0MiB / 98304MiB |      0%      Default |
+| N/A   37C  N/A     86W / 400W |      0MiB / 98304MiB |      0%      Default |
 |                               |      0MiB /    96MiB |             Disabled |
 +-------------------------------+----------------------+----------------------+
 |   5  P800 OAM           N/A   | 00000000:85:00.0 N/A |                    0 |
-| N/A   40C  N/A     90W / 400W |      0MiB / 98304MiB |      0%      Default |
+| N/A   42C  N/A     86W / 400W |      0MiB / 98304MiB |      0%      Default |
 |                               |      0MiB /    96MiB |             Disabled |
 +-------------------------------+----------------------+----------------------+
 |   6  P800 OAM           N/A   | 00000000:A3:00.0 N/A |                    0 |
-| N/A   39C  N/A     90W / 400W |      0MiB / 98304MiB |      0%      Default |
+| N/A   35C  N/A     86W / 400W |      0MiB / 98304MiB |      0%      Default |
 |                               |      0MiB /    96MiB |             Disabled |
 +-------------------------------+----------------------+----------------------+
 |   7  P800 OAM           N/A   | 00000000:A5:00.0 N/A |                    0 |
-| N/A   40C  N/A     87W / 400W |      0MiB / 98304MiB |      0%      Default |
+| N/A   42C  N/A     88W / 400W |      0MiB / 98304MiB |      0%      Default |
 |                               |      0MiB /    96MiB |             Disabled |
 +-------------------------------+----------------------+----------------------+
 
@@ -71,7 +71,7 @@ Wed Jun 25 19:45:10 2025
 1. 拉取镜像
 
 ```shell
-docker pull ccr-2vdh3abv-pub.cnc.bj.baidubce.com/device/paddle-xpu:ubuntu20-x86_64-gcc84-py310
+docker pull ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleqa:xpu-ubuntu2204-x86_64-gcc123-py310
 ```
 
 2. 启动 docker
@@ -79,7 +79,7 @@ docker pull ccr-2vdh3abv-pub.cnc.bj.baidubce.com/device/paddle-xpu:ubuntu20-x86_
 ```shell
 # Recommended: Map your project directory and a dataset directory
 # Replace pwd with the actual path on your host machine
-docker run -it --privileged=true  --net host --shm-size '256gb' --device=/dev/xpu0:/dev/xpu0 --device=/dev/xpu1:/dev/xpu1 --device=/dev/xpu2:/dev/xpu2 --device=/dev/xpu3:/dev/xpu3 --device=/dev/xpu4:/dev/xpu4 --device=/dev/xpu5:/dev/xpu5 --device=/dev/xpu6:/dev/xpu6 --device=/dev/xpu7:/dev/xpu7 --device=/dev/xpuctrl:/dev/xpuctrl --name paddle-xpu-dev -v $(pwd):/work -w=/work -v xxx ccr-2vdh3abv-pub.cnc.bj.baidubce.com/device/paddle-xpu:ubuntu20-x86_64-gcc84-py310 /bin/bash
+docker run -it --privileged=true  --net host --shm-size '256gb' --device=/dev/xpu0:/dev/xpu0 --device=/dev/xpu1:/dev/xpu1 --device=/dev/xpu2:/dev/xpu2 --device=/dev/xpu3:/dev/xpu3 --device=/dev/xpu4:/dev/xpu4 --device=/dev/xpu5:/dev/xpu5 --device=/dev/xpu6:/dev/xpu6 --device=/dev/xpu7:/dev/xpu7 --device=/dev/xpuctrl:/dev/xpuctrl --name paddle-xpu-dev -v $(pwd):/work -w=/work -v xxx ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleqa:xpu-ubuntu2204-x86_64-gcc123-py310 /bin/bash
 ```
 
 3. 安装 PaddlePaddle
