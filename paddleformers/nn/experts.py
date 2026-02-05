@@ -25,8 +25,14 @@ class MoeExpertsBase(nn.Layer):
 class MoeExperts(MoeExpertsBase):
     def __init__(self, config):
         super().__init__()
-        self.num_experts = config.num_experts
-        self.intermediate_dim = config.moe_intermediate_size
+        if hasattr(config, "n_routed_experts"):
+            self.num_experts = config.n_routed_experts
+        else:
+            self.num_experts = config.num_experts
+        if hasattr(config, "moe_intermediate_size"):
+            self.intermediate_dim = config.moe_intermediate_size
+        else:
+            self.intermediate_dim = config.intermediate_size
         self.hidden_dim = config.hidden_size
         self.act_fn = ACT2FN[config.hidden_act]
 

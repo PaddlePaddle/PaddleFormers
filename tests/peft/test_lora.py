@@ -240,7 +240,6 @@ class TestLoraModel(unittest.TestCase):
             dtype="float32",
             load_checkpoint_format="flex_checkpoint",
         )
-        model.eval()
         lora_model = LoRAModel(model, lora_config)
         lora_model.eval()
         lora_model.merge()
