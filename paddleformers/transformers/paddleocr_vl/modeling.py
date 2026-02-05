@@ -1990,21 +1990,19 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
                 pixel_values = pixel_values.astype(inputs_embeds.dtype)
                 pixel_values = pixel_values.unsqueeze(0)
 
-                sizes = paddle.prod(image_grid_thw, axis=1)
-
                 bs, _ = image_grid_thw.shape
+                sizes = paddle.prod(image_grid_thw, axis=1)
+                spatial_sizes = paddle.prod(image_grid_thw[:, 1:], axis=1, dtype="int64")
                 sample_indices = paddle.repeat_interleave(paddle.arange(bs), sizes)
 
                 cum_sizes = paddle.cumsum(sizes, axis=0)
-                cu_seqlens = F.pad(cum_sizes, (1, 0), value=0, data_format="NCL").astype("int32")
+                cu_seqlens = F.pad(cum_sizes, (1, 0), value=0, data_format="NCL")
 
-                global_range = paddle.arange(sizes.sum(), dtype="int32")
-                offsets = cu_seqlens[:-1]
-                expanded_offsets = paddle.repeat_interleave(offsets, sizes)
-                local_indices = global_range - expanded_offsets
-                spatial_sizes = paddle.prod(image_grid_thw[:, 1:], axis=1, dtype="int32")
-                expanded_spatial_sizes = paddle.repeat_interleave(spatial_sizes, sizes)
-                siglip_position_ids = local_indices % expanded_spatial_sizes
+                global_range = paddle.arange(sizes.sum())
+                per_sample_offset = cu_seqlens[sample_indices]
+                per_sample_spatial = spatial_sizes[sample_indices]
+                local_indices = global_range - per_sample_offset
+                siglip_position_ids = local_indices % per_sample_spatial
 
                 vision_outputs = self.visual(
                     pixel_values=pixel_values,
@@ -2013,7 +2011,7 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
                     vision_return_embed_list=True,
                     interpolate_pos_encoding=True,
                     sample_indices=sample_indices,
-                    cu_seqlens=cu_seqlens,
+                    cu_seqlens=cu_seqlens.astype("int32"),
                     return_pooler_output=False,
                     use_rope=True,
                     window_size=-1,
