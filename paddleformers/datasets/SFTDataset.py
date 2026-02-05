@@ -154,8 +154,7 @@ class BaseSFTDataset:
         if self.is_pretraining and self.packing and self.truncate_packing:
             take_lengths = []
             buffer = []
-            for _ in range(len(self.mix_datasets)):
-                example = next(dataset_iterator)
+            for example in dataset_iterator:
                 try:
                     tokens = self._encode_pretraining_messages(example["messages"], actual_example_num)
                 except Exception as e:
@@ -235,8 +234,7 @@ class BaseSFTDataset:
                 yield batch_sequence
         else:
             if not self.packing:
-                for _ in range(len(self.mix_datasets)):
-                    example = next(dataset_iterator)
+                for example in dataset_iterator:
                     try:
                         if self.is_pretraining:
                             sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
@@ -289,8 +287,7 @@ class BaseSFTDataset:
                             break
                 elif not self.greedy_intokens:
                     # base
-                    for _ in range(len(self.mix_datasets)):
-                        example = next(dataset_iterator)
+                    for example in dataset_iterator:
                         try:
                             if self.is_pretraining:
                                 sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
@@ -333,8 +330,7 @@ class BaseSFTDataset:
                     examples = []
                     actual_example_num_list = []
                     i = 0
-                    for _ in range(len(self.mix_datasets)):
-                        example = next(dataset_iterator)
+                    for example in dataset_iterator:
                         if i < buffer_size:
                             examples.append(example)
                             actual_example_num_list.append(actual_example_num)

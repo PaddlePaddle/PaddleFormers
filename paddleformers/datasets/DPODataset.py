@@ -92,8 +92,7 @@ class BaseDPODataSet:
         dataset_iterator = get_worker_sliced_iterator(self.mix_datasets)
 
         if not self.packing:
-            for _ in range(len(self.mix_datasets)):
-                example = next(dataset_iterator)
+            for example in dataset_iterator:
                 try:
                     sequence = self._postprocess_sequence(example)
                 except Exception as e:
@@ -110,8 +109,7 @@ class BaseDPODataSet:
         else:
             if not self.greedy_intokens:
                 # base
-                for _ in range(len(self.mix_datasets)):
-                    example = next(dataset_iterator)
+                for example in dataset_iterator:
                     try:
                         sequence = self._postprocess_sequence(example)
                     except Exception as e:
@@ -131,8 +129,7 @@ class BaseDPODataSet:
             else:
                 sequence_buffer = []
                 buffer_size = self.buffer_size
-                for _ in range(len(self.mix_datasets)):
-                    example = next(dataset_iterator)
+                for example in dataset_iterator:
                     try:
                         sequence = self._postprocess_sequence(example)
                     except Exception as e:
