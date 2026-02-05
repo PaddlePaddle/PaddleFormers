@@ -556,14 +556,14 @@ def run_sft(
     # padding to the maximum seq length in batch data when max_seq_len is None
     if getattr(model, "is_fleet", False) and not model_args.lora:
         if training_args.per_device_train_batch_size > 1:
-            max_seq_len = data_args.max_seq_len + model_config.num_nextn_predict_layers
+            max_seq_len = data_args.max_seq_len
             logger.warning(f"Setting max_seq_len to {max_seq_len} for mbs > 1 using PaddleFleet model.")
         else:
             max_seq_len = None
             logger.warning("Setting max_seq_len to None for mbs = 1 using PaddleFleet Model.")
     else:
         max_seq_len = (
-            data_args.max_seq_len + model_config.num_nextn_predict_layers
+            data_args.max_seq_len
             if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
             else None
         )

@@ -217,6 +217,8 @@ def collate_fn(
     if not max_seq_len:
         max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
     max_seq_len = calc_padding_size(max_seq_len, training_args)
+    if training_args.num_nextn_predict_layers > 0:
+        max_seq_len += training_args.num_nextn_predict_layers
 
     for batch_sequence in batch:
         if len(batch_sequence) == 1 and isinstance(batch_sequence[0].position_ids[0], List):
@@ -335,6 +337,9 @@ def mm_collate_fn(
     if not max_seq_len:
         max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
     max_seq_len = calc_padding_size(max_seq_len, training_args)
+    if training_args.num_nextn_predict_layers > 0:
+        max_seq_len += training_args.num_nextn_predict_layers
+
     for batch_sequence in batch:
         original_token_ids = []
         original_position_ids = []
