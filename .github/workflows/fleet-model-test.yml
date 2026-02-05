@@ -140,7 +140,7 @@ jobs:
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
           pip install -e ".[paddlefleet]" --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-          # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
+          # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlefleet -y
           # pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           # wget -q --no-proxy --no-check-certificate https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
@@ -174,6 +174,7 @@ jobs:
           fi
           '
 
+
       - name: Integration test (GLM4.5 single-card)
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
@@ -189,7 +190,6 @@ jobs:
           fi
           '
 
-
       - name: Integration test (Qwen3-30B-A3B single-card)
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
@@ -204,6 +204,22 @@ jobs:
             echo -e "\033[32mIntegration test succeeded: Qwen3-30B-A3B single-card.\033[0m"
           fi
           '
+
+      - name: Qwen3-vl-8k-single-card
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft_single_card.sh single
+          exit_code=$?
+          if [[ "$exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: Qwen3-vl-8k-single-card.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen3-vl-8k-single-card.\033[0m"
+          fi
+          '
+
 
       - name: Terminate and delete the container
         if: ${{ always() }}
@@ -255,6 +271,7 @@ jobs:
             -e PR_USER="${{ github.event.pull_request.user.login }}" \
             -w /workspace --network host ${docker_image}
 
+
       - name: Install PaddleFormers
         id: formers_install
         run: |
@@ -274,7 +291,7 @@ jobs:
           git pull --no-edit origin pull/${PR_ID}/head
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           pip install -e ".[paddlefleet]" --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-          # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
+          # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlefleet -y
           # pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           # wget -q --no-proxy --no-check-certificate https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
@@ -307,6 +324,7 @@ jobs:
             echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
           fi
           '
+
       - name: GLM4.5 sft
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
@@ -413,6 +431,7 @@ jobs:
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh sft
           '
 
+
       - name: Qwen lora
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
@@ -421,12 +440,46 @@ jobs:
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh lora
           '
 
+      # - name: Qwen vl sft
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 h20
+      #     '
+      
+      # - name: Qwen vl lora
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_lora.sh h20
+      #     '
+      #     '
+
+      # - name: Qwen vl moe
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe h20
+      #     '
+      
+      # - name: Qwen3-vl-8k-fsdp
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
+      #     '
+
       - name: Terminate and delete the container
         if: ${{ always() }}
         run: |
           set +e
           docker exec -t ${{ env.container_name }} /bin/bash -c 'rm -rf * .[^.]*'
           docker rm -f ${{ env.container_name }}
+      
 
   integration-test-a100:
     needs: check_documents_type
@@ -491,7 +544,7 @@ jobs:
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
           pip install -e ".[paddlefleet]" --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-          # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
+          # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlefleet -y
           # pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           # wget -q --no-proxy --no-check-certificate https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
@@ -523,6 +576,40 @@ jobs:
             echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
           fi
           '
+
+      - name: Qwen vl sft
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 a100
+          '
+      
+      - name: Qwen vl lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_lora.sh a100
+          '
+
+          
+      - name: Qwen vl moe
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe a100
+          '
+
+
+      # - name: Qwen3-vl-8k-fsdp
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
+      #     '
 
       - name: Terminate and delete the container
         if: ${{ always() }}
