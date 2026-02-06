@@ -1146,6 +1146,8 @@ class Trainer:
                 comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
             )
+            if hasattr(self.model, "_synchronize_shared_weights"):
+                self.model._synchronize_shared_weights()
             return
 
         state_dict_metadata = {}
