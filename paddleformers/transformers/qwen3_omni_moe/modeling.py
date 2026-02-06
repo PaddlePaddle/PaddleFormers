@@ -654,6 +654,14 @@ class Qwen3OmniMoeAudioAttention(nn.Layer):
         value_states = value_states.transpose(0, 1).unsqueeze(0)
         max_seqlen = (cu_seqlens[1:] - cu_seqlens[:-1]).max()
 
+        # cu_seqlens_rm_first = cu_seqlens[1:]
+        # cu_seqlens_rm_last = cu_seqlens[:-1]
+        # repeats = cu_seqlens_rm_first - cu_seqlens_rm_last
+
+        # startend_row_indices_lts = paddle.repeat_interleave(cu_seqlens_rm_first, repeats).reshape([1, 1, -1, 1])
+        # startend_row_indices_ute = paddle.repeat_interleave(cu_seqlens_rm_last, repeats).reshape([1, 1, -1, 1])
+        # startend_row_indices = paddle.concat([startend_row_indices_lts, startend_row_indices_ute], axis=-1)
+
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         attn_output, _ = attention_interface(
@@ -1423,8 +1431,18 @@ class Qwen3OmniMoeThinkerTextExperts(nn.Layer):
         self.num_experts = config.num_experts
         self.hidden_dim = config.hidden_size
         self.intermediate_dim = config.moe_intermediate_size
-        self.gate_up_proj = nn.Parameter(paddle.empty(self.num_experts, 2 * self.intermediate_dim, self.hidden_dim))
-        self.down_proj = nn.Parameter(paddle.empty(self.num_experts, self.hidden_dim, self.intermediate_dim))
+        self.gate_up_proj = self.create_parameter(
+            shape=[self.num_experts, self.hidden_dim, 2 * self.intermediate_dim],
+            dtype=paddle.get_default_dtype(),
+            is_bias=False,
+        )
+        self.down_proj = self.create_parameter(
+            shape=[self.num_experts, self.intermediate_dim, self.hidden_dim],
+            dtype=paddle.get_default_dtype(),
+            is_bias=False,
+        )
+        # self.gate_up_proj = nn.Parameter(paddle.empty(self.num_experts, 2 * self.intermediate_dim, self.hidden_dim))
+        # self.down_proj = nn.Parameter(paddle.empty(self.num_experts, self.hidden_dim, self.intermediate_dim))
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(
@@ -1437,7 +1455,7 @@ class Qwen3OmniMoeThinkerTextExperts(nn.Layer):
         with paddle.no_grad():
             expert_mask = paddle.nn.functional.one_hot(top_k_index, num_classes=self.num_experts)
             expert_mask = expert_mask.permute(2, 1, 0)
-            expert_hit = paddle.greater(expert_mask.sum(dim=(-1, -2)), 0).nonzero()
+            expert_hit = paddle.greater(expert_mask.sum(dim=(-1, -2)), paddle.to_tensor(0, dtype="int32")).nonzero()
 
         for expert_idx in expert_hit:
             expert_idx = expert_idx[0]
@@ -1461,7 +1479,7 @@ class Qwen3OmniMoeThinkerTextTopKRouter(nn.Layer):
         self.num_experts = config.num_experts
         self.norm_topk_prob = config.norm_topk_prob
         self.hidden_dim = config.hidden_size
-        self.weight = nn.Parameter(paddle.zeros(self.num_experts, self.hidden_dim))
+        self.weight = nn.Parameter(paddle.zeros(self.hidden_dim, self.num_experts))
 
     def forward(self, hidden_states):
         hidden_states = hidden_states.reshape(-1, self.hidden_dim)
@@ -1751,6 +1769,7 @@ class Qwen3OmniMoeThinkerTextModel(Qwen3OmniMoePreTrainedModel):
         # args for deepstack
         visual_pos_masks: Optional[paddle.Tensor] = None,
         deepstack_visual_embeds: Optional[list[paddle.Tensor]] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> tuple | BaseModelOutputWithPast:
         r"""
@@ -1798,7 +1817,7 @@ class Qwen3OmniMoeThinkerTextModel(Qwen3OmniMoePreTrainedModel):
         # TODO attention_mask
         mask_kwargs = {
             "config": self.config,
-            "input_embeds": inputs_embeds,
+            "inputs_embeds": inputs_embeds,
             "batch_size": batch_size,
             "seq_length": seq_length,
             "cache_length": cache_length,
@@ -2633,6 +2652,7 @@ class Qwen3OmniMoeTalkerCodePredictorModel(Qwen3OmniMoePreTrainedModel):
         inputs_embeds: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         cache_position: Optional[paddle.Tensor] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> BaseModelOutputWithPast:
         if input_ids is not None:
@@ -2827,8 +2847,18 @@ class Qwen3OmniMoeTalkerTextExperts(nn.Layer):
         self.num_experts = config.num_experts
         self.hidden_dim = config.hidden_size
         self.intermediate_dim = config.moe_intermediate_size
-        self.gate_up_proj = nn.Parameter(paddle.empty(self.num_experts, 2 * self.intermediate_dim, self.hidden_dim))
-        self.down_proj = nn.Parameter(paddle.empty(self.num_experts, self.hidden_dim, self.intermediate_dim))
+        self.gate_up_proj = self.create_parameter(
+            shape=[self.num_experts, self.hidden_dim, 2 * self.intermediate_dim],
+            dtype=paddle.get_default_dtype(),
+            is_bias=False,
+        )
+        self.down_proj = self.create_parameter(
+            shape=[self.num_experts, self.intermediate_dim, self.hidden_dim],
+            dtype=paddle.get_default_dtype(),
+            is_bias=False,
+        )
+        # self.gate_up_proj = nn.Parameter(paddle.empty(self.num_experts, 2 * self.intermediate_dim, self.hidden_dim))
+        # self.down_proj = nn.Parameter(paddle.empty(self.num_experts, self.hidden_dim, self.intermediate_dim))
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(
@@ -2982,6 +3012,7 @@ class Qwen3OmniMoeTalkerModel(Qwen3OmniMoePreTrainedModel):
         # args for deepstack
         visual_pos_masks: Optional[paddle.Tensor] = None,
         deepstack_visual_embeds: Optional[list[paddle.Tensor]] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> tuple | BaseModelOutputWithPast:
         r"""
@@ -3645,6 +3676,7 @@ class Qwen3OmniMoeCode2WavTransformerModel(Qwen3OmniMoePreTrainedModel):
         inputs_embeds=None,
         use_cache=None,
         cache_position=None,
+        attn_mask_startend_row_indices=None,
         **kwargs,
     ) -> BaseModelOutputWithPast:
         if input_ids is not None:
@@ -3703,7 +3735,8 @@ class Qwen3OmniMoeCode2WavTransformerModel(Qwen3OmniMoePreTrainedModel):
                 # causal_mask_mapping["sliding_attention"] = create_sliding_window_causal_mask(**mask_kwargs)
                 (
                     causal_mask_mapping["sliding_attention"],
-                    attn_mask_startend_row_indices_mapping["sliding_attention"],
+                    _
+                    # attn_mask_startend_row_indices_mapping["sliding_attention"],
                 ) = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
 
         hidden_states = inputs_embeds

@@ -484,28 +484,28 @@ class Qwen3OmniMoeThinkerConfig(PretrainedConfig):
         self.image_token_id = image_token_id
         self.video_token_id = video_token_id
     
-    def __setattr__(self, key, value):
-        if (
-            (text_config := super().__getattribute__("__dict__").get("text_config")) is not None
-            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
-            and key in text_config.__dict__
-        ):
-            setattr(text_config, key, value)
-        else:
-            super().__setattr__(key, value)
+    # def __setattr__(self, key, value):
+    #     if (
+    #         (text_config := super().__getattribute__("__dict__").get("text_config")) is not None
+    #         and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+    #         and key in text_config.__dict__
+    #     ):
+    #         setattr(text_config, key, value)
+    #     else:
+    #         super().__setattr__(key, value)
 
-    def __getattribute__(self, key):
-        if "text_config" in super().__getattribute__("__dict__") and key not in [
-            "_name_or_path",
-            "model_type",
-            "dtype",
-            "_attn_implementation_internal",
-        ]:
-            text_config = super().__getattribute__("text_config")
-            if key in text_config.__dict__:
-                return getattr(text_config, key)
+    # def __getattribute__(self, key):
+    #     if "text_config" in super().__getattribute__("__dict__") and key not in [
+    #         "_name_or_path",
+    #         "model_type",
+    #         "dtype",
+    #         "_attn_implementation_internal",
+    #     ]:
+    #         text_config = super().__getattribute__("text_config")
+    #         if key in text_config.__dict__:
+    #             return getattr(text_config, key)
 
-        return super().__getattribute__(key)
+    #     return super().__getattribute__(key)
 
 
 class Qwen3OmniMoeTalkerCodePredictorConfig(PretrainedConfig):

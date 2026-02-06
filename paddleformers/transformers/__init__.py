@@ -214,9 +214,10 @@ import_structure = {
         "Qwen3VLMoePretrainedModel",
         "Qwen3VLMoeTextModel",
     ],
-    "qwen3_omni_moe.configuration": ["Qwen3OmniMoeConfig", "Qwen3OmniMoeTextConfig"],
+    "qwen3_omni_moe.configuration": ["Qwen3OmniMoeConfig", "Qwen3OmniMoeThinkerConfig", "Qwen3OmniMoeTextConfig"],
     "qwen3_omni_moe.modeling": [
         "Qwen3OmniMoeForConditionalGeneration",
+        "Qwen3OmniMoeThinkerForConditionalGeneration",
         "Qwen3OmniMoePreTrainedModel",
         "Qwen3OmniMoeThinkerTextPreTrainedModel",
         "Qwen3OmniMoeThinkerTextModel",

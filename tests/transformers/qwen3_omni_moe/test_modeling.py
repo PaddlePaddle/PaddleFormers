@@ -19,7 +19,10 @@ import random
 from paddleformers.transformers import (
     Qwen3OmniMoeForConditionalGeneration,
     Qwen3OmniMoeConfig,
+    Qwen3OmniMoeThinkerForConditionalGeneration,
+    Qwen3OmniMoeThinkerConfig,
 )
+from paddleformers.transformers import AutoConfig, AutoModel
 
 MODEL_PATH = "/root/.cache/modelscope/hub/models/Qwen/Qwen3-Omni-30B-A3B-Instruct/"
 
@@ -77,7 +80,25 @@ def test_model():
             _attn_implementation="flash_attention_2",
         )
 
+
+def test_thinker_text_model():
+    config = Qwen3OmniMoeThinkerConfig.from_pretrained(MODEL_PATH)
+
+    model = Qwen3OmniMoeThinkerForConditionalGeneration.from_config(config)
+
+    config_dict = model.config.to_dict()
+    for key, value in config_dict.items():
+        print(f"{key}:{value}")
+
+    input_ids = paddle.to_tensor(np.random.randint(0, 200, [1, 20]).astype("int64"))
+    output_ids = model(input_ids=input_ids)
+
+    print("output_ids: ", type(output_ids), output_ids)
+
 if __name__ == "__main__":
-    test_config()
+    # test_config()
 
     # test_model()
+
+    # test_thinker_text_model()
+    pass
