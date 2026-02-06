@@ -18,7 +18,7 @@ from typing import List, Optional, Union
 import numpy as np
 import paddle
 import paddlenlp
-
+from ..audio_utils import mel_filter_bank, spectrogram, window_function
 from ..audio_processing_utils import BatchFeature, SequenceFeatureExtractor
 from ..tokenizer_utils_base import TensorType
 
@@ -91,7 +91,7 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
         self.nb_max_frames = self.n_samples // hop_length
         self.sampling_rate = sampling_rate
         self.dither = dither
-        self.mel_filters = paddlenlp.transformers.mel_filter_bank(
+        self.mel_filters = mel_filter_bank(
             num_frequency_bins=1 + n_fft // 2,
             num_mel_filters=feature_size,
             min_frequency=0.0,
@@ -137,9 +137,9 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
             )
         log_spec_batch = []
         for waveform in waveform_batch:
-            log_spec = paddlenlp.transformers.spectrogram(
+            log_spec = spectrogram(
                 waveform,
-                paddlenlp.transformers.window_function(self.n_fft, "hann"),
+                window_function(self.n_fft, "hann"),
                 frame_length=self.n_fft,
                 hop_length=self.hop_length,
                 power=2.0,
