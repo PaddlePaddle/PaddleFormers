@@ -269,9 +269,8 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
         
         batched_speech = BatchFeature(
             {"input_features": raw_speech}
-        )
-        #import pdb
-        #pdb.set_trace()
+        )paddleformers/transformers/
+        
         padded_inputs = self.pad(
             batched_speech,
             padding=padding,

@@ -273,10 +273,6 @@ class PaddleProcessorMixin:
             
             proper_class = self.get_possibly_dynamic_module(class_name)
             
-            # import pdb;pdb.set_trace()
-        print(type(argument))
-        print(class_name)
-        print(proper_class)
         if not isinstance(argument, proper_class):
             raise TypeError(
                 f"Received a {type(argument).__name__} for argument {argument_name}, but a {class_name} was expected."
@@ -683,8 +679,6 @@ class PaddleProcessorMixin:
         args = [args_to_update.get(i, arg) for i, arg in enumerate(args)]
 
         # instantiate processor with used (and valid) kwargs only
-        # print("valid_kwargs: ", valid_kwargs)
-        # print("args:",args)
         processor = cls(*args, **valid_kwargs)
 
         # logger.info(f"Processor {processor}")
@@ -782,11 +776,9 @@ class PaddleProcessorMixin:
             elif is_primary:
                 # Primary non-tokenizer sub-processor: load via Auto class
                 auto_processor_class = MODALITY_TO_AUTOPROCESSOR_MAPPING[sub_processor_type]
-                print(auto_processor_class)
                 sub_processor = auto_processor_class.from_pretrained(
                     pretrained_model_name_or_path, subfolder=subfolder, **kwargs
                 )
-                print(type)
                 args.append(sub_processor)
 
             elif sub_processor_type in processor_dict:
