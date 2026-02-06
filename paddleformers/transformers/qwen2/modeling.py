@@ -20,6 +20,7 @@
 """Paddle Qwen2 model."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
 
 import paddle
@@ -28,6 +29,8 @@ from paddle import Tensor, nn
 from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
+from paddleformers.transformers.gpt_provider import GPTModelProvider
+
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
@@ -35,7 +38,7 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Qwen2MLP
 from ...nn.norm import Norm as GeneralNorm
-from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..contrastive_loss import SimpleContrastiveLoss
@@ -53,6 +56,44 @@ from ..model_outputs import (
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import Qwen2Config
+
+@dataclass
+class Qwen2ModelProvider(GPTModelProvider):
+    """Base provider for Qwen2 Models."""
+    attention_bias: bool = True
+
+    moe_router_load_balancing_type: str = "seq_aux_loss"
+
+    gated_linear_unit: bool = True
+
+    bias_activation_fusion: bool = True
+
+    transform_rules = {
+        "dtype": "params_dtype",
+    }
+
+    # (@peiziliang) hard code
+    rotary_base: float = 1000000.0
+    rotary_percent: float = 1.0
+    moe_shared_expert_overlap: bool = True
+    moe_router_pre_softmax: bool = False
+    moe_permute_fusion: bool = True
+    moe_router_dtype: str = "fp32"
+    moe_router_enable_expert_bias: bool = True
+    moe_router_bias_update_rate: float = 0
+    persist_layer_norm: bool = True
+    moe_router_force_load_balancing: bool = True
+    share_embeddings_and_output_weights: bool = False
+
+    apply_rope_fusion: bool = True
+    mtp_loss_scaling_factor: float = 0.3
+    recompute_granularity: str = None
+    virtual_pipeline_model_parallel_size: int = None
+
+    rope_scaling: float = 1.0
+    bias_dropout_fusion: bool = True
+    router_aux_loss_coef: float = 0.001
+    moe_grouped_gemm: bool = False
 
 
 def rotate_half(x):
@@ -307,16 +348,26 @@ class Qwen2PretrainedModel(PretrainedModel):
     @classmethod
     def _gen_aoa_config(cls, config: Qwen2Config):
         model_prefix = "" if cls == cls.base_model_class else "model."
+        is_fleet = getattr(cls, "is_fleet", False)
+
         aoa_config = {
             "aoa_statements": [
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
                 f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
-                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
                 f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"model.norm.weight -> {model_prefix}norm.weight",
             ]
         }
+
+        if is_fleet:
+            aoa_config['aoa_statements'] += [
+                f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
+            ]
+        else:
+             aoa_config['aoa_statements'] += [
+                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
+             ]
 
         # attention qkv
         if not config.fuse_attention_qkv:
@@ -345,21 +396,37 @@ class Qwen2PretrainedModel(PretrainedModel):
 
         # lm_head
         if config.tie_word_embeddings:
-            aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
+            if is_fleet:
+                aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}lm_head.weight"]
+            else:
+                aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
+        else:
+            if is_fleet:
+                aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}lm_head.weight"]
 
         return aoa_config
 
     @classmethod
     def _gen_inv_aoa_config(cls, config: Qwen2Config):
         model_prefix = "" if cls == cls.base_model_class else "model."
+        is_fleet = getattr(cls, "is_fleet", False)
+
         aoa_statements = [
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
-            f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
             f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
             f"{model_prefix}norm.weight -> model.norm.weight",
         ]
+
+        if is_fleet:
+            aoa_statements += [
+                f"{model_prefix}embedding.embed_tokens.weight -> model.embed_tokens.weight",
+            ]
+        else:
+            aoa_statements += [
+                f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+            ]
 
         if not config.fuse_attention_qkv:
             aoa_statements += [
@@ -395,7 +462,13 @@ class Qwen2PretrainedModel(PretrainedModel):
                 ]
 
         if config.tie_word_embeddings:
-            aoa_statements += ["lm_head.weight -> _"]
+            if is_fleet:
+                aoa_statements += [f"{model_prefix}lm_head.weight -> _"]
+            else:
+                aoa_statements += ["lm_head.weight -> _"]
+        else:
+            if is_fleet:
+                aoa_statements += [f"{model_prefix}lm_head.weight -> lm_head.weight"]
 
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config
@@ -631,8 +704,30 @@ class Qwen2Model(Qwen2PretrainedModel):
             past_key_values=past_key_values,
         )
 
-
 class Qwen2ForCausalLM(Qwen2PretrainedModel):
+    is_fleet = True
+
+    def __new__(cls, config):
+        # Hybrid parallel config convert.
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+
+        model_provider_class = Qwen2ModelProvider
+        model_provider = model_provider_class.from_config(config)
+        loss_fn = None
+        if getattr(config, "dpo_config", None):
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
+        gpt_model = model_provider.provide(loss_fn=loss_fn)
+        gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
+        return gpt_model
+
+class Qwen2ForCausalLMDecapitated(Qwen2PretrainedModel):
     enable_to_static_method = True
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -962,7 +1057,32 @@ class Qwen2SentenceEmbedding(Qwen2PretrainedModel):
         return last_hidden_states
 
 
-class Qwen2ForCausalLMPipe(GeneralModelForCausalLMPipe):
+class Qwen2ForCausalLMPipe(Qwen2PretrainedModel, GeneralModelForCausalLMPipe):
+    is_fleet = True
+
+    def __new__(cls, config):
+        # Hybrid parallel config convert.
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+
+        model_provider_class = Qwen2ModelProvider
+        model_provider = model_provider_class.from_config(config)
+        loss_fn = None
+        if getattr(config, "dpo_config", None):
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
+        gpt_model = model_provider.provide(loss_fn=loss_fn)
+        gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        if not hasattr(config, "architectures"):
+            config.architectures = [cls.__name__.replace("Pipe", "")]
+        gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
+        return gpt_model
+
+class Qwen2ForCausalLMPipeDecapitated(GeneralModelForCausalLMPipe):
     config_class = Qwen2Config
     _decoder_layer_cls = Qwen2DecoderLayer
     _get_tensor_parallel_mappings = Qwen2Model._get_tensor_parallel_mappings
@@ -983,4 +1103,6 @@ __all__ = [
     "Qwen2ForSequenceClassification",
     "Qwen2ForTokenClassification",
     "Qwen2SentenceEmbedding",
+    "Qwen2ForCausalLMDecapitated",
+    "Qwen2ForCausalLMPipeDecapitated"
 ]
