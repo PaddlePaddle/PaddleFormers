@@ -12,12 +12,12 @@ template_backend: custom
 template: qwen3
 
 ### model
-model_name_or_path: Qwen/Qwen3-0.6B-Base
+model_name_or_path: ../moonshotai/Kimi-K2.5
 _attn_implementation: flashmask
 
 ### finetuning
 # base
-stage: SFT
+stage: VL-SFT
 fine_tuning: full
 seed: 23
 do_train: true
@@ -53,3 +53,4 @@ fp16_opt_level: O2
 unified_checkpoint: false
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
+continue_training: false

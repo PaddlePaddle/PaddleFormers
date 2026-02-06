@@ -158,6 +158,11 @@ import_structure = {
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
     "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
+    "kimi_k25.configuration": ["KimiK25Config", "KimiK25VisionConfig"],
+    "kimi_k25.processor": ["KimiK25Processor"],
+    "kimi_k25.video_processor": ["KimiK25VisionProcessor"],
+    "kimi_k25.tokenizer": ["KimiK25Tokenizer"],
+    "kimi_k25.modeling": ["KimiK25ForConditionalGeneration"],
     "llama.configuration": [
         "LlamaConfig",
     ],
@@ -334,6 +339,7 @@ if TYPE_CHECKING:
     from .ernie4_5_moe_vl import *
     from .paddleocr_vl import *
     from .llama import *
+    from .kimi_k25 import *
     from .optimization import *
     from .qwen2 import *
     from .qwen2_5_vl import *
