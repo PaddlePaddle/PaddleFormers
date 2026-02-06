@@ -496,8 +496,8 @@ class DPODataSet(IterableDataset):
             response_index=response_index,
             score_delta=example["score_delta"],
             has_mm=example["has_mm"],
-            images=example["images"],
-            videos=example["videos"],
-            audios=example["audios"],
+            images=example.get("images", []),
+            videos=example.get("videos", []),
+            audios=example.get("audios", []),
             mm_inputs=mm_inputs,
         )
