@@ -33,6 +33,7 @@ from paddle.distributed.fleet.meta_parallel import (
     RowParallelLinear,
 )
 from paddle.incubate.nn import FusedLinear
+from paddlefleet.transformer.moe.moe_expert import GroupedMLPExpert
 
 from ...nn.experts import MoeExpertsBase
 from ...transformers.model_utils import VLMS
@@ -109,7 +110,7 @@ def get_lora_layers():
                 XPURowSequenceParallelLoRALinear as RowSequenceParallelLoRALinear,
             )
 
-            from .lora_layers import LoRAConv2D, LoRAMoeExperts
+            from .lora_layers import FleetLoRAMoeExperts, LoRAConv2D, LoRAMoeExperts
         else:
             raise ImportError  # Force to use the fallback if not XPU
     except ImportError:
@@ -119,6 +120,7 @@ def get_lora_layers():
             FleetColumnParallelLoRALinear,
             FleetColumnSequenceParallelLoRALinear,
             FleetLoRALinear,
+            FleetLoRAMoeExperts,
             FleetRowParallelLoRALinear,
             FleetRowSequenceParallelLoRALinear,
             LoRAConv2D,
@@ -141,6 +143,7 @@ def get_lora_layers():
         "FleetColumnParallelLoRALinear": FleetColumnParallelLoRALinear,
         "FleetRowSequenceParallelLoRALinear": FleetRowSequenceParallelLoRALinear,
         "FleetColumnSequenceParallelLoRALinear": FleetColumnSequenceParallelLoRALinear,
+        "FleetLoRAMoeExperts": FleetLoRAMoeExperts,
     }
 
 
@@ -157,6 +160,7 @@ FleetRowParallelLoRALinear = lora_layers["FleetRowParallelLoRALinear"]
 FleetColumnParallelLoRALinear = lora_layers["FleetColumnParallelLoRALinear"]
 FleetRowSequenceParallelLoRALinear = lora_layers["FleetRowSequenceParallelLoRALinear"]
 FleetColumnSequenceParallelLoRALinear = lora_layers["FleetColumnSequenceParallelLoRALinear"]
+FleetLoRAMoeExperts = lora_layers["FleetLoRAMoeExperts"]
 
 
 from ...quantization.quantization_linear import (
@@ -183,7 +187,12 @@ AVAILABLE_LAYERS = [
     RowParallelQuantizationLoRALinear,
 ]
 
-MOE_EXPERTS_LORA_MAPPING = {"MoeExperts": LoRAMoeExperts}
+MOE_EXPERTS_LORA_MAPPING = {
+    "MoeExperts": LoRAMoeExperts,
+    "LoRAMoeExperts": LoRAMoeExperts,
+    "GroupedMLPExpert": FleetLoRAMoeExperts,
+    "FleetLoRAMoeExperts": FleetLoRAMoeExperts,
+}
 
 
 class LoRAModel(nn.Layer):
@@ -911,7 +920,7 @@ class LoRAModel(nn.Layer):
             lora_module = RowParallelQuantizationLoRALinear(module, lora_config)
             # Lora row parallel will spilt lora A matrix
             self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
-        elif isinstance(module, MoeExpertsBase):
+        elif isinstance(module, MoeExpertsBase) or isinstance(module, GroupedMLPExpert):
             cls = MOE_EXPERTS_LORA_MAPPING.get(module.__class__.__name__, LoRAMoeExperts)
             lora_module = cls(
                 module,
@@ -986,6 +995,7 @@ class LoRAModel(nn.Layer):
                 or isinstance(layer, RowSequenceParallelLoRALinear)
                 or isinstance(layer, FleetRowSequenceParallelLoRALinear)
                 or isinstance(layer, LoRAMoeExperts)
+                or isinstance(layer, FleetLoRAMoeExperts)
                 or (QuantizationLoRALinear is not None and isinstance(layer, QuantizationLoRALinear))
                 or (
                     ColumnParallelQuantizationLoRALinear is not None

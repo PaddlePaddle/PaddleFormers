@@ -26,6 +26,7 @@ from paddle.distributed.fleet.meta_parallel import (
 from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
     build_sharded_state_dict,
 )
+from paddlefleet.transformer.moe.moe_expert import BMMFunction, DeepGEMMBMMFunction
 
 from ...nn.experts import MoeExpertsBase
 from ...transformers import linear_utils
@@ -963,3 +964,189 @@ class LoRAMoeExperts(MoeExpertsBase):
             final_hidden_states.index_add_(0, token_idx, current_hidden_states.to(final_hidden_states.dtype))
 
         return final_hidden_states
+
+
+class FleetLoRAMoeExperts(MoeExpertsBase):
+    def __init__(
+        self,
+        base_layer,
+        r: int = 0,
+        lora_alpha: int = 1,
+        lora_dropout: float = 0.0,
+        rslora: bool = False,
+        lora_plus_scale: float = 1.0,
+        **kwargs
+    ):
+        super().__init__()
+        self.config = base_layer.config
+        self.activation_func = base_layer.activation_func
+        self.expert_parallel = base_layer.expert_parallel
+        self.moe_deep_gemm = base_layer.moe_deep_gemm
+        self.activation_recompute = base_layer.activation_recompute
+        self.r = r
+        self.lora_alpha = lora_alpha
+        self.merged = False
+        self.disable_lora = False
+        self.lora_plus_scale = lora_plus_scale
+
+        self.weight1, self.weight1_lora_A, self.weight1_lora_B = self._init_lora(base_layer, "weight1")
+        self.weight2, self.weight2_lora_A, self.weight2_lora_B = self._init_lora(base_layer, "weight2")
+
+        if not rslora:
+            self.scaling = self.lora_alpha / self.r
+        else:
+            self.scaling = self.lora_alpha / math.sqrt(self.r)
+
+    def _init_lora(self, base_layer, parameter_name: str):
+        if not hasattr(base_layer, parameter_name):
+            raise ValueError(f"Parameter '{parameter_name}' does not exist in the base layer.")
+
+        parameter = getattr(base_layer, parameter_name)
+        parameter.stop_gradient = True
+        num_experts, in_features, out_features = parameter.shape
+        lora_A = paddle.create_parameter(
+            shape=[num_experts, in_features, self.r],
+            dtype=parameter.dtype,
+            is_bias=False,
+            default_initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu"),
+        )
+        lora_B = paddle.create_parameter(
+            shape=[num_experts, self.r, out_features],
+            dtype=parameter.dtype,
+            is_bias=False,
+            attr=paddle.ParamAttr(
+                initializer=paddle.nn.initializer.Constant(value=0.0),
+                learning_rate=self.lora_plus_scale,
+            ),
+        )
+        lora_A.is_distributed = self.expert_parallel
+        lora_B.is_distributed = self.expert_parallel
+
+        return (parameter, lora_A, lora_B)
+
+    def get_delta_weight(self, lora_A, lora_B):
+        return lora_A @ lora_B * self.scaling
+
+    def merge(self):
+        if not self.merged:
+            delta_weight = self.get_delta_weight(self.weight1_lora_A, self.weight1_lora_B)
+            new_parameter = self.weight1 + delta_weight
+            self.weight1.set_value(new_parameter)
+            delta_weight = self.get_delta_weight(self.weight2_lora_A, self.weight2_lora_B)
+            new_parameter = self.weight2 + delta_weight
+            self.weight2.set_value(new_parameter)
+            self.merged = True
+
+    def unmerge(self):
+        if self.merged:
+            delta_weight = self.get_delta_weight(self.weight1_lora_A, self.weight1_lora_B)
+            new_parameter = self.weight1 - delta_weight
+            self.weight1.set_value(new_parameter)
+            delta_weight = self.get_delta_weight(self.weight2_lora_A, self.weight2_lora_B)
+            new_parameter = self.weight2 - delta_weight
+            self.weight2.set_value(new_parameter)
+            self.merged = False
+
+    def forward(
+        self,
+        permuted_local_hidden_states: paddle.Tensor,
+        tokens_per_expert: paddle.Tensor,
+    ):
+        """Forward step of the GroupedMLP without TP/DP."""
+
+        def apply_lora(base_weight, lora_A, lora_B):
+            if self.disable_lora or self.merged:
+                return base_weight
+            else:
+                return base_weight + self.get_delta_weight(lora_A, lora_B)
+
+        w1 = apply_lora(self.weight1, self.weight1_lora_A, self.weight1_lora_B)
+        w2 = apply_lora(self.weight2, self.weight2_lora_A, self.weight2_lora_B)
+
+        if permuted_local_hidden_states.numel() != 0:
+            tokens_per_expert = tokens_per_expert.cpu().tolist()
+            tokens_per_expert = [int(x) for x in tokens_per_expert]
+            tokens_per_expert_tensor = paddle.to_tensor(tokens_per_expert, dtype="int32")
+
+            if self.moe_deep_gemm:
+                fc1_output = DeepGEMMBMMFunction.apply(
+                    permuted_local_hidden_states,
+                    w1,
+                    tokens_per_expert_tensor,
+                )
+            else:
+                fc1_output = BMMFunction.apply(
+                    permuted_local_hidden_states,
+                    w1,
+                    tokens_per_expert,
+                )
+
+            if self.activation_recompute:
+                raise NotImplementedError("Recompute in GroupedMLPExpert is not implemented")
+            else:
+                intermediate_parallel = self.activation_func(fc1_output)
+                if self.moe_deep_gemm:
+                    fc2_output = DeepGEMMBMMFunction.apply(
+                        intermediate_parallel,
+                        w2,
+                        tokens_per_expert_tensor,
+                    )
+                else:
+                    fc2_output = BMMFunction.apply(intermediate_parallel, w2, tokens_per_expert)
+        else:
+            # No token is allocated for local experts.
+            assert paddle.count_nonzero(tokens_per_expert) == 0
+
+            # Make sure params of experts still have gradients even given zero tokens.
+            w1 = w1.reshape(self.config.hidden_size, -1)
+            w2 = w2.reshape(-1, self.config.hidden_size)
+            h = paddle.matmul(permuted_local_hidden_states, w1)
+            if self.activation_recompute:
+                raise NotImplementedError("Recompute in GroupedMLPExpert is not implemented")
+            else:
+                h = self.activation_func(h)
+                fc2_output = paddle.matmul(h, w2)
+
+        return fc2_output, None
+
+    # def forward(self, hidden_states, top_k_index, top_k_weights):
+    #     final_hidden_states = paddle.zeros_like(hidden_states)
+    #     with paddle.no_grad():
+    #         expert_mask = paddle.nn.functional.one_hot(top_k_index, num_classes=self.num_experts)
+    #         expert_mask = expert_mask.permute(2, 1, 0)
+    #         expert_hit = paddle.greater(expert_mask.sum(dim=(-1, -2)), paddle.to_tensor(0, dtype="int32")).nonzero()
+
+    #     for expert_idx in expert_hit:
+    #         expert_idx = expert_idx[0]
+    #         if expert_idx == self.num_experts:
+    #             continue
+    #         top_k_pos, token_idx = paddle.where(expert_mask[expert_idx])
+    #         current_state = hidden_states[token_idx]
+    #         if not (self.disable_lora or self.merged):
+    #             delta_state = (
+    #                 current_state
+    #                 @ self.gate_up_proj_lora_A[expert_idx]
+    #                 @ self.gate_up_proj_lora_B[expert_idx]
+    #                 * self.scaling
+    #             )
+    #             current_state = nn.functional.linear(current_state, self.gate_up_proj[expert_idx]) + delta_state
+    #         else:
+    #             current_state = nn.functional.linear(current_state, self.gate_up_proj[expert_idx])
+    #         gate, up = current_state.chunk(2, dim=-1)
+    #         current_hidden_states = self.act_fn(gate) * up
+    #         if not (self.disable_lora or self.merged):
+    #             delta_states = (
+    #                 current_hidden_states
+    #                 @ self.down_proj_lora_A[expert_idx]
+    #                 @ self.down_proj_lora_B[expert_idx]
+    #                 * self.scaling
+    #             )
+    #             current_hidden_states = (
+    #                 nn.functional.linear(current_hidden_states, self.down_proj[expert_idx]) + delta_states
+    #             )
+    #         else:
+    #             current_hidden_states = nn.functional.linear(current_hidden_states, self.down_proj[expert_idx])
+    #         current_hidden_states = current_hidden_states * top_k_weights[token_idx, top_k_pos, None]
+    #         final_hidden_states.index_add_(0, token_idx, current_hidden_states.to(final_hidden_states.dtype))
+
+    #     return final_hidden_states
