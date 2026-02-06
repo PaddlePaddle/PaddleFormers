@@ -891,10 +891,10 @@ class Qwen3MoePretrainedModel(PretrainedModel):
     def _gen_inv_aoa_config(cls, config: Qwen3MoeConfig):
         if hasattr(config, "n_routed_experts"):
             num_experts = config.n_routed_experts
-        elif hasattr(config, "num_local_experts"):
-            num_experts = config.num_local_experts
-        else:
+        elif hasattr(config, "num_experts"):
             num_experts = config.num_experts
+        else:
+            num_experts = config.num_local_experts
         model_prefix = "" if cls == cls.base_model_class else "model."
         using_sonic_moe = config.using_sonic_moe
         aoa_statements = [
