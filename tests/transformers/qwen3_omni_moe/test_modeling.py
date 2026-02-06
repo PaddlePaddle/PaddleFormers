@@ -27,10 +27,6 @@ def test_thinker_text_model():
 
     model = Qwen3OmniMoeThinkerForConditionalGeneration.from_config(config)
 
-    config_dict = model.config.to_dict()
-    for key, value in config_dict.items():
-        print(f"{key}:{value}")
-
     input_ids = paddle.to_tensor(np.random.randint(0, 200, [1, 20]).astype("int64"))
     output_ids = model(input_ids=input_ids)
 
@@ -38,4 +34,3 @@ def test_thinker_text_model():
 
 if __name__ == "__main__":
     test_thinker_text_model()
-    
