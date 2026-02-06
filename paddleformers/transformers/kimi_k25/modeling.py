@@ -1,5 +1,5 @@
-# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2026 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
+# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright 2025 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
 #
 # This code is based on EleutherAI's GPT-NeoX library and the GPT-NeoX
 # and OPT implementations in this library. It has been modified from its
@@ -18,589 +18,500 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
-from collections.abc import Sequence
-from copy import deepcopy
 
-import numpy as np
+from collections.abc import Callable
+from contextlib import nullcontext
+from dataclasses import dataclass
+from typing import Optional, Union
+
 import paddle
-import paddle.nn as nn
 import paddle.nn.functional as F
-from transformers.utils import is_flash_attn_2_available
 
-from paddleformers.transformers.deepseek_v3 import DeepseekV3ForCausalLM
+# from paddle.distributed.fleet.utils import recompute
+from paddlefleet import parallel_state, tensor_parallel
+from paddlefleet.fusions.fused_bias_dropout import get_bias_dropout_add
+from paddlefleet.models.common.vision_layer.vision_layer import VisionLayer
+from paddlefleet.models.multimodal.llava_model import LLaVAModel as MCoreLLaVAModel
+from paddlefleet.packed_seq_params import PackedSeqParams
+from paddlefleet.process_groups_config import ProcessGroupCollection
+from paddlefleet.spec_utils import LayerSpec
+from paddlefleet.tensor_parallel.layers import ColumnParallelLinear, RowParallelLinear
+from paddlefleet.transformer.attention import SelfAttention, SelfAttentionSublayersSpec
+from paddlefleet.transformer.dot_product_attention import DotProductAttention
+from paddlefleet.transformer.enums import AttnMaskType, ModelType
+from paddlefleet.transformer.identity_op import IdentityOp
+from paddlefleet.transformer.mlp import MLP, MLPSublayersSpec
+from paddlefleet.transformer.paddle_norm import FusedRMSNorm, LayerNorm
+from paddlefleet.transformer.transformer_block import (
+    TransformerBlock,
+    TransformerBlockSublayersSpec,
+)
+from paddlefleet.transformer.transformer_config import TransformerConfig
+from paddlefleet.transformer.transformer_layer import (
+    TransformerLayer,
+    TransformerLayerSublayersSpec,
+)
+from paddlefleet.utils import WrappedTensor  # deprecate_inference_params
 
-from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
-from ..activations import PaddleGELUTanh
+from ...nn.criterion.interface import CriterionLayer
+
+# from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ..cache_utils import Cache
-from ..configuration_utils import PretrainedConfig
+
+# from ..gpt_provider import GPTModelProvider
 from ..model_utils import PretrainedModel
 from .configuration import KimiK25Config
+from .modeling_base import (
+    DeepseekV3ForCausalLM,
+    IdentityMap,
+    KimiK25CausalLMOutputWithPast,
+    KimiK25PretrainedModel,
+    MoonVision3dPatchEmbed,
+    PatchMergerMLP,
+    PatchMLP,
+    ProjectorConfig,
+    Rope2DPosEmbRepeated,
+)
 
-# Flash attention imports
-if is_flash_attn_2_available():
-    from flash_attn import flash_attn_varlen_func
-else:
-    flash_attn_varlen_func = None
+'''
+class KimiK25TextTransformerLayer(TransformerLayer):
+    """KimiK25 text model for adapt deepstack process"""
 
-from ..model_outputs import ModelOutput
+    def forward(
+        self,
+        dict_args: dict,
+    ):
+        """
+        Perform a forward pass through the transformer layer.
+
+        This method calls the core computation of a transformer layer, including
+        self-attention, cross-attention (if applicable), and feed-forward operations.
+        """
+        # Remove 'dynamic_inference_decode_only' from kwargs if present
+        # this is only used to uniquely identify decode and non-decode cuda graph
+        # runners in the cuda graph manager
+        dict_args.pop("dynamic_inference_decode_only", None)
+        dict_args.pop("position_ids", None)
+        if self.full_recompute:
+            hidden_states = dict_args["hidden_states"]
+            attention_mask = dict_args.get("attention_mask", None)
+            attn_mask_startend_row_indices = dict_args.get("attn_mask_startend_row_indices", None)
+            context = dict_args.get("context", None)
+            context_mask = dict_args.get("context_mask", None)
+            rotary_pos_emb = dict_args.get("rotary_pos_emb", None)
+            rotary_pos_cos = dict_args.get("rotary_pos_cos", None)
+            rotary_pos_sin = dict_args.get("rotary_pos_sin", None)
+            attention_bias = dict_args.get("attention_bias", None)
+            packed_seq_params = dict_args.get("packed_seq_params", None)
+            deepstack_visual_emb = dict_args.get("deepstack_visual_emb", None)
+            visual_pos_masks = dict_args.get("visual_pos_masks", None)
+
+            assert (rotary_pos_sin is None) == (rotary_pos_cos is None)
+
+            if rotary_pos_cos is not None and rotary_pos_sin is not None:
+                rotary_pos_cos = rotary_pos_cos.clone()
+                rotary_pos_sin = rotary_pos_sin.clone()
+                if self.config.apply_rope_fusion:
+                    rotary_pos_cos = rotary_pos_cos[0, ...]
+                    rotary_pos_sin = rotary_pos_sin[0, ...]
+                    if rotary_pos_cos.ndim == 2:
+                        rotary_pos_cos = rotary_pos_cos.reshape(
+                            [1, rotary_pos_cos.shape[0], 1, rotary_pos_cos.shape[1]]
+                        )
+                        rotary_pos_sin = rotary_pos_sin.reshape(
+                            [1, rotary_pos_sin.shape[0], 1, rotary_pos_sin.shape[1]]
+                        )
+
+            outputs = recompute(
+                self._forward_impl,
+                hidden_states=hidden_states,
+                attention_mask=attention_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices.clone()  # Clone is necessary!
+                if attn_mask_startend_row_indices is not None
+                else None,
+                context=context,
+                context_mask=context_mask,
+                rotary_pos_emb=rotary_pos_emb.clone() if rotary_pos_emb is not None else None,  # Clone is necessary!
+                rotary_pos_cos=rotary_pos_cos,
+                rotary_pos_sin=rotary_pos_sin,
+                attention_bias=attention_bias,
+                packed_seq_params=packed_seq_params,
+                deepstack_visual_emb=deepstack_visual_emb,
+                visual_pos_masks=visual_pos_masks,
+            )
+        else:
+            outputs = self._forward_impl(**dict_args)
+
+        if isinstance(outputs, tuple):
+            output, context = outputs[0], outputs[1]
+        else:
+            output, context = outputs, None
+
+        rst = OrderedDict()
+        rst = {"hidden_states": output}
+        if context is not None:
+            rst["context"] = context
+        rst = {**dict_args, **rst}
+        return rst
+
+    def _forward_impl(
+        self,
+        hidden_states: paddle.Tensor,
+        attention_mask: paddle.Tensor = None,
+        attn_mask_startend_row_indices: paddle.Tensor = None,
+        context: paddle.Tensor = None,
+        context_mask: paddle.Tensor = None,
+        rotary_pos_emb: paddle.Tensor = None,
+        rotary_pos_cos: paddle.Tensor = None,
+        rotary_pos_sin: paddle.Tensor = None,
+        attention_bias: paddle.Tensor = None,
+        packed_seq_params: PackedSeqParams = None,
+        deepstack_visual_emb: list[paddle.Tensor] = None,
+        visual_pos_masks: paddle.Tensor = None,
+    ):
+        hidden_states, context = self._forward_attention(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            context=context,
+            context_mask=context_mask,
+            rotary_pos_emb=rotary_pos_emb,
+            rotary_pos_cos=rotary_pos_cos,
+            rotary_pos_sin=rotary_pos_sin,
+            attention_bias=attention_bias,
+            packed_seq_params=packed_seq_params,
+        )
+        hidden_states = self._forward_mlp(hidden_states)
+        if deepstack_visual_emb and self.layer_number in range(len(deepstack_visual_emb)):
+            # print("process _deepstack_process ",hidden_states.shape,visual_pos_masks.shape,deepstack_visual_emb[self.layer_number].shape)
+            hidden_states = self._deepstack_process(
+                hidden_states=hidden_states,
+                visual_embeds=deepstack_visual_emb[self.layer_number],
+                visual_pos_masks=visual_pos_masks,
+            )
+        if context is not None:
+            return hidden_states, context
+        return hidden_states
+
+    def _deepstack_process(
+        self, hidden_states: paddle.Tensor, visual_pos_masks: paddle.Tensor, visual_embeds: paddle.Tensor
+    ):
+        # Store original shape and flatten hidden_states to 2D [B*S, D]
+        original_shape = hidden_states.shape
+        if hidden_states.ndim > 2:
+            hidden_states = hidden_states.flatten(start_axis=0, stop_axis=1)
+
+        visual_embeds = visual_embeds.to(hidden_states.device, hidden_states.dtype)
+
+        # complicated logic for squential parallelism
+        if visual_pos_masks.ndim > 1:
+            visual_pos_masks = visual_pos_masks.flatten()
+
+        # This block handles Sequence Parallelism (Row Slicing)
+        if visual_pos_masks.shape[0] > hidden_states.shape[0]:
+            try:
+                from paddle.distributed.fleet import get_hybrid_communicate_group
+
+                hcg = get_hybrid_communicate_group()
+                mp_rank = hcg.get_model_parallel_rank()
+                mp_size = hcg.get_model_parallel_world_size()
+            except (ImportError, AttributeError):
+                mp_size = visual_pos_masks.shape[0] // hidden_states.shape[0]
+                mp_rank = paddle.distributed.get_rank() % mp_size
+            total_len = visual_pos_masks.shape[0]
+            chunk_size = total_len // mp_size
+            start_idx = mp_rank * chunk_size
+            end_idx = start_idx + chunk_size
+            if start_idx > 0:
+                pre_mask = visual_pos_masks[:start_idx]
+                visual_offset = paddle.sum(paddle.cast(pre_mask, "int32")).item()
+            else:
+                visual_offset = 0
+            local_mask = visual_pos_masks[start_idx:end_idx]
+            local_visual_count = paddle.sum(paddle.cast(local_mask, "int32")).item()
+
+            visual_embeds = visual_embeds[visual_offset : visual_offset + local_visual_count]
+            visual_pos_masks = local_mask
+
+        # If TP is enabled, hidden_states has shape [..., Hidden_Dim / TP_Size],
+        # but visual_embeds usually has full [Hidden_Dim]. We need to slice visual_embeds column-wise.
+        if hidden_states.shape[-1] != visual_embeds.shape[-1]:
+            try:
+                from paddle.distributed.fleet import get_hybrid_communicate_group
+
+                hcg = get_hybrid_communicate_group()
+                tp_rank = hcg.get_model_parallel_rank()
+                tp_size = hcg.get_model_parallel_world_size()
+            except (ImportError, AttributeError):
+                # Fallback simple estimation
+                tp_size = visual_embeds.shape[-1] // hidden_states.shape[-1]
+                tp_rank = paddle.distributed.get_rank() % tp_size
+
+            if tp_size > 1:
+                embed_dim = visual_embeds.shape[-1]
+                slice_width = embed_dim // tp_size
+                start_col = tp_rank * slice_width
+                end_col = start_col + slice_width
+                visual_embeds = visual_embeds[:, start_col:end_col]
+
+        hidden_states = hidden_states.clone()
+        local_this = hidden_states[visual_pos_masks, :] + visual_embeds
+        hidden_states[visual_pos_masks, :] = local_this  # 这个操作可能会导致paddle转静态图或推理时出问题，建议使用 scatter
+
+        # [Supplement 3] Restore original shape [B*S, D] -> [B, S, D] if necessary
+        if len(original_shape) > 2:
+            hidden_states = hidden_states.reshape(original_shape)
+
+        return hidden_states
 
 
-class LlavaCausalLMOutputWithPast(ModelOutput):
-    r"""
-    loss (`paddle.Tensor` of shape `(1,)`, *optional*, returned when `labels` is provided):
-        Language modeling loss (for next-token prediction).
-    logits (`paddle.Tensor` of shape `(batch_size, sequence_length, config.vocab_size)`):
-        Prediction scores of the language modeling head (scores for each vocabulary token before SoftMax).
-    past_key_values (`Cache`, *optional*, returned when `use_cache=True` is passed or when `config.use_cache=True`):
-        It is a [`~cache_utils.Cache`] instance. For more details, see our [kv cache guide](https://huggingface.co/docs/transformers/en/kv_cache).
-
-        Contains pre-computed hidden-states (key and values in the self-attention blocks) that can be used (see
-        `past_key_values` input) to speed up sequential decoding.
-    image_hidden_states (`paddle.Tensor`, *optional*):
-        A `paddle.Tensor` of size `(batch_size, num_images, sequence_length, hidden_size)`.
-        image_hidden_states of the model produced by the vision encoder and after projecting the last hidden state.
+@dataclass
+class KimiK25TextProvider(GPTModelProvider):
+    """
+    Base config for Qwen3 Models.
     """
 
-    loss: paddle.Tensor | None = None
-    logits: paddle.Tensor | None = None
-    past_key_values: Cache | None = None
-    hidden_states: tuple[paddle.Tensor] | None = None
-    attentions: tuple[paddle.Tensor] | None = None
-    image_hidden_states: paddle.Tensor | None = None
+    normalization: str = "RMSNorm"
+    activation_func: Callable = F.silu
+    gated_linear_unit: bool = True
+    use_bias: bool = False
+    add_qkv_bias: bool = True
+    seq_length: int = 4096
+    init_method_std: int = 0.02
+    hidden_dropout_prob: float = 0.0
+    attention_dropout: float = 0.0
+    vocab_size: int = 151936
+    share_embeddings_and_output_weights: bool | None = False
+    rms_norm_eps: float = 1e-6
+    rotary_base: float = 1000000.0
+    position_embedding_type: str = "rope"
+    use_qk_norm: bool = True
+    specific_layer: type = KimiK25TextTransformerLayer
+    max_sequence_length: int = 262144
+    multimodal_embedding: bool = False
+    _save_to_hf: bool = False
+    use_fused_linear_cross_entropy: bool = True
+    high_precision_rope: bool = True
+    moe_grouped_gemm: bool = True
+
+    n_shared_experts: int = 0
+    transform_rules = {
+        "dtype": "params_dtype",
+        "num_heads": "num_attention_heads",
+        "depth": "num_hidden_layers",
+        "initializer_range": "init_method_std",
+        "num_experts": "n_routed_experts",
+    }
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.mrope_section = self.rope_scaling.get("mrope_section", [24, 20, 20])
+
+'''
 
 
-# def multihead_attention(
-#     q: paddle.Tensor,
-#     k: paddle.Tensor,
-#     v: paddle.Tensor,
-#     q_cu_seqlens: paddle.Tensor | None = None,
-#     k_cu_seqlens: paddle.Tensor | None = None,
-#     max_seqlen_q: int | None = None,
-#     max_seqlen_k: int | None = None,
-#     deterministic: bool = False,
-# ):
-#     """Multi-head attention using flash attention 2.
-#     Args:
-#         q, k, v: tensor of shape (batch_size, seqlen, num_heads, head_dim),
-#             or (tot_seqlens, num_heads, head_dim) if packing.
-#         q_cu_seqlens (paddle.Tensor): cumulative sequence lengths of q.
-#             The first element should be 0 and the last element should be q.shape[0].
-#         k_cu_seqlens (paddle.Tensor): cumulative sequence lengths of k.
-#             The first element should be 0 and the last element should be k.shape[0].
-#     Returns:
-#         output: shape (batch_size, seqlen, dim) or (tot_seqlens, dim) if packing,
-#             where dim = num_heads * head_dim
-#     """
-#     attn_out = flash_attn_varlen_func(
-#         q,
-#         k,
-#         v,
-#         q_cu_seqlens,
-#         k_cu_seqlens,
-#         max_seqlen_q,
-#         max_seqlen_k,
-#         causal=False,
-#         deterministic=deterministic,
-#     )
-#     if isinstance(attn_out, tuple):
-#         attn_out = attn_out[0]
-
-#     attn_out = attn_out.flatten(start_dim=-2)
-
-#     return attn_out
-
-
-# def eager_attention(
-#     q: paddle.Tensor,
-#     k: paddle.Tensor,
-#     v: paddle.Tensor,
-#     q_cu_seqlens: Optional[paddle.Tensor] = None,
-#     k_cu_seqlens: Optional[paddle.Tensor] = None,
-#     **kwargs,
-# ) -> paddle.Tensor:
-#     seq_length = q.shape[0]
-#     attention_mask = paddle.zeros([1, seq_length, seq_length],
-#                                  device=q.device,
-#                                  dtype=paddle.bool)
-#     for i in range(1, len(q_cu_seqlens)):
-#         attention_mask[
-#             ...,
-#             q_cu_seqlens[i - 1]:q_cu_seqlens[i],
-#             q_cu_seqlens[i - 1]:q_cu_seqlens[i],
-#         ] = True
-#     q = q.transpose(0, 1)
-#     k = k.transpose(0, 1)
-#     v = v.transpose(0, 1)
-
-#     attn_weight = q @ k.transpose(-2, -1) / math.sqrt(q.shape[-1])
-#     attn_weight += attention_mask
-#     attn_weight = paddle.softmax(attn_weight, dim=-1,
-#                                 dtype=paddle.float32).to(q.dtype)
-
-#     attn_output = attn_weight @ v
-#     attn_output = attn_output.transpose(0, 1)
-#     attn_output = attn_output.reshape(seq_length, -1)
-#     return attn_output
-
-
-# VL_VISION_ATTENTION_FUNCTIONS = {
-#     "flash_attention_2": multihead_attention,
-#     "eager": eager_attention,
-# }
-
-
-def _apply_rope_input_validation(x, freqs_cis):
-    assert x.ndim == freqs_cis.ndim + 1, (x.shape, freqs_cis.shape)
-    assert x.shape[:-2] == freqs_cis.shape[:-1], (x.shape, freqs_cis.shape)
-    assert x.shape[-1] == 2 * freqs_cis.shape[-1], (x.shape, freqs_cis.shape)
-    assert freqs_cis.dtype == paddle.complex64, freqs_cis.dtype
-
-
-def get_rope_shape_decorate(func):
-    _get_rope_shape_first_call_flag = set()
-
-    def wrapper(org, interpolation_mode, shape):
-        key = (org.requires_grad, paddle.is_grad_enabled(), interpolation_mode)
-        if key not in _get_rope_shape_first_call_flag:
-            _get_rope_shape_first_call_flag.add(key)
-            _ = func(org, interpolation_mode, shape=(64, 64))
-        return func(org, interpolation_mode, shape)
-
-    return wrapper
-
-
-@get_rope_shape_decorate
-def get_rope_shape(org, interpolation_mode, shape):
-    return (
-        F.interpolate(
-            org.permute((2, 0, 1)).unsqueeze(0),
-            size=shape,
-            mode=interpolation_mode,
-        )
-        .squeeze(0)
-        .permute((1, 2, 0))
-        .flatten(end_dim=1)
+def get_mlp_module_spec(use_te: bool = True) -> LayerSpec:
+    return LayerSpec(
+        layer=MLP,
+        sublayers_spec=MLPSublayersSpec(
+            up_gate_proj=ColumnParallelLinear,
+            down_proj=RowParallelLinear,
+        ),
     )
 
 
-def apply_rope(xq: paddle.Tensor, xk: paddle.Tensor, freqs_cis: paddle.Tensor) -> tuple[paddle.Tensor, paddle.Tensor]:
-    """
-    Args: (The leading dimensions of all inputs should be the same)
-        xq: query, tensor of shape (..., num_heads, head_dim)
-        xk: key, tensor of shape (..., num_heads, head_dim)
-        freqs_cis: tensor of shape (..., head_dim/2), dtype=paddle.complex64. It contains the precomputed cis(freqs) for each position in the 2D grid.
-    Returns:
-        xq_out, xk_out: tensors of shape (..., num_heads, head_dim)
-    """
-    _apply_rope_input_validation(xq, freqs_cis)
-    _apply_rope_input_validation(xk, freqs_cis)
+def get_layer_spec(is_vit, normalization) -> LayerSpec:
+    """Transformer Layer Spec."""
+    attn_mask_type = AttnMaskType.no_mask if is_vit else AttnMaskType.causal
+    if normalization == "LayerNorm":
+        norm = LayerNorm
+    elif normalization == "RMSNorm":
+        norm = FusedRMSNorm
+    else:
+        raise RuntimeError(f"Unknown normalization: {normalization}")
 
-    freqs_cis = freqs_cis.unsqueeze(-2)  # ..., 1, head_dim/2
-    # ..., num_heads, head_dim/2
-    xq_ = paddle.view_as_complex(xq.float().view(*xq.shape[:-1], -1, 2))
-    xk_ = paddle.view_as_complex(xk.float().view(*xq.shape[:-1], -1, 2))
-    xq_out = paddle.view_as_real(xq_ * freqs_cis).flatten(-2)  # ..., num_heads, head_dim
-    xk_out = paddle.view_as_real(xk_ * freqs_cis).flatten(-2)  # ..., num_heads, head_dim
-    return xq_out.type_as(xq), xk_out.type_as(xk)
+    mlp = get_mlp_module_spec(use_te=False)
 
-
-def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
-    """
-    From:
-    https://github.com/OpenGVLab/InternVideo/blob/421f6d2361fc8f61a3394244571f2601a4e99e29/InternVideo2/multi_modality/models/backbones/internvideo2/pos_embed.py#L86
-    embed_dim: output dimension for each position
-    pos: a list of positions to be encoded: size (M,)
-    out: (M, D)
-    """
-    assert embed_dim % 2 == 0
-    omega = np.arange(embed_dim // 2, dtype=np.float32)
-    omega /= embed_dim / 2.0
-    omega = 1.0 / 10000**omega  # (D/2,)
-
-    pos = pos.reshape(-1)  # (M,)
-    out = np.einsum("m,d->md", pos, omega)  # (M, D/2), outer product
-
-    emb_sin = np.sin(out)  # (M, D/2)
-    emb_cos = np.cos(out)  # (M, D/2)
-
-    emb = np.concatenate([emb_sin, emb_cos], axis=1)  # (M, D)
-    return emb
+    return LayerSpec(
+        layer=TransformerLayer,
+        sublayers_spec=TransformerLayerSublayersSpec(
+            input_layernorm=norm,
+            self_attn=LayerSpec(
+                layer=SelfAttention,
+                extra_kwargs={"attn_mask_type": attn_mask_type},
+                sublayers_spec=SelfAttentionSublayersSpec(
+                    qkv_proj=ColumnParallelLinear,
+                    core_attention=DotProductAttention,
+                    o_proj=RowParallelLinear,
+                    q_norm=IdentityOp,
+                    k_norm=IdentityOp,
+                ),
+            ),
+            self_attn_bda=get_bias_dropout_add,
+            post_attention_layernorm=norm,
+            mlp=mlp,
+            mlp_bda=get_bias_dropout_add,
+        ),
+    )
 
 
-def get_1d_sincos_pos_embed(embed_dim, t_size, cls_token=False):
-    """
-    t_size: int of the temporal size
-    return:
-    pos_embed: [t_size, embed_dim] or [1+t_size, embed_dim] (w/ or w/o cls_token)
-    """
-    grid_t = np.arange(t_size, dtype=np.float32)
-    pos_embed = get_1d_sincos_pos_embed_from_grid(embed_dim, grid_t)
-    if cls_token:
-        pos_embed = np.concatenate([np.zeros([1, embed_dim]), pos_embed], axis=0)
-    return pos_embed
+@dataclass
+class KimiK25VisionProvider(TransformerConfig):
+    """KimiK25 Vidion Model Configuration."""
 
+    patch_size: int = 16
+    use_bias: bool = True
+    add_qkv_bias: bool = True
+    num_position_embeddings: int = 2304
+    embed_dim: int = (1152,)
+    hidden_size: int = 1152
+    out_hidden_size: int = 4096
+    in_channels: int = 3
+    spatial_merge_size: int = 2
+    spatial_patch_size: int = 16
+    temporal_patch_size: int = 2
+    hidden_dropout_prob: float = 0.0
+    attention_dropout: float = 0.0
+    intermediate_size: int = 4304
+    initializer_range: float = 0.02
+    gated_linear_unit: bool = False
+    activation_func: Callable = F.gelu
+    attention_bias: bool = True
+    layernorm_zero_centered_gamma: bool = False
+    apply_query_key_layer_scaling: bool = False
+    persist_layer_norm: bool = True
+    bias_activation_fusion: bool = False
+    bias_dropout_fusion: bool = False
+    attention_softmax_in_fp32: bool = True
+    normalization: str = "LayerNorm"
+    apply_rope_fusion: bool = True
+    rms_norm_eps: float = 1e-6
+    transformer_layer_spec: LayerSpec = None
+    model_version: str = "kimi_k25"
+    img_h: int = 336
+    img_w: int = 336
+    add_class_token: bool = False
+    class_token_len: int = 1
+    high_precision_rope: bool = True
+    # _save_to_hf: bool = False
+    # use_fused_linear_cross_entropy: bool = True
+    # fuse_linear: bool = True
+    # transform_rules: dict = field(default_factory=lambda: {
+    #     "num_heads": "num_attention_heads",
+    #     "depth": "num_hidden_layers"
+    # })
+    transform_rules = {
+        "dtype": "params_dtype",
+        "num_heads": "num_attention_heads",
+        "depth": "num_hidden_layers",
+        "initializer_range": "init_method_std",
+    }
 
-class Learnable2DInterpPosEmbDivided_fixed(nn.Layer):
-    def __init__(
-        self, height: int, width: int, num_frames: int, dim: int, interpolation_mode: str = "bicubic"
-    ) -> None:
-        super().__init__()
-        self.height = height
-        self.width = width
-        self.num_frames = num_frames
-        self.dim = dim
-        self.interpolation_mode = interpolation_mode
-        self.weight = nn.Parameter(paddle.empty(height, width, dim))
-        self.register_buffer(
-            "time_weight",
-            paddle.from_numpy(get_1d_sincos_pos_embed(self.dim, self.num_frames)).float().unsqueeze(1),
-            persistent=False,
+    def provide(self) -> "KimiK25VisionModel":
+        transformer_layer_spec = self.transformer_layer_spec
+        if not isinstance(transformer_layer_spec, LayerSpec):
+            transformer_layer_spec = get_layer_spec(is_vit=True, normalization=self.normalization)
+        model = KimiK25VisionModel(
+            config=self,
+            transformer_layer_spec=transformer_layer_spec,
         )
 
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.normal_(self.weight)
-
-    def forward(self, x: paddle.Tensor, grid_thws: paddle.Tensor) -> paddle.Tensor:
-        pos_embs = []
-        for t, h, w in grid_thws.tolist():
-            assert t <= self.num_frames, f"t:{t} > self.num_frames:{self.num_frames}"
-            if (h, w) == self.weight.shape[:-1]:
-                pos_emb_2d = self.weight.flatten(end_dim=1)
-            else:
-                pos_emb_2d = get_rope_shape(
-                    self.weight,
-                    interpolation_mode=self.interpolation_mode,
-                    shape=(h, w),
-                )
-
-            if t == 1:
-                pos_emb_3d = pos_emb_2d
-            else:
-                pos_emb_3d = pos_emb_2d.unsqueeze(0).repeat(t, 1, 1) + self.time_weight[0:t]
-
-            pos_embs.append(pos_emb_3d.reshape(-1, pos_emb_3d.shape[-1]))
-
-        out = x + paddle.cat(pos_embs)
-        return out
+        return model
 
 
-class MoonVision3dPatchEmbed(nn.Layer):
+class KimiK25VisionTransformerBlock(TransformerBlock):
+    """
+    Qwen3-VL Vision Transformer Block.
+    """
+
     def __init__(
         self,
-        out_dim: int,
-        in_dim: int = 3,
-        patch_size: int | tuple[int, int] = (14, 14),
-        pos_emb_height: int = 14,
-        pos_emb_width: int = 14,
-        pos_emb_time: int = 4,
-        pos_emb_type: str = "divided_fixed",
+        config: TransformerConfig,
+        spec: TransformerBlockSublayersSpec | LayerSpec,
+        post_layer_norm: bool = True,
+        pre_process: bool = True,
+        post_process: bool = True,
+        pg_collection: ProcessGroupCollection = None,
+        vp_stage: int = None,
     ):
-        super().__init__()
-        assert isinstance(patch_size, int | Sequence), f"Invalid patch_size type: {type(patch_size)}"
-        if isinstance(patch_size, int):
-            patch_size = (patch_size, patch_size)
-        assert len(patch_size) == 2, f"Expected patch_size to be a tuple of 2, got {patch_size}"
-        self.patch_size = patch_size
-
-        self.proj = nn.Conv2d(in_dim, out_dim, kernel_size=patch_size, stride=patch_size)
-
-        if pos_emb_type == "divided_fixed":
-            self.pos_emb = Learnable2DInterpPosEmbDivided_fixed(
-                height=pos_emb_height, width=pos_emb_width, num_frames=pos_emb_time, dim=out_dim
-            )
-        else:
-            raise NotImplementedError(f"Not support pos_emb_type: {pos_emb_type}")
-
-    def forward(self, x: paddle.Tensor, grid_thws: paddle.Tensor) -> paddle.Tensor:
-        """
-        Args:
-            x (L, Channels): input tensor
-            grid_hws (N, 3): temporal, height and width
-        Returns:
-            (L, Cout) tensor
-        """
-        x = self.proj(x).view(x.size(0), -1)
-        # apply positional embedding
-        x = self.pos_emb(x, grid_thws)
-        return x
-
-
-class Rope2DPosEmbRepeated(nn.Layer):
-    """2D rotary position embedding with multi-resolution support.
-    This class is intended to be used in the following way:
-    1. Before training, create an instance of Rope2DPosEmb. This instance will hold the precomputed cis.
-    2. Before each forward pass, call `get_freqs_cis_by_*` to get the `freqs_cis` tensor for this iteration.
-    3. During the forward pass, pass the `freqs_cis` tensor to each attention layer, and call `apply` just before each attention operation.
-        The rope is shared across all attention layers and all heads.
-    Refs:
-    - RoFormer: https://arxiv.org/abs/2104.09864
-    - VisionLLaMA: https://arxiv.org/abs/2403.00522
-    - https://github.com/Meituan-AutoML/VisionLLaMA/blob/main/dit/models.py
-    Args:
-        dim (int): usually the multi-head attention dimension, should be divisible by 4 (TODO: relax this constraint if needed)
-        max_height (int): the maximum height of the 2D grid
-        max_width (int): the maximum width of the 2D grid
-        theta_base (float): the base of the theta
-        device (str): the device to store the precomputed cis
-    """
-
-    def __init__(self, dim: int, max_height: int, max_width: int, theta_base=10000):
-        super().__init__()
-        self.dim = dim
-        assert self.dim % 4 == 0, "dim must be divisible by 4"
-        self.max_height = max_height
-        self.max_width = max_width
-        self.theta_base = theta_base
-
-    def extra_repr(self):
-        return (
-            f"dim={self.dim}, max_height={self.max_height}, max_width={self.max_width}, theta_base={self.theta_base}"
+        super().__init__(
+            config=config,
+            spec=spec,
+            post_layer_norm=post_layer_norm,
+            pre_process=pre_process,
+            post_process=post_process,
+            pg_collection=pg_collection,
+            vp_stage=vp_stage,
         )
 
-    def _precompute_freqs_cis(self, device: paddle.device) -> paddle.Tensor:
-        """Calculate the cis(freqs) for each position in the 2D grid.
-        Return: complex tensor of shape (max_height, max_width, dim//2) and value:
-            height axis: ret[h, w, 2*i] = cis(h * theta_base**(-4*i/dim))
-            weight axis: ret[h, w, 2*i+1] = cis(w * theta_base**(-4*i/dim))   with (i in [0, dim//4))
-            note: `cis` is a mathematical notation defined by cis x = cos x + i sin x,
-        """
-        N = self.max_height * self.max_width
-        flat_pos = paddle.arange(0, N).float().to(device)
-        x_pos = flat_pos % self.max_width
-        y_pos = flat_pos // self.max_width
-        dim_range = paddle.arange(0, self.dim, 4)[: (self.dim // 4)].float().to(device)  # C/4
-        freqs = 1.0 / (self.theta_base ** (dim_range / self.dim))
-        x_freqs = paddle.outer(x_pos, freqs).float()  # N, C/4
-        y_freqs = paddle.outer(y_pos, freqs).float()  # N, C/4
-        x_cis = paddle.polar(paddle.ones_like(x_freqs), x_freqs)  # N, C/4
-        y_cis = paddle.polar(paddle.ones_like(y_freqs), y_freqs)  # N, C/4
-        # N, C/4, 2
-        freqs_cis = paddle.cat([x_cis.unsqueeze(dim=-1), y_cis.unsqueeze(dim=-1)], dim=-1)
-        # max_height, max_width, C/2
-        freqs_cis = freqs_cis.reshape(self.max_height, self.max_width, -1)
-        return freqs_cis
-
-    def get_freqs_cis(self, grid_thws: paddle.Tensor, device: paddle.device) -> paddle.Tensor:
-        """
-        Args:
-            grid_thws (paddle.Tensor): grid time, height and width
-        Returns:
-            freqs_cis: tensor of shape (sum(t * height * width), dim//2)
-        """
-        if not hasattr(self, "freqs_cis"):
-            self.register_buffer("freqs_cis", self._precompute_freqs_cis(device), persistent=False)
-
-        shapes = grid_thws.tolist()
-        assert all(1 <= h <= self.max_height and 1 <= w <= self.max_width for t, h, w in shapes), (
-            shapes,
-            self.max_height,
-            self.max_width,
-        )
-        freqs_cis = paddle.cat(
-            [self.freqs_cis[:h, :w].reshape(-1, self.dim // 2).repeat(t, 1) for t, h, w in shapes],
-            dim=0,
-        )
-        return freqs_cis
-
-
-class MLP2(nn.Layer):
-    """
-    Args:
-        dims: [in_dim, hidden_dim, out_dim]
-        bias: whether to use bias in linear layer.
-    """
-
-    def __init__(self, dims: list[int], activation, bias=True):
-        super().__init__()
-        assert len(dims) == 3
-        self.fc0 = nn.Linear(dims[0], dims[1], bias_attr=bias)
-        self.fc1 = nn.Linear(dims[1], dims[2], bias_attr=bias)
-        self.activation = activation
-        for m in [self.fc0, self.fc1]:
-            nn.init.normal_(m.weight, mean=0.0, std=math.sqrt(2 / m.weight.shape[0]))
-            if m.bias is not None:
-                nn.init.zeros_(m.bias)
-
-    def forward(self, x: paddle.Tensor) -> paddle.Tensor:
-        x = self.fc0(x)
-        x = self.activation(x)
-        return self.fc1(x)
-
-
-class MoonViTEncoderLayer(nn.Layer):
-    def __init__(
+    def forward(
         self,
-        num_heads: int,
-        hidden_dim: int,
-        mlp_dim: int,
+        hidden_states: paddle.Tensor | WrappedTensor,
+        attention_mask: paddle.Tensor | None,
+        attn_mask_startend_row_indices: paddle.Tensor | None,
+        rotary_pos_emb: paddle.Tensor | None = None,
+        rotary_pos_cos: paddle.Tensor | None = None,
+        rotary_pos_sin: paddle.Tensor | None = None,
+        attention_bias: paddle.Tensor | None = None,
+        inference_context=None,
+        packed_seq_params: PackedSeqParams | None = None,
+        sequence_len_offset: paddle.Tensor | None = None,
         *,
-        attn_implementation: str = "flash_attention_2",
-        activation=F.gelu,
-        attn_bias: bool = False,
+        inference_params=None,
     ):
-        super().__init__()
-        self.num_heads = num_heads
-        self.hidden_dim = hidden_dim
-        self.hidden_size_per_attention_head = self.hidden_dim // self.num_heads
-        self.attn_implementation = attn_implementation
 
-        self.norm0 = nn.LayerNorm(hidden_dim)
-        self.norm1 = nn.LayerNorm(hidden_dim)
-        self.mlp = MLP2([hidden_dim, mlp_dim, hidden_dim], activation)
-        self.wqkv = nn.Linear(hidden_dim, hidden_dim * 3, bias_attr=attn_bias)
-        self.wo = nn.Linear(hidden_dim, hidden_dim, bias_attr=attn_bias)
+        # Delete the obsolete reference to the initial input tensor if necessary
+        if isinstance(hidden_states, WrappedTensor):
+            hidden_states = hidden_states.unwrap()
 
-    def attention_qkvpacked(
-        self,
-        x: paddle.Tensor,
-        cu_seqlens: paddle.Tensor,
-        max_seqlen: paddle.Tensor,
-        rope_freqs_cis: paddle.Tensor | None = None,
-    ):
-        """
-        Args:
-            x (paddle.Tensor): (batch_size, seqlen, hidden_dim)
-            cu_seqlens (paddle.Tensor):
-        """
-        xqkv = self.wqkv(x)
+        if not self.pre_process:
+            hidden_states = self.input_tensor
 
-        qkv_shape = xqkv.size()[:-1] + (
-            3,
-            self.num_heads,
-            self.hidden_size_per_attention_head,
-        )
-        # xqkv: (batch_size, seqlen, 3, nheads, headdim)
-        xqkv = xqkv.view(*qkv_shape)
-        xq, xk, xv = paddle.unbind(xqkv, dim=-3)
+        if self.config.sequence_parallel:
+            rng_context = tensor_parallel.get_cuda_rng_tracker().fork()
+        else:
+            rng_context = nullcontext()
 
-        xq, xk = apply_rope(xq, xk, rope_freqs_cis)
-
-        # FlashAttentionVarlen cu_seqlens to FlashMask mask
-        cu_seqlens_rm_first = cu_seqlens[1:]
-        cu_seqlens_rm_last = cu_seqlens[:-1]
-        repeats = cu_seqlens_rm_first - cu_seqlens_rm_last
-
-        startend_row_indices_lts = paddle.repeat_interleave(cu_seqlens_rm_first, repeats).reshape([1, 1, -1, 1])
-        startend_row_indices_ute = paddle.repeat_interleave(cu_seqlens_rm_last, repeats).reshape([1, 1, -1, 1])
-        startend_row_indices = paddle.concat([startend_row_indices_lts, startend_row_indices_ute], axis=-1)
-
-        attn_func = ALL_ATTENTION_FUNCTIONS[self.attn_implementation]
-        attn_out = attn_func(
-            self,
-            xq,
-            xk,
-            xv,
-            attn_mask_startend_row_indices=startend_row_indices,
-        )
-
-        attn_out = self.wo(attn_out)
-        return attn_out
-
-    def forward(
-        self,
-        hidden_states: paddle.Tensor,
-        cu_seqlens: paddle.Tensor,
-        max_seqlen: int,
-        rope_freqs_cis: paddle.Tensor | None = None,
-    ):
-        residual = hidden_states
-        hidden_states = self.norm0(hidden_states)
-
-        hidden_states = self.attention_qkvpacked(hidden_states, cu_seqlens, max_seqlen, rope_freqs_cis)
-        hidden_states = residual + hidden_states
-
-        residual = hidden_states
-        hidden_states = self.norm1(hidden_states)
-        hidden_states = self.mlp(hidden_states)
-        hidden_states = residual + hidden_states
-
-        return hidden_states
-
-
-class MoonViT3dEncoder(nn.Layer):
-    def __init__(
-        self, hidden_dim: int, num_layers: int, block_cfg: dict, video_attn_type: str = "spatial_temporal"
-    ) -> None:
-        super().__init__()
-
-        assert (
-            video_attn_type == "spatial_temporal"
-        ), f'video_attn_type must be "spatial_temporal", got {video_attn_type}'
-        self.video_attn_type = video_attn_type
-        self.rope_2d = Rope2DPosEmbRepeated(block_cfg["hidden_dim"] // block_cfg["num_heads"], 512, 512)
-        self.blocks = nn.LayerList(
-            [
-                MoonViTEncoderLayer(
-                    **block_cfg,
+        with rng_context:
+            # Forward pass.
+            for l_no, layer in enumerate(self.layers):
+                hidden_states, context = layer(
+                    hidden_states=hidden_states,
+                    attention_mask=attention_mask,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    rotary_pos_emb=rotary_pos_emb,
+                    rotary_pos_cos=rotary_pos_cos,
+                    rotary_pos_sin=rotary_pos_sin,
                 )
-                for _ in range(num_layers)
-            ]
-        )
-        self.final_layernorm = nn.LayerNorm(hidden_dim)
 
-    def forward(
-        self,
-        hidden_states: paddle.Tensor,
-        grid_thws: paddle.Tensor,
-    ) -> paddle.Tensor:
-        rope_freqs_cis = self.rope_2d.get_freqs_cis(grid_thws=grid_thws, device=hidden_states.device)
+        # Final layer norm.
+        if self.norm is not None:
+            hidden_states = self.norm(hidden_states)
 
-        lengths = paddle.cat(
-            (
-                paddle.zeros(1, dtype=grid_thws.dtype, device=grid_thws.device),
-                grid_thws[:, 0] * grid_thws[:, 1] * grid_thws[:, 2],
-            )
-        )
-
-        max_seqlen = lengths.max()
-        cu_seqlens = lengths.to(hidden_states.device).cumsum(dim=0, dtype=paddle.int32)
-        for block in self.blocks:
-            hidden_states = block(hidden_states, cu_seqlens, max_seqlen, rope_freqs_cis=rope_freqs_cis)
-
-        hidden_states = self.final_layernorm(hidden_states)
         return hidden_states
 
 
-def tpool_patch_merger(
-    x: paddle.Tensor,
-    grid_thws: paddle.Tensor,
-    merge_kernel_size: tuple[int, int] = (2, 2),
-) -> list[paddle.Tensor]:
-    d_model = x.size(-1)
+class KimiK25VisionModel(VisionLayer):
+    is_fleet = True
 
-    outputs = []
-    pre_sum = 0
-    for t, h, w in grid_thws.tolist():
-        # Get the current sequence
-        seq = x[pre_sum : pre_sum + t * h * w]
-        # Reshape along self.merge_kernel_size and concat to the last dimension
-        kernel_height, kernel_width = merge_kernel_size
-        new_height, new_width = h // kernel_height, w // kernel_width
-        reshaped_seq = seq.view(t, new_height, kernel_height, new_width, kernel_width, d_model)
-        reshaped_seq = reshaped_seq.permute(0, 1, 3, 2, 4, 5).contiguous().mean(dim=0)  # temporal pooling
-        padded_seq = reshaped_seq.view(new_height * new_width, kernel_height * kernel_width, -1)
-        outputs.append(padded_seq)
-        pre_sum += t * h * w
+    def __init__(
+        self,
+        config: TransformerConfig,
+        transformer_layer_spec: LayerSpec,
+    ):
+        super().__init__(config=config)
+        # print("KimiK25VisionModel transformer_layer nums ",config.num_hidden_layers)
+        # self.spatial_merge_size = config.spatial_merge_size
+        # self.spatial_merge_unit = self.spatial_merge_size * self.spatial_merge_size
+        # self.merge_hidden_size = self.embed_dim * (config.spatial_merge_size**2)
 
-    return outputs
-
-
-class MoonViT3dPretrainedModel(PretrainedModel):
-    config_class = None
-    model_type = "moonvit3d"
-    _no_split_modules = ["PackingTransformer"]
-    _supports_flash_attn_2 = True
-    _supports_sdpa = True
-
-    def __init__(self, config, *inputs, **kwargs):
-        super().__init__(config, *inputs, **kwargs)
-        config = deepcopy(config)
         self.merge_kernel_size = config.merge_kernel_size
         self.patch_size = config.patch_size
         self.merge_type = config.merge_type
+        self.model_type = ModelType.encoder_or_decoder
+        assert (
+            config.video_attn_type == "spatial_temporal"
+        ), f'video_attn_type must be "spatial_temporal", got {config.video_attn_type}'
 
         self.patch_embed = MoonVision3dPatchEmbed(
             out_dim=config.hidden_size,
@@ -611,21 +522,93 @@ class MoonViT3dPretrainedModel(PretrainedModel):
             pos_emb_type=config.pos_emb_type,
         )
 
-        self.encoder = MoonViT3dEncoder(
-            hidden_dim=config.hidden_size,
-            num_layers=config.num_hidden_layers,
-            block_cfg={
-                "num_heads": config.num_attention_heads,
-                "hidden_dim": config.hidden_size,
-                "mlp_dim": config.intermediate_size,
-                "activation": PaddleGELUTanh(),
-                "attn_bias": True,
-                "attn_implementation": config._attn_implementation,
-            },
-            video_attn_type=config.video_attn_type,
+        # self.encoder = MoonViT3dEncoder(
+        #     hidden_dim=config.hidden_size,
+        #     num_layers=config.num_hidden_layers,
+        #     block_cfg={
+        #         "num_heads": config.num_attention_heads,
+        #         "hidden_dim": config.hidden_size,
+        #         "mlp_dim": config.intermediate_size,
+        #         "activation": PaddleGELUTanh(),
+        #         "attn_bias": True,
+        #         "attn_implementation": config._attn_implementation,
+        #     },
+        #     video_attn_type=config.video_attn_type,
+        # )
+        self.rotary_pos_emb = Rope2DPosEmbRepeated(config.hidden_size // config.num_attention_heads, 512, 512)
+
+        self.decoder = KimiK25VisionTransformerBlock(
+            config=config,
+            spec=transformer_layer_spec,
+            pre_process=True,
+            post_process=True,
         )
 
-    def forward(self, pixel_values: paddle.Tensor, grid_thws: paddle.Tensor) -> paddle.Tensor:
+    def tpool_patch_merger(
+        x: paddle.Tensor,
+        grid_thws: paddle.Tensor,
+        merge_kernel_size: tuple[int, int] = (2, 2),
+    ) -> list[paddle.Tensor]:
+        d_model = x.size(-1)
+
+        outputs = []
+        pre_sum = 0
+        for t, h, w in grid_thws.tolist():
+            # Get the current sequence
+            seq = x[pre_sum : pre_sum + t * h * w]
+            # Reshape along self.merge_kernel_size and concat to the last dimension
+            kernel_height, kernel_width = merge_kernel_size
+            new_height, new_width = h // kernel_height, w // kernel_width
+            reshaped_seq = seq.view(t, new_height, kernel_height, new_width, kernel_width, d_model)
+            reshaped_seq = reshaped_seq.permute(0, 1, 3, 2, 4, 5).contiguous().mean(dim=0)  # temporal pooling
+            padded_seq = reshaped_seq.view(new_height * new_width, kernel_height * kernel_width, -1)
+            outputs.append(padded_seq)
+            pre_sum += t * h * w
+
+        return outputs
+
+    def get_attn_mask_startend_row_indices(
+        self,
+        grid_thws: paddle.Tensor,
+        device: paddle.Device,
+    ):
+        lengths = paddle.cat(
+            (
+                paddle.zeros(1, dtype=grid_thws.dtype, device=grid_thws.device),
+                grid_thws[:, 0] * grid_thws[:, 1] * grid_thws[:, 2],
+            )
+        )
+
+        # max_seqlen = lengths.max()
+        cu_seqlens = lengths.to(device).cumsum(dim=0, dtype=paddle.int32)
+        cu_seqlens_rm_first = cu_seqlens[1:]
+        cu_seqlens_rm_last = cu_seqlens[:-1]
+        repeats = cu_seqlens_rm_first - cu_seqlens_rm_last
+
+        startend_row_indices_lts = paddle.repeat_interleave(cu_seqlens_rm_first, repeats).reshape([1, 1, -1, 1])
+        startend_row_indices_ute = paddle.repeat_interleave(cu_seqlens_rm_last, repeats).reshape([1, 1, -1, 1])
+        startend_row_indices = paddle.concat([startend_row_indices_lts, startend_row_indices_ute], axis=-1)
+
+        return startend_row_indices
+
+    def get_rotary_pos_emb(self, grid_thws: paddle.Tensor, device: paddle.Device) -> tuple[paddle.Tensor, ...]:
+
+        freqs_cis = self.rotary_pos_emb.get_freqs_cis(grid_thws=grid_thws, device=device)
+        rotary_pos_cos = paddle.real(freqs_cis)  # 实部 = cos(θ)
+        rotary_pos_sin = paddle.imag(freqs_cis)  # 虚部 = sin(θ)
+
+        # 方法2：通过角度计算
+        rotary_pos_emb = paddle.angle(freqs_cis)
+
+        return rotary_pos_emb, rotary_pos_cos, rotary_pos_sin
+
+    def forward(
+        self,
+        pixel_values: paddle.Tensor,
+        grid_thws: paddle.Tensor,
+        attention_mask: paddle.Tensor | None = None,
+        **kwargs
+    ) -> paddle.Tensor:
         """
         Args:
             pixel_values (paddle.Tensor): The input pixel values.
@@ -633,195 +616,229 @@ class MoonViT3dPretrainedModel(PretrainedModel):
         Returns:
             paddle.Tensor: The output tokens.
         """
-        # grid_thws = grid_thws.to('cpu')
+        # Pathed embedding
         assert grid_thws.ndim == 2, f"grid_thws should be 2D, got {grid_thws.ndim}"
         assert grid_thws.size(1) == 3, f"No support for thw: {grid_thws}"
         hidden_states = self.patch_embed(pixel_values, grid_thws)
-        hidden_states = self.encoder(hidden_states, grid_thws)
+
+        # MoonViT3dEncoder
+
+        rotary_pos_emb, rotary_pos_cos, rotary_pos_sin = self.get_rotary_pos_emb(grid_thws, hidden_states.device)
+        attn_mask_startend_row_indices = self.get_attn_mask_startend_row_indices(grid_thws, hidden_states.device)
+        hidden_states = self.decoder(
+            hidden_states,
+            attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            rotary_pos_emb=rotary_pos_emb,
+            rotary_pos_cos=rotary_pos_cos,
+            rotary_pos_sin=rotary_pos_sin,
+        )
+
         if self.merge_type == "sd2_tpool":  # spatial downsampling 2x with temporal pooling all
-            hidden_states = tpool_patch_merger(hidden_states, grid_thws, merge_kernel_size=self.merge_kernel_size)
+            hidden_states = self.tpool_patch_merger(hidden_states, grid_thws, merge_kernel_size=self.merge_kernel_size)
         else:
             raise NotImplementedError(f"Not support {self.merge_type}")
 
         return hidden_states
 
 
-# ============================================================================
-# MM Projector Helper Classes (from mm_projector/modeling_mm_projectors.py)
-# ============================================================================
+class KimiK25VisionModelFleet(KimiK25PretrainedModel):
+    def __new__(cls, config):
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+
+        model_provider_class = KimiK25VisionProvider
+        model_provider = model_provider_class.from_config(config)
+        vision_model = model_provider.provide()
+        vision_model._gen_aoa_config = cls._gen_aoa_config
+        vision_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        vision_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
+        vision_model.config_to_save = config
+
+        return vision_model
 
 
-class IdentityMap(nn.Layer):
-    def __init__(self):
-        super().__init__()
+@dataclass
+class KimiK25Provider(TransformerConfig):
+    text_config: TransformerConfig | None = None
+    vision_config: KimiK25VisionProvider | None = None
 
-    def forward(self, x, *args, **kwargs):
-        return x
+    drop_vision_class_token: bool = False
+    vision_feature_layer: int = -2
 
+    encoder_pipeline_model_parallel_size: int = 0
+    encoder_tensor_model_parallel_size: int = 1
 
-class MLP(nn.Layer):
-    def __init__(self, config):
-        super().__init__()
-        # TODO, use faster LayerNorm
-        self.pre_norm = nn.LayerNorm(config.mm_hidden_size)
-        self.proj = nn.Sequential(
-            nn.Linear(config.mm_hidden_size, config.hidden_size),
-            nn.GELU(),
-            nn.Linear(config.hidden_size, config.hidden_size),
+    seq_length: int = 1024
+
+    language_model_from_pretrained: str | None = None
+    vision_model_from_pretrained: str | None = None
+
+    freeze_langurage_model: bool = False
+    freeze_vision_model: bool = True
+    freeze_vision_projection: bool = False
+
+    def provide(self, tokenizer=None, vp_stage: int | None = None) -> "KimiK25ModelDist":
+        self.text_config.scatter_embedding_sequence_parallel = False
+        self.text_config.tensor_model_parallel_size = self.tensor_model_parallel_size
+        self.text_config.sequence_parallel = self.sequence_parallel
+        self.text_config.context_parallel_size = self.context_parallel_size
+        self.vision_config.tensor_model_parallel_size = self.tensor_model_parallel_size
+        # self.vision_projection_config.tensor_model_parallel_size = self.tensor_model_parallel_size
+        self.text_config.pipeline_model_parallel_size = self.pipeline_model_parallel_size
+
+        if self.encoder_pipeline_model_parallel_size > 0:
+            assert self.encoder_pipeline_model_parallel_size == 1, "ViT can only live on 1 pipeline stage."
+            self.vision_config.pipeline_model_parallel_size = self.encoder_pipeline_model_parallel_size
+            # self.vision_projection_config.pipeline_model_parallel_size = self.encoder_pipeline_model_parallel_size
+            self.text_config.encoder_pipeline_model_parallel_size = self.encoder_pipeline_model_parallel_size
+            if self.encoder_tensor_model_parallel_size > 0:
+                self.vision_config.tensor_model_parallel_size = self.encoder_tensor_model_parallel_size
+                # self.vision_projection_config.tensor_model_parallel_size = self.encoder_tensor_model_parallel_size
+
+        config_attrs = [
+            "cross_entropy_loss_fusion",
+            "gradient_accumulation_fusion",
+            "bias_activation_fusion",
+            "bias_dropout_fusion",
+            "masked_softmax_fusion",
+            "attention_softmax_in_fp32",
+            "apply_rope_fusion",
+            "overlap_p2p_comm",
+            "batch_p2p_comm",
+        ]
+
+        for config in [
+            self.text_config,
+            self.vision_config,
+            # self.vision_projection_config,
+        ]:
+            for attr in config_attrs:
+                setattr(config, attr, getattr(self, attr))
+
+        self.text_config.tp_comm_overlap = self.tp_comm_overlap
+        self.vision_config.tp_comm_overlap = False
+        # self.vision_projection_config.tp_comm_overlap = False
+
+        vp_stage = vp_stage or 0
+
+        model = KimiK25ModelDist(
+            config=self,
+            tokenizer=tokenizer,
+            pre_process=parallel_state.is_pipeline_first_stage(ignore_virtual=False, vp_stage=vp_stage)
+            or parallel_state.get_pipeline_model_parallel_rank() == self.encoder_pipeline_model_parallel_size,
+            post_process=parallel_state.is_pipeline_last_stage(ignore_virtual=False, vp_stage=vp_stage),
+            add_encoder=parallel_state.is_pipeline_first_stage(ignore_virtual=False, vp_stage=vp_stage),
+            add_decoder=parallel_state.is_pipeline_last_stage(ignore_virtual=False, vp_stage=vp_stage)
+            or parallel_state.get_pipeline_model_parallel_rank() >= self.encoder_pipeline_model_parallel_size,
+            drop_vision_class_token=self.drop_vision_class_token,
+            vp_stage=vp_stage,
         )
 
-    def forward(self, x, *args, **kwargs):
-        assert isinstance(x, list | tuple), f"x is not a list or tuple: {type(x)}"
-        lengths = [item.shape[0] for item in x]
-        x = paddle.cat(x, dim=0)
-        x = self.pre_norm(x)
-        x = self.proj(x)
-        x = paddle.split(x, lengths, dim=0)
+        return model
 
-        return x
+    @classmethod
+    def from_config(cls, config):
+        res = super().from_config(config)
+        res.vision_config = KimiK25VisionProvider.from_config(config.vision_config)
+        # res.text_config = KimiK25TextProvider.from_config(config.text_config)
+        res.vision_config.normalization = "LayerNorm"
+        res.vision_config.gated_linear_unit = False
+        # res.text_config.multimodal_embedding = True
+        # res.text_config.position_embedding_type = "mrope"
+        # res.text_config.image_token_id = config.image_token_id
+        # res.text_config.video_token_id = config.video_token_id
+        return res
 
 
-class PatchMergerMLP(nn.Layer):
-    def __init__(self, config):
-        super().__init__()
-        eps = config.projector_ln_eps
-        self.hidden_size = config.mm_hidden_size * (config.merge_kernel_size[0] * config.merge_kernel_size[1])
-        self.pre_norm = nn.LayerNorm(config.mm_hidden_size, eps=eps)
-        self.proj = nn.Sequential(
-            nn.Linear(self.hidden_size, self.hidden_size),
-            nn.GELU(),
-            nn.Linear(self.hidden_size, config.hidden_size),
+class KimiK25ModelDist(MCoreLLaVAModel):
+    """KimiK25 Model Base Model Class."""
+
+    def __init__(
+        self,
+        config: KimiK25Provider,
+        tokenizer=None,
+        pre_process: bool = True,
+        post_process: bool = True,
+        add_encoder: bool = True,
+        add_decoder: bool = True,
+        drop_vision_class_token: bool = False,
+        vp_stage: int | None = None,
+        model_version: str | None = None,
+        criterion=False,
+    ) -> None:
+        super(MCoreLLaVAModel, self).__init__(config=config)
+
+        language_transformer_config = config.text_config
+        vision_transformer_config = config.vision_config
+        self.model_version = vision_transformer_config.model_version if model_version is None else model_version
+        self._language_max_sequence_length = language_transformer_config.max_sequence_length
+        assert self.model_version is not None
+
+        self.config = config
+        self.pre_process = pre_process
+        self.post_process = post_process
+        self.add_encoder = add_encoder
+        self.add_decoder = add_decoder
+        self.vp_stage = vp_stage
+
+        self.encoder_hidden_state = None
+        self.vision_model = None
+        self.language_model = None
+        self.image_token_index = config.image_token_id
+        self.video_token_index = config.video_token_id
+
+        self.sequence_parallel_lm = language_transformer_config.sequence_parallel
+        self.tp_comm_overlap_lm = language_transformer_config.tp_comm_overlap
+        self.context_parallel_lm = language_transformer_config.context_parallel_size
+        assert not (self.sequence_parallel_lm or self.context_parallel_lm > 1), (
+            f"qwenvl donnot support sequence parallel {self.sequence_parallel_lm} "
+            f"or context parallel {self.context_parallel_lm}"
+        )
+        self.share_embeddings_and_output_weights = False
+        self.rope_deltas = None
+
+        if self.add_decoder:
+            # self.language_model = language_transformer_config.provide(
+            #     pre_process=pre_process,
+            #     post_process=post_process,
+            #     vp_stage=vp_stage,
+            # )
+            # self._language_is_pipeline_parallel = language_transformer_config.pipeline_model_parallel_size > 1
+            self.language_model = DeepseekV3ForCausalLM(config.text_config)
+            self.post_init()
+
+        if add_encoder:
+            self.vision_model = KimiK25VisionModelFleet(vision_transformer_config)
+            self._drop_vision_class_token = drop_vision_class_token
+
+            proj_config = ProjectorConfig(vision_transformer_config)
+            if proj_config.mm_projector_type == "identity":
+                self.mm_projector = IdentityMap()
+            elif proj_config.mm_projector_type == "mlp":
+                self.mm_projector = PatchMLP(proj_config)
+            elif proj_config.mm_projector_type == "patchmerger":
+                self.mm_projector = PatchMergerMLP(proj_config)
+            else:
+                raise ValueError(f"Unsupported mm_projector_type: {proj_config.mm_projector_type}")
+
+            if hasattr(self.language_model, "dtype"):
+                target_dtype = self.language_model.dtype
+                self.vision_model = self.vision_model.to(dtype=target_dtype)
+                self.mm_projector = self.mm_projector.to(dtype=target_dtype)
+
+        self.freeze(
+            freeze_language_model=config.freeze_langurage_model,
+            freeze_vision_model=config.freeze_vision_model,
+            freeze_vision_projection=config.freeze_vision_projection,
         )
 
-    def forward(self, x, *args, **kwargs):
-        if isinstance(x, list) or isinstance(x, tuple):
-            x = [self.proj(self.pre_norm(item).view(item.shape[0], -1)) for item in x]
-        else:
-            # B, N, N_k, C = x.shape
-            B = x.shape[0]
-            x = self.proj(self.pre_norm(x).view(B, -1, self.hidden_size))
-        return x
+        self.model_type = ModelType.encoder_or_decoder
 
-
-class KimiK25PretrainedModel(PretrainedModel):
-    config_class = KimiK25Config
-    base_model_prefix = "model"
-    _no_split_modules = [
-        "MoonViT3dPretrainedModel",
-        "MoonViTEncoderLayer",
-        "DeepseekDecoderLayer",
-        "PatchMergerMLP",
-    ]
-    _skip_keys_device_placement = "past_key_values"
-    _supports_flash_attn_2 = True
-    _supports_sdpa = False
-
-    def _init_weights(self, module):
-        # important: this ported version of Llava isn't meant for training from scratch - only
-        # inference and fine-tuning - so the proper init weights code has been removed - the original codebase
-        # https://github.com/haotian-liu/LLaVA/tree/main/llava should serve for that purpose
-        std = (
-            self.config.initializer_range
-            if hasattr(self.config, "initializer_range")
-            else self.config.text_config.initializer_range
-        )
-
-        if hasattr(module, "class_embedding"):
-            module.class_embedding.data.normal_(mean=0.0, std=std)
-
-        if isinstance(module, (nn.Linear, nn.Conv2d)):
-            module.weight.data.normal_(mean=0.0, std=std)
-            if module.bias is not None:
-                module.bias.data.zero_()
-        elif isinstance(module, nn.Embedding):
-            module.weight.data.normal_(mean=0.0, std=std)
-            if module.padding_idx is not None:
-                module.weight.data[module.padding_idx].zero_()
-
-
-class VisionTowerConfig(PretrainedConfig):
-    model_type = "moonvit3d"
-
-    def __init__(self, config: KimiK25Config, **kwargs):
-        super().__init__(**kwargs)
-        self.patch_size = config.patch_size
-        self.init_pos_emb_height = config.init_pos_emb_height
-        self.init_pos_emb_width = config.init_pos_emb_width
-        self.init_pos_emb_time = config.init_pos_emb_time
-        self.pos_emb_type = config.pos_emb_type
-        self.num_attention_heads = config.vt_num_attention_heads
-        self.num_hidden_layers = config.vt_num_hidden_layers
-        self.hidden_size = config.vt_hidden_size
-        self.intermediate_size = config.vt_intermediate_size
-        self.merge_kernel_size = config.merge_kernel_size
-        self.video_attn_type = config.video_attn_type
-        self.merge_type = config.merge_type
-        self._attn_implementation = config._attn_implementation
-
-
-class ProjectorConfig:
-    def __init__(self, config: KimiK25Config):
-        self.mm_projector_type = config.mm_projector_type
-        self.mm_hidden_size = config.mm_hidden_size
-        self.hidden_size = config.text_hidden_size
-        self.merge_kernel_size = config.merge_kernel_size
-        self.projector_hidden_act = config.projector_hidden_act
-        self.projector_ln_eps = config.projector_ln_eps
-
-
-# ref https://github.com/huggingface/transformers/blob/78b2929c0554b79e0489b451ce4ece14d265ead2/src/transformers/models/llava/modeling_llava.py#L240
-class KimiK25ForConditionalGeneration(KimiK25PretrainedModel):
-    def __init__(self, config: KimiK25Config):
-        super().__init__(config)
-
-        vt_config = VisionTowerConfig(config.vision_config)
-        self.vision_tower = MoonViT3dPretrainedModel(vt_config)
-
-        proj_config = ProjectorConfig(config.vision_config)
-        if proj_config.mm_projector_type == "identity":
-            self.mm_projector = IdentityMap()
-        elif proj_config.mm_projector_type == "mlp":
-            self.mm_projector = MLP(proj_config)
-        elif proj_config.mm_projector_type == "patchmerger":
-            self.mm_projector = PatchMergerMLP(proj_config)
-        else:
-            raise ValueError(f"Unsupported mm_projector_type: {proj_config.mm_projector_type}")
-
-        self.language_model = DeepseekV3ForCausalLM(config.text_config)
-        self.post_init()
-
-        if hasattr(self.language_model, "dtype"):
-            target_dtype = self.language_model.dtype
-            self.vision_tower = self.vision_tower.to(dtype=target_dtype)
-            self.mm_projector = self.mm_projector.to(dtype=target_dtype)
-
-    def get_input_embeddings(self):
-        return self.language_model.get_input_embeddings()
-
-    def set_input_embeddings(self, value):
-        self.language_model.set_input_embeddings(value)
-
-    def get_output_embeddings(self):
-        return self.language_model.get_output_embeddings()
-
-    def set_output_embeddings(self, new_embeddings):
-        self.language_model.set_output_embeddings(new_embeddings)
-
-    def set_decoder(self, decoder):
-        self.language_model.set_decoder(decoder)
-
-    def get_decoder(self):
-        return self.language_model.get_decoder()
-
-    def tie_weights(self):
-        return self.language_model.tie_weights()
-
-    def resize_token_embeddings(self, new_num_tokens: int | None = None, pad_to_multiple_of=None) -> nn.Embedding:
-        model_embeds = self.language_model.resize_token_embeddings(new_num_tokens, pad_to_multiple_of)
-        # update vocab size
-        self.config.text_config.vocab_size = model_embeds.num_embeddings
-        self.vocab_size = model_embeds.num_embeddings
-        return model_embeds
+        self.criterion = criterion
 
     def _merge_input_ids_with_image_features(
         self,
@@ -951,200 +968,311 @@ class KimiK25ForConditionalGeneration(KimiK25PretrainedModel):
                 The selected image features to use as input to the projector head.
         """
 
-        target_dtype = self.vision_tower.patch_embed.proj.weight.dtype
+        target_dtype = self.vision_model.patch_embed.proj.weight.dtype
         pixel_values = pixel_values.to(target_dtype)
 
-        image_features = self.vision_tower(pixel_values, grid_thws)
+        image_features = self.vision_model(pixel_values, grid_thws)
         return image_features
+
+    def get_inputs_embeds(
+        self,
+        input_ids: paddle.LongTensor,
+        pixel_values: paddle.Tensor | None = None,
+        grid_thws: paddle.Tensor | None = None,
+        attention_mask: paddle.Tensor | None = None,
+        past_key_values: list[paddle.FloatTensor] | None = None,
+        labels: paddle.Tensor | None = None,
+    ):
+        # 1. Extra the input embeddings
+        inputs_embeds = self.language_model.get_input_embeddings()(input_ids)
+
+        # 2. Merge text and images
+        if pixel_values is not None and len(pixel_values) > 0 and input_ids.shape[1] != 1:
+            image_features = self._extract_image_features(pixel_values, grid_thws)
+            if self.mm_projector:
+                image_features = self.mm_projector(image_features)
+
+            inputs_embeds = inputs_embeds.to(image_features[0].dtype)  # num_tokens, embed_dim
+            inputs_embeds, attention_mask, labels, position_ids = self._merge_input_ids_with_image_features(
+                image_features,
+                inputs_embeds,
+                input_ids,
+                attention_mask,
+                labels,
+            )
+
+        # In case input_ids.shape[1] == 1 & pixel_values==None & past_key_values != None, we are in the case of
+        # generation with cache
+        elif past_key_values is not None and pixel_values is not None and input_ids.shape[1] == 1:
+            # Retrieve the first layer to inspect the logits and mask out the hidden states
+            # that are set to 0
+            first_layer_past_key_value = past_key_values[0][0][:, :, :, 0]
+
+            # Sum all dimensions of head_dim (-2) to avoid random errors such as: https://github.com/huggingface/transformers/pull/28032#issuecomment-1863691941
+            batch_index, non_attended_tokens = paddle.where(first_layer_past_key_value.float().sum(-2) == 0)
+
+            # Get the target length
+            target_length = input_ids.shape[1]
+            past_length = first_layer_past_key_value.shape[-1]
+
+            extended_attention_mask = paddle.ones(
+                (attention_mask.shape[0], past_length),
+                dtype=attention_mask.dtype,
+                device=attention_mask.device,
+            )
+
+            # Filter out only the tokens that can be un-attended, this can happen
+            # if one uses Llava + Fused modules where the cache on the
+            # first iteration is already big enough, or if one passes custom cache
+            valid_indices = non_attended_tokens < extended_attention_mask.size(-1)
+            new_batch_index = batch_index[valid_indices]
+            new_non_attended_tokens = non_attended_tokens[valid_indices]
+
+            # Zero-out the places where we don't need to attend
+            extended_attention_mask[new_batch_index, new_non_attended_tokens] = 0
+
+            attention_mask = paddle.cat((extended_attention_mask, attention_mask[:, -target_length:]), dim=1)
+            position_ids = paddle.sum(attention_mask, dim=1).unsqueeze(-1) - 1
+
+        input_dict = {
+            "inputs_embeds": inputs_embeds,
+            "position_ids": position_ids,
+            "attention_mask": attention_mask,
+            "labels": labels,
+            "past_key_values": past_key_values,
+        }
+
+        return input_dict
 
     def forward(
         self,
-        input_ids: paddle.LongTensor | None = None,
-        pixel_values: paddle.FloatTensor | list[paddle.FloatTensor] | None = None,
-        grid_thws: paddle.Tensor | None = None,
+        input_ids: paddle.LongTensor = None,
         attention_mask: paddle.Tensor | None = None,
         position_ids: paddle.LongTensor | None = None,
-        past_key_values: list[paddle.FloatTensor] | None = None,
-        inputs_embeds: paddle.FloatTensor | None = None,
-        labels: paddle.LongTensor | None = None,
-        use_cache: bool | None = None,
-        output_attentions: bool | None = None,
-        output_hidden_states: bool | None = None,
-        return_dict: bool | None = None,
-    ) -> tuple | LlavaCausalLMOutputWithPast:
+        loss_mask: paddle.Tensor | None = None,
+        labels: paddle.Tensor | None = None,
+        inference_params=None,
+        pixel_values: paddle.Tensor | None = None,
+        pixel_values_videos=None,  # kimi not support video now
+        image_grid_thw=None,
+        video_grid_thw=None,
+        runtime_gather_output: bool | None = None,
+        cache_position: paddle.Tensor | None = None,
+        attn_mask_startend_row_indices: paddle.Tensor | None = None,
+        **kwargs,
+    ) -> paddle.Tensor:
+        assert loss_mask is None, "loss_mask is not supported yet"
+
+        input_dict = self.get_inputs_embeds(input_ids, pixel_values, image_grid_thw, attention_mask, None, labels)
+        labels = input_dict.get("labels", labels)
+
+        output = self.language_model(input_dict)
+        # print("qwenvl criterion ",self.criterion)
+        if labels is None:
+            return output
+        elif self.criterion is not None:
+            # print("qwenvl output loss  ",self.criterion(output, labels))
+            return self.criterion(output, labels)
+        else:
+            return output
+
+
+class KimiK25PretrainedModelFleet(PretrainedModel):
+    config_class = KimiK25Config
+    base_model_prefix = "model"
+    input_modalities = ["image", "text"]
+    _no_split_modules = ["KimiK25TextTransformerLayer", "KimiK25VisionTransformerBlock"]
+    # _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
+    transpose_weight_keys = [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "qkv",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+        "proj",
+        "linear_fc\d+",
+        "up_gate_proj",
+        "qkv_proj",
+    ]
+
+    @classmethod
+    def _gen_aoa_config(cls, config: KimiK25Config):
+        pass
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: KimiK25Config):
+        pass
+
+
+class KimiK25Model(KimiK25PretrainedModelFleet):
+    config_class = KimiK25Config
+
+    def __new__(cls, config, have_criterion=True):
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+        criterion = None
+        if have_criterion:
+            criterion = CriterionLayer(config.text_config)
+        model_provider_class = KimiK25Provider
+        model_provider = model_provider_class.from_config(config)
+        KimiK25_model = KimiK25ModelDist(model_provider, model_version=config.model_type, criterion=criterion)
+        KimiK25_model._gen_aoa_config = cls._gen_aoa_config
+        KimiK25_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        KimiK25_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
+        KimiK25_model.config_to_save = config
+
+        return KimiK25_model
+
+
+class KimiK25ForConditionalGeneration(KimiK25PretrainedModelFleet):
+    _checkpoint_conversion_mapping = {
+        "^visual": "model.visual",
+        r"^model(?!\.(language_model|visual))": "model.language_model",
+    }
+    _tied_weights_keys = {"lm_head.weight": "model.language_model.embed_tokens.weight"}
+    config_class = KimiK25Config
+
+    def __init__(self, config):
+        super().__init__(config)
+        # model_provider = KimiK25Provider.from_config(config)
+        self.model = KimiK25Model(
+            config, have_criterion=False
+        )  # KimiK25Model(model_provider, model_version=config.model_type)
+        self.criterion = CriterionLayer(config.text_config)
+        # self.tie_weights()
+
+    def state_dict(self, *args, **kwargs):
+        # Override state_dict method to handle language_model's custom state_dict
+        state_dict = super().state_dict(*args, **kwargs)
+        # Remove existing language_model keys to avoid duplicates
+        delete_key = []
+        for key in state_dict.keys():
+            if key.startswith("model.language_model."):
+                delete_key.append(key)
+        for key in delete_key:
+            state_dict.pop(key)
+        if self.model.language_model is not None:
+            # Get language_model's state_dict
+            language_state_dict = self.model.language_model.state_dict(*args, **kwargs)
+
+            # Merge language_model parameters into main state_dict
+            for key, value in language_state_dict.items():
+                state_dict[key] = value
+        return state_dict
+
+    # def get_input_embeddings(self):
+    #     return self.model.get_input_embeddings()
+    def forward(
+        self,
+        input_ids: Optional[paddle.Tensor] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
+        position_ids: Optional[paddle.Tensor] = None,
+        past_key_values: Optional[Cache] = None,
+        inputs_embeds: Optional[paddle.Tensor] = None,
+        labels: Optional[paddle.Tensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        pixel_values: Optional[paddle.Tensor] = None,
+        pixel_values_videos: Optional[paddle.Tensor] = None,
+        image_grid_thw: Optional[paddle.Tensor] = None,
+        video_grid_thw: Optional[paddle.Tensor] = None,
+        rope_deltas: Optional[paddle.Tensor] = None,
+        cache_position: Optional[paddle.Tensor] = None,
+        logits_to_keep: Union[int, paddle.Tensor] = 0,
+        return_dict: Optional[bool] = True,
+        **kwargs,
+    ) -> Union[tuple, KimiK25CausalLMOutputWithPast]:
         r"""
-        Args:
-            labels (`paddle.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
-                Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
-                config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
-                (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
-        ```"""
-        assert self.vision_tower is not None, "vision_tower is not loaded"
+        labels (`paddle.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
+            config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
+            (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
+        image_grid_thw (`paddle.Tensor` of shape `(num_images, 3)`, *optional*):
+            The temporal, height and width of feature shape of each image in LLM.
+        video_grid_thw (`paddle.Tensor` of shape `(num_videos, 3)`, *optional*):
+            The temporal, height and width of feature shape of each video in LLM.
+        rope_deltas (`paddle.Tensor` of shape `(batch_size, )`, *optional*):
+            The rope index difference between sequence length and multimodal rope.
+
+        Example:
+
+        ```python
+        >>> from paddleformers.transformers import AutoProcessor, KimiK25ForConditionalGeneration
+
+        >>> model = KimiK25ForConditionalGeneration.from_pretrained("moonshotai/Kimi-K2.5")
+        >>> processor = AutoProcessor.from_pretrained("moonshotai/Kimi-K2.5")
+
+        >>> messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "image": "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg",
+                    },
+                    {"type": "text", "text": "Describe the image."},
+                ],
+            }
+        ]
+
+        >>> inputs = processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pd"
+        )
+
+        >>> # Generate
+        >>> generated_ids = model.generate(**inputs, max_new_tokens=1024)
+        >>> output_text = processor.batch_decode(generated_ids[0], skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
+        >>> print(output_text)
+        ```
+        """
+
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        if inputs_embeds is None:
-            # 1. Extra the input embeddings
-            inputs_embeds = self.get_input_embeddings()(input_ids)
-
-            # 2. Merge text and images
-            if pixel_values is not None and len(pixel_values) > 0 and input_ids.shape[1] != 1:
-                image_features = self._extract_image_features(pixel_values, grid_thws)
-                if self.mm_projector:
-                    image_features = self.mm_projector(image_features)
-
-                inputs_embeds = inputs_embeds.to(image_features[0].dtype)  # num_tokens, embed_dim
-                inputs_embeds, attention_mask, labels, position_ids = self._merge_input_ids_with_image_features(
-                    image_features,
-                    inputs_embeds,
-                    input_ids,
-                    attention_mask,
-                    labels,
-                )
-
-            # In case input_ids.shape[1] == 1 & pixel_values==None & past_key_values != None, we are in the case of
-            # generation with cache
-            elif past_key_values is not None and pixel_values is not None and input_ids.shape[1] == 1:
-                # Retrieve the first layer to inspect the logits and mask out the hidden states
-                # that are set to 0
-                first_layer_past_key_value = past_key_values[0][0][:, :, :, 0]
-
-                # Sum all dimensions of head_dim (-2) to avoid random errors such as: https://github.com/huggingface/transformers/pull/28032#issuecomment-1863691941
-                batch_index, non_attended_tokens = paddle.where(first_layer_past_key_value.float().sum(-2) == 0)
-
-                # Get the target length
-                target_length = input_ids.shape[1]
-                past_length = first_layer_past_key_value.shape[-1]
-
-                extended_attention_mask = paddle.ones(
-                    (attention_mask.shape[0], past_length),
-                    dtype=attention_mask.dtype,
-                    device=attention_mask.device,
-                )
-
-                # Filter out only the tokens that can be un-attended, this can happen
-                # if one uses Llava + Fused modules where the cache on the
-                # first iteration is already big enough, or if one passes custom cache
-                valid_indices = non_attended_tokens < extended_attention_mask.size(-1)
-                new_batch_index = batch_index[valid_indices]
-                new_non_attended_tokens = non_attended_tokens[valid_indices]
-
-                # Zero-out the places where we don't need to attend
-                extended_attention_mask[new_batch_index, new_non_attended_tokens] = 0
-
-                attention_mask = paddle.cat((extended_attention_mask, attention_mask[:, -target_length:]), dim=1)
-                position_ids = paddle.sum(attention_mask, dim=1).unsqueeze(-1) - 1
-
-        outputs = self.language_model(
-            attention_mask=attention_mask,
+        outputs = self.model(
+            input_ids=input_ids,
+            pixel_values=pixel_values,
+            pixel_values_videos=pixel_values_videos,
+            image_grid_thw=image_grid_thw,
+            video_grid_thw=video_grid_thw,
             position_ids=position_ids,
+            attention_mask=attention_mask,
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
             use_cache=use_cache,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            cache_position=cache_position,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            **kwargs,
         )
 
-        logits = outputs[0]
+        logits = outputs
 
         loss = None
         if labels is not None:
-            # Shift so that tokens < n predict n
-            if attention_mask is not None:
-                shift_attention_mask = attention_mask[..., 1:]
-                shift_logits = logits[..., :-1, :][shift_attention_mask.to(logits.device) != 0].contiguous()
-                shift_labels = labels[..., 1:][shift_attention_mask.to(labels.device) != 0].contiguous()
-            else:
-                shift_logits = logits[..., :-1, :].contiguous()
-                shift_labels = labels[..., 1:].contiguous()
-            # Flatten the tokens
-            loss_fct = nn.CrossEntropyLoss()
-            loss = loss_fct(
-                shift_logits.view(-1, shift_logits.size(-1)),
-                shift_labels.view(-1).to(shift_logits.device),
-            )
+            loss, _ = self.criterion(logits, labels)
 
-        if not return_dict:
-            output = (logits,) + outputs[1:]
-            return (loss,) + output if loss is not None else output
-
-        return LlavaCausalLMOutputWithPast(
+        return KimiK25CausalLMOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
+            rope_deltas=None,
         )
-
-    def prepare_inputs_for_generation(
-        self,
-        input_ids,
-        past_key_values=None,
-        inputs_embeds=None,
-        pixel_values=None,
-        grid_thws=None,
-        attention_mask=None,
-        **kwargs,
-    ):
-        if past_key_values is not None:
-            if isinstance(past_key_values, Cache):
-                cache_length = past_key_values.get_seq_length()
-                past_length = getattr(past_key_values, "seen_tokens", cache_length)
-            else:
-                cache_length = past_length = past_key_values[0][0].shape[2]
-
-            # Keep only the unprocessed tokens:
-            # 1 - If the length of the attention_mask exceeds the length of input_ids, then we are in a setting where
-            # some of the inputs are exclusively passed as part of the cache (e.g. when passing input_embeds as
-            # input)
-            if attention_mask is not None and attention_mask.shape[1] > input_ids.shape[1]:
-                input_ids = input_ids[:, -(attention_mask.shape[1] - past_length) :]
-            # 2 - If the past_length is smaller than input_ids', then input_ids holds all input tokens. We can discard
-            # input_ids based on the past_length.
-            elif past_length < input_ids.shape[1]:
-                input_ids = input_ids[:, past_length:]
-            # 3 - Otherwise (past_length >= input_ids.shape[1]), let's assume input_ids only has unprocessed tokens.
-            elif self.config.media_placeholder_token_id in input_ids:
-                input_ids = input_ids[:, input_ids.shape[1] - 1 :]
-            # If the cache has seen more tokens than it can hold, then the cache has a size limit. Let's discard the
-            # older attention values, as their corresponding values are not part of the input.
-            if cache_length < past_length and attention_mask is not None:
-                attention_mask = attention_mask[:, -(cache_length + input_ids.shape[1]) :]
-
-        position_ids = kwargs.get("position_ids", None)
-        if attention_mask is not None and position_ids is None:
-            # create position_ids on the fly for batch generation
-            position_ids = attention_mask.long().cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask == 0, 1)
-            if past_key_values:
-                position_ids = position_ids[:, -input_ids.shape[1] :]
-
-        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            model_inputs = {"input_ids": input_ids}
-
-        model_inputs.update(
-            {
-                "position_ids": position_ids,
-                "past_key_values": past_key_values,
-                "use_cache": kwargs.get("use_cache"),
-                "attention_mask": attention_mask,
-                "pixel_values": pixel_values,
-                "grid_thws": grid_thws,
-            }
-        )
-        return model_inputs
-
-    def _reorder_cache(self, *args, **kwargs):
-        return self.language_model._reorder_cache(*args, **kwargs)
-
-
-__all__ = [
-    "KimiK25ForConditionalGeneration",
-]
