@@ -53,6 +53,7 @@ PROCESSOR_MAPPING_NAMES = OrderedDict(
         ("qwen2_vl", "Qwen2VLProcessor"),
         ("paddleocr_vl", "PaddleOCRVLProcessor"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLProcessor"),
+        ("qwen3_vl_moe", "Qwen3OmniMoeProcessor"),
     ]
 )
 
@@ -139,7 +140,6 @@ class AutoProcessor:
             if preprocessor_config_file is not None:
                 config_dict, _ = ImageProcessingMixin.get_image_processor_dict(pretrained_model_name_or_path, **kwargs)
                 processor_class = config_dict.get("processor_class", None)
-                # processor_class = "Qwen2VLProcessor" # this is a HACK
                 if "AutoProcessor" in config_dict.get("auto_map", {}):
                     processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
 

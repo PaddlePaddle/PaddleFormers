@@ -354,7 +354,7 @@ def run_sft(
     # Load tokenizer & processor & dataset
     name_bak = model_args.model_name_or_path
 
-    model_args.model_name_or_path = "Qwen/Qwen3-Omni-30B-A3B-Instruct"
+    model_args.model_name_or_path = "/root/paddlejob/workspace/env_run/chenxuran/customQwen3-Omni-30B-A3B-Instruct/"
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
     add_new_special_tokens(tokenizer, data_args.new_special_tokens_path)
     if tokenizer.pad_token_id is None:
@@ -366,9 +366,8 @@ def run_sft(
 
     if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, Llama3Tokenizer):
         tokenizer.pad_token_id = tokenizer.eos_token_id
+    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=False)
     model_args.model_name_or_path = name_bak
-
-    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
 
     dataset_config = {
         "tokenizer": tokenizer,

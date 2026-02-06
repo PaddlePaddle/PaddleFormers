@@ -48,6 +48,47 @@ from .augment_utils import (
     transforms,
 )
 
+
+def round_by_factor(number: int, factor: int) -> int:
+    """Returns the closest integer to 'number' that is divisible by 'factor'."""
+    return round(number / factor) * factor
+
+
+def ceil_by_factor(number: int, factor: int) -> int:
+    """Returns the smallest integer greater than or equal to 'number' that is divisible by 'factor'."""
+    return math.ceil(number / factor) * factor
+
+
+def floor_by_factor(number: int, factor: int) -> int:
+    """Returns the largest integer less than or equal to 'number' that is divisible by 'factor'."""
+    return math.floor(number / factor) * factor
+
+
+def smart_resize(height: int, width: int, factor: int, min_pixels: int, max_pixels: int):
+    """
+    Rescales the image so that the following conditions are met:
+
+    1. Both dimensions (height and width) are divisible by 'factor'.
+    2. The total number of pixels is within the range ['min_pixels', 'max_pixels'].
+    3. The aspect ratio of the image is maintained as closely as possible.
+    """
+    if max(height, width) / min(height, width) > 200:
+        raise ValueError(
+            f"absolute aspect ratio must be smaller than 200, got {max(height, width) / min(height, width)}"
+        )
+    h_bar = max(factor, round_by_factor(height, factor))
+    w_bar = max(factor, round_by_factor(width, factor))
+    if h_bar * w_bar > max_pixels:
+        beta = math.sqrt((height * width) / max_pixels)
+        h_bar = floor_by_factor(height / beta, factor)
+        w_bar = floor_by_factor(width / beta, factor)
+    elif h_bar * w_bar < min_pixels:
+        beta = math.sqrt(min_pixels / (height * width))
+        h_bar = ceil_by_factor(height * beta, factor)
+        w_bar = ceil_by_factor(width * beta, factor)
+    return h_bar, w_bar
+
+
 IMAGE_PLACEHOLDER = os.getenv("IMAGE_PLACEHOLDER", "<image>")
 VIDEO_PLACEHOLDER = os.getenv("VIDEO_PLACEHOLDER", "<video>")
 AUDIO_PLACEHOLDER = os.getenv("AUDIO_PLACEHOLDER", "<audio>")
@@ -723,7 +764,22 @@ class Qwen2VLPlugin(BasePlugin):
 
     @override
     def _preprocess_image(self, image, **kwargs):
-        image = super()._preprocess_image(image, **kwargs)
+        # Default factor for Qwen2-VL is 28 (14*2)
+        factor = kwargs.get("factor", 28)
+        image_min_pixels = kwargs.get("image_min_pixels", 32 * 32)
+        image_max_pixels = kwargs.get("image_max_pixels", 768 * 768)
+
+        # Use smart_resize instead of super()._preprocess_image
+        resized_height, resized_width = smart_resize(
+            height=image.height,
+            width=image.width,
+            factor=factor,
+            min_pixels=image_min_pixels,
+            max_pixels=image_max_pixels,
+        )
+
+        image = image.resize((resized_width, resized_height))
+
         if min(image.width, image.height) < 28:
             width, height = max(image.width, 28), max(image.height, 28)
             image = image.resize((width, height))
@@ -735,6 +791,9 @@ class Qwen2VLPlugin(BasePlugin):
         if image.height / image.width > 200:
             width, height = image.width, image.width * 180
             image = image.resize((width, height))
+
+        if image.mode != "RGB":
+            image = image.convert("RGB")
 
         return image
 
@@ -872,10 +931,11 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
     @override
     def _get_mm_inputs(
         self,
-        processor,
         images,
         videos,
         audios,
+        processor,
+        **kwargs,
     ) -> None:
         # 获取多模态处理器
         image_processor = getattr(processor, "image_processor", None)

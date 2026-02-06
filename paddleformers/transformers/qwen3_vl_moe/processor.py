@@ -1,11 +1,11 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,12 +14,10 @@
 
 import bisect
 import re
-from typing import Sequence, Union
 
 import numpy as np
 from typing_extensions import Unpack
 
-from ...utils import auto_docstring
 from ..audio_utils import AudioInput, load_audio
 from ..image_processing_utils import BatchFeature
 from ..image_utils import ImageInput
@@ -117,6 +115,8 @@ def _get_feat_extract_output_lengths(input_lengths):
 
 
 class Qwen3OmniMoeProcessor(ProcessorMixin):
+    attributes = ["image_processor", "video_processor", "feature_extractor", "tokenizer"]
+
     def __init__(
         self, image_processor=None, video_processor=None, feature_extractor=None, tokenizer=None, chat_template=None
     ):
