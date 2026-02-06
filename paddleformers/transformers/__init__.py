@@ -66,7 +66,7 @@ import_structure = {
     ],
     "auto.configuration": ["AutoConfig"],
     "auto.image_processing": ["AutoImageProcessor", "IMAGE_PROCESSOR_MAPPING"],
-    "auto.feature_extraction":'AutoFeatureExtractor',
+    "auto.feature_extraction": "AutoFeatureExtractor",
     "auto.modeling": [
         "AutoTokenizer",
         "AutoBackbone",
@@ -306,7 +306,7 @@ if TYPE_CHECKING:
     from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
     from .image_processing_utils_fast import BaseImageProcessorFast
     from .audio_processing_utils import SequenceFeatureExtractor
-    from .video_processing_utils import BaseVideoProcessor 
+    from .video_processing_utils import BaseVideoProcessor
     from .attention_utils import create_bigbird_rand_mask_idx_list
     from .sequence_parallel_utils import AllGatherVarlenOp, sequence_parallel_sparse_mask_labels
     from .tensor_parallel_utils import parallel_matmul, fused_head_and_loss_fn

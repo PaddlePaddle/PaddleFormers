@@ -1,10 +1,26 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+# 
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import logging
 from typing import List, Optional, Union
+
 import numpy as np
 import paddle
 import paddlenlp
-import logging
+
+from ..audio_processing_utils import BatchFeature, SequenceFeatureExtractor
 from ..tokenizer_utils_base import TensorType
-from ..audio_processing_utils import SequenceFeatureExtractor,BatchFeature
 
 """
 Feature extractor class for Whisper
@@ -85,37 +101,29 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
             mel_scale="slaney",
         )
 
-    def _paddle_extract_fbank_features(
-        self, waveform: np.array, device: str = "cpu"
-    ) -> np.ndarray:
+    def _paddle_extract_fbank_features(self, waveform: np.array, device: str = "cpu") -> np.ndarray:
         waveform = paddle.to_tensor(data=waveform).to(device, "float32")
-        window = paddle.audio.functional.get_window(
-            win_length=self.n_fft, dtype="float32", window="hann"
-        )
+        window = paddle.audio.functional.get_window(win_length=self.n_fft, dtype="float32", window="hann")
         if self.dither != 0.0:
-            waveform += self.dither * paddle.randn(
-                shape=tuple(waveform.shape), dtype=waveform.dtype
-            )
-        
-        stft = paddle.signal.stft(
-            n_fft=self.n_fft, hop_length=self.hop_length, window=window, x=waveform
-        )
+            waveform += self.dither * paddle.randn(shape=tuple(waveform.shape), dtype=waveform.dtype)
+
+        stft = paddle.signal.stft(n_fft=self.n_fft, hop_length=self.hop_length, window=window, x=waveform)
         magnitudes = stft[..., :-1].abs() ** 2
         mel_filters = paddle.to_tensor(data=self.mel_filters).to(device, "float32")
         mel_spec = mel_filters.T @ magnitudes
         log_spec = paddle.clip(x=mel_spec, min=1e-10).log10()
 
         if waveform.dim() == 2:
-            max_val = paddle.max(paddle.max(log_spec,axis=2, keepdim=True),axis=1, keepdim=True)
+            max_val = paddle.max(paddle.max(log_spec, axis=2, keepdim=True), axis=1, keepdim=True)
             log_spec = paddle.maximum(x=log_spec, y=max_val - 8.0)
         else:
             log_spec = paddle.maximum(x=log_spec, y=log_spec.max_func() - 8.0)
         log_spec = (log_spec + 4.0) / 4.0
-        
+
         if device != "cpu":
             log_spec = log_spec.detach().cpu()
         return log_spec.numpy()
-    
+
     def _np_extract_fbank_features(self, waveform_batch: np.array, device: str) -> np.ndarray:
         """
         Compute the log-mel spectrogram of the provided audio, gives similar results to Whisper's original torch
@@ -135,7 +143,7 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
                 frame_length=self.n_fft,
                 hop_length=self.hop_length,
                 power=2.0,
-                #dither=self.dither,
+                # dither=self.dither,
                 mel_filters=self.mel_filters,
                 log_mel="log10",
             )
@@ -168,7 +176,7 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
             normed_input_values = [(x - x.mean()) / np.sqrt(x.var() + 1e-7) for x in input_values]
 
         return normed_input_values
-    
+
     def __call__(
         self,
         raw_speech: Union[np.ndarray, List[float], List[np.ndarray], List[List[float]]],
@@ -242,35 +250,24 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
             logger.warning(
                 f"It is strongly recommended to pass the `sampling_rate` argument to `{self.__class__.__name__}()`. Failing to do so can result in silent errors that might be hard to debug."
             )
-        is_batched_numpy = (
-            isinstance(raw_speech, np.ndarray) and len(tuple(raw_speech.shape)) > 1
-        )
+        is_batched_numpy = isinstance(raw_speech, np.ndarray) and len(tuple(raw_speech.shape)) > 1
         if is_batched_numpy and len(tuple(raw_speech.shape)) > 2:
-            raise ValueError(
-                f"Only mono-channel audio is supported for input to {self}"
-            )
+            raise ValueError(f"Only mono-channel audio is supported for input to {self}")
         is_batched = (
             is_batched_numpy
             or isinstance(raw_speech, (list, tuple))
             and isinstance(raw_speech[0], (np.ndarray, tuple, list))
         )
         if is_batched:
-            raw_speech = [
-                np.asarray([speech], dtype=np.float32).T for speech in raw_speech
-            ]
+            raw_speech = [np.asarray([speech], dtype=np.float32).T for speech in raw_speech]
         elif not is_batched and not isinstance(raw_speech, np.ndarray):
             raw_speech = np.asarray(raw_speech, dtype=np.float32)
-        elif isinstance(raw_speech, np.ndarray) and raw_speech.dtype is np.dtype(
-            np.float64
-        ):
+        elif isinstance(raw_speech, np.ndarray) and raw_speech.dtype is np.dtype(np.float64):
             raw_speech = raw_speech.astype(np.float32)
         if not is_batched:
             raw_speech = [np.asarray([raw_speech]).T]
-        
-        batched_speech = BatchFeature(
-            {"input_features": raw_speech}
-        )paddleformers/transformers/
-        
+
+        batched_speech = BatchFeature({"input_features": raw_speech})
         padded_inputs = self.pad(
             batched_speech,
             padding=padding,
@@ -288,27 +285,21 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
                 padding_value=self.padding_value,
             )
             padded_inputs["input_features"] = np.stack(padded_inputs["input_features"], axis=0)
-        
+
         input_features = padded_inputs.get("input_features").transpose(2, 0, 1)
 
-        input_features = self._paddle_extract_fbank_features(input_features[0], device='cpu')
-        
+        input_features = self._paddle_extract_fbank_features(input_features[0], device="cpu")
+
         if isinstance(input_features[0], List):
-            padded_inputs["input_features"] = [
-                np.asarray(feature, dtype=np.float32) for feature in input_features
-            ]
+            padded_inputs["input_features"] = [np.asarray(feature, dtype=np.float32) for feature in input_features]
         else:
             padded_inputs["input_features"] = input_features
         if return_attention_mask:
-            padded_inputs["attention_mask"] = padded_inputs["attention_mask"][
-                :, :: self.hop_length
-            ]
+            padded_inputs["attention_mask"] = padded_inputs["attention_mask"][:, :: self.hop_length]
             if padded_inputs["attention_mask"].shape[1] % self.hop_length != 0:
                 padded_inputs["attention_mask"] = padded_inputs["attention_mask"][:, :-1]
         if return_token_timestamps is not None:
-            padded_inputs["num_frames"] = [
-                (len(raw_speech_i) // self.hop_length) for raw_speech_i in raw_speech
-            ]
+            padded_inputs["num_frames"] = [(len(raw_speech_i) // self.hop_length) for raw_speech_i in raw_speech]
         if return_tensors is not None:
             padded_inputs = padded_inputs.convert_to_tensors(return_tensors)
         return padded_inputs

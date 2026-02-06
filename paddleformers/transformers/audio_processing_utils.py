@@ -1,8 +1,26 @@
-from .feature_extraction_utils import FeatureExtractionMixin, BatchFeature
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+# 
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from enum import Enum
-from typing import Union, List, Dict, Optional
+from typing import Dict, List, Optional, Union
+
 import numpy as np
 import paddle
+
+from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
+
+
 class ExplicitEnum(Enum):
     """
     Enum with more explicit error message for missing values.
@@ -13,6 +31,8 @@ class ExplicitEnum(Enum):
         raise ValueError(
             f"{value} is not a valid {cls.__name__}, please select one of {list(cls._value2member_map_.keys())}"
         )
+
+
 class PaddingStrategy(ExplicitEnum):
     """
     Possible values for the `padding` argument in [`PreTrainedTokenizerBase.__call__`]. Useful for tab-completion in an
@@ -22,6 +42,8 @@ class PaddingStrategy(ExplicitEnum):
     LONGEST = "longest"
     MAX_LENGTH = "max_length"
     DO_NOT_PAD = "do_not_pad"
+
+
 class SequenceFeatureExtractor(FeatureExtractionMixin):
     """
     This is a general feature extraction class for speech recognition.

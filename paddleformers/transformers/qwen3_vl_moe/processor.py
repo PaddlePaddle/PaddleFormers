@@ -1,16 +1,38 @@
-from ..processing_utils import ProcessorMixin, ProcessingKwargs, VideosKwargs, AllKwargsForChatTemplate, render_jinja_template
-from ..image_processing_utils import BatchFeature
-from ..video_utils import VideoInput, make_batched_videos
-from ...utils import auto_docstring
-from ..tokenizer_utils_base import TextInput
-from ..image_utils import ImageInput
-from ..audio_utils import load_audio, AudioInput
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+# 
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import bisect
+import re
+from typing import Sequence, Union
 
 import numpy as np
 from typing_extensions import Unpack
-from typing import Union, Sequence
-import re
-import bisect
+
+from ...utils import auto_docstring
+from ..audio_utils import AudioInput, load_audio
+from ..image_processing_utils import BatchFeature
+from ..image_utils import ImageInput
+from ..processing_utils import (
+    AllKwargsForChatTemplate,
+    ProcessingKwargs,
+    ProcessorMixin,
+    VideosKwargs,
+    render_jinja_template,
+)
+from ..tokenizer_utils_base import TextInput
+from ..video_utils import VideoInput, make_batched_videos
+
 
 class Qwen3OmniMoeVideosKwargs(VideosKwargs, total=False):
     """
@@ -92,7 +114,6 @@ def _get_feat_extract_output_lengths(input_lengths):
     feat_lengths = (input_lengths_leave - 1) // 2 + 1
     output_lengths = ((feat_lengths - 1) // 2 + 1 - 1) // 2 + 1 + (input_lengths // 100) * 13
     return output_lengths
-
 
 
 class Qwen3OmniMoeProcessor(ProcessorMixin):
@@ -366,6 +387,7 @@ class Qwen3OmniMoeProcessor(ProcessorMixin):
                 + ["video_second_per_grid"]
             )
         )
+
     def apply_chat_template(
         self,
         conversation: list[dict[str, str]] | list[list[dict[str, str]]],
@@ -595,5 +617,6 @@ class Qwen3OmniMoeProcessor(ProcessorMixin):
             else:
                 return out["input_ids"]
         return prompt
+
 
 __all__ = ["Qwen3OmniMoeProcessor"]

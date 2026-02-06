@@ -1,17 +1,36 @@
-from ..feature_extraction_utils import FeatureExtractionMixin
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+# 
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import importlib
 import os
 from collections import OrderedDict
+
 from transformers.models.auto.configuration_auto import (
     CONFIG_MAPPING_NAMES,
     model_type_to_module_name,
     replace_list_option_in_docstrings,
 )
+
+from ..feature_extraction_utils import FeatureExtractionMixin
+
 FEATURE_EXTRACTOR_MAPPING_NAMES = OrderedDict(
     [
         ("whisper", "WhisperFeatureExtractor"),
     ]
 )
+
+
 def feature_extractor_class_from_name(class_name: str):
     for module_name, extractors in FEATURE_EXTRACTOR_MAPPING_NAMES.items():
         if class_name in extractors:
@@ -144,6 +163,8 @@ def get_feature_extractor_config(
     if resolved_feature_extractor_file is not None and feature_extractor_dict is None:
         feature_extractor_dict = safe_load_json_file(resolved_feature_extractor_file)
     return feature_extractor_dict
+
+
 class AutoFeatureExtractor:
     r"""
     This is a generic feature extractor class that will be instantiated as one of the feature extractor classes of the
@@ -196,11 +217,11 @@ class AutoFeatureExtractor:
             )
 
         if has_remote_code and trust_remote_code:
-            
+
             feature_extractor_class = get_class_from_dynamic_module(
                 feature_extractor_auto_map, pretrained_model_name_or_path, **kwargs
             )
-            
+
             _ = kwargs.pop("code_revision", None)
             feature_extractor_class.register_for_auto_class()
             return feature_extractor_class.from_pretrained(pretrained_model_name_or_path, **kwargs)

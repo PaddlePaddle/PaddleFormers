@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 def auto_docstring(obj=None, *, custom_intro=None, custom_args=None, checkpoint=None):
     r"""
     Automatically generates comprehensive docstrings for model classes and methods in the Transformers library.

@@ -265,14 +265,14 @@ class PaddleProcessorMixin:
         # If the exact attribute name is not in the mapping, use its canonical modality
         if argument_name not in MODALITY_TO_BASE_CLASS_MAPPING:
             argument_name = _get_modality_for_attribute(argument_name)
-        
+
         class_name = MODALITY_TO_BASE_CLASS_MAPPING.get(argument_name)
         if isinstance(class_name, tuple):
             proper_class = tuple(self.get_possibly_dynamic_module(n) for n in class_name if n is not None)
         else:
-            
+
             proper_class = self.get_possibly_dynamic_module(class_name)
-            
+
         if not isinstance(argument, proper_class):
             raise TypeError(
                 f"Received a {type(argument).__name__} for argument {argument_name}, but a {class_name} was expected."
