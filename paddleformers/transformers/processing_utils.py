@@ -31,6 +31,7 @@ from transformers.processing_utils import (
     AllKwargsForChatTemplate as AllKwargsForChatTemplate_hf,
 )
 from transformers.processing_utils import ProcessingKwargs as ProcessingKwargs_hf
+from transformers.processing_utils import ProcessorChatTemplateKwargs
 from transformers.processing_utils import ProcessorMixin as ProcessorMixin_hf
 from transformers.processing_utils import transformers_module
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
@@ -209,6 +210,7 @@ class ProcessingKwargs(ProcessingKwargs_hf):
 
 class AllKwargsForChatTemplate(AllKwargsForChatTemplate_hf):
     processor_kwargs: ProcessingKwargs
+    template_kwargs: ProcessorChatTemplateKwargs
 
 
 @dataclass
@@ -933,25 +935,18 @@ class PaddleProcessorMixin:
             else:
                 kwargs["return_offsets_mapping"] = True  # force offset mapping so we can infer token boundaries
 
-        # Fill sets of kwargs that should be used by different parts of template
-        processed_kwargs = {
-            "mm_load_kwargs": {},
-            "template_kwargs": {},
-        }
-
-        for kwarg_type in processed_kwargs:
-            for key in AllKwargsForChatTemplate.__annotations__[kwarg_type].__annotations__:
-                kwarg_type_defaults = AllKwargsForChatTemplate.__annotations__[kwarg_type]
-                default_value = getattr(kwarg_type_defaults, key, None)
-                value = kwargs.pop(key, default_value)
-                if value is not None and not isinstance(value, dict):
-                    processed_kwargs[kwarg_type][key] = value
-
-        # pop unused and deprecated kwarg
-        kwargs.pop("video_load_backend", None)
+        # Fill sets of kwargs that should be used by jinja template, filtering out kwargs used in `processor.__call__`
+        # NOTE: we don't only filter but also set the default values here. Without default values, we can remove it
+        template_kwargs = {}
+        for key in AllKwargsForChatTemplate.__annotations__["template_kwargs"].__annotations__:
+            kwarg_type_defaults = AllKwargsForChatTemplate.__annotations__["template_kwargs"]
+            default_value = getattr(kwarg_type_defaults, key, None)
+            value = kwargs.pop(key, default_value)
+            if value is not None and not isinstance(value, dict):
+                template_kwargs[key] = value
 
         # Pass unprocessed custom kwargs
-        processed_kwargs["template_kwargs"].update(kwargs)
+        template_kwargs.update(kwargs)
 
         if isinstance(conversation, (list, tuple)) and (
             isinstance(conversation[0], (list, tuple)) or hasattr(conversation[0], "content")
@@ -962,8 +957,8 @@ class PaddleProcessorMixin:
             is_batched = False
             conversations = [conversation]
 
-        tokenize = processed_kwargs["template_kwargs"].pop("tokenize", False)
-        return_dict = processed_kwargs["template_kwargs"].pop("return_dict", False)
+        tokenize = template_kwargs.pop("tokenize", False)
+        return_dict = template_kwargs.pop("return_dict", True)
 
         if tokenize:
             batch_images, batch_videos = [], []
@@ -994,7 +989,7 @@ class PaddleProcessorMixin:
         prompt, generation_indices = render_jinja_template(
             conversations=conversations,
             chat_template=chat_template,
-            **processed_kwargs["template_kwargs"],  # different flags such as `return_assistant_mask`
+            **template_kwargs,  # different flags such as `return_assistant_mask`
             **self.tokenizer.special_tokens_map,  # tokenizer special tokens are used by some templates
         )
 
@@ -1029,7 +1024,7 @@ class PaddleProcessorMixin:
             )
 
             if return_dict:
-                if processed_kwargs["template_kwargs"].get("return_assistant_tokens_mask", False):
+                if template_kwargs.get("return_assistant_tokens_mask", False):
                     assistant_masks = []
                     offset_mapping = out.pop("offset_mapping")
                     input_ids = out["input_ids"]
