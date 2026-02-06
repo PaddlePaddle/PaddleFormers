@@ -19,6 +19,6 @@ tiktoken
 ml_dtypes
 omegaconf
 modelscope
-transformers>=5.0.0
+transformers==5.0.0
 GPUtil
 importlib_metadata
