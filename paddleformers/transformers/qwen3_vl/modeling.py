@@ -95,7 +95,7 @@ class Qwen3VLVisionMLP(nn.Layer):
 class Qwen3VLVisionPatchEmbed(nn.Layer):
     def __init__(
         self,
-        patch_size: int = 14,
+        patch_size: int = 16,
         temporal_patch_size: int = 2,
         in_channels: int = 3,
         embed_dim: int = 1152,

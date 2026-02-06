@@ -14,6 +14,7 @@ dataloader_num_workers: 4
 ### model
 model_name_or_path: baidu/ERNIE-4.5-VL-28B-A3B-Thinking
 attn_impl: flashmask
+num_hidden_layers: 4
 
 ### finetuning
 # base
@@ -23,12 +24,12 @@ seed: 23
 do_train: true
 do_eval: false
 per_device_train_batch_size: 1
-num_train_epochs: 3
-max_steps: -1
+num_train_epochs: 1
+max_steps: 10
 save_steps: 10000
 save_strategy: steps
 logging_steps: 1
-gradient_accumulation_steps: 4
+gradient_accumulation_steps: 1
 logging_dir: ./vdl_log
 output_dir: ./checkpoints/ernie-vl-thinking-sft-full
 disable_tqdm: true
@@ -38,7 +39,7 @@ warmup_steps: 0
 learning_rate: 1.0e-5
 
 # performance
-tensor_model_parallel_size: 4
+tensor_model_parallel_size: 2
 pipeline_model_parallel_size: 2
 sharding: stage1
 use_sparse_head_and_loss_fn: true

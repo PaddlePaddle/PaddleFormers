@@ -945,7 +945,7 @@ class ZeroCostCheckpointWorker:
         need_report_error = False
         if self.flash_device_save_dir:
             try:
-                self.process_dump_task_impl(self.flash_device_save_dir)
+                self.process_dump_task_impl(self.flash_device_save_dir, saved_signal_type="formal")
                 logger.info(f"[ZCC Worker{self.worker_id}] Dumping to flash device done: {self.flash_device_save_dir}")
             except Exception as e:
                 logger.error(f"{FC_DUMP_ERROR} [ZCC Worker{self.worker_id}] Failed to dump to flash device: {e}")
@@ -1051,7 +1051,11 @@ class ZeroCostCheckpointWorker:
             rng_state_name_path = os.path.join(output_dir, f"rng_state_{dist.get_rank()}.pth")
             paddle.save(self.rng_state, rng_state_name_path)
 
-    def process_dump_task_impl(self, output_dir):
+    def process_dump_task_impl(self, output_dir, saved_signal_type="tmp"):
+        assert saved_signal_type in [
+            "tmp",
+            "formal",
+        ], f"saved_signal_type must be one of ['tmp', 'formal'], but got {saved_signal_type}"
         os.makedirs(output_dir, exist_ok=True)
         # Step1: save static objects
         if self.device_id == 0:
@@ -1064,7 +1068,7 @@ class ZeroCostCheckpointWorker:
 
         self._dump_args_and_state(output_dir)
 
-        if self.save_hf_steps > 0 and self.ema_coef is not None:
+        if self.save_hf_steps > 0 and self.ema_coef is not None and saved_signal_type == "tmp":
             saved_signal_prefix = "save_signal_TMP"
         else:
             saved_signal_prefix = "saved_signal"

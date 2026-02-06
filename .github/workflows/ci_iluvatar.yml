@@ -111,7 +111,7 @@ jobs:
           mkdir -p baidu
           cp -r ${MODEL_PATH}/ERNIE-4.5-21B-A3B-PT baidu/
           ixsmi
-          python -m pytest -v -s --tb=short tests/iluvatar_ci/
+          python -m pytest -v -s --tb=short scripts/iluvatar_ci/
           echo "============================All tests passed============================"
           rm -rf baidu/
           
