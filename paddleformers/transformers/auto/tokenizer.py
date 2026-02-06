@@ -19,7 +19,7 @@ import warnings
 from typing import Any, Dict, Optional, Union
 
 import transformers as hf
-from transformers import AutoConfig, PreTrainedConfig
+from transformers import AutoConfig, PretrainedConfig
 from transformers.dynamic_module_utils import (
     get_class_from_dynamic_module,
     resolve_trust_remote_code,
@@ -304,7 +304,7 @@ class AutoTokenizer(hf.AutoTokenizer):
                         pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
                     )
                 except Exception:
-                    config = PreTrainedConfig.from_pretrained(pretrained_model_name_or_path, **kwargs)
+                    config = PretrainedConfig.from_pretrained(pretrained_model_name_or_path, **kwargs)
 
             tokenizer_config_class = config.tokenizer_class
             if hasattr(config, "auto_map") and "AutoTokenizer" in config.auto_map:
