@@ -296,7 +296,8 @@ def mm_dpo_collate_fn(
     for i, sequences in enumerate(batch):
         # 3.1 input_ids & response_labels
         difference = max_seq_len - sum([len(sequence.token_ids) for sequence in sequences])
-        input_dict["input_ids"].append(sum([sequence.token_ids for sequence in sequences], []) + [0] * difference)
+        padded_token_ids = sum([sequence.token_ids for sequence in sequences], []) + [0] * difference
+        input_dict["input_ids"].append(padded_token_ids)
         input_dict["response_labels"].append(
             sum([sequence.response_labels for sequence in sequences], []) + [-100] * difference
         )

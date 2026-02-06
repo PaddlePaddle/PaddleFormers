@@ -21,7 +21,6 @@ import paddle
 
 from paddleformers.cli.utils.process import add_new_special_tokens
 from paddleformers.datasets.collate import dpo_collate_fn, mm_dpo_collate_fn
-from paddleformers.datasets.collate import dpo_collate_fn as collate_fn
 from paddleformers.datasets.loader import create_dataset
 from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
 from paddleformers.nn.attention import AttentionInterface
