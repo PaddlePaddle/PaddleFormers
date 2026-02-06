@@ -1164,7 +1164,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             ]
             aoa_statements += [
                 f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight"
-                for layer_id in range(config.num_hidden_layers)
+                for layer_id in range(config.num_hidden_layers + config.num_nextn_predict_layers)
                 for x in ("q", "k", "v")
             ]
 
@@ -1194,20 +1194,20 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             aoa_statements += (
                 [
                     f"model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight"
-                    for layer_id in range(1, config.num_hidden_layers)
+                    for layer_id in range(1, config.num_hidden_layers + config.num_nextn_predict_layers)
                 ]
                 + [
                     f"model.layers.{layer_id}.mlp.shared_experts.up_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.up_proj.weight"
-                    for layer_id in range(1, config.num_hidden_layers)
+                    for layer_id in range(1, config.num_hidden_layers + config.num_nextn_predict_layers)
                 ]
                 + [
                     f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight"
-                    for layer_id in range(1, config.num_hidden_layers)
+                    for layer_id in range(1, config.num_hidden_layers + config.num_nextn_predict_layers)
                     for expert_id in range(config.n_routed_experts)
                 ]
                 + [
                     f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight"
-                    for layer_id in range(1, config.num_hidden_layers)
+                    for layer_id in range(1, config.num_hidden_layers + config.num_nextn_predict_layers)
                     for expert_id in range(config.n_routed_experts)
                 ]
             )
