@@ -402,6 +402,18 @@ class SFTDataSet(IterableDataset):
                 logger.info("[dataset debug] Tokenizer not available")
             logger.info("=" * 50 + "\n")
 
+        save_alignment_data = os.getenv("FLAGS_save_data", "false").lower() in ("true", "1", "t")
+        if save_alignment_data:
+            # Append mode: one file per process to avoid too many small files
+            pid = os.getpid()
+            save_path = f"paddle_txt+image_data_worker_{pid}.npy"
+            try:
+                # Use 'ab' mode to append consecutive numpy objects to the same file
+                with open(save_path, "ab") as f:
+                    np.save(f, {"token_ids": tokens, "mm_inputs": mm_inputs})
+            except Exception as e:
+                logger.warning(f"[Alignment Debug] Failed to save alignment data: {e}")
+
         return Sequence(
             token_ids=tokens,
             position_ids=pos_ids,

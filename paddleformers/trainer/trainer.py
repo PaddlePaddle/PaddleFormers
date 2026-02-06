@@ -1930,6 +1930,19 @@ class Trainer:
             step = -1
 
             for step, inputs in enumerate(epoch_iterator):
+
+                save_alignment_data = os.getenv("FLAGS_save_data", "false").lower() in ("true", "1", "t")
+                if save_alignment_data:
+                    # Append mode: one file per process to avoid too many small files
+                    pid = os.getpid()
+                    save_path = f"paddle_txt+image_data_worker_{pid}.npy"
+                    try:
+                        # Use 'ab' mode to append consecutive numpy objects to the same file
+                        with open(save_path, "ab") as f:
+                            np.save(f, inputs)
+                    except Exception as e:
+                        logger.warning(f"[Alignment Debug] Failed to save alignment data: {e}")
+
                 if self.args.profile and step % self.args.gradient_accumulation_steps == 0:
                     perf_utils.switch_profile(
                         self.state.global_step,
