@@ -21,9 +21,9 @@ import numpy as np
 import paddle
 from parameterized import parameterized
 
+from paddleformers.transformers import Qwen2Config
+from paddleformers.transformers import Qwen2ForCausalLMDecapitated as Qwen2ForCausalLM
 from paddleformers.transformers import (
-    Qwen2Config,
-    Qwen2ForCausalLM,
     Qwen2ForSequenceClassification,
     Qwen2ForTokenClassification,
     Qwen2Model,
@@ -525,6 +525,9 @@ class Qwen2CompatibilityTest(unittest.TestCase):
 
             # 3. forward the paddle model
             from paddleformers import transformers
+
+            if class_name == "Qwen2ForCausalLM":
+                class_name == "Qwen2ForCausalLMDecapitated"
 
             paddle_model_class = getattr(transformers, class_name)
             paddle_model = paddle_model_class.from_pretrained(
