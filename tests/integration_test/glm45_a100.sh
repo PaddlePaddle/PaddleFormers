@@ -52,6 +52,7 @@ elif [[ ${step} == "sft" ]]; then
     | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
     | .model_name_or_path = strenv(cur_dir) + "/checkpoints/pretrain"
     | .logging_dir = strenv(cur_dir) + "/glm_full_pp_vdl_log"
+    | .expert_model_parallel_size = 1
     | .num_empty_layers_add_in_head = 0
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"' \
    $config_yaml > ${config_yaml}.tmp
@@ -66,6 +67,7 @@ elif [[ ${step} == "lora" ]]; then
       | .logging_dir = strenv(cur_dir) + "/glm_full_single_lora_log"
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"
       | .num_empty_layers_add_in_tail = 0
+      | .expert_model_parallel_size = 1
       | del(.moe_token_dispatcher_type)' \
     $config_yaml > ${config_yaml}.tmp
   mv ${config_yaml}.tmp $config_yaml
@@ -78,21 +80,8 @@ elif [[ ${step} == "dpo" ]]; then
       | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
       | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_vdl_log"
       | .num_empty_layers_add_in_tail = 0
+      | .expert_model_parallel_size = 1
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_ckpts"' \
-    $config_yaml > ${config_yaml}.tmp
-  mv ${config_yaml}.tmp $config_yaml
-elif [[ ${step} == "grouped_gemm" ]]; then
-  echo "Run GLM4.5 grouped_gemm test"
-  export config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_pt_grouped_gemm.yaml
-  export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
-  yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
-      | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
-      | .model_name_or_path = strenv(CACHE_DIR) + "/glm45/GLM-4.5-Air"
-      | .per_device_train_batch_size = 1
-      | .num_hidden_layers = 2
-      | .stage1_overlap = false
-      | .logging_dir = strenv(data_dir) + "/vdl_log"
-      | .output_dir = strenv(data_dir) + "/checkpoints/grouped_gemm"' \
     $config_yaml > ${config_yaml}.tmp
   mv ${config_yaml}.tmp $config_yaml
 elif [[ ${step} == "dpo_lora" ]]; then
@@ -104,6 +93,7 @@ elif [[ ${step} == "dpo_lora" ]]; then
       | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
       | .model_name_or_path = strenv(CACHE_DIR) + "/zai-org/GLM-4.5-Air-Base"
       | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_lora_vdl_log"
+      | .expert_model_parallel_size = 1
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_lora_ckpts"' \
     $config_yaml > ${config_yaml}.tmp
   mv ${config_yaml}.tmp $config_yaml
@@ -119,7 +109,7 @@ export FLAGS_embedding_deterministic=1
 export FLAGS_cudnn_deterministic=1
 export FLAGS_use_stride_compute_kernel=False
 
-log_file=glm45_${step}_a100.txt
+log_file=glm45_${step}_multi_card_a100.txt
 gt_loss_file=glm45_${step}_multi_card_a100_gt_loss.txt
 
 set +e
@@ -142,6 +132,8 @@ else
     echo "Test passed."
 fi
 
+
+# export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
 export repo_name=PaddleFleet
 export REPO_NAME=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
 # if [[ "${PP}" == "rel" ]]; then
@@ -164,6 +156,10 @@ python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --gt_file ./${gt_loss_file}
 
 if [ $? -ne 0 ]; then
+  if [ "${BRANCH}" != "develop" ]; then
+    echo "please update precision in develop and rerun this workflow"
+    exit 1
+  fi
   pushd $root_dir/PaddleFormers
   source /root/proxy
   bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
@@ -174,11 +170,11 @@ if [ $? -ne 0 ]; then
   popd
   rm ${gt_loss_file} && mv ${log_loss_file} ${gt_loss_file}
   if [ ! -f precision_list.txt ]; then
-    wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}/precision_list.txt
+    wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}/${PR_ID}/precision_list.txt
     if [ $? -ne 0 ]; then
       wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}_latest/precision_list.txt
-      python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}
+      python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}/${PR_ID}
     fi
   fi
-  python $root_dir/bos/BosClient.py ${gt_loss_file} paddle-github-action/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}
+  python $root_dir/bos/BosClient.py ${gt_loss_file} paddle-github-action/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}/${PR_ID}
 fi
