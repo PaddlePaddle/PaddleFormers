@@ -238,61 +238,6 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
             persistable=False,
         )
 
-    def interpolate_pos_encoding(self, embeddings, height: int, width: int, is_after_patchify: bool = False):
-
-        num_positions = self.position_embedding.weight.shape[0]
-
-        patch_pos_embed = self.position_embedding.weight.unsqueeze(0)
-
-        dim = embeddings.shape[-1]
-
-        if is_after_patchify:
-            new_height = height
-            new_width = width
-        else:
-            new_height = height // self.patch_size
-            new_width = width // self.patch_size
-
-        sqrt_num_positions = paddle.to_tensor(num_positions**0.5, dtype=paddle.int64)
-        patch_pos_embed = patch_pos_embed.reshape((1, sqrt_num_positions, sqrt_num_positions, dim))
-        patch_pos_embed = patch_pos_embed.transpose((0, 3, 1, 2))
-
-        patch_pos_embed = nn.functional.interpolate(
-            patch_pos_embed,
-            size=(new_height, new_width),
-            mode="bilinear",
-            align_corners=False,
-        )
-
-        patch_pos_embed = patch_pos_embed.transpose((0, 2, 3, 1)).reshape((1, -1, dim))
-        return patch_pos_embed
-
-    @staticmethod
-    def flatten_list(image_grid_thw):
-        tmp_image_grid_thw = list()
-        for image_grid in image_grid_thw:
-            if isinstance(image_grid, list):
-                tmp_image_grid_thw.extend(image_grid)
-            else:
-                tmp_image_grid_thw.append(image_grid)
-        return tmp_image_grid_thw
-
-    def fetch_position_embedding_lfu_cache(self, embeddings, h, w, max_cache=20):
-        grid = (h, w)
-        if grid in self.cache_position_embedding:
-            self.cache_position_count[grid] += 1
-            return self.cache_position_embedding[grid]
-
-        if len(self.cache_position_embedding) >= max_cache:
-            min_hit_grid = min(self.cache_position_count, key=self.cache_position_count.get)
-            self.cache_position_count.pop(min_hit_grid)
-            self.cache_position_embedding.pop(min_hit_grid)
-
-        position_embedding = self.interpolate_pos_encoding(embeddings, h, w, True)
-        self.cache_position_count[grid] = 1
-        self.cache_position_embedding[grid] = position_embedding
-        return position_embedding
-
     def forward(
         self,
         pixel_values: paddle.Tensor,  # [B, L, C, H, W]
@@ -301,34 +246,39 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
         interpolate_pos_encoding: bool = False,
     ) -> paddle.Tensor:
         if pixel_values.dim() == 5:
-            assert position_ids is not None
+
+            sqrt_num_positions = int(self.num_positions**0.5)
+            patch_pos_embed = self.position_embedding.weight.reshape(
+                (1, sqrt_num_positions, sqrt_num_positions, self.embed_dim)
+            ).transpose((0, 3, 1, 2))
 
             batch_size, squence_len, channel, height, width = pixel_values.shape
             target_dtype = self.patch_embedding.weight.dtype
             pixel_values = pixel_values.reshape(batch_size * squence_len, channel, height, width)
-            patch_embeds = self.patch_embedding(pixel_values.to(dtype=target_dtype))  # shape = [*, width, grid, grid]
-            embeddings = patch_embeds.flatten(-2).squeeze(-1)
-            embeddings = embeddings.reshape(batch_size, squence_len, -1)
+            patch_embeds = self.patch_embedding(
+                pixel_values.astype(dtype=target_dtype)
+            )  # shape = [*, channel, grid, grid]
+            embeddings = patch_embeds.flatten(-3)
 
-            flatten_image_grid_thw = self.flatten_list(image_grid_thw)
-            assert sum([np.prod(x) for x in flatten_image_grid_thw]) == embeddings.shape[1], (
-                flatten_image_grid_thw,
-                embeddings.shape,
-            )
+            image_grid_thw = image_grid_thw.cpu().numpy()
+            split_lengths = image_grid_thw.prod(axis=1).tolist()
+            image_embeddings = paddle.split(embeddings, num_or_sections=split_lengths, axis=0)
 
-            start = 0
-            embeddings = embeddings.squeeze(0)
-            tmp_embeddings = list()
-            for image_grid in image_grid_thw:
-                t, h, w = image_grid
-                end = start + t * h * w
-                image_embeddings = embeddings[int(start) : int(end), :]
+            tmp_embeddings = []
+            for (t, h, w), image_embedding in zip(image_grid_thw, image_embeddings):
                 position_embedding = (
-                    self.interpolate_pos_encoding(image_embeddings, h, w, True).squeeze(0).tile((t, 1))
+                    nn.functional.interpolate(
+                        patch_pos_embed,
+                        size=(h, w),
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+                    .flatten(-2)
+                    .squeeze(0)
+                    .T.tile([t, 1])
                 )
-                image_embeddings = image_embeddings + position_embedding
-                tmp_embeddings.append(image_embeddings)
-                start = end
+
+                tmp_embeddings.append(image_embedding + position_embedding)
             embeddings = paddle.concat(tmp_embeddings, axis=0).unsqueeze(0)
             return embeddings
         else:
