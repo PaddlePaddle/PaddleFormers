@@ -375,7 +375,7 @@ class SFTDataSet(IterableDataset):
         # label shift
         labels = labels[1:] + [-100]
 
-        pos_ids = list(range(len(tokens)))
+        pos_ids = list(range(len(tokens)))  # only pure text, mm_position_ids will be reconstructed in collate.py
 
         if all(x == -100 for x in labels):
             logger.warning(f"[SKIP] all labels set to 0: {example}")
@@ -569,7 +569,7 @@ class SFTDataSet(IterableDataset):
             if len(tokens) > self.max_seq_len:
                 raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
-        pos_ids = list(range(len(tokens)))
+        pos_ids = list(range(len(tokens)))  # only pure text, mm_position_ids will be reconstructed in collate.py
 
         if all(x == -100 for x in labels):
             logger.warning(f"[SKIP] all labels set to 0: {example}")

@@ -412,7 +412,7 @@ class DPODataSet(IterableDataset):
             logger.warning(f"[SKIP] code bug: {example}")
             return None
 
-        # 1.2. position_ids
+        # 1.2. position_ids - only pure text, mm_position_ids will be reconstructed in collate.py
         # [p1, p2, p3, p4, c1, c2, c3, p4, r1, r2, r3]  ->  [0, 1, 2, 3, 4, 5, 6, 3, 4, 5, 6]
         prompt_len = len(prompt_token_ids)
         chosen_len = response_len_list[0]
