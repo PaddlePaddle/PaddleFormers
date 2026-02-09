@@ -45,6 +45,7 @@ import psutil
 from packaging import version
 from paddle import framework
 from paddle.base import core
+from paddle.distributed import ShardedWeight
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
 from paddle.distributed.fleet.meta_parallel import PipelineLayer
 
@@ -1044,6 +1045,10 @@ class Trainer:
 
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
+        for key, sharded_weight in model_sharded_state_dict.items():
+            # NOTE(Waynezee): Only Tensor in Parameter will be used in FlexCheckpoint Save Scenario.
+            if isinstance(sharded_weight, ShardedWeight):
+                sharded_weight.local_tensor = paddle.Tensor(sharded_weight.local_tensor)
         model_state_dict_path = os.path.join(output_dir, MODEL_STATE_DIC)
         os.makedirs(model_state_dict_path, exist_ok=True)
         dist.save_state_dict(
