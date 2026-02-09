@@ -21,6 +21,7 @@ from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import paddle
+import paddle.nn.functional as F
 from paddle import nn
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import (
@@ -69,7 +70,7 @@ def _ensure_cos_sin_dim(cos, sin, dim_needed):
         sin = paddle.concat([sin, sin], axis=-1)
         return cos, sin
     else:
-        raise ValueError(f"Unexpected cos/sin last-dim: {last}, expected {dim_needed} or {dim_needed//2}")
+        raise ValueError(f"Unexpected cos/sin last-dim: {last}, expected {dim_needed} or {dim_needed // 2}")
 
 
 def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim=1):
@@ -1988,32 +1989,29 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
 
                 pixel_values = pixel_values.astype(inputs_embeds.dtype)
                 pixel_values = pixel_values.unsqueeze(0)
-                siglip_position_ids = list()
-                image_grid_hws = list()
-                sample_indices = list()
-                cu_seqlens = [0]
 
-                for idx, thw in enumerate(image_grid_thw):
-                    thw_tuple = tuple(thw.detach().cpu().numpy().tolist())
-                    numel = np.prod(thw_tuple)
-                    image_grid_hws.append(thw_tuple)
-                    image_position_ids = paddle.arange(numel) % np.prod(thw_tuple[1:])
-                    siglip_position_ids.append(image_position_ids)
-                    sample_indices.append(paddle.full((numel,), idx, dtype=paddle.int64))
-                    cu_seqlens.append(cu_seqlens[-1] + numel)
+                bs, _ = image_grid_thw.shape
+                sizes = paddle.prod(image_grid_thw, axis=1)
+                spatial_sizes = paddle.prod(image_grid_thw[:, 1:], axis=1, dtype="int64")
+                sample_indices = paddle.repeat_interleave(paddle.arange(bs), sizes)
 
-                siglip_position_ids = paddle.concat(siglip_position_ids, axis=0)
-                cu_seqlens = paddle.to_tensor(cu_seqlens, dtype=paddle.int32)
-                sample_indices = paddle.concat(sample_indices, axis=0)
+                cum_sizes = paddle.cumsum(sizes, axis=0)
+                cu_seqlens = F.pad(cum_sizes, (1, 0), value=0, data_format="NCL")
+
+                global_range = paddle.arange(sizes.sum())
+                per_sample_offset = cu_seqlens[sample_indices]
+                per_sample_spatial = spatial_sizes[sample_indices]
+                local_indices = global_range - per_sample_offset
+                siglip_position_ids = local_indices % per_sample_spatial
 
                 vision_outputs = self.visual(
                     pixel_values=pixel_values,
-                    image_grid_thw=image_grid_hws,
+                    image_grid_thw=image_grid_thw,
                     position_ids=siglip_position_ids,
                     vision_return_embed_list=True,
                     interpolate_pos_encoding=True,
                     sample_indices=sample_indices,
-                    cu_seqlens=cu_seqlens,
+                    cu_seqlens=cu_seqlens.astype("int32"),
                     return_pooler_output=False,
                     use_rope=True,
                     window_size=-1,

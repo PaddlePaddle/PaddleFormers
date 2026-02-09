@@ -2099,3 +2099,104 @@ class EMAStateAssembler:
             shard_idx=self.shard_idx,
         )
         saver.save_checkpoint(str(save_path))
+
+
+def select_flex_ckpt_comm_method():
+    _BROADCAST = "broadcast"
+    _PARALLEL_BROADCAST = "parallel_broadcast"
+
+    comm_method = _PARALLEL_BROADCAST
+
+    def func_supports_parallel_broadcast(func):
+        import inspect
+
+        try:
+            code = inspect.getsource(func)
+            return _PARALLEL_BROADCAST in code
+        except Exception:
+            return False
+
+    # NOTE(xingmingyyj) For compatibility with old versions, the implementation is rather tricky.
+    # This can be removed once Paddle provides stable support.
+    support_parallel_broadcast = func_supports_parallel_broadcast(dist.load_state_dict)
+
+    world_size = dist.get_world_size()
+    if not support_parallel_broadcast:
+        logger.info(
+            "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
+            "because the current version does not support 'parallel_broadcast'"
+        )
+        comm_method = _BROADCAST
+    elif world_size <= 64:
+        logger.info(
+            f"Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
+            f"because the current 'world_size':{world_size} is less than or equal to 64"
+        )
+        comm_method = _BROADCAST
+    else:
+        hcg = dist.fleet.get_hybrid_communicate_group()
+        try:
+            pp_group = hcg.get_pipe_parallel_group()
+            if pp_group is None or pp_group.nranks < 1:
+                logger.info(
+                    "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
+                    "because the current pipeline_parallel_group is empty"
+                )
+                comm_method = _BROADCAST
+        except Exception:
+            logger.info(
+                "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
+                "because failed to get pipeline_parallel_group"
+            )
+            comm_method = _BROADCAST
+
+        try:
+            moe_group = hcg.get_expert_parallel_group()
+            if moe_group is None or moe_group.nranks < 1:
+                logger.info(
+                    "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
+                    "because the current expert_parallel_group is empty"
+                )
+                comm_method = _BROADCAST
+        except Exception:
+            logger.info(
+                "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
+                "because failed to get expert_parallel_group"
+            )
+            comm_method = _BROADCAST
+
+        try:
+            moe_sharding_group = hcg.get_moe_sharding_parallel_group()
+        except Exception:
+            moe_sharding_group = None
+
+        if moe_sharding_group is None:
+            total_size = pp_group.nranks * moe_group.nranks
+        else:
+            total_size = pp_group.nranks * moe_group.nranks * moe_sharding_group.nranks
+
+        if total_size != world_size:
+            logger.info(
+                "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
+                f"because the total_size of the selected communication groups: "
+                f"{total_size} does not equal 'world_size':{world_size}"
+            )
+            comm_method = _BROADCAST
+
+    all_rank_comm_method = []
+    if world_size > 1:
+        dist.all_gather_object(all_rank_comm_method, comm_method)
+    else:
+        all_rank_comm_method = [comm_method]
+
+    if _BROADCAST in all_rank_comm_method:
+        logger.info(
+            "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
+            "because some process selected 'broadcast'"
+        )
+        comm_method = _BROADCAST
+
+    if comm_method == _PARALLEL_BROADCAST:
+        logger.info("Selected 'parallel_broadcast' communication method for FlexCheckpoint reshard.")
+
+    return comm_method

@@ -138,6 +138,7 @@ from ..utils import empty_device_cache, perf_utils
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
     EMA_STATE_DIC,
+    FLEX_CKPT_AUTO_GENERATED_METADATA,
     LORA_WEIGHTS_NAME,
     MASTER_WEIGHT_DIC,
     MODEL_META_NAME,
@@ -196,6 +197,7 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     has_length,
     init_optimizer,
     mock_offload_optimizer,
+    select_flex_ckpt_comm_method,
     set_random_seed,
     set_seed,
     should_skip_data,
@@ -1096,7 +1098,8 @@ class Trainer:
         model_states_path = os.path.join(resume_from_checkpoint, MODEL_STATE_DIC)
 
         hcg = dist.fleet.get_hybrid_communicate_group()
-        if self.args.flex_ckpt_comm_method == "parallel_broadcast":
+        flex_ckpt_comm_method = select_flex_ckpt_comm_method()
+        if flex_ckpt_comm_method == "parallel_broadcast":
             try:
                 pp_group = hcg.get_pipe_parallel_group()
                 if pp_group is None or pp_group.nranks < 1:
@@ -1128,6 +1131,16 @@ class Trainer:
 
             # when moe_sharding_group is None, we use the default process_group
             logger.info(f"Loading model weights from '{resume_from_checkpoint}' in safetensors format.")
+            metadata_path = os.path.join(resume_from_checkpoint, FLEX_CKPT_AUTO_GENERATED_METADATA)
+
+            # delete the metadata file if it exists
+            try:
+                os.remove(metadata_path)
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                logger.error(f"Failed to delete {metadata_path}: {e}")
+
             dist.load_state_dict(
                 model_sharded_state_dict,
                 resume_from_checkpoint,
@@ -1135,9 +1148,11 @@ class Trainer:
                 offload=self.args.load_via_cpu,
                 safetensors=True,
                 process_group=None,
-                comm_method=self.args.flex_ckpt_comm_method,
+                comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
             )
+            if hasattr(self.model, "_synchronize_shared_weights"):
+                self.model._synchronize_shared_weights()
             return
 
         state_dict_metadata = {}
@@ -1171,7 +1186,7 @@ class Trainer:
                 master_weights_path,
                 aoa_config=self.args.aoa_config,
                 offload=self.args.load_via_cpu,
-                comm_method=self.args.flex_ckpt_comm_method,
+                comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
             )
 
@@ -1181,7 +1196,7 @@ class Trainer:
                     opt_states_path,
                     aoa_config=self.args.aoa_config,
                     offload=self.args.load_via_cpu,
-                    comm_method=self.args.flex_ckpt_comm_method,
+                    comm_method=flex_ckpt_comm_method,
                     worker_groups=worker_groups,
                 )
                 self._load_scheduler(resume_from_checkpoint)
@@ -1229,7 +1244,7 @@ class Trainer:
                 model_states_path,
                 aoa_config=aoa_config,
                 offload=self.args.load_via_cpu,
-                comm_method=self.args.flex_ckpt_comm_method,
+                comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
             )
 
