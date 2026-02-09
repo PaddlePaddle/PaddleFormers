@@ -1,5 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2025 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,14 +18,20 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "configuration": [],
-    "modeling": [],
-    "processor": ["Qwen3OmniMoeProcessor"],
-    "video_processor": ["Qwen2VLVideoProcessor"],
+    "configuration": ["Qwen3OmniMoeConfig", "Qwen3OmniMoeThinkerConfig", "Qwen3OmniMoeTextConfig"],
+    "modeling": [
+        "Qwen3OmniMoeForConditionalGeneration",
+        "Qwen3OmniMoeThinkerForConditionalGeneration",
+        "Qwen3OmniMoePreTrainedModel",
+        "Qwen3OmniMoeThinkerTextPreTrainedModel",
+        "Qwen3OmniMoeThinkerTextModel",
+        "Qwen3OmniMoeTalkerModel",
+    ],
 }
 
 if TYPE_CHECKING:
-    pass
+    from .configuration import *
+    from .modeling import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
