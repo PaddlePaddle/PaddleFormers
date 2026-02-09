@@ -1931,17 +1931,34 @@ class Trainer:
 
             for step, inputs in enumerate(epoch_iterator):
 
-                save_alignment_data = os.getenv("FLAGS_save_data", "false").lower() in ("true", "1", "t")
-                if save_alignment_data:
-                    # Append mode: one file per process to avoid too many small files
-                    pid = os.getpid()
-                    save_path = f"paddle_txt+image_data_worker_{pid}.npy"
-                    try:
-                        # Use 'ab' mode to append consecutive numpy objects to the same file
-                        with open(save_path, "ab") as f:
-                            np.save(f, inputs)
-                    except Exception as e:
-                        logger.warning(f"[Alignment Debug] Failed to save alignment data: {e}")
+                save_inputs = os.getenv("FLAGS_save_data", "false").lower() in ("true", "1", "t")
+                if save_inputs:
+                    save_dir = os.getenv("FLAGS_save_data_dir", "./formers_tmp")
+                    os.makedirs(save_dir, exist_ok=True)
+
+                    # 可扩展的字段列表，新增字段只需在此添加
+                    fields_to_save = ["input_ids", "labels", "pixel_values"]
+                    for field in fields_to_save:
+                        if field in inputs and inputs[field] is not None:
+                            save_path = f"{save_dir}/{step}_{field}.npy"
+                            try:
+                                data = inputs[field]
+                                # 处理 paddle tensor，先转 float32 避免 BFloat16 不支持
+                                if hasattr(data, "dtype") and "bfloat16" in str(data.dtype).lower():
+                                    data = data.astype("float32")
+                                if hasattr(data, "numpy"):
+                                    data = data.numpy()
+                                # 取第一个样本（batch中第一个）
+                                if hasattr(data, "__len__") and len(data) > 0:
+                                    data = (
+                                        data[0]
+                                        if hasattr(data[0], "__len__") or isinstance(data[0], (int, float))
+                                        else data
+                                    )
+                                np.save(save_path, data)
+                            except Exception as e:
+                                logger.warning(f"[Alignment Debug] Failed to save {field}: {e}")
+                    logger.info(f"[Alignment Debug] Saved step {step} data to {save_dir}")
 
                 if self.args.profile and step % self.args.gradient_accumulation_steps == 0:
                     perf_utils.switch_profile(
