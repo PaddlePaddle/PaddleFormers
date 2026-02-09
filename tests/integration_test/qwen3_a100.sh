@@ -33,7 +33,8 @@ if [[ "$step" == "pt" ]]; then
     export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
     export model_name_or_path=$CACHE_DIR/Qwen3-30B-A3B
     export output_dir=$root_dir/checkpoints/qwen-pt
-    yq eval '.moe_grouped_gemm = false' \
+    yq eval '.moe_grouped_gemm = false
+          | .stage1_overlap = false'\
     $config_yaml > ${config_yaml}.tmp
     mv ${config_yaml}.tmp $config_yaml
 elif [[ "$step" == "sft" ]]; then
@@ -41,7 +42,8 @@ elif [[ "$step" == "sft" ]]; then
     export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
     export model_name_or_path=$root_dir/checkpoints/qwen-pt
     export output_dir=$root_dir/checkpoints/qwen-sft
-    yq eval '.moe_grouped_gemm = false' \
+    yq eval '.moe_grouped_gemm = false
+      | .stage1_overlap = false' \
     $config_yaml > ${config_yaml}.tmp
     mv ${config_yaml}.tmp $config_yaml
 else

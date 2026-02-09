@@ -54,6 +54,8 @@ elif [[ ${step} == "sft" ]]; then
     | .logging_dir = strenv(cur_dir) + "/glm_full_pp_vdl_log"
     | .use_expert_parallel = false
     | .expert_model_parallel_size = 1
+    | .per_device_train_batch_size = 1
+    | .stage1_overlap = false
     | .num_empty_layers_add_in_head = 0
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"' \
    $config_yaml > ${config_yaml}.tmp
