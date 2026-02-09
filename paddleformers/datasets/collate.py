@@ -36,12 +36,12 @@ def calc_padding_size(seq_len: int, training_args) -> int:
     Returns:
         int: Aligned sequence length
     """
-    ALIGN_SIZE = 2
-    if training_args.fp8:
-        ALIGN_SIZE = 4
     cp_size = training_args.context_parallel_size
     sp_size = training_args.tensor_model_parallel_size if training_args.sequence_parallel else 1
-    padding_to_size = cp_size * sp_size * ALIGN_SIZE if cp_size * sp_size > 1 else ALIGN_SIZE
+    padding_to_size = 2 if cp_size * sp_size > 1 else 1
+    if training_args.fp8:
+        padding_to_size = (padding_to_size + 3) // 4 * 4
+    padding_to_size = padding_to_size * cp_size * sp_size
     return math.ceil(seq_len / padding_to_size) * padding_to_size
 
 
