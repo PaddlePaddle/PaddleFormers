@@ -2137,7 +2137,7 @@ def select_flex_ckpt_comm_method():
         hcg = dist.fleet.get_hybrid_communicate_group()
         try:
             pp_group = hcg.get_pipe_parallel_group()
-            if pp_group is None or pp_group.nranks < 1:
+            if pp_group is None or pp_group.nranks <= 1:
                 logger.info(
                     "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
                     "because the current pipeline_parallel_group is empty"
@@ -2152,7 +2152,7 @@ def select_flex_ckpt_comm_method():
 
         try:
             moe_group = hcg.get_expert_parallel_group()
-            if moe_group is None or moe_group.nranks < 1:
+            if moe_group is None or moe_group.nranks <= 1:
                 logger.info(
                     "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
                     "because the current expert_parallel_group is empty"
@@ -2167,12 +2167,20 @@ def select_flex_ckpt_comm_method():
 
         try:
             moe_sharding_group = hcg.get_moe_sharding_parallel_group()
+            if moe_sharding_group is None or moe_sharding_group.nranks <= 1:
+                logger.info(
+                    "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
+                    "because the current moe_sharding_group is empty"
+                )
+                comm_method = _BROADCAST
         except Exception:
-            moe_sharding_group = None
+            logger.info(
+                "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
+                "because the current moe_sharding_group is empty"
+            )
+            comm_method = _BROADCAST
 
-        if moe_sharding_group is None:
-            total_size = pp_group.nranks * moe_group.nranks
-        else:
+        if comm_method == _PARALLEL_BROADCAST:
             total_size = pp_group.nranks * moe_group.nranks * moe_sharding_group.nranks
 
         if total_size != world_size:
