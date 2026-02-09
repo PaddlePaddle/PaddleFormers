@@ -15,7 +15,7 @@
 import importlib
 import os
 from collections import OrderedDict
-
+from ..configuration_utils import PretrainedConfig
 from transformers.models.auto.configuration_auto import (
     CONFIG_MAPPING_NAMES,
     model_type_to_module_name,
@@ -30,14 +30,21 @@ FEATURE_EXTRACTOR_MAPPING_NAMES = OrderedDict(
     ]
 )
 
-
+def safe_load_json_file(json_file: str):
+    "A helper to load safe config files and raise a proper error message if it wasn't serialized correctly"
+    try:
+        with open(json_file, encoding="utf-8") as reader:
+            text = reader.read()
+        config_dict = json.loads(text)
+    except json.JSONDecodeError:
+        raise OSError(f"It looks like the config file at '{json_file}' is not a valid JSON file.")
+    return config_dict
 def feature_extractor_class_from_name(class_name: str):
     for module_name, extractors in FEATURE_EXTRACTOR_MAPPING_NAMES.items():
         if class_name in extractors:
             module_name = model_type_to_module_name(module_name)
-
-            module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
             try:
+                module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
                 return getattr(module, class_name)
             except AttributeError:
                 continue
@@ -48,7 +55,7 @@ def feature_extractor_class_from_name(class_name: str):
 
     # We did not find the class, but maybe it's because a dep is missing. In that case, the class will be in the main
     # init and we return the proper dummy to get an appropriate error message.
-    main_module = importlib.import_module("transformers")
+    main_module = importlib.import_module("paddleformers.transformers")
     if hasattr(main_module, class_name):
         return getattr(main_module, class_name)
 
@@ -121,30 +128,27 @@ def get_feature_extractor_config(
     feature_extractor_config = get_feature_extractor_config("feature-extractor-test")
     ```"""
     # Load with a priority given to the nested processor config, if available in repo
-    resolved_processor_file = cached_file(
-        pretrained_model_name_or_path,
-        filename=PROCESSOR_NAME,
-        cache_dir=cache_dir,
-        force_download=force_download,
-        proxies=proxies,
-        token=token,
-        revision=revision,
-        local_files_only=local_files_only,
-        _raise_exceptions_for_gated_repo=False,
-        _raise_exceptions_for_missing_entries=False,
-    )
-    resolved_feature_extractor_file = cached_file(
-        pretrained_model_name_or_path,
-        filename=FEATURE_EXTRACTOR_NAME,
-        cache_dir=cache_dir,
-        force_download=force_download,
-        proxies=proxies,
-        token=token,
-        revision=revision,
-        local_files_only=local_files_only,
-        _raise_exceptions_for_gated_repo=False,
-        _raise_exceptions_for_missing_entries=False,
-    )
+    resolved_processor_file = resolve_file_path(
+            pretrained_model_name_or_path,
+            PROCESSOR_NAME,
+            cache_dir=cache_dir,
+            force_download=force_download,
+            proxies=proxies,
+            token=token,
+            revision=revision,
+            local_files_only=local_files_only
+        )
+
+    resolved_feature_extractor_file = resolve_file_path(
+            pretrained_model_name_or_path,
+            PROCESSOR_NAME,
+            cache_dir=cache_dir,
+            force_download=force_download,
+            proxies=proxies,
+            token=token,
+            revision=revision,
+            local_files_only=local_files_only
+        )
 
     # An empty list if none of the possible files is found in the repo
     if not resolved_feature_extractor_file and not resolved_processor_file:

@@ -19,23 +19,14 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "configuration": ["Qwen3VLMoeConfig", "Qwen3VLMoeTextConfig"],
-    "modeling": [
-        "Qwen3VLMoeForConditionalGenerationDeprecated",
-        "Qwen3VLMoeForConditionalGeneration",
-        "Qwen3VLMoeDeprecated",
-        "Qwen3VLMoeModel",
-        "Qwen3VLMoePretrainedModel",
-        "Qwen3VLMoeTextModel",
-    ],
-    "processor": [],
+    "configuration": [],
+    "modeling": [],
+    "processor": ["Qwen3OmniMoeProcessor"],
     "video_processor": ["Qwen2VLVideoProcessor"],
 }
 
 if TYPE_CHECKING:
-    from .configuration import *
-    from .modeling import *
-
+    pass
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
