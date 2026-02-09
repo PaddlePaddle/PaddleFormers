@@ -57,6 +57,7 @@ elif [[ ${step} == "sft" ]]; then
     | .expert_model_parallel_size = 1
     | .per_device_train_batch_size = 1
     | .tensor_model_parallel_size = 2
+    | .pipeline_model_parallel_size = 4
     | .stage1_overlap = false
     | .num_empty_layers_add_in_head = 0
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"' \
@@ -74,6 +75,7 @@ elif [[ ${step} == "lora" ]]; then
       | .num_empty_layers_add_in_tail = 0
       | .use_expert_parallel = false
       | .tensor_model_parallel_size = 2
+      | .pipeline_model_parallel_size = 4
       | .expert_model_parallel_size = 1
       | del(.moe_token_dispatcher_type)' \
     $config_yaml > ${config_yaml}.tmp
@@ -88,6 +90,7 @@ elif [[ ${step} == "dpo" ]]; then
       | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_vdl_log"
       | .num_empty_layers_add_in_tail = 0
       | .tensor_model_parallel_size = 2
+      | .pipeline_model_parallel_size = 4
       | .use_expert_parallel = false
       | .expert_model_parallel_size = 1
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_ckpts"' \
@@ -104,6 +107,8 @@ elif [[ ${step} == "dpo_lora" ]]; then
       | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_lora_vdl_log"
       | .use_expert_parallel = false
       | .expert_model_parallel_size = 1
+      | .tensor_model_parallel_size = 2
+      | .pipeline_model_parallel_size = 4
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_lora_ckpts"' \
     $config_yaml > ${config_yaml}.tmp
   mv ${config_yaml}.tmp $config_yaml
