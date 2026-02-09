@@ -54,7 +54,7 @@ fi
 yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
     | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
     | .model_name_or_path = strenv(model_name_or_path)
-    | .expert_model_parallel_size = 1
+    | .use_expert_parallel = false
     | .output_dir = strenv(output_dir)' \
    $config_yaml > ${config_yaml}.tmp
 mv ${config_yaml}.tmp $config_yaml
