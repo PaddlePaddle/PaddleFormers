@@ -2182,14 +2182,13 @@ def select_flex_ckpt_comm_method():
 
         if comm_method == _PARALLEL_BROADCAST:
             total_size = pp_group.nranks * moe_group.nranks * moe_sharding_group.nranks
-
-        if total_size != world_size:
-            logger.info(
-                "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
-                f"because the total_size of the selected communication groups: "
-                f"{total_size} does not equal 'world_size':{world_size}"
-            )
-            comm_method = _BROADCAST
+            if total_size != world_size:
+                logger.info(
+                    "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
+                    f"because the total_size of the selected communication groups: "
+                    f"{total_size} does not equal 'world_size':{world_size}"
+                )
+                comm_method = _BROADCAST
 
     all_rank_comm_method = []
     if world_size > 1:
