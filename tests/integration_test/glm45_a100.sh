@@ -53,6 +53,7 @@ elif [[ ${step} == "sft" ]]; then
     | .model_name_or_path = strenv(cur_dir) + "/checkpoints/pretrain"
     | .logging_dir = strenv(cur_dir) + "/glm_full_pp_vdl_log"
     | .use_expert_parallel = false
+    | .expert_model_parallel_size = 1
     | .num_empty_layers_add_in_head = 0
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"' \
    $config_yaml > ${config_yaml}.tmp
@@ -68,6 +69,7 @@ elif [[ ${step} == "lora" ]]; then
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"
       | .num_empty_layers_add_in_tail = 0
       | .use_expert_parallel = false
+      | .expert_model_parallel_size = 1
       | del(.moe_token_dispatcher_type)' \
     $config_yaml > ${config_yaml}.tmp
   mv ${config_yaml}.tmp $config_yaml
@@ -81,6 +83,7 @@ elif [[ ${step} == "dpo" ]]; then
       | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_vdl_log"
       | .num_empty_layers_add_in_tail = 0
       | .use_expert_parallel = false
+      | .expert_model_parallel_size = 1
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_ckpts"' \
     $config_yaml > ${config_yaml}.tmp
   mv ${config_yaml}.tmp $config_yaml
@@ -94,6 +97,7 @@ elif [[ ${step} == "dpo_lora" ]]; then
       | .model_name_or_path = strenv(CACHE_DIR) + "/zai-org/GLM-4.5-Air-Base"
       | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_lora_vdl_log"
       | .use_expert_parallel = false
+      | .expert_model_parallel_size = 1
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_lora_ckpts"' \
     $config_yaml > ${config_yaml}.tmp
   mv ${config_yaml}.tmp $config_yaml
