@@ -718,7 +718,9 @@ class FP8QuantWeightCallback(TrainerCallback):
                     self.moe_weights_name.append(param.name)
 
             for name in self.moe_weights_name:
-                offload(optimizer._master_weights[name])
+                # NOTE(Waynezee): when moe_sharding_degree > 1, experts parameter's master_weight may exist in ranks of another moe_sharding_rank.
+                if name in optimizer._master_weights:
+                    offload(optimizer._master_weights[name])
 
         skip_count += 1
 
@@ -732,7 +734,8 @@ class FP8QuantWeightCallback(TrainerCallback):
 
         if (not g_shard_bypass_dygraph_optimizer) and hasattr(model, "fp8_quant_weight"):
             for name in self.moe_weights_name:
-                reload(optimizer._master_weights[name])
+                if name in optimizer._master_weights:
+                    reload(optimizer._master_weights[name])
 
 
 class MoECorrectionBiasAdjustCallback(TrainerCallback):
