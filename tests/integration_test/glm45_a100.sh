@@ -55,6 +55,7 @@ elif [[ ${step} == "sft" ]]; then
     | .use_expert_parallel = false
     | .expert_model_parallel_size = 1
     | .per_device_train_batch_size = 1
+    | .tensorwise_offload_optimizer = true
     | .stage1_overlap = false
     | .num_empty_layers_add_in_head = 0
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"' \
@@ -72,7 +73,6 @@ elif [[ ${step} == "lora" ]]; then
       | .num_empty_layers_add_in_tail = 0
       | .use_expert_parallel = false
       | .expert_model_parallel_size = 1
-      | .tensorwise_offload_optimizer = true
       | del(.moe_token_dispatcher_type)' \
     $config_yaml > ${config_yaml}.tmp
   mv ${config_yaml}.tmp $config_yaml
