@@ -313,8 +313,12 @@ class Qwen3VLMoeConfig(PretrainedConfig):
         text_config = self.__dict__.get("text_config")
         if text_config is not None and key not in self.ignore_keys and hasattr(text_config, key):
             setattr(text_config, key, value)
-        else:
-            super().__setattr__(key, value)
+            # Delete from __dict__ to ensure future access triggers __getattr__
+            # instead of returning a stale local value.
+            if key in self.__dict__:
+                del self.__dict__[key]
+            return
+        super().__setattr__(key, value)
 
     def __getattr__(self, key):
         if key not in self.ignore_keys:
