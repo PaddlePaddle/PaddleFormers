@@ -12,7 +12,7 @@ template_backend: custom
 template: qwen3
 
 ### model
-model_name_or_path: ../moonshotai/Kimi-K2.5
+model_name_or_path: ../paddle_moonshotai/Kimi-K2.5
 _attn_implementation: flashmask
 
 ### finetuning

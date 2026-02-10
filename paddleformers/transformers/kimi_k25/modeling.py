@@ -316,6 +316,7 @@ def get_mlp_module_spec(use_te: bool = True) -> LayerSpec:
         sublayers_spec=MLPSublayersSpec(
             up_gate_proj=ColumnParallelLinear,
             down_proj=RowParallelLinear,
+            hidden_act=F.gelu,
         ),
     )
 
@@ -522,19 +523,6 @@ class KimiK25VisionModel(VisionLayer):
             pos_emb_type=config.pos_emb_type,
         )
 
-        # self.encoder = MoonViT3dEncoder(
-        #     hidden_dim=config.hidden_size,
-        #     num_layers=config.num_hidden_layers,
-        #     block_cfg={
-        #         "num_heads": config.num_attention_heads,
-        #         "hidden_dim": config.hidden_size,
-        #         "mlp_dim": config.intermediate_size,
-        #         "activation": PaddleGELUTanh(),
-        #         "attn_bias": True,
-        #         "attn_implementation": config._attn_implementation,
-        #     },
-        #     video_attn_type=config.video_attn_type,
-        # )
         self.rotary_pos_emb = Rope2DPosEmbRepeated(config.hidden_size // config.num_attention_heads, 512, 512)
 
         self.decoder = KimiK25VisionTransformerBlock(
@@ -570,7 +558,7 @@ class KimiK25VisionModel(VisionLayer):
     def get_attn_mask_startend_row_indices(
         self,
         grid_thws: paddle.Tensor,
-        device: paddle.Device,
+        device: paddle.device,
     ):
         lengths = paddle.cat(
             (
@@ -591,7 +579,7 @@ class KimiK25VisionModel(VisionLayer):
 
         return startend_row_indices
 
-    def get_rotary_pos_emb(self, grid_thws: paddle.Tensor, device: paddle.Device) -> tuple[paddle.Tensor, ...]:
+    def get_rotary_pos_emb(self, grid_thws: paddle.Tensor, device: paddle.device) -> tuple[paddle.Tensor, ...]:
 
         freqs_cis = self.rotary_pos_emb.get_freqs_cis(grid_thws=grid_thws, device=device)
         rotary_pos_cos = paddle.real(freqs_cis)  # 实部 = cos(θ)
@@ -653,9 +641,8 @@ class KimiK25VisionModelFleet(KimiK25PretrainedModel):
         model_provider_class = KimiK25VisionProvider
         model_provider = model_provider_class.from_config(config)
         vision_model = model_provider.provide()
-        vision_model._gen_aoa_config = cls._gen_aoa_config
-        vision_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
-        vision_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
+        # vision_model._gen_aoa_config = cls._gen_aoa_config
+        # vision_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         vision_model.config_to_save = config
 
         return vision_model
@@ -788,16 +775,16 @@ class KimiK25ModelDist(MCoreLLaVAModel):
         self.encoder_hidden_state = None
         self.vision_model = None
         self.language_model = None
-        self.image_token_index = config.image_token_id
-        self.video_token_index = config.video_token_id
+        #self.image_token_index = config.image_token_id
+        #self.video_token_index = config.video_token_id
 
-        self.sequence_parallel_lm = language_transformer_config.sequence_parallel
-        self.tp_comm_overlap_lm = language_transformer_config.tp_comm_overlap
-        self.context_parallel_lm = language_transformer_config.context_parallel_size
-        assert not (self.sequence_parallel_lm or self.context_parallel_lm > 1), (
-            f"qwenvl donnot support sequence parallel {self.sequence_parallel_lm} "
-            f"or context parallel {self.context_parallel_lm}"
-        )
+        # self.sequence_parallel_lm = language_transformer_config.sequence_parallel
+        # self.tp_comm_overlap_lm = language_transformer_config.tp_comm_overlap
+        # self.context_parallel_lm = language_transformer_config.context_parallel_size
+        # assert not (self.sequence_parallel_lm or self.context_parallel_lm > 1), (
+        #     f"qwenvl donnot support sequence parallel {self.sequence_parallel_lm} "
+        #     f"or context parallel {self.context_parallel_lm}"
+        # )
         self.share_embeddings_and_output_weights = False
         self.rope_deltas = None
 
@@ -809,7 +796,7 @@ class KimiK25ModelDist(MCoreLLaVAModel):
             # )
             # self._language_is_pipeline_parallel = language_transformer_config.pipeline_model_parallel_size > 1
             self.language_model = DeepseekV3ForCausalLM(config.text_config)
-            self.post_init()
+            #self.post_init()
 
         if add_encoder:
             self.vision_model = KimiK25VisionModelFleet(vision_transformer_config)
@@ -838,7 +825,7 @@ class KimiK25ModelDist(MCoreLLaVAModel):
 
         self.model_type = ModelType.encoder_or_decoder
 
-        self.criterion = criterion
+        # self.criterion = criterion
 
     def _merge_input_ids_with_image_features(
         self,
@@ -1067,14 +1054,8 @@ class KimiK25ModelDist(MCoreLLaVAModel):
         labels = input_dict.get("labels", labels)
 
         output = self.language_model(input_dict)
-        # print("qwenvl criterion ",self.criterion)
-        if labels is None:
-            return output
-        elif self.criterion is not None:
-            # print("qwenvl output loss  ",self.criterion(output, labels))
-            return self.criterion(output, labels)
-        else:
-            return output
+       
+        return output
 
 
 class KimiK25PretrainedModelFleet(PretrainedModel):
@@ -1116,15 +1097,14 @@ class KimiK25Model(KimiK25PretrainedModelFleet):
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
-        criterion = None
-        if have_criterion:
-            criterion = CriterionLayer(config.text_config)
+        # criterion = None
+        # if have_criterion:
+        #     criterion = CriterionLayer(config.text_config)
         model_provider_class = KimiK25Provider
         model_provider = model_provider_class.from_config(config)
-        KimiK25_model = KimiK25ModelDist(model_provider, model_version=config.model_type, criterion=criterion)
+        KimiK25_model = KimiK25ModelDist(model_provider, model_version=config.model_type)
         KimiK25_model._gen_aoa_config = cls._gen_aoa_config
         KimiK25_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
-        KimiK25_model._get_tensor_parallel_mappings = cls._get_tensor_parallel_mappings
         KimiK25_model.config_to_save = config
 
         return KimiK25_model
@@ -1190,52 +1170,7 @@ class KimiK25ForConditionalGeneration(KimiK25PretrainedModelFleet):
         return_dict: Optional[bool] = True,
         **kwargs,
     ) -> Union[tuple, KimiK25CausalLMOutputWithPast]:
-        r"""
-        labels (`paddle.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
-            Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
-            config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
-            (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
-        image_grid_thw (`paddle.Tensor` of shape `(num_images, 3)`, *optional*):
-            The temporal, height and width of feature shape of each image in LLM.
-        video_grid_thw (`paddle.Tensor` of shape `(num_videos, 3)`, *optional*):
-            The temporal, height and width of feature shape of each video in LLM.
-        rope_deltas (`paddle.Tensor` of shape `(batch_size, )`, *optional*):
-            The rope index difference between sequence length and multimodal rope.
-
-        Example:
-
-        ```python
-        >>> from paddleformers.transformers import AutoProcessor, KimiK25ForConditionalGeneration
-
-        >>> model = KimiK25ForConditionalGeneration.from_pretrained("moonshotai/Kimi-K2.5")
-        >>> processor = AutoProcessor.from_pretrained("moonshotai/Kimi-K2.5")
-
-        >>> messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "image": "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg",
-                    },
-                    {"type": "text", "text": "Describe the image."},
-                ],
-            }
-        ]
-
-        >>> inputs = processor.apply_chat_template(
-            messages,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_dict=True,
-            return_tensors="pd"
-        )
-
-        >>> # Generate
-        >>> generated_ids = model.generate(**inputs, max_new_tokens=1024)
-        >>> output_text = processor.batch_decode(generated_ids[0], skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-        >>> print(output_text)
-        ```
+        """
         """
 
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -1245,18 +1180,16 @@ class KimiK25ForConditionalGeneration(KimiK25PretrainedModelFleet):
 
         outputs = self.model(
             input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            loss_mask=None,
+            labels=labels,
+            inference_params=None,
             pixel_values=pixel_values,
             pixel_values_videos=pixel_values_videos,
             image_grid_thw=image_grid_thw,
             video_grid_thw=video_grid_thw,
-            position_ids=position_ids,
-            attention_mask=attention_mask,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
+            runtime_gather_output=None,
             cache_position=cache_position,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             **kwargs,
