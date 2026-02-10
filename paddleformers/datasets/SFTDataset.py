@@ -62,6 +62,8 @@ class SFTDataSet(IterableDataset):
         # parameter init
         self.tokenizer = dataset_config.get("tokenizer", None)
         self.dataset_num_proc = dataset_config.get("dataset_num_proc", 1)
+        if not self.dataset_num_proc:
+            self.dataset_num_proc = 1
         logger.info(f"self.dataset_num_proc: {self.dataset_num_proc}")
         self.processor = dataset_config.get("processor", None)
         self.max_seq_len = dataset_config.get("max_seq_len", 8192)
