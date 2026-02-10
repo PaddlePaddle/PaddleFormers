@@ -413,6 +413,34 @@ class PaddleOCREncoder(nn.Layer):
                 tmp_image_grid_thw.append(image_grid)
         return tmp_image_grid_thw
 
+    @staticmethod
+    def get_position_ids_vectorized(image_grid_thw):
+
+        t = image_grid_thw[:, 0]
+        h = image_grid_thw[:, 1]
+        w = image_grid_thw[:, 2]
+
+        hw = h * w
+        lengths = t * hw  # [N]
+        ends = paddle.cumsum(lengths)  # [N]
+        starts = ends - lengths  # [N]
+        total_len = ends[-1]
+
+        global_pids = paddle.arange(total_len, dtype="int64")
+        sample_ids = paddle.searchsorted(ends, global_pids, right=True)
+
+        start_g = paddle.gather(starts, sample_ids)  # [total_len]
+        w_g = paddle.gather(w, sample_ids)  # [total_len]
+        hw_g = paddle.gather(hw, sample_ids)  # [total_len]
+
+        local_pids = global_pids - start_g
+        rel_pids = local_pids % hw_g
+
+        width_position_ids = rel_pids % w_g
+        height_position_ids = rel_pids // w_g
+
+        return width_position_ids, height_position_ids
+
     def build_window_index(self, image_grid, window_size):
         """
         返回：
@@ -521,17 +549,7 @@ class PaddleOCREncoder(nn.Layer):
             )
 
             if width_position_ids is None or height_position_ids is None:
-                split_hids = list()
-                split_wids = list()
-                for t, h, w in flatten_image_grid_thw:
-                    t, h, w = map(int, (t, h, w))
-                    image_pids = paddle.arange(t * h * w) % (h * w)
-                    sample_hids = image_pids // w
-                    sample_wids = image_pids % w
-                    split_hids.append(sample_hids)
-                    split_wids.append(sample_wids)
-                width_position_ids = paddle.concat(split_wids, axis=0)
-                height_position_ids = paddle.concat(split_hids, axis=0)
+                width_position_ids, height_position_ids = self.get_position_ids_vectorized(image_grid_thw)
 
             window_indices, cu_seqlens_within_windows = None, None
 
