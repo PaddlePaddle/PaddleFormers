@@ -25,7 +25,7 @@ if [ -f 'PaddleFleet/.venv/bin/activate' ]; then
    source PaddleFleet/.venv/bin/activate
 fi
 
-f [[ "$step" == "pt" ]]; then
+if [[ "$step" == "pt" ]]; then
     export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_multicard_pt.yaml
     export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
     export model_name_or_path=$CACHE_DIR/Qwen3-30B-A3B
