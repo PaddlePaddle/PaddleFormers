@@ -48,6 +48,7 @@ from .tokenizer import AutoTokenizer
 
 PROCESSOR_MAPPING_NAMES = OrderedDict(
     [
+        ("kimi_k25", "KimiK25Processor"),
         ("qwen2_5_vl", "Qwen2_5_VLProcessor"),
         ("qwen3_vl", "Qwen3VLProcessor"),
         ("qwen2_vl", "Qwen2VLProcessor"),
@@ -172,7 +173,7 @@ class AutoProcessor:
                 if "AutoProcessor" in config_dict.get("auto_map", {}):
                     processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
 
-        if processor_class is None:
+        if processor_class is None and processor_auto_map is None:
             # Otherwise, load config, if it can be loaded.
             if not isinstance(config, PretrainedConfig):
                 # NOTE: Use local AutoConfig to decouple transformers version dependency (Processor only).
@@ -196,9 +197,13 @@ class AutoProcessor:
                 upstream_repo = processor_auto_map.split("--")[0]
             else:
                 upstream_repo = None
-            trust_remote_code = resolve_trust_remote_code(
-                trust_remote_code, pretrained_model_name_or_path, has_local_code, has_remote_code, upstream_repo
-            )
+
+            processor_class = processor_class_from_name(processor_auto_map.rsplit(".", 1)[-1])
+
+            if processor_class is None:
+                trust_remote_code = resolve_trust_remote_code(
+                    trust_remote_code, pretrained_model_name_or_path, has_local_code, has_remote_code, upstream_repo
+                )
 
         if has_remote_code and trust_remote_code:
             processor_class = get_class_from_dynamic_module(
