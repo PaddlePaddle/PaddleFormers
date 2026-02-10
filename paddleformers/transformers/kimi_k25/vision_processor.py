@@ -251,7 +251,13 @@ class KimiK25VisionProcessor(BaseImageProcessor):
     def from_dict(cls, config_dict: Dict[str, Any], **kwargs):
         config = config_dict.copy()
         media_proc_cfg = config.pop("media_proc_cfg", {})
-        return cls(media_proc_cfg=media_proc_cfg, **config, **kwargs)
+
+        from_pretrained_only_keys = ["subfolder", "revision", "cache_dir", "local_files_only", "trust_remote_code"]
+        for key in from_pretrained_only_keys:
+            kwargs.pop(key, None)
+        merged_kwargs = {**config, **kwargs}
+
+        return cls(media_proc_cfg=media_proc_cfg, **merged_kwargs)
 
     def to_json_string(self):
         dictionary = self.to_dict()

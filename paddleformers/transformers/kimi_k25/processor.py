@@ -46,7 +46,7 @@ class KimiK25Processor(ProcessorMixin):
         **kwargs,
     ):
         super().__init__(image_processor, tokenizer, chat_template=chat_template)
-        self.media_processor = image_processor
+        self.image_processor = self.media_processor = image_processor
         # A special temporal placeholder to be replaced by actual video placeholders
         self.video_placeholder = "<|kimi_k25_video_placeholder|>"
 
