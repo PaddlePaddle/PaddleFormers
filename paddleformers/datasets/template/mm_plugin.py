@@ -29,7 +29,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import BinaryIO, Optional
 
-# import librosa
+import librosa
 import numpy as np
 import requests
 from decord import VideoReader, cpu
@@ -279,9 +279,7 @@ class MMPluginMixin:
         results, sampling_rates = [], []
         for audio in audios:
             if not isinstance(audio, np.ndarray):
-                # audio, sampling_rate = librosa.load(audio, sr=sampling_rate)
-                audio, sampling_rate = None, None
-
+                audio, _ = librosa.load(audio, sr=sampling_rate, mono=True)
             results.append(audio)
             sampling_rates.append(sampling_rate)
 
@@ -940,6 +938,7 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
         # 获取多模态处理器
         image_processor = getattr(processor, "image_processor", None)
         video_processor = getattr(processor, "video_processor", None)
+        feature_extractor = getattr(processor, "feature_extractor", None)
         mm_inputs = {}
         if len(images) != 0:
             images = self._regularize_images(
@@ -967,7 +966,21 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
             temporal_patch_size = getattr(image_processor, "temporal_patch_size", 2)
             if "second_per_grid_ts" in processor.model_input_names:
                 mm_inputs["second_per_grid_ts"] = [temporal_patch_size / fps for fps in videos["fps_per_video"]]
-
+        if len(audios) != 0:
+            audios = self._regularize_audios(
+                audios,
+                sampling_rate=getattr(processor, "audio_sampling_rate", 16000),
+            )["audios"]
+            mm_inputs.update(
+                feature_extractor(
+                    audios,
+                    sampling_rate=getattr(processor, "audio_sampling_rate", 16000),
+                    return_attention_mask=True,
+                    padding="max_length",
+                    return_tensors="pd",
+                )
+            )
+            mm_inputs["feature_attention_mask"] = mm_inputs.pop("attention_mask", None)
         return mm_inputs
 
     @override
@@ -982,17 +995,29 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
     ) -> list[dict[str, str]]:
         self._validate_input(processor, images, videos, audios)
         self._validate_messages(messages, images, videos, audios)
-        num_image_tokens, num_video_tokens = 0, 0
+        num_image_tokens, num_video_tokens, num_audio_tokens = 0, 0, 0
         messages = deepcopy(messages)
         image_processor = getattr(processor, "image_processor")
 
         merge_length = getattr(image_processor, "merge_size") ** 2
+        use_audio_in_video = getattr(processor, "use_audio_in_video", False)
+
         if self.expand_mm_tokens:
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
             video_grid_thw = mm_inputs.get("video_grid_thw", [])
+            if "feature_attention_mask" in mm_inputs:
+                if processor.__class__.__name__ == "Qwen3OmniMoeProcessor":  # for qwen3omni
+                    input_lengths = mm_inputs["feature_attention_mask"].sum(-1)
+                    input_lengths_leave = input_lengths % 100
+                    feature_lengths = (input_lengths_leave - 1) // 2 + 1
+                    audio_lengths = ((feature_lengths - 1) // 2 + 1 - 1) // 2 + 1 + (input_lengths // 100) * 13
+                else:
+                    input_lengths = (mm_inputs["feature_attention_mask"].sum(-1).numpy() - 1) // 2 + 1
+                    audio_lengths = (input_lengths - 2) // 2 + 1
         else:
             image_grid_thw = [None] * len(images)
             video_grid_thw = [None] * len(videos)
+            audio_lengths = [None] * len(audios)
 
         for message in messages:
             content = message["content"]
@@ -1006,19 +1031,30 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
                     1,
                 )
                 num_image_tokens += 1
+            if use_audio_in_video and len(audios) and len(videos):
+                raise NotImplementedError
+            else:
+                while AUDIO_PLACEHOLDER in content:
+                    audio_seqlen = audio_lengths[num_audio_tokens].prod().item() if self.expand_mm_tokens else 1
+                    content = content.replace(
+                        AUDIO_PLACEHOLDER,
+                        f"{self.audio_bos_token}{self.audio_token * audio_seqlen}{self.audio_eos_token}",
+                        1,
+                    )
+                    num_audio_tokens += 1
 
-            while VIDEO_PLACEHOLDER in content:
-                video_seqlen = (
-                    video_grid_thw[num_video_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
-                )
-                content = content.replace(
-                    VIDEO_PLACEHOLDER,
-                    f"{self.vision_bos_token}{self.video_token * video_seqlen}{self.vision_eos_token}",
-                    1,
-                )
-                num_video_tokens += 1
+                while VIDEO_PLACEHOLDER in content:
+                    video_seqlen = (
+                        video_grid_thw[num_video_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                    )
+                    content = content.replace(
+                        VIDEO_PLACEHOLDER,
+                        f"{self.vision_bos_token}{self.video_token * video_seqlen}{self.vision_eos_token}",
+                        1,
+                    )
+                    num_video_tokens += 1
 
-            message["content"] = content
+                message["content"] = content
 
         return messages
 

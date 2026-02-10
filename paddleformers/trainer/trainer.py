@@ -1937,7 +1937,7 @@ class Trainer:
                     os.makedirs(save_dir, exist_ok=True)
 
                     # 可扩展的字段列表，新增字段只需在此添加
-                    fields_to_save = ["input_ids", "labels", "pixel_values"]
+                    fields_to_save = ["input_ids", "labels", "pixel_values", "input_features"]
                     for field in fields_to_save:
                         if field in inputs and inputs[field] is not None:
                             save_path = f"{save_dir}/{step}_{field}.npy"
@@ -1959,7 +1959,7 @@ class Trainer:
                             except Exception as e:
                                 logger.warning(f"[Alignment Debug] Failed to save {field}: {e}")
                     logger.info(f"[Alignment Debug] Saved step {step} data to {save_dir}")
-
+                    continue
                 if self.args.profile and step % self.args.gradient_accumulation_steps == 0:
                     perf_utils.switch_profile(
                         self.state.global_step,
