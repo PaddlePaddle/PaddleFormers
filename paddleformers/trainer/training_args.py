@@ -1608,7 +1608,14 @@ class TrainingArguments:
                     self.fa_version = 2
             else:
                 self.fa_version = 2
-        paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
+        if paddle.base.core.is_compiled_with_cuda():
+            paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
+        else:
+            try:
+                paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
+            except Exception:
+                logger.warning("Flag FLAGS_flash_attn_version cannot set its value through this function.")
+
         logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
 
         env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", -1))
