@@ -50,7 +50,7 @@ class TestLoraLayer(unittest.TestCase):
         lora_layer = LoRALinear(in_features=16, out_features=8, r=4)
         lora_layer.train()
         train_result = lora_layer(x)
-        train_weight = copy.deepcopy(lora_layer.weight)  # deep copy since this is a pointer
+        train_weight = copy.deepcopy(lora_layer.weight)  # deep copy since this is a pointer.
         lora_layer.eval()
         eval_result = lora_layer(x)
         eval_weight = lora_layer.weight
