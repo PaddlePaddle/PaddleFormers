@@ -85,7 +85,6 @@ elif [[ ${step} == "dpo" ]]; then
       | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
       | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_vdl_log"
       | .num_empty_layers_add_in_tail = 0
-      | .pipeline_model_parallel_size = 4
       | .use_expert_parallel = false
       | .expert_model_parallel_size = 1
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_ckpts"' \
