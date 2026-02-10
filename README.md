@@ -181,6 +181,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 > cd PaddleFormers
 > # cuda12.6
 > python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+> # cuda12.9
 > # python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
 > # cuda13.0
 > # python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
