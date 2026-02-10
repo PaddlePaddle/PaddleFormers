@@ -1607,7 +1607,7 @@ class TrainingArguments:
                     # Note(umiswing): always fallback to FA2
                     self.fa_version = 2
             else:
-                self.fa_version == 2
+                self.fa_version = 2
         paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
         logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
 
