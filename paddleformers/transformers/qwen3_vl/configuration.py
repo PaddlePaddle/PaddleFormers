@@ -292,27 +292,22 @@ class Qwen3VLConfig(PretrainedConfig):
         self.vision_end_token_id = vision_end_token_id
 
     def __setattr__(self, key, value):
-        if (
-            (text_config := super().__getattribute__("__dict__").get("text_config")) is not None
-            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
-            and key in text_config.__dict__
-        ):
+        # Note: text_config might not be initialized yet during the early stages of __init__.
+        text_config = self.__dict__.get("text_config")
+        if text_config is not None and key not in self.ignore_keys and hasattr(text_config, key):
             setattr(text_config, key, value)
         else:
             super().__setattr__(key, value)
 
-    def __getattribute__(self, key):
-        if "text_config" in super().__getattribute__("__dict__") and key not in [
-            "_name_or_path",
-            "model_type",
-            "dtype",
-            "_attn_implementation_internal",
-        ]:
-            text_config = super().__getattribute__("text_config")
-            if key in text_config.__dict__:
-                return getattr(text_config, key)
-
-        return super().__getattribute__(key)
+    def __getattr__(self, key):
+        if key not in self.ignore_keys:
+            text_config = self.__dict__.get("text_config")
+            if text_config is not None:
+                try:
+                    return getattr(text_config, key)
+                except AttributeError:
+                    pass
+        return super().__getattr__(key)
 
 
 __all__ = ["Qwen3VLConfig", "Qwen3VLTextConfig"]

@@ -229,9 +229,11 @@ class Qwen2_5_VLTextConfig(PretrainedConfig):
         self.layer_types = layer_types
         if self.layer_types is None:
             self.layer_types = [
-                "sliding_attention"
-                if self.sliding_window is not None and i >= self.max_window_layers
-                else "full_attention"
+                (
+                    "sliding_attention"
+                    if self.sliding_window is not None and i >= self.max_window_layers
+                    else "full_attention"
+                )
                 for i in range(self.num_hidden_layers)
             ]
         layer_type_validation(self.layer_types, self.num_hidden_layers)
@@ -283,6 +285,12 @@ class Qwen2_5_VLConfig(PretrainedConfig):
     model_type = "qwen2_5_vl"
     sub_configs = {"vision_config": Qwen2_5_VLVisionConfig, "text_config": Qwen2_5_VLTextConfig}
     keys_to_ignore_at_inference = ["past_key_values"]
+    ignore_keys = {
+        "_name_or_path",
+        "model_type",
+        "dtype",
+        "_attn_implementation_internal",
+    }
 
     def __init__(
         self,
@@ -316,27 +324,22 @@ class Qwen2_5_VLConfig(PretrainedConfig):
         self.vision_end_token_id = vision_end_token_id
 
     def __setattr__(self, key, value):
-        if (
-            (text_config := super().__getattribute__("__dict__").get("text_config")) is not None
-            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
-            and key in text_config.__dict__
-        ):
+        # Note: text_config might not be initialized yet during the early stages of __init__.
+        text_config = self.__dict__.get("text_config")
+        if text_config is not None and key not in self.ignore_keys and hasattr(text_config, key):
             setattr(text_config, key, value)
         else:
             super().__setattr__(key, value)
 
-    def __getattribute__(self, key):
-        if "text_config" in super().__getattribute__("__dict__") and key not in [
-            "_name_or_path",
-            "model_type",
-            "dtype",
-            "_attn_implementation_internal",
-        ]:
-            text_config = super().__getattribute__("text_config")
-            if key in text_config.__dict__:
-                return getattr(text_config, key)
-
-        return super().__getattribute__(key)
+    def __getattr__(self, key):
+        if key not in self.ignore_keys:
+            text_config = self.__dict__.get("text_config")
+            if text_config is not None:
+                try:
+                    return getattr(text_config, key)
+                except AttributeError:
+                    pass
+        return super().__getattr__(key)
 
 
 __all__ = ["Qwen2_5_VLConfig", "Qwen2_5_VLTextConfig"]

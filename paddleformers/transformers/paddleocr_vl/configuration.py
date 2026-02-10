@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" PaddleOCR-VL model configuration."""
+"""PaddleOCR-VL model configuration."""
 
 from ..configuration_utils import PretrainedConfig
 from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
@@ -77,6 +77,7 @@ class PaddleOCRVLConfig(PretrainedConfig):
     model_type = "paddleocr_vl"
     keys_to_ignore_at_inference = ["past_key_values"]
     sub_configs = {"vision_config": PaddleOCRVisionConfig}
+    ignore_keys = {"_name_or_path", "model_type", "dtype", "_attn_implementation_internal"}
 
     def __init__(
         self,
@@ -207,15 +208,13 @@ class PaddleOCRVLConfig(PretrainedConfig):
             ]
         )
 
-    def __getattribute__(self, key):
-        if "text_config" in super().__getattribute__("__dict__") and key not in [
-            "_name_or_path",
-            "model_type",
-            "dtype",
-            "_attn_implementation_internal",
-        ]:
-            text_config = super().__getattribute__("text_config")
-            if key in text_config.__dict__:
-                return getattr(text_config, key)
+    def __getattr__(self, key):
+        if key not in self.ignore_keys:
+            text_config = self.__dict__.get("text_config")
 
-        return super().__getattribute__(key)
+            if text_config is not None:
+                try:
+                    return getattr(text_config, key)
+                except AttributeError:
+                    pass
+        return super().__getattr__(key)
