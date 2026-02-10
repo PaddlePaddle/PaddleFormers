@@ -45,6 +45,7 @@ import psutil
 from packaging import version
 from paddle import framework
 from paddle.base import core
+from paddle.distributed import ShardedWeight
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
 from paddle.distributed.fleet.meta_parallel import PipelineLayer
 
@@ -1047,6 +1048,10 @@ class Trainer:
 
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
+        for key, sharded_weight in model_sharded_state_dict.items():
+            # NOTE(Waynezee): Only Tensor in Parameter will be used in FlexCheckpoint Save Scenario.
+            if isinstance(sharded_weight, ShardedWeight):
+                sharded_weight.local_tensor = paddle.Tensor(sharded_weight.local_tensor)
         model_state_dict_path = os.path.join(output_dir, MODEL_STATE_DIC)
         os.makedirs(model_state_dict_path, exist_ok=True)
         dist.save_state_dict(
@@ -1944,7 +1949,15 @@ class Trainer:
 
             step = -1
 
+            # Data loading timing for global_step
+            _data_load_time_for_global_step = 0.0
+            _data_load_start_time = time.time()
+
             for step, inputs in enumerate(epoch_iterator):
+                # Record data loading time for this iteration
+                _data_load_end_time = time.time()
+                _data_load_time_for_global_step += _data_load_end_time - _data_load_start_time
+
                 if self.args.profile and step % self.args.gradient_accumulation_steps == 0:
                     perf_utils.switch_profile(
                         self.state.global_step,
@@ -1979,6 +1992,8 @@ class Trainer:
                     if steps_trained_in_current_epoch == 0:
                         self._load_rng_state(resume_from_checkpoint)
                     self.timers and self.timers("read-data").start()
+                    # Reset data loading timer for skipped steps
+                    _data_load_start_time = time.time()
                     continue
                 elif steps_trained_progress_bar is not None:
                     steps_trained_progress_bar.close()
@@ -2040,6 +2055,9 @@ class Trainer:
                         break
 
                     self.timers and self.timers("read-data").start()
+                    # Reset data loading timer for skipped data
+                    _data_load_time_for_global_step = 0.0
+                    _data_load_start_time = time.time()
                     continue
 
                 for inputs in inputs_list:
@@ -2209,7 +2227,6 @@ class Trainer:
                         self.callback_handler.on_optimizer_begin(
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
                         )
-
                         self.optimizer_step(args, model=model, parameters_list=parameters_list)
 
                         self.timers and self.timers("optimizer-step").stop()
@@ -2237,7 +2254,15 @@ class Trainer:
 
                         self.control = self.callback_handler.on_step_end(args, self.state, self.control)
                         self._maybe_log_save_evaluate(tr_loss, model, epoch, ignore_keys_for_eval, inputs=inputs)
+                        # Log data loading time for this global_step
+                        logger.info(
+                            f"[DataLoad global_step: {self.state.global_step}] "
+                            f"data_load_time: {_data_load_time_for_global_step * 1000:.2f} ms "
+                            f"(accumulated over {args.gradient_accumulation_steps} micro-batches)"
+                        )
                         self._print_timer()
+                        # Reset data loading timer for next global_step
+                        _data_load_time_for_global_step = 0.0
                         step_control = 0
                     else:
                         self.control = self.callback_handler.on_substep_end(args, self.state, self.control)
@@ -2248,6 +2273,9 @@ class Trainer:
 
                 if self.args.ignore_data_skip:
                     self.timers and self.timers("read-data").start()
+
+                # Reset start time for next iteration's data loading measurement
+                _data_load_start_time = time.time()
 
             if step < 0:
                 logger.warning(
