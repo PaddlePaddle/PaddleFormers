@@ -1,4 +1,5 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+# Copyright 2026 The Moonshot AI Inc. team and HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,24 +21,20 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple, Union, cast
 
 import tiktoken
 from tiktoken.load import load_tiktoken_bpe
-from tokenizers import AddedToken
 from transformers.convert_slow_tokenizer import bytes_to_unicode
-from transformers.tokenization_utils import PreTrainedTokenizer
 
-from paddleformers.utils.log import logger
-
+from ...utils.log import logger
+from ..tokenizer_utils import AddedToken, PreTrainedTokenizer
 from .tool_declaration_ts import encode_tools_to_typescript_style
 
 VOCAB_FILES_NAMES = {"vocab_file": "tiktoken.model"}
 
 
-class KimiK25Tokenizer(PreTrainedTokenizer):
+class TikTokenTokenizer(PreTrainedTokenizer):
     """
     Tokenizing and encoding/decoding text using the Tiktoken tokenizer. See megatron/tokenizer/tiktoken_tokenizer.py.
-
     This tokenizer inherits from [`PreTrainedTokenizer`] which contains most of the main methods. Users should refer to
     this superclass for more information regarding those methods.
-
     Args:
         vocab_file (`str`):
             The path to the Tiktoken model file.
@@ -164,10 +161,8 @@ class KimiK25Tokenizer(PreTrainedTokenizer):
     def encode(self, text: str, allow_special_tokens: bool = True, **kwargs) -> List[int]:
         """
         Encodes a string into a list of token IDs.
-
         Args:
             text (str): The input string to be encoded.
-
         Returns:
             list[int]: A list of token IDs.
         """
@@ -227,10 +222,8 @@ class KimiK25Tokenizer(PreTrainedTokenizer):
     def decode(self, token_ids: Union[int, List[int]], **kwargs) -> str:
         """
         Decodes a list of token IDs into a string.
-
         Args:
             token_ids (List[int]): The list of token IDs to be decoded.
-
         Returns:
             str: The decoded string.
         """
@@ -355,6 +348,3 @@ def deep_sort_dict(obj: Any) -> Any:
     if isinstance(obj, list):
         return [deep_sort_dict(item) for item in obj]
     return obj
-
-
-__all__ = ["KimiK25Tokenizer"]
