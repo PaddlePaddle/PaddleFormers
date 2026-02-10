@@ -21,7 +21,7 @@ jobs:
     uses: ./.github/workflows/_xpu_ci_test.yml
     with:
       PADDLEFORMERS_ARCHIVE_URL: ${{ needs.clone.outputs.repo_archive_url }}
-      DOCKER_IMAGE: registry.baidubce.com/device/paddle-xpu:ubuntu20-x86_64-gcc84-py310
+      DOCKER_IMAGE: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleqa:xpu-ubuntu2204-x86_64-gcc123-py310
       MODEL_PATH: /ssd3/model
   # xpu_4cards_case_test:
   #   name: xpu_4cards_case_test
