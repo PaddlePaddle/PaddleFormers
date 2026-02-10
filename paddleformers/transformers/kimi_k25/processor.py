@@ -1,10 +1,6 @@
+# coding=utf-8
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2026 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
-#
-# This code is based on EleutherAI's GPT-NeoX library and the GPT-NeoX
-# and OPT implementations in this library. It has been modified from its
-# original forms to accommodate minor architectural differences compared
-# to GPT-NeoX and OPT used by the Meta AI team that trained the model.
+# Copyright 2026 The Moonshot AI Inc. team and HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,6 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""processor class for Kimi-K2.5."""
 
 from ..image_processing_utils import BatchFeature
 from ..processing_utils import ProcessorMixin
@@ -25,10 +22,10 @@ from ..processing_utils import ProcessorMixin
 class KimiK25Processor(ProcessorMixin):
     r"""
     Constructs a KimiK25 processor which wraps a KimiK25 image processor and a tokenizer into a single processor.
-    [`KimiK25Processor`] offers all the functionalities of [`KimiK25VisionProcessor`] and [`TikTokenTokenizer`]. See the
+    [`KimiK25Processor`] offers all the functionalities of [`KimiK25ImageProcessor`] and [`TikTokenTokenizer`]. See the
     [`~KimiK25Processor.__call__`] and [`~KimiK25Processor.decode`] for more information.
     Args:
-        image_processor ([`KimiK25VisionProcessor`], *optional*):
+        image_processor ([`KimiK25ImageProcessor`], *optional*):
             The image processor is a required input.
         tokenizer ([`TikTokenTokenizer`], *optional*):
             The tokenizer is a required input.
@@ -65,14 +62,14 @@ class KimiK25Processor(ProcessorMixin):
         text += text_parts[-1]
         return text
 
-    def preprocess_medias(self, medias: list[dict]) -> list[dict]:
+    def preprocess_medias(self, medias: list[dict], **kwargs) -> list[dict]:
         updated_medias = []
         video_prompts = []
         for media in medias:
             if media["type"] == "image":
                 updated_medias.append(media)
             elif media["type"] == "video":
-                video_chunks = self.media_processor.split_video_chunks(media["video"])
+                video_chunks = self.media_processor.split_video_chunks(media["video"], **kwargs)
                 updated_medias.extend(video_chunks)
                 video_prompts.append("".join([vc["prompt"] for vc in video_chunks]))
             else:
@@ -84,7 +81,7 @@ class KimiK25Processor(ProcessorMixin):
         messages: list[dict] = None,
         medias: list[dict] = None,
         text: str = None,
-        return_tensors: str = "pt",
+        return_tensors: str = "pd",
         **kwargs
     ) -> BatchFeature:
         """
@@ -105,15 +102,15 @@ class KimiK25Processor(ProcessorMixin):
             raise ValueError("Provide either 'messages' or both 'medias' and 'text'")
 
         if medias is not None and text is not None:
-            updated_medias, video_prompts = self.preprocess_medias(medias)
+            updated_medias, video_prompts = self.preprocess_medias(medias, **kwargs)
             preprocessed = self.media_processor.preprocess(updated_medias, return_tensors=return_tensors)
             text = self.update_raw_text(text, video_prompts)
-            text_inputs = self.tokenizer(text, return_tensors=return_tensors)
+            text_inputs = self.tokenizer(text, add_special_tokens=False, return_tensors=return_tensors)
             return BatchFeature(data={**text_inputs, **preprocessed.data})
 
         if medias is None:
             medias = self._extract_medias_from_messages(messages)
-        updated_medias, video_prompts = self.preprocess_medias(medias)
+        updated_medias, video_prompts = self.preprocess_medias(medias, **kwargs)
         preprocessed = self.media_processor.preprocess(updated_medias, return_tensors=return_tensors)
 
         # Generate text if not provided
@@ -122,7 +119,7 @@ class KimiK25Processor(ProcessorMixin):
 
         text = self.update_raw_text(text, video_prompts)
 
-        text_inputs = self.tokenizer(text, return_tensors=return_tensors)
+        text_inputs = self.tokenizer(text, add_special_tokens=False, return_tensors=return_tensors)
         return BatchFeature(data={**text_inputs, **preprocessed.data})
 
     @staticmethod
@@ -168,6 +165,3 @@ class KimiK25Processor(ProcessorMixin):
     @property
     def model_input_names(self):
         return ["input_ids", "attention_mask", "pixel_values", "grid_thws"]
-
-
-__all__ = ["KimiK25Processor"]

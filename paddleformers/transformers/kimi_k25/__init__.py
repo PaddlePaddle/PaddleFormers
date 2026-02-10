@@ -22,7 +22,7 @@ import_structure = {
         "KimiK25ForConditionalGeneration",
     ],
     "processor": ["KimiK25Processor"],
-    "video_processor": ["KimiK25VisionProcessor"],
+    "vision_processor": ["KimiK25VisionProcessor"],
     "tokenizer": ["TikTokenTokenizer"],
 }
 
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from .modeling import *
     from .processor import *
     from .tokenizer import *
-    from .video_processor import *
+    from .vision_processor import *
 
 else:
     sys.modules[__name__] = _LazyModule(

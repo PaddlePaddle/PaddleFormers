@@ -160,7 +160,7 @@ import_structure = {
     "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
     "kimi_k25.configuration": ["KimiK25Config", "KimiK25VisionConfig"],
     "kimi_k25.processor": ["KimiK25Processor"],
-    "kimi_k25.video_processor": ["KimiK25VisionProcessor"],
+    "kimi_k25.vision_processor": ["KimiK25VisionProcessor"],
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
     "kimi_k25.modeling": ["KimiK25ForConditionalGeneration"],
     "llama.configuration": [

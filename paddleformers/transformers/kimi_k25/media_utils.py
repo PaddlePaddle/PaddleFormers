@@ -16,17 +16,18 @@ import base64
 import io
 import math
 import os
+import time
 from datetime import datetime, timezone
 from typing import List, Literal, Optional, TypedDict
 
 import numpy as np
+import paddle
 from PIL import Image
 from pydantic import BaseModel, Field
 
-try:
-    from mecord import VideoReader
-except ImportError:
-    VideoReader = None
+from ...utils import is_decord_available
+from ...utils.log import logger
+from ..paddle_vision_utils import pad, resize
 
 
 class VideoSpec(BaseModel):
@@ -48,33 +49,171 @@ class ImageInput(TypedDict):
 
 class VideoChunkInput(TypedDict):
     type: Literal["video_chunk"]
-    video_chunk: List[Image.Image]
+    video_chunk: List[Image.Image | np.ndarray | paddle.Tensor]
     prompt: Optional[str] = None
 
 
 MediaInput = ImageInput | VideoChunkInput
 
 
-def get_video_meta(video_src: bytes | str | os.PathLike, accurate: bool = True) -> dict:
+def _read_video_decord(
+    video_src: str | bytes | os.PathLike,
+    num_threads: int = 0,
+    sample_indices: list = None,
+    return_video: bool = False,
+) -> dict:
+
+    if not is_decord_available():
+        raise ImportError(
+            "Backend=decord for loading the video but the required library is not found in your environment "
+            "Make sure to install 'decord' before loading the video."
+        )
+    import decord
+
+    logger.info("Loading video with decord backend.")
+    st = time.time()
+    vr = decord.VideoReader(video_src, num_threads=num_threads)
+    total_frames, video_fps = len(vr), vr.get_avg_fps()
+
+    original_height = int(vr[0].shape[0])
+    original_width = int(vr[0].shape[1])
+
+    assert total_frames > 0, "Invalid video format."
+    assert original_width > 0 and original_height > 0, "Invalid video format."
+    assert video_fps > 0, "Invalid video format."
+
+    estimated_frame = max(1, int(video_fps))
+    key_indices = list(range(0, total_frames, estimated_frame))
+
+    frame_time_info = {
+        "video_start": 0,
+        "video_end": total_frames - 1,
+        "total_frames": total_frames,
+    }
+    video = vr.get_batch(indices=sample_indices if sample_indices is not None else key_indices).asnumpy()
+    video = paddle.to_tensor(video).permute(0, 3, 1, 2)  # Convert to TCHW format
+
+    logger.info(f"decord:  {video_src=}, {total_frames=}, {video_fps=}, time={time.time() - st:.3f}s")
+    video_spec = VideoSpec(
+        media_type="video",
+        height=original_height,
+        width=original_width,
+        num_frames=total_frames,
+        fps=video_fps,
+        key_indices=key_indices,
+        frame_time_info=frame_time_info,
+    )
+
+    return (video, video_spec) if return_video else video_spec
+
+
+def _read_video_paddlecodec(
+    video_src: str | bytes | os.PathLike,
+    num_threads: int = 0,
+    sample_indices: list = None,
+    return_video: bool = False,
+) -> dict:
+    """read video using torchcodec.decoders.VideoDecoder(via Paddle Proxy)
+
+    Args:
+        ele (dict): a dict contains the configuration of video.
+        support keys:
+            - video: the path of video. support "file://", "http://", "https://" and local path.
+            - video_start: the start time of video.
+            - video_end: the end time of video.
+    Returns:
+        paddle.Tensor: the video tensor with shape (T, C, H, W).
+    """
+    try:
+        import sys
+
+        import paddle
+
+        del sys.modules["torchcodec"]
+        paddle.compat.enable_torch_proxy(scope={"torchcodec"})
+        from torchcodec.decoders import VideoDecoder
+
+        sys.modules["torchcodec"] = None
+    except (ImportError, RuntimeError) as e:
+        logger.error(
+            f"Failed to load 'torchcodec' backend via Paddle proxy.\n"
+            f"  - Common Causes:\n"
+            f"    1. Conflict with official 'torch' or 'torchcodec' packages.\n"
+            f"    2. Missing FFmpeg libraries or System library mismatch (CXXABI).\n"
+            f"  - Recommended Fix Steps:\n"
+            f"    1. Install dependencies: `conda install ffmpeg -c conda-forge` or `apt-get update && apt-get install ffmpeg` \n"
+            f"    2. Uninstall conflicts: `pip uninstall torchcodec paddlecodec -y`\n"
+            f"    3. Reinstall packages: `pip install paddlecodec --force-reinstall`\n"
+            f"  - If you encounter 'CXXABI' or 'libstdc++' errors, your system libraries might be outdated.\n"
+            f"    Try prioritizing Conda libraries by running: `LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH python your_script.py`\n"
+            f"  - Original Error: {e}"
+        )
+        raise
+
+    logger.info("Loading video with paddlecodec backend.")
+    PADDLECODEC_NUM_THREADS = int(os.environ.get("PADDLECODEC_NUM_THREADS", num_threads))
+    logger.info(
+        f"set PADDLECODEC_NUM_THREADS: {PADDLECODEC_NUM_THREADS if PADDLECODEC_NUM_THREADS != 0 else '0 (Auto)'}"
+    )
+    st = time.time()
+    decoder = VideoDecoder(video_src, num_ffmpeg_threads=PADDLECODEC_NUM_THREADS)
+    video_fps = decoder.metadata.average_fps
+    total_frames = decoder.metadata.num_frames
+
+    original_height = decoder.metadata.height
+    original_width = decoder.metadata.height
+
+    assert total_frames > 0, "Invalid video format."
+    assert original_width > 0 and original_height > 0, "Invalid video format."
+    assert video_fps > 0, "Invalid video format."
+
+    estimated_frame = max(1, int(video_fps))
+    key_indices = list(range(0, total_frames, estimated_frame))
+
+    video = (
+        decoder.get_frames_at(indices=sample_indices if sample_indices is not None else key_indices)
+        .data.contiguous()
+        .to("cuda")
+    )
+    logger.info(f"paddlecodec:  {video_src=}, {total_frames=}, {video_fps=}, time={time.time() - st:.3f}s")
+    paddle.compat.disable_torch_proxy()
+
+    frame_time_info = {
+        "video_start": 0,
+        "video_end": total_frames - 1,
+        "total_frames": total_frames,
+    }
+
+    video_spec = VideoSpec(
+        media_type="video",
+        height=original_height,
+        width=original_width,
+        num_frames=total_frames,
+        fps=video_fps,
+        key_indices=key_indices,
+        frame_time_info=frame_time_info,
+    )
+
+    return (video, video_spec) if return_video else video_spec
+
+
+VIDEO_READER_BACKENDS = {
+    "decord": _read_video_decord,
+    "paddlecodec": _read_video_paddlecodec,
+}
+
+
+def get_video_meta(video_src: bytes | str | os.PathLike, accurate: bool = True, **kwargs) -> dict:
     """Get the dimensions of a video."""
     if isinstance(video_src, os.PathLike):
         video_src = str(video_src)
     # if b64 string, decode to bytes
     if isinstance(video_src, str) and video_src.startswith("data:video/mp4;base64,"):
         video_src = base64.b64decode(video_src.split(",")[1])
-    video = VideoReader(video_src, auto_init=accurate, num_threads=1)
-    assert video.num_frames > 0, "Invalid video format."
-    assert video.original_width > 0 and video.original_height > 0, "Invalid video format."
-    assert video.avg_fps > 0, "Invalid video format."
-    return VideoSpec(
-        media_type="video",
-        height=video.original_height,
-        width=video.original_width,
-        num_frames=video.num_frames,
-        fps=video.avg_fps,
-        key_indices=video.key_indices,
-        frame_time_info=video.frame_time_info,
-    )
+
+    video_backend = kwargs.get("video_backend", "paddlecodec")
+
+    return VIDEO_READER_BACKENDS[video_backend](video_src, num_threads=1, return_video=False)
 
 
 def timestamp_as_str(timestamp: float, timestamp_mode: str = "hh:mm:ss.fff") -> str:
@@ -216,10 +355,87 @@ def ensure_media_type(media: MediaInput) -> MediaInput:
         media["image"] = _to_pil(media["image"])
         return media
     elif media["type"] == "video_chunk":
-        media["video_chunk"] = [_to_pil(frame) for frame in media["video_chunk"]]
+        if isinstance(media["video_chunk"], np.ndarray):
+            video_chunk = media["video_chunk"]
+            media["video_chunk"] = paddle.to_tensor(video_chunk).permute(0, 3, 1, 2)
+
         return media
     else:
         raise ValueError(f"Unsupported media type: {media['type']}")
+
+
+def image_in_tensor(
+    image: paddle.Tensor,
+    resize_to: tuple[int, int] | None = None,
+    mode: str = "resize",
+    raise_error_for_ill_resize: bool = True,
+) -> paddle.Tensor:
+    """Convert an image to a numpy array.
+    Args:
+        content: The image to convert.
+        resize_to: The size to resize the image to.
+        mode: The mode to resize the image to.
+        raise_error_for_ill_resize: Whether to raise an error for ill-sized resize.
+    Returns:
+        A numpy array.
+    """
+    assert isinstance(image, paddle.Tensor), "image must be a Paddle Tensor"
+    if resize_to is not None:
+        if mode == "resize":
+            image = resize(image, size=resize_to, interpolation="bicubic")
+
+        elif mode == "rescale_and_pad_to_center":
+            _, height, width = image.shape
+            scale = min(resize_to[0] / width, resize_to[1] / height, 1.0)
+            new_width = round(width * scale)
+            new_height = round(height * scale)
+            if new_width == 0 or new_height == 0:
+                if raise_error_for_ill_resize:
+                    raise ValueError(
+                        f"Invalid resize to: {resize_to}, from image size: {image.shape[1], image.shape[2]}"
+                    )
+                else:
+                    return paddle.zeros((3, resize_to[0], resize_to[1]), dtype="uint8")
+
+            image = resize(image, (new_width, new_height), resample="bicubic")
+            padding_left = (resize_to[0] - new_width) // 2
+            padding_right = resize_to[0] - new_width - padding_left
+            padding_top = (resize_to[1] - new_height) // 2
+            padding_bottom = resize_to[1] - new_height - padding_top
+            image = pad(
+                image,
+                padding=[padding_left, padding_top, padding_right, padding_bottom],
+                fill=0,
+                padding_mode="constant",
+            )
+
+        elif mode == "rescale_and_pad_to_rightbottom":
+            _, width, height = image.shape
+            scale = min(resize_to[0] / width, resize_to[1] / height, 1.0)
+            new_width = round(width * scale)
+            new_height = round(height * scale)
+            if new_width == 0 or new_height == 0:
+                if raise_error_for_ill_resize:
+                    raise ValueError(
+                        f"Invalid resize to: {resize_to}, from image size: {image.shape[1], image.shape[2]}"
+                    )
+                else:
+                    return paddle.zeros((3, resize_to[0], resize_to[1]), dtype="uint8")
+
+            image = resize(image, (new_width, new_height), resample="bicubic")
+            padding_right = resize_to[0] - new_width
+            padding_bottom = resize_to[1] - new_height
+            image = pad(
+                image,
+                padding=[0, 0, padding_right, padding_bottom],
+                fill=0,
+                padding_mode="constant",
+            )
+
+        else:
+            raise ValueError(f"Invalid mode: {mode}")
+
+    return image
 
 
 def image_to_np(
@@ -297,57 +513,22 @@ def image_to_np(
         return image
 
 
-def navit_patchify(pixel_values: np.ndarray, patch_size: int) -> dict[str, np.ndarray]:
+def navit_patchify(pixel_values: paddle.Tensor, patch_size: int) -> dict[str, paddle.tensor]:
     """Reshape the pixel values to a navit shape.
     Args:
-        pixel_values: np.ndarray, shape (t, h, w, c)
+        pixel_values: paddle.Tensor, shape (b, t, h, w, c)
         patch_size: int
     Returns:
-        dict[str, np.ndarray]
-        - patches: np.ndarray, shape (t * h//patch_size * w//patch_size, c, patch_size, patch_size)
-        - grid_thw: np.ndarray, (t, h//patch_size, w//patch_size)
+        dict[str, paddle.Tensor]
+        - patches: paddle.Tensor, shape (b * t * h//patch_size * w//patch_size, c, patch_size, patch_size)
+        - grid_thw: paddle.Tensor, (t, h//patch_size, w//patch_size)
     """
-    T, H, W, C = pixel_values.shape
+    B, T, C, H, W = pixel_values.shape
     assert C == 3, "pixel_values must have 3 channels"
 
-    patches = pixel_values.reshape(T, H // patch_size, patch_size, W // patch_size, patch_size, C)
+    patches = pixel_values.reshape([B * T, C, H // patch_size, patch_size, W // patch_size, patch_size])
     # (T, H//patch_size, W//patch_size, C, patch_size, patch_size)
-    patches = patches.transpose(0, 1, 3, 5, 2, 4)
+    patches = patches.transpose(0, 2, 4, 1, 3, 5)
     patches = patches.reshape(-1, C, patch_size, patch_size)
-    grid_thw = np.array([T, H // patch_size, W // patch_size])
+    grid_thw = paddle.to_tensor([[T, H // patch_size, W // patch_size]] * B)
     return {"pixel_values": patches, "grid_thw": grid_thw}
-
-
-def normalize(x: np.ndarray, mean, std_inv, pixels_dtype: np.dtype = np.float32) -> np.ndarray:
-    """Normalize the image.
-    Args:
-        x: The image to normalize. The shape is (..., 3). The dtype is uint8. The range is [0, 255].
-        mean: The mean of the image.
-        std_inv: The inverse of the std of the image.
-        pixels_dtype: The dtype of the image.
-    Returns:
-        The normalized image. The shape is (..., 3). The dtype is determined by the pixels_dtype.
-    """
-    x = (x / 255.0).astype(pixels_dtype)
-    x -= mean
-    x *= std_inv
-    return x
-
-
-def _to_tensor(data, **kwargs):
-    import paddle
-
-    if isinstance(data, np.ndarray):
-        return paddle.from_numpy(data).to(**kwargs)
-    elif isinstance(data, paddle.Tensor):
-        return data.to(**kwargs)
-    elif isinstance(data, list):
-        return [_to_tensor(item, **kwargs) for item in data]
-    elif isinstance(data, tuple):
-        return tuple(_to_tensor(item, **kwargs) for item in data)
-    elif isinstance(data, dict):
-        return {k: _to_tensor(v, **kwargs) for k, v in data.items()}
-    elif data is None:
-        return None
-    else:
-        raise ValueError(f"Unsupported data type: {type(data)}")

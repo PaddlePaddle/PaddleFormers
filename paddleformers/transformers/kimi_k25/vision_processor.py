@@ -1,10 +1,6 @@
+# coding=utf-8
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2026 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
-#
-# This code is based on EleutherAI's GPT-NeoX library and the GPT-NeoX
-# and OPT implementations in this library. It has been modified from its
-# original forms to accommodate minor architectural differences compared
-# to GPT-NeoX and OPT used by the Meta AI team that trained the model.
+# Copyright 2026 The Moonshot AI Inc. team and HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,11 +13,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-"""Image processor class for Kimi-K2.5.
-"""
+"""Image processor class for Kimi-K2.5."""
 
 import json
+import math
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
@@ -29,35 +24,36 @@ import paddle
 from PIL import Image
 
 from ..image_processing_utils import BaseImageProcessor, BatchFeature
-from ..tokenizer_utils import TensorType
+from ..paddle_vision_utils import normalize as paddle_normalize
+from ..paddle_vision_utils import pad
+from ..tokenizer_utils_base import TensorType
 from .media_utils import (
+    VIDEO_READER_BACKENDS,
     MediaInput,
     VideoChunkInput,
-    _to_tensor,
     ensure_media_type,
     get_video_meta,
+    image_in_tensor,
     image_to_np,
     navit_patchify,
     navit_resize_image,
     navit_resize_video,
-    normalize,
     real_sample_fps_and_max_num_frames,
     timestamp_as_str,
 )
 
-try:
-    from mecord import VideoReader
-except ImportError:
-    VideoReader = None
-
 
 def resampling(
-    video_bytes: bytes, sample_indices: list[int], key_indices=None, frame_time_info=None, num_threads=4
-) -> str:
-    video = VideoReader(video_bytes, num_threads=num_threads, frame_time_info=frame_time_info, key_indices=key_indices)
-    # extract target frames
-    frames = video[sample_indices]
-    frames = [Image.fromarray(frame) for frame in frames]
+    video_bytes: bytes,
+    sample_indices: list[int],
+    num_threads=4,
+    **kwargs,
+) -> paddle.Tensor:
+
+    video_backend = kwargs.get("video_backend", "paddlecodec")
+    frames, _ = VIDEO_READER_BACKENDS[video_backend](
+        video_bytes, num_threads=num_threads, sample_indices=sample_indices, return_video=True
+    )
     return frames
 
 
@@ -82,15 +78,21 @@ class KimiK25VisionProcessor(BaseImageProcessor):
     def make_chunk_prompt(cls, timestamp_text: str) -> str:
         return f"{timestamp_text}<|media_begin|>video<|media_content|><|media_pad|><|media_end|>"
 
-    def split_video_chunks(self, video_url: str | bytes) -> list[list[Image.Image]]:
+    def split_video_chunks(
+        self,
+        video_url: str | bytes,
+        **kwargs,
+    ) -> list[list[Image.Image | np.ndarray | paddle.Tensor]]:
         # video_url should be base64 str or bytes
-        video_spec = get_video_meta(video_url)
+        video_spec = get_video_meta(video_url, **kwargs)
         sample_fps = min(self.media_proc_cfg["sample_fps"], video_spec.fps)
         sampled_nframes = max(round(video_spec.num_frames * sample_fps / video_spec.fps), 1)
+        temporal_merge_kernel_size = self.media_proc_cfg["temporal_merge_kernel_size"]
+        # NOTE: Enforce temporal divisibility to maintain structural integrity
+        sampled_nframes = math.floor(sampled_nframes / temporal_merge_kernel_size) * temporal_merge_kernel_size
         frame_inds = np.linspace(0, video_spec.num_frames - 1, sampled_nframes).round().astype(int)
         frame_inds = frame_inds.tolist()
         sampled_frame_ids = []
-        temporal_merge_kernel_size = self.media_proc_cfg["temporal_merge_kernel_size"]
         num_chunks = 0
         chunk_timestamp = []
         for i in range(0, len(frame_inds), temporal_merge_kernel_size):
@@ -100,7 +102,7 @@ class KimiK25VisionProcessor(BaseImageProcessor):
             chunk_timestamp.append(timestamp_text)
             num_chunks += 1
 
-        sampled_frames = resampling(video_url, sampled_frame_ids)
+        sampled_frames = resampling(video_url, sampled_frame_ids, **kwargs)
         chunks = []
         for chunk_id in range(num_chunks):
             chunk = sampled_frames[chunk_id * temporal_merge_kernel_size : (chunk_id + 1) * temporal_merge_kernel_size]
@@ -126,7 +128,7 @@ class KimiK25VisionProcessor(BaseImageProcessor):
             return ret
         elif media_input["type"] == "video_chunk":
             frame = media_input["video_chunk"][0]
-            width, height = frame.size
+            _, height, width = frame.shape
             num_frames = len(media_input["video_chunk"])
             fps = 1.0
 
@@ -159,16 +161,26 @@ class KimiK25VisionProcessor(BaseImageProcessor):
             raise ValueError("Unsupported type: {}".format(media_input["type"]))
 
     def resize_image(
-        self, image: Image.Image, new_width: int, new_height: int, pad_width: int, pad_height: int
-    ) -> np.ndarray:
-        image_np = image_to_np(image, (new_width, new_height), "resize")
-        image_np = np.pad(
-            image_np,
-            ((0, pad_height), (0, pad_width), (0, 0)),
-            mode="constant",
-            constant_values=0,
-        )
-        return image_np
+        self, image: Image.Image | paddle.Tensor, new_width: int, new_height: int, pad_width: int, pad_height: int
+    ) -> np.ndarray | paddle.Tensor:
+        if isinstance(image, Image.Image):
+            image_np = image_to_np(image, (new_width, new_height), "resize")
+            image_np = np.pad(
+                image_np,
+                ((0, pad_height), (0, pad_width), (0, 0)),
+                mode="constant",
+                constant_values=0,
+            )
+            return image_np
+        else:
+            image_pd = image_in_tensor(image, (new_height, new_width), "resize")
+            image_pd = pad(
+                image_pd,
+                [0, 0, pad_width, pad_height],
+                fill=0,
+                padding_mode="constant",
+            )
+            return image_pd
 
     def preprocess(
         self,
@@ -180,7 +192,7 @@ class KimiK25VisionProcessor(BaseImageProcessor):
 
         Args:
             medias: List of MediaInput.
-            return_tensors: Desired output format ('pt', 'np', 'tf', or None).
+            return_tensors: Desired output format ('pt', 'np', or None).
 
         Returns:
             BatchFeature containing 'pixel_values' and 'grid_thws' tensors.
@@ -201,45 +213,29 @@ class KimiK25VisionProcessor(BaseImageProcessor):
                 if item["type"] == "image":
                     image = item["image"]
                     image_np = self.resize_image(image, new_width, new_height, pad_width, pad_height)
-                    pixel_values.append(np.expand_dims(image_np, axis=0))
+                    pixel_values.append(paddle.to_tensor(image_np.transpose(2, 0, 1)).unsqueeze(0))
                 elif item["type"] == "video_chunk":
-                    pixels = []
-                    for frame in item["video_chunk"]:
-                        frame_np = self.resize_image(frame, new_width, new_height, pad_width, pad_height)
-                        pixels.append(frame_np)
-                    pixel_values.append(np.stack(pixels, axis=0))
+                    frame_np = self.resize_image(item["video_chunk"], new_width, new_height, pad_width, pad_height)
+                    pixel_values.append(frame_np)
                 else:
                     raise ValueError("Unsupported type: {}".format(item["type"]))
-            normalized_pixel_values = []
-            image_std_inv = 1.0 / np.array(self.media_proc_cfg["image_std"])
-            image_mean = np.array(self.media_proc_cfg["image_mean"])
-            for pixels in pixel_values:
-                pixels = normalize(pixels, image_mean, image_std_inv)
-                pixels_and_thw = navit_patchify(
-                    pixels,
-                    self.media_proc_cfg["patch_size"],
-                )
-                normalized_pixel_values.append(pixels_and_thw)
-
-            pixel_values = paddle.cat(
-                [_to_tensor(pixel_value["pixel_values"]) for pixel_value in normalized_pixel_values]
+            pixel_values = paddle.stack(pixel_values, axis=0)
+            image_std = paddle.to_tensor(self.media_proc_cfg["image_std"])
+            image_mean = paddle.to_tensor(self.media_proc_cfg["image_mean"])
+            pixels = paddle_normalize((pixel_values / 255.0).astype("float32"), image_mean, image_std)
+            pixels_and_thw = navit_patchify(
+                pixels,
+                self.media_proc_cfg["patch_size"],
             )
-            grid_thws = paddle.cat(
-                [
-                    _to_tensor(pixel_value["grid_thw"], dtype=paddle.int64).unsqueeze(0)
-                    for pixel_value in normalized_pixel_values
-                ]
-            )
-
             data = {
-                "pixel_values": pixel_values,
-                "grid_thws": grid_thws,
+                "pixel_values": pixels_and_thw["pixel_values"],
+                "grid_thws": pixels_and_thw["grid_thw"],
             }
 
         else:
             data = {}
 
-        return BatchFeature(data=data, tensor_type=return_tensors)
+        return BatchFeature(data=data, tensor_type="pd")
 
     def __repr__(self):
         return f"KimiK25VisionProcessor(media_proc_cfg={self.media_proc_cfg})"
@@ -263,6 +259,3 @@ class KimiK25VisionProcessor(BaseImageProcessor):
             if hasattr(value, "tolist"):
                 dictionary[key] = value.tolist()
         return json.dumps(dictionary, indent=2, sort_keys=True) + "\n"
-
-
-__all__ = ["KimiK25VisionProcessor"]
