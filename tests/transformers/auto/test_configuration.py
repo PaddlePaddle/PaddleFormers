@@ -90,7 +90,7 @@ class AutoConfigTest(unittest.TestCase):
     def test_new_config_registration(self):
         try:
             AutoConfig.register("custom", CustomConfig)
-            # Wrong model type will raise an error
+            # Wrong model type will raise an error.
             with self.assertRaises(ValueError):
                 AutoConfig.register("model", CustomConfig)
             # Trying to register something existing in the PaddleFormers library will raise an error

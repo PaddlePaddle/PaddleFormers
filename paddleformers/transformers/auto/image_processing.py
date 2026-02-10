@@ -51,9 +51,9 @@ from .factory import _LazyAutoMapping
 
 IMAGE_PROCESSOR_MAPPING_NAMES.update(
     {
-        "glm4v": (),
+        "ernie4_5_moe_vl": ("Ernie4_5_VLImageProcessor"),
         "glm4v_moe": ("Glm4vImageProcessor", "Glm4vImageProcessorFast"),
-        "paddleocr_vl": (),
+        "paddleocr_vl": ("PaddleOCRVLImageProcessor"),
         "qwen2_5_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen2_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen3_vl": ("Qwen3VLImageProcessor", "Qwen3VLImageProcessorFast"),
@@ -356,18 +356,18 @@ class AutoImageProcessor(hf.AutoImageProcessor):
                         f"`use_fast` is set to `True` but the requested image processor `{image_processor_type}` does not have a fast version. "
                         "Falling back to the slow version (`use_fast=False`)."
                     )
-                    image_processor_class = get_image_processor_class_from_name_hf(image_processor_type)
+                    image_processor_class = get_image_processor_class_from_name(image_processor_type)
 
-                    # Not found in Transformers, try local PaddleFormers registry
+                    # Not found in PaddleFormers, try local Transformers registry
                     if image_processor_class is None:
-                        image_processor_class = get_image_processor_class_from_name(image_processor_type)
+                        image_processor_class = get_image_processor_class_from_name_hf(image_processor_type)
             else:
                 image_processor_type_slow = image_processor_type.removesuffix("Fast")
-                image_processor_class = get_image_processor_class_from_name_hf(image_processor_type_slow)
+                image_processor_class = get_image_processor_class_from_name(image_processor_type_slow)
 
-                # Not found in Transformers, try local PaddleFormers registry
+                # Not found in PaddleFormers, try local Transformers registry
                 if image_processor_class is None:
-                    image_processor_class = get_image_processor_class_from_name(image_processor_type_slow)
+                    image_processor_class = get_image_processor_class_from_name_hf(image_processor_type_slow)
 
                 if image_processor_class is None and image_processor_type.endswith("Fast"):
                     raise ValueError(

@@ -910,10 +910,26 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             f"model.layers.0.mlp.gate_proj.weight^T, model.layers.0.mlp.up_proj.weight^T -> {model_prefix}layers.{num_head_empty_layers}.mlp.up_gate_proj.weight, fused_ffn",
         ]
 
-        # layer0 - layer_num_hidden_layers
-        for layer_idx in reversed(range(0, num_hidden_layers)):
+        num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
+
+        for layer_idx in reversed(range(num_hidden_layers, num_hidden_layers + num_nextn_predict_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix = f"model.layers.{layer_idx}"
+            prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
+            aoa_config["aoa_statements"] += [
+                f"{prefix}.eh_proj.weight^T -> {prefix_offset}.eh_proj.weight",
+                f"{prefix}.enorm.weight -> {prefix_offset}.enorm.weight",
+                f"{prefix}.hnorm.weight -> {prefix_offset}.hnorm.weight",
+                f"{prefix}.norm.weight -> {prefix_offset}.shared_head.norm.weight",
+            ]
+
+        # layer0 - layer_num_hidden_layers
+        for layer_idx in reversed(range(0, num_hidden_layers + num_nextn_predict_layers)):
+            layer_idx_offset = layer_idx + num_head_empty_layers
+            prefix = f"model.layers.{layer_idx}"
+            if layer_idx >= num_hidden_layers:
+                # for mtp
+                prefix += ".transformer_layer"
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
             aoa_config["aoa_statements"] += [
                 f"{prefix}.input_layernorm.weight -> {prefix_offset}.input_layernorm.weight",
@@ -929,9 +945,12 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     f"{prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias -> {prefix_offset}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
                 ]
         # layer1 - layer_num_hidden_layers
-        for layer_idx in reversed(range(1, num_hidden_layers)):
+        for layer_idx in reversed(range(1, num_hidden_layers + num_nextn_predict_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix = f"model.layers.{layer_idx}"
+            if layer_idx >= num_hidden_layers:
+                # for mtp
+                prefix += ".transformer_layer"
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
             aoa_config["aoa_statements"] += [
                 f"{prefix}.mlp.gate.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
