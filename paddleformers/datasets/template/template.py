@@ -867,3 +867,16 @@ register_template(
     suffix=["<|im_end|>"],
     chat_sep="<|im_end|>",
 )
+
+register_template(
+    name="kimi_k25",
+    format_user=StringFormatter(
+        slots=["<|im_user|>user<|im_middle|>{{content}}<|im_end|><|im_assistant|>assistant<|im_middle|>"]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>"]),
+    format_system=StringFormatter(slots=["<|im_system|>system<|im_middle|>{{content}}<|im_end|>"]),
+    default_system="You are a helpful assistant",
+    thought_words=("◁think▷", "◁/think▷"),
+    mm_plugin=get_mm_plugin("kimi_k25", image_token="<|media_pad|>"),
+    template_class=ReasoningTemplate,
+)

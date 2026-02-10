@@ -25,10 +25,10 @@ from ..processing_utils import ProcessorMixin
 class KimiK25Processor(ProcessorMixin):
     r"""
     Constructs a KimiK25 processor which wraps a KimiK25 image processor and a tokenizer into a single processor.
-    [`KimiK25Processor`] offers all the functionalities of [`KimiK25ImageProcessor`] and [`TikTokenTokenizer`]. See the
+    [`KimiK25Processor`] offers all the functionalities of [`KimiK25VisionProcessor`] and [`TikTokenTokenizer`]. See the
     [`~KimiK25Processor.__call__`] and [`~KimiK25Processor.decode`] for more information.
     Args:
-        image_processor ([`KimiK25ImageProcessor`], *optional*):
+        image_processor ([`KimiK25VisionProcessor`], *optional*):
             The image processor is a required input.
         tokenizer ([`TikTokenTokenizer`], *optional*):
             The tokenizer is a required input.
