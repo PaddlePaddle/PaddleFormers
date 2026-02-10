@@ -1393,6 +1393,18 @@ class PretrainedConfig:
             `Dict[str, Any]`: Dictionary of all the attributes that make up this configuration instance.
         """
         output = copy.deepcopy(self.__dict__)
+
+        # In __setattr__, we enforce a proxy mechanism where attributes belonging to sub-configs
+        # (like text_config) are removed from self.__dict__ to prevent "attribute shadowing" (stale local cache).
+        # Since copy.deepcopy(self.__dict__) misses these proxied attributes, we must flatten
+        # and merge them back from the sub-configs to ensure the serialized dictionary is complete.
+        for key, value in self.__dict__.items():
+            if isinstance(value, PretrainedConfig):
+                sub_config_dict = value.to_dict(saving_file=saving_file)
+                for sub_key, sub_value in sub_config_dict.items():
+                    if sub_key not in output:
+                        output[sub_key] = sub_value
+
         if hasattr(self.__class__, "model_type"):
             output["model_type"] = self.__class__.model_type
         if "_auto_class" in output:
