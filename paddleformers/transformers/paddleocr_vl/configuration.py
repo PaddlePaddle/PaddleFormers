@@ -209,9 +209,8 @@ class PaddleOCRVLConfig(PretrainedConfig):
         )
 
     def __getattr__(self, key):
-        if key not in self.ignore_keys:
+        if key not in self.__class__.ignore_keys:
             text_config = self.__dict__.get("text_config")
-
             if text_config is not None:
                 try:
                     return getattr(text_config, key)

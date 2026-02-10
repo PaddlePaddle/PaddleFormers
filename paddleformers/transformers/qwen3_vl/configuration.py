@@ -300,7 +300,7 @@ class Qwen3VLConfig(PretrainedConfig):
     def __setattr__(self, key, value):
         # Note: text_config might not be initialized yet during the early stages of __init__.
         text_config = self.__dict__.get("text_config")
-        if text_config is not None and key not in self.ignore_keys and hasattr(text_config, key):
+        if text_config is not None and key not in self.__class__.ignore_keys and hasattr(text_config, key):
             setattr(text_config, key, value)
             # Delete from __dict__ to ensure future access triggers __getattr__
             # instead of returning a stale local value.
@@ -310,7 +310,7 @@ class Qwen3VLConfig(PretrainedConfig):
         super().__setattr__(key, value)
 
     def __getattr__(self, key):
-        if key not in self.ignore_keys:
+        if key not in self.__class__.ignore_keys:
             text_config = self.__dict__.get("text_config")
             if text_config is not None:
                 try:

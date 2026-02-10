@@ -808,10 +808,7 @@ class PretrainedConfig:
     _unsavable_keys = set()
 
     def __setattr__(self, key, value):
-        try:
-            map_ = object.__getattribute__(self, "attribute_map")
-        except AttributeError:
-            map_ = {}
+        map_ = getattr(self.__class__, "attribute_map", {})
 
         if key in map_:
             key = map_[key]
@@ -820,9 +817,7 @@ class PretrainedConfig:
         assert hasattr(self, key)
 
     def __getattr__(self, key):
-        map_ = self.__dict__.get("attribute_map", {})
-        if not map_:
-            map_ = getattr(self.__class__, "attribute_map", {})
+        map_ = getattr(self.__class__, "attribute_map", {})
 
         if key in map_:
             return getattr(self, map_[key])
