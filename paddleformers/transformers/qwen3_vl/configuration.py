@@ -259,6 +259,12 @@ class Qwen3VLConfig(PretrainedConfig):
     model_type = "qwen3_vl"
     sub_configs = {"vision_config": Qwen3VLVisionConfig, "text_config": Qwen3VLTextConfig}
     keys_to_ignore_at_inference = ["past_key_values"]
+    ignore_keys = {
+        "_name_or_path",
+        "model_type",
+        "dtype",
+        "_attn_implementation_internal",
+    }
 
     def __init__(
         self,

@@ -270,6 +270,12 @@ class Qwen3VLMoeConfig(PretrainedConfig):
     model_type = "qwen3_vl_moe"
     sub_configs = {"vision_config": Qwen3VLMoeVisionConfig, "text_config": Qwen3VLMoeTextConfig}
     keys_to_ignore_at_inference = ["past_key_values"]
+    ignore_keys = {
+        "_name_or_path",
+        "model_type",
+        "dtype",
+        "_attn_implementation_internal",
+    }
 
     def __init__(
         self,
