@@ -127,7 +127,7 @@ class AutoProcessor:
         if processor_config_file is not None:
             config_dict, _ = ProcessorMixin.get_processor_dict(pretrained_model_name_or_path, **kwargs)
             processor_class = config_dict.get("processor_class")
-            if "AutoProcessor" in config_dict.get("auto_map", {}):
+            if processor_auto_map is None and "AutoProcessor" in config_dict.get("auto_map", {}):
                 processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
 
         if processor_class is None:
@@ -140,7 +140,7 @@ class AutoProcessor:
             if preprocessor_config_file is not None:
                 config_dict, _ = ImageProcessingMixin.get_image_processor_dict(pretrained_model_name_or_path, **kwargs)
                 processor_class = config_dict.get("processor_class", None)
-                if "AutoProcessor" in config_dict.get("auto_map", {}):
+                if processor_auto_map is None and "AutoProcessor" in config_dict.get("auto_map", {}):
                     processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
 
             # Saved as video processor
@@ -155,7 +155,7 @@ class AutoProcessor:
                         pretrained_model_name_or_path, **kwargs
                     )
                     processor_class = config_dict.get("processor_class", None)
-                    if "AutoProcessor" in config_dict.get("auto_map", {}):
+                    if processor_auto_map is None and "AutoProcessor" in config_dict.get("auto_map", {}):
                         processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
 
         if processor_class is None:
@@ -170,7 +170,7 @@ class AutoProcessor:
                     config_dict = json.load(reader)
 
                 processor_class = config_dict.get("processor_class", None)
-                if "AutoProcessor" in config_dict.get("auto_map", {}):
+                if processor_auto_map is None and "AutoProcessor" in config_dict.get("auto_map", {}):
                     processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
 
         if processor_class is None and processor_auto_map is None:
