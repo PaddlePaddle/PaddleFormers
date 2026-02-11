@@ -45,6 +45,7 @@ import psutil
 from packaging import version
 from paddle import framework
 from paddle.base import core
+from paddle.distributed import ShardedWeight
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
 from paddle.distributed.fleet.meta_parallel import PipelineLayer
 
@@ -138,6 +139,7 @@ from ..utils import empty_device_cache, perf_utils
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
     EMA_STATE_DIC,
+    FLEX_CKPT_AUTO_GENERATED_METADATA,
     LORA_WEIGHTS_NAME,
     MASTER_WEIGHT_DIC,
     MODEL_META_NAME,
@@ -196,6 +198,7 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     has_length,
     init_optimizer,
     mock_offload_optimizer,
+    select_flex_ckpt_comm_method,
     set_random_seed,
     set_seed,
     should_skip_data,
@@ -1045,6 +1048,10 @@ class Trainer:
 
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
+        for key, sharded_weight in model_sharded_state_dict.items():
+            # NOTE(Waynezee): Only Tensor in Parameter will be used in FlexCheckpoint Save Scenario.
+            if isinstance(sharded_weight, ShardedWeight):
+                sharded_weight.local_tensor = paddle.Tensor(sharded_weight.local_tensor)
         model_state_dict_path = os.path.join(output_dir, MODEL_STATE_DIC)
         os.makedirs(model_state_dict_path, exist_ok=True)
         dist.save_state_dict(
@@ -1096,7 +1103,8 @@ class Trainer:
         model_states_path = os.path.join(resume_from_checkpoint, MODEL_STATE_DIC)
 
         hcg = dist.fleet.get_hybrid_communicate_group()
-        if self.args.flex_ckpt_comm_method == "parallel_broadcast":
+        flex_ckpt_comm_method = select_flex_ckpt_comm_method()
+        if flex_ckpt_comm_method == "parallel_broadcast":
             try:
                 pp_group = hcg.get_pipe_parallel_group()
                 if pp_group is None or pp_group.nranks < 1:
@@ -1128,6 +1136,16 @@ class Trainer:
 
             # when moe_sharding_group is None, we use the default process_group
             logger.info(f"Loading model weights from '{resume_from_checkpoint}' in safetensors format.")
+            metadata_path = os.path.join(resume_from_checkpoint, FLEX_CKPT_AUTO_GENERATED_METADATA)
+
+            # delete the metadata file if it exists
+            try:
+                os.remove(metadata_path)
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                logger.error(f"Failed to delete {metadata_path}: {e}")
+
             dist.load_state_dict(
                 model_sharded_state_dict,
                 resume_from_checkpoint,
@@ -1135,9 +1153,11 @@ class Trainer:
                 offload=self.args.load_via_cpu,
                 safetensors=True,
                 process_group=None,
-                comm_method=self.args.flex_ckpt_comm_method,
+                comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
             )
+            if hasattr(self.model, "_synchronize_shared_weights"):
+                self.model._synchronize_shared_weights()
             return
 
         state_dict_metadata = {}
@@ -1171,7 +1191,7 @@ class Trainer:
                 master_weights_path,
                 aoa_config=self.args.aoa_config,
                 offload=self.args.load_via_cpu,
-                comm_method=self.args.flex_ckpt_comm_method,
+                comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
             )
 
@@ -1181,7 +1201,7 @@ class Trainer:
                     opt_states_path,
                     aoa_config=self.args.aoa_config,
                     offload=self.args.load_via_cpu,
-                    comm_method=self.args.flex_ckpt_comm_method,
+                    comm_method=flex_ckpt_comm_method,
                     worker_groups=worker_groups,
                 )
                 self._load_scheduler(resume_from_checkpoint)
@@ -1229,7 +1249,7 @@ class Trainer:
                 model_states_path,
                 aoa_config=aoa_config,
                 offload=self.args.load_via_cpu,
-                comm_method=self.args.flex_ckpt_comm_method,
+                comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
             )
 
@@ -1929,6 +1949,10 @@ class Trainer:
 
             step = -1
 
+            # Data loading timing for global_step
+            _data_load_time_for_global_step = 0.0
+            _data_load_start_time = time.time()
+
             for step, inputs in enumerate(epoch_iterator):
 
                 save_inputs = os.getenv("FLAGS_save_data", "false").lower() in ("true", "1", "t")
@@ -1959,6 +1983,10 @@ class Trainer:
                             except Exception as e:
                                 logger.warning(f"[Alignment Debug] Failed to save {field}: {e}")
                     logger.info(f"[Alignment Debug] Saved step {step} data to {save_dir}")
+
+                # Record data loading time for this iteration
+                _data_load_end_time = time.time()
+                _data_load_time_for_global_step += _data_load_end_time - _data_load_start_time
 
                 if self.args.profile and step % self.args.gradient_accumulation_steps == 0:
                     perf_utils.switch_profile(
@@ -1994,6 +2022,8 @@ class Trainer:
                     if steps_trained_in_current_epoch == 0:
                         self._load_rng_state(resume_from_checkpoint)
                     self.timers and self.timers("read-data").start()
+                    # Reset data loading timer for skipped steps
+                    _data_load_start_time = time.time()
                     continue
                 elif steps_trained_progress_bar is not None:
                     steps_trained_progress_bar.close()
@@ -2055,6 +2085,9 @@ class Trainer:
                         break
 
                     self.timers and self.timers("read-data").start()
+                    # Reset data loading timer for skipped data
+                    _data_load_time_for_global_step = 0.0
+                    _data_load_start_time = time.time()
                     continue
 
                 for inputs in inputs_list:
@@ -2224,7 +2257,6 @@ class Trainer:
                         self.callback_handler.on_optimizer_begin(
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
                         )
-
                         self.optimizer_step(args, model=model, parameters_list=parameters_list)
 
                         self.timers and self.timers("optimizer-step").stop()
@@ -2252,7 +2284,15 @@ class Trainer:
 
                         self.control = self.callback_handler.on_step_end(args, self.state, self.control)
                         self._maybe_log_save_evaluate(tr_loss, model, epoch, ignore_keys_for_eval, inputs=inputs)
+                        # Log data loading time for this global_step
+                        logger.info(
+                            f"[DataLoad global_step: {self.state.global_step}] "
+                            f"data_load_time: {_data_load_time_for_global_step * 1000:.2f} ms "
+                            f"(accumulated over {args.gradient_accumulation_steps} micro-batches)"
+                        )
                         self._print_timer()
+                        # Reset data loading timer for next global_step
+                        _data_load_time_for_global_step = 0.0
                         step_control = 0
                     else:
                         self.control = self.callback_handler.on_substep_end(args, self.state, self.control)
@@ -2263,6 +2303,9 @@ class Trainer:
 
                 if self.args.ignore_data_skip:
                     self.timers and self.timers("read-data").start()
+
+                # Reset start time for next iteration's data loading measurement
+                _data_load_start_time = time.time()
 
             if step < 0:
                 logger.warning(

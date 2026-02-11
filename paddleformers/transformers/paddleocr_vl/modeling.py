@@ -21,6 +21,7 @@ from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import paddle
+import paddle.nn.functional as F
 from paddle import nn
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import (
@@ -69,7 +70,7 @@ def _ensure_cos_sin_dim(cos, sin, dim_needed):
         sin = paddle.concat([sin, sin], axis=-1)
         return cos, sin
     else:
-        raise ValueError(f"Unexpected cos/sin last-dim: {last}, expected {dim_needed} or {dim_needed//2}")
+        raise ValueError(f"Unexpected cos/sin last-dim: {last}, expected {dim_needed} or {dim_needed // 2}")
 
 
 def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim=1):
@@ -237,61 +238,6 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
             persistable=False,
         )
 
-    def interpolate_pos_encoding(self, embeddings, height: int, width: int, is_after_patchify: bool = False):
-
-        num_positions = self.position_embedding.weight.shape[0]
-
-        patch_pos_embed = self.position_embedding.weight.unsqueeze(0)
-
-        dim = embeddings.shape[-1]
-
-        if is_after_patchify:
-            new_height = height
-            new_width = width
-        else:
-            new_height = height // self.patch_size
-            new_width = width // self.patch_size
-
-        sqrt_num_positions = paddle.to_tensor(num_positions**0.5, dtype=paddle.int64)
-        patch_pos_embed = patch_pos_embed.reshape((1, sqrt_num_positions, sqrt_num_positions, dim))
-        patch_pos_embed = patch_pos_embed.transpose((0, 3, 1, 2))
-
-        patch_pos_embed = nn.functional.interpolate(
-            patch_pos_embed,
-            size=(new_height, new_width),
-            mode="bilinear",
-            align_corners=False,
-        )
-
-        patch_pos_embed = patch_pos_embed.transpose((0, 2, 3, 1)).reshape((1, -1, dim))
-        return patch_pos_embed
-
-    @staticmethod
-    def flatten_list(image_grid_thw):
-        tmp_image_grid_thw = list()
-        for image_grid in image_grid_thw:
-            if isinstance(image_grid, list):
-                tmp_image_grid_thw.extend(image_grid)
-            else:
-                tmp_image_grid_thw.append(image_grid)
-        return tmp_image_grid_thw
-
-    def fetch_position_embedding_lfu_cache(self, embeddings, h, w, max_cache=20):
-        grid = (h, w)
-        if grid in self.cache_position_embedding:
-            self.cache_position_count[grid] += 1
-            return self.cache_position_embedding[grid]
-
-        if len(self.cache_position_embedding) >= max_cache:
-            min_hit_grid = min(self.cache_position_count, key=self.cache_position_count.get)
-            self.cache_position_count.pop(min_hit_grid)
-            self.cache_position_embedding.pop(min_hit_grid)
-
-        position_embedding = self.interpolate_pos_encoding(embeddings, h, w, True)
-        self.cache_position_count[grid] = 1
-        self.cache_position_embedding[grid] = position_embedding
-        return position_embedding
-
     def forward(
         self,
         pixel_values: paddle.Tensor,  # [B, L, C, H, W]
@@ -300,34 +246,39 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
         interpolate_pos_encoding: bool = False,
     ) -> paddle.Tensor:
         if pixel_values.dim() == 5:
-            assert position_ids is not None
+
+            sqrt_num_positions = int(self.num_positions**0.5)
+            patch_pos_embed = self.position_embedding.weight.reshape(
+                (1, sqrt_num_positions, sqrt_num_positions, self.embed_dim)
+            ).transpose((0, 3, 1, 2))
 
             batch_size, squence_len, channel, height, width = pixel_values.shape
             target_dtype = self.patch_embedding.weight.dtype
             pixel_values = pixel_values.reshape(batch_size * squence_len, channel, height, width)
-            patch_embeds = self.patch_embedding(pixel_values.to(dtype=target_dtype))  # shape = [*, width, grid, grid]
-            embeddings = patch_embeds.flatten(-2).squeeze(-1)
-            embeddings = embeddings.reshape(batch_size, squence_len, -1)
+            patch_embeds = self.patch_embedding(
+                pixel_values.astype(dtype=target_dtype)
+            )  # shape = [*, channel, grid, grid]
+            embeddings = patch_embeds.flatten(-3)
 
-            flatten_image_grid_thw = self.flatten_list(image_grid_thw)
-            assert sum([np.prod(x) for x in flatten_image_grid_thw]) == embeddings.shape[1], (
-                flatten_image_grid_thw,
-                embeddings.shape,
-            )
+            image_grid_thw = image_grid_thw.cpu().numpy()
+            split_lengths = image_grid_thw.prod(axis=1).tolist()
+            image_embeddings = paddle.split(embeddings, num_or_sections=split_lengths, axis=0)
 
-            start = 0
-            embeddings = embeddings.squeeze(0)
-            tmp_embeddings = list()
-            for image_grid in image_grid_thw:
-                t, h, w = image_grid
-                end = start + t * h * w
-                image_embeddings = embeddings[int(start) : int(end), :]
+            tmp_embeddings = []
+            for (t, h, w), image_embedding in zip(image_grid_thw, image_embeddings):
                 position_embedding = (
-                    self.interpolate_pos_encoding(image_embeddings, h, w, True).squeeze(0).tile((t, 1))
+                    nn.functional.interpolate(
+                        patch_pos_embed,
+                        size=(h, w),
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+                    .flatten(-2)
+                    .squeeze(0)
+                    .T.tile([t, 1])
                 )
-                image_embeddings = image_embeddings + position_embedding
-                tmp_embeddings.append(image_embeddings)
-                start = end
+
+                tmp_embeddings.append(image_embedding + position_embedding)
             embeddings = paddle.concat(tmp_embeddings, axis=0).unsqueeze(0)
             return embeddings
         else:
@@ -462,6 +413,34 @@ class PaddleOCREncoder(nn.Layer):
                 tmp_image_grid_thw.append(image_grid)
         return tmp_image_grid_thw
 
+    @staticmethod
+    def get_position_ids_vectorized(image_grid_thw):
+
+        t = image_grid_thw[:, 0]
+        h = image_grid_thw[:, 1]
+        w = image_grid_thw[:, 2]
+
+        hw = h * w
+        lengths = t * hw  # [N]
+        ends = paddle.cumsum(lengths)  # [N]
+        starts = ends - lengths  # [N]
+        total_len = ends[-1]
+
+        global_pids = paddle.arange(total_len, dtype="int64")
+        sample_ids = paddle.searchsorted(ends, global_pids, right=True)
+
+        start_g = paddle.gather(starts, sample_ids)  # [total_len]
+        w_g = paddle.gather(w, sample_ids)  # [total_len]
+        hw_g = paddle.gather(hw, sample_ids)  # [total_len]
+
+        local_pids = global_pids - start_g
+        rel_pids = local_pids % hw_g
+
+        width_position_ids = rel_pids % w_g
+        height_position_ids = rel_pids // w_g
+
+        return width_position_ids, height_position_ids
+
     def build_window_index(self, image_grid, window_size):
         """
         返回：
@@ -570,17 +549,7 @@ class PaddleOCREncoder(nn.Layer):
             )
 
             if width_position_ids is None or height_position_ids is None:
-                split_hids = list()
-                split_wids = list()
-                for t, h, w in flatten_image_grid_thw:
-                    t, h, w = map(int, (t, h, w))
-                    image_pids = paddle.arange(t * h * w) % (h * w)
-                    sample_hids = image_pids // w
-                    sample_wids = image_pids % w
-                    split_hids.append(sample_hids)
-                    split_wids.append(sample_wids)
-                width_position_ids = paddle.concat(split_wids, axis=0)
-                height_position_ids = paddle.concat(split_hids, axis=0)
+                width_position_ids, height_position_ids = self.get_position_ids_vectorized(image_grid_thw)
 
             window_indices, cu_seqlens_within_windows = None, None
 
@@ -1988,32 +1957,29 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
 
                 pixel_values = pixel_values.astype(inputs_embeds.dtype)
                 pixel_values = pixel_values.unsqueeze(0)
-                siglip_position_ids = list()
-                image_grid_hws = list()
-                sample_indices = list()
-                cu_seqlens = [0]
 
-                for idx, thw in enumerate(image_grid_thw):
-                    thw_tuple = tuple(thw.detach().cpu().numpy().tolist())
-                    numel = np.prod(thw_tuple)
-                    image_grid_hws.append(thw_tuple)
-                    image_position_ids = paddle.arange(numel) % np.prod(thw_tuple[1:])
-                    siglip_position_ids.append(image_position_ids)
-                    sample_indices.append(paddle.full((numel,), idx, dtype=paddle.int64))
-                    cu_seqlens.append(cu_seqlens[-1] + numel)
+                bs, _ = image_grid_thw.shape
+                sizes = paddle.prod(image_grid_thw, axis=1)
+                spatial_sizes = paddle.prod(image_grid_thw[:, 1:], axis=1, dtype="int64")
+                sample_indices = paddle.repeat_interleave(paddle.arange(bs), sizes)
 
-                siglip_position_ids = paddle.concat(siglip_position_ids, axis=0)
-                cu_seqlens = paddle.to_tensor(cu_seqlens, dtype=paddle.int32)
-                sample_indices = paddle.concat(sample_indices, axis=0)
+                cum_sizes = paddle.cumsum(sizes, axis=0)
+                cu_seqlens = F.pad(cum_sizes, (1, 0), value=0, data_format="NCL")
+
+                global_range = paddle.arange(sizes.sum())
+                per_sample_offset = cu_seqlens[sample_indices]
+                per_sample_spatial = spatial_sizes[sample_indices]
+                local_indices = global_range - per_sample_offset
+                siglip_position_ids = local_indices % per_sample_spatial
 
                 vision_outputs = self.visual(
                     pixel_values=pixel_values,
-                    image_grid_thw=image_grid_hws,
+                    image_grid_thw=image_grid_thw,
                     position_ids=siglip_position_ids,
                     vision_return_embed_list=True,
                     interpolate_pos_encoding=True,
                     sample_indices=sample_indices,
-                    cu_seqlens=cu_seqlens,
+                    cu_seqlens=cu_seqlens.astype("int32"),
                     return_pooler_output=False,
                     use_rope=True,
                     window_size=-1,

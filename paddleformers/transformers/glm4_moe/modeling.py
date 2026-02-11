@@ -920,17 +920,17 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 f"{prefix}.eh_proj.weight^T -> {prefix_offset}.eh_proj.weight",
                 f"{prefix}.enorm.weight -> {prefix_offset}.enorm.weight",
                 f"{prefix}.hnorm.weight -> {prefix_offset}.hnorm.weight",
-                f"{prefix}.norm.weight -> {prefix_offset}.shared_head.norm.weight",
+                f"{prefix}.shared_head.norm.weight -> {prefix_offset}.norm.weight",
             ]
 
         # layer0 - layer_num_hidden_layers
         for layer_idx in reversed(range(0, num_hidden_layers + num_nextn_predict_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix = f"model.layers.{layer_idx}"
+            prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
             if layer_idx >= num_hidden_layers:
                 # for mtp
-                prefix += ".transformer_layer"
-            prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
+                prefix_offset += ".transformer_layer"
             aoa_config["aoa_statements"] += [
                 f"{prefix}.input_layernorm.weight -> {prefix_offset}.input_layernorm.weight",
                 f"{prefix}.post_attention_layernorm.weight -> {prefix_offset}.post_attention_layernorm.weight",
@@ -948,10 +948,10 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         for layer_idx in reversed(range(1, num_hidden_layers + num_nextn_predict_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix = f"model.layers.{layer_idx}"
+            prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
             if layer_idx >= num_hidden_layers:
                 # for mtp
-                prefix += ".transformer_layer"
-            prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
+                prefix_offset += ".transformer_layer"
             aoa_config["aoa_statements"] += [
                 f"{prefix}.mlp.gate.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
                 f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='float32'",
