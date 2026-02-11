@@ -58,4 +58,3 @@ save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
 freeze_config: freeze_vision freeze_aligner
 processor_use_fast: false
-dataloader_num_workers: 8
