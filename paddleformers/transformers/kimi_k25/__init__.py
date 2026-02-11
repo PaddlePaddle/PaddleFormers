@@ -1,5 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2025 The ZhipuAI Inc. team and HuggingFace Inc. team. All rights reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,35 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import sys
 from typing import TYPE_CHECKING
 
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "configuration": ["Glm4vMoeConfig", "Glm4vMoeTextConfig", "Glm4vMoeVisionConfig"],
-    "modeling": [
-        "Glm4vMoeForConditionalGeneration",
-        "Glm4vMoeModel",
-        "Glm4vMoePreTrainedModel",
-        "Glm4vMoeTextModel",
-        "Glm4vMoeVisionModel",
-    ],
-    # TODO: might be moved to glm4v in the future
-    "image_processor": ["Glm4vImageProcessor"],
-    "image_processor_fast": ["Glm4vImageProcessorFast"],
-    "processor": ["Glm4vProcessor"],
-    "video_processor": ["Glm4vVideoProcessor"],
+    "processor": ["KimiK25Processor"],
+    "tokenizer": ["TikTokenTokenizer"],
+    "vision_processor": ["KimiK25VisionProcessor"],
 }
-
 if TYPE_CHECKING:
-    from .configuration import *
-    from .image_processor import *
-    from .image_processor_fast import *
-    from .modeling import *
     from .processor import *
-    from .video_processor import *
+    from .tokenizer import *
+    from .vision_processor import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
