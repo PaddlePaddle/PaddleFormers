@@ -653,7 +653,7 @@ class PaddleProcessorMixin:
                             "Detected `use_fast=True` but will fall back to the slow version."
                         )
                 else:
-                    use_fast = True
+                    use_fast = kwargs.get("use_fast", True)
                 if use_fast and classes[1] is not None and "Image" not in attribute_name:
                     attribute_class = classes[1]
                 else:
