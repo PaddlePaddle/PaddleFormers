@@ -1961,7 +1961,7 @@ class Trainer:
                     os.makedirs(save_dir, exist_ok=True)
 
                     # 可扩展的字段列表，新增字段只需在此添加
-                    fields_to_save = ["input_ids", "labels", "pixel_values"]
+                    fields_to_save = ["input_ids", "labels", "pixel_values", "input_features"]
                     for field in fields_to_save:
                         if field in inputs and inputs[field] is not None:
                             save_path = f"{save_dir}/{step}_{field}.npy"
