@@ -166,6 +166,25 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
             shutil.copy2(src_file, dst_file)
         else:
             logger.debug(f'Copy failed: "preprocessor_config.json" not found in {config["base_model_path"]}')
+
+        # Copy custom .py files from base model path (if any)
+        base_path = config["base_model_path"]
+        py_files = [
+            f for f in os.listdir(base_path) if f.endswith(".py") and os.path.isfile(os.path.join(base_path, f))
+        ]
+        copied_py_files = []
+        for file_name in py_files:
+            src_file = os.path.join(base_path, file_name)
+            dst_file = os.path.join(config["output_path"], file_name)
+            try:
+                shutil.copy2(src_file, dst_file)
+                copied_py_files.append(file_name)
+                logger.debug(f"Copied custom Python file: {file_name}")
+            except Exception as e:
+                logger.warning(f"Failed to copy {file_name}: {e}")
+        if copied_py_files:
+            logger.info(f"Copied {len(copied_py_files)} custom Python file(s) from base model path")
+
         logger.info(f"***** Successfully finished merging LoRA model. Time cost: {time.time() - start} s *****")
     else:
         raise ValueError("Only support merge lora checkpoint, but get model_args.lora is False.")
