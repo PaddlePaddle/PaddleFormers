@@ -138,6 +138,9 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
         # runners in the cuda graph manager
         dict_args.pop("dynamic_inference_decode_only", None)
         dict_args.pop("position_ids", None)
+        deepstack_visual_emb = dict_args.get("deepstack_visual_emb", None)
+        visual_pos_masks = dict_args.get("visual_pos_masks", None)
+
         if self.full_recompute:
             hidden_states = dict_args["hidden_states"]
             attention_mask = dict_args.get("attention_mask", None)
@@ -149,8 +152,6 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
             rotary_pos_sin = dict_args.get("rotary_pos_sin", None)
             attention_bias = dict_args.get("attention_bias", None)
             packed_seq_params = dict_args.get("packed_seq_params", None)
-            deepstack_visual_emb = dict_args.get("deepstack_visual_emb", None)
-            visual_pos_masks = dict_args.get("visual_pos_masks", None)
 
             assert (rotary_pos_sin is None) == (rotary_pos_cos is None)
 
@@ -182,8 +183,6 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
                 rotary_pos_sin=rotary_pos_sin,
                 attention_bias=attention_bias,
                 packed_seq_params=packed_seq_params,
-                deepstack_visual_emb=deepstack_visual_emb,
-                visual_pos_masks=visual_pos_masks,
             )
         else:
             outputs = self._forward_impl(**dict_args)
@@ -192,6 +191,15 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
             output, context = outputs[0], outputs[1]
         else:
             output, context = outputs, None
+
+        # Apply deepstack visual embedding outside of recompute to avoid issues
+        # with recompute not properly handling list-of-tensors (deepstack_visual_emb)
+        if deepstack_visual_emb and self.layer_number in range(len(deepstack_visual_emb)):
+            output = self._deepstack_process(
+                hidden_states=output,
+                visual_embeds=deepstack_visual_emb[self.layer_number],
+                visual_pos_masks=visual_pos_masks,
+            )
 
         rst = OrderedDict()
         rst = {"hidden_states": output}
@@ -212,8 +220,7 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
         rotary_pos_sin: paddle.Tensor = None,
         attention_bias: paddle.Tensor = None,
         packed_seq_params: PackedSeqParams = None,
-        deepstack_visual_emb: list[paddle.Tensor] = None,
-        visual_pos_masks: paddle.Tensor = None,
+        **kwargs,
     ):
         hidden_states, context = self._forward_attention(
             hidden_states=hidden_states,
@@ -228,13 +235,6 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
             packed_seq_params=packed_seq_params,
         )
         hidden_states = self._forward_mlp(hidden_states)
-        if deepstack_visual_emb and self.layer_number in range(len(deepstack_visual_emb)):
-            # print("process _deepstack_process ",hidden_states.shape,visual_pos_masks.shape,deepstack_visual_emb[self.layer_number].shape)
-            hidden_states = self._deepstack_process(
-                hidden_states=hidden_states,
-                visual_embeds=deepstack_visual_emb[self.layer_number],
-                visual_pos_masks=visual_pos_masks,
-            )
         if context is not None:
             return hidden_states, context
         return hidden_states
@@ -1146,7 +1146,7 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
             # print("qwenvl output loss  ",self.criterion(output, labels))
             return self.criterion(output, labels)
         else:
-            output
+            return output
 
     def set_input_tensor(self, input_tensor) -> None:
         """Set model chunk input tensor."""
