@@ -65,16 +65,13 @@ class RMSNorm(nn.Layer):
         if input_is_parallel:
             self.enable_sequence_parallel()
 
+    @paddle.jit.marker.unified
     def forward(self, hidden_states):
         current_device = detect_device()
         if self.config.get("fuse_rms_norm", True) and current_device != "iluvatar_gpu":
             return fused_rms_norm_ext(hidden_states, self.weight, self.variance_epsilon)[0].astype(self.weight.dtype)
 
-        if paddle.in_dynamic_mode():
-            with paddle.amp.auto_cast(False):
-                variance = hidden_states.astype("float32").pow(2).mean(-1, keepdim=True)
-                hidden_states = paddle.rsqrt(variance + self.variance_epsilon) * hidden_states
-        else:
+        with paddle.amp.auto_cast(False):
             variance = hidden_states.astype("float32").pow(2).mean(-1, keepdim=True)
             hidden_states = paddle.rsqrt(variance + self.variance_epsilon) * hidden_states
 

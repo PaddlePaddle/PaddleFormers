@@ -1056,11 +1056,27 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             f"model.layers.{num_head_empty_layers}.mlp.up_proj.weight^T -> model.layers.0.mlp.up_proj.weight",
         ]
 
+        num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
+
+        for layer_idx in reversed(range(num_hidden_layers, num_hidden_layers + num_nextn_predict_layers)):
+            layer_idx_offset = layer_idx + num_head_empty_layers
+            prefix = f"model.layers.{layer_idx}"
+            prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
+            aoa_statements += [
+                f"{prefix_offset}.eh_proj.weight -> {prefix}.eh_proj.weight^T",
+                f"{prefix_offset}.enorm.weight -> {prefix}.enorm.weight",
+                f"{prefix_offset}.hnorm.weight -> {prefix}.hnorm.weight",
+                f"{prefix_offset}.norm.weight -> {prefix}.shared_head.norm.weight",
+            ]
+
         # layer 0 -> layer num_hidden_layers-1
-        for layer_idx in range(0, num_hidden_layers):
+        for layer_idx in range(0, num_hidden_layers + num_nextn_predict_layers):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
             prefix = f"model.layers.{layer_idx}"
+            if layer_idx >= num_hidden_layers:
+                # for mtp
+                prefix_offset += ".transformer_layer"
 
             aoa_statements += [
                 f"{prefix_offset}.input_layernorm.weight -> {prefix}.input_layernorm.weight",
@@ -1079,10 +1095,13 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 ]
 
         # layer 1 -> layer num_hidden_layers-1
-        for layer_idx in range(1, num_hidden_layers):
+        for layer_idx in range(1, num_hidden_layers + num_nextn_predict_layers):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
             prefix = f"model.layers.{layer_idx}"
+            if layer_idx >= num_hidden_layers:
+                # for mtp
+                prefix_offset += ".transformer_layer"
 
             if is_fleet and (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
                 ep_weight1 = []
