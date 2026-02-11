@@ -77,6 +77,7 @@ def standardize_rope_params(config, rope_theta: float | dict[str, float] | None 
                 rope_parameters[layer_type]["partial_rotary_factor"] = partial_rotary_factor
             config.rope_parameters = rope_parameters_per_layer_type
 
+
 def dynamic_rope_update(rope_forward):
     """
     Decorator function to update the RoPE parameters in the forward pass, if the model is using a dynamic RoPE

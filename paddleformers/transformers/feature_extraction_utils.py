@@ -366,7 +366,6 @@ class FeatureExtractionMixin(object):
         return_unused_kwargs = kwargs.pop("return_unused_kwargs", False)
 
         feature_extractor = cls(**feature_extractor_dict)
-
         # Update feature_extractor with kwargs if needed
         to_remove = []
         for key, value in kwargs.items():

@@ -53,6 +53,7 @@ PROCESSOR_MAPPING_NAMES = OrderedDict(
         ("qwen2_vl", "Qwen2VLProcessor"),
         ("paddleocr_vl", "PaddleOCRVLProcessor"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLProcessor"),
+        ("qwen3_omni_moe", "Qwen3OmniMoeProcessor"),
     ]
 )
 
@@ -63,7 +64,6 @@ def processor_class_from_name(class_name: str):
     for module_name, extractors in PROCESSOR_MAPPING_NAMES.items():
         if class_name in extractors:
             module_name = model_type_to_module_name(module_name)
-
             try:
                 module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
                 return getattr(module, class_name)
@@ -125,10 +125,10 @@ class AutoProcessor:
         )
         if processor_config_file is not None:
             config_dict, _ = ProcessorMixin.get_processor_dict(pretrained_model_name_or_path, **kwargs)
+
             processor_class = config_dict.get("processor_class")
             if "AutoProcessor" in config_dict.get("auto_map", {}):
                 processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
-
         if processor_class is None:
             # Checking whether the processor class is saved in an image processor config
             preprocessor_config_file = resolve_file_path(
@@ -171,7 +171,6 @@ class AutoProcessor:
                 processor_class = config_dict.get("processor_class", None)
                 if "AutoProcessor" in config_dict.get("auto_map", {}):
                     processor_auto_map = config_dict["auto_map"]["AutoProcessor"]
-
         if processor_class is None:
             # Otherwise, load config, if it can be loaded.
             if not isinstance(config, PretrainedConfig):
@@ -179,12 +178,12 @@ class AutoProcessor:
                 config = AutoConfig.from_pretrained(
                     pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
                 )
-
+            print(config)
             # And check if the config contains the processor class.
             processor_class = getattr(config, "processor_class", None)
+
             if hasattr(config, "auto_map") and "AutoProcessor" in config.auto_map:
                 processor_auto_map = config.auto_map["AutoProcessor"]
-
         if processor_class is not None:
             processor_class = processor_class_from_name(processor_class)
 
@@ -199,7 +198,6 @@ class AutoProcessor:
             trust_remote_code = resolve_trust_remote_code(
                 trust_remote_code, pretrained_model_name_or_path, has_local_code, has_remote_code, upstream_repo
             )
-
         if has_remote_code and trust_remote_code:
             processor_class = get_class_from_dynamic_module(
                 processor_auto_map, pretrained_model_name_or_path, **kwargs

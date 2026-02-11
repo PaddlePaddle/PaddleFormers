@@ -53,6 +53,7 @@ import_structure = {
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
     "image_processing_utils": ["PaddleImageProcessingMixin", "ImageProcessingMixin", "BaseImageProcessor"],
     "image_processing_utils_fast": ["BaseImageProcessorFast"],
+    "audio_processing_utils": ["SequenceFeatureExtractor"],
     "video_processing_utils": ["BaseVideoProcessor"],
     "moe_gate": ["PretrainedMoEGate", "MoEGateMixin"],
     "token_dispatcher": ["_DispatchManager"],
@@ -223,6 +224,7 @@ import_structure = {
         "Qwen3OmniMoeThinkerTextModel",
         "Qwen3OmniMoeTalkerModel",
     ],
+    "qwen3_omni_moe.processor": ["Qwen3OmniMoeProcessor"],
     "qwen2_moe.configuration": ["Qwen2MoeConfig"],
     "qwen2_moe.modeling": [
         "Qwen2MoeModel",
@@ -279,6 +281,7 @@ import_structure = {
     "qwen2_vl": [],
     "qwen3_moe": [],
     "qwen3_next": [],
+    "whisper.processor": ["WhisperFeatureExtractor"],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
@@ -312,6 +315,7 @@ if TYPE_CHECKING:
     from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
     from .image_processing_utils_fast import BaseImageProcessorFast
     from .video_processing_utils import BaseVideoProcessor
+    from .audio_processing_utils import BatchFeature, SequenceFeatureExtractor
     from .attention_utils import create_bigbird_rand_mask_idx_list
     from .sequence_parallel_utils import AllGatherVarlenOp, sequence_parallel_sparse_mask_labels
     from .tensor_parallel_utils import parallel_matmul, fused_head_and_loss_fn
@@ -353,6 +357,7 @@ if TYPE_CHECKING:
     from .qwen3_next import *
     from .qwen3_vl import *
     from .qwen3_vl_moe import *
+    from .qwen3_omni_moe import *
     from .glm4_moe import *
     from .glm4v_moe import *
     from .gpt_oss import *

@@ -1,5 +1,5 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -22,12 +22,13 @@ import paddle
 from paddle import nn
 from paddle.nn import functional as F
 
+from ...generation import GenerationMixin
+from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ..activations import ACT2FN
 from ..cache_utils import Cache, DynamicCache
-from ...generation import GenerationMixin
 from ..masking_utils import (
     create_causal_mask_and_row_indices,
-    create_sliding_window_causal_mask_and_row_indices
+    create_sliding_window_causal_mask_and_row_indices,
 )
 from ..model_outputs import (
     BaseModelOutputWithPast,
@@ -36,9 +37,8 @@ from ..model_outputs import (
     MoECausalLMOutputWithPast,
     MoEModelOutputWithPast,
 )
-from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
-from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ..model_utils import PretrainedModel
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import (
     Qwen3OmniMoeAudioEncoderConfig,
     Qwen3OmniMoeCode2WavConfig,
@@ -79,15 +79,11 @@ def pad_sequence(
         sequences = list(paddle.unbind(sequences, axis=0))
 
     if not isinstance(sequences, (list, tuple)):
-        raise TypeError(
-            f"pad_sequence: expected list/tuple of Tensor, got {type(sequences)}"
-        )
+        raise TypeError(f"pad_sequence: expected list/tuple of Tensor, got {type(sequences)}")
     if len(sequences) == 0:
         raise ValueError("pad_sequence: received empty list of sequences")
     if padding_side not in ("right", "left"):
-        raise ValueError(
-            f"padding_side must be 'right' or 'left', got {padding_side}"
-        )
+        raise ValueError(f"padding_side must be 'right' or 'left', got {padding_side}")
 
     lengths = [seq.shape[0] for seq in sequences]
     max_len = max(lengths)
@@ -178,24 +174,25 @@ class Qwen3OmniMoePreTrainedModel(PretrainedModel):
         elif isinstance(module, SinusoidsPositionEmbedding):
             log_timescale_increment = np.log(module.max_timescale) / (module.channels // 2 - 1)
             inv_timescales = paddle.exp(-log_timescale_increment * paddle.arange(module.channels // 2).float())
-            scaled_time = paddle.arange(module.length).astype(inv_timescales.dtype)[:, np.newaxis] * inv_timescales[np.newaxis, :]
-            module.positional_embedding.set_value(paddle.cat([paddle.sin(scaled_time), paddle.cos(scaled_time)], dim=1))
+            scaled_time = (
+                paddle.arange(module.length).astype(inv_timescales.dtype)[:, np.newaxis]
+                * inv_timescales[np.newaxis, :]
+            )
+            module.positional_embedding.set_value(
+                paddle.cat([paddle.sin(scaled_time), paddle.cos(scaled_time)], dim=1)
+            )
         elif isinstance(module, Qwen3OmniMoeVisionRotaryEmbedding):
             inv_freq = 1.0 / (module.theta ** (paddle.arange(0, module.dim, 2, dtype=paddle.float) / module.dim))
             module.inv_freq.set_value(inv_freq)
 
     @classmethod
     def _gen_aoa_config(cls, config: Qwen3OmniMoeConfig):
-        aoa_config = {
-            "aoa_statements": []
-        }
+        aoa_config = {"aoa_statements": []}
         return aoa_config
-    
+
     @classmethod
     def _gen_inv_aoa_config(cls, config: Qwen3OmniMoeConfig):
-        aoa_config = {
-            "aoa_statements": []
-        }
+        aoa_config = {"aoa_statements": []}
         return aoa_config
 
 
@@ -330,12 +327,12 @@ class Qwen3OmniMoePreTrainedModelForConditionalGeneration(Qwen3OmniMoePreTrained
     def get_rope_index(
         self,
         input_ids: Optional[paddle.Tensor] = None,
-        image_grid_thw:  Optional[paddle.Tensor] = None,
-        video_grid_thw:  Optional[paddle.Tensor] = None,
-        attention_mask:  Optional[paddle.Tensor] = None,
+        image_grid_thw: Optional[paddle.Tensor] = None,
+        video_grid_thw: Optional[paddle.Tensor] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
         use_audio_in_video: bool = False,
-        audio_seqlens:  Optional[paddle.Tensor] = None,
-        second_per_grids:  Optional[paddle.Tensor] = None,
+        audio_seqlens: Optional[paddle.Tensor] = None,
+        second_per_grids: Optional[paddle.Tensor] = None,
     ) -> tuple[paddle.Tensor, paddle.Tensor]:
         """
         Calculate the 3D rope index based on image and video's temporal, height and width in LLM.
@@ -772,10 +769,9 @@ class Qwen3OmniMoeAudioEncoder(Qwen3OmniMoePreTrainedModel):
         self.proj1 = nn.Linear(config.d_model, config.d_model)
         self.act = ACT2FN[config.activation_function]
         self.proj2 = nn.Linear(config.d_model, config.output_dim)
-        
+
         self.n_window_infer = self.config.n_window_infer
         self.conv_chunksize = self.config.conv_chunksize
-
 
     def _freeze_parameters(self):
         for param in self.parameters():
@@ -821,7 +817,9 @@ class Qwen3OmniMoeAudioEncoder(Qwen3OmniMoePreTrainedModel):
         aftercnn_lens = _get_feat_extract_output_lengths(feature_lens)
         chunk_num = paddle.ceil(feature_lens / (self.n_window * 2)).long()
 
-        chunk_lengths = paddle.full((chunk_num.sum(),), self.n_window * 2, dtype=paddle.long, device=feature_lens.device)
+        chunk_lengths = paddle.full(
+            (chunk_num.sum(),), self.n_window * 2, dtype=paddle.long, device=feature_lens.device
+        )
         tail_chunk_index = F.pad(chunk_num, (1, 0), value=-1).cumsum(0)[1:]
         chunk_lengths[tail_chunk_index] = feature_lens % (self.n_window * 2)
         chunk_lengths[chunk_lengths == 0] = self.n_window * 2
@@ -837,7 +835,10 @@ class Qwen3OmniMoeAudioEncoder(Qwen3OmniMoePreTrainedModel):
         #     batch_first=True,
         # )
         padded_mask_after_cnn = pad_sequence(
-            [paddle.ones(length, dtype=paddle.bool, device=padded_feature.device) for length in feature_lens_after_cnn],
+            [
+                paddle.ones(length, dtype=paddle.bool, device=padded_feature.device)
+                for length in feature_lens_after_cnn
+            ],
             batch_first=True,
         )
         padded_feature = padded_feature.unsqueeze(1)
@@ -988,9 +989,7 @@ class Qwen3OmniMoeVisionAttention(nn.Layer):
 
         # Other implementations: Process each chunk separately
         lengths = cu_seqlens[1:] - cu_seqlens[:-1]
-        splits = [
-            paddle.split(tensor, lengths.tolist(), dim=2) for tensor in (query_states, key_states, value_states)
-        ]
+        splits = [paddle.split(tensor, lengths.tolist(), dim=2) for tensor in (query_states, key_states, value_states)]
 
         attn_outputs = [
             attention_interface(
@@ -1339,7 +1338,7 @@ class Qwen3OmniMoeThinkerTextRotaryEmbedding(nn.Layer):
         self.original_max_seq_len = config.max_position_embeddings
 
         self.config = config
-        
+
         rope_parameters = config.rope_parameters
         print("In ", __class__.__name__, ".__init__, ", type(config.rope_parameters), config.rope_parameters)
         self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
@@ -1390,7 +1389,7 @@ class Qwen3OmniMoeThinkerTextRotaryEmbedding(nn.Layer):
         # So we expand the inv_freq to shape (3, ...)
         if position_ids.ndim == 2:
             position_ids = position_ids[None, ...].expand(3, position_ids.shape[0], -1)
-        
+
         with paddle.amp.auto_cast(False):
             inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand(3, position_ids.shape[1], -1, 1)
             position_ids_expanded = position_ids[:, :, None, :].float()  # shape (3, bs, 1, positions)
@@ -1822,8 +1821,8 @@ class Qwen3OmniMoeThinkerTextModel(Qwen3OmniMoePreTrainedModel):
             "seq_length": seq_length,
             "cache_length": cache_length,
             "attention_mask": attention_mask,
-            "attn_mask_startend_row_indices": attn_mask_startend_row_indices, # TODO
-            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask, # TODO
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,  # TODO
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,  # TODO
         }
         attention_mask, _ = create_causal_mask_and_row_indices(**mask_kwargs)
         # attention_mask = create_causal_mask(
@@ -2210,9 +2209,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
             # image_outputs: BaseModelOutputWithDeepstackFeatures = self.get_image_features(
             #     pixel_values, image_grid_thw, return_dict=True
             # )
-            image_outputs = self.get_image_features(
-                pixel_values, image_grid_thw, return_dict=True
-            )
+            image_outputs = self.get_image_features(pixel_values, image_grid_thw, return_dict=True)
             image_embeds = image_outputs.pooler_output
             image_embeds_multiscale = image_outputs.deepstack_features
             image_embeds = image_embeds.to(inputs_embeds.device, inputs_embeds.dtype)
@@ -2379,7 +2376,9 @@ class Qwen3OmniMoeTalkerResizeMLP(nn.Layer):
     def __init__(self, config: Qwen3OmniMoeTalkerConfig):
         super().__init__()
         self.linear_fc1 = nn.Linear(config.thinker_hidden_size, config.text_config.intermediate_size, bias_attr=True)
-        self.linear_fc2 = nn.Linear(config.text_config.intermediate_size, config.text_config.hidden_size, bias_attr=True)
+        self.linear_fc2 = nn.Linear(
+            config.text_config.intermediate_size, config.text_config.hidden_size, bias_attr=True
+        )
         self.act_fn = ACT2FN[config.text_config.hidden_act]
 
     def forward(self, hidden_state):
@@ -2740,7 +2739,10 @@ class Qwen3OmniMoeTalkerCodePredictorModelForConditionalGeneration(Qwen3OmniMoeP
         self.model = Qwen3OmniMoeTalkerCodePredictorModel._from_config(config)
         self.vocab_size = config.vocab_size
         self.lm_head = nn.LayerList(
-            [nn.Linear(config.hidden_size, config.vocab_size, bias_attr=False) for _ in range(config.num_code_groups - 1)]
+            [
+                nn.Linear(config.hidden_size, config.vocab_size, bias_attr=False)
+                for _ in range(config.num_code_groups - 1)
+            ]
         )
 
     def forward(
@@ -3172,7 +3174,7 @@ class Qwen3OmniMoeTalkerForConditionalGeneration(Qwen3OmniMoeThinkerTextPreTrain
         talker_input_ids=None,
         **kwargs,
     ) -> MoECausalLMOutputWithPast:
-    # ) -> MoeCausalLMOutputWithPast:
+        # ) -> MoeCausalLMOutputWithPast:
         r"""
         use_audio_in_video (`bool`, *optional*):
             If set to `True`, use the audio in video.
@@ -4113,7 +4115,9 @@ class Qwen3OmniMoeForConditionalGeneration(Qwen3OmniMoePreTrainedModel, Generati
                 for hidden_states in thinker_result.hidden_states
             ],
             dim=1,
-        ).to(input_ids.device)  # [1 t d]
+        ).to(
+            input_ids.device
+        )  # [1 t d]
         im_start_indexes = paddle.cat(
             (
                 paddle.nonzero(input_ids[0] == self.config.im_start_token_id).squeeze(),
@@ -4122,10 +4126,12 @@ class Qwen3OmniMoeForConditionalGeneration(Qwen3OmniMoePreTrainedModel, Generati
             dim=-1,
         )  # Shape [n_starts + 1]; Take batch 0 since batched inference is not supported here.
         multimodal_mask = (
-            (thinker_result.sequences == self.config.thinker_config.audio_token_id) |
-            (thinker_result.sequences == self.config.thinker_config.image_token_id) |
-            (thinker_result.sequences == self.config.thinker_config.video_token_id)
-        ).to(input_ids.device)  # [1 t] # fmt: skip
+            (thinker_result.sequences == self.config.thinker_config.audio_token_id)
+            | (thinker_result.sequences == self.config.thinker_config.image_token_id)
+            | (thinker_result.sequences == self.config.thinker_config.video_token_id)
+        ).to(
+            input_ids.device
+        )  # [1 t] # fmt: skip
 
         talker_special_tokens = paddle.tensor(
             [[self.config.tts_bos_token_id, self.config.tts_eos_token_id, self.config.tts_pad_token_id]],
