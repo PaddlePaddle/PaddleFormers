@@ -86,6 +86,7 @@ elif [[ ${step} == "dpo" ]]; then
       | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_vdl_log"
       | .num_empty_layers_add_in_tail = 0
       | .use_expert_parallel = false
+      | .tensorwise_offload_optimizer = true
       | .expert_model_parallel_size = 1
       | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_ckpts"' \
     $config_yaml > ${config_yaml}.tmp
