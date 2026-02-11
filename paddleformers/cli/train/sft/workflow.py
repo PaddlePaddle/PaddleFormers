@@ -48,16 +48,13 @@ from paddleformers.trainer import (
     set_random_seed,
     set_seed,
 )
-from paddleformers.transformers import (
-    AutoConfig,
-    AutoModelForCausalLM,
-    AutoModelForCausalLMPipe,
-    AutoModelForConditionalGeneration,
-    AutoModelForConditionalGenerationPipe,
+from paddleformers.transformers import (  # AutoConfig,; AutoModelForCausalLM,; AutoModelForCausalLMPipe,; AutoModelForConditionalGeneration,; AutoModelForConditionalGenerationPipe,
     AutoProcessor,
     AutoTokenizer,
     Llama3Tokenizer,
     LlamaTokenizer,
+    Qwen3OmniMoeThinkerConfig,
+    Qwen3OmniMoeThinkerForConditionalGeneration,
 )
 from paddleformers.transformers.configuration_utils import (
     LlmMetaConfig,
@@ -238,11 +235,12 @@ def run_sft(
         quantization_config = dict(weight_quantize_algo=finetuning_args.weight_quantize_algo)
     quantization_config = QuantizationConfig.from_dict(quantization_config)
 
-    model_config = AutoConfig.from_pretrained(
-        model_args.model_name_or_path,
-        dtype=dtype,
-        quantization_config=quantization_config,
-    )
+    # model_config = AutoConfig.from_pretrained(
+    #     model_args.model_name_or_path,
+    #     dtype=dtype,
+    #     quantization_config=quantization_config,
+    # )
+    model_config = Qwen3OmniMoeThinkerConfig.from_pretrained(model_args.model_name_or_path)
 
     if (
         model_config.tie_word_embeddings
@@ -304,32 +302,34 @@ def run_sft(
         model_config.vision_config.recompute_method = model_config.recompute_method
         model_config.vision_config.recompute_num_layers = model_config.recompute_num_layers
 
-    logger.info(f"Final model config: {model_config}")
+    # logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 
-    if "VL" in model_args.stage:
-        model_class = AutoModelForConditionalGeneration
-        if training_args.pipeline_model_parallel_size > 1:
-            if data_args.eval_with_do_generation and training_args.do_eval:
-                raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
-            model_class = AutoModelForConditionalGenerationPipe
-    else:
-        model_class = AutoModelForCausalLM
-        if training_args.pipeline_model_parallel_size > 1:
-            if data_args.eval_with_do_generation and training_args.do_eval:
-                raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
-            model_class = AutoModelForCausalLMPipe
+    # if "VL" in model_args.stage:
+    #     model_class = AutoModelForConditionalGeneration
+    #     if training_args.pipeline_model_parallel_size > 1:
+    #         if data_args.eval_with_do_generation and training_args.do_eval:
+    #             raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
+    #         model_class = AutoModelForConditionalGenerationPipe
+    # else:
+    #     model_class = AutoModelForCausalLM
+    #     if training_args.pipeline_model_parallel_size > 1:
+    #         if data_args.eval_with_do_generation and training_args.do_eval:
+    #             raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
+    #         model_class = AutoModelForCausalLMPipe
 
-    if model_args.continue_training and not training_args.autotuner_benchmark:
-        model = model_class.from_pretrained(
-            model_args.model_name_or_path,
-            config=model_config,
-            convert_from_hf=training_args.convert_from_hf,
-            load_via_cpu=training_args.load_via_cpu,
-            load_checkpoint_format=training_args.load_checkpoint_format,
-        )
-    else:
-        model = model_class.from_config(model_config, dtype=dtype)
+    # if model_args.continue_training and not training_args.autotuner_benchmark:
+    #     model = model_class.from_pretrained(
+    #         model_args.model_name_or_path,
+    #         config=model_config,
+    #         convert_from_hf=training_args.convert_from_hf,
+    #         load_via_cpu=training_args.load_via_cpu,
+    #         load_checkpoint_format=training_args.load_checkpoint_format,
+    #     )
+    # else:
+    #     model = model_class.from_config(model_config, dtype=dtype)
+
+    model = Qwen3OmniMoeThinkerForConditionalGeneration.from_config(model_config)
 
     if training_args.do_train and model_args.neftune:
         # Inspired by https://github.com/neelsjain/NEFTune
@@ -352,9 +352,8 @@ def run_sft(
     runtime_timer = RuntimeTimer("Creating SFT MapDataset")
 
     # Load tokenizer & processor & dataset
-    name_bak = model_args.model_name_or_path
-
-    model_args.model_name_or_path = "/root/paddlejob/workspace/env_run/chenxuran/customQwen3-Omni-30B-A3B-Instruct/"
+    # name_bak = model_args.model_name_or_path
+    # model_args.model_name_or_path = "/root/paddlejob/workspace/env_run/chenxuran/customQwen3-Omni-30B-A3B-Instruct/"
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
     add_new_special_tokens(tokenizer, data_args.new_special_tokens_path)
     if tokenizer.pad_token_id is None:
@@ -367,7 +366,7 @@ def run_sft(
     if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, Llama3Tokenizer):
         tokenizer.pad_token_id = tokenizer.eos_token_id
     processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=False)
-    model_args.model_name_or_path = name_bak
+    # model_args.model_name_or_path = name_bak
 
     dataset_config = {
         "tokenizer": tokenizer,

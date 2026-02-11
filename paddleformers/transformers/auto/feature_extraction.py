@@ -23,9 +23,9 @@ from transformers.models.auto.configuration_auto import (
 )
 
 from PaddleFormers.paddleformers.utils.download.download import resolve_file_path
-from PaddleFormers.paddleformers.utils.log import Logger
+from PaddleFormers.paddleformers.utils.log import logger
 from paddleformers.transformers import AutoConfig
-from paddleformers.transformers.utils import PROCESSOR_NAME
+from paddleformers.transformers.processing_utils import PROCESSOR_NAME
 
 from ..configuration_utils import PretrainedConfig
 from ..feature_extraction_utils import FeatureExtractionMixin
@@ -161,7 +161,7 @@ def get_feature_extractor_config(
 
     # An empty list if none of the possible files is found in the repo
     if not resolved_feature_extractor_file and not resolved_processor_file:
-        Logger.info("Could not locate the feature extractor configuration file.")
+        logger.info("Could not locate the feature extractor configuration file.")
         return {}
 
     # Load feature_extractor dict. Priority goes as (nested config if found -> feature extractor config)

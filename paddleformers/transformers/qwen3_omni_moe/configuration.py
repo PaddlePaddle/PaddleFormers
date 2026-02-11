@@ -457,6 +457,7 @@ class Qwen3OmniMoeThinkerConfig(PretrainedConfig):
         tie_word_embeddings=False,
         **kwargs,
     ):
+        super().__init__(**kwargs)
         self.user_token_id = user_token_id
         self.position_id_per_seconds = position_id_per_seconds
         self.audio_start_token_id = audio_start_token_id
@@ -481,7 +482,6 @@ class Qwen3OmniMoeThinkerConfig(PretrainedConfig):
             text_config = Qwen3OmniMoeTextConfig()
         self.text_config = text_config
 
-        super().__init__(**kwargs)
         self.audio_token_id = audio_token_id
         self.image_token_id = image_token_id
         self.video_token_id = video_token_id

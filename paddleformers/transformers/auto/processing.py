@@ -53,7 +53,8 @@ PROCESSOR_MAPPING_NAMES = OrderedDict(
         ("qwen2_vl", "Qwen2VLProcessor"),
         ("paddleocr_vl", "PaddleOCRVLProcessor"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLProcessor"),
-        ("qwen3_vl_moe", "Qwen3OmniMoeProcessor"),
+        ("qwen3_omni_moe", "Qwen3OmniMoeProcessor"),
+        # ("qwen3_vl", "Qwen3OmniMoeProcessor"),
         ("glm4v_moe", "Glm4vProcessor"),
     ]
 )
@@ -67,7 +68,7 @@ def processor_class_from_name(class_name: str):
             module_name = model_type_to_module_name(module_name)
 
             try:
-                module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
+                module = importlib.import_module(f".{module_name}.processor", "paddleformers.transformers")
                 return getattr(module, class_name)
             except (ModuleNotFoundError, AttributeError):
                 continue

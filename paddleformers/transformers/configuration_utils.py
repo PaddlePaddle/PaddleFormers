@@ -1439,7 +1439,7 @@ class PretrainedConfig:
         else:
             config_dict = self.to_dict(saving_file=saving_file)
 
-        return json.dumps(config_dict, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+        return json.dumps(config_dict, indent=2, sort_keys=True, ensure_ascii=False, default=list) + "\n"
 
     def to_json_file(self, json_file_path: Union[str, os.PathLike], use_diff: bool = True, saving_file=True):
         """
