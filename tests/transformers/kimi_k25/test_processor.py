@@ -15,41 +15,28 @@
 
 from __future__ import annotations
 
+import inspect
+import io
 import shutil
 import tempfile
 import unittest
 
-import numpy as np
 import paddle
+import requests
 from PIL import Image
 
 from paddleformers.transformers import AutoProcessor, KimiK25Processor
 from tests.testing_utils import gpu_device_initializer
-
-# from tests.transformers.test_processing_common import ProcessorTesterMixin
-
-# testing code
-MODEL_NAME_OR_PATH = "moonshotai/Kimi-K2.5"
+from tests.transformers.test_processing_common import ProcessorTesterMixin
 
 
-def prepare_image_inputs():
-    image_inputs = [np.random.randint(255, size=(3, 100, 100), dtype=np.uint8)]
-    image_inputs = [Image.fromarray(np.moveaxis(x, 0, -1)) for x in image_inputs]
-    return image_inputs
-
-
-# class KimiK25ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
-class KimiK25ProcessorTest(unittest.TestCase):
+class KimiK25ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     processor_class = KimiK25Processor
-    # testing code
-    text_input_name = "input_ids"
-    images_input_name = "pixel_values"
 
     @classmethod
     def setUpClass(cls):
         cls.tmpdir = tempfile.mkdtemp()
-        # testing code
-        processor = KimiK25Processor.from_pretrained(MODEL_NAME_OR_PATH, download_hub="huggingface")
+        processor = KimiK25Processor.from_pretrained("PaddleFormers/tiny-random-kimi-k25")
         processor.save_pretrained(cls.tmpdir)
 
     # Use GPU 0 to prevent CUDA illegal memory access during resize
@@ -57,38 +44,11 @@ class KimiK25ProcessorTest(unittest.TestCase):
     def setUp(self):
         pass
 
-    # testing code
-    def prepare_text_inputs(self, batch_size: int | None = None, modalities: str | list | None = None):
-        if isinstance(modalities, str):
-            modalities = [modalities]
-
-        special_token_to_add = ""
-        if modalities is not None:
-            for modality in modalities:
-                special_token_to_add += getattr(self, f"{modality}_token", "")
-
-        if batch_size is None:
-            return f"lower newer {special_token_to_add}"
-
-        if batch_size < 1:
-            raise ValueError("batch_size must be greater than 0")
-
-        if batch_size == 1:
-            return [f"lower newer {special_token_to_add}"]
-        return [f"lower newer {special_token_to_add}", f" {special_token_to_add} upper older longer string"] + [
-            f"lower newer {special_token_to_add}"
-        ] * (batch_size - 2)
-
-    # testing code
     def prepare_image_inputs(self, batch_size: int | None = None):
-        # image_input = super().prepare_image_inputs()
-        if batch_size is None:
-            image_input = prepare_image_inputs()[0]
-        elif batch_size < 1:
-            raise ValueError("batch_size must be greater than 0")
+        image_input = super().prepare_image_inputs()
+        # Default batch size is 1
         if batch_size is None:
             batch_size = 1
-        image_input = prepare_image_inputs()[0]
         image_inputs = [{"type": "image", "image": image_input}] * batch_size
         return image_inputs
 
@@ -110,23 +70,22 @@ class KimiK25ProcessorTest(unittest.TestCase):
 
         vision_processor = self.get_image_processor()
 
-        # media = {"type": "image", "image": Image.fromarray(np.random.randint(255, size=(100, 100, 3), dtype=np.uint8))}
         media = self.prepare_image_inputs()[0]
         output = vision_processor.get_resize_config(media)
         self.assertTrue("num_tokens" in output)
-        self.assertEqual(output["num_tokens"], 16)
+        self.assertEqual(output["num_tokens"], 30)
 
         self.assertTrue("new_width" in output)
-        self.assertEqual(output["new_width"], 100)
+        self.assertEqual(output["new_width"], 400)
 
         self.assertTrue("new_height" in output)
-        self.assertEqual(output["new_height"], 100)
+        self.assertEqual(output["new_height"], 30)
 
         self.assertTrue("pad_width" in output)
-        self.assertEqual(output["pad_width"], 12)
+        self.assertEqual(output["pad_width"], 20)
 
         self.assertTrue("pad_height" in output)
-        self.assertEqual(output["pad_height"], 12)
+        self.assertEqual(output["pad_height"], 26)
 
         self.assertTrue("sampled_nframes" in output)
         self.assertEqual(output["sampled_nframes"], 1)
@@ -179,6 +138,88 @@ class KimiK25ProcessorTest(unittest.TestCase):
             processor(text=input_str, return_tensors="pd")
         with self.assertRaises(ValueError):
             processor(medias=image_input, return_tensors="pd")
+
+    def test_model_input_names(self):
+        processor = self.get_processor()
+
+        text = self.prepare_text_inputs(modalities=["image"])
+        image_input = self.prepare_image_inputs()
+        inputs_dict = {"text": text, "medias": image_input}
+
+        call_signature = inspect.signature(processor.__call__)
+        input_args = [param.name for param in call_signature.parameters.values()]
+        inputs_dict = {k: v for k, v in inputs_dict.items() if k in input_args}
+
+        inputs = processor(**inputs_dict, return_tensors="pd")
+
+        self.assertSetEqual(set(inputs.keys()), set(processor.model_input_names))
+
+    def test_image_inputs(self):
+        processor = self.get_processor()
+        if processor.chat_template is None:
+            self.skipTest("Processor has no chat template")
+
+        messages = [
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image"},
+                        {"type": "text", "text": "What is shown in this image?"},
+                    ],
+                },
+            ]
+        ]
+
+        formatted_prompt = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+        self.assertEqual(len(formatted_prompt), 1)
+
+        formatted_prompt_tokenized = processor.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=True
+        ).input_ids
+        expected_output = processor.tokenizer(
+            formatted_prompt, add_special_tokens=False, return_tensors=None
+        ).input_ids
+        self.assertListEqual(expected_output, formatted_prompt_tokenized)
+
+        out_dict = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, return_dict=True)
+        self.assertListEqual(list(out_dict.keys()), ["input_ids", "attention_mask"])
+
+        url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg"
+        image = Image.open(io.BytesIO(requests.get(url).content))
+
+        # Add video URL for return dict and load with `num_frames` arg
+        messages[0][0]["content"][0] = {
+            "type": "image",
+            "image_url": image,
+        }
+        output = processor(messages[0])
+
+        EXPECTED_INPUT_IDS = paddle.to_tensor([163587, 2482, 163601, 163602, 4017, 163603, 163605, 163604, 198])
+        EXPECTED_PIXEL_SLICE = paddle.to_tensor(
+            [
+                0.69411778,
+                0.69411778,
+                0.69411778,
+                0.69411778,
+                0.69411778,
+                0.69411778,
+                0.69411778,
+                0.69411778,
+                0.69411778,
+                0.69411778,
+            ]
+        )
+        EXPECTED_IMAGE_GRID_THW = [[1, 64, 94]]
+
+        self.assertIsInstance(output["input_ids"], paddle.Tensor)
+        self.assertEqual(output["input_ids"].shape, [1, 21])
+        self.assertTrue(paddle.allclose(output["input_ids"][0, :9], EXPECTED_INPUT_IDS))
+        self.assertIsInstance(output["pixel_values"], paddle.Tensor)
+        self.assertEqual(output["pixel_values"].shape, [6016, 3, 14, 14])
+        self.assertTrue(paddle.allclose(output["pixel_values"][0, 0, 0, 0:10], EXPECTED_PIXEL_SLICE))
+        self.assertEqual(output["grid_thws"].shape, [1, 3])
+        self.assertEqual(output["grid_thws"].tolist(), EXPECTED_IMAGE_GRID_THW)
 
     def test_video_frame_sampling(self):
         processor = self.get_processor()
@@ -298,3 +339,75 @@ class KimiK25ProcessorTest(unittest.TestCase):
                 medias=image_input,
                 return_tensors="pd",
             )
+
+    def test_tokenizer_defaults_preserved_by_kwargs(self):
+        pass
+
+    def test_image_processor_defaults_preserved_by_image_kwargs(self):
+        pass
+
+    def test_kwargs_overrides_default_tokenizer_kwargs(self):
+        pass
+
+    def test_kwargs_overrides_default_image_processor_kwargs(self):
+        pass
+
+    def test_unstructured_kwargs(self):
+        pass
+
+    def test_unstructured_kwargs_batched(self):
+        pass
+
+    def test_doubly_passed_kwargs(self):
+        pass
+
+    def test_args_overlap_kwargs(self):
+        pass
+
+    def test_structured_kwargs_nested(self):
+        pass
+
+    def test_structured_kwargs_nested_from_dict(self):
+        pass
+
+    def test_tokenizer_defaults_preserved_by_kwargs_video(self):
+        pass
+
+    def test_video_processor_defaults_preserved_by_video_kwargs(self):
+        pass
+
+    def test_kwargs_overrides_default_tokenizer_kwargs_video(self):
+        pass
+
+    def test_kwargs_overrides_default_video_processor_kwargs(self):
+        pass
+
+    def test_unstructured_kwargs_video(self):
+        pass
+
+    def test_unstructured_kwargs_batched_video(self):
+        pass
+
+    def test_doubly_passed_kwargs_video(self):
+        pass
+
+    def test_structured_kwargs_nested_video(self):
+        pass
+
+    def test_structured_kwargs_nested_from_dict_video(self):
+        pass
+
+    def test_overlapping_text_image_kwargs_handling(self):
+        pass
+
+    def test_prepare_and_validate_optional_call_args(self):
+        pass
+
+    def test_chat_template_save_loading(self):
+        pass
+
+    def test_apply_chat_template_video_frame_sampling(self):
+        pass
+
+    def test_apply_chat_template_assistant_mask(self):
+        pass
