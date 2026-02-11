@@ -24,6 +24,7 @@ import numpy as np
 import paddle
 
 from paddleformers.transformers import AutoProcessor, Glm4vProcessor
+from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_processing_common import ProcessorTesterMixin
 
 
@@ -39,6 +40,11 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         )
         processor.save_pretrained(cls.tmpdir)
         cls.image_token = processor.image_token
+
+    # Use GPU 0 to prevent CUDA illegal memory access during resize
+    @gpu_device_initializer(log_prefix="Glm4vMoeProcessorTest", gpu_id=0)
+    def setUp(self):
+        pass
 
     def get_tokenizer(self, **kwargs):
         return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).tokenizer
