@@ -39,6 +39,7 @@ from ..model_outputs import (
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ..model_utils import PretrainedModel
+from ...nn.lm_head import LMHead as GeneralLMHead
 from .configuration import (
     Qwen3OmniMoeAudioEncoderConfig,
     Qwen3OmniMoeCode2WavConfig,
@@ -158,6 +159,21 @@ class Qwen3OmniMoePreTrainedModel(PretrainedModel):
     _supports_flash_attn = True
     _supports_sdpa = True
     _supports_attention_backend = True
+    transpose_weight_keys = [
+        "q_proj",
+        "k_proj", 
+        "v_proj",
+        "o_proj",
+        "gate",
+        "fc1",
+        "fc2",
+        "conv_out",
+        "proj2",
+        "qkv",
+        "linear_fc1",
+        "linear_fc2",
+        "mlp.2",
+    ]
 
     @paddle.no_grad()
     def _init_weights(self, module):
@@ -654,13 +670,13 @@ class Qwen3OmniMoeAudioAttention(nn.Layer):
         value_states = value_states.transpose(0, 1).unsqueeze(0)
         max_seqlen = (cu_seqlens[1:] - cu_seqlens[:-1]).max()
 
-        # cu_seqlens_rm_first = cu_seqlens[1:]
-        # cu_seqlens_rm_last = cu_seqlens[:-1]
-        # repeats = cu_seqlens_rm_first - cu_seqlens_rm_last
+        cu_seqlens_rm_first = cu_seqlens[1:]
+        cu_seqlens_rm_last = cu_seqlens[:-1]
+        repeats = cu_seqlens_rm_first - cu_seqlens_rm_last
 
-        # startend_row_indices_lts = paddle.repeat_interleave(cu_seqlens_rm_first, repeats).reshape([1, 1, -1, 1])
-        # startend_row_indices_ute = paddle.repeat_interleave(cu_seqlens_rm_last, repeats).reshape([1, 1, -1, 1])
-        # startend_row_indices = paddle.concat([startend_row_indices_lts, startend_row_indices_ute], axis=-1)
+        startend_row_indices_lts = paddle.repeat_interleave(cu_seqlens_rm_first, repeats).reshape([1, 1, -1, 1])
+        startend_row_indices_ute = paddle.repeat_interleave(cu_seqlens_rm_last, repeats).reshape([1, 1, -1, 1])
+        startend_row_indices = paddle.concat([startend_row_indices_lts, startend_row_indices_ute], axis=-1)
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
@@ -670,12 +686,9 @@ class Qwen3OmniMoeAudioAttention(nn.Layer):
             key_states,
             value_states,
             attention_mask=attention_mask,
+            attn_mask_startend_row_indices=startend_row_indices,
             dropout=0.0 if not self.training else self.attention_dropout,
             scaling=self.scaling,
-            cu_seq_lens_q=cu_seqlens,  # pass cu seq lens for FA2
-            cu_seq_lens_k=cu_seqlens,
-            max_length_q=max_seqlen,
-            max_length_k=max_seqlen,
             is_causal=False,
             **kwargs,
         )
@@ -826,7 +839,7 @@ class Qwen3OmniMoeAudioEncoder(Qwen3OmniMoePreTrainedModel):
         chunk_lengths[tail_chunk_index] = feature_lens % (self.n_window * 2)
         chunk_lengths[chunk_lengths == 0] = self.n_window * 2
 
-        chunk_list = input_features.T.split(chunk_lengths.tolist(), dim=0)
+        chunk_list = input_features.T.split(chunk_lengths.tolist(), axis=0)
         # TODO paddle lack of this implement
         # padded_feature = nn.utils.rnn.pad_sequence(chunk_list, batch_first=True).transpose(1, 2)
         padded_feature = pad_sequence(chunk_list, batch_first=True).transpose(1, 2)
@@ -843,14 +856,25 @@ class Qwen3OmniMoeAudioEncoder(Qwen3OmniMoePreTrainedModel):
         padded_feature = padded_feature.unsqueeze(1)
         # Split to chunk to avoid OOM during convolution
         padded_embeds = []
-        for chunk in padded_feature.split(self.conv_chunksize, dim=0):
+        # for chunk in padded_feature.split(self.conv_chunksize, axis=0):
+        batch_size = padded_feature.shape[0]
+        chunk_size = self.conv_chunksize
+
+        for start in range(0, batch_size, chunk_size):
+            end = min(start + chunk_size, batch_size)
+            chunk = padded_feature[start:end]
+            if chunk.dtype != self.conv2d1.weight.dtype:
+                chunk = chunk.astype(self.conv2d1.weight.dtype)
             padded_embed = F.gelu(self.conv2d1(chunk))
             padded_embed = F.gelu(self.conv2d2(padded_embed))
             padded_embed = F.gelu(self.conv2d3(padded_embed))
             padded_embeds.append(padded_embed)
         padded_embed = paddle.cat(padded_embeds, dim=0)
         b, c, f, t = padded_embed.size()
-        padded_embed = self.conv_out(padded_embed.permute(0, 3, 1, 2).contiguous().view(b, t, c * f))
+        # padded_embed = self.conv_out(padded_embed.permute(0, 3, 1, 2).contiguous().view(b, t, c * f))
+        reshape_padded_embed = padded_embed.transpose([0, 3, 1, 2])  # permute
+        reshape_padded_embed = reshape_padded_embed.reshape([b, t, -1])
+        padded_embed = self.conv_out(reshape_padded_embed)
 
         positional_embedding = (
             self.positional_embedding.positional_embedding[: padded_embed.shape[1], :]
@@ -989,7 +1013,7 @@ class Qwen3OmniMoeVisionAttention(nn.Layer):
         # Other implementations: Process each chunk separately
         lengths = cu_seqlens[1:] - cu_seqlens[:-1]
         splits = [
-            paddle.split(tensor, lengths.tolist(), dim=2) for tensor in (query_states, key_states, value_states)
+            paddle.split(tensor, lengths.tolist(), axis=2) for tensor in (query_states, key_states, value_states)
         ]
 
         attn_outputs = [
@@ -999,6 +1023,7 @@ class Qwen3OmniMoeVisionAttention(nn.Layer):
                 k,
                 v,
                 attention_mask=None,
+                attn_mask_startend_row_indices=None,
                 scaling=self.scaling,
                 dropout=0.0 if not self.training else self.attention_dropout,
                 is_causal=False,
@@ -1170,44 +1195,77 @@ class Qwen3OmniMoeVisionEncoder(Qwen3OmniMoePreTrainedModel):
 
         self.gradient_checkpointing = False
 
-    def rot_pos_emb(self, grid_thw: paddle.Tensor) -> paddle.Tensor:
-        merge_size = self.spatial_merge_size
+    def rot_pos_emb(self, grid_thw):
+        pos_ids = []
+        for t, h, w in grid_thw:
+            hpos_ids = paddle.arange(h).unsqueeze(1).expand([-1, w])
+            hpos_ids = hpos_ids.reshape(
+                [
+                    h // self.spatial_merge_size,
+                    self.spatial_merge_size,
+                    w // self.spatial_merge_size,
+                    self.spatial_merge_size,
+                ]
+            )
+            hpos_ids = hpos_ids.transpose(perm=[0, 2, 1, 3])
+            hpos_ids = hpos_ids.flatten()
 
-        max_hw = int(grid_thw[:, 1:].max().item())
-        freq_table = self.rotary_pos_emb(max_hw)  # (max_hw, dim // 2)
-        device = freq_table.device
+            wpos_ids = paddle.arange(w).unsqueeze(0).expand([h, -1])
+            wpos_ids = wpos_ids.reshape(
+                [
+                    h // self.spatial_merge_size,
+                    self.spatial_merge_size,
+                    w // self.spatial_merge_size,
+                    self.spatial_merge_size,
+                ]
+            )
+            wpos_ids = wpos_ids.transpose([0, 2, 1, 3])
+            wpos_ids = wpos_ids.flatten()
+            pos_ids.append(paddle.stack(x=[hpos_ids, wpos_ids], axis=-1).tile(repeat_times=[t, 1]))
+        pos_ids = paddle.cat(x=pos_ids, axis=0)
+        max_grid_size = grid_thw[:, 1:].max()
+        rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
+        rotary_pos_emb = rotary_pos_emb_full[pos_ids].flatten(start_axis=1)
+        return rotary_pos_emb
+        
+    # def rot_pos_emb(self, grid_thw: paddle.Tensor) -> paddle.Tensor:
+    #     merge_size = self.spatial_merge_size
 
-        total_tokens = int(paddle.prod(grid_thw, dim=1).sum().item())
-        pos_ids = paddle.empty((total_tokens, 2), dtype=paddle.long, device=device)
+    #     max_hw = int(grid_thw[:, 1:].max().item())
+    #     freq_table = self.rotary_pos_emb(max_hw)  # (max_hw, dim // 2)
+    #     device = freq_table.device
 
-        offset = 0
-        for num_frames, height, width in grid_thw:
-            merged_h, merged_w = height // merge_size, width // merge_size
+    #     total_tokens = int(paddle.prod(grid_thw, dim=1).sum().item())
+    #     pos_ids = paddle.empty((total_tokens, 2), dtype=paddle.long, device=device)
 
-            block_rows = paddle.arange(merged_h, device=device)  # block row indices
-            block_cols = paddle.arange(merged_w, device=device)  # block col indices
-            intra_row = paddle.arange(merge_size, device=device)  # intra-block row offsets
-            intra_col = paddle.arange(merge_size, device=device)  # intra-block col offsets
+    #     offset = 0
+    #     for num_frames, height, width in grid_thw:
+    #         merged_h, merged_w = height // merge_size, width // merge_size
 
-            # Compute full-resolution positions
-            row_idx = block_rows[:, None, None, None] * merge_size + intra_row[None, None, :, None]
-            col_idx = block_cols[None, :, None, None] * merge_size + intra_col[None, None, None, :]
+    #         block_rows = paddle.arange(merged_h, device=device)  # block row indices
+    #         block_cols = paddle.arange(merged_w, device=device)  # block col indices
+    #         intra_row = paddle.arange(merge_size, device=device)  # intra-block row offsets
+    #         intra_col = paddle.arange(merge_size, device=device)  # intra-block col offsets
 
-            row_idx = row_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
-            col_idx = col_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
+    #         # Compute full-resolution positions
+    #         row_idx = block_rows[:, None, None, None] * merge_size + intra_row[None, None, :, None]
+    #         col_idx = block_cols[None, :, None, None] * merge_size + intra_col[None, None, None, :]
 
-            coords = paddle.stack((row_idx, col_idx), dim=-1)
+    #         row_idx = row_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
+    #         col_idx = col_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
 
-            if num_frames > 1:
-                coords = coords.repeat(num_frames, 1)
+    #         coords = paddle.stack((row_idx, col_idx), dim=-1)
 
-            num_tokens = coords.shape[0]
-            pos_ids[offset : offset + num_tokens] = coords
-            offset += num_tokens
+    #         if num_frames > 1:
+    #             coords = coords.repeat(num_frames, 1)
 
-        embeddings = freq_table[pos_ids]  # lookup rotary embeddings
-        embeddings = embeddings.flatten(1)
-        return embeddings
+    #         num_tokens = coords.shape[0]
+    #         pos_ids[offset : offset + num_tokens] = coords
+    #         offset += num_tokens
+
+    #     embeddings = freq_table[pos_ids]  # lookup rotary embeddings
+    #     embeddings = embeddings.flatten(1)
+    #     return embeddings
 
     def fast_pos_embed_interpolate(self, grid_thw):
         grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
@@ -1225,8 +1283,8 @@ class Qwen3OmniMoeVisionEncoder(Qwen3OmniMoePreTrainedModel):
             h_idxs_ceil = (h_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
             w_idxs_ceil = (w_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
 
-            dh = h_idxs - h_idxs_floor
-            dw = w_idxs - w_idxs_floor
+            dh = h_idxs - h_idxs_floor.astype("float32")
+            dw = w_idxs - w_idxs_floor.astype("float32")
 
             base_h = h_idxs_floor * self.num_grid_per_side
             base_h_ceil = h_idxs_ceil * self.num_grid_per_side
@@ -1258,10 +1316,12 @@ class Qwen3OmniMoeVisionEncoder(Qwen3OmniMoePreTrainedModel):
 
         patch_pos_embeds_permute = []
         merge_size = self.config.spatial_merge_size
+        print("grid_thw:", grid_thw)
+        print("self.config.spatial_merge_size:", self.config.spatial_merge_size)
         for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
-            pos_embed = pos_embed.repeat(t, 1)
+            pos_embed = pos_embed.tile([t, 1])
             pos_embed = (
-                pos_embed.view(t, h // merge_size, merge_size, w // merge_size, merge_size, -1)
+                pos_embed.reshape([t, h // merge_size, merge_size, w // merge_size, merge_size, -1])
                 .permute(0, 1, 3, 2, 4, 5)
                 .flatten(0, 4)
             )
@@ -1317,13 +1377,12 @@ class Qwen3OmniMoeVisionEncoder(Qwen3OmniMoePreTrainedModel):
 
         merged_hidden_states = self.merger(hidden_states)
 
-        # TODO return what?
-        return merged_hidden_states, deepstack_feature_lists
         # return BaseModelOutputWithDeepstackFeatures(
         #     last_hidden_state=hidden_states,
         #     pooler_output=merged_hidden_states,
         #     deepstack_features=deepstack_feature_lists,
         # )
+        return merged_hidden_states, deepstack_feature_lists
 
     @property
     def deepstack_merger_list(self):
@@ -1595,6 +1654,7 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Layer):
         attention_mask: Optional[paddle.Tensor],
         past_key_values: Optional[Cache] = None,
         cache_position: Optional[paddle.Tensor] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> tuple[paddle.Tensor, paddle.Tensor | None]:
         input_shape = hidden_states.shape[:-1]
@@ -1619,7 +1679,8 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Layer):
             query_states,
             key_states,
             value_states,
-            attention_mask,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             dropout=0.0 if not self.training else self.attention_dropout,
             scaling=self.scaling,
             sliding_window=self.sliding_window,  # diff with Llama
@@ -1706,6 +1767,21 @@ class Qwen3OmniMoeThinkerTextPreTrainedModel(PretrainedModel):
     _supports_flex_attn = True
     _supports_attention_backend = True
     config_class = Qwen3OmniMoeTextConfig
+    transpose_weight_keys = [
+        "q_proj",
+        "k_proj", 
+        "v_proj",
+        "o_proj",
+        "gate",
+        "fc1",
+        "fc2",
+        "conv_out",
+        "proj2",
+        "qkv",
+        "linear_fc1",
+        "linear_fc2",
+        "mlp.2",
+    ]
 
     @paddle.no_grad()
     def _init_weights(self, module):
@@ -1991,7 +2067,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         self.visual = Qwen3OmniMoeVisionEncoder._from_config(config.vision_config)
         self.vocab_size = config.text_config.vocab_size
         self.model = Qwen3OmniMoeThinkerTextModel._from_config(config.text_config)
-        self.lm_head = nn.Linear(config.text_config.hidden_size, config.text_config.vocab_size, bias_attr=False)
+        self.lm_head = GeneralLMHead(config.text_config)
         self.spatial_merge_size = config.vision_config.spatial_merge_size
         self.rope_deltas = None
         self.num_experts = config.text_config.num_experts
@@ -2016,7 +2092,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         video_grid_thw (`paddle.Tensor` of shape `(num_videos, 3)`, *optional*):
             The temporal, height and width of feature shape of each video in LLM.
         """
-        pixel_values_videos = pixel_values_videos.type(self.visual.dtype)
+        pixel_values_videos = pixel_values_videos.astype(self.visual.config.dtype)
         return self.visual(pixel_values_videos, grid_thw=video_grid_thw, **kwargs)
 
     def get_image_features(
@@ -2031,7 +2107,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         image_grid_thw (`paddle.Tensor` of shape `(num_images, 3)`, *optional*):
             The temporal, height and width of feature shape of each image in LLM.
         """
-        pixel_values = pixel_values.type(self.visual.dtype)
+        pixel_values = pixel_values.astype(self.visual.config.dtype)
         return self.visual(pixel_values, grid_thw=image_grid_thw, **kwargs)
 
     def get_audio_features(
@@ -2056,10 +2132,11 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
             audio_feature_lengths = None
 
         feature_lens = audio_feature_lengths if audio_feature_lengths is not None else feature_attention_mask.sum(-1)
+        return_dict = kwargs.pop("return_dict", True)
         audio_outputs = self.audio_tower(
             input_features,
             feature_lens=feature_lens,
-            return_dict=True,
+            return_dict=return_dict,
             **kwargs,
         )
 
@@ -2210,11 +2287,11 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
             # image_outputs: BaseModelOutputWithDeepstackFeatures = self.get_image_features(
             #     pixel_values, image_grid_thw, return_dict=True
             # )
-            image_outputs = self.get_image_features(
+            # image_embeds = image_outputs.pooler_output
+            # image_embeds_multiscale = image_outputs.deepstack_features
+            image_embeds, image_embeds_multiscale = self.get_image_features(
                 pixel_values, image_grid_thw, return_dict=True
             )
-            image_embeds = image_outputs.pooler_output
-            image_embeds_multiscale = image_outputs.deepstack_features
             image_embeds = image_embeds.to(inputs_embeds.device, inputs_embeds.dtype)
             image_mask, _, _ = self.get_placeholder_mask(
                 input_ids, inputs_embeds=inputs_embeds, image_features=image_embeds
@@ -2262,7 +2339,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         if attention_mask is not None and position_ids is None:
             past_key_values_length = 0 if past_key_values is None else past_key_values.get_seq_length()
             if past_key_values_length == 0 or self.rope_deltas is None:
-                delta0 = (1 - attention_mask).sum(dim=-1).unsqueeze(1)
+                delta0 = (1 - attention_mask).sum(dim=-1).unsqueeze(1).astype("float32")
                 position_ids, rope_deltas = self.get_rope_index(
                     input_ids,
                     image_grid_thw,
@@ -2457,6 +2534,7 @@ class Qwen3OmniMoeTalkerCodePredictorAttention(nn.Layer):
         attention_mask: Optional[paddle.Tensor],
         past_key_values: Optional[Cache] = None,
         cache_position: Optional[paddle.Tensor] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> tuple[paddle.Tensor, Optional[paddle.Tensor]]:
         input_shape = hidden_states.shape[:-1]
@@ -2481,7 +2559,8 @@ class Qwen3OmniMoeTalkerCodePredictorAttention(nn.Layer):
             query_states,
             key_states,
             value_states,
-            attention_mask,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             dropout=0.0 if not self.training else self.attention_dropout,
             scaling=self.scaling,
             sliding_window=self.sliding_window,  # diff with Llama
@@ -2740,7 +2819,7 @@ class Qwen3OmniMoeTalkerCodePredictorModelForConditionalGeneration(Qwen3OmniMoeP
         self.model = Qwen3OmniMoeTalkerCodePredictorModel._from_config(config)
         self.vocab_size = config.vocab_size
         self.lm_head = nn.LayerList(
-            [nn.Linear(config.hidden_size, config.vocab_size, bias_attr=False) for _ in range(config.num_code_groups - 1)]
+            [GeneralLMHead(config) for _ in range(config.num_code_groups - 1)]
         )
 
     def forward(
@@ -3499,6 +3578,7 @@ class Qwen3OmniMoeCode2WavAttention(nn.Layer):
         attention_mask: Optional[paddle.Tensor],
         past_key_values: Optional[Cache] = None,
         cache_position: Optional[paddle.Tensor] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> tuple[paddle.Tensor, paddle.Tensor | None]:
         input_shape = hidden_states.shape[:-1]
@@ -3516,16 +3596,15 @@ class Qwen3OmniMoeCode2WavAttention(nn.Layer):
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
-        attention_interface: Callable = eager_attention_forward
-        if self.config._attn_implementation != "eager":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         attn_output, attn_weights = attention_interface(
             self,
             query_states,
             key_states,
             value_states,
-            attention_mask,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indice=attn_mask_startend_row_indices,
             dropout=0.0 if not self.training else self.attention_dropout,
             scaling=self.scaling,
             sliding_window=self.sliding_window,  # diff with Llama
