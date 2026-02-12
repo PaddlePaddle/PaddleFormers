@@ -939,24 +939,6 @@ class KimiK25ForConditionalGeneration(KimiK25PretrainedModel):
 
         return final_embedding, final_attention_mask, final_labels, position_ids
 
-    def _extract_image_features(self, pixel_values: paddle.Tensor, grid_thws: paddle.Tensor) -> list[paddle.Tensor]:
-        """
-        Args:
-            pixel_values (:obj:`paddle.FloatTensor` of shape :obj:`(batch_size, num_channels, height, width)`):
-                The pixel values of the images processed by image processor.
-            grid_thws (:obj:`paddle.Tensor` of shape :obj:`(batch_size, 3)`):
-                The grid, height, width of the images.
-        Returns:
-            selected_image_feature (:obj:`paddle.FloatTensor` of shape :obj:`(num_image_tokens, embed_dim)`):
-                The selected image features to use as input to the projector head.
-        """
-
-        target_dtype = self.vision_tower.patch_embed.proj.weight.dtype
-        pixel_values = pixel_values.to(target_dtype)
-
-        image_features = self.vision_tower(pixel_values, grid_thws)
-        return image_features
-
     def forward(
         self,
         input_ids: paddle.LongTensor | None = None,

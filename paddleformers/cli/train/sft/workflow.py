@@ -331,6 +331,7 @@ def run_sft(
     else:
         model = model_class.from_config(model_config, dtype=dtype)
 
+    print(model)
     if training_args.do_train and model_args.neftune:
         # Inspired by https://github.com/neelsjain/NEFTune
         if hasattr(model, "get_input_embeddings"):

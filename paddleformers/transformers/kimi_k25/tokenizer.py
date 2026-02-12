@@ -172,7 +172,7 @@ class TikTokenTokenizer(PreTrainedTokenizer):
         # NOTE: our encode method is not compatible with the super().encode method,
         #   e.g. split_special_tokens' default is True in our encode method.
         if len(kwargs) > 0:
-            logger.warning(f"Calling super().encode with {kwargs}")
+            # logger.warning(f"Calling super().encode with {kwargs}")
             return super().encode(text, **kwargs)
 
         assert type(text) is str

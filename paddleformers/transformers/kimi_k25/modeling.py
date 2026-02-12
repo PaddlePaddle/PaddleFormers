@@ -18,59 +18,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-from collections.abc import Callable
-from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Optional, Union
 
 import paddle
-import paddle.nn.functional as F
-
-# from paddle.distributed.fleet.utils import recompute
-from paddlefleet import parallel_state, tensor_parallel
-from paddlefleet.fusions.fused_bias_dropout import get_bias_dropout_add
-from paddlefleet.models.common.vision_layer.vision_layer import VisionLayer
+from paddlefleet import parallel_state
+from paddlefleet.models.kimi_k25 import KimiK25VisionProvider
 from paddlefleet.models.multimodal.llava_model import LLaVAModel as MCoreLLaVAModel
-from paddlefleet.packed_seq_params import PackedSeqParams
-from paddlefleet.process_groups_config import ProcessGroupCollection
-from paddlefleet.spec_utils import LayerSpec
-from paddlefleet.tensor_parallel.layers import ColumnParallelLinear, RowParallelLinear
-from paddlefleet.transformer.attention import SelfAttention, SelfAttentionSublayersSpec
-from paddlefleet.transformer.dot_product_attention import DotProductAttention
-from paddlefleet.transformer.enums import AttnMaskType, ModelType
-from paddlefleet.transformer.identity_op import IdentityOp
-from paddlefleet.transformer.mlp import MLP, MLPSublayersSpec
-from paddlefleet.transformer.paddle_norm import FusedRMSNorm, LayerNorm
-from paddlefleet.transformer.transformer_block import (
-    TransformerBlock,
-    TransformerBlockSublayersSpec,
-)
+from paddlefleet.transformer.enums import ModelType
 from paddlefleet.transformer.transformer_config import TransformerConfig
-from paddlefleet.transformer.transformer_layer import (
-    TransformerLayer,
-    TransformerLayerSublayersSpec,
-)
-from paddlefleet.utils import WrappedTensor  # deprecate_inference_params
 
 from ...nn.criterion.interface import CriterionLayer
-
-# from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ..cache_utils import Cache
-
-# from ..gpt_provider import GPTModelProvider
 from ..model_utils import PretrainedModel
 from .configuration import KimiK25Config
 from .modeling_base import (
     DeepseekV3ForCausalLM,
-    IdentityMap,
     KimiK25CausalLMOutputWithPast,
     KimiK25PretrainedModel,
-    MoonVision3dPatchEmbed,
-    PatchMergerMLP,
-    PatchMLP,
-    ProjectorConfig,
-    Rope2DPosEmbRepeated,
 )
 
 '''
@@ -310,326 +275,6 @@ class KimiK25TextProvider(GPTModelProvider):
 '''
 
 
-def get_mlp_module_spec(use_te: bool = True) -> LayerSpec:
-    return LayerSpec(
-        layer=MLP,
-        sublayers_spec=MLPSublayersSpec(
-            up_gate_proj=ColumnParallelLinear,
-            down_proj=RowParallelLinear,
-            hidden_act=F.gelu,
-        ),
-    )
-
-
-def get_layer_spec(is_vit, normalization) -> LayerSpec:
-    """Transformer Layer Spec."""
-    attn_mask_type = AttnMaskType.no_mask if is_vit else AttnMaskType.causal
-    if normalization == "LayerNorm":
-        norm = LayerNorm
-    elif normalization == "RMSNorm":
-        norm = FusedRMSNorm
-    else:
-        raise RuntimeError(f"Unknown normalization: {normalization}")
-
-    mlp = get_mlp_module_spec(use_te=False)
-
-    return LayerSpec(
-        layer=TransformerLayer,
-        sublayers_spec=TransformerLayerSublayersSpec(
-            input_layernorm=norm,
-            self_attn=LayerSpec(
-                layer=SelfAttention,
-                extra_kwargs={"attn_mask_type": attn_mask_type},
-                sublayers_spec=SelfAttentionSublayersSpec(
-                    qkv_proj=ColumnParallelLinear,
-                    core_attention=DotProductAttention,
-                    o_proj=RowParallelLinear,
-                    q_norm=IdentityOp,
-                    k_norm=IdentityOp,
-                ),
-            ),
-            self_attn_bda=get_bias_dropout_add,
-            post_attention_layernorm=norm,
-            mlp=mlp,
-            mlp_bda=get_bias_dropout_add,
-        ),
-    )
-
-
-@dataclass
-class KimiK25VisionProvider(TransformerConfig):
-    """KimiK25 Vidion Model Configuration."""
-
-    patch_size: int = 16
-    use_bias: bool = True
-    add_qkv_bias: bool = True
-    num_position_embeddings: int = 2304
-    embed_dim: int = (1152,)
-    hidden_size: int = 1152
-    out_hidden_size: int = 4096
-    in_channels: int = 3
-    spatial_merge_size: int = 2
-    spatial_patch_size: int = 16
-    temporal_patch_size: int = 2
-    hidden_dropout_prob: float = 0.0
-    attention_dropout: float = 0.0
-    intermediate_size: int = 4304
-    initializer_range: float = 0.02
-    gated_linear_unit: bool = False
-    activation_func: Callable = F.gelu
-    attention_bias: bool = True
-    layernorm_zero_centered_gamma: bool = False
-    apply_query_key_layer_scaling: bool = False
-    persist_layer_norm: bool = True
-    bias_activation_fusion: bool = False
-    bias_dropout_fusion: bool = False
-    attention_softmax_in_fp32: bool = True
-    normalization: str = "LayerNorm"
-    apply_rope_fusion: bool = True
-    rms_norm_eps: float = 1e-6
-    transformer_layer_spec: LayerSpec = None
-    model_version: str = "kimi_k25"
-    img_h: int = 336
-    img_w: int = 336
-    add_class_token: bool = False
-    class_token_len: int = 1
-    high_precision_rope: bool = True
-    # _save_to_hf: bool = False
-    # use_fused_linear_cross_entropy: bool = True
-    # fuse_linear: bool = True
-    # transform_rules: dict = field(default_factory=lambda: {
-    #     "num_heads": "num_attention_heads",
-    #     "depth": "num_hidden_layers"
-    # })
-    transform_rules = {
-        "dtype": "params_dtype",
-        "num_heads": "num_attention_heads",
-        "depth": "num_hidden_layers",
-        "initializer_range": "init_method_std",
-    }
-
-    def provide(self) -> "KimiK25VisionModel":
-        transformer_layer_spec = self.transformer_layer_spec
-        if not isinstance(transformer_layer_spec, LayerSpec):
-            transformer_layer_spec = get_layer_spec(is_vit=True, normalization=self.normalization)
-        model = KimiK25VisionModel(
-            config=self,
-            transformer_layer_spec=transformer_layer_spec,
-        )
-
-        return model
-
-
-class KimiK25VisionTransformerBlock(TransformerBlock):
-    """
-    Qwen3-VL Vision Transformer Block.
-    """
-
-    def __init__(
-        self,
-        config: TransformerConfig,
-        spec: TransformerBlockSublayersSpec | LayerSpec,
-        post_layer_norm: bool = True,
-        pre_process: bool = True,
-        post_process: bool = True,
-        pg_collection: ProcessGroupCollection = None,
-        vp_stage: int = None,
-    ):
-        super().__init__(
-            config=config,
-            spec=spec,
-            post_layer_norm=post_layer_norm,
-            pre_process=pre_process,
-            post_process=post_process,
-            pg_collection=pg_collection,
-            vp_stage=vp_stage,
-        )
-
-    def forward(
-        self,
-        hidden_states: paddle.Tensor | WrappedTensor,
-        attention_mask: paddle.Tensor | None,
-        attn_mask_startend_row_indices: paddle.Tensor | None,
-        rotary_pos_emb: paddle.Tensor | None = None,
-        rotary_pos_cos: paddle.Tensor | None = None,
-        rotary_pos_sin: paddle.Tensor | None = None,
-        attention_bias: paddle.Tensor | None = None,
-        inference_context=None,
-        packed_seq_params: PackedSeqParams | None = None,
-        sequence_len_offset: paddle.Tensor | None = None,
-        *,
-        inference_params=None,
-    ):
-
-        # Delete the obsolete reference to the initial input tensor if necessary
-        if isinstance(hidden_states, WrappedTensor):
-            hidden_states = hidden_states.unwrap()
-
-        if not self.pre_process:
-            hidden_states = self.input_tensor
-
-        if self.config.sequence_parallel:
-            rng_context = tensor_parallel.get_cuda_rng_tracker().fork()
-        else:
-            rng_context = nullcontext()
-
-        with rng_context:
-            # Forward pass.
-            for l_no, layer in enumerate(self.layers):
-                hidden_states, context = layer(
-                    hidden_states=hidden_states,
-                    attention_mask=attention_mask,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                    rotary_pos_emb=rotary_pos_emb,
-                    rotary_pos_cos=rotary_pos_cos,
-                    rotary_pos_sin=rotary_pos_sin,
-                )
-
-        # Final layer norm.
-        if self.norm is not None:
-            hidden_states = self.norm(hidden_states)
-
-        return hidden_states
-
-
-class KimiK25VisionModel(VisionLayer):
-    is_fleet = True
-
-    def __init__(
-        self,
-        config: TransformerConfig,
-        transformer_layer_spec: LayerSpec,
-    ):
-        super().__init__(config=config)
-        # print("KimiK25VisionModel transformer_layer nums ",config.num_hidden_layers)
-        # self.spatial_merge_size = config.spatial_merge_size
-        # self.spatial_merge_unit = self.spatial_merge_size * self.spatial_merge_size
-        # self.merge_hidden_size = self.embed_dim * (config.spatial_merge_size**2)
-
-        self.merge_kernel_size = config.merge_kernel_size
-        self.patch_size = config.patch_size
-        self.merge_type = config.merge_type
-        self.model_type = ModelType.encoder_or_decoder
-        assert (
-            config.video_attn_type == "spatial_temporal"
-        ), f'video_attn_type must be "spatial_temporal", got {config.video_attn_type}'
-
-        self.patch_embed = MoonVision3dPatchEmbed(
-            out_dim=config.hidden_size,
-            patch_size=config.patch_size,
-            pos_emb_height=config.init_pos_emb_height,
-            pos_emb_width=config.init_pos_emb_width,
-            pos_emb_time=config.init_pos_emb_time,
-            pos_emb_type=config.pos_emb_type,
-        )
-
-        self.rotary_pos_emb = Rope2DPosEmbRepeated(config.hidden_size // config.num_attention_heads, 512, 512)
-
-        self.decoder = KimiK25VisionTransformerBlock(
-            config=config,
-            spec=transformer_layer_spec,
-            pre_process=True,
-            post_process=True,
-        )
-
-    def tpool_patch_merger(
-        x: paddle.Tensor,
-        grid_thws: paddle.Tensor,
-        merge_kernel_size: tuple[int, int] = (2, 2),
-    ) -> list[paddle.Tensor]:
-        d_model = x.size(-1)
-
-        outputs = []
-        pre_sum = 0
-        for t, h, w in grid_thws.tolist():
-            # Get the current sequence
-            seq = x[pre_sum : pre_sum + t * h * w]
-            # Reshape along self.merge_kernel_size and concat to the last dimension
-            kernel_height, kernel_width = merge_kernel_size
-            new_height, new_width = h // kernel_height, w // kernel_width
-            reshaped_seq = seq.view(t, new_height, kernel_height, new_width, kernel_width, d_model)
-            reshaped_seq = reshaped_seq.permute(0, 1, 3, 2, 4, 5).contiguous().mean(dim=0)  # temporal pooling
-            padded_seq = reshaped_seq.view(new_height * new_width, kernel_height * kernel_width, -1)
-            outputs.append(padded_seq)
-            pre_sum += t * h * w
-
-        return outputs
-
-    def get_attn_mask_startend_row_indices(
-        self,
-        grid_thws: paddle.Tensor,
-        device: paddle.device,
-    ):
-        lengths = paddle.cat(
-            (
-                paddle.zeros(1, dtype=grid_thws.dtype, device=grid_thws.device),
-                grid_thws[:, 0] * grid_thws[:, 1] * grid_thws[:, 2],
-            )
-        )
-
-        # max_seqlen = lengths.max()
-        cu_seqlens = lengths.to(device).cumsum(dim=0, dtype=paddle.int32)
-        cu_seqlens_rm_first = cu_seqlens[1:]
-        cu_seqlens_rm_last = cu_seqlens[:-1]
-        repeats = cu_seqlens_rm_first - cu_seqlens_rm_last
-
-        startend_row_indices_lts = paddle.repeat_interleave(cu_seqlens_rm_first, repeats).reshape([1, 1, -1, 1])
-        startend_row_indices_ute = paddle.repeat_interleave(cu_seqlens_rm_last, repeats).reshape([1, 1, -1, 1])
-        startend_row_indices = paddle.concat([startend_row_indices_lts, startend_row_indices_ute], axis=-1)
-
-        return startend_row_indices
-
-    def get_rotary_pos_emb(self, grid_thws: paddle.Tensor, device: paddle.device) -> tuple[paddle.Tensor, ...]:
-
-        freqs_cis = self.rotary_pos_emb.get_freqs_cis(grid_thws=grid_thws, device=device)
-        rotary_pos_cos = paddle.real(freqs_cis)  # 实部 = cos(θ)
-        rotary_pos_sin = paddle.imag(freqs_cis)  # 虚部 = sin(θ)
-
-        # 方法2：通过角度计算
-        rotary_pos_emb = paddle.angle(freqs_cis)
-
-        return rotary_pos_emb, rotary_pos_cos, rotary_pos_sin
-
-    def forward(
-        self,
-        pixel_values: paddle.Tensor,
-        grid_thws: paddle.Tensor,
-        attention_mask: paddle.Tensor | None = None,
-        **kwargs
-    ) -> paddle.Tensor:
-        """
-        Args:
-            pixel_values (paddle.Tensor): The input pixel values.
-            grid_thws (paddle.Tensor): Temporal, height and width.
-        Returns:
-            paddle.Tensor: The output tokens.
-        """
-        # Pathed embedding
-        assert grid_thws.ndim == 2, f"grid_thws should be 2D, got {grid_thws.ndim}"
-        assert grid_thws.size(1) == 3, f"No support for thw: {grid_thws}"
-        hidden_states = self.patch_embed(pixel_values, grid_thws)
-
-        # MoonViT3dEncoder
-
-        rotary_pos_emb, rotary_pos_cos, rotary_pos_sin = self.get_rotary_pos_emb(grid_thws, hidden_states.device)
-        attn_mask_startend_row_indices = self.get_attn_mask_startend_row_indices(grid_thws, hidden_states.device)
-        hidden_states = self.decoder(
-            hidden_states,
-            attention_mask,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            rotary_pos_emb=rotary_pos_emb,
-            rotary_pos_cos=rotary_pos_cos,
-            rotary_pos_sin=rotary_pos_sin,
-        )
-
-        if self.merge_type == "sd2_tpool":  # spatial downsampling 2x with temporal pooling all
-            hidden_states = self.tpool_patch_merger(hidden_states, grid_thws, merge_kernel_size=self.merge_kernel_size)
-        else:
-            raise NotImplementedError(f"Not support {self.merge_type}")
-
-        return hidden_states
-
-
 class KimiK25VisionModelFleet(KimiK25PretrainedModel):
     def __new__(cls, config):
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
@@ -641,8 +286,6 @@ class KimiK25VisionModelFleet(KimiK25PretrainedModel):
         model_provider_class = KimiK25VisionProvider
         model_provider = model_provider_class.from_config(config)
         vision_model = model_provider.provide()
-        # vision_model._gen_aoa_config = cls._gen_aoa_config
-        # vision_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         vision_model.config_to_save = config
 
         return vision_model
@@ -734,10 +377,7 @@ class KimiK25Provider(TransformerConfig):
         # res.text_config = KimiK25TextProvider.from_config(config.text_config)
         res.vision_config.normalization = "LayerNorm"
         res.vision_config.gated_linear_unit = False
-        # res.text_config.multimodal_embedding = True
-        # res.text_config.position_embedding_type = "mrope"
-        # res.text_config.image_token_id = config.image_token_id
-        # res.text_config.video_token_id = config.video_token_id
+
         return res
 
 
@@ -761,6 +401,10 @@ class KimiK25ModelDist(MCoreLLaVAModel):
 
         language_transformer_config = config.text_config
         vision_transformer_config = config.vision_config
+
+        # vision_transformer_config.num_attention_heads = vision_transformer_config.vt_num_attention_heads
+        # vision_transformer_config.num_key_value_heads = language_transformer_config.num_key_value_heads
+
         self.model_version = vision_transformer_config.model_version if model_version is None else model_version
         self._language_max_sequence_length = language_transformer_config.max_sequence_length
         assert self.model_version is not None
@@ -775,16 +419,6 @@ class KimiK25ModelDist(MCoreLLaVAModel):
         self.encoder_hidden_state = None
         self.vision_model = None
         self.language_model = None
-        #self.image_token_index = config.image_token_id
-        #self.video_token_index = config.video_token_id
-
-        # self.sequence_parallel_lm = language_transformer_config.sequence_parallel
-        # self.tp_comm_overlap_lm = language_transformer_config.tp_comm_overlap
-        # self.context_parallel_lm = language_transformer_config.context_parallel_size
-        # assert not (self.sequence_parallel_lm or self.context_parallel_lm > 1), (
-        #     f"qwenvl donnot support sequence parallel {self.sequence_parallel_lm} "
-        #     f"or context parallel {self.context_parallel_lm}"
-        # )
         self.share_embeddings_and_output_weights = False
         self.rope_deltas = None
 
@@ -796,26 +430,13 @@ class KimiK25ModelDist(MCoreLLaVAModel):
             # )
             # self._language_is_pipeline_parallel = language_transformer_config.pipeline_model_parallel_size > 1
             self.language_model = DeepseekV3ForCausalLM(config.text_config)
-            #self.post_init()
 
         if add_encoder:
             self.vision_model = KimiK25VisionModelFleet(vision_transformer_config)
-            self._drop_vision_class_token = drop_vision_class_token
-
-            proj_config = ProjectorConfig(vision_transformer_config)
-            if proj_config.mm_projector_type == "identity":
-                self.mm_projector = IdentityMap()
-            elif proj_config.mm_projector_type == "mlp":
-                self.mm_projector = PatchMLP(proj_config)
-            elif proj_config.mm_projector_type == "patchmerger":
-                self.mm_projector = PatchMergerMLP(proj_config)
-            else:
-                raise ValueError(f"Unsupported mm_projector_type: {proj_config.mm_projector_type}")
 
             if hasattr(self.language_model, "dtype"):
                 target_dtype = self.language_model.dtype
                 self.vision_model = self.vision_model.to(dtype=target_dtype)
-                self.mm_projector = self.mm_projector.to(dtype=target_dtype)
 
         self.freeze(
             freeze_language_model=config.freeze_langurage_model,
@@ -824,8 +445,6 @@ class KimiK25ModelDist(MCoreLLaVAModel):
         )
 
         self.model_type = ModelType.encoder_or_decoder
-
-        # self.criterion = criterion
 
     def _merge_input_ids_with_image_features(
         self,
@@ -861,6 +480,7 @@ class KimiK25ModelDist(MCoreLLaVAModel):
 
         # 1. Create a mask to know where special image tokens are
         _token_occupation_table = paddle.ones_like(input_ids.flatten())
+        print(_token_occupation_table[input_ids.flatten() == image_token_index])
         _token_occupation_table[input_ids.flatten() == image_token_index] = paddle.tensor(
             feature_lengths, dtype=paddle.long, device=input_ids.device
         )
@@ -955,10 +575,35 @@ class KimiK25ModelDist(MCoreLLaVAModel):
                 The selected image features to use as input to the projector head.
         """
 
-        target_dtype = self.vision_model.patch_embed.proj.weight.dtype
-        pixel_values = pixel_values.to(target_dtype)
+        def get_attn_mask_startend_row_indices(
+            grid_thws: paddle.Tensor,
+        ):
+            lengths = paddle.cat(
+                (
+                    paddle.zeros(1, dtype=grid_thws.dtype),
+                    grid_thws[:, 0] * grid_thws[:, 1] * grid_thws[:, 2],
+                )
+            )
 
-        image_features = self.vision_model(pixel_values, grid_thws)
+            cu_seqlens = lengths.cumsum(dim=0, dtype=paddle.int32)
+            cu_seqlens_rm_first = cu_seqlens[1:]
+            cu_seqlens_rm_last = cu_seqlens[:-1]
+            repeats = cu_seqlens_rm_first - cu_seqlens_rm_last
+
+            startend_row_indices_lts = paddle.repeat_interleave(cu_seqlens_rm_first, repeats).reshape([1, 1, -1, 1])
+            startend_row_indices_ute = paddle.repeat_interleave(cu_seqlens_rm_last, repeats).reshape([1, 1, -1, 1])
+            startend_row_indices = paddle.concat([startend_row_indices_lts, startend_row_indices_ute], axis=-1)
+
+            return startend_row_indices
+
+        attn_mask_startend_row_indices = (get_attn_mask_startend_row_indices(grid_thws),)
+
+        input_dict = {
+            "pixel_values": pixel_values,
+            "grid_thws": grid_thws,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+        }
+        image_features = self.vision_model(input_dict)
         return image_features
 
     def get_inputs_embeds(
@@ -976,10 +621,8 @@ class KimiK25ModelDist(MCoreLLaVAModel):
         # 2. Merge text and images
         if pixel_values is not None and len(pixel_values) > 0 and input_ids.shape[1] != 1:
             image_features = self._extract_image_features(pixel_values, grid_thws)
-            if self.mm_projector:
-                image_features = self.mm_projector(image_features)
+            image_features = image_features["hidden_states"]
 
-            inputs_embeds = inputs_embeds.to(image_features[0].dtype)  # num_tokens, embed_dim
             inputs_embeds, attention_mask, labels, position_ids = self._merge_input_ids_with_image_features(
                 image_features,
                 inputs_embeds,
@@ -1040,21 +683,20 @@ class KimiK25ModelDist(MCoreLLaVAModel):
         labels: paddle.Tensor | None = None,
         inference_params=None,
         pixel_values: paddle.Tensor | None = None,
-        pixel_values_videos=None,  # kimi not support video now
-        image_grid_thw=None,
-        video_grid_thw=None,
+        grid_thws=None,  # image grid thws
         runtime_gather_output: bool | None = None,
         cache_position: paddle.Tensor | None = None,
         attn_mask_startend_row_indices: paddle.Tensor | None = None,
         **kwargs,
     ) -> paddle.Tensor:
         assert loss_mask is None, "loss_mask is not supported yet"
-
-        input_dict = self.get_inputs_embeds(input_ids, pixel_values, image_grid_thw, attention_mask, None, labels)
+        print("in forward input_ids: ", input_ids)
+        print("attention_mask: ", attention_mask)
+        input_dict = self.get_inputs_embeds(input_ids, pixel_values, grid_thws, attention_mask, None, labels)
         labels = input_dict.get("labels", labels)
 
         output = self.language_model(input_dict)
-       
+
         return output
 
 
@@ -1121,11 +763,11 @@ class KimiK25ForConditionalGeneration(KimiK25PretrainedModelFleet):
     def __init__(self, config):
         super().__init__(config)
         # model_provider = KimiK25Provider.from_config(config)
+        self.model_type = config.model_type
         self.model = KimiK25Model(
             config, have_criterion=False
         )  # KimiK25Model(model_provider, model_version=config.model_type)
         self.criterion = CriterionLayer(config.text_config)
-        # self.tie_weights()
 
     def state_dict(self, *args, **kwargs):
         # Override state_dict method to handle language_model's custom state_dict
@@ -1146,8 +788,6 @@ class KimiK25ForConditionalGeneration(KimiK25PretrainedModelFleet):
                 state_dict[key] = value
         return state_dict
 
-    # def get_input_embeddings(self):
-    #     return self.model.get_input_embeddings()
     def forward(
         self,
         input_ids: Optional[paddle.Tensor] = None,
@@ -1170,8 +810,7 @@ class KimiK25ForConditionalGeneration(KimiK25PretrainedModelFleet):
         return_dict: Optional[bool] = True,
         **kwargs,
     ) -> Union[tuple, KimiK25CausalLMOutputWithPast]:
-        """
-        """
+        """ """
 
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (

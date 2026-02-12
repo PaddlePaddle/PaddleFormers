@@ -218,16 +218,16 @@ class SFTDataSet(IterableDataset):
             if not self.packing:
                 for _ in range(len(self.mix_datasets)):
                     example = next(dataset_iterator)
-                    try:
-                        if self.is_pretraining:
-                            sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
-                        else:
-                            sequence = self._postprocess_sequence(example, actual_example_num)
-                    except Exception as e:
-                        print(f"Warning: Error processing example, skipping. Error: {str(e)}")
-                        if self.estimate:
-                            self.unused_samples += actual_example_num
-                        continue
+                    # try:
+                    if self.is_pretraining:
+                        sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
+                    else:
+                        sequence = self._postprocess_sequence(example, actual_example_num)
+                    # except Exception as e:
+                    #     print(f"Warning: Error processing example, skipping. Error: {str(e)}")
+                    #     if self.estimate:
+                    #         self.unused_samples += actual_example_num
+                    #     continue
                     # unused_samples and used_samples are used to calculate skip_samples and actual_train_samples
                     if sequence is None:
                         if self.estimate:

@@ -1180,23 +1180,24 @@ class Gemma3Plugin(BasePlugin):
 
 class KimiK25Plugin(BasePlugin):
     @override
-    def process_messages(self, messages, images, videos, audios, processor):
+    def process_messages(self, messages, images, videos, audios, mm_inputs, processor):
         self._validate_input(processor, images, videos, audios)
         self._validate_messages(messages, images, videos, audios)
         if self.expand_mm_tokens:
-            mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
-            image_grid_hws = mm_inputs.get("image_grid_hws", [])
+            image_grid_hws = mm_inputs.get("grid_thws", [])
         else:
             image_grid_hws = [None] * len(images)
 
         num_image_tokens = 0
         image_processor = getattr(processor, "image_processor")
-        merge_length = math.prod(image_processor.merge_kernel_size)
+        merge_length = getattr(image_processor, "merge_kernel_size") ** 2
         messages = deepcopy(messages)
         for message in messages:
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:
-                image_seqlen = image_grid_hws[num_image_tokens].prod() // merge_length if self.expand_mm_tokens else 1
+                image_seqlen = (
+                    image_grid_hws[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                )
                 content = content.replace(
                     IMAGE_PLACEHOLDER,
                     f"<|media_start|>image<|media_content|>{self.image_token * image_seqlen}<|media_end|>",
@@ -1207,6 +1208,49 @@ class KimiK25Plugin(BasePlugin):
             message["content"] = content
 
         return messages
+
+    def _get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ):
+        mm_inputs = {}
+        if len(images) != 0:
+            image_processor = getattr(processor, "image_processor", None)
+            images = self._regularize_images(
+                images,
+                image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
+                image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
+            )["images"]
+            imglens = kwargs.get("imglens", None)
+            if imglens is not None:  # if imglens are provided, make batched images
+                images = _make_batched_images(images, imglens)
+            new_images = []
+            for image in images:
+                if isinstance(image, list):
+                    for img in image:
+                        new_images.append({"type": "image", "image": img})
+                else:
+                    new_images.append({"type": "image", "image": image})
+
+            mm_inputs.update(image_processor(new_images, return_tensors="pd"))
+        return mm_inputs
+
+    @override
+    def get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        mm_inputs = self._get_mm_inputs(images, videos, audios, processor, **kwargs)
+        return mm_inputs
 
 
 PLUGINS = {
