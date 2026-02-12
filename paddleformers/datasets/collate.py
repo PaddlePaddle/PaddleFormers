@@ -373,7 +373,8 @@ def mm_collate_fn(
                 func_params = inspect.signature(get_rope_func).parameters.keys()
                 filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
                 attn_mask = gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
-                filtered_args["attention_mask"] = paddle.to_tensor(attn_mask).squeeze()
+                filtered_args["attention_mask"] = paddle.to_tensor(attn_mask[0, 0, -1:, :])
+                assert (filtered_args["attention_mask"] == 1).all()
                 position_ids, rope_deltas = get_rope_func(input_ids=paddle.to_tensor([seq.token_ids]), **filtered_args)
                 original_position_ids.append(position_ids)
 

@@ -976,7 +976,7 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
                     audios,
                     sampling_rate=getattr(processor, "audio_sampling_rate", 16000),
                     return_attention_mask=True,
-                    padding="max_length",
+                    padding=False,
                     return_tensors="pd",
                 )
             )
