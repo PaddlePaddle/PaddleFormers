@@ -196,17 +196,27 @@ register_multimodel_keys(
 register_multimodel_keys(
     MultiModelKeys(
         model_dtype=MLLMModelMapping.qwen3_vl,
-        aligner=["model.visual.merger", "model.visual.deepstack_merger_list"],
+        aligner=[
+            "model.visual.merger",
+            "model.visual.deepstack_merger_list",
+            "model.vision_model.merger",
+            "model.vision_model.layers.$LAYER_ID.deepstack_merger",
+        ],
         llm=["model.language_model", "lm_head"],
-        vision="model.visual",
+        vision=["model.visual", "model.vision_model"],
     )
 )
 register_multimodel_keys(
     MultiModelKeys(
         model_dtype=MLLMModelMapping.qwen3_vl_moe,
-        aligner=["model.visual.merger", "model.visual.deepstack_merger_list"],
+        aligner=[
+            "model.visual.merger",
+            "model.visual.deepstack_merger_list",
+            "model.vision_model.merger",
+            "model.vision_model.layers.$LAYER_ID.deepstack_merger",
+        ],
         llm=["model.language_model", "lm_head"],
-        vision="model.visual",
+        vision=["model.visual", "model.vision_model"],
     )
 )
 
