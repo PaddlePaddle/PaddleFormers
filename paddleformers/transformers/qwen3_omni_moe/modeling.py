@@ -1316,8 +1316,6 @@ class Qwen3OmniMoeVisionEncoder(Qwen3OmniMoePreTrainedModel):
 
         patch_pos_embeds_permute = []
         merge_size = self.config.spatial_merge_size
-        print("grid_thw:", grid_thw)
-        print("self.config.spatial_merge_size:", self.config.spatial_merge_size)
         for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
             pos_embed = pos_embed.tile([t, 1])
             pos_embed = (
@@ -2301,7 +2299,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         if pixel_values_videos is not None:
             video_embeds, video_embeds_multiscale = self.get_video_features(
                 pixel_values_videos, video_grid_thw, return_dict=True
-            ).pooler_output
+            )
 
             video_embeds = video_embeds.to(inputs_embeds.device, inputs_embeds.dtype)
             _, video_mask, _ = self.get_placeholder_mask(
@@ -2317,7 +2315,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
             image_mask_joint = image_mask[visual_pos_masks]
             video_mask_joint = video_mask[visual_pos_masks]
             for img_embed, vid_embed in zip(image_embeds_multiscale, video_embeds_multiscale):
-                embed_joint = img_embed.new_zeros(visual_pos_masks.sum(), img_embed.shape[-1])
+                embed_joint = paddle.zeros([visual_pos_masks.sum(), img_embed.shape[-1]], dtype=img_embed.dtype)
                 embed_joint[image_mask_joint, :] = img_embed
                 embed_joint[video_mask_joint, :] = vid_embed
                 visual_embeds_multiscale_joint = visual_embeds_multiscale_joint + (embed_joint,)
