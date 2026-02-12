@@ -287,6 +287,13 @@ def run_sft(
         model_config.vision_config.recompute_method = model_config.recompute_method
         model_config.vision_config.recompute_num_layers = model_config.recompute_num_layers
 
+    # Sync freeze_config to model_config so that Fleet model providers can read it
+    freeze_config = getattr(training_args, "freeze_config", "")
+    if freeze_config:
+        model_config.freeze_vision_model = "freeze_vision" in freeze_config
+        model_config.freeze_langurage_model = "freeze_llm" in freeze_config
+        model_config.freeze_vision_projection = "freeze_aligner" in freeze_config
+
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 

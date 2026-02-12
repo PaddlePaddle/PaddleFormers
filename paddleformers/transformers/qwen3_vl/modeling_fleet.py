@@ -785,8 +785,8 @@ class Qwen3VLProvider(TransformerConfig):
     language_model_from_pretrained: str | None = None
     vision_model_from_pretrained: str | None = None
 
-    freeze_langurage_model: bool = False
-    freeze_vision_model: bool = True
+    freeze_language_model: bool = False
+    freeze_vision_model: bool = False
     freeze_vision_projection: bool = False
 
     def provide(self, tokenizer=None, vp_stage: int | None = None) -> "Qwen3VLModelDist":
@@ -928,9 +928,11 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
         if add_encoder:
             self.vision_model = Qwen3VLVisionModelFleet(vision_transformer_config)
             self._drop_vision_class_token = drop_vision_class_token
+        from paddleformers.utils.log import logger
 
+        logger.info(f"debug config: {config}")
         self.freeze(
-            freeze_language_model=config.freeze_langurage_model,
+            freeze_language_model=config.freeze_language_model,
             freeze_vision_model=config.freeze_vision_model,
             freeze_vision_projection=config.freeze_vision_projection,
         )
