@@ -13,6 +13,9 @@
 # limitations under the License.
 from __future__ import annotations
 
+import glob
+import os
+
 import numpy as np
 import paddle
 
@@ -35,5 +38,64 @@ def test_thinker_text_model():
     print("output_ids: ", type(output_ids), output_ids)
 
 
+def test_thinker_with_dumped_inputs(dumped_input_path=None):
+    """Test model with dumped inputs from training"""
+    config = Qwen3OmniMoeThinkerConfig.from_pretrained(MODEL_PATH)
+    model = Qwen3OmniMoeThinkerForConditionalGeneration.from_config(config)
+
+    # Find dumped inputs
+    if dumped_input_path is None:
+        # Auto-discover the latest dumped input file
+        dump_dir = "/root/paddlejob/workspace/env_run/chenxuran/dumped_inputs"
+        if not os.path.exists(dump_dir):
+            print(f"Warning: Dump directory {dump_dir} does not exist")
+            print("Please run training first to generate dumped inputs")
+            return
+
+        input_files = glob.glob(os.path.join(dump_dir, "*_inputs.npz"))
+        if not input_files:
+            print(f"Warning: No dumped input files found in {dump_dir}")
+            return
+
+        # Use the latest file
+        dumped_input_path = max(input_files, key=os.path.getmtime)
+
+    print(f"Loading dumped inputs from: {dumped_input_path}")
+
+    # Load dumped inputs
+    loaded_data = np.load(dumped_input_path)
+
+    # Convert numpy arrays back to paddle tensors
+    model_inputs = {}
+    for key in loaded_data.files:
+        model_inputs[key] = paddle.to_tensor(loaded_data[key])
+
+    print(f"Loaded input keys: {list(model_inputs.keys())}")
+    for key, value in model_inputs.items():
+        print(f"  {key}: shape={value.shape}, dtype={value.dtype}")
+
+    # Run model with dumped inputs
+    output_ids = model(**model_inputs)
+
+    print("output_ids: ", type(output_ids), output_ids)
+
+    return output_ids
+
+
 if __name__ == "__main__":
-    test_thinker_text_model()
+    import sys
+
+    # print("=" * 60)
+    # print("Test 1: Random input test")
+    # print("=" * 60)
+    # test_thinker_text_model()
+
+    print("\n" + "=" * 60)
+    print("Test 2: Dumped input test")
+    print("=" * 60)
+
+    # Check if a specific dumped input path is provided
+    if len(sys.argv) > 1:
+        test_thinker_with_dumped_inputs(sys.argv[1])
+    else:
+        test_thinker_with_dumped_inputs()
