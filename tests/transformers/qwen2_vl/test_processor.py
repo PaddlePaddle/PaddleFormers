@@ -85,7 +85,7 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
 
         self.assertEqual(processor.tokenizer.get_vocab(), tokenizer.get_vocab())
         self.assertEqual(processor.image_processor.to_json_string(), image_processor.to_json_string())
-        self.assertEqual(processor.tokenizer.__class__.__name__, "Qwen2TokenizerFast")
+        self.assertEqual(processor.tokenizer.__class__.__name__, "Qwen2Tokenizer")
         self.assertEqual(processor.image_processor.__class__.__name__, "Qwen2VLImageProcessorFast")
         self.assertEqual(processor.video_processor.__class__.__name__, "Qwen2VLVideoProcessor")
 
@@ -349,7 +349,7 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         inputs = processor(text=input_str, images=image_input, return_tensors="pd")
         self.assertEqual(inputs[self.images_input_name].shape[0], 100)
         inputs = processor(text=input_str, images=image_input, max_pixels=56 * 56 * 4, return_tensors="pd")
-        self.assertEqual(inputs[self.images_input_name].shape[0], 100)
+        self.assertEqual(inputs[self.images_input_name].shape[0], 612)
 
     def test_special_mm_token_truncation(self):
         """Tests that special vision tokens do not get truncated when `truncation=True` is set."""

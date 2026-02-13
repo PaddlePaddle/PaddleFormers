@@ -14,7 +14,7 @@ dataloader_num_workers: 24
 prefetch_factor: 24
 
 ### model
-model_name_or_path: /root/paddlejob/gpfs/efficient_benchmark/huggingface/GLM-4.5-Air
+model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/huggingface/GLM-4.5-Air
 _attn_implementation: flashmask
 
 ### finetuning

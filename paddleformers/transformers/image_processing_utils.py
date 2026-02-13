@@ -160,7 +160,7 @@ class PaddleImageProcessingMixin:
         **kwargs,
     ):
         image_processor_dict, kwargs = cls.get_image_processor_dict(pretrained_model_name_or_path, **kwargs)
-        return super().from_dict(image_processor_dict, **kwargs)
+        return cls.from_dict(image_processor_dict, **kwargs)
 
     @classmethod
     def get_image_processor_dict(
@@ -251,6 +251,51 @@ class PaddleImageProcessingMixin:
                 f"loading configuration file {image_processor_file} from cache at {resolved_image_processor_file}"
             )
         return image_processor_dict, kwargs
+
+    @classmethod
+    def from_dict(cls, image_processor_dict: dict[str, Any], **kwargs):
+        """
+        Instantiates a type of [`~image_processing_utils.ImageProcessingMixin`] from a Python dictionary of parameters.
+
+        Args:
+            image_processor_dict (`dict[str, Any]`):
+                Dictionary that will be used to instantiate the image processor object. Such a dictionary can be
+                retrieved from a pretrained checkpoint by leveraging the
+                [`~image_processing_utils.ImageProcessingMixin.to_dict`] method.
+            kwargs (`dict[str, Any]`):
+                Additional parameters from which to initialize the image processor object.
+
+        Returns:
+            [`~image_processing_utils.ImageProcessingMixin`]: The image processor object instantiated from those
+            parameters.
+        """
+        image_processor_dict = image_processor_dict.copy()
+        return_unused_kwargs = kwargs.pop("return_unused_kwargs", False)
+
+        # The `size` parameter is a dict and was previously an int or tuple in feature extractors.
+        # We set `size` here directly to the `image_processor_dict` so that it is converted to the appropriate
+        # dict within the image processor and isn't overwritten if `size` is passed in as a kwarg.
+        if "size" in kwargs and "size" in image_processor_dict:
+            image_processor_dict["size"] = kwargs.pop("size")
+        if "crop_size" in kwargs and "crop_size" in image_processor_dict:
+            image_processor_dict["crop_size"] = kwargs.pop("crop_size")
+
+        image_processor = cls(**image_processor_dict)
+
+        # Update image_processor with kwargs if needed
+        to_remove = []
+        for key, value in kwargs.items():
+            if hasattr(image_processor, key):
+                setattr(image_processor, key, value)
+                to_remove.append(key)
+        for key in to_remove:
+            kwargs.pop(key, None)
+
+        # logger.info(f"Image processor {image_processor}")
+        if return_unused_kwargs:
+            return image_processor, kwargs
+        else:
+            return image_processor
 
     def to_dict(self):
         """

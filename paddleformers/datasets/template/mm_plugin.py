@@ -252,7 +252,7 @@ class MMPluginMixin:
         videos,
         audios,
         processor,
-        imglens=None,
+        **kwargs,
     ):
         mm_inputs = {}
         if len(images) != 0:
@@ -262,6 +262,7 @@ class MMPluginMixin:
                 image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
                 image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
             )["images"]
+            imglens = kwargs.get("imglens", None)
             if imglens is not None:  # if imglens are provided, make batched images
                 images = _make_batched_images(images, imglens)
 
@@ -316,20 +317,43 @@ class BasePlugin(MMPluginMixin):
         self._validate_input(processor, images, videos, audios)
         return messages
 
+    def process_tokens(self, tokens, processor):
+        r"""Pre-process input tokens for VLMs."""
+
+        labels = deepcopy(tokens)
+
+        tokenizer = getattr(processor, "tokenizer")
+
+        masked_tokens = getattr(self, "masked_tokens", None)
+        if masked_tokens:
+            masked_tokens_ids = tokenizer.convert_tokens_to_ids(masked_tokens)
+
+            if len(masked_tokens) != len(masked_tokens_ids):
+                raise ValueError(
+                    f"The number of masked tokens {masked_tokens} does not match the number of masked tokens ids {masked_tokens_ids} tokens."
+                )
+
+            # Mask tokens that should be ignored in loss calculation
+            for i, token in enumerate(labels):
+                if token in masked_tokens_ids:
+                    labels[i] = -100
+
     def get_mm_inputs(
         self,
         images,
         videos,
         audios,
-        imglens,
-        vidlens,
-        audlens,
-        batch_ids,
         processor,
+        **kwargs,
     ):
         r"""Build batched multimodal inputs for VLMs."""
+        # imglens = kwargs.get("imglens", None)
+        # vidlens = kwargs.get("vidlens", None)
+        # audlens = kwargs.get("audlens", None)
+        # batch_ids = kwargs.get("batch_ids", None)
+
         self._validate_input(processor, images, videos, audios)
-        return self._get_mm_inputs(images, videos, audios, processor)
+        return self._get_mm_inputs(images, videos, audios, processor, **kwargs)
 
 
 @dataclass
@@ -418,14 +442,15 @@ class PaddleOCRVLPlugin(BasePlugin):
         videos,
         audios,
         processor,
+        **kwargs,
     ):
         image_processor = getattr(processor, "image_processor", None)
         mm_inputs = {}
         if len(images) != 0:
             images = self._regularize_images(
                 images,
-                image_max_pixels=getattr(processor, "max_pixels", 2822400),
-                image_min_pixels=getattr(processor, "min_pixels", 147384),
+                image_max_pixels=getattr(image_processor, "max_pixels", 2822400),
+                image_min_pixels=getattr(image_processor, "min_pixels", 147384),
                 image_processor=image_processor,
             )["images"]
             mm_inputs.update(image_processor(images, return_tensors="pd"))
@@ -468,6 +493,8 @@ class PaddleOCRVLPlugin(BasePlugin):
                 num_image_tokens += 1
 
             message["content"] = content
+
+        self.masked_tokens = [self.image_token, self.image_bos_token, self.image_eos_token]
 
         return messages
 
@@ -607,6 +634,7 @@ class ErnieVLPlugin(BasePlugin):
         videos,
         audios,
         processor,
+        **kwargs,
     ):
         image_processor = getattr(processor, "image_processor", None)
         mm_inputs = {}
@@ -756,6 +784,7 @@ class Qwen2VLPlugin(BasePlugin):
         videos,
         audios,
         processor,
+        **kwargs,
     ):
         image_processor = getattr(processor, "image_processor", None)
         mm_inputs = {}
@@ -844,6 +873,7 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
         videos,
         audios,
         processor,
+        **kwargs,
     ):
         image_processor = getattr(processor, "image_processor", None)
         video_processor = getattr(processor, "video_processor", None)
@@ -970,6 +1000,7 @@ class GLM4VPlugin(Qwen2VLPlugin):
         videos,
         audios,
         processor,
+        **kwargs,
     ):
         image_processor = getattr(processor, "image_processor", None)
         video_processor = getattr(processor, "video_processor", None)
@@ -1083,14 +1114,11 @@ class GLM4VPlugin(Qwen2VLPlugin):
         images,
         videos,
         audios,
-        imglens,
-        vidlens,
-        audlens,
-        batch_ids,
         processor,
+        **kwargs,
     ):
         self._validate_input(processor, images, videos, audios)
-        mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
+        mm_inputs = self._get_mm_inputs(images, videos, audios, processor, **kwargs)
         mm_inputs.pop("timestamps", None)
         return mm_inputs
 
@@ -1141,14 +1169,11 @@ class Gemma3Plugin(BasePlugin):
         images,
         videos,
         audios,
-        imglens,
-        vidlens,
-        audlens,
-        batch_ids,
         processor,
+        **kwargs,
     ):
         self._validate_input(processor, images, videos, audios)
-        mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
+        mm_inputs = self._get_mm_inputs(images, videos, audios, processor, **kwargs)
         mm_inputs.pop("num_crops", None)
         return mm_inputs
 

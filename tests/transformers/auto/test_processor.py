@@ -27,7 +27,7 @@ class AutoProcessorTest(unittest.TestCase):
 
     def test_auto_processor_load_tokenizer(self):
         processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2")
-        self.assertEqual(processor.tokenizer.__class__.__name__, "Qwen2TokenizerFast")
+        self.assertEqual(processor.tokenizer.__class__.__name__, "Qwen2Tokenizer")
 
     def test_auto_processor_load_image_processor(self):
         processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2")

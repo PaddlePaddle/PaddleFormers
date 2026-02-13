@@ -428,8 +428,10 @@ generation_config = GenerationConfig(
 )
 
 with paddle.no_grad():
-    generated_ids = model.generate(**inputs, generation_config=generation_config, max_new_tokens=1024)
-    output_text = processor.batch_decode(generated_ids[0], skip_special_tokens=True)
+    outputs = model.generate(**inputs, generation_config=generation_config, max_new_tokens=1024)
+    output_ids = outputs[0].tolist()[0]
+
+    output_text = processor.decode(output_ids, skip_special_tokens=True)
 
 print(output_text[0])
 
@@ -543,8 +545,10 @@ def generate_response(model, processor, messages, max_length=1024):
     )
 
     with paddle.no_grad():
-        generated_ids = model.generate(**inputs, generation_config=generation_config, max_new_tokens=max_length)
-        output_text = processor.batch_decode(generated_ids[0], skip_special_tokens=True)
+        outputs = model.generate(**inputs, generation_config=generation_config, max_new_tokens=max_length)
+        output_ids = outputs[0].tolist()[0]
+
+        output_text = processor.decode(output_ids, skip_special_tokens=True)
 
     return output_text
 

@@ -317,8 +317,13 @@ def _read_video_paddlecodec(
         paddle.Tensor: the video tensor with shape (T, C, H, W).
     """
     try:
+        import sys
+
+        del sys.modules["torchcodec"]
         paddle.compat.enable_torch_proxy(scope={"torchcodec"})
         from torchcodec.decoders import VideoDecoder
+
+        sys.modules["torchcodec"] = None
     except (ImportError, RuntimeError) as e:
         logger.error(
             f"Failed to load 'torchcodec' backend via Paddle proxy.\n"

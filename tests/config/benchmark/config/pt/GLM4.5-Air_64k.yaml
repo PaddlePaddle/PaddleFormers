@@ -1,8 +1,8 @@
 train_dataset_type: messages
 eval_dataset_type: messages
-train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/wangnian/NewFleet/glm45_fleet_pt/data_60to64k/LVEval_60to64k_messages.jsonl
+train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/data_60to64k/LVEval_60to64k_messages.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/wangnian/NewFleet/glm45_fleet_pt/data_60to64k/LVEval_60to64k_messages.jsonl
+eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/data_60to64k/LVEval_60to64k_messages.jsonl
 eval_dataset_prob: "1.0"
 
 max_seq_len: 65536
@@ -14,7 +14,7 @@ truncate_packing: false
 padding_free: true
 
 ### model
-model_name_or_path: /root/paddlejob/gpfs/efficient_benchmark/huggingface/GLM-4.5-Air
+model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/huggingface/GLM-4.5-Air
 _attn_implementation: flashmask
 
 ### finetuning

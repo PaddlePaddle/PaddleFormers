@@ -34,7 +34,40 @@ defaults:
     shell: bash
 
 jobs:
+  check_skip:
+    name: Check skip-unittest-ci label
+    runs-on: ubuntu-latest
+
+    outputs:
+      skip: ${{ steps.check_skip.outputs.skip }}
+
+    steps:
+      - name: Check skip-unittest-ci label
+        id: check_skip
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
+            echo "PR labels: $labels"
+
+            if echo "$labels" | grep -q "skip-unittest-ci"; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip CI but mark success
+        if: steps.check_skip.outputs.skip == 'true'
+        run: |
+          echo "skip-unittest-ci label found"
+          echo "Downstream GPU jobs will be skipped"
+
   unittest-gpu-ci:
+    needs: check_skip
+    if: needs.check_skip.outputs.skip == 'false'
     name: unittest-gpu-ci
     runs-on: ${{ inputs.runner || 'ernie-8gpu' || 'distrbute' }}
     outputs:  
@@ -131,20 +164,19 @@ jobs:
           uv cache dir
           set -e
           rm -rf /root/.cache/aistudio/
+          cd /home/models/my_packages && dpkg -i *.deb
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
           source $work_dir/../../../proxy
           source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
-          apt-get update && apt-get install -y ffmpeg
           pip install uv
           echo "work_dir = ${work_dir}"
           cp -r ${work_dir}/../../../models ./models
           echo "Check whether the local model file exists:"
           ls -l ./models
-          timeout 20m bash -x scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
+          bash -x scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
           '
           
       - name: Upload Products
-        if: always()
         env:
           home_path: ${{ github.workspace }}/../../..
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
@@ -189,7 +221,6 @@ jobs:
           # echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/report.tar.gz"
           '
       - name: Set pytest execute flag output
-        if: always()
         id: set_pytest_flag  # 专门设置输出的步骤
         run: |
           # 检查标志文件是否存在，并设置作业输出

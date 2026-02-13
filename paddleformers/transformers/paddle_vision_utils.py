@@ -246,22 +246,22 @@ def _pad_with_scalar_fill(
         # name.
         padding_mode = "replicate"
 
+    dtype = image.dtype
+    if not image.is_floating_point():
+        needs_cast = True
+        image = image.to(paddle.float32)
+    else:
+        needs_cast = False
+
     if padding_mode == "constant":
         image = paddle_pad(image, paddle_padding, mode=padding_mode, value=float(fill))
     elif padding_mode in ("reflect", "replicate"):
-        dtype = image.dtype
-        if not image.is_floating_point():
-            needs_cast = True
-            image = image.to(paddle.float32)
-        else:
-            needs_cast = False
-
         image = paddle_pad(image, paddle_padding, mode=padding_mode)
-
-        if needs_cast:
-            image = image.to(dtype)
     else:  # padding_mode == "symmetric"
         image = _pad_symmetric(image, paddle_padding)
+
+    if needs_cast:
+        image = image.to(dtype)
 
     new_height, new_width = image.shape[-2:]
 

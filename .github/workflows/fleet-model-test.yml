@@ -28,7 +28,40 @@ defaults:
     shell: bash
 
 jobs:
+  check_skip:
+    name: Check skip-fleet-models-ci label
+    runs-on: ubuntu-latest
+
+    outputs:
+      skip: ${{ steps.check_skip.outputs.skip }}
+
+    steps:
+      - name: Check skip-fleet-models-ci label
+        id: check_skip
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
+            echo "PR labels: $labels"
+
+            if echo "$labels" | grep -q "skip-fleet-models-ci"; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip CI but mark success
+        if: steps.check_skip.outputs.skip == 'true'
+        run: |
+          echo "skip-fleet-models-ci label found"
+          echo "Downstream GPU jobs will be skipped"
+  
   check_documents_type:
+    needs: check_skip
+    if: ${{ needs.check_skip.outputs.skip == 'false' }}
     name: check documents type for pull request
     runs-on: ubuntu-latest
     env:
@@ -43,8 +76,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: git diff and check
+      - name: git diff and check 
         id: check_files
+        if: |
+          github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'fleet-models-ci')
         run: |
           changed_files=$(git diff origin/${{ github.event.pull_request.base.ref }}...HEAD --name-only)
           echo "Changed files: $changed_files"
@@ -69,8 +104,8 @@ jobs:
           echo "is_md_only: $(cat $GITHUB_OUTPUT | grep is_md_only || echo '未找到')"
     
   integration-test-H20-single-card:
-    needs: check_documents_type
-    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' }}
+    needs: [check_documents_type, check_skip]
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check_skip.outputs.skip == 'false' }}
     name: Integration test (H20, single card)
     runs-on:
       group: Fleet-H-single-card
@@ -140,7 +175,7 @@ jobs:
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
           pip install -e ".[paddlefleet]" --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-          # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
+          # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlefleet -y
           # pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           # wget -q --no-proxy --no-check-certificate https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
@@ -174,6 +209,7 @@ jobs:
           fi
           '
 
+
       - name: Integration test (GLM4.5 single-card)
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
@@ -188,7 +224,6 @@ jobs:
             echo -e "\033[32mIntegration test succeeded: GLM4.5 single-card.\033[0m"
           fi
           '
-
 
       - name: Integration test (Qwen3-30B-A3B single-card)
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
@@ -205,6 +240,22 @@ jobs:
           fi
           '
 
+      - name: Qwen3-vl-8k-single-card
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft_single_card.sh single
+          exit_code=$?
+          if [[ "$exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: Qwen3-vl-8k-single-card.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: Qwen3-vl-8k-single-card.\033[0m"
+          fi
+          '
+
+
       - name: Terminate and delete the container
         if: ${{ always() }}
         run: |
@@ -214,8 +265,8 @@ jobs:
 
 
   integration-test-H20-multi-card:
-    needs: check_documents_type
-    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' }}
+    needs: [check_documents_type, check_skip]
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check_skip.outputs.skip == 'false' }}
     name: Integration test (H20, multi-card)
     runs-on:
       group: Fleet-H-multi-card
@@ -255,6 +306,7 @@ jobs:
             -e PR_USER="${{ github.event.pull_request.user.login }}" \
             -w /workspace --network host ${docker_image}
 
+
       - name: Install PaddleFormers
         id: formers_install
         run: |
@@ -274,7 +326,7 @@ jobs:
           git pull --no-edit origin pull/${PR_ID}/head
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           pip install -e ".[paddlefleet]" --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-          # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
+          # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlefleet -y
           # pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           # wget -q --no-proxy --no-check-certificate https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
@@ -307,6 +359,7 @@ jobs:
             echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
           fi
           '
+
       - name: GLM4.5 sft
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
@@ -413,6 +466,7 @@ jobs:
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh sft
           '
 
+
       - name: Qwen lora
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
@@ -421,16 +475,50 @@ jobs:
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh lora
           '
 
+      # - name: Qwen vl sft
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 h20
+      #     '
+      
+      # - name: Qwen vl lora
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_lora.sh h20
+      #     '
+      #     '
+
+      # - name: Qwen vl moe
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe h20
+      #     '
+      
+      # - name: Qwen3-vl-8k-fsdp
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
+      #     '
+
       - name: Terminate and delete the container
         if: ${{ always() }}
         run: |
           set +e
           docker exec -t ${{ env.container_name }} /bin/bash -c 'rm -rf * .[^.]*'
           docker rm -f ${{ env.container_name }}
+      
 
   integration-test-a100:
-    needs: check_documents_type
-    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' }}
+    needs: [check_documents_type, check_skip]
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check_skip.outputs.skip == 'false' }}
     name: Integration test (A100)
     runs-on:
       group: Distribute
@@ -491,7 +579,7 @@ jobs:
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
           pip install -e ".[paddlefleet]" --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-          # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.1.0/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
+          # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlefleet -y
           # pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
           # wget -q --no-proxy --no-check-certificate https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
@@ -514,7 +602,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_a100.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh pt
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
@@ -523,6 +611,124 @@ jobs:
             echo -e "\033[32mIntegration test succeeded: GLM4.5.\033[0m"
           fi
           '
+        
+      - name: GLM4.5 sft
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh sft
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 sft.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 sft.\033[0m"
+          fi
+          '
+      
+      - name: GLM4.5 lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh lora
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 lora.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 lora.\033[0m"
+          fi
+          '
+      
+      - name: GLM4.5 dpo
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh dpo
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 dpo.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 dpo.\033[0m"
+          fi
+          '
+      
+      - name: GLM4.5 dpo_lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh dpo_lora
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 dpo lora.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 dpo lora.\033[0m"
+          fi
+          '
+
+      - name: Qwen pre-train
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3_a100.sh pt
+          '
+        
+      - name: Qwen sft
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3_a100.sh sft
+          '
+
+      - name: Qwen lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3_a100.sh lora
+          '
+
+      - name: Qwen vl sft
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 a100
+          '
+      
+      - name: Qwen vl lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_lora.sh a100
+          '
+
+          
+      - name: Qwen vl moe
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe a100
+          '
+
+
+      # - name: Qwen3-vl-8k-fsdp
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
+      #     '
 
       - name: Terminate and delete the container
         if: ${{ always() }}
