@@ -65,13 +65,11 @@ class TestHFMultiSourceVideoProcessor(unittest.TestCase):
     #     self.preprocess(video_processor)
 
     @skip_for_none_ce_case
-    @slow
     def test_model_scope(self):
         video_processor = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="modelscope")
         self.preprocess(video_processor)
 
     @skip_for_none_ce_case
-    @slow
     def test_hf_hub(self):
         video_processor = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface")
         self.preprocess(video_processor)
