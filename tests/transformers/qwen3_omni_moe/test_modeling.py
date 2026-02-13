@@ -14,11 +14,24 @@
 from __future__ import annotations
 
 import paddle
+
+paddle.set_printoptions(precision=10)
+
 import numpy as np
 import random
 from paddleformers.transformers import (
     Qwen3OmniMoeThinkerForConditionalGeneration,
     Qwen3OmniMoeThinkerConfig,
+    Qwen3OmniMoeConfig,
+    Qwen3VLMoeTextConfig,
+    Qwen3VLMoeTextModel,
+    Qwen3VLMoeForConditionalGenerationDeprecated,
+    Qwen3VLMoeConfig,
+    AutoConfig,
+    AutoModel,
+    AutoTokenizer,
+    ProcessorMixin,
+    Qwen2Tokenizer,
 )
 
 MODEL_PATH = "/root/.cache/modelscope/hub/models/Qwen/Qwen3-Omni-30B-A3B-Instruct/"
@@ -59,7 +72,7 @@ def floats_tensor(shape, scale=1.0, rng=None, name=None):
 
 def test_thinker_text_model():
     config = Qwen3OmniMoeThinkerConfig.from_pretrained(MODEL_PATH)
-    config.text_config.num_hidden_layers = 24
+    config.text_config.num_hidden_layers = 12
     config.text_config._attn_implementation = "sdpa"
     config.vision_config._attn_implementation = "sdpa"
     config.audio_config._attn_implementation = "sdpa"
