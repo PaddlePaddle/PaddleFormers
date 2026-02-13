@@ -22,13 +22,15 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     AllGatherOp,
     ReduceScatterOp,
 )
-from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
-    build_sharded_state_dict,
-)
 from paddle.nn.quant import llm_int8_linear, weight_dequantize, weight_only_linear
 
 from ..utils import infohub
 from .qat_utils import QATFunc
+
+# from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+#     build_sharded_state_dict,
+# )
+
 
 try:
     from .qlora import qlora_weight_dequantize, qlora_weight_linear
