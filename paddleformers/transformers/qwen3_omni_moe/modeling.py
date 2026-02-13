@@ -671,11 +671,23 @@ class Qwen3OmniMoePreTrainedModelForConditionalGeneration(Qwen3OmniMoePreTrained
 
             return position_ids, mrope_position_deltas
         else:
-            position_ids = attention_mask.float().cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask == 0, 1)
-            position_ids = position_ids.unsqueeze(0).expand(3, -1, -1).to(attention_mask.device)
-            max_position_ids = position_ids.max(0, keepdim=False)[0].max(-1, keepdim=True)[0]
-            mrope_position_deltas = max_position_ids + 1 - paddle.sum(attention_mask, dim=-1, keepdim=True)
+            if attention_mask is not None:
+                position_ids = attention_mask.float().cumsum(-1) - 1
+                position_ids.masked_fill_(attention_mask == 0, 1)
+                position_ids = position_ids.unsqueeze(0).expand(3, -1, -1).to(attention_mask.device)
+                max_position_ids = position_ids.max(0, keepdim=False)[0].max(-1, keepdim=True)[0]
+                mrope_position_deltas = max_position_ids + 1 - paddle.sum(attention_mask, dim=-1, keepdim=True)
+            else:
+                position_ids = (
+                    paddle.arange(input_ids.shape[1], device=input_ids.device)
+                    .view(1, 1, -1)
+                    .expand(3, input_ids.shape[0], -1)
+                )
+                mrope_position_deltas = paddle.zeros(
+                    [input_ids.shape[0], 1],
+                    device=input_ids.device,
+                    dtype=input_ids.dtype,
+                )
 
             return position_ids, mrope_position_deltas
 
