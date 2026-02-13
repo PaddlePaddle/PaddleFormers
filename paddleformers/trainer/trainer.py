@@ -3183,6 +3183,8 @@ class Trainer:
                 global_norm_var_not_dist,
                 *args,
             ):
+                print("WE DO NOT CAL GRAD NORM FOR NOW")
+                return
                 if len(args) > 0:
                     global_norm_func(global_norm_var_dist, global_norm_var_not_dist, *args)
                     global_norm_var_dist_moe, global_norm_var_not_dist_moe = args
@@ -3193,6 +3195,8 @@ class Trainer:
                         + global_norm_var_not_dist_moe
                     )
                 else:
+                    print("global_norm_var_dist: ", global_norm_var_dist)
+                    print("global_norm_var_not_dist: ", global_norm_var_not_dist)
                     global_norm_func(global_norm_var_dist, global_norm_var_not_dist)
                     global_norm_var_fp32 = paddle.sqrt(global_norm_var_dist + global_norm_var_not_dist)
                 training_logs["global_norm"] = global_norm_var_fp32.item()

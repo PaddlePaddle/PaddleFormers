@@ -18,6 +18,7 @@ import gc
 import math
 import os
 from concurrent.futures import ThreadPoolExecutor
+import re
 from dataclasses import fields
 from functools import partial
 
@@ -84,6 +85,29 @@ from paddleformers.cli.utils import (
     get_lora_target_modules,
     get_multimodel_lora_target_modules,
 )
+
+
+def frozen_param_expect_mtp(model, config):
+    def extract_layer_idx(text):
+        match = re.search(r"model.layers.(-?\d+\.?\d*)", text)
+        if match:
+            num_str = match.group(1)
+            # 区分整数和小数返回（避免123.0这种冗余浮点数）
+            if "." in num_str:
+                return float(num_str)
+            else:
+                return int(num_str)
+        return None
+
+    # not sure can work on all model
+    jackpot = set(range(config.num_hidden_layers, config.num_hidden_layers + config.num_nextn_predict_layers))
+    for name, param in model.state_dict().items():
+        layer_idx = extract_layer_idx(name)
+        is_mtp = layer_idx in jackpot
+        if not is_mtp:
+            param.stop_gradient = True
+        else:
+            param.stop_gradient = False
 
 
 def create_pretrained_dataset(training_args, data_args, model_args):
@@ -684,6 +708,8 @@ def run_sft(
         callbacks += [FP8QuantWeightCallback()]
 
     print("callbacks:", callbacks, flush=True)
+    # print("ddd: ", model); exit()
+
     trainer = SFTTrainer(
         model=model,
         args=training_args,
@@ -696,7 +722,10 @@ def run_sft(
         data_args=data_args,
         callbacks=callbacks,
     )
-    trainable_parameters = [p for p in model.parameters() if not p.stop_gradient]
+    trainable_parameters = [
+        p for p in model.parameters() if not p.stop_gradient or ("quantization_linear" in p.name and "w_1" in p.name)
+    ]
+    frozen_param_expect_mtp(model, model_config)
     trainer.set_optimizer_grouped_parameters(trainable_parameters)
 
     # Train
