@@ -25,6 +25,7 @@ import paddle
 
 from paddleformers.transformers import AutoProcessor, Glm4vProcessor
 from tests.transformers.test_processing_common import ProcessorTesterMixin
+from tests.testing_utils import slow
 
 
 class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
@@ -89,6 +90,7 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         self.assertEqual(processor.image_processor.__class__.__name__, "Glm4vImageProcessor")
         self.assertEqual(processor.video_processor.__class__.__name__, "Glm4vVideoProcessor")
 
+    @slow
     def test_image_processor(self):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
@@ -106,6 +108,7 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         for key in input_image_proc:
             self.assertAlmostEqual(input_image_proc[key].sum(), input_processor[key].sum(), delta=1e-2)
 
+    @slow
     def test_processor(self):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
@@ -129,6 +132,7 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         with self.assertRaises(TypeError):
             processor(images=image_input, return_tensors="pd")
 
+    @slow
     def _test_apply_chat_template(
         self,
         modality: str,
@@ -225,6 +229,7 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         for k in out_dict:
             self.assertIsInstance(out_dict[k], return_tensor_to_type[return_tensors])
 
+    @slow
     def test_apply_chat_template_video_frame_sampling(self):
         processor = self.get_processor(video_backend="decord")
         if processor.chat_template is None:
@@ -318,6 +323,7 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
                 do_sample_frames=True,
             )
 
+    @slow
     def test_kwargs_overrides_custom_image_processor_kwargs(self):
         processor = self.get_processor()
         input_str = self.prepare_text_inputs()

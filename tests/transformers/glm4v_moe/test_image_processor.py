@@ -20,6 +20,7 @@ import paddle
 
 from paddleformers.transformers import AutoImageProcessor
 from tests.testing_utils import gpu_device_initializer
+from tests.testing_utils import slow
 
 
 class Glm4vImageProcessorTest(unittest.TestCase):
@@ -35,6 +36,7 @@ class Glm4vImageProcessorTest(unittest.TestCase):
         cls.patch_size = 14
         cls.size = {"longest_edge": 9633792, "shortest_edge": 12544}
 
+    @slow
     def test_slow_image_processor_consistency_with_hf(self):
         with tempfile.TemporaryDirectory() as tempdir:
             image_processor_pd = AutoImageProcessor.from_pretrained(
@@ -53,6 +55,7 @@ class Glm4vImageProcessorTest(unittest.TestCase):
             )
 
     @gpu_device_initializer(log_prefix="Glm4vImageProcessorTest")
+    @slow
     def test_fast_image_processor_consistency_with_hf(self):
         with tempfile.TemporaryDirectory() as tempdir:
             image_processor_pd = AutoImageProcessor.from_pretrained(

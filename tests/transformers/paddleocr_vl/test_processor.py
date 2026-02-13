@@ -24,6 +24,7 @@ import paddle
 
 from paddleformers.transformers import AutoProcessor, PaddleOCRVLProcessor
 from tests.transformers.test_processing_common import ProcessorTesterMixin
+from tests.testing_utils import slow
 
 
 class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
@@ -53,6 +54,7 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     def tearDownClass(cls):
         shutil.rmtree(cls.tmpdir, ignore_errors=True)
 
+    @slow
     def test_model_input_names(self):
 
         processor = self.get_processor()
@@ -70,6 +72,7 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
 
         self.assertSetEqual(set(inputs.keys()), set(processor.model_input_names))
 
+    @slow
     def test_save_load_pretrained_default(self):
         tokenizer = self.get_tokenizer()
         image_processor = self.get_image_processor()
@@ -83,6 +86,7 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         self.assertEqual(processor.tokenizer.__class__.__name__, "LlamaTokenizer")
         self.assertEqual(processor.image_processor.__class__.__name__, "PaddleOCRVLImageProcessor")
 
+    @slow
     def test_image_processor(self):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
@@ -97,6 +101,7 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         for key in input_image_proc:
             self.assertAlmostEqual(input_image_proc[key].sum(), input_processor[key].sum(), delta=1e-2)
 
+    @slow
     def test_processor(self):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
@@ -117,6 +122,7 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         with self.assertRaises(TypeError):
             processor(images=image_input, return_tensors="pd")
 
+    @slow
     def _test_apply_chat_template(
         self,
         modality: str,
@@ -218,6 +224,7 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     def test_apply_chat_template_video_frame_sampling(self):
         pass
 
+    @slow
     def test_kwargs_overrides_custom_image_processor_kwargs(self):
         processor = self.get_processor()
         # self.skip_processor_without_typed_kwargs(processor)

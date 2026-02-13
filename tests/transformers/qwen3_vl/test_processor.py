@@ -26,6 +26,7 @@ import paddle
 from paddleformers.transformers import AutoProcessor, Qwen3VLProcessor
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_processing_common import ProcessorTesterMixin
+from tests.testing_utils import slow
 
 
 class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
@@ -93,6 +94,7 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         self.assertEqual(processor.image_processor.__class__.__name__, "Qwen2VLImageProcessorFast")
         self.assertEqual(processor.video_processor.__class__.__name__, "Qwen3VLVideoProcessor")
 
+    @slow
     def test_image_processor(self):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
@@ -110,6 +112,7 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         for key in input_image_proc:
             self.assertAlmostEqual(input_image_proc[key].sum(), input_processor[key].sum(), delta=1e-2)
 
+    @slow
     def test_processor(self):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
@@ -133,6 +136,7 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         with self.assertRaises(TypeError):
             processor(images=image_input, return_tensors="pd")
 
+    @slow
     def _test_apply_chat_template(
         self,
         modality: str,
@@ -229,6 +233,7 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         for k in out_dict:
             self.assertIsInstance(out_dict[k], return_tensor_to_type[return_tensors])
 
+    @slow
     def test_apply_chat_template_video_frame_sampling(self):
         processor = self.get_processor()
         if processor.chat_template is None:
@@ -342,6 +347,7 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
                 do_sample_frames=True,
             )
 
+    @slow
     def test_kwargs_overrides_custom_image_processor_kwargs(self):
         processor = self.get_processor()
         # self.skip_processor_without_typed_kwargs(processor)
@@ -353,6 +359,7 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         inputs = processor(text=input_str, images=image_input, max_pixels=56 * 56 * 4, return_tensors="pd")
         self.assertEqual(inputs[self.images_input_name].shape[0], 612)
 
+    @slow
     def test_special_mm_token_truncation(self):
         """Tests that special vision tokens do not get truncated when `truncation=True` is set."""
 

@@ -20,6 +20,7 @@ import paddle
 from paddleformers.transformers import AutoProcessor
 from paddleformers.transformers.qwen2_vl import process_vision_info
 from tests.testing_utils import skip_for_none_ce_case
+from tests.testing_utils import slow
 
 
 class TestHFMultiSourceProcessor(unittest.TestCase):
@@ -93,6 +94,7 @@ class TestHFMultiSourceProcessor(unittest.TestCase):
             )
         )
 
+    @slow
     def preprocess_video(self, processor):
         text = processor.apply_chat_template(self.messages_with_video, tokenize=False, add_generation_prompt=True)
         image_inputs, video_inputs = process_vision_info(self.messages_with_video)

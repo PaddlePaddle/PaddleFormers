@@ -23,6 +23,7 @@ import paddle
 
 from paddleformers.transformers import AutoProcessor, Ernie4_5_VLProcessor
 from tests.transformers.test_processing_common import ProcessorTesterMixin
+from tests.testing_utils import slow
 
 
 class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
@@ -85,6 +86,7 @@ class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         self.assertEqual(processor.tokenizer.__class__.__name__, "Ernie4_5_VLTokenizer")
         self.assertEqual(processor.image_processor.__class__.__name__, "Ernie4_5_VLImageProcessor")
 
+    @slow
     def test_image_processor(self):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
@@ -110,6 +112,7 @@ class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         )
         self.assertAlmostEqual(input_image_proc["image_grid_thw"].sum(), input_processor["grid_thw"].sum(), delta=1e-2)
 
+    @slow
     def test_processor(self):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
@@ -133,6 +136,7 @@ class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         with self.assertRaises(AttributeError):
             processor(images=image_input, return_tensors="pd")
 
+    @slow
     def _test_apply_chat_template(
         self,
         modality: str,
@@ -229,6 +233,7 @@ class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         for k in out_dict:
             self.assertIsInstance(out_dict[k], return_tensor_to_type[return_tensors])
 
+    @slow
     def test_apply_chat_template_video_frame_sampling(self):
         processor = self.get_processor()
         if processor.chat_template is None:
@@ -420,6 +425,7 @@ class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         self.assertTrue(self.videos_input_name in out_dict_with_video)
         self.assertEqual(len(out_dict_with_video[self.videos_input_name]), 2086560)
 
+    @slow
     def test_kwargs_overrides_custom_image_processor_kwargs(self):
         processor = self.get_processor()
         # self.skip_processor_without_typed_kwargs(processor)
@@ -431,6 +437,7 @@ class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         inputs = processor(text=input_str, images=image_input, max_pixels=56 * 56 * 4, return_tensors="pd")
         self.assertEqual(inputs[self.images_input_name].shape[0], 800)
 
+    @slow
     def test_unstructured_kwargs(self):
         if "image_processor" not in self.processor_class.attributes:
             self.skipTest(f"image_processor attribute not present in {self.processor_class}")
@@ -448,6 +455,7 @@ class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
 
         self.assertEqual(inputs[self.images_input_name].dtype.name, "UINT8")
 
+    @slow
     def test_structured_kwargs_nested(self):
         if "image_processor" not in self.processor_class.attributes:
             self.skipTest(f"image_processor attribute not present in {self.processor_class}")
@@ -465,6 +473,7 @@ class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
 
         self.assertEqual(inputs[self.images_input_name].dtype.name, "UINT8")
 
+    @slow
     def test_structured_kwargs_nested_from_dict(self):
         if "image_processor" not in self.processor_class.attributes:
             self.skipTest(f"image_processor attribute not present in {self.processor_class}")
@@ -480,6 +489,7 @@ class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         inputs = processor(text=input_str, images=image_input, **all_kwargs)
         self.assertEqual(inputs[self.images_input_name].dtype.name, "UINT8")
 
+    @slow
     def test_kwargs_overrides_default_image_processor_kwargs(self):
         if "image_processor" not in self.processor_class.attributes:
             self.skipTest(f"image_processor attribute not present in {self.processor_class}")
@@ -500,6 +510,7 @@ class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         )
         self.assertEqual(inputs[self.images_input_name].dtype.name, "UINT8")
 
+    @slow
     def test_image_processor_defaults_preserved_by_image_kwargs(self):
         """
         We use do_rescale=True, rescale_factor=-1.0 to ensure that image_processor kwargs are preserved in the processor.
