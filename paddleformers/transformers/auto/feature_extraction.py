@@ -17,7 +17,6 @@ import json
 import os
 from collections import OrderedDict
 
-from .configuration import PretrainedConfig
 from transformers import AutoConfig
 from transformers.dynamic_module_utils import (
     get_class_from_dynamic_module,
@@ -35,6 +34,7 @@ from transformers.utils import PROCESSOR_NAME
 
 from ...utils.download import resolve_file_path
 from ...utils.log import logger
+from ..configuration_utils import PretrainedConfig
 from ..feature_extraction_utils import FeatureExtractionMixin
 
 FEATURE_EXTRACTOR_MAPPING_NAMES = OrderedDict(
@@ -213,7 +213,7 @@ class AutoFeatureExtractor:
 
         # If we don't find the feature extractor class in the feature extractor config, let's try the model config.
         if feature_extractor_class is None and feature_extractor_auto_map is None:
-            if not isinstance(config, PreTrainedConfig):
+            if not isinstance(config, PretrainedConfig):
                 config = AutoConfig.from_pretrained(
                     pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
                 )
@@ -264,7 +264,7 @@ class AutoFeatureExtractor:
         Register a new feature extractor for this class.
 
         Args:
-            config_class ([`PreTrainedConfig`]):
+            config_class ([`PretrainedConfig`]):
                 The configuration corresponding to the model to register.
             feature_extractor_class ([`FeatureExtractorMixin`]): The feature extractor to register.
         """

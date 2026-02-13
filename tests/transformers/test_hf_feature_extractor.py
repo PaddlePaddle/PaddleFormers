@@ -14,10 +14,11 @@
 # limitations under the License.
 
 import unittest
-from paddleformers.transformers.audio_processing_utils import process_audio_info
+
 import paddle
 
 from paddleformers.transformers import AutoFeatureExtractor
+from paddleformers.transformers.audio_processing_utils import process_audio_info
 from tests.testing_utils import skip_for_none_ce_case
 
 
@@ -27,13 +28,14 @@ class TestHFMultiSourceAudioProcessor(unittest.TestCase):
         import requests
 
         AUDIO_URL = "https://paddlenlp.bj.bcebos.com/models/community/paddlemix/audio-files/wave.wav"
-        audio_response = requests.get(AUDIO_URL, stream=True)
-        cls.audio = process_audio_info('./wave.wav')
+        audio_response = requests.get(AUDIO_URL)
+        with open("./cough.wav", "wb") as f:
+            f.write(audio_response.content)
+        cls.audio = process_audio_info("./wave.wav")
 
     def preprocess(self, feature_extractor):
         inputs = feature_extractor(self.audio, return_tensors="pd")
-        # self.assertIsInstance(inputs["pixel_values"], paddle.Tensor)
-
+        self.assertIsInstance(inputs["pixel_values"], paddle.Tensor)
 
     # def test_ai_studio(self):
     #     image_processor = AutoImageProcessor.from_pretrained(
@@ -43,10 +45,14 @@ class TestHFMultiSourceAudioProcessor(unittest.TestCase):
 
     @skip_for_none_ce_case
     def test_model_scope(self):
-        feature_extractor = AutoFeatureExtractor.from_pretrained("Qwen/Qwen3-Omni-30B-A3B-Instruct", download_hub="modelscope")
+        feature_extractor = AutoFeatureExtractor.from_pretrained(
+            "Qwen/Qwen3-Omni-30B-A3B-Instruct", download_hub="modelscope"
+        )
         self.preprocess(feature_extractor)
 
     @skip_for_none_ce_case
     def test_hf_hub(self):
-        feature_extractor = AutoFeatureExtractor.from_pretrained("Qwen/Qwen3-Omni-30B-A3B-Instruct", download_hub="huggingface")
+        feature_extractor = AutoFeatureExtractor.from_pretrained(
+            "Qwen/Qwen3-Omni-30B-A3B-Instruct", download_hub="huggingface"
+        )
         self.preprocess(feature_extractor)

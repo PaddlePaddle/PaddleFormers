@@ -39,7 +39,7 @@ def pil_to_tensor(pic: Any) -> paddle.Tensor:
     img = paddle.to_tensor(np.array(pic, copy=True))
     img = img.view([pic.size[1], pic.size[0], get_image_num_channels(pic)])
     # put it from HWC to CHW format
-    img = paddle.transpose(img,perm=((2, 0, 1)))
+    img = paddle.transpose(img, perm=((2, 0, 1)))
     return img
 
 
@@ -155,12 +155,7 @@ def resize(
         if need_cast:
             image = image.to(dtype=paddle.float32)
 
-        image = interpolate(
-            image,
-            size=[new_height, new_width],
-            mode=interpolation,
-            align_corners=align_corners
-        )
+        image = interpolate(image, size=[new_height, new_width], mode=interpolation, align_corners=align_corners)
 
         if need_cast:
             if interpolation == "bicubic" and dtype == paddle.uint8:

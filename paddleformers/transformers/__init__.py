@@ -326,7 +326,7 @@ if TYPE_CHECKING:
         convert_to_unicode,
     )
     from .processing_utils import ProcessorMixin
-    from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
+    from .feature_extraction_utils import FeatureExtractionMixin
     from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
     from .image_processing_utils_fast import BaseImageProcessorFast
     from .video_processing_utils import BaseVideoProcessor

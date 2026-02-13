@@ -14,11 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
+import os
 import tempfile
 import unittest
-from pathlib import Path
-import os
+
 from paddleformers.transformers import AutoFeatureExtractor, WhisperFeatureExtractor
 
 
@@ -32,4 +31,3 @@ class AutoFeatureExtractorTest(unittest.TestCase):
             feature_extractor = AutoFeatureExtractor.from_pretrained("Qwen/Qwen3-Omni-30B-A3B-Instruct")
             feature_extractor.save_pretrained(tmpdir)
             self.assertTrue(os.path.exists(os.path.join(tmpdir, "preprocessor_config.json")))
-    

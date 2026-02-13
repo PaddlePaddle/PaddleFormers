@@ -446,9 +446,6 @@ def process_audio_info(conversations: list[dict] | list[list[dict]], use_audio_i
                         path = ele.get("video", ele.get("video_url"))
                         audio_start = ele.get("video_start", 0.0)
                         audio_end = ele.get("video_end", None)
-                        assert _check_if_video_has_audio(
-                            path
-                        ), "Video must has audio track when use_audio_in_video=True"
                         if path.startswith("http://") or path.startswith("https://"):
                             data = audioread.ffdec.FFmpegAudioFile(path)
                         elif path.startswith("file://"):

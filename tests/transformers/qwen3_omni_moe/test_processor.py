@@ -12,11 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import requests
-from qwen_omni_utils import process_mm_info
+import shutil
+import tempfile
+import unittest
+
+from paddleformers.transformers import AutoProcessor, Qwen3OmniMoeProcessor
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_processing_common import ProcessorTesterMixin
-from paddleformers.transformers import AutoProcessor, Qwen3OmniMoeProcessor
+
+
 class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     processor_class = Qwen3OmniMoeProcessor
 
@@ -24,13 +28,11 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     def setUpClass(cls):
         cls.tmpdir = tempfile.mkdtemp()
 
-        processor = AutoProcessor.from_pretrained(
-            "Qwen/Qwen3-Omni-30B-A3B-Instruct", , download_hub="modelscope"
-        )
+        processor = AutoProcessor.from_pretrained("Qwen/Qwen3-Omni-30B-A3B-Instruct", download_hub="modelscope")
+
         processor.save_pretrained(cls.tmpdir)
         cls.image_token = processor.image_token
-
-    # Use GPU 0 to prevent CUDA illegal memory access during resize
+        # Use GPU 0 to prevent CUDA illegal memory access during resize
 
     @gpu_device_initializer(log_prefix="Qwen3_Omni_ProcessorTest", gpu_id=0)
     def setUp(self):
@@ -52,14 +54,16 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     def tearDownClass(cls):
         shutil.rmtree(cls.tmpdir, ignore_errors=True)
 
-
     def test_save_load_pretrained_default(self):
         tokenizer = self.get_tokenizer()
         image_processor = self.get_image_processor()
         video_processor = self.get_video_processor()
-
+        feature_extractor = self.get_feature_extractor()
         processor = Qwen3OmniMoeProcessor(
-            tokenizer=tokenizer, image_processor=image_processor, video_processor=video_processor, feature_extractor=feature_extractor
+            tokenizer=tokenizer,
+            image_processor=image_processor,
+            video_processor=video_processor,
+            feature_extractor=feature_extractor,
         )
         processor.save_pretrained(self.tmpdir)
         processor = Qwen3OmniMoeProcessor.from_pretrained(self.tmpdir)
@@ -70,14 +74,16 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         self.assertEqual(processor.feature_extraction.__class__.__name__, "Qwen2VLVideoProcessor")
         self.assertEqual(processor.video_processor.__class__.__name__, "WhisperFeatureExtractor")
 
-
     def test_image_processor(self):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
         video_processor = self.get_video_processor()
-
+        feature_extractor = self.get_feature_extractor()
         processor = Qwen3OmniMoeProcessor(
-            tokenizer=tokenizer, image_processor=image_processor, video_processor=video_processor, feature_extractor=feature_extractor
+            tokenizer=tokenizer,
+            image_processor=image_processor,
+            video_processor=video_processor,
+            feature_extractor=feature_extractor,
         )
 
         image_input = self.prepare_image_inputs()
@@ -92,9 +98,12 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
         video_processor = self.get_video_processor()
-
+        feature_extractor = self.get_feature_extractor()
         processor = Qwen3OmniMoeProcessor(
-            tokenizer=tokenizer, image_processor=image_processor, video_processor=video_processor, feature_extractor=feature_extractor
+            tokenizer=tokenizer,
+            image_processor=image_processor,
+            video_processor=video_processor,
+            feature_extractor=feature_extractor,
         )
 
         input_str = "lower newer"
@@ -110,4 +119,3 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         # test if it raises when no text is passed
         with self.assertRaises(TypeError):
             processor(images=image_input, return_tensors="pd")
-
