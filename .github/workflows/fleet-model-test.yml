@@ -490,7 +490,6 @@ jobs:
           source /root/proxy
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_lora.sh h20
           '
-          '
 
       - name: Qwen vl moe
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
