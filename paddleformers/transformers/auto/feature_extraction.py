@@ -17,7 +17,7 @@ import json
 import os
 from collections import OrderedDict
 
-from configuration import PretrainedConfig
+from .configuration import PretrainedConfig
 from transformers import AutoConfig
 from transformers.dynamic_module_utils import (
     get_class_from_dynamic_module,

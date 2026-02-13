@@ -125,6 +125,7 @@ def device_guard(device="cpu", dev_id=0):
 if TYPE_CHECKING:
     import paddle
 
+    from .auto_docstring import *
     from .batch_sampler import *
     from .env import CONFIG_NAME, GENERATION_CONFIG_NAME, LEGACY_CONFIG_NAME
     from .import_utils import *
@@ -133,7 +134,7 @@ if TYPE_CHECKING:
     from .log import logger
     from .memory_utils import empty_device_cache
     from .moe_hybrid_parallel_optimizer import MoEHybridParallelOptimizer
-    from .auto_docstring import *
+
     try:
         from .optimizer import *
     except:

@@ -14,39 +14,100 @@
 
 import requests
 from qwen_omni_utils import process_mm_info
+from tests.testing_utils import gpu_device_initializer
+from tests.transformers.test_processing_common import ProcessorTesterMixin
+from paddleformers.transformers import AutoProcessor, Qwen3OmniMoeProcessor
+class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
+    processor_class = Qwen3OmniMoeProcessor
 
-from paddleformers.transformers import AutoProcessor
+    @classmethod
+    def setUpClass(cls):
+        cls.tmpdir = tempfile.mkdtemp()
 
-processor = AutoProcessor.from_pretrained("Qwen/Qwen3-Omni-30B-A3B-Instruct", download_hub="modelscope")
-text = "What can you see and hear? Answer in one short sentence."
-image_url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg"
-audio_url = "https://paddlenlp.bj.bcebos.com/models/community/paddlemix/audio-files/wave.wav"
-image_response = requests.get(image_url)
-audio_response = requests.get(audio_url)
-with open("./example1.jpg", "wb") as f:
-    f.write(image_response.content)
-with open("./wave.wav", "wb") as f:
-    f.write(audio_response.content)
-conversation = [
-    {
-        "role": "user",
-        "content": [
-            {"type": "image", "image": "./example1.jpg"},
-            {"type": "audio", "audio": "./wave.wav"},
-            {"type": "text", "text": "What can you see and hear? Answer in one short sentence."},
-        ],
-    },
-]
-USE_AUDIO_IN_VIDEO = True
+        processor = AutoProcessor.from_pretrained(
+            "Qwen/Qwen3-Omni-30B-A3B-Instruct", , download_hub="modelscope"
+        )
+        processor.save_pretrained(cls.tmpdir)
+        cls.image_token = processor.image_token
 
-text = processor.apply_chat_template(conversation, add_generation_prompt=True, tokenize=False)
-audios, images, videos = process_mm_info(conversation, use_audio_in_video=USE_AUDIO_IN_VIDEO)
-inputs = processor(
-    text=text,
-    audio=audios,
-    images=images,
-    videos=videos,
-    return_tensors="pd",
-    padding=True,
-    use_audio_in_video=USE_AUDIO_IN_VIDEO,
-)
+    # Use GPU 0 to prevent CUDA illegal memory access during resize
+
+    @gpu_device_initializer(log_prefix="Qwen3_Omni_ProcessorTest", gpu_id=0)
+    def setUp(self):
+        pass
+
+    def get_image_processor(self, **kwargs):
+        return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).image_processor
+
+    def get_video_processor(self, **kwargs):
+        return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).video_processor
+
+    def get_feature_extractor(self, **kwargs):
+        return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).feature_extractor
+
+    def get_processor(self, **kwargs):
+        return AutoProcessor.from_pretrained(self.tmpdir, **kwargs)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmpdir, ignore_errors=True)
+
+
+    def test_save_load_pretrained_default(self):
+        tokenizer = self.get_tokenizer()
+        image_processor = self.get_image_processor()
+        video_processor = self.get_video_processor()
+
+        processor = Qwen3OmniMoeProcessor(
+            tokenizer=tokenizer, image_processor=image_processor, video_processor=video_processor, feature_extractor=feature_extractor
+        )
+        processor.save_pretrained(self.tmpdir)
+        processor = Qwen3OmniMoeProcessor.from_pretrained(self.tmpdir)
+
+        self.assertEqual(processor.tokenizer.get_vocab(), tokenizer.get_vocab())
+        self.assertEqual(processor.image_processor.to_json_string(), image_processor.to_json_string())
+        self.assertEqual(processor.image_processor.__class__.__name__, "Qwen2VLImageProcessorFast")
+        self.assertEqual(processor.feature_extraction.__class__.__name__, "Qwen2VLVideoProcessor")
+        self.assertEqual(processor.video_processor.__class__.__name__, "WhisperFeatureExtractor")
+
+
+    def test_image_processor(self):
+        image_processor = self.get_image_processor()
+        tokenizer = self.get_tokenizer()
+        video_processor = self.get_video_processor()
+
+        processor = Qwen3OmniMoeProcessor(
+            tokenizer=tokenizer, image_processor=image_processor, video_processor=video_processor, feature_extractor=feature_extractor
+        )
+
+        image_input = self.prepare_image_inputs()
+
+        input_image_proc = image_processor(image_input, return_tensors="pd")
+        input_processor = processor(images=image_input, text="dummy", return_tensors="pd")
+
+        for key in input_image_proc:
+            self.assertAlmostEqual(input_image_proc[key].sum(), input_processor[key].sum(), delta=1e-2)
+
+    def test_processor(self):
+        image_processor = self.get_image_processor()
+        tokenizer = self.get_tokenizer()
+        video_processor = self.get_video_processor()
+
+        processor = Qwen3OmniMoeProcessor(
+            tokenizer=tokenizer, image_processor=image_processor, video_processor=video_processor, feature_extractor=feature_extractor
+        )
+
+        input_str = "lower newer"
+        image_input = self.prepare_image_inputs()
+        inputs = processor(text=input_str, images=image_input, return_tensors="pd")
+
+        self.assertListEqual(list(inputs.keys()), ["input_ids", "attention_mask", "pixel_values", "image_grid_thw"])
+
+        # test if it raises when no input is passed
+        with self.assertRaises(ValueError):
+            processor()
+
+        # test if it raises when no text is passed
+        with self.assertRaises(TypeError):
+            processor(images=image_input, return_tensors="pd")
+
