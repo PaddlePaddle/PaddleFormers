@@ -94,6 +94,7 @@ import_structure = {
     "auto.processing": ["AutoProcessor"],
     "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
+    'auto.feature_extraction':["AutoFeatureExtractor"],
     "deepseek_v3.configuration": ["DeepseekV3Config"],
     "deepseek_v3.modeling": [
         "masked_fill",

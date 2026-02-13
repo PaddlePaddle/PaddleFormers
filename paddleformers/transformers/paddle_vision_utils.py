@@ -36,10 +36,10 @@ def get_image_num_channels(img: Any) -> int:
 
 def pil_to_tensor(pic: Any) -> paddle.Tensor:
     """Convert a ``PIL Image`` to a tensor of the same type."""
-    img = paddle.as_tensor(np.array(pic, copy=True))
-    img = img.view(pic.size[1], pic.size[0], get_image_num_channels(pic))
+    img = paddle.to_tensor(np.array(pic, copy=True))
+    img = img.view([pic.size[1], pic.size[0], get_image_num_channels(pic)])
     # put it from HWC to CHW format
-    img = img.permute((2, 0, 1))
+    img = paddle.transpose(img,perm=[2, 0, 1])
     return img
 
 
