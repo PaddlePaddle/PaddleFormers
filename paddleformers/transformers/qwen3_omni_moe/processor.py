@@ -1,11 +1,11 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,12 +16,12 @@ import re
 
 import numpy as np
 
+from ...trainer.utils.doc import add_start_docstrings
 from ..audio_utils import AudioInput
 from ..feature_extraction_utils import BatchFeature
 from ..image_utils import ImageInput
-from ..processing_utils import ProcessingKwargs, ProcessorMixin, VideosKwargs
 from ..legacy import TextInput
-from ...trainer.utils.doc import add_start_docstrings
+from ..processing_utils import ProcessingKwargs, ProcessorMixin, VideosKwargs
 from ..video_utils import VideoInput, make_batched_videos
 
 
@@ -117,6 +117,7 @@ def _get_feat_extract_output_lengths(input_lengths):
 )
 class Qwen3OmniMoeProcessor(ProcessorMixin):
     attributes = ["image_processor", "video_processor", "feature_extractor", "tokenizer"]
+
     def __init__(
         self, image_processor=None, video_processor=None, feature_extractor=None, tokenizer=None, chat_template=None
     ):
@@ -128,6 +129,7 @@ class Qwen3OmniMoeProcessor(ProcessorMixin):
         self.vision_eos_token = self.tokenizer.vision_eos_token
         self.audio_bos_token = self.tokenizer.audio_bos_token
         self.audio_eos_token = self.tokenizer.audio_eos_token
+
     @add_start_docstrings(
         """
         Process inputs for Qwen3OmniMoe model. Handles text, images, videos and audio inputs.

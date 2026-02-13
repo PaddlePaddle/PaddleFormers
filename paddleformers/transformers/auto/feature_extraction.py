@@ -1,11 +1,11 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -13,15 +13,28 @@
 # limitations under the License.
 
 import importlib
+import json
 import os
 from collections import OrderedDict
-from ..configuration_utils import PretrainedConfig
-from transformers.models.auto.configuration_auto import (
-    CONFIG_MAPPING_NAMES,
-    model_type_to_module_name,
-    replace_list_option_in_docstrings,
-)
 
+from configuration import PretrainedConfig
+from transformers import AutoConfig
+from transformers.dynamic_module_utils import (
+    get_class_from_dynamic_module,
+    resolve_trust_remote_code,
+)
+from transformers.models.auto.configuration_auto import (
+    CONFIG_NAME,
+    model_type_to_module_name,
+)
+from transformers.models.auto.feature_extraction_auto import (
+    FEATURE_EXTRACTOR_MAPPING,
+    FEATURE_EXTRACTOR_NAME,
+)
+from transformers.utils import PROCESSOR_NAME
+
+from ...utils.download import resolve_file_path
+from ...utils.log import logger
 from ..feature_extraction_utils import FeatureExtractionMixin
 
 FEATURE_EXTRACTOR_MAPPING_NAMES = OrderedDict(
@@ -29,6 +42,7 @@ FEATURE_EXTRACTOR_MAPPING_NAMES = OrderedDict(
         ("whisper", "WhisperFeatureExtractor"),
     ]
 )
+
 
 def safe_load_json_file(json_file: str):
     "A helper to load safe config files and raise a proper error message if it wasn't serialized correctly"
@@ -39,6 +53,8 @@ def safe_load_json_file(json_file: str):
     except json.JSONDecodeError:
         raise OSError(f"It looks like the config file at '{json_file}' is not a valid JSON file.")
     return config_dict
+
+
 def feature_extractor_class_from_name(class_name: str):
     for module_name, extractors in FEATURE_EXTRACTOR_MAPPING_NAMES.items():
         if class_name in extractors:
@@ -129,26 +145,26 @@ def get_feature_extractor_config(
     ```"""
     # Load with a priority given to the nested processor config, if available in repo
     resolved_processor_file = resolve_file_path(
-            pretrained_model_name_or_path,
-            PROCESSOR_NAME,
-            cache_dir=cache_dir,
-            force_download=force_download,
-            proxies=proxies,
-            token=token,
-            revision=revision,
-            local_files_only=local_files_only
-        )
+        pretrained_model_name_or_path,
+        PROCESSOR_NAME,
+        cache_dir=cache_dir,
+        force_download=force_download,
+        proxies=proxies,
+        token=token,
+        revision=revision,
+        local_files_only=local_files_only,
+    )
 
     resolved_feature_extractor_file = resolve_file_path(
-            pretrained_model_name_or_path,
-            PROCESSOR_NAME,
-            cache_dir=cache_dir,
-            force_download=force_download,
-            proxies=proxies,
-            token=token,
-            revision=revision,
-            local_files_only=local_files_only
-        )
+        pretrained_model_name_or_path,
+        PROCESSOR_NAME,
+        cache_dir=cache_dir,
+        force_download=force_download,
+        proxies=proxies,
+        token=token,
+        revision=revision,
+        local_files_only=local_files_only,
+    )
 
     # An empty list if none of the possible files is found in the repo
     if not resolved_feature_extractor_file and not resolved_processor_file:

@@ -1,28 +1,30 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import base64
-from io import BytesIO
-import audioread
-import librosa
 from enum import Enum
+from io import BytesIO
 from typing import Dict, List, Optional, Union
 
+import audioread
+import librosa
 import numpy as np
 import paddle
 
 from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
-SAMPLE_RATE=16000
+
+SAMPLE_RATE = 16000
+
 
 class ExplicitEnum(Enum):
     """
@@ -387,6 +389,7 @@ class SequenceFeatureExtractor(FeatureExtractionMixin):
 
         return padding_strategy
 
+
 def process_audio_info(conversations: list[dict] | list[list[dict]], use_audio_in_video: bool):
     """
     Read and process audio info
@@ -420,7 +423,11 @@ def process_audio_info(conversations: list[dict] | list[list[dict]], use_audio_i
                             if path.ndim > 1:
                                 raise ValueError("Support only mono audio")
                             audios.append(
-                                path[int(SAMPLE_RATE * audio_start) : None if audio_end is None else int(SAMPLE_RATE * audio_end)]
+                                path[
+                                    int(SAMPLE_RATE * audio_start) : None
+                                    if audio_end is None
+                                    else int(SAMPLE_RATE * audio_end)
+                                ]
                             )
                             continue
                         elif path.startswith("data:audio"):

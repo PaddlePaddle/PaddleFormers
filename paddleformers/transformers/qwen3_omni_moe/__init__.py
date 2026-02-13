@@ -18,21 +18,10 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "configuration": ["Qwen3OmniMoeConfig", "Qwen3OmniMoeThinkerConfig", "Qwen3OmniMoeTextConfig"],
-    "modeling": [
-        "Qwen3OmniMoeForConditionalGeneration",
-        "Qwen3OmniMoeThinkerForConditionalGeneration",
-        "Qwen3OmniMoePreTrainedModel",
-        "Qwen3OmniMoeThinkerTextPreTrainedModel",
-        "Qwen3OmniMoeThinkerTextModel",
-        "Qwen3OmniMoeTalkerModel",
-    ],
     "processor": ["Qwen3OmniMoeProcessor"],
 }
 
 if TYPE_CHECKING:
-    from .configuration import *
-    from .modeling import *
     from .processing import *
 else:
     sys.modules[__name__] = _LazyModule(
