@@ -23,9 +23,8 @@ import numpy as np
 import paddle
 
 from paddleformers.transformers import AutoProcessor, Qwen2VLProcessor
-from tests.testing_utils import gpu_device_initializer
+from tests.testing_utils import gpu_device_initializer, slow
 from tests.transformers.test_processing_common import ProcessorTesterMixin
-from tests.testing_utils import slow
 
 
 class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):

@@ -18,8 +18,7 @@ import unittest
 import paddle
 
 from paddleformers.transformers import AutoVideoProcessor
-from tests.testing_utils import gpu_device_initializer, skip_for_none_ce_case
-from tests.testing_utils import slow
+from tests.testing_utils import gpu_device_initializer, skip_for_none_ce_case, slow
 
 
 class TestHFMultiSourceVideoProcessor(unittest.TestCase):

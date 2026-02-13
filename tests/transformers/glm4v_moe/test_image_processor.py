@@ -19,8 +19,7 @@ import unittest
 import paddle
 
 from paddleformers.transformers import AutoImageProcessor
-from tests.testing_utils import gpu_device_initializer
-from tests.testing_utils import slow
+from tests.testing_utils import gpu_device_initializer, slow
 
 
 class Glm4vImageProcessorTest(unittest.TestCase):

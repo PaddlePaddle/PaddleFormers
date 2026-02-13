@@ -23,8 +23,8 @@ import numpy as np
 import paddle
 
 from paddleformers.transformers import AutoProcessor, PaddleOCRVLProcessor
-from tests.transformers.test_processing_common import ProcessorTesterMixin
 from tests.testing_utils import slow
+from tests.transformers.test_processing_common import ProcessorTesterMixin
 
 
 class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):

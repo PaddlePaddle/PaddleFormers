@@ -22,8 +22,8 @@ import numpy as np
 import paddle
 
 from paddleformers.transformers import AutoProcessor, Ernie4_5_VLProcessor
-from tests.transformers.test_processing_common import ProcessorTesterMixin
 from tests.testing_utils import slow
+from tests.transformers.test_processing_common import ProcessorTesterMixin
 
 
 class Ernie4_5_VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):

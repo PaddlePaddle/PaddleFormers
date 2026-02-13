@@ -24,8 +24,8 @@ import numpy as np
 import paddle
 
 from paddleformers.transformers import AutoProcessor, Glm4vProcessor
-from tests.transformers.test_processing_common import ProcessorTesterMixin
 from tests.testing_utils import slow
+from tests.transformers.test_processing_common import ProcessorTesterMixin
 
 
 class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):

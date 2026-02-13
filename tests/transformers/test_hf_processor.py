@@ -19,8 +19,7 @@ import paddle
 
 from paddleformers.transformers import AutoProcessor
 from paddleformers.transformers.qwen2_vl import process_vision_info
-from tests.testing_utils import skip_for_none_ce_case
-from tests.testing_utils import slow
+from tests.testing_utils import skip_for_none_ce_case, slow
 
 
 class TestHFMultiSourceProcessor(unittest.TestCase):
