@@ -36,10 +36,10 @@ def get_image_num_channels(img: Any) -> int:
 
 def pil_to_tensor(pic: Any) -> paddle.Tensor:
     """Convert a ``PIL Image`` to a tensor of the same type."""
-    img = paddle.to_tensor(np.array(pic, copy=True))
-    img = img.view([pic.size[1], pic.size[0], get_image_num_channels(pic)])
+    img = paddle.as_tensor(np.array(pic, copy=True))
+    img = img.view(pic.size[1], pic.size[0], get_image_num_channels(pic))
     # put it from HWC to CHW format
-    img = paddle.transpose(img, perm=((2, 0, 1)))
+    img = img.permute((2, 0, 1))
     return img
 
 
@@ -144,8 +144,8 @@ def resize(
         #     if _should_use_native_uint8_kernel(interpolation):
         #         acceptable_dtypes.append(paddle.uint8)
 
-        image = image.reshape([-1, num_channels, old_height, old_width])
-        strides = image.strides
+        image = image.reshape(-1, num_channels, old_height, old_width)
+        strides = image.stride()
         if image.is_contiguous() and image.shape[0] == 1 and numel != strides[0]:
             new_strides = list(strides)
             new_strides[0] = numel
@@ -155,7 +155,13 @@ def resize(
         if need_cast:
             image = image.to(dtype=paddle.float32)
 
-        image = interpolate(image, size=[new_height, new_width], mode=interpolation, align_corners=align_corners)
+        image = interpolate(
+            image,
+            size=[new_height, new_width],
+            mode=interpolation,
+            align_corners=align_corners,
+            antialias=antialias,
+        )
 
         if need_cast:
             if interpolation == "bicubic" and dtype == paddle.uint8:
@@ -240,22 +246,22 @@ def _pad_with_scalar_fill(
         # name.
         padding_mode = "replicate"
 
+    dtype = image.dtype
+    if not image.is_floating_point():
+        needs_cast = True
+        image = image.to(paddle.float32)
+    else:
+        needs_cast = False
+
     if padding_mode == "constant":
         image = paddle_pad(image, paddle_padding, mode=padding_mode, value=float(fill))
     elif padding_mode in ("reflect", "replicate"):
-        dtype = image.dtype
-        if not image.is_floating_point():
-            needs_cast = True
-            image = image.to(paddle.float32)
-        else:
-            needs_cast = False
-
         image = paddle_pad(image, paddle_padding, mode=padding_mode)
-
-        if needs_cast:
-            image = image.to(dtype)
     else:  # padding_mode == "symmetric"
         image = _pad_symmetric(image, paddle_padding)
+
+    if needs_cast:
+        image = image.to(dtype)
 
     new_height, new_width = image.shape[-2:]
 
@@ -350,13 +356,13 @@ def normalize(image: paddle.Tensor, mean: list[float], std: list[float], inplace
     mean = paddle.to_tensor(mean, dtype=dtype)
     std = paddle.to_tensor(std, dtype=dtype)
     if mean.ndim == 1:
-        mean = mean.view([-1, 1, 1])
+        mean = mean.view(-1, 1, 1)
     if std.ndim == 1:
-        std = std.view([-1, 1, 1])
+        std = std.view(-1, 1, 1)
 
     if inplace:
         image = image.sub_(mean)
     else:
-        image = paddle.subtract(image, mean)
+        image = image.sub(mean)
 
-    return paddle.divide(image, std)
+    return image.div_(std)
