@@ -771,7 +771,6 @@ class PaddleProcessorMixin:
             elif is_primary:
                 # Primary non-tokenizer sub-processor: load via Auto class
                 auto_processor_class = MODALITY_TO_AUTOPROCESSOR_MAPPING[sub_processor_type]
-                print(auto_processor_class)
                 sub_processor = auto_processor_class.from_pretrained(
                     pretrained_model_name_or_path, subfolder=subfolder, **kwargs
                 )

@@ -181,7 +181,6 @@ class AutoProcessor:
                 config = AutoConfig.from_pretrained(
                     pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
                 )
-            print(config)
             # And check if the config contains the processor class.
             processor_class = getattr(config, "processor_class", None)
 
