@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import hashlib
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,6 +25,10 @@ from paddle.nn import functional as F
 
 from ...generation import GenerationMixin
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
+from ...nn.criterion.interface import CriterionLayer
+from ...nn.linear import Linear as GeneralLinear
+from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.norm import Norm as GeneralNorm
 from ..activations import ACT2FN
 from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import (
@@ -39,6 +44,7 @@ from ..model_outputs import (
 )
 from ..model_utils import PretrainedModel
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
+from ..utils import logger
 from .configuration import (
     Qwen3OmniMoeAudioEncoderConfig,
     Qwen3OmniMoeCode2WavConfig,
@@ -50,6 +56,22 @@ from .configuration import (
     Qwen3OmniMoeThinkerConfig,
     Qwen3OmniMoeVisionEncoderConfig,
 )
+
+
+def compare_and_save(data, name: str, to_save: bool = False, print_tensor: bool = False):
+    if isinstance(data, paddle.Tensor):
+        data_float = data.astype("float32")
+    else:
+        data_float = data.float()
+    data_np = data_float.detach().cpu().numpy()
+    array_bytes = data_np.tobytes()
+    data_md5 = hashlib.md5(array_bytes).hexdigest()
+    print(f"{name} md5: {data_md5}")
+    if to_save:
+        file = "/root/paddlejob/workspace/env_run/wuhuiyue/helper/qwen3_omni_test/pd_" + name + ".npy"
+        np.save(file, data_np)
+    if print_tensor:
+        print(name, type(data), data.shape, data)
 
 
 # TODO torch.nn.utils.rnn.pad_sequence 暂无paddle实现，写一个替换
@@ -154,9 +176,26 @@ class Qwen3OmniMoePreTrainedModel(PretrainedModel):
     _supports_flash_attn = True
     _supports_sdpa = True
     _supports_attention_backend = True
+    transpose_weight_keys = [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate",
+        "fc1",
+        "fc2",
+        "conv_out",
+        "proj2",
+        "qkv",
+        "linear_fc1",
+        "linear_fc2",
+        "mlp.0",
+        "mlp.2",
+    ]
 
     @paddle.no_grad()
     def _init_weights(self, module):
+        """Initialize the weights."""
         super()._init_weights(module)
         if hasattr(self.config, "initializer_range"):
             std = self.config.initializer_range
@@ -187,7 +226,73 @@ class Qwen3OmniMoePreTrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_aoa_config(cls, config: Qwen3OmniMoeConfig):
-        aoa_config = {"aoa_statements": []}
+        mapping = cls._checkpoint_conversion_mapping
+        llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
+        visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
+        audio_target = next((v for v in mapping.values() if "audio_tower" in v), "audio_tower")
+        llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
+        visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
+        audio_prefix = f"{audio_target}." if not audio_target.endswith(".") else audio_target
+
+        # audio_tower
+        # attention qkv
+        aoa_config = {
+            "aoa_statements": [
+                f"thinker.audio_tower.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {audio_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+        }
+        aoa_config["aoa_statements"] += [
+            f"thinker.audio_tower.layers.$LAYER_ID.self_attn.{x}_proj.bias -> {audio_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias"
+            for x in ("q", "k", "v")
+        ]
+
+        aoa_config["aoa_statements"] += [
+            f"thinker.audio_tower.layers.$LAYER_ID.{x}.weight^T -> {audio_prefix}layers.$LAYER_ID.{x}.weight"
+            for x in ("self_attn.out_proj", "self_attn_layer_norm", "fc1", "fc2", "final_layer_norm")
+        ]
+        aoa_config["aoa_statements"] += [
+            f"thinker.audio_tower.layers.$LAYER_ID.{x}.bias -> {audio_prefix}layers.$LAYER_ID.{x}.bias"
+            for x in ("self_attn.out_proj", "self_attn_layer_norm", "fc1", "fc2", "final_layer_norm")
+        ]
+
+        aoa_config["aoa_statements"] += [
+            f"thinker.audio_tower.{x}.weight^T -> {audio_prefix}{x}.weight"
+            for x in ("ln_post", "conv2d1", "conv2d2", "conv2d3", "proj1", "proj2", "conv_out")
+        ]
+        aoa_config["aoa_statements"] += [
+            f"thinker.audio_tower.{x}.bias -> {audio_prefix}{x}.bias"
+            for x in ("ln_post", "conv2d1", "conv2d2", "conv2d3", "proj1", "proj2")
+        ]
+
+        # visual
+        for x in ("ln_q", "mlp.0", "mlp.2"):
+            aoa_config["aoa_statements"] += [
+                f"thinker.visual.merger_list.{layer_id}.{x}.weight^T -> {visual_prefix}merger_list.{layer_id}.{x}.weight"
+                for layer_id in range(len(config.vision_config.deepstack_visual_indexes))
+            ]
+            aoa_config["aoa_statements"] += [
+                f"thinker.visual.merger_list.{layer_id}.{x}.bias-> {visual_prefix}merger_list.{layer_id}.{x}.bias"
+                for layer_id in range(len(config.vision_config.deepstack_visual_indexes))
+            ]
+        aoa_config["aoa_statements"] += [
+            f"thinker.visual.merger.ln_q.weight^T -> {visual_prefix}merger.ln_q.weight",
+            f"thinker.visual.merger.ln_q.bias -> {visual_prefix}merger.ln_q.bias",
+            f"thinker.visual.patch_embed.proj.weight^T -> {visual_prefix}patch_embed.proj.weight",
+            f"thinker.visual.patch_embed.proj.bias -> {visual_prefix}patch_embed.proj.bias",
+            f"thinker.visual.pos_embed.weight^T -> {visual_prefix}pos_embed.weight",
+        ]
+
+        for x in ("norm1", "norm2", "attn.qkv", "attn.proj", "mlp.linear_fc1", "mlp.linear_fc2"):
+            aoa_config["aoa_statements"] += [
+                f"thinker.visual.blocks.{layer_id}.{x}.weight^T -> {visual_prefix}blocks.{layer_id}.{x}.weight"
+                for layer_id in range(config.vision_config.depth)
+            ]
+            aoa_config["aoa_statements"] += [
+                f"thinker.visual.blocks.{layer_id}.{x}.bias -> {visual_prefix}blocks.{layer_id}.{x}.bias"
+                for layer_id in range(config.vision_config.depth)
+            ]
+
         return aoa_config
 
     @classmethod
@@ -208,6 +313,10 @@ def _get_feat_extract_output_lengths(input_lengths):
 
 
 class Qwen3OmniMoePreTrainedModelForConditionalGeneration(Qwen3OmniMoePreTrainedModel):
+    _checkpoint_conversion_mapping = {
+        "^thinker.audio_tower": "audio_tower",
+        "^thinker.visual": "visual",
+    }
     input_modalities = ("image", "video", "audio", "text")
     _gen_aoa_config = Qwen3OmniMoePreTrainedModel._gen_aoa_config
     _gen_inv_aoa_config = Qwen3OmniMoePreTrainedModel._gen_inv_aoa_config
@@ -580,11 +689,11 @@ def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
 
 
 # def eager_attention_forward(
-#     module: nn.Module,
-#     query: torch.Tensor,
-#     key: torch.Tensor,
-#     value: torch.Tensor,
-#     attention_mask: torch.Tensor | None,
+#     module: nn.Linear,
+#     query: paddle.Tensor,
+#     key: paddle.Tensor,
+#     value: paddle.Tensor,
+#     attention_mask: Optional[paddle.Tensor],
 #     scaling: float,
 #     dropout: float = 0.0,
 #     **kwargs,
@@ -592,14 +701,14 @@ def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
 #     key_states = repeat_kv(key, module.num_key_value_groups)
 #     value_states = repeat_kv(value, module.num_key_value_groups)
 
-#     attn_weights = torch.matmul(query, key_states.transpose(2, 3)) * scaling
+#     attn_weights = paddle.matmul(query, key_states.transpose(2, 3)) * scaling
 #     if attention_mask is not None:
 #         causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
 #         attn_weights = attn_weights + causal_mask
 
-#     attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query.dtype)
+#     attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=paddle.float32).to(query.dtype)
 #     attn_weights = nn.functional.dropout(attn_weights, p=dropout, training=module.training)
-#     attn_output = torch.matmul(attn_weights, value_states)
+#     attn_output = paddle.matmul(attn_weights, value_states)
 #     attn_output = attn_output.transpose(1, 2).contiguous()
 
 #     return attn_output, attn_weights
@@ -626,10 +735,34 @@ class Qwen3OmniMoeAudioAttention(nn.Layer):
         self.attention_dropout = 0.0
         self.is_decoder = False
         self.is_causal = False
-        self.k_proj = nn.Linear(self.embed_dim, self.embed_dim, bias_attr=True)
-        self.v_proj = nn.Linear(self.embed_dim, self.embed_dim, bias_attr=True)
-        self.q_proj = nn.Linear(self.embed_dim, self.embed_dim, bias_attr=True)
-        self.out_proj = nn.Linear(self.embed_dim, self.embed_dim, bias_attr=True)
+        self.k_proj = GeneralLinear.create(
+            self.embed_dim,
+            self.embed_dim,
+            has_bias=True,
+            linear_type="default",
+        )
+        self.v_proj = GeneralLinear.create(
+            self.embed_dim,
+            self.embed_dim,
+            has_bias=True,
+            linear_type="default",
+        )
+        self.q_proj = GeneralLinear.create(
+            self.embed_dim,
+            self.embed_dim,
+            has_bias=True,
+            linear_type="default",
+        )
+        self.out_proj = GeneralLinear.create(
+            self.embed_dim,
+            self.embed_dim,
+            has_bias=True,
+            linear_type="default",
+        )
+        # self.k_proj = nn.Linear(self.embed_dim, self.embed_dim, bias_attr=True)
+        # self.v_proj = nn.Linear(self.embed_dim, self.embed_dim, bias_attr=True)
+        # self.q_proj = nn.Linear(self.embed_dim, self.embed_dim, bias_attr=True)
+        # self.out_proj = nn.Linear(self.embed_dim, self.embed_dim, bias_attr=True)
 
     def forward(
         self,
@@ -637,7 +770,7 @@ class Qwen3OmniMoeAudioAttention(nn.Layer):
         cu_seqlens: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         **kwargs,
-    ) -> tuple[paddle.Tensor, Optional[paddle.Tensor], tuple[paddle.Tensor] | None]:
+    ) -> tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[tuple[paddle.Tensor]]]:
         """Input shape: Batch x Time x Channel"""
 
         seq_length, _ = hidden_states.size()
@@ -651,13 +784,13 @@ class Qwen3OmniMoeAudioAttention(nn.Layer):
         value_states = value_states.transpose(0, 1).unsqueeze(0)
         max_seqlen = (cu_seqlens[1:] - cu_seqlens[:-1]).max()
 
-        # cu_seqlens_rm_first = cu_seqlens[1:]
-        # cu_seqlens_rm_last = cu_seqlens[:-1]
-        # repeats = cu_seqlens_rm_first - cu_seqlens_rm_last
+        cu_seqlens_rm_first = cu_seqlens[1:]
+        cu_seqlens_rm_last = cu_seqlens[:-1]
+        repeats = cu_seqlens_rm_first - cu_seqlens_rm_last
 
-        # startend_row_indices_lts = paddle.repeat_interleave(cu_seqlens_rm_first, repeats).reshape([1, 1, -1, 1])
-        # startend_row_indices_ute = paddle.repeat_interleave(cu_seqlens_rm_last, repeats).reshape([1, 1, -1, 1])
-        # startend_row_indices = paddle.concat([startend_row_indices_lts, startend_row_indices_ute], axis=-1)
+        startend_row_indices_lts = paddle.repeat_interleave(cu_seqlens_rm_first, repeats).reshape([1, 1, -1, 1])
+        startend_row_indices_ute = paddle.repeat_interleave(cu_seqlens_rm_last, repeats).reshape([1, 1, -1, 1])
+        startend_row_indices = paddle.concat([startend_row_indices_lts, startend_row_indices_ute], axis=-1)
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
@@ -667,12 +800,9 @@ class Qwen3OmniMoeAudioAttention(nn.Layer):
             key_states,
             value_states,
             attention_mask=attention_mask,
+            attn_mask_startend_row_indices=startend_row_indices,
             dropout=0.0 if not self.training else self.attention_dropout,
             scaling=self.scaling,
-            cu_seq_lens_q=cu_seqlens,  # pass cu seq lens for FA2
-            cu_seq_lens_k=cu_seqlens,
-            max_length_q=max_seqlen,
-            max_length_k=max_seqlen,
             is_causal=False,
             **kwargs,
         )
@@ -824,7 +954,7 @@ class Qwen3OmniMoeAudioEncoder(Qwen3OmniMoePreTrainedModel):
         chunk_lengths[tail_chunk_index] = feature_lens % (self.n_window * 2)
         chunk_lengths[chunk_lengths == 0] = self.n_window * 2
 
-        chunk_list = input_features.T.split(chunk_lengths.tolist(), dim=0)
+        chunk_list = input_features.T.split(chunk_lengths.tolist(), axis=0)
         # TODO paddle lack of this implement
         # padded_feature = nn.utils.rnn.pad_sequence(chunk_list, batch_first=True).transpose(1, 2)
         padded_feature = pad_sequence(chunk_list, batch_first=True).transpose(1, 2)
@@ -844,14 +974,25 @@ class Qwen3OmniMoeAudioEncoder(Qwen3OmniMoePreTrainedModel):
         padded_feature = padded_feature.unsqueeze(1)
         # Split to chunk to avoid OOM during convolution
         padded_embeds = []
-        for chunk in padded_feature.split(self.conv_chunksize, dim=0):
+        # for chunk in padded_feature.split(self.conv_chunksize, axis=0):
+        batch_size = padded_feature.shape[0]
+        chunk_size = self.conv_chunksize
+
+        for start in range(0, batch_size, chunk_size):
+            end = min(start + chunk_size, batch_size)
+            chunk = padded_feature[start:end]
+            if chunk.dtype != self.conv2d1.weight.dtype:
+                chunk = chunk.astype(self.conv2d1.weight.dtype)
             padded_embed = F.gelu(self.conv2d1(chunk))
             padded_embed = F.gelu(self.conv2d2(padded_embed))
             padded_embed = F.gelu(self.conv2d3(padded_embed))
             padded_embeds.append(padded_embed)
         padded_embed = paddle.cat(padded_embeds, dim=0)
         b, c, f, t = padded_embed.size()
-        padded_embed = self.conv_out(padded_embed.permute(0, 3, 1, 2).contiguous().view(b, t, c * f))
+        # padded_embed = self.conv_out(padded_embed.permute(0, 3, 1, 2).contiguous().view(b, t, c * f))
+        reshape_padded_embed = padded_embed.transpose([0, 3, 1, 2])  # permute
+        reshape_padded_embed = reshape_padded_embed.reshape([b, t, -1])
+        padded_embed = self.conv_out(reshape_padded_embed)
 
         positional_embedding = (
             self.positional_embedding.positional_embedding[: padded_embed.shape[1], :]
@@ -959,8 +1100,19 @@ class Qwen3OmniMoeVisionAttention(nn.Layer):
         self.num_heads = config.num_heads
         self.head_dim = self.dim // self.num_heads
         self.num_key_value_groups = 1  # needed for eager attention
-        self.qkv = nn.Linear(self.dim, self.dim * 3, bias_attr=True)
-        self.proj = nn.Linear(self.dim, self.dim)
+        self.qkv = GeneralLinear.create(
+            self.dim,
+            self.dim * 3,
+            has_bias=True,
+            linear_type="default",
+        )
+        self.proj = GeneralLinear.create(
+            self.dim,
+            self.dim,
+            linear_type="default",
+        )
+        # self.qkv = nn.Linear(self.dim, self.dim * 3, bias_attr=True)
+        # self.proj = nn.Linear(self.dim, self.dim)
         self.scaling = self.head_dim**-0.5
         self.config = config
         self.attention_dropout = 0.0
@@ -989,7 +1141,9 @@ class Qwen3OmniMoeVisionAttention(nn.Layer):
 
         # Other implementations: Process each chunk separately
         lengths = cu_seqlens[1:] - cu_seqlens[:-1]
-        splits = [paddle.split(tensor, lengths.tolist(), dim=2) for tensor in (query_states, key_states, value_states)]
+        splits = [
+            paddle.split(tensor, lengths.tolist(), axis=2) for tensor in (query_states, key_states, value_states)
+        ]
 
         attn_outputs = [
             attention_interface(
@@ -998,6 +1152,7 @@ class Qwen3OmniMoeVisionAttention(nn.Layer):
                 k,
                 v,
                 attention_mask=None,
+                attn_mask_startend_row_indices=None,
                 scaling=self.scaling,
                 dropout=0.0 if not self.training else self.attention_dropout,
                 is_causal=False,
@@ -1057,7 +1212,7 @@ class Qwen3OmniMoeTextTopKRouter(nn.Layer):
         self.top_k = config.num_experts_per_tok
         self.num_experts = config.num_experts
         self.hidden_dim = config.hidden_size
-        self.weight = nn.Parameter(paddle.zeros(self.num_experts, self.hidden_dim))
+        self.weight = nn.Parameter(paddle.zeros(self.hidden_dim, self.num_experts))
 
     def forward(self, hidden_states):
         hidden_states = hidden_states.reshape(-1, self.hidden_dim)
@@ -1169,44 +1324,77 @@ class Qwen3OmniMoeVisionEncoder(Qwen3OmniMoePreTrainedModel):
 
         self.gradient_checkpointing = False
 
-    def rot_pos_emb(self, grid_thw: paddle.Tensor) -> paddle.Tensor:
-        merge_size = self.spatial_merge_size
+    def rot_pos_emb(self, grid_thw):
+        pos_ids = []
+        for t, h, w in grid_thw:
+            hpos_ids = paddle.arange(h).unsqueeze(1).expand([-1, w])
+            hpos_ids = hpos_ids.reshape(
+                [
+                    h // self.spatial_merge_size,
+                    self.spatial_merge_size,
+                    w // self.spatial_merge_size,
+                    self.spatial_merge_size,
+                ]
+            )
+            hpos_ids = hpos_ids.transpose(perm=[0, 2, 1, 3])
+            hpos_ids = hpos_ids.flatten()
 
-        max_hw = int(grid_thw[:, 1:].max().item())
-        freq_table = self.rotary_pos_emb(max_hw)  # (max_hw, dim // 2)
-        device = freq_table.device
+            wpos_ids = paddle.arange(w).unsqueeze(0).expand([h, -1])
+            wpos_ids = wpos_ids.reshape(
+                [
+                    h // self.spatial_merge_size,
+                    self.spatial_merge_size,
+                    w // self.spatial_merge_size,
+                    self.spatial_merge_size,
+                ]
+            )
+            wpos_ids = wpos_ids.transpose([0, 2, 1, 3])
+            wpos_ids = wpos_ids.flatten()
+            pos_ids.append(paddle.stack(x=[hpos_ids, wpos_ids], axis=-1).tile(repeat_times=[t, 1]))
+        pos_ids = paddle.cat(x=pos_ids, axis=0)
+        max_grid_size = grid_thw[:, 1:].max()
+        rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
+        rotary_pos_emb = rotary_pos_emb_full[pos_ids].flatten(start_axis=1)
+        return rotary_pos_emb
 
-        total_tokens = int(paddle.prod(grid_thw, dim=1).sum().item())
-        pos_ids = paddle.empty((total_tokens, 2), dtype=paddle.long, device=device)
+    # def rot_pos_emb(self, grid_thw: paddle.Tensor) -> paddle.Tensor:
+    #     merge_size = self.spatial_merge_size
 
-        offset = 0
-        for num_frames, height, width in grid_thw:
-            merged_h, merged_w = height // merge_size, width // merge_size
+    #     max_hw = int(grid_thw[:, 1:].max().item())
+    #     freq_table = self.rotary_pos_emb(max_hw)  # (max_hw, dim // 2)
+    #     device = freq_table.device
 
-            block_rows = paddle.arange(merged_h, device=device)  # block row indices
-            block_cols = paddle.arange(merged_w, device=device)  # block col indices
-            intra_row = paddle.arange(merge_size, device=device)  # intra-block row offsets
-            intra_col = paddle.arange(merge_size, device=device)  # intra-block col offsets
+    #     total_tokens = int(paddle.prod(grid_thw, dim=1).sum().item())
+    #     pos_ids = paddle.empty((total_tokens, 2), dtype=paddle.long, device=device)
 
-            # Compute full-resolution positions
-            row_idx = block_rows[:, None, None, None] * merge_size + intra_row[None, None, :, None]
-            col_idx = block_cols[None, :, None, None] * merge_size + intra_col[None, None, None, :]
+    #     offset = 0
+    #     for num_frames, height, width in grid_thw:
+    #         merged_h, merged_w = height // merge_size, width // merge_size
 
-            row_idx = row_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
-            col_idx = col_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
+    #         block_rows = paddle.arange(merged_h, device=device)  # block row indices
+    #         block_cols = paddle.arange(merged_w, device=device)  # block col indices
+    #         intra_row = paddle.arange(merge_size, device=device)  # intra-block row offsets
+    #         intra_col = paddle.arange(merge_size, device=device)  # intra-block col offsets
 
-            coords = paddle.stack((row_idx, col_idx), dim=-1)
+    #         # Compute full-resolution positions
+    #         row_idx = block_rows[:, None, None, None] * merge_size + intra_row[None, None, :, None]
+    #         col_idx = block_cols[None, :, None, None] * merge_size + intra_col[None, None, None, :]
 
-            if num_frames > 1:
-                coords = coords.repeat(num_frames, 1)
+    #         row_idx = row_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
+    #         col_idx = col_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
 
-            num_tokens = coords.shape[0]
-            pos_ids[offset : offset + num_tokens] = coords
-            offset += num_tokens
+    #         coords = paddle.stack((row_idx, col_idx), dim=-1)
 
-        embeddings = freq_table[pos_ids]  # lookup rotary embeddings
-        embeddings = embeddings.flatten(1)
-        return embeddings
+    #         if num_frames > 1:
+    #             coords = coords.repeat(num_frames, 1)
+
+    #         num_tokens = coords.shape[0]
+    #         pos_ids[offset : offset + num_tokens] = coords
+    #         offset += num_tokens
+
+    #     embeddings = freq_table[pos_ids]  # lookup rotary embeddings
+    #     embeddings = embeddings.flatten(1)
+    #     return embeddings
 
     def fast_pos_embed_interpolate(self, grid_thw):
         grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
@@ -1224,8 +1412,8 @@ class Qwen3OmniMoeVisionEncoder(Qwen3OmniMoePreTrainedModel):
             h_idxs_ceil = (h_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
             w_idxs_ceil = (w_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
 
-            dh = h_idxs - h_idxs_floor
-            dw = w_idxs - w_idxs_floor
+            dh = h_idxs - h_idxs_floor.astype("float32")
+            dw = w_idxs - w_idxs_floor.astype("float32")
 
             base_h = h_idxs_floor * self.num_grid_per_side
             base_h_ceil = h_idxs_ceil * self.num_grid_per_side
@@ -1258,9 +1446,9 @@ class Qwen3OmniMoeVisionEncoder(Qwen3OmniMoePreTrainedModel):
         patch_pos_embeds_permute = []
         merge_size = self.config.spatial_merge_size
         for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
-            pos_embed = pos_embed.repeat(t, 1)
+            pos_embed = pos_embed.tile([t, 1])
             pos_embed = (
-                pos_embed.view(t, h // merge_size, merge_size, w // merge_size, merge_size, -1)
+                pos_embed.reshape([t, h // merge_size, merge_size, w // merge_size, merge_size, -1])
                 .permute(0, 1, 3, 2, 4, 5)
                 .flatten(0, 4)
             )
@@ -1316,13 +1504,12 @@ class Qwen3OmniMoeVisionEncoder(Qwen3OmniMoePreTrainedModel):
 
         merged_hidden_states = self.merger(hidden_states)
 
-        # TODO return what?
-        return merged_hidden_states, deepstack_feature_lists
         # return BaseModelOutputWithDeepstackFeatures(
         #     last_hidden_state=hidden_states,
         #     pooler_output=merged_hidden_states,
         #     deepstack_features=deepstack_feature_lists,
         # )
+        return merged_hidden_states, deepstack_feature_lists
 
     @property
     def deepstack_merger_list(self):
@@ -1354,9 +1541,9 @@ class Qwen3OmniMoeThinkerTextRotaryEmbedding(nn.Layer):
 
     @staticmethod
     def compute_default_rope_parameters(
-        config: Qwen3OmniMoeTextConfig | None = None,
-        device: Optional["paddle.device.Device"] = None,
-        seq_len: int | None = None,
+        config: Optional[Qwen3OmniMoeTextConfig] = None,
+        device: Optional["paddle.device"] = None,
+        seq_len: Optional[int] = None,
     ) -> tuple["paddle.Tensor", float]:
         """
         Computes the inverse frequencies according to the original RoPE implementation
@@ -1430,6 +1617,17 @@ class Qwen3OmniMoeThinkerTextExperts(nn.Layer):
         self.num_experts = config.num_experts
         self.hidden_dim = config.hidden_size
         self.intermediate_dim = config.moe_intermediate_size
+        self.gate_proj = self.create_parameter(
+            shape=[self.num_experts, self.hidden_dim, self.intermediate_dim],
+            dtype=paddle.get_default_dtype(),
+            is_bias=False,
+        )
+        self.up_proj = self.create_parameter(
+            shape=[self.num_experts, self.hidden_dim, self.intermediate_dim],
+            dtype=paddle.get_default_dtype(),
+            is_bias=False,
+        )
+        # fuse to gate_up_proj
         self.gate_up_proj = self.create_parameter(
             shape=[self.num_experts, self.hidden_dim, 2 * self.intermediate_dim],
             dtype=paddle.get_default_dtype(),
@@ -1480,11 +1678,24 @@ class Qwen3OmniMoeThinkerTextTopKRouter(nn.Layer):
         self.hidden_dim = config.hidden_size
         self.weight = nn.Parameter(paddle.zeros(self.hidden_dim, self.num_experts))
 
-    def forward(self, hidden_states):
+    def forward(self, hidden_states, layer_idx):
         hidden_states = hidden_states.reshape(-1, self.hidden_dim)
         router_logits = F.linear(hidden_states, self.weight)  # (seq_len, num_experts)
-        router_logits = paddle.nn.functional.softmax(router_logits, dtype=paddle.float, dim=-1)
-        router_top_value, router_indices = paddle.topk(router_logits, self.top_k, dim=-1)  # (seq_len, top_k)
+        router_logits = nn.functional.softmax(router_logits, dtype=paddle.float, dim=-1)
+        if layer_idx < 1:
+            # use torch to mock
+            import torch
+
+            torch_router_logits = torch.from_numpy(router_logits.detach().cpu().numpy()).to("cuda")
+            torch_router_top_value, torch_router_indices = torch.topk(torch_router_logits, self.top_k, dim=-1)
+            compare_and_save(torch_router_indices, "topk_torch_router_indices_after_topk", True, True)
+            np_router_top_value = torch_router_top_value.float().detach().cpu().numpy()
+            np_router_indices = torch_router_indices.float().detach().cpu().numpy()
+            router_top_value = paddle.to_tensor(np_router_top_value, dtype="float32").cuda()
+            router_indices = paddle.to_tensor(np_router_indices, dtype="int64").cuda()
+        else:
+            router_top_value, router_indices = paddle.topk(router_logits, self.top_k, dim=-1)  # (seq_len, top_k)
+
         if self.norm_topk_prob:
             router_top_value /= router_top_value.sum(dim=-1, keepdim=True)
         router_top_value = router_top_value.to(router_logits.dtype)
@@ -1498,11 +1709,11 @@ class Qwen3OmniMoeThinkerTextSparseMoeBlock(nn.Layer):
         self.experts = Qwen3OmniMoeThinkerTextExperts(config)
         self.gate = Qwen3OmniMoeThinkerTextTopKRouter(config)
 
-    def forward(self, hidden_states: paddle.Tensor) -> tuple[paddle.Tensor, paddle.Tensor]:
+    def forward(self, hidden_states: paddle.Tensor, layer_idx) -> tuple[paddle.Tensor, paddle.Tensor]:
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states_reshaped = hidden_states.view(-1, hidden_dim)
-        _, routing_weights, selected_experts = self.gate(hidden_states_reshaped)
-        final_hidden_states = self.experts(hidden_states_reshaped, selected_experts, routing_weights)
+        _, routing_weights, selected_experts = self.gate(hidden_states_reshaped, layer_idx)
+        final_hidden_states = self.experts(hidden_states_reshaped, selected_experts, routing_weights, layer_idx)
         return final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
 
 
@@ -1561,30 +1772,81 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Layer):
         super().__init__()
         self.config = config
         self.layer_idx = layer_idx
+        if layer_idx is None:
+            logger.warning_once(
+                f"Instantiating {self.__class__.__name__} without passing `layer_idx` is not recommended and will "
+                "to errors during the forward call, if caching is used. Please make sure to provide a `layer_idx` "
+                "when creating this class."
+            )
+
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
         self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
         self.scaling = self.head_dim**-0.5
         self.attention_dropout = config.attention_dropout
         self.is_causal = True
 
-        self.q_proj = nn.Linear(
-            config.hidden_size, config.num_attention_heads * self.head_dim, bias_attr=config.attention_bias
+        self.q_proj = GeneralLinear.create(
+            config.hidden_size,
+            config.num_attention_heads * self.head_dim,
+            has_bias=config.attention_bias,
+            tp_plan="colwise",
+            config=config,
         )
-        self.k_proj = nn.Linear(
-            config.hidden_size, config.num_key_value_heads * self.head_dim, bias_attr=config.attention_bias
+        self.k_proj = GeneralLinear.create(
+            config.hidden_size,
+            config.num_key_value_heads * self.head_dim,
+            has_bias=config.attention_bias,
+            tp_plan="colwise",
+            config=config,
         )
-        self.v_proj = nn.Linear(
-            config.hidden_size, config.num_key_value_heads * self.head_dim, bias_attr=config.attention_bias
+        self.v_proj = GeneralLinear.create(
+            config.hidden_size,
+            config.num_key_value_heads * self.head_dim,
+            has_bias=config.attention_bias,
+            tp_plan="colwise",
+            config=config,
         )
-        self.o_proj = nn.Linear(
-            config.num_attention_heads * self.head_dim, config.hidden_size, bias_attr=config.attention_bias
+        self.o_proj = GeneralLinear.create(
+            config.num_attention_heads * self.head_dim,
+            config.hidden_size,
+            has_bias=config.attention_bias,
+            tp_plan="rowwise",
+            config=config,
         )
-        self.q_norm = Qwen3OmniMoeThinkerTextRMSNorm(
-            self.head_dim, eps=config.rms_norm_eps
-        )  # unlike olmo, only on the head dim!
-        self.k_norm = Qwen3OmniMoeThinkerTextRMSNorm(
-            self.head_dim, eps=config.rms_norm_eps
-        )  # thus post q_norm does not need reshape
+        # print("config.hidden_size: ", config.hidden_size, " config.num_attention_heads: ", config.num_attention_heads,
+        #     " self.head_dim: ", self.head_dim, " config.attention_bias: ", config.attention_bias)
+        # self.q_proj = nn.Linear(
+        #     config.hidden_size, config.num_attention_heads * self.head_dim, bias_attr=config.attention_bias
+        # )
+        # self.k_proj = nn.Linear(
+        #     config.hidden_size, config.num_key_value_heads * self.head_dim, bias_attr=config.attention_bias
+        # )
+        # self.v_proj = nn.Linear(
+        #     config.hidden_size, config.num_key_value_heads * self.head_dim, bias_attr=config.attention_bias
+        # )
+        # self.o_proj = nn.Linear(
+        #     config.num_attention_heads * self.head_dim, config.hidden_size, bias_attr=config.attention_bias
+        # )
+        self.q_norm = GeneralNorm.create(
+            config,
+            hidden_size=self.head_dim,
+            norm_type="rms_norm",
+            norm_eps=config.rms_norm_eps,
+            has_bias=False,
+        )
+        self.k_norm = GeneralNorm.create(
+            config,
+            hidden_size=self.head_dim,
+            norm_type="rms_norm",
+            norm_eps=config.rms_norm_eps,
+            has_bias=False,
+        )
+        # self.q_norm = Qwen3OmniMoeThinkerTextRMSNorm(
+        #     self.head_dim, eps=config.rms_norm_eps
+        # )  # unlike olmo, only on the head dim!
+        # self.k_norm = Qwen3OmniMoeThinkerTextRMSNorm(
+        #     self.head_dim, eps=config.rms_norm_eps
+        # )  # thus post q_norm does not need reshape
         self.sliding_window = None
 
     def forward(
@@ -1593,15 +1855,36 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Layer):
         position_embeddings: tuple[paddle.Tensor, paddle.Tensor],
         attention_mask: Optional[paddle.Tensor],
         past_key_values: Optional[Cache] = None,
+        output_attentions: bool = False,
         cache_position: Optional[paddle.Tensor] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
-    ) -> tuple[paddle.Tensor, paddle.Tensor | None]:
-        input_shape = hidden_states.shape[:-1]
-        hidden_shape = (*input_shape, -1, self.head_dim)
+    ) -> tuple[paddle.Tensor, Optional[paddle.Tensor]]:
+        # TODO fuse
+        bsz, q_len, _ = hidden_states.shape
 
-        query_states = self.q_norm(self.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
-        key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        query_states = self.q_proj(hidden_states)
+        key_states = self.k_proj(hidden_states)
+        value_states = self.v_proj(hidden_states)
+
+        query_states = query_states.reshape(bsz, q_len, -1, self.head_dim)
+        key_states = key_states.reshape(bsz, q_len, -1, self.head_dim)
+        value_states = value_states.reshape(bsz, q_len, -1, self.head_dim)
+
+        # apply qk_norm
+        query_states = self.q_norm(query_states)
+        key_states = self.k_norm(key_states)
+        # [b,seq,head_nums,head_dim] - > [b,head_nums,seq,head_dim]
+        query_states = query_states.transpose([0, 2, 1, 3])
+        key_states = key_states.transpose([0, 2, 1, 3])
+        value_states = value_states.transpose([0, 2, 1, 3])
+
+        # input_shape = hidden_states.shape[:-1]
+        # hidden_shape = (*input_shape, -1, self.head_dim)
+
+        # query_states = self.q_norm(self.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
+        # key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
+        # value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -1613,20 +1896,58 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Layer):
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
+        # if self.layer_idx < 1:
+        #     print(
+        #         "Qwen3OmniMoeThinkerTextAttention before attention layer_idx: ", self.layer_idx, ", "
+        #         "query_states: ", type(query_states), query_states.shape, query_states
+        #     )
+        #     print(
+        #         "Qwen3OmniMoeThinkerTextAttention before attention layer_idx: ", self.layer_idx, ", "
+        #         "key_states: ", type(key_states), key_states.shape, key_states
+        #     )
+        #     print(
+        #         "Qwen3OmniMoeThinkerTextAttention before attention layer_idx: ", self.layer_idx, ", "
+        #         "value_states: ", type(value_states), value_states.shape, value_states
+        #     )
+
         attn_output, attn_weights = attention_interface(
             self,
             query_states,
             key_states,
             value_states,
-            attention_mask,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             dropout=0.0 if not self.training else self.attention_dropout,
             scaling=self.scaling,
-            sliding_window=self.sliding_window,  # diff with Llama
             **kwargs,
         )
 
-        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+        import os
+
+        import numpy as np
+
+        # if self.layer_idx < 1:
+        #     print(
+        #         "Qwen3OmniMoeThinkerTextAttention after attention layer_idx: ", self.layer_idx, ", "
+        #         "attn_output: ", type(attn_output), attn_output.shape, attn_output
+        #     )
+        #     attn_output_before_o_proj = attn_output.astype("float32")
+        #     np_attn_output_before_o_proj = attn_output_before_o_proj.cpu().numpy()
+        #     np.save("/root/paddlejob/workspace/env_run/wuhuiyue/helper/qwen3_omni_test/pd_attn_output_before_o_proj.npy", np_attn_output_before_o_proj)
+
         attn_output = self.o_proj(attn_output)
+        if not output_attentions:
+            attn_weights = None
+
+        # if self.layer_idx < 1:
+        #     print(
+        #         "Qwen3OmniMoeThinkerTextAttention after o_proj layer_idx: ", self.layer_idx, ", "
+        #         "attn_output: ", type(attn_output), attn_output.shape, attn_output
+        #     )
+        #     attn_output_after_o_proj = attn_output.astype("float32")
+        #     np_attn_output_after_o_proj = attn_output_after_o_proj.cpu().numpy()
+        #     np.save("/root/paddlejob/workspace/env_run/wuhuiyue/helper/qwen3_omni_test/pd_attn_output_after_o_proj.npy", np_attn_output_after_o_proj)
+
         return attn_output, attn_weights
 
 
@@ -1641,7 +1962,7 @@ class Qwen3OmniMoeThinkerTextMLP(nn.Layer):
         self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias_attr=False)
         self.act_fn = ACT2FN[config.hidden_act]
 
-    def forward(self, x):
+    def forward(self, x, layer_idx):
         down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
         return down_proj
 
@@ -1649,6 +1970,7 @@ class Qwen3OmniMoeThinkerTextMLP(nn.Layer):
 class Qwen3OmniMoeThinkerTextDecoderLayer(nn.Layer):
     def __init__(self, config, layer_idx):
         super().__init__()
+        self.layer_idx = layer_idx
         self.self_attn = Qwen3OmniMoeThinkerTextAttention(config, layer_idx)
         if (layer_idx not in config.mlp_only_layers) and (
             config.num_experts > 0 and (layer_idx + 1) % config.decoder_sparse_step == 0
@@ -1656,8 +1978,22 @@ class Qwen3OmniMoeThinkerTextDecoderLayer(nn.Layer):
             self.mlp = Qwen3OmniMoeThinkerTextSparseMoeBlock(config)
         else:
             self.mlp = Qwen3OmniMoeThinkerTextMLP(config, intermediate_size=config.intermediate_size)
-        self.input_layernorm = Qwen3OmniMoeThinkerTextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = Qwen3OmniMoeThinkerTextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.input_layernorm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
+        )
+        self.post_attention_layernorm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
+        )
+        # self.input_layernorm = Qwen3OmniMoeThinkerTextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        # self.post_attention_layernorm = Qwen3OmniMoeThinkerTextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.hidden_size = config.hidden_size
 
     def forward(
@@ -1673,6 +2009,7 @@ class Qwen3OmniMoeThinkerTextDecoderLayer(nn.Layer):
     ) -> paddle.Tensor:
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
+
         # Self Attention
         hidden_states, _ = self.self_attn(
             hidden_states=hidden_states,
@@ -1689,7 +2026,6 @@ class Qwen3OmniMoeThinkerTextDecoderLayer(nn.Layer):
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
         return hidden_states
 
@@ -1705,17 +2041,36 @@ class Qwen3OmniMoeThinkerTextPreTrainedModel(PretrainedModel):
     _supports_flex_attn = True
     _supports_attention_backend = True
     config_class = Qwen3OmniMoeTextConfig
+    transpose_weight_keys = [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate",
+        "fc1",
+        "fc2",
+        "conv_out",
+        "proj2",
+        "qkv",
+        "linear_fc1",
+        "linear_fc2",
+        "mlp.0",
+        "mlp.2",
+    ]
 
     @paddle.no_grad()
     def _init_weights(self, module):
+        """Initialize the weights."""
         super()._init_weights(module)
-        std = self.config.initializer_range
+        if hasattr(self.config, "initializer_range"):
+            std = self.config.initializer_range
+        else:
+            std = getattr(self.config, "initializer_range", 0.02)
+        normal_init = nn.initializer.Normal(mean=0.0, std=std)
         if isinstance(module, Qwen3OmniMoeThinkerTextExperts):
-            normal_init = nn.initializer.Normal(mean=0.0, std=std)
             normal_init(module.gate_up_proj)
             normal_init(module.down_proj)
         elif isinstance(module, Qwen3OmniMoeThinkerTextTopKRouter):
-            normal_init = nn.initializer.Normal(mean=0.0, std=std)
             normal_init(module.weight)
 
 
@@ -1754,7 +2109,14 @@ class Qwen3OmniMoeThinkerTextModel(Qwen3OmniMoePreTrainedModel):
         self.layers = nn.LayerList(
             [Qwen3OmniMoeThinkerTextDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
-        self.norm = Qwen3OmniMoeTextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.norm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=self.config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
+        )
+        # self.norm = Qwen3OmniMoeTextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.rotary_emb = Qwen3OmniMoeThinkerTextRotaryEmbedding(config)
         self.gradient_checkpointing = False
 
@@ -1772,7 +2134,7 @@ class Qwen3OmniMoeThinkerTextModel(Qwen3OmniMoePreTrainedModel):
         deepstack_visual_embeds: Optional[list[paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
-    ) -> tuple | BaseModelOutputWithPast:
+    ) -> Union[tuple, BaseModelOutputWithPast]:
         r"""
         visual_pos_masks (`paddle.Tensor` of shape `(batch_size, seqlen)`, *optional*):
             The mask of the visual positions.
@@ -1841,7 +2203,6 @@ class Qwen3OmniMoeThinkerTextModel(Qwen3OmniMoePreTrainedModel):
         # create position embeddings to be shared across the decoder layers
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
-        # decoder layers
         for layer_idx, decoder_layer in enumerate(self.layers):
             layer_outputs = decoder_layer(
                 hidden_states,
@@ -1890,15 +2251,15 @@ class Qwen3OmniMoeThinkerCausalLMOutputWithPast(MoECausalLMOutputWithPast):
             The rope index difference between sequence length and multimodal rope.
     """
 
-    rope_deltas: paddle.Tensor | None = None
+    rope_deltas: Optional[paddle.Tensor] = None
 
 
 def load_balancing_loss_func(
-    gate_logits: paddle.Tensor | tuple[paddle.Tensor] | None,
-    num_experts: int | None = None,
+    gate_logits: Optional[Union[paddle.Tensor, tuple[paddle.Tensor]]],
+    num_experts: Optional[int] = None,
     top_k=2,
-    attention_mask: paddle.Tensor | None = None,
-) -> paddle.Tensor | int:
+    attention_mask: Optional[paddle.Tensor] = None,
+) -> Union[paddle.Tensor, int]:
     r"""
     Computes auxiliary load balancing loss as in Switch Transformer.
 
@@ -1992,7 +2353,8 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         self.visual = Qwen3OmniMoeVisionEncoder._from_config(config.vision_config)
         self.vocab_size = config.text_config.vocab_size
         self.model = Qwen3OmniMoeThinkerTextModel._from_config(config.text_config)
-        self.lm_head = nn.Linear(config.text_config.hidden_size, config.text_config.vocab_size, bias_attr=False)
+        self.lm_head = GeneralLMHead(config.text_config)
+        self.criterion = CriterionLayer(config.text_config)
         self.spatial_merge_size = config.vision_config.spatial_merge_size
         self.rope_deltas = None
         self.num_experts = config.text_config.num_experts
@@ -2017,7 +2379,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         video_grid_thw (`paddle.Tensor` of shape `(num_videos, 3)`, *optional*):
             The temporal, height and width of feature shape of each video in LLM.
         """
-        pixel_values_videos = pixel_values_videos.type(self.visual.dtype)
+        pixel_values_videos = pixel_values_videos.astype(self.visual.config.dtype)
         return self.visual(pixel_values_videos, grid_thw=video_grid_thw, **kwargs)
 
     def get_image_features(
@@ -2032,7 +2394,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         image_grid_thw (`paddle.Tensor` of shape `(num_images, 3)`, *optional*):
             The temporal, height and width of feature shape of each image in LLM.
         """
-        pixel_values = pixel_values.type(self.visual.dtype)
+        pixel_values = pixel_values.astype(self.visual.config.dtype)
         return self.visual(pixel_values, grid_thw=image_grid_thw, **kwargs)
 
     def get_audio_features(
@@ -2057,10 +2419,11 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
             audio_feature_lengths = None
 
         feature_lens = audio_feature_lengths if audio_feature_lengths is not None else feature_attention_mask.sum(-1)
+        return_dict = kwargs.pop("return_dict", True)
         audio_outputs = self.audio_tower(
             input_features,
             feature_lens=feature_lens,
-            return_dict=True,
+            return_dict=return_dict,
             **kwargs,
         )
 
@@ -2097,17 +2460,14 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
             special_video_mask = input_ids == self.config.video_token_id
             special_audio_mask = input_ids == self.config.audio_token_id
 
-        # n_image_tokens = special_image_mask.sum()
+        n_image_tokens = special_image_mask.sum()
         special_image_mask = special_image_mask.unsqueeze(-1).expand_as(inputs_embeds).to(inputs_embeds.device)
 
-        # n_video_tokens = special_video_mask.sum()
+        n_video_tokens = special_video_mask.sum()
         special_video_mask = special_video_mask.unsqueeze(-1).expand_as(inputs_embeds).to(inputs_embeds.device)
 
         special_audio_mask = special_audio_mask.unsqueeze(-1).expand_as(inputs_embeds).to(inputs_embeds.device)
         return special_image_mask, special_video_mask, special_audio_mask
-
-    def loss_function(self, logits, labels, vocab_size):
-        return paddle.nn.functional.cross_entropy(logits.view(-1, vocab_size), labels.view(-1))  # dummy one
 
     def forward(
         self,
@@ -2126,12 +2486,12 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         rope_deltas=None,
         labels=None,
         use_cache=None,
-        output_router_logits: bool | None = None,
+        output_router_logits: Optional[bool] = None,
         use_audio_in_video=None,
         cache_position=None,
         video_second_per_grid=None,
         **kwargs,
-    ) -> tuple | Qwen3OmniMoeThinkerCausalLMOutputWithPast:
+    ) -> Union[tuple, Qwen3OmniMoeThinkerCausalLMOutputWithPast]:
         r"""
         image_grid_thw (`paddle.Tensor` of shape `(num_images, 3)`, *optional*):
             The temporal, height and width of feature shape of each image in LLM.
@@ -2214,9 +2574,11 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
             # image_outputs: BaseModelOutputWithDeepstackFeatures = self.get_image_features(
             #     pixel_values, image_grid_thw, return_dict=True
             # )
-            image_outputs = self.get_image_features(pixel_values, image_grid_thw, return_dict=True)
-            image_embeds = image_outputs.pooler_output
-            image_embeds_multiscale = image_outputs.deepstack_features
+            # image_embeds = image_outputs.pooler_output
+            # image_embeds_multiscale = image_outputs.deepstack_features
+            image_embeds, image_embeds_multiscale = self.get_image_features(
+                pixel_values, image_grid_thw, return_dict=True
+            )
             image_embeds = image_embeds.to(inputs_embeds.device, inputs_embeds.dtype)
             image_mask, _, _ = self.get_placeholder_mask(
                 input_ids, inputs_embeds=inputs_embeds, image_features=image_embeds
@@ -2226,7 +2588,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         if pixel_values_videos is not None:
             video_embeds, video_embeds_multiscale = self.get_video_features(
                 pixel_values_videos, video_grid_thw, return_dict=True
-            ).pooler_output
+            )
 
             video_embeds = video_embeds.to(inputs_embeds.device, inputs_embeds.dtype)
             _, video_mask, _ = self.get_placeholder_mask(
@@ -2242,7 +2604,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
             image_mask_joint = image_mask[visual_pos_masks]
             video_mask_joint = video_mask[visual_pos_masks]
             for img_embed, vid_embed in zip(image_embeds_multiscale, video_embeds_multiscale):
-                embed_joint = img_embed.new_zeros(visual_pos_masks.sum(), img_embed.shape[-1])
+                embed_joint = paddle.zeros([visual_pos_masks.sum(), img_embed.shape[-1]], dtype=img_embed.dtype)
                 embed_joint[image_mask_joint, :] = img_embed
                 embed_joint[video_mask_joint, :] = vid_embed
                 visual_embeds_multiscale_joint = visual_embeds_multiscale_joint + (embed_joint,)
@@ -2264,7 +2626,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         if attention_mask is not None and position_ids is None:
             past_key_values_length = 0 if past_key_values is None else past_key_values.get_seq_length()
             if past_key_values_length == 0 or self.rope_deltas is None:
-                delta0 = (1 - attention_mask).sum(dim=-1).unsqueeze(1)
+                delta0 = (1 - attention_mask).sum(dim=-1).unsqueeze(1).astype("float32")
                 position_ids, rope_deltas = self.get_rope_index(
                     input_ids,
                     image_grid_thw,
@@ -2302,9 +2664,7 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
 
         loss = None
         if labels is not None:
-            loss = self.loss_function(
-                logits=logits, labels=labels, vocab_size=self.config.get_text_config().vocab_size
-            )
+            loss = self.criterion(logits, labels)
 
         aux_loss = None
         if output_router_logits:
@@ -2397,7 +2757,7 @@ class Qwen3OmniMoeTalkerCodePredictorOutputWithPast(CausalLMOutputWithPast):
         Current generation step of code predictor model.
     """
 
-    generation_steps: int | None = None
+    generation_steps: Optional[int] = None
 
 
 # TODO
@@ -2436,18 +2796,42 @@ class Qwen3OmniMoeTalkerCodePredictorAttention(nn.Layer):
         self.attention_dropout = config.attention_dropout
         self.is_causal = True
 
-        self.q_proj = nn.Linear(
-            config.hidden_size, config.num_attention_heads * self.head_dim, bias_attr=config.attention_bias
+        self.q_proj = GeneralLinear.create(
+            config.hidden_size,
+            config.num_attention_heads * self.head_dim,
+            has_bias=config.attention_bias,
+            linear_type="default",
         )
-        self.k_proj = nn.Linear(
-            config.hidden_size, config.num_key_value_heads * self.head_dim, bias_attr=config.attention_bias
+        self.k_proj = GeneralLinear.create(
+            config.hidden_size,
+            config.num_key_value_heads * self.head_dim,
+            has_bias=config.attention_bias,
+            linear_type="default",
         )
-        self.v_proj = nn.Linear(
-            config.hidden_size, config.num_key_value_heads * self.head_dim, bias_attr=config.attention_bias
+        self.v_proj = GeneralLinear.create(
+            config.hidden_size,
+            config.num_key_value_heads * self.head_dim,
+            has_bias=config.attention_bias,
+            linear_type="default",
         )
-        self.o_proj = nn.Linear(
-            config.num_attention_heads * self.head_dim, config.hidden_size, bias_attr=config.attention_bias
+        self.o_proj = GeneralLinear.create(
+            config.num_attention_heads * self.head_dim,
+            config.hidden_size,
+            has_bias=config.attention_bias,
+            linear_type="default",
         )
+        # self.q_proj = nn.Linear(
+        #     config.hidden_size, config.num_attention_heads * self.head_dim, bias_attr=config.attention_bias
+        # )
+        # self.k_proj = nn.Linear(
+        #     config.hidden_size, config.num_key_value_heads * self.head_dim, bias_attr=config.attention_bias
+        # )
+        # self.v_proj = nn.Linear(
+        #     config.hidden_size, config.num_key_value_heads * self.head_dim, bias_attr=config.attention_bias
+        # )
+        # self.o_proj = nn.Linear(
+        #     config.num_attention_heads * self.head_dim, config.hidden_size, bias_attr=config.attention_bias
+        # )
         self.q_norm = Qwen3OmniMoeRMSNorm(self.head_dim, eps=config.rms_norm_eps)  # unlike olmo, only on the head dim!
         self.k_norm = Qwen3OmniMoeRMSNorm(
             self.head_dim, eps=config.rms_norm_eps
@@ -2461,6 +2845,7 @@ class Qwen3OmniMoeTalkerCodePredictorAttention(nn.Layer):
         attention_mask: Optional[paddle.Tensor],
         past_key_values: Optional[Cache] = None,
         cache_position: Optional[paddle.Tensor] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> tuple[paddle.Tensor, Optional[paddle.Tensor]]:
         input_shape = hidden_states.shape[:-1]
@@ -2485,7 +2870,8 @@ class Qwen3OmniMoeTalkerCodePredictorAttention(nn.Layer):
             query_states,
             key_states,
             value_states,
-            attention_mask,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             dropout=0.0 if not self.training else self.attention_dropout,
             scaling=self.scaling,
             sliding_window=self.sliding_window,  # diff with Llama
@@ -2583,8 +2969,8 @@ class Qwen3OmniMoeRotaryEmbedding(nn.Layer):
     @staticmethod
     def compute_default_rope_parameters(
         config: Optional[Qwen3OmniMoeConfig] = None,
-        device: Optional["paddle.device.Device"] = None,
-        seq_len: int | None = None,
+        device: Optional["paddle.device"] = None,
+        seq_len: Optional[int] = None,
     ) -> tuple["paddle.Tensor", float]:
         """
         Computes the inverse frequencies according to the original RoPE implementation
@@ -2743,12 +3129,8 @@ class Qwen3OmniMoeTalkerCodePredictorModelForConditionalGeneration(Qwen3OmniMoeP
         super().__init__(config)
         self.model = Qwen3OmniMoeTalkerCodePredictorModel._from_config(config)
         self.vocab_size = config.vocab_size
-        self.lm_head = nn.LayerList(
-            [
-                nn.Linear(config.hidden_size, config.vocab_size, bias_attr=False)
-                for _ in range(config.num_code_groups - 1)
-            ]
-        )
+        self.lm_head = nn.LayerList([GeneralLMHead(config) for _ in range(config.num_code_groups - 1)])
+        self.criterion = CriterionLayer(config)
 
     def forward(
         self,
@@ -2792,7 +3174,7 @@ class Qwen3OmniMoeTalkerCodePredictorModelForConditionalGeneration(Qwen3OmniMoeP
 
         loss = None
         if labels is not None:
-            loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **kwargs)
+            loss = self.criterion(logits, labels)
 
         return Qwen3OmniMoeTalkerCodePredictorOutputWithPast(
             loss=loss,
@@ -2902,12 +3284,12 @@ class Qwen3OmniMoeTalkerTextTopKRouter(nn.Layer):
         self.num_experts = config.num_experts
         self.norm_topk_prob = config.norm_topk_prob
         self.hidden_dim = config.hidden_size
-        self.weight = nn.Parameter(paddle.zeros(self.num_experts, self.hidden_dim))
+        self.weight = nn.Parameter(paddle.zeros(self.hidden_dim, self.num_experts))
 
     def forward(self, hidden_states):
         hidden_states = hidden_states.reshape(-1, self.hidden_dim)
         router_logits = F.linear(hidden_states, self.weight)  # (seq_len, num_experts)
-        router_logits = paddle.nn.functional.softmax(router_logits, dtype=paddle.float, dim=-1)
+        router_logits = nn.functional.softmax(router_logits, dtype=paddle.float, dim=-1)
         router_top_value, router_indices = paddle.topk(router_logits, self.top_k, dim=-1)  # (seq_len, top_k)
         if self.norm_topk_prob:
             router_top_value /= router_top_value.sum(dim=-1, keepdim=True)
@@ -3021,7 +3403,7 @@ class Qwen3OmniMoeTalkerModel(Qwen3OmniMoePreTrainedModel):
         deepstack_visual_embeds: Optional[list[paddle.Tensor]] = None,
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
-    ) -> tuple | BaseModelOutputWithPast:
+    ) -> Union[tuple, BaseModelOutputWithPast]:
         r"""
         visual_pos_masks (`paddle.Tensor` of shape `(batch_size, seqlen)`, *optional*):
             The mask of the visual positions.
@@ -3155,6 +3537,7 @@ class Qwen3OmniMoeTalkerForConditionalGeneration(Qwen3OmniMoeThinkerTextPreTrain
         )
         self.rope_deltas = None
         self.spatial_merge_size = self.config.spatial_merge_size
+        self.criterion = CriterionLayer(config.text_config)
 
     def forward(
         self,
@@ -3229,7 +3612,7 @@ class Qwen3OmniMoeTalkerForConditionalGeneration(Qwen3OmniMoeThinkerTextPreTrain
                 position_ids = position_ids.add(delta)
                 position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
 
-        outputs: MoEModelOutputWithPast = self.model(
+        outputs: MoeModelOutputWithPast = self.model(
             input_ids=None,
             attention_mask=attention_mask,
             position_ids=position_ids,
@@ -3246,7 +3629,7 @@ class Qwen3OmniMoeTalkerForConditionalGeneration(Qwen3OmniMoeThinkerTextPreTrain
 
         loss = None
         if labels is not None:
-            loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **kwargs)
+            loss = self.criterion(logits, labels)
 
         aux_loss = None
         if output_router_logits:
@@ -3483,18 +3866,42 @@ class Qwen3OmniMoeCode2WavAttention(nn.Layer):
         self.attention_dropout = config.attention_dropout
         self.is_causal = True
 
-        self.q_proj = nn.Linear(
-            config.hidden_size, config.num_attention_heads * self.head_dim, bias_attr=config.attention_bias
+        self.q_proj = GeneralLinear.create(
+            config.hidden_size,
+            config.num_attention_heads * self.head_dim,
+            has_bias=config.attention_bias,
+            linear_type="default",
         )
-        self.k_proj = nn.Linear(
-            config.hidden_size, config.num_key_value_heads * self.head_dim, bias_attr=config.attention_bias
+        self.k_proj = GeneralLinear.create(
+            config.hidden_size,
+            config.num_key_value_heads * self.head_dim,
+            has_bias=config.attention_bias,
+            linear_type="default",
         )
-        self.v_proj = nn.Linear(
-            config.hidden_size, config.num_key_value_heads * self.head_dim, bias_attr=config.attention_bias
+        self.v_proj = GeneralLinear.create(
+            config.hidden_size,
+            config.num_key_value_heads * self.head_dim,
+            has_bias=config.attention_bias,
+            linear_type="default",
         )
-        self.o_proj = nn.Linear(
-            config.num_attention_heads * self.head_dim, config.hidden_size, bias_attr=config.attention_bias
+        self.o_proj = GeneralLinear.create(
+            config.num_attention_heads * self.head_dim,
+            config.hidden_size,
+            has_bias=config.attention_bias,
+            linear_type="default",
         )
+        # self.q_proj = nn.Linear(
+        #     config.hidden_size, config.num_attention_heads * self.head_dim, bias_attr=config.attention_bias
+        # )
+        # self.k_proj = nn.Linear(
+        #     config.hidden_size, config.num_key_value_heads * self.head_dim, bias_attr=config.attention_bias
+        # )
+        # self.v_proj = nn.Linear(
+        #     config.hidden_size, config.num_key_value_heads * self.head_dim, bias_attr=config.attention_bias
+        # )
+        # self.o_proj = nn.Linear(
+        #     config.num_attention_heads * self.head_dim, config.hidden_size, bias_attr=config.attention_bias
+        # )
         self.q_norm = nn.Identity()
         self.k_norm = nn.Identity()
         self.sliding_window = config.sliding_window
@@ -3506,8 +3913,9 @@ class Qwen3OmniMoeCode2WavAttention(nn.Layer):
         attention_mask: Optional[paddle.Tensor],
         past_key_values: Optional[Cache] = None,
         cache_position: Optional[paddle.Tensor] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
-    ) -> tuple[paddle.Tensor, paddle.Tensor | None]:
+    ) -> tuple[paddle.Tensor, Optional[paddle.Tensor]]:
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, self.head_dim)
 
@@ -3523,16 +3931,15 @@ class Qwen3OmniMoeCode2WavAttention(nn.Layer):
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
-        # attention_interface: Callable = eager_attention_forward
-        if self.config._attn_implementation != "eager":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         attn_output, attn_weights = attention_interface(
             self,
             query_states,
             key_states,
             value_states,
-            attention_mask,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indice=attn_mask_startend_row_indices,
             dropout=0.0 if not self.training else self.attention_dropout,
             scaling=self.scaling,
             sliding_window=self.sliding_window,  # diff with Llama
@@ -3617,7 +4024,7 @@ class Qwen3OmniMoeCode2WavTransformerLayer(nn.Layer):
         use_cache: Optional[bool] = False,
         cache_position: Optional[paddle.Tensor] = None,
         **kwargs,
-    ) -> tuple[paddle.Tensor, tuple[paddle.Tensor, paddle.Tensor] | None]:
+    ) -> tuple[paddle.Tensor, Optional[tuple[paddle.Tensor, paddle.Tensor]]]:
         """
         Args:
             hidden_states (`paddle.Tensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
@@ -4019,7 +4426,7 @@ class Qwen3OmniMoeForConditionalGeneration(Qwen3OmniMoePreTrainedModel, Generati
         input_ids: Optional[paddle.Tensor] = None,
         speaker: str = "Ethan",
         use_audio_in_video: bool = False,
-        return_audio: bool | None = None,
+        return_audio: Optional[bool] = None,
         thinker_max_new_tokens: int = 1024,
         thinker_eos_token_id: int = 151645,
         talker_max_new_tokens: int = 4096,

@@ -1954,44 +1954,6 @@ class Trainer:
             _data_load_start_time = time.time()
 
             for step, inputs in enumerate(epoch_iterator):
-                if step == 59:
-                    break
-                save_inputs = os.getenv("FLAGS_save_data", "false").lower() in ("true", "1", "t")
-                if save_inputs:
-                    save_dir = os.getenv("FLAGS_save_data_dir", "./formers_tmp")
-                    os.makedirs(save_dir, exist_ok=True)
-
-                    fields_to_save = [
-                        "input_ids",
-                        "labels",
-                        "position_ids",
-                        "image_grid_thw",
-                        "pixel_values",
-                        "input_features",
-                    ]
-                    for field in fields_to_save:
-                        if field in inputs and inputs[field] is not None:
-                            save_path = f"{save_dir}/{step}_{field}.npy"
-                            try:
-                                data = inputs[field]
-                                if hasattr(data, "dtype") and "bfloat16" in str(data.dtype).lower():
-                                    data = data.astype("float32")
-                                if hasattr(data, "numpy"):
-                                    data = data.numpy()
-                                # # 取第一个样本（batch中第一个）
-                                # if hasattr(data, "__len__") and len(data) > 0:
-                                #     data = (
-                                #         data[0]
-                                #         if hasattr(data[0], "__len__") or isinstance(data[0], (int, float))
-                                #         else data
-                                #     )
-                                np.save(save_path, data)
-                            except Exception as e:
-                                logger.warning(f"[Alignment Debug] Failed to save {field}: {e}")
-                        else:
-                            logger.info(f"[Alignment Debug] Field {field} not found or is None in inputs.")
-                    logger.info(f"[Alignment Debug] Saved step {step} data to {save_dir}")
-                    continue
                 # Record data loading time for this iteration
                 _data_load_end_time = time.time()
                 _data_load_time_for_global_step += _data_load_end_time - _data_load_start_time
@@ -3556,6 +3518,59 @@ class Trainer:
         else:
             labels = None
 
+        ################## Input Saving Debug Block ##################
+        import os
+
+        save_mode = os.getenv("FLAGS_save_inputs_mode", "").lower()  # "npz" for all, "npy" for selected fields
+        if save_mode in ("npz", "npy"):
+            save_dir = os.getenv("FLAGS_save_inputs_dir", f"./saved_inputs/pdformers/{save_mode}")
+            os.makedirs(save_dir, exist_ok=True)
+            current_step = self.state.global_step
+
+            def _to_numpy(value):
+                """Convert tensor/array to numpy array."""
+                if value is None:
+                    return None
+                # Handle paddle bfloat16
+                if hasattr(value, "dtype") and str(value.dtype) == "paddle.bfloat16":
+                    value = value.astype("float32")
+                if hasattr(value, "numpy"):  # paddle.Tensor
+                    return value.numpy()
+                elif isinstance(value, np.ndarray):
+                    return value
+                elif isinstance(value, (list, tuple)):
+                    try:
+                        return np.array(value)
+                    except:
+                        return None
+                return None
+
+            if save_mode == "npz":
+                # Save all inputs to a single npz file
+                dump_dict = {k: arr for k, v in inputs.items() if (arr := _to_numpy(v)) is not None}
+                np.savez(os.path.join(save_dir, f"inputs_step_{current_step}.npz"), **dump_dict)
+                logger.info(f"[Debug] Dumped all inputs to {save_dir}/inputs_step_{current_step}.npz")
+
+            elif save_mode == "npy":
+                # Save selected fields as separate npy files
+                fields_env = os.getenv(
+                    "FLAGS_save_inputs_fields",
+                    "input_ids, labels,position_ids, image_grid_thw, pixel_values, input_features",
+                )
+                fields_to_save = [f.strip() for f in fields_env.split(",")]
+                for field in fields_to_save:
+                    if field in inputs and inputs[field] is not None:
+                        try:
+                            arr = _to_numpy(inputs[field])
+                            if arr is not None:
+                                np.save(os.path.join(save_dir, f"{current_step}_{field}.npy"), arr)
+                        except Exception as e:
+                            logger.warning(f"[Debug] Failed to save {field}: {e}")
+                    else:
+                        logger.info(f"[Debug] Field {field} not found or is None.")
+                logger.info(f"[Debug] Saved step {current_step} fields to {save_dir}")
+        ################## End Input Saving Debug Block ##################
+
         outputs = model(**inputs)
 
         if self.criterion is not None:
@@ -3581,14 +3596,14 @@ class Trainer:
             self._past = outputs[self.args.past_index]
 
         # We don't use .loss here since the model may return tuples instead of ModelOutput.
-        loss = outputs["loss"] if isinstance(outputs, dict) else outputs
         if isinstance(outputs, dict):
             loss = outputs["loss"]
         elif isinstance(outputs, tuple):
             loss = outputs[0]
         else:
             loss = outputs
-
+        if len(loss) > 0:
+            loss = loss[0]  # hack for some problem in modeling
         return (loss, outputs) if return_outputs else loss
 
     def _enable_delay_scale_loss(self):

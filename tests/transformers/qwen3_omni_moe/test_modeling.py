@@ -16,24 +16,88 @@ from __future__ import annotations
 import glob
 import os
 
+import paddle
+
+paddle.set_printoptions(precision=10)
+
+import random
+
 import numpy as np
 import paddle
 
 from paddleformers.transformers import (
+    AutoConfig,
+    AutoModel,
+    AutoTokenizer,
+    ProcessorMixin,
+    Qwen2Tokenizer,
     Qwen3OmniMoeThinkerConfig,
     Qwen3OmniMoeThinkerForConditionalGeneration,
+    Qwen3VLMoeConfig,
+    Qwen3VLMoeTextConfig,
 )
 
 MODEL_PATH = "/root/paddlejob/workspace/env_run/chenxuran/models/customQwen3-Omni-30B-A3B-Instruct/"
 
+global_rng = random.Random()
+
+
+def ids_tensor(shape, vocab_size, rng=None, name=None):
+    #  Creates a random int32 tensor of the shape within the vocab size
+    if rng is None:
+        rng = global_rng
+
+    total_dims = 1
+    for dim in shape:
+        total_dims *= dim
+
+    values = []
+    for _ in range(total_dims):
+        values.append(rng.randint(0, vocab_size - 1))
+
+    return paddle.to_tensor(values, dtype="int64").cuda().view(shape).contiguous()
+
+
+def floats_tensor(shape, scale=1.0, rng=None, name=None):
+    """Creates a random float32 tensor"""
+    if rng is None:
+        rng = global_rng
+
+    total_dims = 1
+    for dim in shape:
+        total_dims *= dim
+
+    values = []
+    for _ in range(total_dims):
+        values.append(rng.random() * scale)
+
+    return paddle.to_tensor(values, dtype="float32").cuda().view(shape).contiguous()
+
 
 def test_thinker_text_model():
     config = Qwen3OmniMoeThinkerConfig.from_pretrained(MODEL_PATH)
+    config.text_config.num_hidden_layers = 12
+    config.text_config._attn_implementation = "sdpa"
+    config.vision_config._attn_implementation = "sdpa"
+    config.audio_config._attn_implementation = "sdpa"
 
-    model = Qwen3OmniMoeThinkerForConditionalGeneration.from_config(config)
+    model = Qwen3OmniMoeThinkerForConditionalGeneration.from_pretrained(
+        MODEL_PATH,
+        config=config,
+        load_checkpoint_format="",
+    )
 
-    input_ids = paddle.to_tensor(np.random.randint(0, 200, [1, 20]).astype("int64"))
-    output_ids = model(input_ids=input_ids)
+    batch_size = 1
+    seq_length = 2048
+    vocab_size = config.get_text_config().vocab_size
+    patch_size = config.vision_config.patch_size
+    spatial_merge_size = config.vision_config.spatial_merge_size
+    image_row_size = 56
+    image_col_size = 56
+    num_channels = 3
+    temporal_patch_size = config.vision_config.temporal_patch_size
+    num_mel_bins = 128
+    feat_seq_length = 290
 
     print("output_ids: ", type(output_ids), output_ids)
 
@@ -80,6 +144,84 @@ def test_thinker_with_dumped_inputs(dumped_input_path=None):
     print("output_ids: ", type(output_ids), output_ids)
 
     return output_ids
+
+    # calculate image tokens
+    num_image_tokens = (image_row_size * image_col_size) // (spatial_merge_size**2)
+
+    # calculate image tokens
+    video_temporal = 4
+    video_row_size = 28
+    video_col_size = 28
+    num_video_tokens = (video_temporal * video_row_size * video_col_size) // (spatial_merge_size**2)
+
+    # calculate audio tokens (the same to _get_feat_extract_output_lengths)
+    input_lengths_leave = feat_seq_length % 100
+    feat_lengths = (input_lengths_leave - 1) // 2 + 1
+    num_audio_tokens = ((feat_lengths - 1) // 2 + 1 - 1) // 2 + 1 + (feat_seq_length // 100) * 13
+
+    input_ids = ids_tensor([batch_size, seq_length], vocab_size - 3) + 3
+    # set the num_image_tokens position to image_token_id in order to match pixel_values
+    input_ids[0, :num_image_tokens] = config.image_token_id
+    # set the num_video_tokens position to video_token_id in order to match pixel_values_videos
+    input_ids[0, num_image_tokens : num_image_tokens + num_video_tokens] = config.video_token_id
+    # set the num_audio_tokens position to audio_token_id in order to match input_features
+    input_ids[
+        0, num_image_tokens + num_video_tokens : num_image_tokens + num_video_tokens + num_audio_tokens
+    ] = config.audio_token_id
+
+    print(f"====== multimodal tokens confirm ======")
+    print(f"image_token_id: {config.image_token_id}")
+    print(f"video_token_id: {config.video_token_id}")
+    print(f"audio_token_id: {config.audio_token_id}")
+    print(f"num_image_tokens (expected): {num_image_tokens}")
+    print(f"num_video_tokens (expected): {num_video_tokens}")
+    print(f"num_audio_tokens (expected): {num_audio_tokens}")
+    print(f"image_tokens in input_ids: {(input_ids == config.image_token_id).sum().item()}")
+    print(f"video_tokens in input_ids: {(input_ids == config.video_token_id).sum().item()}")
+    print(f"audio_tokens in input_ids: {(input_ids == config.audio_token_id).sum().item()}")
+    attention_mask = paddle.ones(input_ids.shape, dtype="int64").to(input_ids.place)
+
+    # image data: pixel_values and image_grid_thw
+    pixel_values = floats_tensor(
+        [
+            batch_size * (image_row_size * image_col_size),
+            num_channels * (patch_size**2) * temporal_patch_size,
+        ]
+    ).to(input_ids.place)
+    pixel_grid_thw = paddle.to_tensor(
+        [[1, image_row_size, image_col_size]] * batch_size, dtype="int64", place=input_ids.place
+    )
+
+    # video data: pixel_values_videos and video_grid_thw
+    # differ from image with temporal > 1
+    pixel_values_videos = floats_tensor(
+        [
+            batch_size * (video_temporal * video_row_size * video_col_size),
+            num_channels * (patch_size**2) * temporal_patch_size,
+        ]
+    ).to(input_ids.place)
+    video_grid_thw = paddle.to_tensor(
+        [[video_temporal, video_row_size, video_col_size]] * batch_size, dtype="int64", place=input_ids.place
+    )
+
+    # audio data: input_features and feature_attention_mask
+    input_features_values = floats_tensor([batch_size, num_mel_bins, feat_seq_length]).to(input_ids.place)
+    feature_attention_mask = paddle.ones([batch_size, feat_seq_length], dtype="int64").to(input_ids.place)
+
+    inputs_dict = {
+        "input_features": input_features_values,
+        "feature_attention_mask": feature_attention_mask,
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "image_grid_thw": pixel_grid_thw,
+        "pixel_values": pixel_values,
+        "pixel_values_videos": pixel_values_videos,
+        "video_grid_thw": video_grid_thw,
+    }
+
+    output_ids = model(**inputs_dict)
+
+    print("output_ids: ", type(output_ids), output_ids)
 
 
 if __name__ == "__main__":
