@@ -1,5 +1,4 @@
-# coding=utf-8
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,12 +35,6 @@ class TestHFMultiSourceAudioProcessor(unittest.TestCase):
     def preprocess(self, feature_extractor):
         inputs = feature_extractor(self.audio, return_tensors="pd")
         self.assertIsInstance(inputs["pixel_values"], paddle.Tensor)
-
-    # def test_ai_studio(self):
-    #     image_processor = AutoImageProcessor.from_pretrained(
-    #         "PaddleFormers/tiny-random-qwen3omni", download_hub="aistudio"
-    #     )
-    #     self.preprocess(image_processor)
 
     @skip_for_none_ce_case
     def test_model_scope(self):
