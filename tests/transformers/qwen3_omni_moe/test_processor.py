@@ -28,7 +28,9 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     def setUpClass(cls):
         cls.tmpdir = tempfile.mkdtemp()
 
-        processor = AutoProcessor.from_pretrained("Qwen/Qwen3-Omni-30B-A3B-Instruct", download_hub="modelscope")
+        processor = Qwen3OmniMoeProcessor.from_pretrained(
+            "Qwen/Qwen3-Omni-30B-A3B-Instruct", download_hub="modelscope"
+        )
 
         processor.save_pretrained(cls.tmpdir)
         cls.image_token = processor.image_token

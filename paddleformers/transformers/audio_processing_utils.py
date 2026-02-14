@@ -20,6 +20,7 @@ import audioread
 import librosa
 import numpy as np
 import paddle
+from transformers.utils import PaddingStrategy
 
 from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
 
@@ -36,17 +37,6 @@ class ExplicitEnum(Enum):
         raise ValueError(
             f"{value} is not a valid {cls.__name__}, please select one of {list(cls._value2member_map_.keys())}"
         )
-
-
-class PaddingStrategy(ExplicitEnum):
-    """
-    Possible values for the `padding` argument in [`PreTrainedTokenizerBase.__call__`]. Useful for tab-completion in an
-    IDE.
-    """
-
-    LONGEST = "longest"
-    MAX_LENGTH = "max_length"
-    DO_NOT_PAD = "do_not_pad"
 
 
 class SequenceFeatureExtractor(FeatureExtractionMixin):
