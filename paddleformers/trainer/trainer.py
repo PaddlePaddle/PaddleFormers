@@ -4769,6 +4769,7 @@ class Trainer:
         prediction_loss_only: bool,
         ignore_keys: Optional[List[str]] = None,
         step: int = -1,
+        need_clear: bool = True,
     ) -> Tuple[Optional[paddle.Tensor], Optional[paddle.Tensor], Optional[paddle.Tensor]]:
         """
         prediction_step function for pipeline parallel mode.
@@ -4798,7 +4799,7 @@ class Trainer:
             inputs = inputs.pop("input_ids")
             data_provider = [inputs, labels]
         # train & eval share the same p2p_helper, so clear it before and after each step
-        if hasattr(model, "_p2p_helper"):
+        if hasattr(model, "_p2p_helper") or need_clear:
             model._p2p_helper.clear_meta_cache()
 
         with paddle.no_grad():
@@ -4822,7 +4823,7 @@ class Trainer:
             else:
                 raise ValueError("pipeline mode eval need label!")
         # train & eval share the same p2p_helper, so clear it before and after each step
-        if hasattr(model, "_p2p_helper"):
+        if hasattr(model, "_p2p_helper") or need_clear:
             model._p2p_helper.clear_meta_cache()
 
         return (loss, None, labels)
