@@ -475,38 +475,37 @@ jobs:
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh lora
           '
 
-      # - name: Qwen vl sft
-      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-      #   run: |
-      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
-      #     source /root/proxy
-      #     timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 h20
-      #     '
+      - name: Qwen vl sft
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 h20
+          '
       
-      # - name: Qwen vl lora
-      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-      #   run: |
-      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
-      #     source /root/proxy
-      #     timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_lora.sh h20
-      #     '
-      #     '
+      - name: Qwen vl lora
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_lora.sh h20
+          '
 
-      # - name: Qwen vl moe
-      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-      #   run: |
-      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
-      #     source /root/proxy
-      #     timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe h20
-      #     '
+      - name: Qwen vl moe
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe h20
+          '
       
-      # - name: Qwen3-vl-8k-fsdp
-      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
-      #   run: |
-      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
-      #     source /root/proxy
-      #     timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
-      #     '
+      - name: Qwen3-vl-8k-fsdp
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
+          '
 
       - name: Terminate and delete the container
         if: ${{ always() }}
