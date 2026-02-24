@@ -159,3 +159,7 @@ class DataArguments:
         default=False,
         metadata={"help": "Make offline data for SFT training."},
     )
+    processor_use_fast: bool = field(
+        default=None,
+        metadata={"help": "Whether to use fast processor."},
+    )

@@ -211,7 +211,7 @@ class Template:
 
         if stop_words:
             num_added_tokens = tokenizer.add_special_tokens(
-                dict(additional_special_tokens=stop_words), replace_additional_special_tokens=False
+                dict(additional_special_tokens=stop_words), replace_extra_special_tokens=False
             )
             logger.info("Add {} to stop words.".format(",".join(stop_words)))
             if num_added_tokens > 0:
@@ -770,7 +770,7 @@ register_template(
 # copied from glm4 template
 register_template(
     name="glm4v_moe",
-    format_user=StringFormatter(slots=["<|user|>\n{{content}}<|assistant|>"]),
+    format_user=StringFormatter(slots=["<|user|>\n{{content}}<|assistant|>\n"]),
     format_assistant=StringFormatter(slots=["\n{{content}}"]),
     format_system=StringFormatter(slots=["<|system|>\n{{content}}"]),
     format_function=FunctionFormatter(slots=["{{content}}"], tool_format="glm4_moe"),
@@ -778,6 +778,9 @@ register_template(
     format_tools=ToolFormatter(tool_format="glm4_moe"),
     format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
     suffix=["<|user|>"],
+    stop_words=["<|user|>", "<|observation|>", "</answer>"],
+    efficient_eos=True,
+    thought_words=("<think>", "</think>"),
     mm_plugin=get_mm_plugin(name="glm4v", image_token="<|image|>", video_token="<|video|>"),
     template_class=ReasoningTemplate,
 )
