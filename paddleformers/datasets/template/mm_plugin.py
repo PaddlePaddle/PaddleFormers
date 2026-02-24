@@ -338,6 +338,8 @@ class BasePlugin(MMPluginMixin):
                 if token in masked_tokens_ids:
                     labels[i] = -100
 
+        return labels
+
     def get_mm_inputs(
         self,
         images,
