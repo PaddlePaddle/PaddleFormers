@@ -156,6 +156,9 @@ import_structure = {
     "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
+    "kimi_k25.vision_processor": ["KimiK25VisionProcessor"],
+    "kimi_k25.processor": ["KimiK25Processor"],
+    "kimi_k25.tokenizer": ["TikTokenTokenizer"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
     "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
     "llama.configuration": [
@@ -196,9 +199,9 @@ import_structure = {
     "qwen3_vl.configuration": ["Qwen3VLConfig", "Qwen3VLTextConfig"],
     "qwen3_vl.modeling": [
         "Qwen3VLForConditionalGeneration",
-        "Qwen3VLForConditionalGenerationDecapitated",
+        "Qwen3VLForConditionalGenerationDeprecated",
         "Qwen3VLModel",
-        "Qwen3VLModelDecapitated",
+        "Qwen3VLModelDeprecated",
         "Qwen3VLPretrainedModel",
         "Qwen3VLTextModel",
         "Qwen3VLModelFleet",
@@ -208,8 +211,8 @@ import_structure = {
     "qwen3_vl_moe.configuration": ["Qwen3VLMoeConfig", "Qwen3VLMoeTextConfig"],
     "qwen3_vl_moe.modeling": [
         "Qwen3VLMoeForConditionalGeneration",
-        "Qwen3VLMoeForConditionalGenerationDecapitated",
-        "Qwen3VLMoeModelDecapitated",
+        "Qwen3VLMoeForConditionalGenerationDeprecated",
+        "Qwen3VLMoeModelDeprecated",
         "Qwen3VLMoeModel",
         "Qwen3VLMoePretrainedModel",
         "Qwen3VLMoeTextModel",
@@ -245,7 +248,7 @@ import_structure = {
         "Qwen3MoeForCausalLM",
         "Qwen3MoeForCausalLMPipe",
         "Qwen3MoePretrainingCriterion",
-        "Qwen3MoeForCausalLMDecapitated",
+        "Qwen3MoeForCausalLMDeprecated",
     ],
     "qwen3_next.configuration": ["Qwen3NextConfig"],
     "qwen3_next.modeling": [
@@ -271,7 +274,7 @@ import_structure = {
     "qwen3_moe": [],
     "qwen3_next": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
-    "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDecapitated"],
+    "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
     "glm4v_moe.image_processor_fast": ["Glm4vImageProcessorFast"],
     "auto": ["AutoModelForCausalLM"],
@@ -280,6 +283,17 @@ import_structure = {
     "phi3.configuration": ["Phi3Config"],
     "phi3.tokenizer": ["Phi3Tokenizer"],
     "phi3.modeling": ["Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
+    "glm4v_moe.configuration": ["Glm4vMoeConfig", "Glm4vMoeTextConfig", "Glm4vMoeVisionConfig"],
+    "glm4v_moe.modeling": [
+        "Glm4vMoeForConditionalGeneration",
+        "Glm4vMoeModel",
+        "Glm4vMoePreTrainedModel",
+        "Glm4vMoeTextModel",
+        "Glm4vMoeVisionModel",
+    ],
+    "glm4v_moe.processor": ["Glm4vProcessor"],
+    "glm4v_moe.video_processor": ["Glm4vVideoProcessor"],
+    "glm4v_moe": [],
 }
 
 if TYPE_CHECKING:
@@ -347,6 +361,7 @@ if TYPE_CHECKING:
     from .glm4_moe import *
     from .glm4v_moe import *
     from .gpt_oss import *
+    from .kimi_k25 import *
     from .phi3 import *
     from .gemma3_text import *
 else:

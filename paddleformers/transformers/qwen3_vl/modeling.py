@@ -95,7 +95,7 @@ class Qwen3VLVisionMLP(nn.Layer):
 class Qwen3VLVisionPatchEmbed(nn.Layer):
     def __init__(
         self,
-        patch_size: int = 14,
+        patch_size: int = 16,
         temporal_patch_size: int = 2,
         in_channels: int = 3,
         embed_dim: int = 1152,
@@ -214,6 +214,7 @@ class Qwen3VLVisionAttention(nn.Layer):
         cu_seqlens: paddle.Tensor,
         rotary_pos_emb: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[tuple[paddle.Tensor, paddle.Tensor]] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> paddle.Tensor:
         seq_length = hidden_states.shape[0]
@@ -229,26 +230,17 @@ class Qwen3VLVisionAttention(nn.Layer):
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
-        lengths = cu_seqlens[1:] - cu_seqlens[:-1]
-        splits = [
-            paddle.split(tensor, lengths.tolist(), axis=2) for tensor in (query_states, key_states, value_states)
-        ]
-        attn_outputs = [
-            attention_interface(
-                self,
-                q,
-                k,
-                v,
-                attention_mask=None,
-                attn_mask_startend_row_indices=None,
-                scaling=self.scaling,
-                dropout=0.0 if not self.training else self.attention_dropout,
-                is_causal=False,
-                **kwargs,
-            )[0]
-            for q, k, v in zip(*splits)
-        ]
-        attn_output = paddle.cat(attn_outputs, axis=-2)
+        attn_output, attn_weights = attention_interface(
+            self,
+            query_states,
+            key_states,
+            value_states,
+            attention_mask=None,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            dropout=0.0 if not self.training else self.attention_dropout,
+            scaling=self.scaling,
+            **kwargs,
+        )
 
         attn_output = attn_output.reshape([seq_length, -1]).contiguous()
         attn_output = self.proj(attn_output)
@@ -269,6 +261,7 @@ class Qwen3VLVisionBlock(nn.Layer):
         cu_seqlens: paddle.Tensor,
         rotary_pos_emb: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[tuple[paddle.Tensor, paddle.Tensor]] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> paddle.Tensor:
         hidden_states = hidden_states + self.attn(
@@ -276,6 +269,7 @@ class Qwen3VLVisionBlock(nn.Layer):
             cu_seqlens=cu_seqlens,
             rotary_pos_emb=rotary_pos_emb,
             position_embeddings=position_embeddings,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             **kwargs,
         )
         hidden_states = hidden_states + self.mlp(self.norm2(hidden_states))
@@ -370,30 +364,18 @@ class Qwen3VLPretrainedModel(PretrainedModel):
         ]
 
         # attention qkv
-        if not config.text_config.fuse_attention_qkv:
+        aoa_config["aoa_statements"] += [
+            f"model.language_model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.language_model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.language_model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups={config.text_config.num_key_value_heads}"
+        ]
+        if config.attention_bias:
             aoa_config["aoa_statements"] += [
-                f"model.language_model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
-                for x in ("q", "k", "v")
-            ]
-            aoa_config["aoa_statements"] += [
-                f"model.language_model.layers.$LAYER_ID.self_attn.{x}_proj.bias -> {llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias"
-                for x in ("q", "k", "v")
-            ]
-        else:
-            aoa_config["aoa_statements"] += [
-                f"model.language_model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.language_model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.language_model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups={config.text_config.num_key_value_heads}"
+                f"model.language_model.layers.$LAYER_ID.self_attn.q_proj.bias, model.language_model.layers.$LAYER_ID.self_attn.k_proj.bias, model.language_model.layers.$LAYER_ID.self_attn.v_proj.bias -> {llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups={config.text_config.num_key_value_heads}"
             ]
 
         # FFN
-        if not config.text_config.fuse_attention_ffn:
-            aoa_config["aoa_statements"] += [
-                f"model.language_model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight"
-                for p in ("gate", "up")
-            ]
-        else:
-            aoa_config["aoa_statements"] += [
-                f"model.language_model.layers.$LAYER_ID.mlp.gate_proj.weight^T, model.language_model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
-            ]
+        aoa_config["aoa_statements"] += [
+            f"model.language_model.layers.$LAYER_ID.mlp.gate_proj.weight^T, model.language_model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
+        ]
 
         # Qwen3_VLModel without lm_head
         if cls._tied_weights_keys:
@@ -471,40 +453,28 @@ class Qwen3VLPretrainedModel(PretrainedModel):
         ]
 
         # attention qkv
-        if not config.text_config.fuse_attention_qkv:
+        aoa_config["aoa_statements"] += [
+            f"{llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight  -> {llm_prefix}layers.$LAYER_ID.self_attn.q_proj.weight, {llm_prefix}layers.$LAYER_ID.self_attn.k_proj.weight, {llm_prefix}layers.$LAYER_ID.self_attn.v_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups = {config.text_config.num_key_value_heads}",
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{llm_prefix}layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.self_attn.{x}_proj.weight"
+            for layer_id in range(config.text_config.num_hidden_layers)
+            for x in ("q", "k", "v")
+        ]
+        if config.attention_bias:
             aoa_config["aoa_statements"] += [
-                f"{llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.language_model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
-                for x in ("q", "k", "v")
-            ]
-            aoa_config["aoa_statements"] += [
-                f"{llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias -> model.language_model.layers.$LAYER_ID.self_attn.{x}_proj.bias"
-                for x in ("q", "k", "v")
-            ]
-        else:
-            aoa_config["aoa_statements"] += [
-                f"{llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight  -> model.language_model.layers.$LAYER_ID.self_attn.q_proj.weight, model.language_model.layers.$LAYER_ID.self_attn.k_proj.weight, model.language_model.layers.$LAYER_ID.self_attn.v_proj.weight, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups = {config.text_config.num_key_value_heads}",
-            ]
-            aoa_config["aoa_statements"] += [
-                f"{llm_prefix}layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.self_attn.{x}_proj.weight"
-                for layer_id in range(config.text_config.num_hidden_layers)
-                for x in ("q", "k", "v")
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias  -> model.language_model.layers.$LAYER_ID.self_attn.q_proj.bias, model.language_model.layers.$LAYER_ID.self_attn.k_proj.bias, model.language_model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.text_config.num_attention_heads}, num_key_value_groups = {config.text_config.num_key_value_heads}",
             ]
 
         # FFN
-        if not config.text_config.fuse_attention_ffn:
-            aoa_config["aoa_statements"] += [
-                f"{llm_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight^T -> model.language_model.layers.$LAYER_ID.mlp.{p}_proj.weight"
-                for p in ("gate", "up")
-            ]
-        else:
-            aoa_config["aoa_statements"] += [
-                f"{llm_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight -> model.language_model.layers.$LAYER_ID.mlp.gate_proj.weight, model.language_model.layers.$LAYER_ID.mlp.up_proj.weight, fused_ffn"
-            ]
-            aoa_config["aoa_statements"] += [
-                f"{llm_prefix}layers.{layer_id}.mlp.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.mlp.{x}_proj.weight"
-                for layer_id in range(config.text_config.num_hidden_layers)
-                for x in ("gate", "up")
-            ]
+        aoa_config["aoa_statements"] += [
+            f"{llm_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight -> {llm_prefix}layers.$LAYER_ID.mlp.gate_proj.weight, {llm_prefix}layers.$LAYER_ID.mlp.up_proj.weight, fused_ffn"
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{llm_prefix}layers.{layer_id}.mlp.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.mlp.{x}_proj.weight"
+            for layer_id in range(config.text_config.num_hidden_layers)
+            for x in ("gate", "up")
+        ]
 
         # Qwen3VLModel without lm_head
         if cls._tied_weights_keys:
@@ -699,6 +669,21 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
             axis=0, dtype="int32"
         )
         cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
+
+        lengths = cu_seqlens[1:] - cu_seqlens[:-1]
+        indices_per_segment = paddle.stack(
+            [
+                cu_seqlens[1:],
+                paddle.full_like(cu_seqlens[1:], cu_seqlens[-1]),
+                paddle.zeros_like(cu_seqlens[:-1]),
+                cu_seqlens[:-1],
+            ],
+            axis=1,
+        )
+        attn_mask_startend_row_indices = paddle.repeat_interleave(indices_per_segment, lengths, axis=0)[
+            None, None, ...
+        ]
+
         deepstack_feature_lists = []
         for layer_num, blk in enumerate(self.blocks):
             cu_seqlens_now = cu_seqlens
@@ -715,12 +700,14 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
                     hidden_states,
                     cu_seqlens=cu_seqlens_now,
                     position_embeddings=position_embeddings,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 )
             else:
                 hidden_states = blk(
                     hidden_states,
                     cu_seqlens=cu_seqlens_now,
                     position_embeddings=position_embeddings,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 )
             if layer_num in self.deepstack_visual_indexes:
                 deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(layer_num)](
@@ -915,7 +902,6 @@ class Qwen3VLTextAttention(nn.Layer):
         #     )
 
         self.sequence_parallel = config.sequence_parallel
-        self.fuse_attention_qkv = config.fuse_attention_qkv
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
         if config.tensor_model_parallel_size > 1:
@@ -932,36 +918,13 @@ class Qwen3VLTextAttention(nn.Layer):
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.config.num_attention_heads * self.head_dim
 
-        if not self.fuse_attention_qkv:
-            self.q_proj = GeneralLinear.create(
-                config.hidden_size,
-                q_hidden_size,
-                has_bias=config.attention_bias,
-                config=config,
-                tp_plan="colwise",
-            )
-            self.k_proj = GeneralLinear.create(
-                config.hidden_size,
-                kv_hidden_size,
-                has_bias=config.attention_bias,
-                config=config,
-                tp_plan="colwise",
-            )
-            self.v_proj = GeneralLinear.create(
-                config.hidden_size,
-                kv_hidden_size,
-                has_bias=config.attention_bias,
-                config=config,
-                tp_plan="colwise",
-            )
-        else:
-            self.qkv_proj = GeneralLinear.create(
-                config.hidden_size,
-                q_hidden_size + 2 * kv_hidden_size,
-                has_bias=config.attention_bias,
-                config=config,
-                tp_plan="colwise",
-            )
+        self.qkv_proj = GeneralLinear.create(
+            config.hidden_size,
+            q_hidden_size + 2 * kv_hidden_size,
+            has_bias=config.attention_bias,
+            config=config,
+            tp_plan="colwise",
+        )
         self.o_proj = GeneralLinear.create(
             q_hidden_size,
             config.hidden_size,
@@ -984,46 +947,29 @@ class Qwen3VLTextAttention(nn.Layer):
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
-        if not self.fuse_attention_qkv:
-            if self.sequence_parallel:
-                max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
-                q_len = max_sequence_length
-            else:
-                bsz, q_len, _ = hidden_states.shape
-
-            query_states = self.q_proj(hidden_states)
-            key_states = self.k_proj(hidden_states)
-            value_states = self.v_proj(hidden_states)
-
-            query_states = query_states.reshape(bsz, q_len, -1, self.head_dim)
-            key_states = key_states.reshape(bsz, q_len, -1, self.head_dim)
-            value_states = value_states.reshape(bsz, q_len, -1, self.head_dim)
-
+        mix_layer = self.qkv_proj(hidden_states)
+        if self.sequence_parallel:
+            max_sequence_length = self.config.max_sequence_length
+            bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
+            q_len = max_sequence_length
+            target_shape = [
+                bsz,
+                q_len,
+                self.num_key_value_heads,
+                (self.num_key_value_groups + 2) * self.head_dim,
+            ]
         else:
-            mix_layer = self.qkv_proj(hidden_states)
-            if self.sequence_parallel:
-                max_sequence_length = self.config.max_sequence_length
-                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
-                q_len = max_sequence_length
-                target_shape = [
-                    bsz,
-                    q_len,
-                    self.num_key_value_heads,
-                    (self.num_key_value_groups + 2) * self.head_dim,
-                ]
-            else:
-                target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
-            # mix_layer = mix_layer.reshape(target_shape)
-            mix_layer = paddle.reshape_(mix_layer, target_shape)
-            query_states, key_states, value_states = paddle.split(
-                mix_layer,
-                num_or_sections=[self.num_key_value_groups * self.head_dim, self.head_dim, self.head_dim],
-                axis=-1,
-            )
-            if self.gqa_or_mqa:
-                # query_states = query_states.reshape([0, 0, self.num_heads, self.head_dim])
-                query_states = paddle.reshape_(query_states, [0, 0, self.num_heads, self.head_dim])
+            target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
+        # mix_layer = mix_layer.reshape(target_shape)
+        mix_layer = paddle.reshape_(mix_layer, target_shape)
+        query_states, key_states, value_states = paddle.split(
+            mix_layer,
+            num_or_sections=[self.num_key_value_groups * self.head_dim, self.head_dim, self.head_dim],
+            axis=-1,
+        )
+        if self.gqa_or_mqa:
+            # query_states = query_states.reshape([0, 0, self.num_heads, self.head_dim])
+            query_states = paddle.reshape_(query_states, [0, 0, self.num_heads, self.head_dim])
 
         # apply qk_norm
         query_states = self.q_norm(query_states)
@@ -1067,7 +1013,7 @@ class Qwen3VLTextDecoderLayer(nn.Layer):
         self.hidden_size = config.hidden_size
         self.self_attn = Qwen3VLTextAttention(config, layer_idx)
 
-        self.mlp = Qwen3VLTextMLP(config, fuse_up_gate=config.fuse_attention_ffn)
+        self.mlp = Qwen3VLTextMLP(config, fuse_up_gate=True)
         self.input_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
@@ -1463,7 +1409,7 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
 
 
 @register_base_model
-class Qwen3VLModelDecapitated(Qwen3VLPretrainedModel):
+class Qwen3VLModelDeprecated(Qwen3VLPretrainedModel):
     base_model_prefix = "model"
     _checkpoint_conversion_mapping = {}
     config: Qwen3VLConfig
@@ -1827,7 +1773,7 @@ class Qwen3VLCausalLMOutputWithPast(ModelOutput):
     rope_deltas: Optional[paddle.Tensor] = None
 
 
-class Qwen3VLForConditionalGenerationDecapitated(Qwen3VLPretrainedModel):
+class Qwen3VLForConditionalGenerationDeprecated(Qwen3VLPretrainedModel):
     _checkpoint_conversion_mapping = {
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
@@ -1837,7 +1783,7 @@ class Qwen3VLForConditionalGenerationDecapitated(Qwen3VLPretrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        self.model = Qwen3VLModelDecapitated(config)
+        self.model = Qwen3VLModelDeprecated(config)
         self.lm_head = GeneralLMHead(config.text_config)
         self.criterion = CriterionLayer(config.text_config)
         self.tie_weights()
@@ -2181,8 +2127,8 @@ class Qwen3VLForConditionalGenerationDecapitated(Qwen3VLPretrainedModel):
 
 
 __all__ = [
-    "Qwen3VLForConditionalGenerationDecapitated",
-    "Qwen3VLModelDecapitated",
+    "Qwen3VLForConditionalGenerationDeprecated",
+    "Qwen3VLModelDeprecated",
     "Qwen3VLModelPipe",
     "Qwen3VLForCausalLMPipe",
     "Qwen3VLPretrainedModel",

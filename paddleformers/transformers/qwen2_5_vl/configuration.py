@@ -155,6 +155,10 @@ class Qwen2_5_VLTextConfig(PretrainedConfig):
                     Only used with 'llama3'. Scaling factor applied to low frequency components of the RoPE
                 `high_freq_factor` (`float`, *optional*):
                     Only used with 'llama3'. Scaling factor applied to high frequency components of the RoPE
+        bos_token_id (`int`, *optional*, defaults to 151643):
+            The id of the _beginning-of-stream_ token.
+        eos_token_id (`int`, *optional*, defaults to 151645):
+            The id of the _end-of-stream_ token.
 
     ```python
     >>> from paddleformers.transformers import Qwen2_5_VLTextModel, Qwen2_5_VLConfig
@@ -194,6 +198,8 @@ class Qwen2_5_VLTextConfig(PretrainedConfig):
         layer_types=None,
         attention_dropout=0.0,
         rope_scaling=None,
+        bos_token_id=151643,
+        eos_token_id=151645,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -235,7 +241,9 @@ class Qwen2_5_VLTextConfig(PretrainedConfig):
         if self.rope_parameters["rope_type"] == "mrope":
             self.rope_parameters["rope_type"] = "default"
         rope_config_validation(self, ignore_keys={"mrope_section"})
-        super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
+        super().__init__(
+            tie_word_embeddings=tie_word_embeddings, bos_token_id=bos_token_id, eos_token_id=eos_token_id, **kwargs
+        )
 
 
 class Qwen2_5_VLConfig(PretrainedConfig):

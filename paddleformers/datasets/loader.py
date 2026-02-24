@@ -15,7 +15,7 @@
 from typing import Any, Dict
 
 from .DPODataset import DPODataSet
-from .SFTDataset import Sequence, SFTDataSet
+from .SFTDataset import SFTDataSet, TextSequence
 
 
 def create_dataset(**dataset_config: Dict[str, Any]):
@@ -29,7 +29,7 @@ def create_dataset(**dataset_config: Dict[str, Any]):
     Returns:
         SequenceDataset: Configured sequence dataset
     """
-    if dataset_config["stage"].lower() == "dpo":
+    if dataset_config["stage"].lower() in ["dpo", "vl-dpo"]:
         train_dataset = DPODataSet(**dataset_config)
     else:
         train_dataset = SFTDataSet(**dataset_config)
@@ -52,6 +52,6 @@ def create_indexed_dataset(data_file_prefix):
 
     indexed_dataset = make_sft_indexed_dataset(
         path=data_file_prefix,
-        dataclass=Sequence,
+        dataclass=TextSequence,
     )
     return indexed_dataset

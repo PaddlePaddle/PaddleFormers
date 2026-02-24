@@ -122,7 +122,7 @@ class ModelArguments:
         default=False,
         metadata={"help": "GPT3 model, use fast layernorm"},
     )
-    attn_impl: str = field(default="flashmask", metadata={"help": "Attention implementation"})
+    _attn_implementation: str = field(default="flashmask", metadata={"help": "Attention implementation"})
     fuse_gate_detach_matmul: bool = field(
         default=True,
         metadata={"help": "Whether to use the fused gate-detach matmul implementation."},

@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: messages
 eval_dataset_type: messages
-train_dataset_path: ./coco_grounding/train.jsonl
+train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/coco_grounding/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./coco_grounding/val.jsonl
+eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/coco_grounding/val.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: false
@@ -12,8 +12,8 @@ template_backend: custom
 template: qwen3_vl
 
 ### model
-model_name_or_path: ./model_30B_A3B
-attn_impl: flashmask
+model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/huggingface/Qwen/Qwen3-VL-30B-A3B
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -57,14 +57,10 @@ recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
 
-fuse_attention_qkv: true
-fuse_attention_ffn: true
-
 moe_grouped_gemm: true
 moe_deep_gemm: true
 
 apply_rope_fusion: False
-fuse_rms_norm: true
 # moe_router_force_load_balancing: true
 
 # sharding
@@ -95,7 +91,7 @@ load_checkpoint_format: flex_checkpoint
 continue_training: True
 dataloader_shuffle: false
 
-benchmark: false
+benchmark: true
 report_to: none
 dataloader_num_workers: 8
 prefetch_factor: 8

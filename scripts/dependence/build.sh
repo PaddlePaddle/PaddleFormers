@@ -54,13 +54,14 @@ paddleformers_build (){
     rm -rf paddleformers.egg-info/
 
     python -m pip install -r requirements.txt
-    python -m pip install -r tests/requirements.txt
     python setup.py bdist_wheel
-    python -m pip install --ignore-installed  "$(ls -t dist/*.whl | head -1)[paddlefleet]" --force-reinstall --no-dependencies
+    python -m pip install --ignore-installed  dist/p****.whl --force-reinstall --no-dependencies
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
-
+    commit=$(python -c "import paddleformers; print(paddleformers.version.commit)")
+    commit=${commit:-unknown}
     cp $formers_dir/dist/p****.whl ${upload_path}/
     cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-0.0.0-py3-none-any.whl
+    cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-${commit}-py3-none-any.whl
 }
 
 install_paddleformers(){

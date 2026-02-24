@@ -16,6 +16,7 @@
 # Copyright (c) 2025 LLaMA-Factory
 # Licensed under the Apache License - https://github.com/hiyouga/LLaMA-Factory/blob/main/LICENSE
 
+import importlib.util
 import json
 import os
 import sys
@@ -27,6 +28,7 @@ from omegaconf import OmegaConf
 
 from paddleformers.trainer import PdArgumentParser
 
+from ...utils.log import logger
 from ..utils.process import (
     is_env_enabled,
     remove_paddle_shm_files,
@@ -79,6 +81,16 @@ _SERVER_ARGS = [
 _SERVER_CLS = tuple[ModelArguments, GeneratingArguments, FinetuningArguments, ServerArguments]
 
 
+def _load_custom_template(custom_path):
+    try:
+        spec = importlib.util.spec_from_file_location("custom_template", custom_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        logger.info(f"Successfully loaded custom templates from {custom_path}")
+    except Exception as e:
+        raise RuntimeError(f"Failed to load custom templates from {custom_path}: {e}")
+
+
 def read_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> Union[dict[str, Any], list[str]]:
     r"""Get arguments from the command line or a config file."""
     if args is not None:
@@ -120,6 +132,10 @@ def _parse_args(
     """
 
     args = read_args(args)
+
+    if isinstance(args, dict) and "custom_register_path" in args:
+        _load_custom_template(args.pop("custom_register_path"))
+
     if isinstance(args, dict):
         return parser.parse_dict(args)
 
@@ -200,7 +216,7 @@ def get_train_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _
     """
     model_args, data_args, preprocess_args, generating_args, finetuning_args = _parse_train_args(args)
 
-    if model_args.stage == "VL-SFT":
+    if "VL" in model_args.stage:
         os.environ["NCCL_DEBUG"] = "INFO"
         os.environ["PYTHONUNBUFFERED"] = "1"
         os.environ["FLAGS_use_auto_growth_pinned_allocator"] = "True"
@@ -224,6 +240,12 @@ def get_train_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _
 
         os.environ["FLAGS_call_stack_level"] = "2"
         os.environ["FLAGS_eager_communication_connection"] = "0"
+
+        if data_args.packing and data_args.truncate_packing:
+            logger.warning(
+                "VLMs training does not support Truncate Packing, we will enforce that truncate_packing=False."
+            )
+            data_args.truncate_packing = False
 
     if data_args.split_multi_turn and data_args.template_backend != "jinja":
         raise ValueError("data_args.template_backend must be jinja when split_multi_turn is True")

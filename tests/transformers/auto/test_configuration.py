@@ -59,6 +59,7 @@ class AutoConfigTest(unittest.TestCase):
             auto_config = AutoConfig.from_pretrained(tempdir)
             self.assertEqual(auto_config.hidden_size, number)
 
+    @slow
     def test_from_hf_hub(self):
         config = AutoConfig.from_pretrained("dfargveazd/tiny-random-llama-paddle-safe", download_hub="huggingface")
         self.assertEqual(config.hidden_size, 16)
@@ -89,7 +90,7 @@ class AutoConfigTest(unittest.TestCase):
     def test_new_config_registration(self):
         try:
             AutoConfig.register("custom", CustomConfig)
-            # Wrong model type will raise an error
+            # Wrong model type will raise an error.
             with self.assertRaises(ValueError):
                 AutoConfig.register("model", CustomConfig)
             # Trying to register something existing in the PaddleFormers library will raise an error
@@ -124,8 +125,6 @@ class AutoConfigTest(unittest.TestCase):
             "bos_token_id": 1,
             "do_normalize": False,
             "eos_token_id": 2,
-            "fuse_attention_ffn": False,
-            "fuse_attention_qkv": False,
             "fuse_sequence_parallel_allreduce": False,
             "hidden_act": "silu",
             "hidden_size": 4096,
@@ -151,7 +150,6 @@ class AutoConfigTest(unittest.TestCase):
             "tensor_parallel_output": True,
             "tie_word_embeddings": False,
             "transformers_version": "4.28.1",
-            "fuse_rms_norm": False,
             "apply_rope_fusion": False,
             "use_recompute": False,
             "virtual_pipeline_model_parallel_size": 1,

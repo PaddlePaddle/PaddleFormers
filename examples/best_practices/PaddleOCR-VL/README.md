@@ -134,7 +134,7 @@ template: paddleocr_vl
 
 ### model
 model_name_or_path: PaddlePaddle/PaddleOCR-VL
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -207,7 +207,7 @@ template: paddleocr_vl
 
 ### model
 model_name_or_path: PaddlePaddle/PaddleOCR-VL
-attn_impl: flashmask
+_attn_implementation: flashmask
 lora: true
 lora_rank: 8
 
@@ -428,8 +428,10 @@ generation_config = GenerationConfig(
 )
 
 with paddle.no_grad():
-    generated_ids = model.generate(**inputs, generation_config=generation_config, max_new_tokens=1024)
-    output_text = processor.batch_decode(generated_ids[0], skip_special_tokens=True)
+    outputs = model.generate(**inputs, generation_config=generation_config, max_new_tokens=1024)
+    output_ids = outputs[0].tolist()[0]
+
+    output_text = processor.decode(output_ids, skip_special_tokens=True)
 
 print(output_text[0])
 
@@ -543,8 +545,10 @@ def generate_response(model, processor, messages, max_length=1024):
     )
 
     with paddle.no_grad():
-        generated_ids = model.generate(**inputs, generation_config=generation_config, max_new_tokens=max_length)
-        output_text = processor.batch_decode(generated_ids[0], skip_special_tokens=True)
+        outputs = model.generate(**inputs, generation_config=generation_config, max_new_tokens=max_length)
+        output_ids = outputs[0].tolist()[0]
+
+        output_text = processor.decode(output_ids, skip_special_tokens=True)
 
     return output_text
 
@@ -728,7 +732,7 @@ CUDA_VISIBLE_DEVICES=0 paddleformers-cli train examples/best_practices/PaddleOCR
                         per_device_train_batch_size=2 \
                         per_device_eval_batch_size=2 \
                         gradient_accumulation_steps=32 \
-                        attn_impl=sdpa \
+                        _attn_implementation=sdpa \
                         pre_alloc_memory=18 \
                         device=iluvatar_gpu
 ```

@@ -164,6 +164,9 @@ class SFTTrainingArguments(TrainingArguments):
         default=1e5,
         metadata={"help": "Maximum number of samples used in estimation."},
     )
+    estimation_output_file: str = field(
+        default=None, metadata={"help": "The output file of max_steps estimation result"}
+    )
 
 
 @dataclass
@@ -270,6 +273,10 @@ class FinetuningArguments(
         default=None,
         metadata={"help": "Model weight quantization algorithm including 'nf4'(qlora), 'weight_only_int8'."},
     )
+    merge_with_qdq_base_model: bool = field(
+        default=False,
+        metadata={"help": "Whether to merge model with quantize_dequantized base-model weights."},
+    )
     # fp8
     use_fp8: bool = field(
         default=False,
@@ -308,23 +315,25 @@ class FinetuningArguments(
             self.weight_quantize_algo = {"weight_only_int4": DEFAULT_QUANTIZE_LAYERS}
         elif self.compute_type == "wint8":
             self.weight_quantize_algo = {"weight_only_int8": DEFAULT_QUANTIZE_LAYERS}
-        # TODO: @bosspi to support wint4/8
-        # elif self.compute_type == "wint4/8":
-        #     # self.weight_quantize_algo = "weight_only_mix"
-        #     self.weight_quantize_algo = {
-        #         "weight_only_int4": [".*mlp.experts.*"],
-        #         "weight_only_int8": [
-        #             ".*self_attn.qkv_proj.*",
-        #             ".*self_attn.q_proj.*",
-        #             ".*self_attn.k_proj.*",
-        #             ".*self_attn.v_proj.*",
-        #             ".*self_attn.o_proj.*",
-        #             ".*mlp.up_gate_proj.*",
-        #             ".*mlp.up_proj.*",
-        #             ".*mlp.gate_proj.*",
-        #             ".*mlp.down_proj.*",
-        #         ],
-        #     }
+        elif self.compute_type == "wint4/8":
+            self.weight_quantize_algo = {
+                "weight_only_int4": [
+                    ".*mlp.experts.*",
+                    ".*mlp.shared_expert.*",
+                    ".*mlp.shared_experts.*",
+                ],
+                "weight_only_int8": [
+                    ".*self_attn.qkv_proj.*",
+                    ".*self_attn.q_proj.*",
+                    ".*self_attn.k_proj.*",
+                    ".*self_attn.v_proj.*",
+                    ".*self_attn.o_proj.*",
+                    ".*mlp.up_gate_proj.*",
+                    ".*mlp.up_proj.*",
+                    ".*mlp.gate_proj.*",
+                    ".*mlp.down_proj.*",
+                ],
+            }
         elif self.compute_type == "nf4":
             self.weight_quantize_algo = {"nf4": DEFAULT_QUANTIZE_LAYERS}
         else:

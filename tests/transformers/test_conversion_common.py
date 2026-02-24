@@ -17,7 +17,6 @@ import copy
 import glob
 import os
 import tempfile
-import unittest
 
 import paddle
 
@@ -236,17 +235,3 @@ def _test_fast_ffn():
     config_fast_ffn.convert_fast_ffn = True
 
     common_test_save_and_load(config_no_fast_ffn, config_fast_ffn, TestForCausalLM)
-
-
-from paddleformers.transformers import LlamaConfig, LlamaForCausalLM
-
-
-class TestFuseOrSplit(unittest.TestCase):
-    def test_model_split_to_fuse(self):
-        _test_split_to_fuse(LlamaConfig, LlamaForCausalLM)
-
-    def test_model_fuse_to_split(self):
-        _test_fuse_to_split(LlamaConfig, LlamaForCausalLM)
-
-    def test_model_convert_fast_ffn(self):
-        _test_fast_ffn()

@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import copy
-import os
 import tempfile
 import unittest
 
@@ -25,13 +24,12 @@ from parameterized import parameterized
 
 from paddleformers.transformers import AutoProcessor, Qwen3VLConfig
 from paddleformers.transformers import (
-    Qwen3VLForConditionalGenerationDecapitated as Qwen3VLForConditionalGeneration,
+    Qwen3VLForConditionalGenerationDeprecated as Qwen3VLForConditionalGeneration,
 )
-from paddleformers.transformers import Qwen3VLModelDecapitated as Qwen3VLModel
+from paddleformers.transformers import Qwen3VLModelDeprecated as Qwen3VLModel
 from paddleformers.transformers import process_vision_info
 from paddleformers.transformers.video_utils import load_video
-from paddleformers.utils.log import logger
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -187,6 +185,8 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     all_generative_model_classes = {Qwen3VLForConditionalGeneration: {Qwen3VLModel, "qwen3_vl"}}
     max_new_tokens = 3
 
+    # Use GPU 0 to prevent CUDA illegal memory access during resize
+    @gpu_device_initializer(log_prefix="Qwen3VLModelTest", gpu_id=0)
     def setUp(self):
         self.model_tester = Qwen3VLVisionText2TextModelTester(self)
         self.config_tester = ConfigTester(self, config_class=Qwen3VLConfig, has_text_modality=False)
@@ -547,18 +547,9 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 
 
 class Qwen3VLIntegrationTest(unittest.TestCase):
+    # Use GPU 0 to prevent CUDA illegal memory access during resize
+    @gpu_device_initializer(log_prefix="Qwen3VLIntegrationTest", gpu_id=0)
     def setUp(self):
-        # Initialize device when GPU is needed by certain test case
-        gpu_count = paddle.device.cuda.device_count()
-        pid = os.getpid()
-
-        if gpu_count > 0:
-            paddle.set_device("gpu")
-        else:
-            paddle.set_device("cpu")
-            self.skipTest("No GPU currently available/allocated")
-        logger.info(f"Qwen3VLIntegrationTest [PID:{pid}] Device initialized: {paddle.get_device()}")
-
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(
             "PaddleFormers/tiny-random-qwen3vl",
             dtype="float32",
@@ -659,49 +650,48 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
         )
         self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=5e-4, rtol=1e-5))
 
-    # TODO: Re-enable this test case once paddle.Tensor support the more tensor dimensions.
-    # def test_model_tiny_logits_batch(self):
-    #     text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
+    def test_model_tiny_logits_batch(self):
+        text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
 
-    #     inputs = self.processor(text=[text, text], images=[self.image, self.image], return_tensors="pd")
+        inputs = self.processor(text=[text, text], images=[self.image, self.image], return_tensors="pd")
 
-    #     output = self.model(**inputs)["logits"].astype(paddle.float32)
-    #     EXPECTED_SLICE = paddle.to_tensor(
-    #         [
-    #             0.06287927,
-    #             -0.07886235,
-    #             0.04489284,
-    #             0.05893321,
-    #             0.01931595,
-    #             -0.01385389,
-    #             0.08200871,
-    #             -0.03711491,
-    #             -0.01657202,
-    #             -0.02351523,
-    #             0.07860593,
-    #             0.04915767,
-    #             0.01571729,
-    #             -0.03793694,
-    #             -0.01400308,
-    #             0.01007790,
-    #             -0.00566702,
-    #             0.00890818,
-    #             0.07228709,
-    #             -0.00890865,
-    #             0.00333118,
-    #             -0.01285518,
-    #             -0.05833241,
-    #             0.03265308,
-    #             -0.03928559,
-    #             -0.02193597,
-    #             -0.00813984,
-    #             0.00105143,
-    #             0.04259191,
-    #             -0.02120323,
-    #         ]
-    #     )
-    #     self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
-    #     self.assertTrue(paddle.allclose(output[1, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+        output = self.model(**inputs)["logits"].astype(paddle.float32)
+        EXPECTED_SLICE = paddle.to_tensor(
+            [
+                0.06287927,
+                -0.07886235,
+                0.04489284,
+                0.05893321,
+                0.01931595,
+                -0.01385389,
+                0.08200871,
+                -0.03711491,
+                -0.01657202,
+                -0.02351523,
+                0.07860593,
+                0.04915767,
+                0.01571729,
+                -0.03793694,
+                -0.01400308,
+                0.01007790,
+                -0.00566702,
+                0.00890818,
+                0.07228709,
+                -0.00890865,
+                0.00333118,
+                -0.01285518,
+                -0.05833241,
+                0.03265308,
+                -0.03928559,
+                -0.02193597,
+                -0.00813984,
+                0.00105143,
+                0.04259191,
+                -0.02120323,
+            ]
+        )
+        self.assertTrue(paddle.allclose(output[0, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+        self.assertTrue(paddle.allclose(output[1, 0, :30], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
     def test_model_tiny_logits_batch_wo_image(self):
         text = self.processor.apply_chat_template(self.messages, tokenize=False, add_generation_prompt=True)
@@ -841,6 +831,10 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
 
 
 class Qwen3VLCompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Qwen3VLCompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
@@ -864,13 +858,14 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
             "spatial_merge_size": 2,
             "temporal_patch_size": 2,
         }
-        tiny_rope_scaling = {"type": "mrope", "mrope_section": [4, 6, 6]}
+        tiny_rope_scaling = {"type": "default", "mrope_section": [4, 6, 6]}
         tiny_text_config = {
             "attention_bias": False,
             "attention_dropout": 0.0,
             "bos_token_id": 151643,
             "dtype": "float32",
             "eos_token_id": 151645,
+            "pad_token_id": 151643,
             "head_dim": 32,
             "hidden_act": "silu",
             "hidden_size": 128,
@@ -927,7 +922,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
 
         # 2. forward the paddle model
         from paddleformers.transformers import (
-            Qwen3VLForConditionalGenerationDecapitated as Qwen3VLForConditionalGeneration,
+            Qwen3VLForConditionalGenerationDeprecated as Qwen3VLForConditionalGeneration,
         )
 
         paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
@@ -964,7 +959,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
 
             # 2. forward the paddle model
             from paddleformers.transformers import (
-                Qwen3VLForConditionalGenerationDecapitated as Qwen3VLForConditionalGeneration,
+                Qwen3VLForConditionalGenerationDeprecated as Qwen3VLForConditionalGeneration,
             )
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
@@ -1005,41 +1000,21 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
             from paddleformers import transformers
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
-            paddle_model_class = getattr(transformers, class_name + "Decapitated")
+            paddle_model_class = getattr(transformers, class_name + "Deprecated")
             paddle_model = paddle_model_class.from_pretrained(
                 tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
             ).eval()
 
-            paddle_model_fused = paddle_model_class.from_pretrained(
-                tempdir,
-                dtype="float32",
-                fuse_attention_qkv=True,
-                fuse_attention_ffn=True,
-                load_checkpoint_format="flex_checkpoint",
-            ).eval()
-
             if class_name == "Qwen3VLModel":
                 paddle_logit = paddle_model(**paddle_inputs)[0]
-                paddle_fused_logit = paddle_model_fused(**paddle_inputs)[0]
             else:
                 paddle_logit = paddle_model(**paddle_inputs)["logits"]
-                paddle_fused_logit = paddle_model_fused(**paddle_inputs)["logits"]
 
             # 3. compare the result between paddle and torch
             self.assertTrue(
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e-2,
-                    rtol=1e-2,
-                )
-            )
-
-            # 4.compare the result between paddle and paddle_fused
-            self.assertTrue(
-                np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    paddle_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )

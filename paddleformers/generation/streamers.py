@@ -17,7 +17,10 @@ from queue import Queue
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from transformers.tokenization_utils import PreTrainedTokenizer
+    try:
+        from transformers.tokenization_python import PreTrainedTokenizer
+    except ImportError:
+        from transformers.tokenization_utils import PreTrainedTokenizer
 
 
 class BaseStreamer:

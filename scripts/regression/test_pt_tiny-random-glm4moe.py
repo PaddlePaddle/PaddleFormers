@@ -31,20 +31,20 @@ MODEL_NAME_OR_PATH = "/home/models/PaddleFormers/tiny-random-glm4moe-bf16"
 MAX_STEPS = 2
 SAVE_STEPS = 2
 
-PT_FULL_EXCEPTED_LOSS = 12.830773
-PT_FULL_RESUME_EXCEPTED_LOSS = 12.830642
+PT_FULL_EXCEPTED_LOSS = 12.830769
+PT_FULL_RESUME_EXCEPTED_LOSS = 12.830632
 PT_FULL_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
-PT_LORA_EXCEPTED_LOSS = 12.832637
-PT_LORA_RESUME_EXCEPTED_LOSS = 12.832492
+PT_LORA_EXCEPTED_LOSS = 12.830773
+PT_LORA_RESUME_EXCEPTED_LOSS = 12.83066
 PT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 133362, 30625, 95331, 4198]]
 
-PT_FULL_TP_PP_EXCEPTED_LOSS = 12.83085
-PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 12.830748
-PT_FULL_TP_PP_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
+PT_FULL_TP_PP_EXCEPTED_LOSS = 12.830832
+PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 12.830781
+PT_FULL_TP_PP_EXCEPTED_RESULT = [[10564, 10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231]]
 
-PT_LORA_TP_PP_EXCEPTED_LOSS = 12.832589
-PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 12.832575
+PT_LORA_TP_PP_EXCEPTED_LOSS = 12.83085
+PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 12.830852
 PT_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 PT_FC_EXCEPTED_LOSS = 11.931005
@@ -100,12 +100,12 @@ class PTTrainTester(unittest.TestCase):
         excepted_result,
     ):
         from paddleformers.transformers.glm4_moe.modeling import (
-            Glm4MoeForCausalLMDecapitated,
+            Glm4MoeForCausalLMDeprecated,
         )
 
         input_ids = paddle.to_tensor([[1, 306, 4658, 278, 6593, 310, 2834, 338]])
         attention_mask = paddle.ones_like(input_ids)
-        model = Glm4MoeForCausalLMDecapitated.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
+        model = Glm4MoeForCausalLMDeprecated.from_pretrained(model_path, dtype="bfloat16", convert_from_hf=True)
         with paddle.no_grad():
             result = model.generate(input_ids, attention_mask=attention_mask, max_new_tokens=10)
         print(f"excepted_result is : {excepted_result}")
@@ -131,8 +131,6 @@ class PTTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
-            "fuse_attention_qkv": "true",
-            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -183,8 +181,6 @@ class PTTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
-            "fuse_attention_qkv": "true",
-            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -242,8 +238,6 @@ class PTTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
-            "fuse_attention_qkv": "true",
-            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -293,8 +287,6 @@ class PTTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
-            "fuse_attention_qkv": "true",
-            "fuse_attention_ffn": "true",
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)

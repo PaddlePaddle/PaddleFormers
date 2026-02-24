@@ -89,6 +89,13 @@
   --remove_unused_columns
                         是否在使用 `datasets.Dataset` 时自动移除模型 `forward` 方法未使用的列。
                         默认为 `True`。(`bool`, 可选)
+
+  --new_special_tokens_path
+                        存储额外的特殊 Token 的文本文件路径，用于扩展模型词汇表。
+                        (`str`, 可选)
+
+  --custom_register_path
+                        自定义注册路径，用于加载自定义 template 和 mm_plugin。若不指定，则只注册默认部分。 (`str`, 可选)
 ```
 
 # 2. 优化器与学习率调度
@@ -283,7 +290,7 @@
   --expert_model_parallel_size
                         专家并行的并行度。(`int`, 可选)
 
-  --aux_loss_alpha
+  --router_aux_loss_coef
                         MoE 模型的辅助损失（Auxiliary loss）权重系数。(`float`, 可选, 默认为 0.0001)
 
   --expert_max_capacity
