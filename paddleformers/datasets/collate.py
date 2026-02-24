@@ -221,6 +221,7 @@ def collate_fn(
         max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
     max_seq_len = calc_padding_size(max_seq_len, training_args)
     if training_args.num_nextn_predict_layers > 0:
+        # for easier implementation of the n-next-token prediction loss
         max_seq_len += training_args.num_nextn_predict_layers
 
     for batch_sequence in batch:
