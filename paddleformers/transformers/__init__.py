@@ -229,6 +229,7 @@ import_structure = {
         "Qwen3OmniMoeTalkerModel",
     ],
     "qwen3_omni_moe.processor": ["Qwen3OmniMoeProcessor"],
+    "qwen3_omni_moe.audio_processor": ["WhisperFeatureExtractor"],
     "qwen2_moe.configuration": ["Qwen2MoeConfig"],
     "qwen2_moe.modeling": [
         "Qwen2MoeModel",
