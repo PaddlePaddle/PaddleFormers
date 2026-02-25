@@ -29,7 +29,7 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         cls.tmpdir = tempfile.mkdtemp()
 
         processor = Qwen3OmniMoeProcessor.from_pretrained(
-            "Qwen/Qwen3-Omni-30B-A3B-Instruct", download_hub="modelscope"
+            "PaddleFormers/tiny-random-qwen3omnimoe", download_hub="modelscope"
         )
 
         processor.save_pretrained(cls.tmpdir)
@@ -73,8 +73,8 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         self.assertEqual(processor.tokenizer.get_vocab(), tokenizer.get_vocab())
         self.assertEqual(processor.image_processor.to_json_string(), image_processor.to_json_string())
         self.assertEqual(processor.image_processor.__class__.__name__, "Qwen2VLImageProcessorFast")
-        self.assertEqual(processor.feature_extraction.__class__.__name__, "Qwen2VLVideoProcessor")
-        self.assertEqual(processor.video_processor.__class__.__name__, "WhisperFeatureExtractor")
+        self.assertEqual(processor.feature_extraction.__class__.__name__, "WhisperFeatureExtractor")
+        self.assertEqual(processor.video_processor.__class__.__name__, "Qwen2VLVideoProcessor")
 
     def test_image_processor(self):
         image_processor = self.get_image_processor()

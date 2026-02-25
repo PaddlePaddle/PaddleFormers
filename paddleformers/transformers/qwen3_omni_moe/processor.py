@@ -117,6 +117,10 @@ def _get_feat_extract_output_lengths(input_lengths):
 )
 class Qwen3OmniMoeProcessor(ProcessorMixin):
     attributes = ["image_processor", "video_processor", "feature_extractor", "tokenizer"]
+    image_processor_class = "AutoImageProcessor"
+    video_processor_class = "AutoVideoProcessor"
+    feature_extractor_class = "AutoFeatureExtractor"
+    tokenizer_class = ("Qwen2Tokenizer", "Qwen2TokenizerFast")
 
     def __init__(
         self, image_processor=None, video_processor=None, feature_extractor=None, tokenizer=None, chat_template=None
