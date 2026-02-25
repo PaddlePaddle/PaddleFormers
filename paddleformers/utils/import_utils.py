@@ -16,11 +16,17 @@ from __future__ import annotations
 import builtins
 import functools
 import importlib.util
+
+try:
+    from importlib import metadata
+except ImportError:
+    import importlib_metadata as metadata
 import os
 import shutil
 import site
 import sys
 from contextlib import contextmanager
+from types import ModuleType
 from typing import Optional, Tuple, Type, Union
 
 import pip
@@ -115,8 +121,8 @@ def _is_package_available(pkg_name: str, return_version: bool = False) -> Union[
     if package_exists:
         try:
             # Primary method to get the package version
-            package_version = importlib.metadata.version(pkg_name)
-        except importlib.metadata.PackageNotFoundError:
+            package_version = metadata.version(pkg_name)
+        except metadata.PackageNotFoundError:
             # Fallback method: Only for "torch" and versions containing "dev"
             if pkg_name == "torch":
                 try:
@@ -145,8 +151,8 @@ _sentencepiece_available = _is_package_available("sentencepiece")
 _sklearn_available = importlib.util.find_spec("sklearn") is not None
 if _sklearn_available:
     try:
-        importlib.metadata.version("scikit-learn")
-    except importlib.metadata.PackageNotFoundError:
+        metadata.version("scikit-learn")
+    except metadata.PackageNotFoundError:
         _sklearn_available = False
 
 
@@ -158,8 +164,8 @@ def _is_package_available(pkg_name: str, return_version: bool = False) -> Union[
     if package_exists:
         try:
             # Primary method to get the package version
-            package_version = importlib.metadata.version(pkg_name)
-        except importlib.metadata.PackageNotFoundError:
+            package_version = metadata.version(pkg_name)
+        except metadata.PackageNotFoundError:
             # Fallback method: Only for "torch" and versions containing "dev"
             if pkg_name == "torch":
                 try:
@@ -188,8 +194,8 @@ _sentencepiece_available = _is_package_available("sentencepiece")
 _sklearn_available = importlib.util.find_spec("sklearn") is not None
 if _sklearn_available:
     try:
-        importlib.metadata.version("scikit-learn")
-    except importlib.metadata.PackageNotFoundError:
+        metadata.version("scikit-learn")
+    except metadata.PackageNotFoundError:
         _sklearn_available = False
 
 
@@ -207,9 +213,9 @@ def is_protobuf_available():
 
 def is_paddle_cuda_available() -> bool:
     if is_paddle_available():
-        import paddle
+        from .tools import paddle_device
 
-        return paddle.device.cuda.device_count() > 0
+        return paddle_device.device_count() > 0
     else:
         return False
 
@@ -244,6 +250,14 @@ def is_torch_available() -> bool:
         bool: if `torch` is available
     """
     return is_package_available("torch")
+
+
+def is_decord_available() -> bool:
+    """check if `decord` package is installed
+    Returns:
+        bool: if `decord` is available
+    """
+    return _is_package_available("decord")
 
 
 def is_package_available(package_name: str) -> bool:
@@ -287,6 +301,15 @@ def is_transformers_available() -> bool:
         bool: if `transformers` is available
     """
     return is_package_available("transformers")
+
+
+def is_paddlefleet_available() -> bool:
+    """check if `paddlefleet` package is installed and can be imported
+
+    Returns:
+        bool: if `paddlefleet` is available
+    """
+    return is_package_available("paddlefleet")
 
 
 def install_package(
@@ -382,3 +405,22 @@ def import_module(module_name: str) -> Optional[Type]:
         return target_module
     except ModuleNotFoundError:
         return None
+
+
+def direct_paddleformers_import(path: str, file="__init__.py") -> ModuleType:
+    """Imports paddleformers.transformers directly
+
+    Args:
+        path (`str`): The path to the source file
+        file (`str`, *optional*): The file to join with the path. Defaults to "__init__.py".
+
+    Returns:
+        `ModuleType`: The resulting imported module
+    """
+    name = "paddleformers.transformers"
+    location = os.path.join(path, file)
+    spec = importlib.util.spec_from_file_location(name, location, submodule_search_locations=[path])
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module = sys.modules[name]
+    return module

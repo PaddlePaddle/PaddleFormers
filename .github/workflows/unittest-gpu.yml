@@ -34,9 +34,42 @@ defaults:
     shell: bash
 
 jobs:
+  check_skip:
+    name: Check skip-unittest-ci label
+    runs-on: ubuntu-latest
+
+    outputs:
+      skip: ${{ steps.check_skip.outputs.skip }}
+
+    steps:
+      - name: Check skip-unittest-ci label
+        id: check_skip
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
+            echo "PR labels: $labels"
+
+            if echo "$labels" | grep -q "skip-unittest-ci"; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip CI but mark success
+        if: steps.check_skip.outputs.skip == 'true'
+        run: |
+          echo "skip-unittest-ci label found"
+          echo "Downstream GPU jobs will be skipped"
+
   unittest-gpu-ci:
+    needs: check_skip
+    if: needs.check_skip.outputs.skip == 'false'
     name: unittest-gpu-ci
-    runs-on: ${{ inputs.runner || 'ernie-8gpu' }}
+    runs-on: ${{ inputs.runner || 'ernie-8gpu' || 'distrbute' }}
     outputs:  
       pytest_execute_flag: ${{ steps.set_pytest_flag.outputs.pytest_execute_flag }}
     steps:
@@ -55,7 +88,8 @@ jobs:
           work_dir: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
-          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda126-Cudnn95-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
+          PIP_CACHE_DIR: /root/.cache/pip
+          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda12.6-Cudnn9.5-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
@@ -68,10 +102,12 @@ jobs:
           fi
           echo "DOCKER_VER=${DOCKER_VER}"
           echo "GPU_OPTION=${GPU_OPTION}"
-          docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+          docker run -d -t ${GPU_OPTION} --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
-            -v /home/.cache/pip:/home/.cache/pip \
+            -v /home/.cache/:/root/.cache/ \
+            -v /home/paddle-1/models/:/home/models/ \
+            -e PF_HOME=/home/models/ \
             -e "BRANCH=$BRANCH" \
             -e "AGILE_COMPILE_BRANCH=$AGILE_COMPILE_BRANCH" \
             -e "PR_ID=$PR_ID" \
@@ -88,8 +124,9 @@ jobs:
             -e "AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio" \
             -e "HF_DATASETS_CACHE=$work_dir/../../../paddlenlp/huggingface/datasets" \
             -e "TRANSFORMERS_CACHE=$work_dir/../../../paddlenlp/huggingface" \
-            -w /workspace ${GPU_OPTION} --privileged $IMAGE_NAME
-            
+            -e PIP_CACHE_DIR \
+            -w /workspace --privileged $IMAGE_NAME
+
       - name: Download Code
         run: |
           docker exec -t $container_name /bin/bash -c '
@@ -97,6 +134,7 @@ jobs:
             echo "Downloading PaddleFormers.tar"
             wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
             echo "Extracting PaddleFormers.tar"
+            rm -rf PaddleFormers
             tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
             source $work_dir/../../../proxy
             cd PaddleFormers
@@ -121,21 +159,24 @@ jobs:
         run: |
           docker exec -t $container_name /bin/bash -c '
           ldconfig
-          pip config set global.cache-dir "/home/.cache/pip"
+          mkdir -p /root/.cache/pip
+          pip cache dir
+          uv cache dir
           set -e
           rm -rf /root/.cache/aistudio/
+          cd /home/models/my_packages && dpkg -i *.deb
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
           source $work_dir/../../../proxy
           source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
+          pip install uv
           echo "work_dir = ${work_dir}"
           cp -r ${work_dir}/../../../models ./models
           echo "Check whether the local model file exists:"
           ls -l ./models
-          timeout 30m bash scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
+          bash -x scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
           '
           
       - name: Upload Products
-        if: always()
         env:
           home_path: ${{ github.workspace }}/../../..
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
@@ -180,7 +221,6 @@ jobs:
           # echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/report.tar.gz"
           '
       - name: Set pytest execute flag output
-        if: always()
         id: set_pytest_flag  # 专门设置输出的步骤
         run: |
           # 检查标志文件是否存在，并设置作业输出
@@ -261,39 +301,3 @@ jobs:
           files: coverage.xml
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
-  # upload-allure:
-  #   name: upload-allure
-  #   needs: [unittest-gpu-ci]
-  #   if: success() || failure()
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout Code
-  #       uses: actions/checkout@v4
-  #       with:
-  #         fetch-depth: 0
-
-  #     - name: Download report.tar.gz
-  #       run: |
-  #         if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
-  #           bos_prefix="${PR_ID}/${COMMIT_ID}"
-  #         else
-  #           bos_prefix="schedule/$(date +%Y%m%d)"
-  #         fi
-  #         wget -q --no-proxy \
-  #           https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/report.tar.gz \
-  #           --no-check-certificate -O report.tar.gz
-  #         tar -xzf report.tar.gz
-
-  #     - name: Upload Allure Report
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: allure-report
-  #         path: report
-  #         if-no-files-found: ignore
-
-  #     - name: Deploy allure report to GitHub Pages
-  #       uses: peaceiris/actions-gh-pages@v4
-  #       with:
-  #         github_token: ${{ secrets.GITHUB_TOKEN }}
-  #         publish_dir: ./report

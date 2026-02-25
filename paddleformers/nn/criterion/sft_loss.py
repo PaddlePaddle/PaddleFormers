@@ -16,7 +16,7 @@ from typing import Tuple, Union
 import paddle
 import paddle.nn as nn
 from paddle.distributed.fleet.utils import recompute
-from paddle.distributed.fleet.utils.sequence_parallel_utils import AllGatherOp
+from paddle.distributed.fleet.utils.sequence_parallel_utils import GatherOp
 
 from ...transformers.sequence_parallel_utils import (
     AllGatherVarlenOp,
@@ -29,10 +29,15 @@ from .loss_utils import calc_lm_head_logits, subbatch
 def sft_preprocess_inputs(self, logits, labels):
     hidden_states, lm_head_weight, lm_head_bias, transpose_y = None, None, None, None
 
-    if isinstance(logits, tuple):
-        hidden_states, lm_head_weight, lm_head_bias, transpose_y = logits  # unpack logits when using fused head loss
-        logits = None
+    def unpack_logits(obj):
+        if isinstance(obj, tuple):
+            if len(obj) == 1:
+                return unpack_logits(obj[0])
+            elif len(obj) == 4:
+                return None, *obj  # unpack logits when using fused head loss
+        return obj, None, None, None, None
 
+    logits, hidden_states, lm_head_weight, lm_head_bias, transpose_y = unpack_logits(logits)
     return logits, labels, hidden_states, lm_head_weight, lm_head_bias, transpose_y
 
 
@@ -69,7 +74,7 @@ def sft_calculate_loss(self, logits, hidden_states, lm_head_weight, lm_head_bias
             None,
             transpose_y,
             self.config.vocab_size,
-            self.config.tensor_parallel_degree,
+            self.config.tensor_model_parallel_size,
             self.config.tensor_parallel_output,
             False,
             self.loss_subbatch_sequence_length,
@@ -150,11 +155,11 @@ def sft_loss_forward(
     else:
         if self.sequence_parallel:
             if hidden_states is not None:
-                hidden_states = AllGatherOp.apply(hidden_states)
+                hidden_states = GatherOp.apply(hidden_states)
 
     masked_lm_labels = labels
     # bsz,seq_len,hidden_size or seq_len,hidden_size
-    if self.config.recompute:
+    if self.config.recompute_granularity is not None:
         loss = recompute(
             sft_calculate_loss,
             self,
@@ -202,11 +207,17 @@ def mtp_sft_loss_forward(
 
     if num_nextn_predict_layers > 0:
         mtp_loss_res = []
+        mtp_loss_res_sum = []
         for depth in range(num_nextn_predict_layers):
             logtis_cur_depth = mtp_logits[depth]
             labels_cur_depth = labels_ori[:, (depth + 1) : (depth + 1 + seq_length)]
-            res_cur_depth = sft_loss_forward(logtis_cur_depth, labels_cur_depth, loss_mask)
+            res_cur_depth = sft_loss_forward(self, logtis_cur_depth, labels_cur_depth, loss_mask)
+            if self.return_tuple:
+                res_cur_depth, res_cur_depth_sum = res_cur_depth
+            else:
+                res_cur_depth, res_cur_depth_sum = res_cur_depth, None
             mtp_loss_res.append(res_cur_depth)
+            mtp_loss_res_sum.append(res_cur_depth_sum)
 
     def add_loss(main_loss, loss):
         return main_loss + loss - loss.detach()
@@ -219,11 +230,13 @@ def mtp_sft_loss_forward(
     if num_nextn_predict_layers > 0:
         loss = add_loss(
             loss,
-            multi_token_pred_lambda * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
+            multi_token_pred_lambda * sum([x for x in mtp_loss_res]) / len(mtp_loss_res),
         )
 
     if loss_sum is not None:
-        loss_sum = loss_sum + multi_token_pred_lambda * sum([x[1].detach() for x in mtp_loss_res]) / len(mtp_loss_res)
+        loss_sum = loss_sum + multi_token_pred_lambda * sum([x.detach() for x in mtp_loss_res_sum]) / len(
+            mtp_loss_res_sum
+        )
 
     if router_loss is not None and isinstance(router_loss, paddle.Tensor):
         loss = loss + router_loss - router_loss.detach()

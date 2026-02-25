@@ -16,6 +16,7 @@
 """Qwen3MoE model configuration"""
 
 from ..configuration_utils import PretrainedConfig
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 
 class Qwen3MoeConfig(PretrainedConfig):
@@ -121,12 +122,14 @@ class Qwen3MoeConfig(PretrainedConfig):
         output_router_logits (`bool`, *optional*, defaults to `False`):
             Whether or not the router logits should be returned by the model. Enabling this will also
             allow the model to output the auxiliary loss, including load balancing loss and router z-loss.
-        router_aux_loss_coef (`float`, *optional*, defaults to 0.001):
-            The aux loss factor for the total loss.
         mlp_only_layers (`list[int]`, *optional*, defaults to `[]`):
             Indicate which layers use Qwen3MoeMLP rather than Qwen3MoeSparseMoeBlock
             The list contains layer index, from 0 to num_layers-1 if we have num_layers layers
             If `mlp_only_layers` is empty, `decoder_sparse_step` is used to determine the sparsity.
+        moe_subbatch_token_num_before_dispatch (`int`, *optional*, defaults to 0):
+            The number of tokens in a subbatch for MoE.
+        fd_fallback (`bool`, *optional*, defaults to `False`):
+            Whether fastdeploy fallback.
 
     ```python
     >>> from paddleformers.transformers import Qwen3MoeModel, Qwen3MoeConfig
@@ -170,8 +173,9 @@ class Qwen3MoeConfig(PretrainedConfig):
         num_experts=128,
         norm_topk_prob=False,
         output_router_logits=False,
-        router_aux_loss_coef=0.001,
         mlp_only_layers=None,
+        moe_subbatch_token_num_before_dispatch=0,
+        fd_fallback=False,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -192,11 +196,14 @@ class Qwen3MoeConfig(PretrainedConfig):
         self.rope_scaling = rope_scaling
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
+        self.fd_fallback = fd_fallback
         # Validate the correctness of rotary position embeddings parameters
         # BC: if there is a 'type' field, move it to 'rope_type'.
         if self.rope_scaling is not None and "type" in self.rope_scaling:
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
-        # rope_config_validation(self)
+        self.rope_parameters = self.rope_scaling
+        standardize_rope_params(self, rope_theta=rope_theta)
+        rope_config_validation(self)
 
         # MoE arguments
         self.decoder_sparse_step = decoder_sparse_step
@@ -205,8 +212,8 @@ class Qwen3MoeConfig(PretrainedConfig):
         self.num_experts = num_experts
         self.norm_topk_prob = norm_topk_prob
         self.output_router_logits = output_router_logits
-        self.router_aux_loss_coef = router_aux_loss_coef
         self.mlp_only_layers = [] if mlp_only_layers is None else mlp_only_layers
+        self.moe_subbatch_token_num_before_dispatch = moe_subbatch_token_num_before_dispatch
 
         super().__init__(
             tie_word_embeddings=tie_word_embeddings,

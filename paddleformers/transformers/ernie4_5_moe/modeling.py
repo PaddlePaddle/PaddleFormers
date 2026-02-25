@@ -16,7 +16,6 @@
 
 import math
 from copy import deepcopy
-from functools import partial
 from typing import Optional, Tuple
 
 import paddle
@@ -32,7 +31,7 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     ScatterOp,
     mark_as_sequence_parallel_parameter,
 )
-from paddle.incubate.nn.functional import swiglu as fused_swiglu
+from paddle.nn.functional import swiglu as fused_swiglu
 
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
@@ -46,9 +45,12 @@ from ...nn.moe.utils import _parse_moe_group
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
+from ..cache_utils import Cache, DynamicCache
 from ..ernie4_5.modeling import Ernie4_5Attention
+from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import MoECausalLMOutputWithPast, MoECausalLMOutputWithPastAndMTP
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..tensor_parallel_utils import model_parallel_dropout
 from .configuration import Ernie4_5_MoeConfig
 
@@ -89,10 +91,47 @@ def mtp_hidden_states_set_zero(hidden_states, inbatch_pack_offset):
 class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
     def __init__(self, config):
         super().__init__()
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
         self.config = config
         self.head_dim = config.head_dim
         self.base = config.rope_theta
+        rope_parameters = config.rope_parameters
+        self.rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
 
+        self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.original_inv_freq = inv_freq
+
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[Ernie4_5_MoeConfig] = None,
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        """
+        Computes the inverse frequencies according to the original RoPE implementation
+        Args:
+            config ([`PreTrainedConfig`]):
+                The model configuration.
+            seq_len (`int`, *optional*):
+                The current sequence length. Unused for this type of RoPE.
+        Returns:
+            Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
+            post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
+        """
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+
+        attention_factor = 1.0  # Unused in this type of RoPE
+
+        # Compute the inverse frequencies
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, attention_factor
+
+    @dynamic_rope_update
     def forward(self, x, position_ids):
         """
         Compute rotary position embeddings for given sequence length.
@@ -104,24 +143,25 @@ class Ernie4_5_MoeRotaryEmbedding(nn.Layer):
         Returns:
             Tensor: Rotary position embeddings of shape [1, 1, seq_length, head_dim]
         """
-        indices = paddle.arange(0, self.head_dim, 2, dtype="float32")
-        indices = 1 / self.base ** (indices / self.head_dim)
+        with paddle.amp.auto_cast(enable=False):
+            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
-        sinusoid_inp = position_ids.unsqueeze(-1).astype("float32") * indices.unsqueeze(
-            0
-        )  # [b, s, 1] * [1, d/2] -> [b, s, d/2]
-        emb = paddle.cat((sinusoid_inp, sinusoid_inp), axis=-1)
-        cos = emb.cos()
-        sin = emb.sin()
+            position_ids_expanded = position_ids[:, None, :].float()
 
-        # keeping it in full precision
-        return cos, sin
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+
+            emb = paddle.concat((freqs, freqs), axis=-1)
+
+            cos = emb.cos() * self.attention_scaling
+            sin = emb.sin() * self.attention_scaling
+
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 class Ernie4_5_MoeMLP(Ernie4_5MLP):
     """Mixture of Experts (MoE) variant of ERNIE's MLP layer."""
 
-    def __init__(self, config, hidden_size, moe_intermediate_size, layer_idx=0):
+    def __init__(self, config, hidden_size, moe_intermediate_size, layer_idx=0, **kwargs):
         """Initialize the MoE MLP layer.
 
         Args:
@@ -131,9 +171,11 @@ class Ernie4_5_MoeMLP(Ernie4_5MLP):
 
         if getattr(config, "disable_ffn_model_parallel", False):
             config = deepcopy(config)
-            config.tensor_parallel_degree = 1
+            config.tensor_model_parallel_size = 1
 
-        super().__init__(config, hidden_size=hidden_size, intermediate_size=moe_intermediate_size, layer_idx=layer_idx)
+        super().__init__(
+            config, hidden_size=hidden_size, intermediate_size=moe_intermediate_size, layer_idx=layer_idx, **kwargs
+        )
         self.moe_dropout_prob = config.moe_dropout_prob
         self.fuse_swiglu = config.fuse_swiglu
         if self.fuse_swiglu:
@@ -217,6 +259,7 @@ class FakeMoERouterLoss(PyLayer):
 class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
     def __init__(self, config, layer_idx):
         # correction bias (yes it seems to be a typo with statics <> statistics)
+        self.config = config
         moe_num_experts = config.moe_num_experts
         config.moe_world_size = dist.get_world_size(config.moe_group)
         self.use_multimodel_experts = False
@@ -242,7 +285,13 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
             if i // moe_num_experts_per_device == moe_rank:
                 config.disable_ffn_model_parallel = True  # no-split expert
                 experts.append(
-                    Ernie4_5_MoeMLP(deepcopy(config), config.hidden_size, config.moe_intermediate_size, layer_idx)
+                    Ernie4_5_MoeMLP(
+                        deepcopy(config),
+                        config.hidden_size,
+                        config.moe_intermediate_size,
+                        layer_idx,
+                        fuse_up_gate=True,
+                    )
                 )
             else:
                 experts.append(None)
@@ -256,7 +305,10 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
         if config.moe_num_shared_experts > 0:
             config.disable_ffn_model_parallel = False  # split shared epxert
             shared_experts = Ernie4_5_MoeMLP(
-                deepcopy(config), config.hidden_size, config.moe_intermediate_size * config.moe_num_shared_experts
+                deepcopy(config),
+                config.hidden_size,
+                config.moe_intermediate_size * config.moe_num_shared_experts,
+                fuse_up_gate=True,
             )
         use_expert_out_alltoall = use_expert_out_alltoall = "alltoall" in config.moe_multimodal_dispatch_use_allgather
         use_padding = "unpad" not in config.moe_multimodal_dispatch_use_allgather
@@ -266,7 +318,11 @@ class Ernie4_5_MoeSparseMoeBlock(MOEAllGatherLayerV2):
             layer_idx=layer_idx,
             shared_experts=shared_experts,
             group=config.moe_group,
-            recompute=config.use_recompute_moe,
+            recompute=bool(
+                self.config.recompute_granularity == "selective"
+                and self.config.recompute_modules is not None
+                and "moe" in self.config.recompute_modules
+            ),
             k=config.moe_k,
             all_to_all_dropout=config.moe_all_to_all_dropout,
             group_experts=config.moe_group_experts,
@@ -307,7 +363,12 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
         ):
             self.mlp = Ernie4_5_MoeSparseMoeBlock(config, layer_idx)
         else:
-            self.mlp = Ernie4_5MLP(config, hidden_size=config.hidden_size, intermediate_size=config.intermediate_size)
+            self.mlp = Ernie4_5MLP(
+                config,
+                hidden_size=config.hidden_size,
+                intermediate_size=config.intermediate_size,
+                fuse_up_gate=True,
+            )
 
         if config.sequence_parallel and isinstance(
             self.mlp, Ernie4_5_MoeSparseMoeBlock
@@ -354,7 +415,7 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
         position_ids: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[Tuple[paddle.Tensor]] = None,
         output_attentions: Optional[bool] = False,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         output_gate_logits=False,  # PP model should not output gate logits,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
@@ -366,7 +427,7 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
             attn_mask_startend_row_indices (Optional[paddle.Tensor]): Indices for variable length attention
             position_ids (Optional[paddle.Tensor]): Position indices for rotary embeddings
             output_attentions (Optional[bool]): Whether to return attention weights
-            past_key_value (Optional[Tuple[paddle.Tensor]]): Cached key/value states
+            past_key_values (Optional[Cache]): Cached key/value states
             use_cache (Optional[bool]): Whether to cache key/value states
             output_gate_logits (bool): Whether to return MoE gate logits
 
@@ -381,9 +442,9 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
         hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
-        (hidden_states, self_attn_weights, present_key_value, *router_loss_attn) = self.self_attn(
+        (hidden_states, self_attn_weights, *router_loss_attn) = self.self_attn(
             hidden_states=hidden_states,
-            past_key_value=past_key_value,
+            past_key_values=past_key_values,
             attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             position_embeddings=position_embeddings,
@@ -411,9 +472,6 @@ class Ernie4_5_MoeDecoderLayer(nn.Layer):
 
         if output_attentions:
             outputs += (self_attn_weights,)
-
-        if not self.training and use_cache:
-            outputs += (present_key_value,)
 
         # Non-empty only if `use_moe`
         if router_loss_attn:
@@ -461,142 +519,130 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
     ]
 
     @classmethod
-    def _get_tensor_parallel_mappings(cls, config, is_split=True):
-        """Generate tensor parallel mappings for model conversion."""
+    def _gen_aoa_config(cls, config: Ernie4_5_MoeConfig):
+        model_prefix = "" if cls == cls.base_model_class else "model."
+        aoa_config = {
+            "aoa_statements": [
+                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
+                f"model.norm.weight -> {model_prefix}norm.weight",
+                f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
+                f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"model.layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias -> {model_prefix}layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias, dtype='float32'",
+                f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
+                f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
+                f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
+                f"model.mtp_block.$LAYER_ID.input_layernorm.weight -> {model_prefix}mtp_block.$LAYER_ID.input_layernorm.weight",
+                f"model.mtp_block.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}mtp_block.$LAYER_ID.post_attention_layernorm.weight",
+                f"model.mtp_block.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}mtp_block.$LAYER_ID.mlp.down_proj.weight",
+                f"model.mtp_block.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}mtp_block.$LAYER_ID.self_attn.o_proj.weight",
+                f"model.mtp_emb_norm.$LAYER_ID.weight -> {model_prefix}mtp_emb_norm.$LAYER_ID.weight",
+                f"model.mtp_hidden_norm.$LAYER_ID.weight -> {model_prefix}mtp_hidden_norm.$LAYER_ID.weight",
+                f"model.mtp_linear_proj.$LAYER_ID.weight^T -> {model_prefix}mtp_linear_proj.$LAYER_ID.weight",
+            ]
+        }
 
-        from ..conversion_utils import split_or_merge_func
-
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
-            tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
-        )
-
-        LAYER_COLWISE = [
-            "self_attn.q_proj.weight",
-            "self_attn.k_proj.weight",
-            "self_attn.v_proj.weight",
-            "mlp.up_proj.weight",
-            "mlp.gate_proj.weight",
+        # attention qkv
+        aoa_config["aoa_statements"] += [
+            f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
+            f"model.mtp_block.$LAYER_ID.self_attn.q_proj.weight^T, model.mtp_block.$LAYER_ID.self_attn.k_proj.weight^T, model.mtp_block.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}mtp_block.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
         ]
-        LAYER_ROWWISE = ["self_attn.o_proj.weight", "mlp.down_proj.weight"]
-        MTP_COLWISE = [
-            "self_attn.q_proj.weight",
-            "self_attn.k_proj.weight",
-            "self_attn.v_proj.weight",
-            "mlp.up_proj.weight",
-            "mlp.gate_proj.weight",
+        if config.use_bias:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                f"model.mtp_block.$LAYER_ID.self_attn.q_proj.bias, model.mtp_block.$LAYER_ID.self_attn.k_proj.bias, model.mtp_block.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}mtp_block.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+            ]
+
+        # FFN
+        aoa_config["aoa_statements"] += [
+            f"model.layers.$LAYER_ID.mlp.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
+            f"model.layers.$LAYER_ID.mlp.shared_experts.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.shared_experts.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
+            f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
+            f"model.mtp_block.$LAYER_ID.mlp.gate_proj.weight^T, model.mtp_block.$LAYER_ID.mlp.up_proj.weight^T -> {model_prefix}mtp_block.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
         ]
-        MTP_ROWWISE = [
-            "mlp.down_proj.weight",
-            "self_attn.o_proj.weight",
+
+        if config.tie_word_embeddings:
+            aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
+
+        return aoa_config
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: Ernie4_5_MoeConfig):
+        model_prefix = "" if cls == cls.base_model_class else "model."
+        aoa_statements = [
+            f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+            f"{model_prefix}norm.weight -> model.norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
+            f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
+            f"{model_prefix}layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias -> model.layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias",
+            f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.layers.$LAYER_ID.mlp.gate.weight",
+            f"{model_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+            f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
+            f"{model_prefix}mtp_block.$LAYER_ID.input_layernorm.weight -> model.mtp_block.$LAYER_ID.input_layernorm.weight",
+            f"{model_prefix}mtp_block.$LAYER_ID.post_attention_layernorm.weight -> model.mtp_block.$LAYER_ID.post_attention_layernorm.weight",
+            f"{model_prefix}mtp_block.$LAYER_ID.mlp.down_proj.weight^T -> model.mtp_block.$LAYER_ID.mlp.down_proj.weight",
+            f"{model_prefix}mtp_block.$LAYER_ID.self_attn.o_proj.weight^T -> model.mtp_block.$LAYER_ID.self_attn.o_proj.weight",
+            f"{model_prefix}mtp_emb_norm.$LAYER_ID.weight -> model.mtp_emb_norm.$LAYER_ID.weight",
+            f"{model_prefix}mtp_hidden_norm.$LAYER_ID.weight -> model.mtp_hidden_norm.$LAYER_ID.weight",
+            f"{model_prefix}mtp_linear_proj.$LAYER_ID.weight^T -> model.mtp_linear_proj.$LAYER_ID.weight",
         ]
 
-        BIAS_KEYS = [
-            "self_attn.q_proj.bias",
-            "self_attn.k_proj.bias",
-            "self_attn.v_proj.bias",
-            "mlp.gate_proj.bias",
-            "mlp.up_proj.bias",
-            "self_attn.o_proj.bias",
-            "mlp.down_proj.bias",
-            "lm_head.bias",
+        aoa_statements += [
+            f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
+            f"{model_prefix}mtp_block.$LAYER_ID.self_attn.qkv_proj.weight -> model.mtp_block.$LAYER_ID.self_attn.q_proj.weight, model.mtp_block.$LAYER_ID.self_attn.k_proj.weight, model.mtp_block.$LAYER_ID.self_attn.v_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
         ]
-        SHARED_EXPERTS_COLWISE_KEYS = ["up_proj.weight", "gate_proj.weight"]
-        SHARED_EXPERTS_ROWWISE_KEYS = ["down_proj.weight"]
+        for x in ("q", "k", "v"):
+            for layer_id in range(config.num_hidden_layers):
+                aoa_statements += [
+                    f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight",
+                ]
+            for layer_id in range(config.num_nextn_predict_layers):
+                aoa_statements += [
+                    f"model.mtp_block.{layer_id}.self_attn.{x}_proj.weight^T -> model.mtp_block.{layer_id}.self_attn.{x}_proj.weight",
+                ]
+        if config.use_bias:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                f"{model_prefix}mtp_block.$LAYER_ID.self_attn.qkv_proj.bias -> model.mtp_block.$LAYER_ID.self_attn.q_proj.bias, model.mtp_block.$LAYER_ID.self_attn.k_proj.bias, model.mtp_block.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+            ]
 
-        def make_base_actions():
-            actions = {
-                "lm_head.weight": partial(fn, is_column=False),
-                "embed_tokens.weight": partial(fn, is_column=False),
-            }
-            for layer_idx in range(config.num_hidden_layers):
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=True)
-                        for k in LAYER_COLWISE
-                    }
-                )
-                actions.update(
-                    {
-                        f"{cls.base_model_prefix}.layers.{layer_idx}.{k}": partial(fn, is_column=False)
-                        for k in LAYER_ROWWISE
-                    }
-                )
-                # bias
-                if config.use_bias:
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.layers.{layer_idx}.{b}": partial(fn, is_column=True)
-                            for b in BIAS_KEYS
-                        }
-                    )
-            # MTP block
-            if config.num_nextn_predict_layers > 0:
-                for layer_idx in range(config.num_nextn_predict_layers):
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.mtp_block.{layer_idx}.{k}": partial(fn, is_column=True)
-                            for k in MTP_COLWISE
-                        }
-                    )
-                    actions.update(
-                        {
-                            f"{cls.base_model_prefix}.mtp_block.{layer_idx}.{k}": partial(fn, is_column=False)
-                            for k in MTP_ROWWISE
-                        }
-                    )
-            return actions
+        aoa_statements += [
+            f"{model_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.gate_proj.weight, model.layers.$LAYER_ID.mlp.up_proj.weight, fused_ffn",
+            f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.shared_experts.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_experts.up_proj.weight, fused_ffn",
+            f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
+            f"{model_prefix}mtp_block.$LAYER_ID.mlp.up_gate_proj.weight -> model.mtp_block.$LAYER_ID.mlp.gate_proj.weight, model.mtp_block.$LAYER_ID.mlp.up_proj.weight, fused_ffn",
+        ]
+        # mlp
+        for layer_id in range(config.moe_layer_start_index):
+            for y in ("gate", "up"):
+                aoa_statements += [
+                    f"model.layers.{layer_id}.mlp.{y}_proj.weight^T -> model.layers.{layer_id}.mlp.{y}_proj.weight",
+                ]
+        # experts
+        for layer_id in range(config.moe_layer_start_index, config.num_hidden_layers):
+            for y in ("gate", "up"):
+                aoa_statements += [
+                    f"model.layers.{layer_id}.mlp.shared_experts.{y}_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.{y}_proj.weight"
+                ]
+                for expert_id in range(config.moe_num_experts):
+                    aoa_statements += [
+                        f"model.layers.{layer_id}.mlp.experts.{expert_id}.{y}_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.{y}_proj.weight"
+                    ]
+        # mtp
+        for layer_id in range(config.num_nextn_predict_layers):
+            for y in ("gate", "up"):
+                aoa_statements += [
+                    f"model.mtp_block.{layer_id}.mlp.{y}_proj.weight^T -> model.mtp_block.{layer_id}.mlp.{y}_proj.weight"
+                ]
 
-        def expand_actions(base_actions, num_layers):
-            extend_action = {}
-            moe_group = config.moe_group if isinstance(config.moe_group, str) else config.moe_group_origin
-            moe_in_mp = moe_group in {"mp", "model", "tp"}
+        if config.tie_word_embeddings:
+            aoa_statements += ["lm_head.weight -> _"]
 
-            extend_key_prefix = f"{cls.base_model_prefix}.layers.0"
-
-            for i in range(num_layers):
-                # skip non-moe layers
-                if (
-                    ((i + 1) % config.moe_layer_interval != 0)
-                    or i < config.moe_layer_start_index
-                    or i > config.moe_layer_end_index
-                ):
-                    continue
-                experts_newkey = extend_key_prefix.replace("layers.0", f"layers.{i}.mlp.experts")
-
-                if config.moe_num_experts > 0:
-                    for eid in range(config.moe_num_experts):
-                        for key in LAYER_COLWISE:
-                            exp_key = f"{experts_newkey}.{eid}.{key}"
-                            action = partial(fn, is_column=True)
-                            if not moe_in_mp:
-                                extend_action[exp_key] = action
-
-                        for key in LAYER_ROWWISE:
-                            exp_key = f"{experts_newkey}.{eid}.{key}"
-                            action = partial(fn, is_column=False)
-                            if not moe_in_mp:
-                                extend_action[exp_key] = action
-
-                if config.moe_num_shared_experts > 0:
-                    shared_expert_newkey = extend_key_prefix.replace("layers.0", f"layers.{i}.mlp.shared_experts")
-                    for key in SHARED_EXPERTS_COLWISE_KEYS:
-                        exp_key = f"{shared_expert_newkey}.{key}"
-                        action = partial(fn, is_column=True)
-                        extend_action[exp_key] = action
-
-                    for key in SHARED_EXPERTS_ROWWISE_KEYS:
-                        exp_key = f"{shared_expert_newkey}.{key}"
-                        action = partial(fn, is_column=False)
-                        extend_action[exp_key] = action
-            extend_action.update(base_actions)
-            return extend_action
-
-        base_actions = make_base_actions()
-        mappings = expand_actions(base_actions, config.num_hidden_layers)
-        return mappings
+        aoa_config = {"aoa_statements": aoa_statements}
+        return aoa_config
 
 
 @register_base_model
@@ -609,7 +655,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         Args:
             config (Ernie4_5_MoeConfig): Model configuration.
         """
-        if config.moe_group in {"mp", "model", "tp"} and config.tensor_parallel_degree > 1:
+        if config.moe_group in {"mp", "model", "tp"} and config.tensor_model_parallel_size > 1:
             logger.info(f"disable FFN tensor model parallel, moe-group={config.moe_group}")
             config.disable_ffn_model_parallel = True
         config.moe_group_origin = config.moe_group
@@ -684,7 +730,6 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                         config.hidden_size,
                         has_bias=config.use_bias,
                         config=config,
-                        fuse_matmul_bias=config.fuse_linear,
                         linear_type="default",
                     )
                     for _ in range(config.num_nextn_predict_layers)
@@ -707,7 +752,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         position_ids,
         position_embeddings,
         output_attentions,
-        past_key_value,
+        past_key_values,
         use_cache,
     ):
         """Perform gradient checkpointing for memory-efficient training.
@@ -719,7 +764,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             attn_mask_startend_row_indices (paddle.Tensor): Variable length indices
             position_ids (paddle.Tensor): Position indices
             output_attentions (bool): Whether to output attention weights
-            past_key_value (Optional[Tuple[paddle.Tensor]]): Cached key/value states
+            past_key_values (Optional[Cache]): Cached key/value states
             use_cache (bool): Whether to cache key/value states
 
         Returns:
@@ -740,7 +785,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             position_ids,
             position_embeddings,
             output_attentions,
-            past_key_value,
+            past_key_values,
             use_cache,
         )
         return hidden_states
@@ -768,7 +813,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             attn_mask_startend_row_indices (Optional[paddle.Tensor]): Variable length attention indices
             inputs_embeds (Optional[paddle.Tensor]): Precomputed embeddings
             use_cache (Optional[bool]): Whether to cache key/value states
-            past_key_values (Optional[Tuple[Tuple[paddle.Tensor]]]): Cached key/value states
+            past_key_values (Optional[Cache]): Cached key/value states
             output_attentions (Optional[bool]): Whether to output attention weights
             output_hidden_states (Optional[bool]): Whether to output all hidden states
             return_dict (Optional[bool]): Whether to return dict or tuple
@@ -800,12 +845,11 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             bsz, seq_length, _ = inputs_embeds.shape
         else:
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
+        full_seq_length = seq_length
 
-        if past_key_values is None:
-            past_key_values = tuple([None] * len(self.layers))
-            kv_seq_len = 0
-        else:
-            kv_seq_len = past_key_values[0][0].shape[1]
+        if use_cache and past_key_values is None:
+            past_key_values = DynamicCache(config=self.config)
+        kv_seq_len = past_key_values.get_seq_length() if past_key_values is not None else 0
 
         if position_ids is None:
             position_ids = paddle.arange(kv_seq_len, seq_length).unsqueeze(0).tile((bsz, 1))
@@ -813,12 +857,20 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         seq_length -= self.config.num_nextn_predict_layers
 
         if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
-        if attention_mask is not None:
-            attention_mask = self._prepare_decoder_attention_mask(
-                attention_mask, inputs_embeds.shape[:2], kv_seq_len, inputs_embeds.dtype
-            )
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": bsz,
+            "seq_length": full_seq_length,
+            "cache_length": kv_seq_len,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
+        }
+
+        attention_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
 
         if self.training and self.config.num_nextn_predict_layers > 0:
             inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]
@@ -862,7 +914,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
 
         hidden_states = inputs_embeds
 
-        if self.config.fuse_rope:
+        if self.config.apply_rope_fusion:
             position_embeddings = None
         else:
             position_embeddings = self.rotary_emb(hidden_states, position_ids)  # cos and sin
@@ -870,7 +922,6 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
-        next_decoder_cache = () if use_cache else None
         all_router_loss = 0.0
         all_gate_logits = ()
         mtp_outputs = []
@@ -879,9 +930,13 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            past_key_value = past_key_values[idx] if past_key_values is not None else None
             has_gradient = not hidden_states.stop_gradient
-            if self.config.recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 layer_outputs = self.recompute_training(
                     decoder_layer,
                     hidden_states,
@@ -890,7 +945,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                     position_ids,
                     position_embeddings,
                     output_attentions,
-                    past_key_value,
+                    past_key_values,
                     use_cache,
                 )
             else:
@@ -901,7 +956,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                     position_ids,
                     position_embeddings,
                     output_attentions,
-                    past_key_value,
+                    past_key_values,
                     use_cache,
                 )
 
@@ -910,13 +965,15 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
             else:
                 hidden_states = layer_outputs
 
-            if use_cache:
-                next_decoder_cache += (layer_outputs[2 if output_attentions else 1],)
-
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
 
-            if not (self.config.recompute and self.config.recompute_granularity == "full" and has_gradient):
+            if not (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 layer_outputs, gate_logits = layer_outputs[:-1], layer_outputs[-1]
                 all_gate_logits = all_gate_logits + (gate_logits,)
 
@@ -985,14 +1042,14 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                     inputs_embeds_cur_depth = ScatterOp.apply(inputs_embeds_cur_depth)
 
                 decoder_layer = self.mtp_block[depth]
-                past_key_value = None
+                past_key_values = None
                 layer_outputs = decoder_layer(
                     inputs_embeds_cur_depth,
                     attention_mask,
                     attn_mask_startend_row_indices,
                     position_ids,
                     output_attentions,
-                    past_key_value,
+                    past_key_values,
                     use_cache,
                 )
                 if isinstance(layer_outputs, (tuple, list)):
@@ -1000,7 +1057,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
                 else:
                     hidden_states = layer_outputs
 
-                if not (self.config.recompute and has_gradient):
+                if not (self.config.recompute_granularity is not None and has_gradient):
                     layer_outputs, gate_logits = (
                         layer_outputs[:-1],
                         layer_outputs[-1],
@@ -1017,14 +1074,12 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
 
-        next_cache = next_decoder_cache if use_cache else None
-
         if not return_dict:
             return tuple(
                 v
                 for v in [
                     hidden_states,
-                    next_cache,
+                    past_key_values,
                     all_hidden_states,
                     all_self_attns,
                     all_router_loss,
@@ -1037,7 +1092,7 @@ class Ernie4_5_MoeModel(Ernie4_5_MoePretrainedModel):
         # assert all_router_loss is None, f'moe not support `return-dict`'
         return MoECausalLMOutputWithPastAndMTP(
             last_hidden_state=hidden_states,
-            past_key_values=next_cache,
+            past_key_values=past_key_values,
             hidden_states=all_hidden_states,
             attentions=all_self_attns,
             router_loss=all_router_loss,
@@ -1073,7 +1128,7 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
 
     def prepare_attention_mask_for_generation(self, input_ids, pad_token_id, eos_token_id):
         """Avoid using attention_mask with flash_attn on generation."""
-        if self.config.use_flash_attention:
+        if self.config._attn_implementation == "sdpa":
             return None
         return super().prepare_attention_mask_for_generation(input_ids, pad_token_id, eos_token_id)
 
@@ -1105,7 +1160,7 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
             labels (paddle.Tensor): Target labels.
             loss_mask (paddle.Tensor): Loss mask.
             use_cache (bool): Whether to use cached hidden states.
-            past_key_values (dict): Pre-computed hidden states.
+            past_key_values (Cache): Pre-computed hidden states.
             output_attentions (bool): Whether to output attentions.
             output_hidden_states (bool): Whether to output hidden states.
             return_dict (bool): Whether to return a dictionary.
@@ -1138,27 +1193,6 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
 
         hidden_states = outputs.last_hidden_state
         mtp_outputs = outputs.mtp_outputs
-
-        if self.criterion.loss_type == "dpo":
-            logits = self.lm_head(hidden_states)
-            chosen_labels = kwargs.get("chosen_labels", None)
-            rejected_labels = kwargs.get("rejected_labels", None)
-            response_indexs = kwargs.get("response_indexs", None)
-            score_deltas = kwargs.get("score_deltas", None)
-            reference_chosen_logps = kwargs.get("reference_chosen_logps", None)
-            reference_rejected_logps = kwargs.get("reference_rejected_logps", None)
-            labels = (
-                chosen_labels,
-                rejected_labels,
-                response_indexs,
-                score_deltas,
-                reference_chosen_logps,
-                reference_rejected_logps,
-            )
-            return self.criterion(
-                logits,
-                labels,
-            )
 
         # if labels is None，means we need full output, instead of tensor_parallel_output
         # tensor_parallel_output is togather with ParallelCrossEntropy
@@ -1196,6 +1230,8 @@ class Ernie4_5_MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _keep_in_fp32_modules = Ernie4_5_MoeModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Ernie4_5_MoeModel.transpose_weight_keys
+    _gen_aoa_config = Ernie4_5_MoeForCausalLM._gen_aoa_config
+    _gen_inv_aoa_config = Ernie4_5_MoeForCausalLM._gen_inv_aoa_config
 
 
 __all__ = ["Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM", "Ernie4_5_MoeForCausalLMPipe"]

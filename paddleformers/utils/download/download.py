@@ -31,9 +31,8 @@ from huggingface_hub.utils import (
 
 try:
     from paddle import __version__
-except ImportError:
+except:
     __version__ = ""
-
 from requests import HTTPError
 
 from ..log import logger
@@ -58,6 +57,11 @@ def register_model_group(models: dict[str, dict[DownloadSource, str]]) -> None:
 
 
 def check_repo(model_name_or_path, download_hub):
+    if "PF_HOME" in os.environ:
+        home_path = os.environ["PF_HOME"]
+        home_model_path = os.path.join(home_path, model_name_or_path)
+        if os.path.isfile(home_model_path) or os.path.isdir(home_model_path):
+            model_name_or_path = home_model_path
     is_local = os.path.isfile(model_name_or_path) or os.path.isdir(model_name_or_path)
     if not is_local:
         assert download_hub in [
@@ -107,6 +111,7 @@ def resolve_file_path(
     local_files_only: bool = False,
     endpoint: Optional[str] = None,
     download_hub: Optional[DownloadSource] = None,
+    force_return: Optional[bool] = False,
 ) -> str:
     """
     This is a general download function, mainly called by the from_pretrained function.
@@ -122,6 +127,8 @@ def resolve_file_path(
         repo_type('str'): The default is model.
         cache_dir('str' or Path): Where to save or load the file after downloading.
         download_hub (DownloadSource): The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `aistudio`.
+        force_return (Optional[bool]): If True, the function will return None instead of raising an error
+            when none of the specified `filenames` can be found or downloaded. Defaults to False (raises error).
 
 
     Returns:
@@ -178,17 +185,28 @@ def resolve_file_path(
             elif index < len(filenames) - 1:
                 continue
             else:
-                raise FileNotFoundError(f"please make sure one of the {filenames} under the dir {repo_id}")
+                if force_return:
+                    return None
+                else:
+                    raise FileNotFoundError(f"please make sure one of the {filenames} under the dir {repo_id}")
 
     # check cache
+    existing_files = []
+    file_counter = 0
     for filename in filenames:
         cache_file_name = hf_try_to_load_from_cache(repo_id, filename, cache_dir, subfolder, revision, repo_type)
         if download_hub == DownloadSource.HUGGINGFACE and cache_file_name is _CACHED_NO_EXIST:
             cache_file_name = None
         if cache_file_name is not None and os.path.exists(str(cache_file_name)):
-            return cache_file_name
+            existing_files.append(cache_file_name)
+            file_counter += 1
+
+    if file_counter == len(filenames) and len(existing_files) > 0:
+        return existing_files[0]
 
     # download file from different origins
+    os.environ["https_proxy"] = os.environ.get("HTTPS_PROXY", "")
+    os.environ["http_proxy"] = os.environ.get("HTTP_PROXY", "")
     try:
         if download_hub == DownloadSource.MODELSCOPE:
             for index, filename in enumerate(filenames):
@@ -202,7 +220,12 @@ def resolve_file_path(
                     if index < len(filenames) - 1:
                         continue
                     else:
-                        raise EntryNotFoundError(f"please make sure one of the {filenames} under the repo {repo_id}")
+                        if force_return:
+                            return None
+                        else:
+                            raise EntryNotFoundError(
+                                f"please make sure one of the {filenames} under the repo {repo_id}"
+                            )
 
         elif download_hub == DownloadSource.AISTUDIO:
             for index, filename in enumerate(filenames):
@@ -216,8 +239,12 @@ def resolve_file_path(
                 except Exception:
                     if index < len(filenames) - 1:
                         continue
-                    else:
-                        raise EntryNotFoundError(f"please make sure one of the {filenames} under the repo {repo_id}")
+                        if force_return:
+                            return None
+                        else:
+                            raise EntryNotFoundError(
+                                f"please make sure one of the {filenames} under the repo {repo_id}"
+                            )
 
         elif download_hub == DownloadSource.HUGGINGFACE:
             log_endpoint = "Huggingface Hub"

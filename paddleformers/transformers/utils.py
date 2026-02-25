@@ -174,13 +174,10 @@ def adapt_stale_fwd_patch(self, name, value):
         # NOTE(changwenbin & zhoukangkang):
         # When use model = paddle.incubate.jit.inference(model), it reportes errors, we fix it here.
         # is_inference_mode API is only available in PaddlePaddle develop，so we add a try except.
-        try:
-            from paddle.incubate.jit import is_inference_mode
+        from paddle.incubate.jit import is_inference_mode
 
-            if is_inference_mode(value):
-                return value
-        except:
-            pass
+        if is_inference_mode(value):
+            return value
 
         if hasattr(inspect, "getfullargspec"):
             (
@@ -849,9 +846,9 @@ def dtype_byte_size(dtype):
     4
     ```
     """
-    if dtype == paddle.bool:
+    if str(dtype) in {"paddle.bool", "bool"}:
         return 1 / 8
-    if dtype == paddle.float8_e4m3fn or dtype == paddle.float8_e5m2:
+    if str(dtype) in {"paddle.float8_e4m3fn", "paddle.float8_e5m2", "float8_e4m3fn", "float8_e5m2"}:
         return 1
     bit_search = re.search(r"[^\d](\d+)$", str(dtype))
     if bit_search is None:

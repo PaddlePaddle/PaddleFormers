@@ -69,8 +69,6 @@ class DeepseekV2FastConfig(PretrainedConfig):
             Whether to normalize the weights of the routed experts.
         scoring_func (`str`, *optional*, defaults to 'softmax'):
             Method of computing expert weights.
-        aux_loss_alpha (`float`, *optional*, defaults to 0.001):
-            Auxiliary loss weight coefficient.
         seq_aux = (`bool`, *optional*, defaults to True):
             Whether to compute the auxiliary loss for each individual sample.
         num_key_value_heads (`int`, *optional*):
@@ -101,8 +99,7 @@ class DeepseekV2FastConfig(PretrainedConfig):
         pretraining_tp (`int`, *optional*, defaults to 1):
             Experimental feature. Tensor parallelism rank used during pretraining. Please refer to [this
             document](https://huggingface.co/docs/transformers/parallelism) to understand more about it. This value is
-            necessary to ensure exact reproducibility of the pretraining results. Please refer to [this
-            issue](https://github.com/pytorch/pytorch/issues/76232).
+            necessary to ensure exact reproducibility of the pretraining results.
         tie_word_embeddings (`bool`, *optional*, defaults to `False`):
             Whether to tie weight embeddings
         rope_theta (`float`, *optional*, defaults to 10000.0):
@@ -160,7 +157,6 @@ class DeepseekV2FastConfig(PretrainedConfig):
         first_k_dense_replace=0,
         norm_topk_prob=False,
         scoring_func="softmax",
-        aux_loss_alpha=0.001,
         seq_aux=True,
         hidden_act="silu",
         max_position_embeddings=2048,
@@ -235,7 +231,6 @@ class DeepseekV2FastConfig(PretrainedConfig):
         self.first_k_dense_replace = first_k_dense_replace
         self.norm_topk_prob = norm_topk_prob
         self.scoring_func = scoring_func
-        self.aux_loss_alpha = aux_loss_alpha
         self.seq_aux = seq_aux
         # for backward compatibility
         if num_key_value_heads is None:

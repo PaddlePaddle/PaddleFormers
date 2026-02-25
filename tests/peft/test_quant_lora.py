@@ -25,7 +25,7 @@ from paddle.quantization.quanters.abs_max import FakeQuanterWithAbsMaxObserverLa
 
 from paddleformers.peft.lora import LoRAConfig, LoRALinear, LoRAModel
 from paddleformers.peft.lora.lora_quant_layers import QuantedLoRALinear
-from paddleformers.transformers import AutoModel
+from paddleformers.transformers import AutoModelForCausalLM
 
 
 class TestQuantedLoraLayer(unittest.TestCase):
@@ -98,11 +98,11 @@ class TestQuantedLoRAModel(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         lora_config = LoRAConfig(
-            target_modules=[".*q_proj.*", ".*v_proj.*"],
+            target_modules=[".*qkv_proj.*"],
             r=4,
             lora_alpha=8,
         )
-        cls.model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert")
+        cls.model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
         cls.lora_model = LoRAModel(cls.model, lora_config)
         cls.lora_model.mark_only_lora_as_trainable()
         # lora_B parameter is initialized to 0, therefore AB = 0 and W + AB = W
@@ -128,8 +128,8 @@ class TestQuantedLoRAModel(unittest.TestCase):
         self.lora_model.train()
         quant_lora_model = qat.quantize(self.lora_model, inplace=False)
         quantizer_cnt = self._count_layers(quant_lora_model, FakeQuanterWithAbsMaxObserverLayer)
-        # 2 LoRA layers (q_proj, v_proj) per transformer layer
-        self.assertEqual(quantizer_cnt, 2 * self.model.config.num_hidden_layers)
+        # 2 LoRA layers (qkv_proj) per transformer layer
+        self.assertEqual(quantizer_cnt, self.model.config.num_hidden_layers)
 
     def test_forward_no_quant(self):
         q_config = QuantConfig(activation=None, weight=None)

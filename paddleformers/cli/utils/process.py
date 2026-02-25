@@ -20,6 +20,8 @@ import subprocess
 import paddle
 import psutil
 
+from paddleformers.utils.log import logger
+
 
 def terminate_process_tree(pid: int) -> None:
     """
@@ -190,3 +192,49 @@ def set_cuda_environment():
         print(f"run nvidia-smi error: {e}")
     except Exception as e:
         print(f"process cuda version error: {e}")
+
+
+def set_env_if_empty(key, value):
+    """
+    Set the environment variable to the specified value if it is not set
+
+    Args:
+        key (str): The name of the environment variable
+        value (str): The value to set for the environment variable
+
+    Returns:
+        None
+    """
+    if not os.environ.get(key):
+        os.environ[key] = value
+
+
+def add_new_special_tokens(tokenizer, path):
+    if path is None:
+        return
+    if not isinstance(path, str):
+        raise TypeError(f"new_special_tokens_path must be a string, but got {type(path)}")
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Special tokens file not found: {path}")
+    new_special_tokens = []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith("#") or line.startswith("//"):
+                    continue
+                new_special_tokens.append(line)
+        if not new_special_tokens:
+            logger.warning(f"No valid special tokens found in {path}")
+            return
+        num_new_tokens = tokenizer.add_special_tokens({"additional_special_tokens": new_special_tokens})
+        if num_new_tokens > 0:
+            logger.info(f"Added {num_new_tokens} new special tokens from {path}: {new_special_tokens}")
+        else:
+            logger.info(f"All special tokens from {path} already exist in tokenizer.")
+    except UnicodeDecodeError as e:
+        raise ValueError(f"Failed to read {path} with UTF-8 encoding: {e}")
+    except Exception as e:
+        raise RuntimeError(f"Error processing special tokens file {path}: {e}")

@@ -553,7 +553,7 @@ class MultiHeadAttention(Layer):
         self.v_proj = Linear3D(embed_dim, num_heads, self.head_dim, weight_attr, bias_attr=bias_attr)
         self.out_proj = nn.Linear(embed_dim, embed_dim, weight_attr, bias_attr=bias_attr)
 
-        self.attn_impl = AttentionRegistry.cls_dict[attention_type](
+        self._attn_implementation = AttentionRegistry.cls_dict[attention_type](
             num_heads, block_size, window_size, num_global_blocks, num_rand_blocks, seed
         )
 
@@ -603,7 +603,9 @@ class MultiHeadAttention(Layer):
         else:
             q, k, v, cache = self._prepare_qkv(query, key, value, cache)
 
-        out = self.attn_impl(q, k, v, self.head_dim, attn_mask, rand_mask_idx, query_mask, key_mask, self.dropout)
+        out = self._attn_implementation(
+            q, k, v, self.head_dim, attn_mask, rand_mask_idx, query_mask, key_mask, self.dropout
+        )
         # combine heads
         out = paddle.transpose(out, perm=[0, 2, 1, 3])
         out = paddle.reshape(x=out, shape=[0, 0, out.shape[2] * out.shape[3]])

@@ -20,7 +20,8 @@ from paddleformers.trainer import TrainingArguments
 from paddleformers.trainer.trainer_utils import IntervalStrategy
 from paddleformers.trainer.utils.doc import add_start_docstrings
 from paddleformers.transformers.configuration_utils import llmmetaclass
-from paddleformers.trl import DataConfig
+
+from .data_config import DataConfig
 
 
 @dataclass
@@ -103,7 +104,8 @@ class DPOConfig:
     reference_free: bool = field(default=False, metadata={"help": "No reference model."})
     lora: bool = field(default=False, metadata={"help": "Use LoRA model."})
     offset_alpha: float = field(default=0.0, metadata={"help": "offset alpha"})
-    normalize_logps: bool = field(default=True, metadata={"help": "normalize logps"})
+    normalize_logps: bool = field(default=False, metadata={"help": "normalize logps"})
+    ignore_eos_token: bool = field(default=False, metadata={"help": "ignore eos token"})
 
 
 @dataclass
@@ -114,7 +116,6 @@ class DPODataArgument(DataConfig):
     max_prompt_len: int = field(default=2048, metadata={"help": "Maximum prompt length."})
     num_samples_each_epoch: int = field(default=6000000, metadata={"help": "Number of sample per training epoch."})
     buffer_size: int = field(default=1000, metadata={"help": "Preloading buffer capacity."})
-    mask_out_eos_token: bool = field(default=True, metadata={"help": "EOS loss masking."})
 
 
 @dataclass
@@ -138,14 +139,6 @@ class DPOModelArgument:
         default=None,
         metadata={"help": "Model weight quantization algorithm including 'nf4'(qlora), 'weight_only_int8'."},
     )
-    fuse_attention_qkv: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse attention qkv"},
-    )
-    fuse_attention_ffn: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse first up and gate proj in mlp block"},
-    )
     use_attn_mask_startend_row_indices: bool = field(
         default=True,
         metadata={"help": "Sparse attention mode."},
@@ -158,7 +151,6 @@ class DPOModelArgument:
     lora_plus_scale: float = field(default=1.0, metadata={"help": "Lora B scale in LoRA+ technique"})
     lora_alpha: int = field(default=-1, metadata={"help": "lora_alpha"})
     rslora_plus: bool = field(default=False, metadata={"help": "Strengthen lora performance"})
-    use_quick_lora: bool = field(default=True, metadata={"help": "quick lora"})
 
     # Attention
-    attn_impl: str = field(default="flashmask", metadata={"help": "Attention implementation"})
+    _attn_implementation: str = field(default="flashmask", metadata={"help": "Attention implementation"})

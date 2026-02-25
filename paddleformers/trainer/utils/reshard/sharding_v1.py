@@ -17,20 +17,27 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding
 )
 
 from ....transformers.model_utils import unwrap_optimizer
+from .common import is_sharding_opt
 
 
 def shard(node_model_state, model, optimizer):
     cur_rank = max(node_model_state.group.rank, 0)
-    optimizer = unwrap_optimizer(optimizer, DygraphShardingOptimizer)
-    assert optimizer is not None
-    param2rank = optimizer._param2rank
+    unwrapped_optimizer = unwrap_optimizer(optimizer, DygraphShardingOptimizer)
+    if unwrapped_optimizer is not None:
+        optimizer = unwrapped_optimizer
+        assert not is_sharding_opt(optimizer)
+        param2rank = optimizer._param2rank
 
-    def filter_func(key):
-        names = key
-        param_name = names[1]
-        assert param_name in param2rank
-        dst_rank = param2rank[param_name]
-        return dst_rank == cur_rank
+        def filter_func(key):
+            names = key
+            param_name = names[1]
+            assert param_name in param2rank
+            dst_rank = param2rank[param_name]
+            return dst_rank == cur_rank
+
+    else:
+        assert not is_sharding_opt(optimizer)
+        filter_func = lambda key: True
 
     node_model_state.reshard(filter_func)
     return node_model_state

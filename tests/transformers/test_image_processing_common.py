@@ -20,13 +20,7 @@ import numpy as np
 import paddle
 from PIL import Image
 
-
-def check_json_file_has_correct_format(file_path):
-    with open(file_path, "r") as f:
-        try:
-            json.load(f)
-        except Exception as e:
-            raise Exception(f"{e}: the json file should be a valid json")
+from .test_utils import check_json_file_has_correct_format
 
 
 def prepare_image_inputs(image_processor_tester, equal_resolution=False, numpify=False, paddlefy=False):
@@ -74,8 +68,8 @@ class ImageProcessingSavingTestMixin:
     def test_image_processor_to_json_file(self):
         image_processor_first = self.image_processing_class(**self.image_processor_dict)
 
-        with tempfile.TemporaryDirectory() as tmpdirname:
-            json_file_path = os.path.join(tmpdirname, "image_processor.json")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            json_file_path = os.path.join(tmpdir, "image_processor.json")
             image_processor_first.to_json_file(json_file_path)
             image_processor_second = self.image_processing_class.from_json_file(json_file_path)
 
@@ -84,9 +78,9 @@ class ImageProcessingSavingTestMixin:
     def test_image_processor_from_and_save_pretrained(self):
         image_processor_first = self.image_processing_class(**self.image_processor_dict)
 
-        with tempfile.TemporaryDirectory() as tmpdirname:
-            saved_file = image_processor_first.save_pretrained(tmpdirname)[0]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            saved_file = image_processor_first.save_pretrained(tmpdir)[0]
             check_json_file_has_correct_format(saved_file)
-            image_processor_second = self.image_processing_class.from_pretrained(tmpdirname)
+            image_processor_second = self.image_processing_class.from_pretrained(tmpdir)
 
         self.assertEqual(image_processor_second.to_dict(), image_processor_first.to_dict())

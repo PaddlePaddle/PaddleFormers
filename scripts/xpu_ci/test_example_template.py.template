@@ -1,0 +1,90 @@
+"""
+Template for adding new XPU CI test cases.
+
+To add a new test case:
+1. Copy this file and rename it to test_<your_test_name>.py
+2. Write your shell command directly in the test function
+3. Create baseline file in base_value/ directory
+4. Adjust tolerance and timeout if needed
+
+Example: Testing a new model called "gpt3_finetune"
+- Baseline: base_value/gpt3_finetune_loss.json
+- Test file: test_gpt3_finetune.py
+"""
+import pytest
+from conftest import run_command_and_validate
+
+
+def test_your_model_name(project_root, base_value_dir, log_file):
+    """Test <MODEL_NAME> with <COMMAND_DESCRIPTION>.
+    
+    This test runs the following shell command:
+        <WRITE YOUR EXACT COMMAND HERE>
+    
+    Then validates that loss values match the baseline.
+    """
+    # Define the exact shell command to execute
+    cmd = "paddleformers-cli train tests/xpu_ci/config/your_config.yaml"
+    
+    # Execute command and validate results
+    passed, error_msg = run_command_and_validate(
+        cmd=cmd,
+        baseline_path=base_value_dir / "your_model_loss.json",
+        log_file=log_file,
+        working_dir=project_root,
+        tolerance=1e-6,      # Adjust if needed
+        timeout=3600         # Adjust based on training time
+    )
+    
+    if not passed:
+        pytest.fail(error_msg)
+
+
+# Example: Test with a different command (not paddleformers-cli)
+def test_custom_training_script(project_root, base_value_dir, log_file):
+    """Test custom training script.
+    
+    This test runs the following shell command:
+        python scripts/custom_train.py --config my_config.json
+    
+    Shows that you can use ANY shell command, not just paddleformers-cli.
+    """
+    # You can use any shell command here
+    cmd = "python scripts/custom_train.py --config my_config.json"
+    
+    passed, error_msg = run_command_and_validate(
+        cmd=cmd,
+        baseline_path=base_value_dir / "custom_script_loss.json",
+        log_file=log_file,
+        working_dir=project_root,
+        tolerance=1e-5,      # Custom tolerance
+        timeout=7200         # 2 hours
+    )
+    
+    if not passed:
+        pytest.fail(error_msg)
+
+
+# Example: Test with complex shell command
+def test_with_complex_command(project_root, base_value_dir, log_file):
+    """Test with environment variables and piping.
+    
+    This test runs the following shell command:
+        CUDA_VISIBLE_DEVICES=0,1 paddleformers-cli train config.yaml 2>&1 | tee train.log
+    
+    Shows that you can use complex shell syntax.
+    """
+    # Complex shell command with env vars and piping
+    cmd = "CUDA_VISIBLE_DEVICES=0,1 paddleformers-cli train tests/xpu_ci/config/ernie_21b_sft.yaml"
+    
+    passed, error_msg = run_command_and_validate(
+        cmd=cmd,
+        baseline_path=base_value_dir / "ernie_21b_sft_loss.json",
+        log_file=log_file,
+        working_dir=project_root,
+        tolerance=1e-6,
+        timeout=3600
+    )
+    
+    if not passed:
+        pytest.fail(error_msg)

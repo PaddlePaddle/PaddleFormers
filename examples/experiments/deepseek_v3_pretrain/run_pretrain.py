@@ -32,6 +32,8 @@ from paddleformers.data.causal_dataset import (
 )
 from paddleformers.trainer import (
     FP8QuantWeightCallback,
+    MoECorrectionBiasAdjustCallback,
+    MoeExpertsGradScaleCallback,
     PdArgumentParser,
     StepFlexToken,
     Trainer,
@@ -46,7 +48,7 @@ from paddleformers.transformers import (
     LinearAnnealingWithWarmupDecay,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig, llmmetaclass
-from paddleformers.transformers.deepseek_v2 import DeepseekV2ForCausalLM
+from paddleformers.transformers.deepseek_v3 import DeepseekV3ForCausalLM
 from paddleformers.utils.batch_sampler import DistributedBatchSampler
 from paddleformers.utils.log import logger
 
@@ -82,9 +84,39 @@ class PreTrainingArguments(TrainingArguments):
         default=False,
         metadata={"help": "Weather to run benchmark by autotuner. True for from_scratch and pad_max_length."},
     )
+
     unified_checkpoint: bool = field(
         default=True,
         metadata={"help": "Enable fused linear grad add strategy."},
+    )
+
+    recompute: bool = field(
+        default=False,
+        metadata={
+            "help": "Recompute the forward pass to calculate gradients. Used for saving memory. "
+            "Only support for networks with transformer blocks."
+        },
+    )
+
+    refined_recompute: str = field(
+        default="",
+        metadata={
+            "help": "The refined recompute parameter is designed to optimize the balance between GPU memory usage and computational speed.\n"
+            "An example configuration could be: `attention_column_ln:-1,attention_row_ln:-1,flash_attn:-1,mlp_column_ln:5,mlp_row_ln:-1`.\n"
+            "The supported parameters for refining recompute are `attention_column_ln`, `attention_row_ln`, `flash_attn`, `mlp_column_ln`, and `mlp_row_ln`.\n"
+            "The associated number, `skip_num`, determines how many times to bypass recomputation for the specified operation.\n"
+            "A `skip_num` of `-1` indicates no recomputation across all stages, maximizing memory usage;\n"
+            "A `skip_num` of `0` enforces recomputation at every stage, minimizing memory usage.\n"
+            "You can also set `skip_num` to a value within the range [1, ..., num_layers]. If `skip_num` exceeds `num_layers`, it will behave as if set to `-1`.\n"
+            "If a parameter is omitted, it defaults to `xxx:0`."
+        },
+    )
+
+    pp_recompute_interval: int = field(
+        default=1,
+        metadata={
+            "help": "The interval for the number of layers at which recomputation occurs. A value of 0 indicates no recomputation."
+        },
     )
 
     def __post_init__(self):
@@ -104,6 +136,44 @@ class PreTrainingArguments(TrainingArguments):
             self.save_strategy = IntervalStrategy.NO
             self.evaluation_strategy = IntervalStrategy.NO
             self.unified_checkpoint = False
+
+        # arse_refined_recompute string to dict
+        if self.refined_recompute in [None, ""]:
+            self.refined_recompute = dict()
+        else:
+            refined_recompute_dict = {
+                "mlp_row_ln": 0,
+                "attention_row_ln": 0,
+                "attention_column_ln": 0,
+                "mlp_column_ln": 0,
+                "flash_attn": 0,
+                "global": 0,
+            }
+            ops = self.refined_recompute.split(",")
+            enable_rr = False
+            for op in ops:
+                op = op.strip()
+                if ":" not in op:
+                    raise ValueError("Illegal refined_recompute input, please check.")
+                op_name, skip_num = op.split(":")[0], int(op.split(":")[1])
+                if op_name not in refined_recompute_dict:
+                    raise ValueError(f"Refined recompute do not support {op_name}, please check.")
+                if (
+                    op_name in ["mlp_row_ln", "attention_row_ln", "attention_column_ln", "mlp_column_ln"]
+                    and self.tensor_model_parallel_size <= 1
+                ):
+                    logger.warning(
+                        f"Refined recompute is only supported for the `{op_name}` operation when `tensor_model_parallel_size` is greater than 1. \
+                            This refined recompute operation will be ignored."
+                    )
+                    continue
+
+                refined_recompute_dict[op_name] = skip_num
+                if skip_num != 0:
+                    enable_rr = True
+            if not enable_rr:
+                refined_recompute_dict = dict()
+            self.refined_recompute = refined_recompute_dict
 
 
 @dataclass
@@ -163,24 +233,11 @@ class ModelArguments:
     hidden_dropout_prob: float = field(default=0.1, metadata={"help": "The hidden dropout prob."})
     attention_probs_dropout_prob: float = field(default=0.1, metadata={"help": "The attention hidden dropout prob."})
 
-    fuse_attention_qkv: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse attention qkv"},
-    )
-    fuse_attention_ffn: bool = field(
-        default=None,
-        metadata={"help": "whether to fuse first up and gate proj in mlp block"},
-    )
-
     continue_training: bool = field(
         default=False,
         metadata={
             "help": "Pre-training from existing paddleformers model weights. Default False and model will train from scratch. If set True, the model_name_or_path argument must exist in the paddleformers models."
         },
-    )
-    num_hidden_layers: Optional[int] = field(
-        default=None,
-        metadata={"help": "num_hidden_layers."},
     )
 
 
@@ -403,11 +460,12 @@ def main():
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
             )
 
-    tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path, download_hub="huggingface")
+    tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name_or_path)
     config = DeepseekV2FastConfig.from_pretrained(model_args.model_name_or_path)
 
     # set all llm config
     LlmMetaConfig.set_llm_config(config, training_args)
+    setattr(config, "pp_recompute_interval", training_args.pp_recompute_interval)
     config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
     config.seq_length = data_args.max_seq_length
@@ -420,43 +478,34 @@ def main():
         config.vocab_size = max(config.vocab_size, ((tokenizer.vocab_size - 1) // 128 + 1) * 128)
         logger.info(f"Reset vocab size to {config.vocab_size} for batter amp peformance.")
 
-    config.num_hidden_layers = (
-        model_args.num_hidden_layers if model_args.num_hidden_layers is not None else config.num_hidden_layers
-    )
     # Config for model using dropout, such as GPT.
     if hasattr(config, "use_dualpipev"):
         # NOTE(zhangyuqin): In Paddle, the segmentation and scheduling of pipeline parallel
         # models are separate. Therefore, first we need to set the flag in the model config
         # to perform V-shape segmentation. Second, we need to set the flag in the training_args
         # to configure strategy.hybrid_configs to choose the DualPipeV schedule.
-        config.use_dualpipev = "use_dualpipev" in training_args.pipeline_parallel_config
+        config.use_dualpipev = training_args.use_dualpipev
     if hasattr(config, "hidden_dropout_prob"):
         config.hidden_dropout_prob = model_args.hidden_dropout_prob
     if hasattr(config, "attention_probs_dropout_prob"):
         config.attention_probs_dropout_prob = model_args.attention_probs_dropout_prob
-    if model_args.fuse_attention_qkv is not None:
-        config.fuse_attention_qkv = model_args.fuse_attention_qkv
-    if model_args.fuse_attention_ffn is not None:
-        config.fuse_attention_ffn = model_args.fuse_attention_ffn
 
     if config.sequence_parallel:
-        assert config.tensor_parallel_degree > 1, "tensor_parallel_degree must be larger than 1 for sequence parallel."
+        assert (
+            config.tensor_model_parallel_size > 1
+        ), "tensor_model_parallel_size must be larger than 1 for sequence parallel."
     assert (
-        config.num_attention_heads % config.sep_parallel_degree == 0
-    ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_degree {config.sep_parallel_degree}"
+        config.num_attention_heads % config.sep_parallel_size == 0
+    ), f"num_attention_heads:{config.num_attention_heads} must be divisible by sep_parallel_size {config.sep_parallel_size}"
     assert (
-        config.seq_length % config.context_parallel_degree == 0
-    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_degree {config.context_parallel_degree}"
+        config.seq_length % config.context_parallel_size == 0
+    ), f"seq_length:{config.seq_length} must be divisible by context_parallel_size {config.context_parallel_size}"
 
-    if training_args.sharding_parallel_config is not None:
-        # for stage1 overlap optimization
-        if (
-            "enable_stage1_allgather_overlap" in training_args.sharding_parallel_config
-            or "enable_stage1_broadcast_overlap" in training_args.sharding_parallel_config
-        ):
-            from paddle.io.reader import use_pinned_memory
+    # for stage1 overlap optimization
+    if training_args.stage1_allgather_overlap or training_args.stage1_broadcast_overlap:
+        from paddle.io.reader import use_pinned_memory
 
-            use_pinned_memory(False)
+        use_pinned_memory(False)
 
     if get_env_device() == "xpu" and training_args.gradient_accumulation_steps > 1:
         try:
@@ -478,8 +527,8 @@ def main():
         if training_args.bf16:
             dtype = "bfloat16"
 
-    model_class = DeepseekV2ForCausalLM
-    if training_args.pipeline_parallel_degree > 1:
+    model_class = DeepseekV3ForCausalLM
+    if training_args.pipeline_model_parallel_size > 1:
         model_class = DeepseekV2ForCausalLMPipe
         if "LLama" in str(config.architectures):
             try:
@@ -492,7 +541,7 @@ def main():
     architectures_to_check = {"Qwen2Moe", "DeepseekV2", "DeepseekV3"}
     if (
         any(architecture in str(config.architectures) for architecture in architectures_to_check)
-        and training_args.data_parallel_degree > 1
+        and training_args.data_parallel_size > 1
     ):
         training_args.use_expert_parallel = True
 
@@ -517,10 +566,8 @@ def main():
 
         # config.using_flex_token = True
         # config.num_nextn_predict_layers = 1
-        # config.using_fake_gate = True
-        # config.use_fused_rms_norm = True
-        # config.fuse_attention_ffn = True
-        # config.use_fused_rope = True
+        # config.moe_router_force_load_balancing = True
+        # config.apply_rope_fusion = True
         # config.token_drop_steps = 0
         model = model_class.from_config(config, dtype=dtype)
 
@@ -572,6 +619,13 @@ def main():
     )
 
     callbacks = [StepFlexToken(), FP8QuantWeightCallback()]
+
+    if training_args.use_expert_parallel:
+        callbacks += [MoeExpertsGradScaleCallback(training_args)]
+
+    if getattr(config, "topk_method", None) == "noaux_tc":
+        moe_router_bias_update_rate = getattr(config, "moe_router_bias_update_rate", 0.001)
+        callbacks += [MoECorrectionBiasAdjustCallback(moe_router_bias_update_rate)]
 
     def resume_from_custom_func(model):
         if training_args.resume_from_huggingface_ckpt:

@@ -17,8 +17,7 @@ import unittest
 import paddle
 
 from paddleformers.transformers import AutoTokenizer, Qwen2Tokenizer
-from paddleformers.utils.download import DownloadSource
-from tests.testing_utils import set_proxy, skip_for_none_ce_case
+from tests.testing_utils import slow
 
 
 class TestHFMultiSourceTokenizer(unittest.TestCase):
@@ -28,36 +27,34 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
         true_ids = [14990, 1879, 11, 220, 108386]
         self.assertEqual(output_ids, true_ids)
 
-    @set_proxy(DownloadSource.AISTUDIO)
     def test_ai_studio(self):
         tokenizer = AutoTokenizer.from_pretrained("ModelHub/Qwen2.5-7B-Instruct", download_hub="aistudio")
         self.encode(tokenizer)
         tokenizer = Qwen2Tokenizer.from_pretrained("ModelHub/Qwen2.5-7B-Instruct", download_hub="aistudio")
         self.encode(tokenizer)
 
-    @set_proxy(DownloadSource.MODELSCOPE)
+    @slow
     def test_model_scope(self):
         tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="modelscope")
         self.encode(tokenizer)
         tokenizer = Qwen2Tokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="modelscope")
         self.encode(tokenizer)
 
-    @skip_for_none_ce_case
-    @set_proxy(DownloadSource.HUGGINGFACE)
+    @slow
     def test_hf_hub(self):
         tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="huggingface")
         self.encode(tokenizer)
         tokenizer = Qwen2Tokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", download_hub="huggingface")
         self.encode(tokenizer)
 
+    @slow
     def test_default(self):
-        tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct")
+        tokenizer = AutoTokenizer.from_pretrained("PaddleFormers/tiny-random-qwen3")
         self.encode(tokenizer)
-        tokenizer = Qwen2Tokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct")
+        tokenizer = Qwen2Tokenizer.from_pretrained("PaddleFormers/tiny-random-qwen2")
         self.encode(tokenizer)
 
-    @skip_for_none_ce_case
-    @set_proxy(DownloadSource.HUGGINGFACE)
+    @slow
     def test_ernie_4_5_tokenizer(self):
         tokenizer = AutoTokenizer.from_pretrained("baidu/ERNIE-4.5-21B-A3B-PT", download_hub="huggingface")
         input_text = "hello world, 你好"
@@ -75,7 +72,7 @@ class TestHFMultiSourceTokenizer(unittest.TestCase):
 
 class TestHFTokenizer(unittest.TestCase):
     def setUp(self):
-        self.tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2.5-7B")
+        self.tokenizer = AutoTokenizer.from_pretrained("PaddleFormers/tiny-random-qwen2v2")
 
     def test_encode(self):
         input_text = "hello world, this is paddle format checker"
@@ -86,7 +83,7 @@ class TestHFTokenizer(unittest.TestCase):
 
     def test_encode_plus(self):
         input_text = "hello world, this is paddle format checker"
-        output_dict = self.tokenizer.encode_plus(input_text, return_tensors="pd")
+        output_dict = self.tokenizer._encode_plus(input_text, return_tensors="pd")
         true_dict = {
             "input_ids": [[14990, 1879, 11, 419, 374, 39303, 3561, 40915]],
             "attention_mask": [[1, 1, 1, 1, 1, 1, 1, 1]],
@@ -96,7 +93,7 @@ class TestHFTokenizer(unittest.TestCase):
 
     def test_batch_encode_plus(self):
         input_text = ["hello world, this is paddle format checker", "covert to decode to check"]
-        output_dict = self.tokenizer.batch_encode_plus(input_text, return_tensors="pd", padding=True)
+        output_dict = self.tokenizer._encode_plus(input_text, return_tensors="pd", padding_strategy="max_length")
         true_dict = {
             "input_ids": [
                 [14990, 1879, 11, 419, 374, 39303, 3561, 40915],
@@ -109,9 +106,10 @@ class TestHFTokenizer(unittest.TestCase):
 
     def test_single_apply_chat_template(self):
         input_text = "hello world, this is paddle format checker"
-        true_chat_str = self.tokenizer.apply_chat_template(input_text, tokenize=False)
-        output_ids = self.tokenizer.apply_chat_template(input_text, return_tensors="pd")
-        decode_str = self.tokenizer.decode(output_ids[0])
+        chat = [{"role": "user", "content": input_text}]
+        true_chat_str = self.tokenizer.apply_chat_template(chat, tokenize=False)
+        output = self.tokenizer.apply_chat_template(chat, return_tensors="pd")
+        decode_str = self.tokenizer.decode(output["input_ids"][0])
         self.assertEqual(true_chat_str, decode_str)
 
     def test_dict_apply_chat_template(self):
@@ -122,16 +120,16 @@ class TestHFTokenizer(unittest.TestCase):
         true_chat_str = self.tokenizer.apply_chat_template(
             input_text_dict_list, tokenize=False, add_generation_prompt=True
         )
-        output_ids = self.tokenizer.apply_chat_template(
+        output = self.tokenizer.apply_chat_template(
             input_text_dict_list, return_tensors="pd", add_generation_prompt=True
         )
-        decode_str = self.tokenizer.decode(output_ids[0])
+        decode_str = self.tokenizer.decode(output["input_ids"][0])
         self.assertEqual(true_chat_str, decode_str)
 
 
 class TestPaddleTokenizerMethod(unittest.TestCase):
     def test_tokenizer_decode_token(self) -> None:
-        tokenizer = AutoTokenizer.from_pretrained("PaddleNLP/Qwen2.5-7B", download_hub="aistudio")
+        tokenizer = AutoTokenizer.from_pretrained("PaddleFormers/tiny-random-qwen2v2", download_hub="aistudio")
         test_cases = ["1. 百度 2. 腾讯", "hello world! I like eating banana", "🤓😖", "🤓😖testtest"]
         for test_case in test_cases:
             input_ids = tokenizer(test_case)["input_ids"]

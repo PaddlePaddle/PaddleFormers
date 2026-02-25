@@ -802,7 +802,9 @@ class TinyRandomGenerationTest(unittest.TestCase):
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
 
         tokenizer = AutoTokenizer.from_pretrained("Paddleformers/tiny-random-llama")
-        model = AutoModelForCausalLM.from_pretrained("Paddleformers/tiny-random-llama")
+        model = AutoModelForCausalLM.from_pretrained(
+            "Paddleformers/tiny-random-llama", convert_from_hf=False, load_checkpoint_format=""
+        )
         input_ids = paddle.to_tensor(tokenizer(article)["input_ids"]).unsqueeze([0])
         attention_mask = paddle.ones_like(input_ids)
         result = model.generate(input_ids, attention_mask=attention_mask, min_new_tokens=10)[0]

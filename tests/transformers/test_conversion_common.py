@@ -17,7 +17,6 @@ import copy
 import glob
 import os
 import tempfile
-import unittest
 
 import paddle
 
@@ -33,6 +32,7 @@ def prepare_default_config(config):
     config.num_key_value_heads = 16
     config.intermediate_size = config.hidden_size
     config.word_embed_proj_dim = 512
+    config.head_dim = config.hidden_size // config.num_attention_heads
     return config
 
 
@@ -57,7 +57,9 @@ def common_test_load(model_class, model_first, config_second, tempdir):
     with paddle.no_grad():
         first = model_first(input_ids)[0]
 
-    model_second = model_class.from_pretrained(tempdir, config=config_second)
+    model_second = model_class.from_pretrained(
+        tempdir, config=config_second, convert_from_hf=False, load_checkpoint_format=""
+    )
     model_second.eval()
     with paddle.no_grad():
         second = model_second(input_ids)[0]
@@ -75,19 +77,21 @@ def common_test_save_and_load(config_first, config_second, model_class):
 
     with tempfile.TemporaryDirectory() as tempdir:
         # test load pdparams: model.pdparams
-        model_first.save_pretrained(save_dir=tempdir)
+        model_first.save_pretrained(save_dir=tempdir, save_to_hf=False, save_checkpoint_format="")
         common_test_load(model_class, model_first, config_second, tempdir)
 
         # test load shard pdparams: model-001-0f-008.pdparams
-        model_first.save_pretrained(tempdir, max_shard_size="5MB")
+        model_first.save_pretrained(tempdir, max_shard_size="5MB", save_to_hf=False, save_checkpoint_format="")
         common_test_load(model_class, model_first, config_second, tempdir)
 
         # test save safetensors: model.safetensors
-        model_first.save_pretrained(tempdir, safe_serialization=True)
+        model_first.save_pretrained(tempdir, safe_serialization=True, save_to_hf=False, save_checkpoint_format="")
         common_test_load(model_class, model_first, config_second, tempdir)
 
         # test load shard safetensors: model-001-0f-008.safetensors
-        model_first.save_pretrained(tempdir, max_shard_size="5MB", safe_serialization=True)
+        model_first.save_pretrained(
+            tempdir, max_shard_size="5MB", safe_serialization=True, save_to_hf=False, save_checkpoint_format=""
+        )
         common_test_load(model_class, model_first, config_second, tempdir)
 
 
@@ -231,17 +235,3 @@ def _test_fast_ffn():
     config_fast_ffn.convert_fast_ffn = True
 
     common_test_save_and_load(config_no_fast_ffn, config_fast_ffn, TestForCausalLM)
-
-
-from paddleformers.transformers import LlamaConfig, LlamaForCausalLM
-
-
-class TestFuseOrSplit(unittest.TestCase):
-    def test_model_split_to_fuse(self):
-        _test_split_to_fuse(LlamaConfig, LlamaForCausalLM)
-
-    def test_model_fuse_to_split(self):
-        _test_fuse_to_split(LlamaConfig, LlamaForCausalLM)
-
-    def test_model_convert_fast_ffn(self):
-        _test_fast_ffn()

@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import warnings
+from collections import defaultdict
 from typing import Iterable, List, Optional, Tuple, Union
 
 import numpy as np
@@ -28,6 +29,8 @@ from .image_utils import (
     get_channel_dimension_axis,
     get_image_size,
     infer_channel_dimension_format,
+    is_numpy_array,
+    is_pil_image,
     to_numpy_array,
 )
 from .tokenizer_utils import ExplicitEnum, TensorType
@@ -54,7 +57,7 @@ def to_channel_dimension_format(
     Returns:
         `np.ndarray`: The image with the channel dimension set to `channel_dim`.
     """
-    if not isinstance(image, np.ndarray):
+    if not is_numpy_array(image):
         raise ValueError(f"Input image must be of type np.ndarray, got {type(image)}")
 
     if input_channel_dim is None:
@@ -94,7 +97,7 @@ def rescale(
     Returns:
         `np.ndarray`: The rescaled image.
     """
-    if not isinstance(image, np.ndarray):
+    if not is_numpy_array(image):
         raise ValueError(f"Input image must be of type np.ndarray, got {type(image)}")
 
     rescaled_image = image * scale
@@ -122,13 +125,13 @@ def to_pil_image(
     Returns:
         `PIL.Image.Image`: The converted image.
     """
-    if isinstance(image, PIL.Image.Image):
+    if is_pil_image(image):
         return image
 
     # Convert all tensors to numpy arrays before converting to PIL image
     if is_paddle_tensor(image):
         image = image.cpu().numpy()
-    elif not isinstance(image, np.ndarray):
+    elif not is_numpy_array(image):
         raise ValueError("Input image type not supported: {}".format(type(image)))
 
     # If the channel as been moved to first dim, we put it back at the end.
@@ -145,12 +148,52 @@ def to_pil_image(
     return PIL.Image.fromarray(image)
 
 
+def get_size_with_aspect_ratio(image_size, size, max_size=None) -> tuple[int, int]:
+    """
+    Computes the output image size given the input image size and the desired output size.
+
+    Args:
+        image_size (`tuple[int, int]`):
+            The input image size.
+        size (`int`):
+            The desired output size.
+        max_size (`int`, *optional*):
+            The maximum allowed output size.
+    """
+    height, width = image_size
+    raw_size = None
+    if max_size is not None:
+        min_original_size = float(min((height, width)))
+        max_original_size = float(max((height, width)))
+        if max_original_size / min_original_size * size > max_size:
+            raw_size = max_size * min_original_size / max_original_size
+            size = int(round(raw_size))
+
+    if (height <= width and height == size) or (width <= height and width == size):
+        oh, ow = height, width
+    elif width < height:
+        ow = size
+        if max_size is not None and raw_size is not None:
+            oh = int(raw_size * height / width)
+        else:
+            oh = int(size * height / width)
+    else:
+        oh = size
+        if max_size is not None and raw_size is not None:
+            ow = int(raw_size * width / height)
+        else:
+            ow = int(size * width / height)
+
+    return (oh, ow)
+
+
 # Logic adapted from torchvision resizing logic: https://github.com/pytorch/vision/blob/511924c1ced4ce0461197e5caa64ce5b9e558aab/torchvision/transforms/functional.py#L366
 def get_resize_output_image_size(
     input_image: np.ndarray,
     size: Union[int, Tuple[int, int], List[int], Tuple[int]],
     default_to_square: bool = True,
     max_size: Optional[int] = None,
+    input_data_format: Optional[Union[str, ChannelDimension]] = None,
 ) -> tuple:
     """
     Find the target (height, width) dimension of the output image after resizing given the input image and the desired
@@ -192,7 +235,7 @@ def get_resize_output_image_size(
     if default_to_square:
         return (size, size)
 
-    height, width = get_image_size(input_image)
+    height, width = get_image_size(input_image, input_data_format)
     short, long = (width, height) if width <= height else (height, width)
     requested_new_short = size
 
@@ -251,7 +294,7 @@ def resize(
 
     # To maintain backwards compatibility with the resizing done in previous image feature extractors, we use
     # the pillow library to resize the image and then convert back to numpy
-    if not isinstance(image, PIL.Image.Image):
+    if not is_pil_image(image):
         image = to_pil_image(image)
     height, width = size
     # PIL images are in the format (width, height)
@@ -290,7 +333,7 @@ def normalize(
         data_format (`ChannelDimension`, *optional*):
             The channel dimension format of the output image. If unset, will use the inferred format from the input.
     """
-    if isinstance(image, PIL.Image.Image):
+    if is_pil_image(image):
         warnings.warn(
             "PIL.Image.Image inputs are deprecated and will be removed in v4.26.0. Please use numpy arrays instead.",
             FutureWarning,
@@ -300,7 +343,7 @@ def normalize(
         image = to_numpy_array(image)
         image = rescale(image, scale=1 / 255)
 
-    if not isinstance(image, np.ndarray):
+    if not is_numpy_array(image):
         raise ValueError("image must be a numpy array")
 
     input_data_format = infer_channel_dimension_format(image)
@@ -359,7 +402,7 @@ def center_crop(
     Returns:
         `np.ndarray`: The cropped image.
     """
-    if isinstance(image, PIL.Image.Image):
+    if is_pil_image(image):
         warnings.warn(
             "PIL.Image.Image inputs are deprecated and will be removed in v4.26.0. Please use numpy arrays instead.",
             FutureWarning,
@@ -369,7 +412,7 @@ def center_crop(
     else:
         return_numpy = True if return_numpy is None else return_numpy
 
-    if not isinstance(image, np.ndarray):
+    if not is_numpy_array(image):
         raise ValueError(f"Input image must be of type np.ndarray, got {type(image)}")
 
     if not isinstance(size, Iterable) or len(size) != 2:
@@ -648,8 +691,133 @@ def convert_to_rgb(image: ImageInput) -> ImageInput:
             The image to convert.
     """
 
-    if not isinstance(image, PIL.Image.Image):
+    if not is_pil_image(image):
         return image
 
     image = image.convert("RGB")
     return image
+
+
+def _group_images_by_shape(nested_images, is_nested: bool = False):
+    """Helper function to flatten a single level of nested image structures and group by shape."""
+    grouped_images = defaultdict(list)
+    grouped_images_index = {}
+    nested_images = [nested_images] if not is_nested else nested_images
+    for i, sublist in enumerate(nested_images):
+        for j, image in enumerate(sublist):
+            key = (i, j) if is_nested else j
+            # NOTE: Convert to tuple since paddle.shape is unhashable for defaultdict keys.
+            shape = tuple(image.shape[1:])
+            grouped_images[shape].append(image)
+            grouped_images_index[key] = (shape, len(grouped_images[shape]) - 1)
+
+    return grouped_images, grouped_images_index
+
+
+def _reconstruct_nested_structure(indices, processed_images):
+    """Helper function to reconstruct a single level nested structure."""
+    # Find the maximum outer index
+    max_outer_idx = max(idx[0] for idx in indices)
+
+    # Create the outer list
+    result = [None] * (max_outer_idx + 1)
+
+    # Group indices by outer index
+    nested_indices = defaultdict(list)
+    for i, j in indices:
+        nested_indices[i].append(j)
+
+    for i in range(max_outer_idx + 1):
+        if i in nested_indices:
+            inner_max_idx = max(nested_indices[i])
+            inner_list = [None] * (inner_max_idx + 1)
+            for j in range(inner_max_idx + 1):
+                if (i, j) in indices:
+                    shape, idx = indices[(i, j)]
+                    inner_list[j] = processed_images[shape][idx]
+            result[i] = inner_list
+
+    return result
+
+
+def group_images_by_shape(
+    images: Union[list["paddle.Tensor"], "paddle.Tensor"],
+    disable_grouping: bool,
+    is_nested: bool = False,
+) -> tuple[
+    dict[tuple[int, int], list["paddle.Tensor"]], dict[Union[int, tuple[int, int]], tuple[tuple[int, int], int]]
+]:
+    """
+    Groups images by shape.
+    Returns a dictionary with the shape as key and a list of images with that shape as value,
+    and a dictionary with the index of the image in the original list as key and the shape and index in the grouped list as value.
+
+    The function supports both flat lists of tensors and nested structures.
+    The input must be either all flat or all nested, not a mix of both.
+
+    Args:
+        images (Union[list["paddle.Tensor"], "paddle.Tensor"]):
+            A list of images or a single tensor
+        disable_grouping (bool):
+            Whether to disable grouping. If None, will be set to True if the images are on CPU, and False otherwise.
+            This choice is based on empirical observations, as detailed here: https://github.com/huggingface/transformers/pull/38157
+        is_nested (bool, *optional*, defaults to False):
+            Whether the images are nested.
+
+    Returns:
+        tuple[dict[tuple[int, int], list["paddle.Tensor"]], dict[Union[int, tuple[int, int]], tuple[tuple[int, int], int]]]:
+            - A dictionary with shape as key and list of images with that shape as value
+            - A dictionary mapping original indices to (shape, index) tuples
+    """
+    # If disable grouping is not explicitly provided, we favor disabling it if the images are on CPU, and enabling it otherwise.
+    if disable_grouping is None:
+        device = images[0][0].device if is_nested else images[0].device
+        disable_grouping = device == "cpu"
+
+    if disable_grouping:
+        if is_nested:
+            return {(i, j): images[i][j].unsqueeze(0) for i in range(len(images)) for j in range(len(images[i]))}, {
+                (i, j): ((i, j), 0) for i in range(len(images)) for j in range(len(images[i]))
+            }
+        else:
+            return {i: images[i].unsqueeze(0) for i in range(len(images))}, {i: (i, 0) for i in range(len(images))}
+
+    # Handle single level nested structure
+    grouped_images, grouped_images_index = _group_images_by_shape(images, is_nested)
+
+    # Stack images with the same shape
+    grouped_images = {shape: paddle.stack(images_list, axis=0) for shape, images_list in grouped_images.items()}
+
+    return grouped_images, grouped_images_index
+
+
+def reorder_images(
+    processed_images: dict[tuple[int, int], "paddle.Tensor"],
+    grouped_images_index: dict[Union[int, tuple[int, int]], tuple[tuple[int, int], int]],
+    is_nested: bool = False,
+) -> Union[list["paddle.Tensor"], "paddle.Tensor"]:
+    """
+    Reconstructs images in the original order, preserving the original structure (nested or not).
+    The input structure is either all flat or all nested.
+
+    Args:
+        processed_images (dict[tuple[int, int], "paddle.Tensor"]):
+            Dictionary mapping shapes to batched processed images.
+        grouped_images_index (dict[Union[int, tuple[int, int]], tuple[tuple[int, int], int]]):
+            Dictionary mapping original indices to (shape, index) tuples.
+        is_nested (bool, *optional*, defaults to False):
+            Whether the images are nested. Cannot be inferred from the input, as some processing functions outputs nested images.
+            even with non nested images,e.g functions splitting images into patches. We thus can't deduce is_nested from the input.
+
+
+    Returns:
+        Union[list["paddle.Tensor"], "paddle.Tensor"]:
+            Images in the original structure.
+    """
+    if not is_nested:
+        return [
+            processed_images[grouped_images_index[i][0]][grouped_images_index[i][1]]
+            for i in range(len(grouped_images_index))
+        ]
+
+    return _reconstruct_nested_structure(grouped_images_index, processed_images)

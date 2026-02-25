@@ -26,18 +26,14 @@ import numpy as np
 import paddle
 import paddle.autograd
 from paddle.distributed import fleet
+from paddle.distributed.fleet.layers.mpu import mp_layers, mp_ops
 from paddle.distributed.fleet.meta_parallel.parallel_layers.random import (
     get_rng_state_tracker,
 )
 from paddle.distributed.fleet.recompute.recompute import check_recompute_necessary
 from paddle.distributed.fleet.recompute.recompute import recompute as original_recompute
 from paddle.distributed.fleet.recompute.recompute import switch_rng_state_tracker
-
-try:
-    from paddle.distributed.fleet.utils import sequence_parallel_utils
-except ImportError:
-    sequence_parallel_utils = None
-from paddle.distributed.fleet.layers.mpu import mp_layers, mp_ops
+from paddle.distributed.fleet.utils import sequence_parallel_utils
 
 from .linear_utils import (
     ColumnParallelLinear,
@@ -531,7 +527,7 @@ def get_skip_recompute_ops(config, layer_idx):
 
     """
     skip_recompute_ops = dict()
-    if not config.recompute or not isinstance(config.refined_recompute, dict):
+    if config.recompute_granularity is not None or not isinstance(config.recompute_modules, dict):
         return skip_recompute_ops
 
     try:
@@ -543,10 +539,17 @@ def get_skip_recompute_ops(config, layer_idx):
     if hasattr(config, "add_tail_layer") and config.add_tail_layer:
         layer_num += 1
 
-    for op_name, skip_num in config.refined_recompute.items():
+    for op_name, recompute_num in config.recompute_modules.items():
+        skip_num = -1
+        if recompute_num < 0:
+            skip_num = 0
+        elif recompute_num == 0:
+            skip_num = -1
+        else:
+            skip_num = max(layer_num - recompute_num, 0)
         # is pp model
         if pp_size > 1:
-            vp_size = max(config.virtual_pp_degree, 1)
+            vp_size = max(config.virtual_pipeline_model_parallel_size, 1)
             no_recompute_layers = get_pp_vp_split_layers(layer_num, pp_size, vp_size, skip_num)
             if layer_idx in no_recompute_layers:
                 skip_recompute_ops[op_name] = True

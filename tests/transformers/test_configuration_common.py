@@ -22,7 +22,7 @@ import unittest.mock as mock
 
 from requests.exceptions import HTTPError
 
-from paddleformers.transformers import BertConfig
+from paddleformers.transformers import Qwen3Config
 from paddleformers.transformers.configuration_utils import PretrainedConfig
 
 
@@ -105,9 +105,10 @@ class ConfigTester(object):
         config = self.config_class(**self.inputs_dict)
         common_properties = (
             ["hidden_size", "num_attention_heads", "num_hidden_layers"]
-            if self.common_properties is None
+            if self.common_properties is None and not self.config_class.sub_configs
             else self.common_properties
         )
+        common_properties = [] if common_properties is None else common_properties
 
         # Add common fields for text models
         if self.has_text_modality:
@@ -198,6 +199,7 @@ class ConfigTester(object):
         self.create_and_test_config_to_json_file()
         self.create_and_test_config_from_and_save_pretrained()
         self.create_and_test_config_with_num_classes()
+        self.create_and_test_config_with_num_labels()
         self.check_config_can_be_init_without_params()
         self.check_config_arguments_init()
 
@@ -243,10 +245,10 @@ class ConfigTestUtils:
         response_mock.raise_for_status.side_effect = HTTPError
 
         # Download this model to make sure it's in the cache.
-        _ = BertConfig.from_pretrained("Paddleformers/tiny-random-bert")
+        _ = Qwen3Config.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
 
         # Under the mock environment we get a 500 error when trying to reach the model.
         with mock.patch("transformers.utils.hub.requests.head", return_value=response_mock) as mock_head:
-            _ = BertConfig.from_pretrained("Paddleformers/tiny-random-bert")
+            _ = Qwen3Config.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
             # This check we did call the fake head request
             mock_head.assert_called()

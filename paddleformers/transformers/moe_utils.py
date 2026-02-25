@@ -18,11 +18,6 @@ from typing import Optional
 
 import paddle
 
-try:
-    from paddle import scatter_add_
-except ImportError:
-    scatter_add_ = None
-
 from ..utils.tools import get_env_device
 
 
@@ -129,6 +124,8 @@ def unpermute(
 def offload(tensor):
     if paddle.is_compiled_with_cuda():
         place = paddle.CUDAPinnedPlace()
+    elif paddle.is_compiled_with_xpu():
+        place = paddle.XPUPinnedPlace()
     else:
         place = paddle.CPUPlace()
 

@@ -16,10 +16,7 @@ import copy
 import json
 from dataclasses import dataclass
 
-try:
-    from paddle.nn.quant.quantized_linear import _get_arch_info
-except:
-    _get_arch_info = None
+from paddle.nn.quant.quantized_linear import _get_arch_info
 
 quant_inference_mapping = {"avg": "abs_max", "abs_max_channel_wise": "abs_max_channel_wise", "abs_max": "abs_max"}
 fp8_format_mapping = {
@@ -80,6 +77,7 @@ class QuantizationConfig:
         dense_quant_type="",
         moe_quant_type="",
         quantization="",
+        quantization_linear_list=[],
         **kwargs,
     ):
         if weight_quantize_algo is not None:
@@ -164,6 +162,7 @@ class QuantizationConfig:
         self.dense_quant_type = dense_quant_type
         self.moe_quant_type = moe_quant_type
         self.quantization = quantization
+        self.quantization_linear_list = quantization_linear_list
 
     @property
     def fp8_format(self):

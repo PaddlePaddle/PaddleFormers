@@ -157,7 +157,7 @@ class PdArgumentParser(ArgumentParser):
             elif field.default is dataclasses.MISSING:
                 kwargs["required"] = True
         else:
-            kwargs["type"] = json.loads if field.type is dict else field.type
+            kwargs["type"] = json.loads if origin_type is dict else field.type
             if field.default is not dataclasses.MISSING:
                 kwargs["default"] = field.default
             elif field.default_factory is not dataclasses.MISSING:
@@ -188,7 +188,6 @@ class PdArgumentParser(ArgumentParser):
                 f"removing line of `from __future__ import annotations` which opts in Postponed "
                 f"Evaluation of Annotations (PEP 563)"
             )
-
         for field in dataclasses.fields(dtype):
             if not field.init:
                 continue

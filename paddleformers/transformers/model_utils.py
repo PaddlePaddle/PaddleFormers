@@ -24,6 +24,7 @@ import re
 import sys
 import tempfile
 import warnings
+from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
@@ -33,6 +34,7 @@ import aistudio_sdk
 import ml_dtypes
 import numpy as np
 import paddle
+import paddle.distributed as dist
 import paddle.nn as nn
 import six
 from huggingface_hub import (
@@ -44,19 +46,16 @@ from huggingface_hub import (
 )
 from huggingface_hub.utils import EntryNotFoundError
 from paddle import Tensor
+from paddle.distributed.fleet.meta_parallel import LocalSharedLayerDesc
 from paddle.distributed.fleet.meta_parallel.parallel_layers import (
     PipelineLayer,
     SharedLayerDesc,
 )
-
-try:
-    from paddle.distributed.fleet.meta_parallel import LocalSharedLayerDesc
-except:
-    LocalSharedLayerDesc = None
 from paddle.nn import Embedding, Layer
 
 # TODO(fangzeyang) Temporary fix and replace by paddle framework downloader later
 from paddle.utils.download import is_url as is_remote_url
+from safetensors.paddle import save_file
 from tqdm.auto import tqdm
 
 from ..generation import GenerationConfig, GenerationMixin
@@ -68,12 +67,14 @@ from ..quantization.quantization_utils import (
     update_loaded_state_dict_keys,
 )
 from ..quantization.unified_checkpoint_quantization import dequant_unified_optimizer
+from ..trainer.argparser import strtobool
 from ..utils import device_guard
 from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.env import (
     ASYMMETRY_QUANT_SCALE_MAX,
     ASYMMETRY_QUANT_SCALE_MIN,
     CONFIG_NAME,
+    FLEX_CKPT_AUTO_GENERATED_METADATA,
     PADDLE_WEIGHTS_INDEX_NAME,
     PADDLE_WEIGHTS_NAME,
     PYTORCH_WEIGHTS_INDEX_NAME,
@@ -112,6 +113,12 @@ __all__ = [
     "PretrainedModel",
     "register_base_model",
 ]
+
+
+def fit_bf16_to_uint16_np(tensor):
+    if "xpu" in paddle.device.get_device() and isinstance(tensor, np.ndarray) and str(tensor.dtype) == "bfloat16":
+        return tensor.view("uint16")
+    return tensor
 
 
 def dy2st_nocheck_guard_context():
@@ -377,7 +384,7 @@ def _load_part_state_dict(
     quantization_config=None,
     dtype=None,
     return_numpy=False,
-    convert_from_hf=False,
+    convert_from_hf=True,
     transpose_weight_keys=None,
 ):
     """load part state dict from checkpoint file.
@@ -433,7 +440,7 @@ def _load_part_state_dict(
                 and not key.endswith("_scale")
             ):
                 # numpy.array -> paddle.tensor
-                weight = paddle.Tensor.__call__(py_safe_slice_[:], zero_copy=True)
+                weight = paddle.Tensor.__call__(fit_bf16_to_uint16_np(py_safe_slice_[:]), zero_copy=True)
                 weight = _transpose_hf_weight(key, weight)
                 key_name = key.split(".weight")[0]
                 quant_key_name = key_name + ".quant_weight"
@@ -478,8 +485,10 @@ def _load_part_state_dict(
                         weight = py_safe_slice_[:]
                 if not return_numpy and device == "expected":
                     with device_guard():
-                        weight = paddle.Tensor.__call__(weight, zero_copy=True)
+                        weight = paddle.Tensor.__call__(fit_bf16_to_uint16_np(weight), zero_copy=True)
                     weight = weight._copy_to(paddle.framework._current_expected_place(), False)
+                if not isinstance(weight, paddle.Tensor):
+                    weight = paddle.Tensor.__call__(weight, zero_copy=True)
                 weight = _transpose_hf_weight(key, weight)
                 part_state_dict[key] = weight
 
@@ -492,7 +501,7 @@ def _load_part_state_dict(
                 scale = f.get_tensor(key)
                 if not return_numpy and device == "expected":
                     with device_guard():
-                        scale = paddle.Tensor.__call__(scale, zero_copy=True)
+                        scale = paddle.Tensor.__call__(fit_bf16_to_uint16_np(scale), zero_copy=True)
                     scale = scale._copy_to(paddle.framework._current_expected_place(), False)
                 scale_dict[key] = scale
     return part_state_dict, scale_dict
@@ -508,7 +517,7 @@ def load_state_dict(
     quantization_config=None,
     dtype=None,
     return_numpy=False,
-    convert_from_hf=False,
+    convert_from_hf=True,
     transpose_weight_keys=None,
 ):
     """
@@ -583,10 +592,14 @@ def load_state_dict(
                 if device == "cpu":
                     with device_guard():
                         for k in list(state_dict.keys()):
-                            state_dict[k] = paddle.Tensor.__call__(state_dict.pop(k), zero_copy=True)
+                            state_dict[k] = paddle.Tensor.__call__(
+                                fit_bf16_to_uint16_np(state_dict.pop(k)), zero_copy=True
+                            )
                 elif device == "pin_memory":
                     for k in list(state_dict.keys()):
-                        state_dict[k] = paddle.to_tensor(state_dict.pop(k), place=paddle.CUDAPinnedPlace())
+                        state_dict[k] = paddle.to_tensor(
+                            fit_bf16_to_uint16_np(state_dict.pop(k)), place=paddle.CUDAPinnedPlace()
+                        )
 
             if len(scale_dict) != 0:
                 if ckpt_quant_stage == "O0":
@@ -605,7 +618,7 @@ def load_state_dict(
     return state_dict
 
 
-def prepare_safe_save_state_dict(state_dict, save_to_hf=False):
+def prepare_safe_save_state_dict(state_dict, save_to_hf=True):
     for k in list(state_dict.keys()):
         if isinstance(state_dict[k], paddle.Tensor):
             if state_dict[k].dtype == paddle.bfloat16:
@@ -989,7 +1002,7 @@ def _load_state_dict_into_model(model_to_load, state_dict, start_prefix, model_t
     if len(start_prefix) > 0:
         for key in list(state_dict.keys()):
             if key.startswith(start_prefix):
-                state_dict[key.replace(start_prefix, "")] = state_dict.pop(key)
+                state_dict[key.replace(start_prefix, "", 1)] = state_dict.pop(key)
 
     _convert_state_dict_dtype_and_shape(state_dict, model_to_load_state_dict)
 
@@ -1103,6 +1116,70 @@ def _load_state_dict_into_meta_model(
     return error_msgs
 
 
+def _parse_size(size_str: str) -> int:
+    """Parses a size string like '100MB', '2GB' into the number of bytes."""
+    size_str = size_str.upper().strip()
+    match = re.match(r"^(\d+\.?\d*)\s*(B|KB|MB|GB|TB)?$", size_str)
+    if not match:
+        raise ValueError(f"Could not parse size string: '{size_str}'")
+
+    num_str, unit = match.groups()
+    num = float(num_str)
+
+    if unit == "B" or unit is None:
+        return int(num)
+    elif unit == "KB":
+        return int(num * 1024)
+    elif unit == "MB":
+        return int(num * 1024**2)
+    elif unit == "GB":
+        return int(num * 1024**3)
+    elif unit == "TB":
+        return int(num * 1024**4)
+    else:
+        # This case should not be reached due to regex
+        raise ValueError(f"Unknown unit: '{unit}'")
+
+
+def clean_unrelated_safetensors(save_dir):
+    use_dist = True if paddle.distributed.get_world_size() > 1 else False
+
+    if not os.path.exists(save_dir):
+        return
+
+    to_delete = []
+    for filename in os.listdir(save_dir):
+        filepath = os.path.join(save_dir, filename)
+        if filename.endswith(".safetensors") and filename != SAFE_WEIGHTS_NAME and os.path.isfile(filepath):
+            to_delete.append(filepath)
+        elif filename == SAFE_WEIGHTS_INDEX_NAME and os.path.isfile(filepath):
+            to_delete.append(filepath)
+        elif filename == SAFE_PEFT_WEIGHTS_INDEX_NAME and os.path.isfile(filepath):
+            to_delete.append(filepath)
+
+    if to_delete:
+        logger.warning(
+            "There are unrelated safetensors files in the current folder, which may break the consistency of Huggingface format weights. They will be deleted automatically."
+        )
+        for filepath in to_delete:
+            try:
+                os.remove(filepath)
+            except FileNotFoundError:
+                pass
+
+    if use_dist:
+        dist.barrier()
+
+
+def get_common_folder(file_list):
+    dirnames = [os.path.dirname(f) for f in file_list]
+    common_folder = dirnames[0]
+    if all(d == common_folder for d in dirnames):
+        return common_folder
+    else:
+        raise ValueError("All files must be in the same folder!")
+
+
 @six.add_metaclass(InitTrackerMeta)
 class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
     """
@@ -1165,6 +1242,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
     # trained, but which are either deterministic or tied variables)
     _keys_to_ignore_on_save = None
     _tied_weights_keys = None
+
+    # Attributes used mainly in multimodal LLMs, though all models contain a valid field for these
+    # Possible values are: text, image, video
+    input_modalities: Union[str, list[str]] = "text"  # most models are text
 
     def __init__(self, *args, **kwargs):
         super(PretrainedModel, self).__init__()
@@ -1301,11 +1382,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             predictor_args : PredictorArgument
                 The args of the predictor.
         """
-        tensor_parallel_degree = kwargs.pop("tensor_parallel_degree", 1)
+        tensor_model_parallel_size = kwargs.pop("tensor_model_parallel_size", 1)
         tensor_parallel_rank = kwargs.pop("tensor_parallel_rank", 0)
 
         if predictor_args.mode == "dynamic" or predictor_args.speculate_method in ["eagle", "mtp"]:
-            config.tensor_parallel_degree = tensor_parallel_degree
+            config.tensor_model_parallel_size = tensor_model_parallel_size
             config.tensor_parallel_rank = tensor_parallel_rank
             config.model_name_or_path = predictor_args.model_name_or_path
             config.quant_type = predictor_args.quant_type
@@ -1493,20 +1574,19 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         Raises:
             NotImplementedError: Model has not implement `set_input_embeddings` method
         """
-        base_model = getattr(self, self.base_model_prefix, None)
-
         name = getattr(self, "_input_embed_layer", "embed_tokens")
-        if base_model is not None and hasattr(base_model, name):
-            setattr(base_model, name, value)
+        if hasattr(self, "model") and hasattr(self.model, name):
+            setattr(self.model, name, value)
         # 2) as well as vanilla decoder‑only architectures
         elif hasattr(self, name):
             setattr(self, name, value)
-        elif base_model is not None:
+        # 3) recurse once into the registered *base* model (e.g. for encoder/decoder)
+        elif getattr(self, self.base_model_prefix, self) is not self:
+            base_model = getattr(self, self.base_model_prefix, self)
             base_model.set_input_embeddings(value)
         else:
             raise NotImplementedError(
-                f"model of {type(base_model)} has not implemented the `get_input_embeddings`"
-                " or `set_input_embeddings` method"
+                f"`set_input_embeddings` not auto‑handled for {self.__class__.__name__}; please override in the subclass."
             )
 
     def get_output_embeddings(self) -> Optional[Embedding]:
@@ -1774,7 +1854,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         self.set_input_embeddings(new_embeddings)
 
         # 2. Update vocab_size
-        self.base_model.config["vocab_size"] = new_num_tokens
+        self.config.get_text_config()["vocab_size"] = new_num_tokens
         self.vocab_size = new_num_tokens
 
         # update init_config
@@ -1865,7 +1945,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         cache_dir: str | None = None,
         subfolder: Optional[str] = "",
         config: PretrainedConfig = None,
-        convert_from_hf: bool = False,
+        convert_from_hf: bool = True,
         use_safetensors: bool | None = None,
         variant=None,
     ) -> str:
@@ -2062,7 +2142,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     raise EnvironmentError(
                         f"Error no files {filenames} found in repo {pretrained_model_name_or_path}."
                     )
-                elif "pytorch_model.bin" in str(resolved_archive_file):
+                elif PYTORCH_WEIGHTS_NAME in str(resolved_archive_file):
 
                     if download_hub == DownloadSource.AISTUDIO and not convert_from_hf:
                         raise ValueError(
@@ -2105,7 +2185,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         config=None,
         ignore_mismatched_sizes=False,
         low_cpu_mem_usage=False,
-        convert_from_hf=False,
+        convert_from_hf=True,
         dtype=None,
         keep_in_fp32_modules=None,
         quantization_linear_list=None,
@@ -2206,6 +2286,23 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             else:
                 origin_expected_keys = [k.replace("quant_weight", "weight") for k in expected_keys]
                 expected_keys_set = set(expected_keys + origin_expected_keys)
+
+            # Add original (pre-fuse) keys so that shards containing q/k/v or gate/up are not skipped
+            try:
+                fuse_actions, _ = cls.get_fuse_or_split_param_convert_actions(
+                    config, loaded_keys, is_fuse=True, ignore_error=True
+                )
+                logger.info(
+                    f"Getting fuse_actions for determine expected keys set succeed, "
+                    f"number of fuse actions: {len(fuse_actions)}"
+                )
+            except Exception as e:
+                logger.warning(f"get_fuse_or_split_param_convert_actions failed when building expected_keys_set: {e}")
+                fuse_actions = {}
+            for keys in fuse_actions.keys():
+                fused_key = keys[-1]
+                if fused_key in expected_keys_set:
+                    expected_keys_set.update(keys[:-1])
 
             if key_mapping is not None:
                 # Determine the precise set of original checkpoint keys that are actually needed for the current file.
@@ -2340,12 +2437,14 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 )
             else:
                 # Have loaded all state_dict, no resume state_dict
+                if key_mapping is not None:
+                    state_dict = {key_renaming_mapping[key]: value for key, value in state_dict.items()}
                 state_dict, _, fused_keys, new_keys = _fuse_or_split_keys(
                     state_dict,
                     config,
                     loaded_keys,
                     pre_tensor_parallel_split=True
-                    if config is not None and config.tensor_parallel_degree > 1
+                    if config is not None and config.tensor_model_parallel_size > 1
                     else False,
                 )
                 missing_keys = list(set(missing_keys) - set(new_keys))
@@ -2396,7 +2495,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 if quantization_linear_list is not None:
                     if (
                         shard_file.endswith(".safetensors")
-                        and config.tensor_parallel_degree > 1
+                        and config.tensor_model_parallel_size > 1
                         and "tp" not in os.path.split(shard_file)[-1]
                     ):
                         pre_tensor_parallel_split = True
@@ -2437,7 +2536,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 else:
                     if (
                         shard_file.endswith(".safetensors")
-                        and config.tensor_parallel_degree > 1
+                        and config.tensor_model_parallel_size > 1
                         and "tp" not in os.path.split(shard_file)[-1]
                     ):
                         pre_tensor_parallel_split = True
@@ -2508,7 +2607,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     ignore_mismatched_sizes,
                 )
 
-                if config.tensor_parallel_degree > 1 and ".tp" not in shard_file and not pre_tensor_parallel_split:
+                if config.tensor_model_parallel_size > 1 and ".tp" not in shard_file and not pre_tensor_parallel_split:
                     logger.info("Converting state_dict to Tensor Parallel Format")
                     # ignore error for multi shard, since only parts of data
                     state_dict = cls.convert_tensor_parallel(
@@ -2662,13 +2761,15 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         dtype = kwargs.pop("dtype", None)
         download_hub = kwargs.pop("download_hub", None)
         subfolder = kwargs.pop("subfolder", None)
+        load_via_cpu = kwargs.pop("load_via_cpu", False)
+        load_checkpoint_format = kwargs.pop("load_checkpoint_format", "flex_checkpoint")
         if subfolder is None:
             subfolder = ""
         variant = kwargs.pop("variant", None)
         use_safetensors = kwargs.pop("use_safetensors", None if is_safetensors_available() else False)
 
         low_cpu_mem_usage = kwargs.pop("low_cpu_mem_usage", False)
-        convert_from_hf = kwargs.pop("convert_from_hf", None)
+        convert_from_hf = kwargs.pop("convert_from_hf", True)
         load_state_as_np = kwargs.pop("load_state_as_np", None)
         if load_state_as_np is not None:
             logger.warning("`load_state_as_np` is deprecated,  please delete it!")
@@ -2698,7 +2799,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             convert_from_hf = True
         # convert_from_hf default is False
         if convert_from_hf is None:
-            convert_from_hf = False
+            convert_from_hf = True
 
         # 1. get the PretrainedConfig to init model
         if not isinstance(config, PretrainedConfig):
@@ -2713,14 +2814,41 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             )
 
         if dtype is None:
-            dtype = config.dtype
+            if config.dtype is not None:
+                dtype = config.dtype
+            elif config.sub_configs and (
+                sub_config := next(
+                    (
+                        v
+                        for k in config.sub_configs
+                        for v in [getattr(config, k, None)]
+                        if v and hasattr(v, "dtype") and v.dtype
+                    ),
+                    None,
+                )
+            ):
+                dtype = sub_config.dtype
+            else:
+                dtype = paddle.get_default_dtype()
+                for key in config.sub_configs:
+                    if (sub_config := getattr(config, key)) is not None:
+                        sub_config.dtype = dtype
+        else:
+            for sub_config_key in config.sub_configs:
+                if (sub_config := getattr(config, sub_config_key)) is not None:
+                    sub_config.dtype = dtype
 
         config.dtype = dtype
+
+        if config.moe_grouped_gemm and config.is_lora:
+            logger.info("Lora doesn't support moe_grouped_gemm, moe_grouped_gemm is set to False.")
+            config.moe_grouped_gemm = False
 
         init_contexts = []
         if low_cpu_mem_usage or config.quantization_config.is_weight_quantize():
             # Instantiate model.
             init_contexts.append(no_init_weights(_enable=True))
+            config.perform_initialization = False
             if is_paddle_support_lazy_init():
                 init_contexts.append(paddle.LazyGuard())
 
@@ -2750,11 +2878,115 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             variant=variant,
         )
 
+        file_list = resolved_sharded_files if is_sharded else [resolved_archive_file]
+        ckpt_path = get_common_folder(file_list)
+        # 3. init the model
+        init_args = config["init_args"] or ()
+        with ContextManagers(init_contexts):
+            if (
+                config.quantization_config.is_weight_quantize() and load_checkpoint_format == "flex_checkpoint"
+            ):  # flex_checkpoint need a extra model in cpu to initialize weights
+                copied_config = copy.deepcopy(config)
+                copied_init_args = copy.deepcopy(init_args)
+                copied_model_kwargs = copy.deepcopy(model_kwargs)
+                copied_model = cls(copied_config, *copied_init_args, **copied_model_kwargs)
+            model = cls(config, *init_args, **model_kwargs)
+
+        if (
+            config.quantization_config.is_weight_quantize() and load_checkpoint_format == "flex_checkpoint"
+        ):  # flex_checkpoint need initialized weights
+            for name, param in model.named_parameters():
+                with paddle.device_guard("cpu"):
+                    value = paddle.zeros(shape=param.shape, dtype=param.dtype)
+                param.set_value(value)
+
+        if load_checkpoint_format == "flex_checkpoint":
+            if not hasattr(cls, "_gen_aoa_config"):
+                raise RuntimeError(
+                    "When using flex_checkpoint to load Hugging Face open-source weights, "
+                    "the model must implement the _gen_aoa_config function to provide checkpoint conversion rules."
+                )
+            aoa_config = cls._gen_aoa_config(config)
+            sharded_state_dict = model.sharded_state_dict()
+            metadata_path = os.path.join(ckpt_path, FLEX_CKPT_AUTO_GENERATED_METADATA)
+
+            # delete the metadata file if it exists
+            try:
+                os.remove(metadata_path)
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                logger.error(f"Failed to delete {metadata_path}: {e}")
+
+            # change dtype in aoa
+            if dtype is not None:
+                for key in model.state_dict().keys():
+                    # keep fp32
+                    if model.state_dict()[key].dtype == paddle.float32:
+                        aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='float32'")
+                    else:
+                        aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='{dtype}'")
+
+            dist.load_state_dict(
+                sharded_state_dict,
+                path=ckpt_path,
+                aoa_config=aoa_config,
+                safetensors=True,
+                offload=load_via_cpu,
+            )
+
+            for v in sharded_state_dict.values():
+                if hasattr(v.local_tensor, "target_tensor"):
+                    del v.local_tensor.target_tensor
+
+            if config.quantization_config.is_weight_quantize():
+                new_state_dict = copy.deepcopy(model.state_dict())
+                del model
+                model = copied_model
+
+                quantization_linear_list = None
+                if config.quantization_config.is_weight_quantize():
+                    with ContextManagers(quantization_init_contexts):
+                        replace_with_quantization_linear(
+                            model=model,
+                            quantization_config=config.quantization_config,
+                        )
+                        quantization_linear_list = []
+                        for key in model.state_dict().keys():
+                            if "quant_weight" in key:
+                                quantization_linear_list.append(key[:-13])
+
+                if isinstance(model.config, dict):
+                    model.config["quantization_config"].quantization_linear_list = quantization_linear_list
+                else:  # model.config is instance of GPTProvider
+                    model.config.quantization_config.quantization_linear_list = quantization_linear_list
+
+                new_state_dict = convert_to_quantize_state_dict(
+                    new_state_dict,
+                    quantization_linear_list,
+                    config.quantization_config,
+                    dtype,
+                )
+
+                model_state_dict = model.state_dict()
+                set_state_dict = {}
+                for param_name, param in new_state_dict.items():
+                    if config.tie_word_embeddings and "lm_head.weight" in param_name:
+                        continue
+                    with paddle.no_grad():
+                        set_state_dict[param_name] = param.cuda()
+                        model_state_dict[param_name].get_tensor()._share_data_with(
+                            set_state_dict[param_name].value().get_tensor()
+                        )
+                    param.value().get_tensor()._clear()
+
+            return model
+
         if not is_sharded and state_dict is None:
             # 4. loading non-sharded ckpt from the state dict
-            if config.tensor_parallel_degree > 1 and resolved_archive_file.endswith("model_state.pdparams"):
+            if config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith(PADDLE_WEIGHTS_NAME):
                 state_dict = cls.convert_tensor_parallel(resolved_archive_file, config)
-            elif config.tensor_parallel_degree > 1 and resolved_archive_file.endswith("model.safetensors"):
+            elif config.tensor_model_parallel_size > 1 and resolved_archive_file.endswith(SAFE_WEIGHTS_NAME):
                 with safe_open(resolved_archive_file, framework="np", device="cpu") as f:
                     loaded_keys = f.keys()
                 tp_actions = cls.get_tensor_parallel_convert_actions(config, loaded_keys)
@@ -2784,7 +3016,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             for k in list(state_dict.keys()):
                 if not isinstance(state_dict[k], paddle.Tensor):
                     with device_guard():
-                        state_dict[k] = paddle.Tensor.__call__(state_dict.pop(k), zero_copy=True)
+                        state_dict[k] = paddle.Tensor.__call__(
+                            fit_bf16_to_uint16_np(state_dict.pop(k)), zero_copy=True
+                        )
         else:
             if is_sharded:
                 loaded_state_dict_keys = sharded_metadata["all_checkpoint_keys"]
@@ -2799,11 +3033,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             for k in list(state_dict.keys()):
                 if not isinstance(state_dict[k], paddle.Tensor):
                     with device_guard():
-                        state_dict[k] = paddle.Tensor.__call__(state_dict.pop(k), zero_copy=True)
-        # 3. init the model
-        init_args = config["init_args"] or ()
-        with ContextManagers(init_contexts):
-            model = cls(config, *init_args, **model_kwargs)
+                        state_dict[k] = paddle.Tensor.__call__(
+                            fit_bf16_to_uint16_np(state_dict.pop(k)), zero_copy=True
+                        )
 
         if use_keep_in_fp32_modules:
             # low_cpu_mem_usage = True
@@ -2947,8 +3179,17 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         shard_format = kwargs.get("shard_format", "naive")  # support naive pipeline
         # variant = kwargs.get("variant", None)
         # is_main_process = kwargs.get("is_main_process", True)
-        save_to_hf = kwargs.get("save_to_hf", False)
+        save_to_hf = kwargs.get("save_to_hf", True)
+
+        save_checkpoint_format = kwargs.get("save_checkpoint_format", "flex_checkpoint")
+
+        if kwargs.get("enable_auto_parallel", ""):
+            # use flex_checkpoint as the default format in auto_parallel
+            save_checkpoint_format = "flex_checkpoint"
+
         safe_serialization = safe_serialization or save_to_hf
+
+        using_sonic_moe = self.config.using_sonic_moe
 
         save_directory = save_dir
 
@@ -2965,6 +3206,53 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Only save the model in distributed training setup
         model_to_save = unwrap_model(self)
 
+        if save_checkpoint_format == "flex_checkpoint":
+            if not hasattr(self, "_gen_inv_aoa_config"):
+                if hasattr(self, "_gen_aoa_config"):
+                    aoa_config = self._gen_aoa_config(model_to_save.config)
+                    aoa_config["aoa_config_reverse"] = True
+                    logger.warning("There is no _gen_inv_aoa_config, so we auto-derived it from _gen_aoa_config.")
+                else:
+                    raise RuntimeError(
+                        "When using flex_checkpoint to save Hugging Face weights, "
+                        "the model must implement either the _gen_inv_aoa_config function "
+                        "or the _gen_aoa_config function (which will be automatically used to derive _gen_inv_aoa_config)."
+                    )
+            else:
+                aoa_config = self._gen_inv_aoa_config(model_to_save.config)
+
+            clean_unrelated_safetensors(save_dir)
+
+            if using_sonic_moe:
+                SonicMoEHFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
+            else:
+                HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
+
+            dtype = get_parameter_dtype(model_to_save)
+            if dtype is not None:
+                model_to_save.config.dtype = str(dtype).split(".")[1]
+            if config_to_save is None:
+                if hasattr(model_to_save, "config_to_save"):
+                    config_to_save = copy.deepcopy(model_to_save.config_to_save)
+                else:
+                    config_to_save = copy.deepcopy(model_to_save.config)
+                    # Attach architecture to the config
+                    config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+
+            # Save the config
+            if is_main_process:
+                if config_to_save.tensor_model_parallel_size > 1:
+                    config_to_save.tensor_model_parallel_size = 1
+                paddle_series = ["ernie4_5", "paddleocr_vl"]
+                if any(paddle_model in config_to_save.get("model_type", "") for paddle_model in paddle_series):
+                    # hacking for FastDeploy to deploy paddle series model
+                    config_to_save.save_pretrained(save_directory, save_to_hf=True)
+                else:
+                    config_to_save.save_pretrained(save_directory)
+                if self.can_generate():
+                    model_to_save.generation_config.save_pretrained(save_directory)
+            return
+
         # save the string version of dtype to the config, e.g. convert paddle.float32 => "float32"
         # we currently don't use this setting automatically, but may start to use with v5
 
@@ -2977,7 +3265,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Save the model
         if state_dict is None:
             state_dict = model_to_save.state_dict()
-            if config_to_save.tensor_parallel_degree > 1:
+            if config_to_save.tensor_model_parallel_size > 1:
                 if not config_to_save.quantization_config.is_support_merge_tensor_parallel() and merge_tensor_parallel:
                     logger.warning(
                         f"Quantization strategy: {config_to_save.quantization_config.weight_quantize_algo} does not support merge tensor parallel, thus we set merge_tensor_parallel to False."
@@ -2985,7 +3273,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     merge_tensor_parallel = False
                 if merge_tensor_parallel:
                     state_dict = model_to_save.merge_tensor_parallel(state_dict, config_to_save)
-                    config_to_save.tensor_parallel_degree = 1
+                    config_to_save.tensor_model_parallel_size = 1
                     if config_to_save.tensor_parallel_rank != 0:
                         logger.info("Saving with merge_tensor_parallel, tensor_parallel_rank > 0 don't need save")
                         return
@@ -3250,12 +3538,12 @@ class PipelinePretrainedModel(PretrainedModel):
             first_key = first_key.split(".")
             # if use virtual pp_degree, the prefix is like 0.0.xxx
             # else it will be like 0.xxx
-            use_virtual_pp_degree = first_key[0].isdigit() and first_key[1].isdigit()
+            use_virtual_pipeline_model_parallel_size = first_key[0].isdigit() and first_key[1].isdigit()
 
             prefixes = self.get_sequential_name_prefixes()
             for k in state_dict_keys:
                 name_splited = k.split(".")
-                if use_virtual_pp_degree:
+                if use_virtual_pipeline_model_parallel_size:
                     if name_splited[0].isdigit():
                         if name_splited[1].isdigit():
                             idx = str(int(name_splited[0]) + int(name_splited[1]))
@@ -3340,6 +3628,39 @@ class PipelinePretrainedModel(PretrainedModel):
 
         return state_dict
 
+    def sharded_state_dict(self, *args, **kwargs):
+        sharded_state_dict = super().sharded_state_dict(*args, **kwargs)
+        if self._single_to_pp_mapping is None:
+            self._set_pipeline_name_mapping()
+
+        for k in list(sharded_state_dict.keys()):
+            v = sharded_state_dict.pop(k)
+            v.key = self._pp_to_single_mapping[k]
+            sharded_state_dict[self._pp_to_single_mapping[k]] = v
+
+        import re
+
+        def increment_expert_number(s, increment):
+            def replace(match):
+                original_number = int(match.group(0))
+                new_number = original_number + increment
+                return str(new_number)
+
+            return re.sub(r"(?<=experts\.)\d+", replace, s)
+
+        renamed_sharded_state_dict = {}
+        for k, v in sharded_state_dict.items():
+            global_expert_id_offset = getattr(v, "global_expert_id_offset", None)
+            if global_expert_id_offset is not None:
+                new_key = increment_expert_number(k, global_expert_id_offset)
+                v.key = new_key
+                delattr(v, "global_expert_id_offset")
+                renamed_sharded_state_dict[new_key] = v
+            else:
+                renamed_sharded_state_dict[k] = v
+
+        return renamed_sharded_state_dict
+
     def set_state_dict(self, state_dict, *args, **kwargs):
         if self._single_to_pp_mapping is None:
             self._set_pipeline_name_mapping()
@@ -3368,9 +3689,9 @@ def load_sharded_checkpoint_as_one(folder, variant=None, return_numpy=False):
 
     """
     # Load the index
-    pdparams_file = os.path.join(folder, _add_variant("model_state.pdparams", variant))
+    pdparams_file = os.path.join(folder, _add_variant(PADDLE_WEIGHTS_NAME, variant))
     lora_pdparams_file = os.path.join(folder, _add_variant("lora_model_state.pdparams", variant))
-    safetensors_file = os.path.join(folder, _add_variant("model.safetensors", variant))
+    safetensors_file = os.path.join(folder, _add_variant(SAFE_WEIGHTS_NAME, variant))
     if os.path.isfile(pdparams_file):
         return paddle.load(pdparams_file, return_numpy=return_numpy)
     if os.path.isfile(lora_pdparams_file):
@@ -3380,7 +3701,9 @@ def load_sharded_checkpoint_as_one(folder, variant=None, return_numpy=False):
         if not return_numpy:
             for key in list(state_dict.keys()):
                 if isinstance(state_dict[key], np.ndarray):
-                    state_dict[key] = paddle.Tensor.__call__(state_dict.pop(key), zero_copy=True)
+                    state_dict[key] = paddle.Tensor.__call__(
+                        fit_bf16_to_uint16_np(state_dict.pop(key)), zero_copy=True
+                    )
         return state_dict
 
     index_file = os.path.join(folder, _add_variant(PADDLE_WEIGHTS_INDEX_NAME, variant))
@@ -3423,12 +3746,12 @@ def load_sharded_checkpoint_as_one(folder, variant=None, return_numpy=False):
     if not return_numpy:
         for key in list(ret.keys()):
             if isinstance(ret[key], np.ndarray):
-                ret[key] = paddle.Tensor.__call__(ret.pop(key), zero_copy=True)
+                ret[key] = paddle.Tensor.__call__(fit_bf16_to_uint16_np(ret.pop(key)), zero_copy=True)
 
     return ret
 
 
-def load_tp_checkpoint(folder, cls, config, return_numpy=False, convert_from_hf=False, transpose_weight_keys=None):
+def load_tp_checkpoint(folder, cls, config, return_numpy=False, convert_from_hf=True, transpose_weight_keys=None):
     """
 
     This load is performed efficiently: Load tp checkpoint only from cpu, no need to init the model.
@@ -3439,12 +3762,12 @@ def load_tp_checkpoint(folder, cls, config, return_numpy=False, convert_from_hf=
         config (`AutoConfig`): The model config.
         return_numpy (bool): Whether load the tp checkpoint as numpy.
     """
-    if config.tensor_parallel_degree == 1 or config.tensor_parallel_degree == -1:
+    if config.tensor_model_parallel_size == 1 or config.tensor_model_parallel_size == -1:
         return load_sharded_checkpoint_as_one(folder, return_numpy=return_numpy)
     else:
         rank_model_path = os.path.join(folder, f"model_state.tp0{config.tensor_parallel_rank}.pdparams")
-        model_path = os.path.join(folder, "model_state.pdparams")
-        safe_model_path = os.path.join(folder, "model.safetensors")
+        model_path = os.path.join(folder, PADDLE_WEIGHTS_NAME)
+        safe_model_path = os.path.join(folder, SAFE_WEIGHTS_NAME)
         if os.path.exists(rank_model_path):
             return paddle.load(rank_model_path, return_numpy=return_numpy)
         elif os.path.exists(model_path):
@@ -3504,3 +3827,371 @@ def clean_model_class_name(class_name, suffixes_to_strip: Union[str, List[str]] 
 
     pattern = f"({'|'.join(map(re.escape, suffixes_to_strip))})$"
     return re.sub(pattern, "", class_name)
+
+
+def save_full_param(
+    itr: Iterator[tuple[str, Tensor]],
+    save_dir: str,
+    rank: int,
+    moe_sharding_world_size: int,
+    max_shard_size: str = "2GB",
+    num_saver_ranks: int = 8,
+) -> None:
+    """
+    Saves model weights from an iterator into shards, supporting max shard size
+    and a limited number of saver ranks.
+
+    Only ranks less than `num_saver_ranks` will perform disk I/O. All other ranks
+    will iterate through the data to maintain synchronization but will not save.
+    The parameter distribution logic is based on `num_saver_ranks`, ensuring all
+    parameters are handled by a designated saver rank.
+
+    Args:
+        itr (Iterator): An iterator that yields (param_key, param_tensor).
+        save_dir (str): The directory where shard files will be saved.
+        rank (int): The rank of the current process.
+        moe_sharding_world_size (int): The total number of processes.
+        max_shard_size (str): The maximum size for each shard file, e.g., "500MB", "2GB".
+        num_saver_ranks (int): The number of ranks (starting from 0) that will save files.
+    """
+
+    # 1. Non-saver ranks simply consume the iterator to stay in sync.
+    if rank >= num_saver_ranks:
+        logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Non-saver) Consuming iterator for synchronization...")
+        for _ in itr:
+            pass
+        logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Non-saver) Iterator consumption complete.")
+        return
+
+    max_shard_size_bytes = _parse_size(max_shard_size)
+    logger.info(
+        f"[Rank {rank}/{moe_sharding_world_size}] (Saver) Initializing save. "
+        f"Max shard size set to: {max_shard_size_bytes / 1024**3:.2f} GB"
+    )
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    current_shard_state_dict = {}
+    current_shard_size_bytes = 0
+    sub_shard_index = 0
+
+    def _save_current_shard():
+        nonlocal sub_shard_index, current_shard_state_dict, current_shard_size_bytes
+        if not current_shard_state_dict:
+            return
+
+        # Filename includes the main shard number (rank) and the sub-shard index
+        cur_rank = paddle.distributed.get_rank()
+        shard_filename = f"shard_{cur_rank}-{sub_shard_index}.safetensors"
+        save_path = os.path.join(save_dir, shard_filename)
+
+        logger.info(
+            f"[Rank {rank}/{moe_sharding_world_size}] Saving sub-shard {sub_shard_index}... "
+            f"Size: {current_shard_size_bytes / 1024**2:.2f} MB, "
+            f"Params: {len(current_shard_state_dict)}, "
+            f"Path: {save_path}"
+        )
+
+        save_file(current_shard_state_dict, save_path)
+
+        # Reset for the next shard
+        sub_shard_index += 1
+        current_shard_state_dict = {}
+        current_shard_size_bytes = 0
+
+    logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Starting to process the weight iterator...")
+
+    total_size = 0
+
+    for i, (param_key, param) in enumerate(itr):
+        param_size_bytes = param.numel() * param.element_size()
+        total_size += param_size_bytes.item()
+        if i % num_saver_ranks == rank:
+            logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Assigned to store parameter {param_key}")
+            if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
+                _save_current_shard()
+            # Move tensor to CPU since we only need to save it, not compute with it
+            current_shard_state_dict[param_key] = param.cpu()
+            current_shard_size_bytes += param_size_bytes
+
+            if current_shard_size_bytes >= max_shard_size_bytes:
+                _save_current_shard()
+    _save_current_shard()
+    logger.info(f"[Rank {rank}/{moe_sharding_world_size}] (Saver) All shards saved successfully.")
+    return total_size
+
+
+def replace_name_and_gen_index(path, total_size, save_peft=False):
+    index_mapping = {}
+    cur_rank = paddle.distributed.get_rank()
+    safetensor_files = [fname for fname in os.listdir(path) if fname.endswith(".safetensors")]
+    files_num = len(safetensor_files)
+    all_files_num = []
+    if paddle.distributed.get_world_size() > 1:
+        paddle.distributed.all_gather_object(all_files_num, files_num)
+    else:
+        all_files_num.append(files_num)
+    total_files_num = sum(all_files_num)
+
+    start_idx = []
+    acc = 1
+    for files_num in all_files_num:
+        start_idx.append(acc)
+        acc += files_num
+
+    # NOTE(xingmingyyj) If PADDLE_LOCAL_SIZE is not set, assume PADDLE_LOCAL_SIZE=8.
+    env_local_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
+    env_local_rank = dist.get_rank() % env_local_size
+    assert env_local_rank >= 0, f"expected positive local rank, got {env_local_rank}"
+
+    if paddle.distributed.get_world_size() > 1:
+        cur_file_index = start_idx[cur_rank] // env_local_size
+        total_files_num = total_files_num // env_local_size
+    else:
+        cur_file_index = 0
+
+    index_mapping = {}
+    if env_local_rank == 0:
+        for file in safetensor_files:
+            cur_file_index += 1
+            file_path = os.path.join(path, file)
+            new_file_name = f"model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
+            if save_peft:
+                new_file_name = f"peft_model-{cur_file_index:05d}-of-{total_files_num:05d}.safetensors"
+            with safe_open(file_path, framework="np") as f:
+                for key in f.keys():
+                    index_mapping[key] = new_file_name
+            new_file_path = os.path.join(path, new_file_name)
+            os.rename(file_path, new_file_path)
+
+    index_mapping_list = []
+    if paddle.distributed.get_world_size() > 1:
+        paddle.distributed.all_gather_object(index_mapping_list, index_mapping)
+    else:
+        index_mapping_list.append(index_mapping)
+    index_mapping = {}
+    for mapping in index_mapping_list:
+        index_mapping.update(mapping)
+
+    if env_local_rank == 0:
+        index_file_name = SAFE_WEIGHTS_INDEX_NAME
+        if save_peft:
+            index_file_name = SAFE_PEFT_WEIGHTS_INDEX_NAME
+        index_infos = {}
+        index_infos["metadata"] = {}
+        index_infos["metadata"]["total_size"] = total_size
+        index_infos["weight_map"] = dict(sorted(index_mapping.items()))
+        with open(os.path.join(path, index_file_name), "w") as f:
+            json.dump(index_infos, f, indent=4)
+
+        # For PDC signal
+        if strtobool(os.getenv("FLAG_LLM_PDC", "False")):
+            for i in range(paddle.distributed.get_world_size()):
+                saved_signal_path = os.path.join(path, f".model_weights.done.{i}")
+                paddle.save(i, saved_signal_path)
+
+    saved_signal_path = os.path.join(path, f"saved_signal_{dist.get_rank()}")
+    with open(saved_signal_path, mode="w+") as f:
+        f.write("1")
+
+
+class HFFormatFullParamSaver:
+    def __init__(
+        self,
+        model,
+        aoa_config,
+        h_group=None,
+        v_group=None,
+        num_splits=None,
+        shard_idx=None,
+        saved_in_one_node=False,
+        memory_growth_threshold=8 * (2**30),
+    ):
+        self.model = model
+        self.aoa_config = aoa_config
+        self.h_group = h_group
+        self.v_group = v_group
+        self.num_splits = num_splits
+        self.shard_idx = shard_idx
+        self.saved_in_one_node = saved_in_one_node
+        self.memory_growth_threshold = memory_growth_threshold
+        self.determin_saver_based_group()
+
+    def get_full_param_iter(self):
+        assert (self.v_group and self.h_group) or not (
+            self.v_group or self.h_group
+        ), f"both h_group and v_group are provided or none of them, but got {self.v_group} and {self.h_group}"
+        if self.v_group and self.h_group:
+            assert self.shard_idx is not None, "expected shard_idx is not None"
+            assert self.num_splits is not None, "expected num_splits is not None"
+
+            param_iter = self.model.full(
+                aoa_config=self.aoa_config,
+                h_group=self.h_group,
+                v_group=self.v_group,
+                num_splits=self.num_splits,
+                shard_idx=self.shard_idx,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+        else:
+            param_iter = self.model.full(
+                aoa_config=self.aoa_config, memory_growth_threshold=self.memory_growth_threshold
+            )
+        return param_iter
+
+    def determin_saver_based_group(self):
+        self.num_saver_ranks = paddle.distributed.get_world_size()
+        self.rank = paddle.distributed.get_rank()
+
+        if self.h_group and self.v_group:
+            self.num_saver_ranks = self.h_group.nranks * self.v_group.nranks
+            self.rank = self.h_group.rank + self.v_group.rank * self.h_group.nranks
+
+        if self.saved_in_one_node:
+            local_world_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))
+            self.num_saver_ranks = min(local_world_size, self.num_saver_ranks)
+
+    def save_checkpoint(self, path, max_shard_size="16GB", save_peft=False):
+        total_saved_size = save_full_param(
+            itr=self.get_full_param_iter(),
+            save_dir=path,
+            rank=self.rank,
+            moe_sharding_world_size=self.num_saver_ranks,
+            max_shard_size=max_shard_size,
+            num_saver_ranks=self.num_saver_ranks,
+        )
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.barrier()
+
+        # TODO(): fix total size
+        all_sizes = []
+        if paddle.distributed.get_world_size() > 1:
+            paddle.distributed.all_gather_object(all_sizes, total_saved_size)
+        else:
+            all_sizes.append(total_saved_size)
+        total_size = sum(all_sizes)
+        replace_name_and_gen_index(path, total_size, save_peft)
+        return total_saved_size
+
+
+class EMAStateHFFormatFullParamSaver(HFFormatFullParamSaver):
+    def __init__(
+        self,
+        ema_sharded_state_dict,
+        aoa_config,
+        h_group=None,
+        v_group=None,
+        num_splits=None,
+        shard_idx=None,
+        saved_in_one_node=False,
+        memory_growth_threshold=8 * (2**30),
+    ):
+        super().__init__(
+            None,
+            aoa_config,
+            h_group,
+            v_group,
+            num_splits=num_splits,
+            shard_idx=shard_idx,
+            saved_in_one_node=saved_in_one_node,
+            memory_growth_threshold=memory_growth_threshold,
+        )
+        self.ema_sharded_state_dict = ema_sharded_state_dict
+
+    def get_full_param_iter(self):
+        from paddle.distributed.flex_checkpoint.dcp.full_param import full_param
+
+        assert (self.v_group and self.h_group) or not (
+            self.v_group or self.h_group
+        ), f"both h_group and v_group are provided or none of them, but got {self.v_group} and {self.h_group}"
+        if self.v_group and self.h_group:
+            assert self.shard_idx is not None, "expected shard_idx is not None"
+            assert self.num_splits is not None, "expected num_splits is not None"
+
+            param_iter = full_param(
+                self.ema_sharded_state_dict,
+                aoa_config=self.aoa_config,
+                h_group=self.h_group,
+                v_group=self.v_group,
+                num_splits=self.num_splits,
+                shard_idx=self.shard_idx,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+        else:
+            param_iter = full_param(
+                self.ema_sharded_state_dict,
+                aoa_config=self.aoa_config,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+        return param_iter
+
+
+class SonicMoEHFFormatFullParamSaver(HFFormatFullParamSaver):
+    def __init__(
+        self,
+        model,
+        aoa_config,
+        h_group=None,
+        v_group=None,
+        num_splits=None,
+        shard_idx=None,
+        saved_in_one_node=False,
+        memory_growth_threshold=8 * (2**30),
+    ):
+        super().__init__(
+            model,
+            aoa_config,
+            h_group,
+            v_group,
+            num_splits=num_splits,
+            shard_idx=shard_idx,
+            saved_in_one_node=saved_in_one_node,
+            memory_growth_threshold=memory_growth_threshold,
+        )
+
+    def deinterleave_gate_up_proj(self, w, moe_intermediate_size):
+        w_cloned = w.clone().detach()
+        w_cloned = w_cloned.reshape([-1, 2 * moe_intermediate_size, w_cloned.shape[-1]])
+        B, D, C = w_cloned.shape
+        I = D // 2
+        w_ = paddle.reshape(w_cloned, [B, I, 2, C])
+        first_half = w_[:, :, 0, :]
+        second_half = w_[:, :, 1, :]
+        orig_w = paddle.concat([first_half, second_half], axis=1).contiguous()
+        return orig_w
+
+    def get_full_param_iter(self):
+        assert (self.v_group and self.h_group) or not (
+            self.v_group or self.h_group
+        ), f"both h_group and v_group are provided or none of them, but got {self.v_group} and {self.h_group}"
+        from paddle.distributed.flex_checkpoint.dcp.full_param import full_param
+
+        model_sharded_state_dict = self.model.sharded_state_dict()
+        moe_intermediate_size = self.model.config.moe_intermediate_size
+        for k, v in model_sharded_state_dict.items():
+            if "weight1" in k:
+                weight1 = self.deinterleave_gate_up_proj(v.local_tensor, moe_intermediate_size)
+                v.local_tensor = weight1
+
+        if self.v_group and self.h_group:
+            assert self.shard_idx is not None, "expected shard_idx is not None"
+            assert self.num_splits is not None, "expected num_splits is not None"
+
+            param_iter = full_param(
+                model_sharded_state_dict,
+                aoa_config=self.aoa_config,
+                h_group=self.h_group,
+                v_group=self.v_group,
+                num_splits=self.num_splits,
+                shard_idx=self.shard_idx,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+        else:
+            param_iter = full_param(
+                model_sharded_state_dict,
+                aoa_config=self.aoa_config,
+                memory_growth_threshold=self.memory_growth_threshold,
+            )
+
+        del model_sharded_state_dict
+        return param_iter

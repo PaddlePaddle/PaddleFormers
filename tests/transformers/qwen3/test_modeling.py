@@ -19,7 +19,6 @@ import unittest
 
 import numpy as np
 import paddle
-from parameterized import parameterized
 
 from paddleformers.transformers import (
     Qwen3Config,
@@ -28,7 +27,7 @@ from paddleformers.transformers import (
     Qwen3ForTokenClassification,
     Qwen3Model,
 )
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -276,6 +275,7 @@ class Qwen3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
         "zero-shot": Qwen3ForSequenceClassification,
     }
 
+    @gpu_device_initializer(log_prefix="Qwen3ModelTest")
     def setUp(self):
         super().setUp()
         self.model_tester = Qwen3ModelTester(self)
@@ -373,10 +373,16 @@ class Qwen3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase)
 
 
 class Qwen3IntegrationTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Qwen3IntegrationTest")
+    def setUp(self):
+        pass
+
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
         model = Qwen3ForCausalLM.from_pretrained(
-            "PaddleFormers/tiny-random-qwen3", dtype="float32", convert_from_hf=True
+            "PaddleFormers/tiny-random-qwen3",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
         )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
@@ -403,6 +409,10 @@ class Qwen3GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
 
 
 class Qwen3CompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Qwen3CompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
@@ -421,20 +431,22 @@ class Qwen3CompatibilityTest(unittest.TestCase):
         # 1. create common input
         input_ids = np.random.randint(100, 200, [1, 20])
 
-        # 2. forward the paddle model
-        from paddleformers.transformers import Qwen3Model
-
-        paddle_model = Qwen3Model.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
-        paddle_model.eval()
-        paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
-
-        # 3. forward the torch  model
+        # 2. forward the torch model
         import torch
-        from transformers import Qwen3Model
+        from transformers import Qwen3ForCausalLM
 
-        torch_model = Qwen3Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+        torch_model = Qwen3ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+
+        # 3. forward the paddle model
+        from paddleformers.transformers import Qwen3ForCausalLM
+
+        paddle_model = Qwen3ForCausalLM.from_pretrained(
+            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+        )
+        paddle_model.eval()
+        paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         self.assertTrue(
             np.allclose(
@@ -452,19 +464,21 @@ class Qwen3CompatibilityTest(unittest.TestCase):
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch  model
+            # 2. forward the torch model
             import torch
-            from transformers import Qwen3Model
+            from transformers import Qwen3ForCausalLM
 
-            torch_model = Qwen3Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = Qwen3ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
-            # 2. forward the paddle model
-            from paddleformers.transformers import Qwen3Model
+            # 3. forward the paddle model with fc
+            from paddleformers.transformers import Qwen3Config, Qwen3ForCausalLM
 
-            paddle_model = Qwen3Model.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = Qwen3ForCausalLM.from_pretrained(
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -477,42 +491,21 @@ class Qwen3CompatibilityTest(unittest.TestCase):
                 )
             )
 
-    @parameterized.expand([("Qwen3Model",), ("Qwen3ForCausalLM",)])
-    @require_package("transformers", "torch")
-    def test_Qwen3_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
-        pytorch_class_name = pytorch_class_name or class_name
-        with tempfile.TemporaryDirectory() as tempdir:
-
-            # 1. create common input
-            input_ids = np.random.randint(100, 200, [1, 20])
-
-            # 2. forward the torch model
-            import torch
-            import transformers
-
-            torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-            # 3. forward the paddle model
-            from paddleformers import transformers
-
-            paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
-            paddle_model.eval()
-
-            if class_name == "Qwen3Model":
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
-            else:
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
+            # 4. fuse qkv/ffn with fc
+            model_config = Qwen3Config.from_pretrained(tempdir)
+            paddle_model_fused = Qwen3ForCausalLM.from_pretrained(
+                tempdir,
+                config=model_config,
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
+            )
+            paddle_model_fused.eval()
+            paddle_fused_logit = paddle_model_fused(paddle.to_tensor(input_ids))[0]
 
             self.assertTrue(
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
+                    paddle_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     atol=1e-2,
                     rtol=1e-2,
                 )

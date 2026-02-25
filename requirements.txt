@@ -1,26 +1,24 @@
-blobfile
 colorlog
 scikit-learn
-multiprocess<=0.70.12.2
-datasets >= 2.0.0
+multiprocess
+datasets >= 3.0.0
 tqdm
 sentencepiece
 huggingface_hub>=0.19.2
 protobuf>=3.20.2
 visualdl
-safetensors @ https://paddle-whl.bj.bcebos.com/nightly/cu126/safetensors/safetensors-0.6.2.dev0-cp38-abi3-linux_x86_64.whl
+safetensors
+decord
+paddlecodec; sys_platform == 'linux'
 fast_dataindex>=0.1.1 ; platform_system == "Linux"
 aistudio-sdk>=0.3.0
 jinja2
 regex
-numpy<=1.26.4
+numpy
 tiktoken
 ml_dtypes
-tokenizers<=0.20.3; python_version<="3.8"
-tokenizers>=0.21,<0.22; python_version>"3.8"
 omegaconf
 modelscope
-transformers>=4.55.1
-triton >= 3.1
-use_triton_in_paddle
+transformers==5.0.0
 GPUtil
+importlib_metadata

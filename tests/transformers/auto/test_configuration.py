@@ -22,19 +22,18 @@ import unittest
 
 from paddleformers.transformers import AutoConfig
 from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
-from paddleformers.transformers.bert.configuration import BertConfig
-from paddleformers.utils.download import DownloadSource
+from paddleformers.transformers.qwen3.configuration import Qwen3Config
 from paddleformers.utils.env import CONFIG_NAME
-from tests.testing_utils import set_proxy, skip_for_none_ce_case
+from tests.testing_utils import slow
 
 from ...utils.test_module.custom_configuration import CustomConfig
 
 
 class AutoConfigTest(unittest.TestCase):
     def test_built_in_model_class_config(self):
-        config = AutoConfig.from_pretrained("PaddleFormers/tiny-random-bert", download_hub="aistudio")
+        config = AutoConfig.from_pretrained("PaddleFormers/tiny-random-qwen3", download_hub="aistudio")
         number = random.randint(0, 10000)
-        self.assertEqual(config.hidden_size, 32)
+        self.assertEqual(config.hidden_size, 128)
         config.hidden_size = number
 
         with tempfile.TemporaryDirectory() as tempdir:
@@ -60,18 +59,15 @@ class AutoConfigTest(unittest.TestCase):
             auto_config = AutoConfig.from_pretrained(tempdir)
             self.assertEqual(auto_config.hidden_size, number)
 
-    @skip_for_none_ce_case
-    @set_proxy(DownloadSource.HUGGINGFACE)
+    @slow
     def test_from_hf_hub(self):
         config = AutoConfig.from_pretrained("dfargveazd/tiny-random-llama-paddle-safe", download_hub="huggingface")
         self.assertEqual(config.hidden_size, 16)
 
-    @set_proxy(DownloadSource.AISTUDIO)
     def test_from_aistudio(self):
         config = AutoConfig.from_pretrained("Paddleformers/tiny-random-llama", download_hub="aistudio")
         self.assertEqual(config.hidden_size, 16)
 
-    @set_proxy(DownloadSource.MODELSCOPE)
     def test_from_modelscope(self):
         config = AutoConfig.from_pretrained("sqlhuman/tiny-random-llama", download_hub="modelscope")
         self.assertEqual(config.hidden_size, 768)
@@ -82,7 +78,7 @@ class AutoConfigTest(unittest.TestCase):
 
     def test_load_from_legacy_config(self):
         number = random.randint(0, 10000)
-        legacy_config = {"init_class": "BertModel", "hidden_size": number}
+        legacy_config = {"init_class": "Qwen3Model", "hidden_size": number}
         with tempfile.TemporaryDirectory() as tempdir:
             with open(os.path.join(tempdir, AutoConfig.legacy_config_file), "w", encoding="utf-8") as f:
                 json.dump(legacy_config, f, ensure_ascii=False)
@@ -94,12 +90,12 @@ class AutoConfigTest(unittest.TestCase):
     def test_new_config_registration(self):
         try:
             AutoConfig.register("custom", CustomConfig)
-            # Wrong model type will raise an error
+            # Wrong model type will raise an error.
             with self.assertRaises(ValueError):
                 AutoConfig.register("model", CustomConfig)
             # Trying to register something existing in the PaddleFormers library will raise an error
             with self.assertRaises(ValueError):
-                AutoConfig.register("bert", BertConfig)
+                AutoConfig.register("qwen3", Qwen3Config)
 
             # Now that the config is registered, it can be used as any other config with the auto-API
             config = CustomConfig()
@@ -112,8 +108,9 @@ class AutoConfigTest(unittest.TestCase):
             if "custom" in CONFIG_MAPPING._extra_content:
                 del CONFIG_MAPPING._extra_content["custom"]
 
+    @slow
     def test_from_pretrained_cache_dir(self):
-        model_id = "Paddleformers/tiny-random-bert"
+        model_id = "PaddleFormers/tiny-random-qwen3"
         with tempfile.TemporaryDirectory() as tempdir:
             AutoConfig.from_pretrained(model_id, download_hub="aistudio", cache_dir=tempdir)
             self.assertTrue(os.path.exists(os.path.join(tempdir, model_id, CONFIG_NAME)))
@@ -128,8 +125,6 @@ class AutoConfigTest(unittest.TestCase):
             "bos_token_id": 1,
             "do_normalize": False,
             "eos_token_id": 2,
-            "fuse_attention_ffn": False,
-            "fuse_attention_qkv": False,
             "fuse_sequence_parallel_allreduce": False,
             "hidden_act": "silu",
             "hidden_size": 4096,
@@ -144,7 +139,6 @@ class AutoConfigTest(unittest.TestCase):
             "num_key_value_heads": 32,
             "pad_token_id": 32000,
             "paddleformers_version": None,
-            "pp_recompute_interval": 1,
             "recompute_granularity": "full",
             "rms_norm_eps": 1e-06,
             "rope_scaling_factor": 1.0,
@@ -156,11 +150,9 @@ class AutoConfigTest(unittest.TestCase):
             "tensor_parallel_output": True,
             "tie_word_embeddings": False,
             "transformers_version": "4.28.1",
-            "use_flash_attention": False,
-            "use_fused_rms_norm": False,
-            "use_fused_rope": False,
+            "apply_rope_fusion": False,
             "use_recompute": False,
-            "virtual_pp_degree": 1,
+            "virtual_pipeline_model_parallel_size": 1,
             "vocab_size": 32001,
         }
         config_str = json.dumps(config_dict, indent=2, sort_keys=True, ensure_ascii=False) + "\n"

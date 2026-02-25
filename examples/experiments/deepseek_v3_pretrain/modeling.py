@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import contextlib
 import math
+import os
 import warnings
 from functools import partial
 from typing import List, Optional, Tuple, Union
@@ -59,7 +60,9 @@ try:
 except:
     flash_attention = None
 
+import fp8_linear as linear_utils
 from config.configuration import DeepseekV2FastConfig
+from fp8_linear import Linear as Linear_
 from moe_gate import PretrainedMoEGate
 from moe_layer import MoELayer
 from moe_utils import get_env_device
@@ -70,23 +73,11 @@ from paddleformers.transformers.conversion_utils import (
     StateDictNameMapping,
     init_name_mappings,
 )
-from paddleformers.transformers.deepseek_v2 import (
-    DeepseekV2DynamicNTKScalingRotaryEmbedding,
-    DeepseekV2LinearScalingRotaryEmbedding,
-    DeepseekV2RotaryEmbedding,
-    _expand_2d_mask,
-    _make_causal_mask,
-)
-from paddleformers.transformers.deepseek_v2 import fp8_linear as linear_utils
-from paddleformers.transformers.deepseek_v2 import (
-    is_casual_mask,
+from paddleformers.transformers.deepseek_v3 import (
     rotate_half,
     scaled_dot_product_attention,
-    yarn_find_correction_range,
     yarn_get_mscale,
-    yarn_linear_ramp_mask,
 )
-from paddleformers.transformers.deepseek_v2.fp8_linear import Linear as Linear_
 from paddleformers.transformers.fp8_utils import (
     FP8KeepXLinear,
     FP8Linear,
@@ -96,7 +87,6 @@ from paddleformers.transformers.fp8_utils import (
     cache_fp8_weight,
     set_parameter_color,
 )
-from paddleformers.transformers.llama.modeling import get_use_casual_mask
 from paddleformers.transformers.model_outputs import BaseModelOutputWithPastAndMTP
 from paddleformers.transformers.model_utils import (
     PretrainedModel,
@@ -106,10 +96,14 @@ from paddleformers.transformers.model_utils import (
 from paddleformers.transformers.utils import device_guard
 from paddleformers.utils.initializer import kaiming_uniform_
 from paddleformers.utils.log import logger
+from paddleformers.utils.masking_utils import (
+    _expand_2d_mask,
+    _make_causal_mask,
+    is_casual_mask,
+)
 
 try:
-    import fused_ln
-    from paddle.incubate.nn.functional import swiglu
+    from paddle.nn.functional import swiglu
 except ImportError:
 
     def swiglu(x, y=None):
@@ -136,6 +130,11 @@ __all__ = [
 global_step = 0
 
 
+def get_use_casual_mask():
+    """Get the value of the 'USE_CASUAL_MASK' environment variable."""
+    return os.getenv("USE_CASUAL_MASK", "False") == "True"
+
+
 def set_global_step(cur_step):
     global global_step
     global_step = cur_step
@@ -151,8 +150,7 @@ def rms_norm_fused(x_in, w, eps, use_fast_ln=False):
         fast_ln = try_import("fast_ln")
         return fast_ln.fast_rms_norm(x_in, w, eps)[0]
     else:
-        fused_ln = try_import("fused_ln")
-        return fused_ln.fused_rms_norm(x_in, w, eps)[0]
+        return paddle.incubate.nn.functional.fused_rms_norm_ext(x_in, w, eps)[0]
 
 
 def cast_if_needed(x, dtype):
@@ -226,20 +224,20 @@ class LMHeadFunction(paddle.autograd.PyLayer):
 
 def parallel_matmul(x: Tensor, y: Tensor, transpose_y=False, tensor_parallel_output=True):
     is_fleet_init = True
-    tensor_parallel_degree = 1
+    tensor_model_parallel_size = 1
     try:
         hcg = fleet.get_hybrid_communicate_group()
         model_parallel_group = hcg.get_model_parallel_group()
-        tensor_parallel_degree = hcg.get_model_parallel_world_size()
+        tensor_model_parallel_size = hcg.get_model_parallel_world_size()
     except AttributeError:
         is_fleet_init = False
 
     if paddle.in_dynamic_mode():
         y_is_distributed = y.is_distributed
     else:
-        y_is_distributed = tensor_parallel_degree > 1
+        y_is_distributed = tensor_model_parallel_size > 1
 
-    if is_fleet_init and tensor_parallel_degree > 1 and y_is_distributed:
+    if is_fleet_init and tensor_model_parallel_size > 1 and y_is_distributed:
         # if not running under distributed.launch, it will raise AttributeError: 'Fleet' object has no attribute '_hcg'
         input_parallel = paddle.distributed.collective._c_identity(x, group=model_parallel_group)
         logits = paddle.matmul(input_parallel, y, transpose_y=transpose_y)
@@ -260,7 +258,6 @@ class DeepseekV2MLP(nn.Layer):
         self.config = config
         self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
         self.intermediate_size = config.intermediate_size if intermediate_size is None else intermediate_size
-        self.fuse_attention_ffn = config.fuse_attention_ffn
         Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear_
 
         def linear_dtype_gaurd():
@@ -277,7 +274,7 @@ class DeepseekV2MLP(nn.Layer):
             RowParallelLinear = linear_utils.RowParallelLinear
 
         with linear_dtype_gaurd():
-            if config.tensor_parallel_degree > 1 and not is_moe:
+            if config.tensor_model_parallel_size > 1 and not is_moe:
                 self.gate_proj = ColumnParallelLinear(
                     self.hidden_size,
                     self.intermediate_size,
@@ -297,20 +294,13 @@ class DeepseekV2MLP(nn.Layer):
                     has_bias=False,
                 )
             else:
-                if config.fuse_attention_ffn:
-                    self.gate_up_fused_proj = Linear(self.hidden_size, self.intermediate_size * 2, bias_attr=False)
-                else:
-                    self.gate_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)
-                    self.up_proj = Linear(self.hidden_size, self.intermediate_size, bias_attr=False)
+                self.gate_up_fused_proj = Linear(self.hidden_size, self.intermediate_size * 2, bias_attr=False)
                 self.down_proj = Linear(self.intermediate_size, self.hidden_size, bias_attr=False)
 
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(self, x):
-        if self.fuse_attention_ffn:
-            x = swiglu(self.gate_up_fused_proj(x))
-        else:
-            x = swiglu(self.gate_proj(x), self.up_proj(x))
+        x = swiglu(self.gate_up_fused_proj(x))
         out = self.down_proj(x)
         return out
 
@@ -350,6 +340,12 @@ class MoEGate(PretrainedMoEGate):
             )
             self.e_score_correction_bias.is_distributed = True
 
+            self.expert_usage = paddle.zeros(
+                shape=[num_experts],
+                dtype=paddle.int64,
+            )
+            self.expert_usage.stop_gradient = True
+
         if self.using_post_norm_recompute:
             assert norm_weight is not None and norm_eps is not None
             self.norm_weight = norm_weight
@@ -366,7 +362,7 @@ class MoEGate(PretrainedMoEGate):
         # compute gating score
         if self.using_post_norm_recompute:
             logits, norm_out = FusedNormGateFunc.apply(hidden_states, self.norm_weight, self.weight, self.norm_eps)
-            if hasattr(self.config, "using_fake_gate") and self.config.using_fake_gate:
+            if hasattr(self.config, "moe_router_force_load_balancing") and self.config.moe_router_force_load_balancing:
                 logits = FakeGate.apply(
                     hidden_states,
                     self.weight,
@@ -376,7 +372,10 @@ class MoEGate(PretrainedMoEGate):
         else:
             with paddle.amp.auto_cast(False):
                 hidden_states = hidden_states.cast(self.weight.dtype)
-                if hasattr(self.config, "using_fake_gate") and self.config.using_fake_gate:
+                if (
+                    hasattr(self.config, "moe_router_force_load_balancing")
+                    and self.config.moe_router_force_load_balancing
+                ):
                     logits = FakeGate.apply(
                         hidden_states,
                         self.weight,
@@ -392,6 +391,8 @@ class MoEGate(PretrainedMoEGate):
         # Compute all possible return values
         if self.using_flex_token:
             scores, routing_map, exp_counts, l_aux, l_zloss = self.topkgating_nodrop(scores)
+            with paddle.no_grad():
+                self.expert_usage += exp_counts
             ret = (scores, routing_map, l_aux, l_zloss)
         else:
             ret = self.topkgating(scores)  # (capacity, combine_weights, dispatch_mask, exp_counts, l_aux, l_zloss)
@@ -409,11 +410,14 @@ class DeepseekV2MoE(MoELayer):
     """
 
     def __init__(self, config: DeepseekV2FastConfig, norm_weight=None, norm_eps=None):
-        assert config.tensor_parallel_degree <= 1, "tensor_parallel_degree should be 1"
+        assert config.tensor_model_parallel_size <= 1, "tensor_model_parallel_size should be 1"
 
         self.using_post_norm_recompute = config.using_post_norm_recompute
         if self.using_post_norm_recompute:
             assert norm_weight is not None and norm_eps is not None
+
+        hcg = fleet.get_hybrid_communicate_group()
+        moe_grad_group = hcg.get_moe_sharding_parallel_group()
 
         gate = MoEGate(
             config=config,
@@ -425,11 +429,12 @@ class DeepseekV2MoE(MoELayer):
             topk_group=config.topk_group,
             norm_topk_prob=config.norm_topk_prob,
             routed_scaling_factor=config.routed_scaling_factor,
-            drop_tokens=False,
             using_post_norm_recompute=self.using_post_norm_recompute,
             norm_weight=norm_weight,
             norm_eps=norm_eps,
         )
+        self.is_mp_moe = False
+        self.is_ep_moe = True
         DeepseekV2MLPClass = FP8Mlp if config.dsv3_use_fp8_gemm else DeepseekV2MLP
 
         super().__init__(
@@ -448,15 +453,22 @@ class DeepseekV2MoE(MoELayer):
         )
 
         if config.offline_quant_expert_weight and config.clear_origin_weight_when_offline_quant:
-            moe_grad_group = fleet.get_hybrid_communicate_group().expert_grad_comm_group
             expert_w1_list = [expert.w1 for expert in self.experts if expert is not None]
             expert_w2_list = [expert.w2 for expert in self.experts if expert is not None]
             for p in expert_w1_list:
+                setattr(p, "is_moe_param", True)
                 setattr(p, "color", {"color": "moe_expert", "group": moe_grad_group})
+                p.no_sync = not self.is_mp_moe
+                p.expert = not self.is_mp_moe
+                logger.info(f"expert no-sync={p.no_sync}-{p.name}")
             for p in expert_w2_list:
+                setattr(p, "is_moe_param", True)
                 setattr(p, "color", {"color": "moe_expert", "group": moe_grad_group})
+                p.no_sync = not self.is_mp_moe
+                p.expert = not self.is_mp_moe
+                logger.info(f"expert no-sync={p.no_sync}-{p.name}")
 
-        self.alpha = config.aux_loss_alpha
+        self.alpha = config.router_aux_loss_coef
         if config.n_shared_experts is not None:
             intermediate_size = config.moe_intermediate_size * config.n_shared_experts
             if self.using_post_norm_recompute:
@@ -575,6 +587,47 @@ class DeepseekV2MoE(MoELayer):
         return final_hidden_states
 
 
+class DeepseekV2RotaryEmbedding(nn.Layer):
+    def __init__(self, dim, max_position_embeddings=2048, base=10000):
+        super().__init__()
+
+        self.dim = dim
+        self.max_position_embeddings = max_position_embeddings
+        self.base = base
+        # [dim / 2]
+        with device_guard("cpu"):
+            self.inv_freq = 1.0 / (
+                self.base ** (paddle.cast(paddle.arange(0, self.dim, 2), dtype="float32") / self.dim)
+            )
+            self._set_cos_sin_cache(seq_len=max_position_embeddings)
+
+        self.max_seq_len_cached = None
+
+    def _set_cos_sin_cache(self, seq_len):
+        self.max_seq_len_cached = seq_len
+        # [seq_len]
+        t = paddle.arange(seq_len, dtype="float32")
+        # [seq_len, axis/2]
+        freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
+        # Different from paper, but it uses a different permutation in order to obtain the same calculation
+        # [seq_len, axis]
+        emb = paddle.cat([freqs, freqs], axis=-1)
+        # [1, seqlen, 1, axis]
+        self.cos_cached = emb.cos()[None, :, None, :]
+        self.sin_cached = emb.sin()[None, :, None, :]
+
+    def forward(self, x, seq_len=None):
+        # x: [bs, num_attention_heads, seq_len, head_size]
+        if self.max_seq_len_cached is None or seq_len > self.max_seq_len_cached:
+            self._set_cos_sin_cache(seq_len)
+        cos = self.cos_cached[:seq_len]
+        sin = self.sin_cached[:seq_len]
+        return (
+            cos.cast(x.dtype) if cos.dtype != x.dtype else cos,
+            sin.cast(x.dtype) if sin.dtype != x.dtype else sin,
+        )
+
+
 # Copied from transformers.models.llama.modeling_llama.LlamaAttention with Llama->DeepseekV2
 class DeepseekV2Attention(nn.Layer):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
@@ -596,7 +649,7 @@ class DeepseekV2Attention(nn.Layer):
         self.q_head_dim = config.qk_nope_head_dim + config.qk_rope_head_dim
 
         self.is_causal = True
-        self.fuse_rope = config.use_fused_rope
+        self.apply_rope_fusion = config.apply_rope_fusion
 
         if config.num_nextn_predict_layers > 0:
             self.seq_length = config.seq_length - config.num_nextn_predict_layers
@@ -628,10 +681,18 @@ class DeepseekV2Attention(nn.Layer):
 
         self._init_rope()
         self.softmax_scale = self.q_head_dim ** (-0.5)
+        if self.config.rope_scaling is not None:
+            mscale_all_dim = self.config.rope_scaling.get("mscale_all_dim", 0)
+            scaling_factor = self.config.rope_scaling["factor"]
+
+            if mscale_all_dim:
+                mscale = yarn_get_mscale(scaling_factor, mscale_all_dim)
+                self.softmax_scale = self.softmax_scale * mscale * mscale
+
         Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear_
 
         # fmt: off
-        if self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_model_parallel_size > 1:
             # for tensor parallel
             if config.sequence_parallel:
                 ColumnParallelLinear = linear_utils.ColumnSequenceParallelLinear
@@ -659,8 +720,8 @@ class DeepseekV2Attention(nn.Layer):
             if self.config.dsv3_use_atten_recompute:
                 self.fused_rms_norm_linear = FusedRMSLinear(self.hidden_size, config.q_lora_rank, config.kv_lora_rank + config.qk_rope_head_dim, 1e-6)
                 kv_up_dim = self.num_heads * (self.q_head_dim - self.qk_rope_head_dim + self.v_head_dim)
-                self.memory_recompute_att = MemroyRecomputeAttn(config.q_lora_rank, config.kv_lora_rank, config.q_lora_rank, self.num_heads * self.q_head_dim, config.kv_lora_rank, kv_up_dim, self.rotary_emb, self.num_heads, self.q_head_dim, self.qk_nope_head_dim, self.v_head_dim, self.qk_rope_head_dim, 1e-6, self.kv_lora_rank, self.softmax_scale, recompute_fa3=self.recompute_fa3, fa_version=self.fa_version)
                 self.o_proj = FP8KeepXLinear(self.num_heads * self.v_head_dim, self.hidden_size, bias_attr=config.attention_bias)
+                self.memory_recompute_att = MemroyRecomputeAttn(config.q_lora_rank, config.kv_lora_rank, config.q_lora_rank, self.num_heads * self.q_head_dim, config.kv_lora_rank, kv_up_dim, self.rotary_emb, self.num_heads, self.q_head_dim, self.qk_nope_head_dim, self.v_head_dim, self.qk_rope_head_dim, 1e-6, self.seq_length, self.o_proj.weight, self.kv_lora_rank, self.softmax_scale, recompute_fa3=self.recompute_fa3, fa_version=self.fa_version)
             else:
 
                 if self.q_lora_rank is None:
@@ -679,14 +740,6 @@ class DeepseekV2Attention(nn.Layer):
                 self.kv_a_layernorm = DeepseekV2RMSNorm(config=config, hidden_size=config.kv_lora_rank)
 
         # fmt: on
-        self.softmax_scale = self.q_head_dim ** (-0.5)
-        if self.config.rope_scaling is not None:
-            mscale_all_dim = self.config.rope_scaling.get("mscale_all_dim", 0)
-            scaling_factor = self.config.rope_scaling["factor"]
-            if mscale_all_dim:
-                mscale = yarn_get_mscale(scaling_factor, mscale_all_dim)
-                self.softmax_scale = self.softmax_scale * mscale * mscale
-
         self.attn_func = scaled_dot_product_attention
 
     def fp8_quant_weight(self, quant_transpose=None):
@@ -706,21 +759,7 @@ class DeepseekV2Attention(nn.Layer):
         else:
             scaling_type = self.config.rope_scaling["type"]
             scaling_factor = self.config.rope_scaling["factor"]
-            if scaling_type == "linear":
-                self.rotary_emb = DeepseekV2LinearScalingRotaryEmbedding(
-                    self.qk_rope_head_dim,
-                    max_position_embeddings=self.max_position_embeddings,
-                    scaling_factor=scaling_factor,
-                    base=self.rope_theta,
-                )
-            elif scaling_type == "dynamic":
-                self.rotary_emb = DeepseekV2DynamicNTKScalingRotaryEmbedding(
-                    self.qk_rope_head_dim,
-                    max_position_embeddings=self.max_position_embeddings,
-                    scaling_factor=scaling_factor,
-                    base=self.rope_theta,
-                )
-            elif scaling_type == "yarn":
+            if scaling_type == "yarn":
                 kwargs = {
                     key: self.config.rope_scaling[key]
                     for key in [
@@ -770,11 +809,13 @@ class DeepseekV2Attention(nn.Layer):
 
             outputs = self.memory_recompute_att(q_t1, compressed_kv, position_ids)
 
-            if self.v_head_dim * self.num_heads != outputs.shape[-1]:
-                outputs = outputs.reshape([bsz, q_len, self.num_heads, -1])
-                outputs = outputs[..., : self.v_head_dim]
-                outputs = outputs.reshape([bsz, q_len, -1])
+            if not self.recompute_fa3:
+                if self.v_head_dim * self.num_heads != outputs.shape[-1]:
+                    outputs = outputs.reshape([bsz, q_len, self.num_heads, -1])
+                    outputs = outputs[..., : self.v_head_dim]
+                    outputs = outputs.reshape([bsz, q_len, -1])
         else:
+            assert self.recompute_fa3 is False
             hidden_states = self.input_layernorm(hidden_states)
             if self.q_lora_rank is None:
                 q = self.q_proj(hidden_states)
@@ -811,7 +852,7 @@ class DeepseekV2Attention(nn.Layer):
             cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
             cos = cos[None, :, None, :]
             sin = sin[None, :, None, :]
-            q_pe, k_pe = apply_rotary_pos_emb(q_pe, k_pe, cos, sin, position_ids, self.fuse_rope)
+            q_pe, k_pe = apply_rotary_pos_emb(q_pe, k_pe, cos, sin, position_ids, self.apply_rope_fusion)
 
             query_states = paddle.cat([q_nope, q_pe], axis=-1)
             key_states = paddle.cat([k_nope, k_pe], axis=-1)
@@ -828,7 +869,9 @@ class DeepseekV2Attention(nn.Layer):
                 self.enable_recompute
                 and self.layerwise_recompute
                 and has_gradient
-                and self.recompute_granularity == "core_attn"
+                and self.config.recompute_granularity == "selective"
+                and self.config.recompute_modules is not None
+                and "core_attn" in self.config.recompute_modules
             ):
                 outputs = recompute(
                     self.attn_func,
@@ -858,13 +901,16 @@ class DeepseekV2Attention(nn.Layer):
                     sequence_parallel=self.sequence_parallel,
                 )
         if output_attentions:
+            assert self.recompute_fa3 is False
             attn_output, attn_weights = outputs
         else:
             attn_output = outputs
 
         # if sequence_parallel is true, out shape are [q_len / n, bs, num_head * head_dim]
         # else their shape are [bs, q_len, num_head * head_dim], n is mp parallelism.
-        attn_output = self.o_proj(attn_output)
+
+        if not self.recompute_fa3:
+            attn_output = self.o_proj(attn_output)
 
         if not output_attentions:
             attn_weights = None
@@ -971,7 +1017,9 @@ class DeepseekV2DecoderLayer(nn.Layer):
             self.enable_recompute
             and self.layerwise_recompute
             and has_gradient
-            and self.recompute_granularity == "full_attn"
+            and self.config.recompute_granularity == "selective"
+            and self.config.recompute_modules is not None
+            and "full_attn" in self.config.recompute_modules
         ):
             outputs = recompute(
                 self.self_attn,
@@ -1039,7 +1087,9 @@ class DeepseekV2DecoderLayer(nn.Layer):
             self.enable_recompute
             and self.layerwise_recompute
             and has_gradient
-            and self.recompute_granularity == "full_attn"
+            and self.config.recompute_granularity == "selective"
+            and self.config.recompute_modules is not None
+            and "full_attn" in self.config.recompute_modules
         ):
             outputs = recompute(
                 self.self_attn,
@@ -1169,7 +1219,7 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
     _no_split_modules = ["DeepseekV2DecoderLayer"]
 
     def _get_model_flops(self, batch_size=1, seq_length=None, **kwargs):
-        from paddleformers.transformers.deepseek_v2.mfu_utils import DeepSeekProjection
+        from paddleformers.transformers.deepseek_v3.mfu_utils import DeepSeekProjection
 
         # self._
         mfu_cal_proj = DeepSeekProjection(self.config)
@@ -1250,7 +1300,7 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
 
         fn = split_or_merge_func(
             is_split=is_split,
-            tensor_parallel_degree=config.tensor_parallel_degree,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
             tensor_parallel_rank=config.tensor_parallel_rank,
             num_attention_heads=config.num_attention_heads,
         )
@@ -1271,7 +1321,7 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
             else:
                 base_actions["lm_head.weight"] = partial(fn, is_column=True)
 
-            if not config.vocab_size % config.tensor_parallel_degree == 0:
+            if not config.vocab_size % config.tensor_model_parallel_size == 0:
                 base_actions.pop("lm_head.weight")
                 base_actions.pop("embed_tokens.weight")
 
@@ -1281,7 +1331,7 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
             base_actions["layers.0.self_attn.q_b_proj.weight"] = partial(fn, is_column=True)
 
             # if we have enough num_key_value_heads to split, then split it.
-            if config.num_key_value_heads % config.tensor_parallel_degree == 0:
+            if config.num_key_value_heads % config.tensor_model_parallel_size == 0:
                 base_actions["layers.0.self_attn.kv_b_proj.weight"] = partial(fn, is_column=True)
                 if config.use_fp8:
                     base_actions["layers.0.self_attn.kv_b_proj.weight.weight_scale_inv"] = partial(fn, is_column=True)
@@ -1297,8 +1347,8 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
 
             # moe unit routed experts
             moe_group = dist.fleet.get_hybrid_communicate_group().get_data_parallel_group()
-            expert_parallel_degree = dist.get_world_size(moe_group)
-            if expert_parallel_degree <= 1:
+            expert_model_parallel_size = dist.get_world_size(moe_group)
+            if expert_model_parallel_size <= 1:
                 for e_i in range(config.n_routed_experts):
                     base_actions[f"layers.0.mlp.experts.{e_i}.up_proj.weight"] = partial(fn, is_column=True)
                     base_actions[f"layers.0.mlp.experts.{e_i}.gate_proj.weight"] = partial(fn, is_column=True)
@@ -1346,7 +1396,7 @@ class DeepseekV2PretrainedModelFast(PretrainedModel):
         return mappings
 
     def _init_weights(self, layer):
-        if self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_model_parallel_size > 1:
             rng_tracker = get_rng_state_tracker().rng_state
         Linear = FP8Linear if self.config.dsv3_use_fp8_gemm else Linear_
 
@@ -1431,7 +1481,7 @@ class DeepseekV2ModelFast(DeepseekV2PretrainedModelFast):
         self.recompute_granularity = config.recompute_granularity
         self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
 
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
+        if config.tensor_model_parallel_size > 1 and config.vocab_size % config.tensor_model_parallel_size == 0:
             self.embed_tokens = mpu.VocabParallelEmbedding(config.vocab_size, config.hidden_size)
         else:
             self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
@@ -1603,8 +1653,7 @@ class DeepseekV2ModelFast(DeepseekV2PretrainedModelFast):
             attention_mask = self._prepare_decoder_attention_mask(
                 attention_mask, (batch_size, seq_length), past_key_values_length, inputs_embeds.dtype
             )  # [bs, 1, seq_len, seq_len]
-            if self.config.use_flash_attention:
-                attention_mask = None if is_casual_mask(attention_mask) else attention_mask
+            attention_mask = None if is_casual_mask(attention_mask) else attention_mask
 
         if self.config.num_nextn_predict_layers > 0:
             inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]  # [B, S, D]
@@ -1640,7 +1689,9 @@ class DeepseekV2ModelFast(DeepseekV2PretrainedModelFast):
                 self.enable_recompute
                 and idx not in self.no_recompute_layers
                 and has_gradient
-                and self.recompute_granularity == "full"
+                and self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
             ):
                 layer_outputs = self.recompute_training_full(
                     decoder_layer,
@@ -1742,7 +1793,7 @@ class DeepseekV2PretrainingCriterionFast(nn.Layer):
         super(DeepseekV2PretrainingCriterionFast, self).__init__()
         self.ignore_index = getattr(config, "ignore_index", -100)
         self.config = config
-        self.enable_parallel_cross_entropy = config.tensor_parallel_degree > 1 and config.tensor_parallel_output
+        self.enable_parallel_cross_entropy = config.tensor_model_parallel_size > 1 and config.tensor_parallel_output
 
         if self.enable_parallel_cross_entropy:  # and False: # and lm_head is distributed
             self.loss_func = mpu.ParallelCrossEntropy(ignore_index=self.ignore_index)
@@ -1796,6 +1847,27 @@ class DeepseekV2PretrainingCriterionFast(nn.Layer):
             loss = add_loss(loss, router_loss)
 
         return loss
+
+
+# Inverse axis formula to find dim based on number of rotations
+def yarn_find_correction_dim(num_rotations, dim, base=10000, max_position_embeddings=2048):
+    return (dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))) / (2 * math.log(base))
+
+
+# Find axis range bounds based on rotations
+def yarn_find_correction_range(low_rot, high_rot, dim, base=10000, max_position_embeddings=2048):
+    low = math.floor(yarn_find_correction_dim(low_rot, dim, base, max_position_embeddings))
+    high = math.ceil(yarn_find_correction_dim(high_rot, dim, base, max_position_embeddings))
+    return max(low, 0), min(high, dim - 1)  # Clamp values just in case
+
+
+def yarn_linear_ramp_mask(min, max, dim):
+    if min == max:
+        max += 0.001  # Prevent singularity
+
+    linear_func = (paddle.arange(dim, dtype=paddle.float32) - min) / (max - min)
+    ramp_func = paddle.clip(linear_func, 0, 1)
+    return ramp_func
 
 
 class DeepseekV2YarnRotaryEmbedding(DeepseekV2RotaryEmbedding):
@@ -1853,6 +1925,31 @@ class DeepseekV2YarnRotaryEmbedding(DeepseekV2RotaryEmbedding):
             self.sin_cached = emb.sin() * _mscale
 
 
+class RmsNormFunction(paddle.autograd.PyLayer):
+    @staticmethod
+    def forward(ctx, x, scale, epsilon):
+        norm_output, invar = paddle.incubate.nn.functional.fused_rms_norm_ext(x, scale, epsilon)
+        ctx.save_for_backward(x, scale, invar)
+        ctx.epsilon = epsilon
+        ctx.x_stop_gradient = x.stop_gradient
+        ctx.scale_stop_gradient = scale.stop_gradient
+        return norm_output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        x, scale, invar = ctx.saved_tensor()
+        epsilon = ctx.epsilon
+        dx, dscale = paddle._C_ops.fused_rms_norm_ext_grad(x, scale, invar, grad_output, epsilon)
+        if ctx.x_stop_gradient and ctx.scale_stop_gradient:
+            return None, None
+        elif ctx.x_stop_gradient:
+            return None, dscale
+        elif ctx.scale_stop_gradient:
+            return dx, None
+        else:
+            return dx, dscale
+
+
 class DeepseekV2RMSNorm(nn.Layer):
     def __init__(self, config: DeepseekV2FastConfig, hidden_size=None, eps=1e-6, use_sequence_parallel=True):
         """DeepseekV2RMSNorm is equivalent to T5LayerNorm
@@ -1879,8 +1976,8 @@ class DeepseekV2RMSNorm(nn.Layer):
             mark_as_sequence_parallel_parameter(self.weight)
 
     def forward(self, hidden_states):
-        if self.config.use_fused_rms_norm:
-            return fusion_rms_norm(hidden_states, self.weight, self.variance_epsilon, self.config.use_fast_layer_norm)
+        if True:
+            return RmsNormFunction.apply(hidden_states, self.weight, self.variance_epsilon)
 
         with paddle.amp.auto_cast(False):
             hidden_states = hidden_states.astype("float32")
@@ -1895,56 +1992,15 @@ class DeepseekV2RMSNorm(nn.Layer):
         return f"hidden_size={self.hidden_size}, dtype={self.weight.dtype}"
 
 
-class DeepseekV2RotaryEmbedding(nn.Layer):
-    def __init__(self, dim, max_position_embeddings=2048, base=10000):
-        super().__init__()
-
-        self.dim = dim
-        self.max_position_embeddings = max_position_embeddings
-        self.base = base
-        # [dim / 2]
-        with device_guard("cpu"):
-            self.inv_freq = 1.0 / (
-                self.base ** (paddle.cast(paddle.arange(0, self.dim, 2), dtype="float32") / self.dim)
-            )
-            self._set_cos_sin_cache(seq_len=max_position_embeddings)
-
-        self.max_seq_len_cached = None
-
-    def _set_cos_sin_cache(self, seq_len):
-        self.max_seq_len_cached = seq_len
-        # [seq_len]
-        t = paddle.arange(seq_len, dtype="float32")
-        # [seq_len, axis/2]
-        freqs = paddle.einsum("i,j->ij", t, self.inv_freq)
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        # [seq_len, axis]
-        emb = paddle.cat([freqs, freqs], axis=-1)
-        # [1, seqlen, 1, axis]
-        self.cos_cached = emb.cos()[None, :, None, :]
-        self.sin_cached = emb.sin()[None, :, None, :]
-
-    def forward(self, x, seq_len=None):
-        # x: [bs, num_attention_heads, seq_len, head_size]
-        if self.max_seq_len_cached is None or seq_len > self.max_seq_len_cached:
-            self._set_cos_sin_cache(seq_len)
-        cos = self.cos_cached[:seq_len]
-        sin = self.sin_cached[:seq_len]
-        return (
-            cos.cast(x.dtype) if cos.dtype != x.dtype else cos,
-            sin.cast(x.dtype) if sin.dtype != x.dtype else sin,
-        )
-
-
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids, apply_rope_fusion=False):
     """Applies Rotary Position Embedding to the query and key tensors.
 
     Args:
-        q (`torch.Tensor`): The query tensor.
-        k (`torch.Tensor`): The key tensor.
-        cos (`torch.Tensor`): The cosine part of the rotary embedding.
-        sin (`torch.Tensor`): The sine part of the rotary embedding.
-        position_ids (`torch.Tensor`):
+        q (`paddle.Tensor`): The query tensor.
+        k (`paddle.Tensor`): The key tensor.
+        cos (`paddle.Tensor`): The cosine part of the rotary embedding.
+        sin (`paddle.Tensor`): The sine part of the rotary embedding.
+        position_ids (`paddle.Tensor`):
             The position indices of the tokens corresponding to the query and key tensors. For example, this can be
             used to pass offsetted position ids when working with a KV-cache.
         unsqueeze_dim (`int`, *optional*, defaults to 1):
@@ -1955,7 +2011,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
             cos[position_ids] and sin[position_ids] broadcastable to the shapes of q and k. Similarly, if q and k have
             the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
     Returns:
-        `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
+        `tuple(paddle.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
     b, s, h, d = q.shape
     q = q.reshape([b, s, h, d // 2, 2]).transpose([0, 1, 2, 4, 3]).reshape([b, s, h, d])
@@ -1963,7 +2019,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, fuse_rope=False):
     b, s, h, d = k.shape
     k = k.reshape([b, s, h, d // 2, 2]).transpose([0, 1, 2, 4, 3]).reshape([b, s, h, d])
 
-    if (get_env_device() == "xpu" or get_env_device() == "gpu") and fuse_rope:
+    if (get_env_device() == "xpu" or get_env_device() == "gpu") and apply_rope_fusion:
         q_embed, k_embed, _ = fused_rotary_position_embedding(
             q,
             k,
@@ -2009,7 +2065,7 @@ class FusedNormGateFunc(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, x, rms_norm_weight, moe_gate_weight, eps):
         ctx.dtype = paddle.float32
-        norm_output, invar = fused_ln.fused_rms_norm(x, rms_norm_weight, eps)
+        norm_output, invar = paddle.incubate.nn.functional.fused_rms_norm_ext(x, rms_norm_weight, eps)
         with paddle.amp.auto_cast(False):
             gate_logits = F.linear(cast_if_needed(norm_output, ctx.dtype), cast_if_needed(moe_gate_weight, ctx.dtype))
 
@@ -2023,7 +2079,7 @@ class FusedNormGateFunc(paddle.autograd.PyLayer):
         norm_output = FusedNormGateFunc._current_norm_output
         invar = FusedNormGateFunc._current_invar
         if norm_output is None or invar is None:
-            norm_output, invar = fused_ln.fused_rms_norm(x, rms_norm_weight, eps)
+            norm_output, invar = paddle.incubate.nn.functional.fused_rms_norm_ext(x, rms_norm_weight, eps)
         d_norm_output_linear, d_moe_gate_weight = paddle._C_ops.matmul_grad(
             cast_if_needed(norm_output, ctx.dtype),
             cast_if_needed(moe_gate_weight, ctx.dtype),
@@ -2036,7 +2092,7 @@ class FusedNormGateFunc(paddle.autograd.PyLayer):
         ), cast_if_needed(d_moe_gate_weight, moe_gate_weight.dtype)
 
         d_norm_output = d_norm_output + d_norm_output_linear
-        dx, d_rms_norm_weight = fused_ln.fused_rms_norm_grad_func(x, rms_norm_weight, invar, d_norm_output, eps)
+        dx, d_rms_norm_weight = paddle._C_ops.fused_rms_norm_ext_grad(x, rms_norm_weight, invar, d_norm_output, eps)
 
         return dx, d_rms_norm_weight, d_moe_gate_weight
 
@@ -2215,12 +2271,12 @@ def manul_fwd(
     softmax_scale,
 ):
 
-    q_ln_t, q_ln_invar = fused_ln.fused_rms_norm(q_init, q_ln_weight, eps)
+    q_ln_t, q_ln_invar = paddle.incubate.nn.functional.fused_rms_norm_ext(q_init, q_ln_weight, eps)
     q = paddle.matmul(q_ln_t, q_up_weight)
 
     compressed_kv, k_pe = paddle.split(kv_init, [kv_lora_rank, qk_rope_head_dim], axis=-1)
 
-    kv_ln_t, kv_ln_invar = fused_ln.fused_rms_norm(compressed_kv, kv_ln_weight, eps)
+    kv_ln_t, kv_ln_invar = paddle.incubate.nn.functional.fused_rms_norm_ext(compressed_kv, kv_ln_weight, eps)
 
     kv = paddle.matmul(kv_ln_t, kv_up_weight)
 
@@ -2268,12 +2324,13 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
         eps,
         kv_lora_rank,
         softmax_scale,
+        custom_map,
         recompute_fa3=False,
         fa_version=3,
     ):
 
         bsz = q_init.shape[0]
-        q_ln_t, q_ln_invar = fused_ln.fused_rms_norm(q_init, q_ln_weight, eps)
+        q_ln_t, q_ln_invar = paddle.incubate.nn.functional.fused_rms_norm_ext(q_init, q_ln_weight, eps)
         # q = paddle.matmul(q_ln_t, q_up_weight)
         q_orig_shape = q_ln_t.shape
         q = FP8LinearFunctionBase.compute_fp8_linear(
@@ -2283,7 +2340,7 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
 
         compressed_kv, k_pe = paddle.split(kv_init, [kv_lora_rank, qk_rope_head_dim], axis=-1)
 
-        kv_ln_t, kv_ln_invar = fused_ln.fused_rms_norm(compressed_kv, kv_ln_weight, eps)
+        kv_ln_t, kv_ln_invar = paddle.incubate.nn.functional.fused_rms_norm_ext(compressed_kv, kv_ln_weight, eps)
         # kv = paddle.matmul(kv_ln_t, kv_up_weight)
         kv_orig_shape = kv_ln_t.shape
         kv = FP8LinearFunctionBase.compute_fp8_linear(
@@ -2393,6 +2450,8 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                     qk_rope_head_dim,
                     position_ids,
                     eps,
+                    custom_map.q_lens,
+                    custom_map.out_proj_weight,
                     kv_lora_rank,
                     softmax_scale,
                     recompute_fa3,
@@ -2415,6 +2474,8 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                     qk_rope_head_dim,
                     position_ids,
                     eps,
+                    custom_map.q_lens,
+                    custom_map.out_proj_weight,
                     kv_lora_rank,
                     softmax_scale,
                     recompute_fa3,
@@ -2423,6 +2484,19 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
             assert False, f"invalid {fa_version=}"
 
         ctx.fa_version = fa_version
+
+        if recompute_fa3:
+            attn_out_reshape_shape = [bsz, custom_map.q_lens, -1]
+            # deep_gemm only support 2D
+            attn_out_reshape = attn_out.reshape([bsz * custom_map.q_lens, -1]).contiguous()
+            out = FP8LinearFunctionBase.compute_fp8_linear(
+                attn_out_reshape,
+                custom_map.out_proj_weight,
+                weight_transpose=True,
+                return_transpose_only=True,
+            )
+            out = out.reshape([attn_out_reshape_shape[0], -1, custom_map.out_proj_weight.shape[-1]])
+            return out
 
         return attn_out
 
@@ -2469,6 +2543,8 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                 qk_rope_head_dim,
                 position_ids,
                 eps,
+                q_lens,
+                out_proj_weight,
                 kv_lora_rank,
                 softmax_scale,
                 recompute_fa3,
@@ -2482,7 +2558,7 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
         if fa_version == 3 and not recompute_fa3:
             assert attn_out is not None and softmax_lse is not None
 
-        q_ln_t, q_ln_invar = fused_ln.fused_rms_norm(q_init, q_ln_weight, eps)
+        q_ln_t, q_ln_invar = paddle.incubate.nn.functional.fused_rms_norm_ext(q_init, q_ln_weight, eps)
 
         q_ln_fp8, q_ln_scale, q_ln_trans_fp8, q_ln_trans_scale = paddle.incubate.nn.functional.fp8_quant_blockwise(
             q_ln_t.reshape([-1, q_ln_t.shape[-1]]),
@@ -2499,7 +2575,7 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
 
         compressed_kv, k_pe = paddle.split(kv_init, [kv_lora_rank, qk_rope_head_dim], axis=-1)
 
-        kv_ln_t, kv_ln_invar = fused_ln.fused_rms_norm(compressed_kv, kv_ln_weight, eps)
+        kv_ln_t, kv_ln_invar = paddle.incubate.nn.functional.fused_rms_norm_ext(compressed_kv, kv_ln_weight, eps)
 
         kv_ln_fp8, kv_ln_scale, kv_ln_trans_fp8, kv_ln_trans_scale = paddle.incubate.nn.functional.fp8_quant_blockwise(
             kv_ln_t.reshape([-1, kv_ln_t.shape[-1]]),
@@ -2582,6 +2658,43 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
                         False,  # pack_gqa_
                         0,  # sm_margin
                     )
+
+                    # padding x and quant
+                    bsz = value_states.shape[0]
+                    attn_out_reshape = attn_out.reshape([bsz * q_lens, -1]).contiguous()
+                    d_attn_out_reshape_shape = attn_out_reshape.shape
+                    attn_out_reshape = FP8LinearFunctionBase.padding(attn_out_reshape, 0)
+                    (
+                        attn_out_reshape_t_fp8,
+                        attn_out_reshape_t_scale,
+                    ) = paddle.incubate.nn.functional.fp8_quant_blockwise(
+                        attn_out_reshape,
+                        output_scale_transpose=True,
+                        quant_method="1x128",
+                        input_transpose=True,
+                        return_transpose_only=True,
+                    )
+                    dout_2d = dout.reshape([-1, dout.shape[-1]])
+
+                    # ===== dx = deep_gemm(dout_fp8, w_fp8)
+                    d_attn_out, dout_t_fp8, dout_t_scale = FP8LinearFunctionBase.compute_fp8_linear(
+                        dout_2d, out_proj_weight, weight_transpose=False, return_mode="with_input_transpose_quant"
+                    )
+                    d_attn_out = d_attn_out.reshape(d_attn_out_reshape_shape)
+                    FP8LinearFunctionBase.compute_expert_w_grad(
+                        attn_out_reshape_t_fp8,
+                        attn_out_reshape_t_scale,
+                        dout_t_fp8,
+                        dout_t_scale,
+                        True,
+                        True,
+                        out_proj_weight,
+                        paddle.float32,
+                    )
+
+                    dout = d_attn_out
+                    dout = dout.reshape(attn_out.shape)
+
             with paddle.no_grad():
                 q_grad, k_grad, v_grad = _C_ops.flash_attn_v3_grad(
                     query_states,
@@ -2651,7 +2764,7 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
         else:
             d_kv_ln_t, d_kv_up_weight = _C_ops.matmul_grad(kv_ln_t, kv_up_weight, d_kv, False, False)
 
-        d_compressed_kv, d_kv_ln_weight = fused_ln.fused_rms_norm_grad_func(
+        d_compressed_kv, d_kv_ln_weight = paddle._C_ops.fused_rms_norm_ext_grad(
             compressed_kv, kv_ln_weight, kv_ln_invar, d_kv_ln_t, eps
         )
 
@@ -2696,7 +2809,7 @@ class MemroyRecomputeAttnFunc(paddle.autograd.PyLayer):
         else:
             d_q_ln_t, d_q_up_weight = _C_ops.matmul_grad(q_ln_t, q_up_weight, d_q, False, False)
 
-        d_q_init, d_q_ln_weight = fused_ln.fused_rms_norm_grad_func(q_init, q_ln_weight, q_ln_invar, d_q_ln_t, eps)
+        d_q_init, d_q_ln_weight = paddle._C_ops.fused_rms_norm_ext_grad(q_init, q_ln_weight, q_ln_invar, d_q_ln_t, eps)
 
         return d_q_init, d_kv_init, d_q_ln_weight, d_kv_ln_weight, d_q_up_weight, d_kv_up_weight
 
@@ -2717,6 +2830,8 @@ class MemroyRecomputeAttn(paddle.nn.Layer):
         v_head_dim,
         qk_rope_head_dim,
         eps,
+        q_lens,
+        out_proj_weight,
         kv_lora_rank,
         softmax_scale,
         recompute_fa3=False,
@@ -2755,6 +2870,8 @@ class MemroyRecomputeAttn(paddle.nn.Layer):
             self.v_head_dim,
             self.qk_rope_head_dim,
             self.eps,
+            self.q_lens,
+            self.out_proj_weight,
             self.kv_lora_rank,
             self.softmax_scale,
             self.recompute_fa3,
@@ -2767,6 +2884,8 @@ class MemroyRecomputeAttn(paddle.nn.Layer):
             v_head_dim,
             qk_rope_head_dim,
             eps,
+            q_lens,
+            out_proj_weight,
             kv_lora_rank,
             softmax_scale,
             recompute_fa3,
@@ -2802,6 +2921,7 @@ class MemroyRecomputeAttn(paddle.nn.Layer):
             self.eps,
             self.kv_lora_rank,
             self.softmax_scale,
+            self,
             recompute_fa3=self.recompute_fa3,
             fa_version=self.fa_version,
         )
@@ -2811,7 +2931,7 @@ class FusedRMSLinearFunc(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, x, rms_norm_weight, q_down_weight, kv_down_weight, eps):
 
-        hidden_states, invar = fused_ln.fused_rms_norm(x, rms_norm_weight, eps)
+        hidden_states, invar = paddle.incubate.nn.functional.fused_rms_norm_ext(x, rms_norm_weight, eps)
 
         h_fp8, h_scale = paddle.incubate.nn.functional.fp8_quant_blockwise(
             hidden_states.reshape([-1, hidden_states.shape[-1]]), output_scale_transpose=True, quant_method="1x128"
@@ -2833,7 +2953,7 @@ class FusedRMSLinearFunc(paddle.autograd.PyLayer):
     def backward(ctx, d_q, d_kv):
         x, rms_norm_weight, q_down_weight, kv_down_weight = ctx.saved_tensor()
         eps = ctx.eps
-        hidden_states, invar = fused_ln.fused_rms_norm(x, rms_norm_weight, eps)
+        hidden_states, invar = paddle.incubate.nn.functional.fused_rms_norm_ext(x, rms_norm_weight, eps)
 
         h_t_fp8, h_t_scale = paddle.incubate.nn.functional.fp8_quant_blockwise(
             hidden_states.reshape([-1, hidden_states.shape[-1]]),
@@ -2875,7 +2995,7 @@ class FusedRMSLinearFunc(paddle.autograd.PyLayer):
             h_grad_0, d_q_down_weight = _C_ops.matmul_grad(hidden_states, q_down_weight, d_q, False, False)
             h_grad = h_grad + h_grad_0
 
-        dx, d_rms_norm_weight = fused_ln.fused_rms_norm_grad_func(x, rms_norm_weight, invar, h_grad, eps)
+        dx, d_rms_norm_weight = paddle._C_ops.fused_rms_norm_ext_grad(x, rms_norm_weight, invar, h_grad, eps)
 
         return dx, d_rms_norm_weight, d_q_down_weight, d_kv_down_weight
 
@@ -2917,7 +3037,7 @@ class FusedRMSLinearSingleFunc(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, x, rms_norm_weight, linear_weight, eps):
 
-        hidden_states, invar = fused_ln.fused_rms_norm(x, rms_norm_weight, eps)
+        hidden_states, invar = paddle.incubate.nn.functional.fused_rms_norm_ext(x, rms_norm_weight, eps)
         q = paddle.matmul(hidden_states, linear_weight)
 
         ctx.save_for_backward(x, rms_norm_weight, linear_weight, eps)
@@ -2926,11 +3046,11 @@ class FusedRMSLinearSingleFunc(paddle.autograd.PyLayer):
     @staticmethod
     def backward(ctx, d_q, d_kv):
         x, rms_norm_weight, linear_weight, eps = ctx.saved_tensor()
-        hidden_states, invar = fused_ln.fused_rms_norm(x, rms_norm_weight, eps)
+        hidden_states, invar = paddle.incubate.nn.functional.fused_rms_norm_ext(x, rms_norm_weight, eps)
 
         h_grad, d_linear_weight = _C_ops.matmul_grad(hidden_states, linear_weight, d_q, False, False)
 
-        dx, d_rms_norm_weight = fused_ln.fused_rms_norm_grad_func(x, rms_norm_weight, invar, h_grad, eps)
+        dx, d_rms_norm_weight = paddle._C_ops.fused_rms_norm_ext_grad(x, rms_norm_weight, invar, h_grad, eps)
 
         return dx, d_rms_norm_weight, d_linear_weight
 
@@ -2961,8 +3081,9 @@ class FusedRMSLinearSingle(paddle.nn.Layer):
 class FastCrossEntropyFunction(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, preds, labels):
-        softmax_val, loss = paddle._C_ops.cross_entropy_with_softmax(preds, labels, False, True, False, -100, -1)
-
+        preds = preds.cast(paddle.float32)
+        softmax_val, loss = paddle._C_ops.cross_entropy_with_softmax(preds, labels, False, True, True, -100, -1)
+        loss = loss.cast(paddle.float32)
         ctx.save_for_backward(labels, softmax_val)
         return loss
 
@@ -2987,8 +3108,8 @@ class DeepseekV2LMHead(nn.Layer):
         else:
             self.seq_length = config.seq_length
 
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
-            vocab_size = config.vocab_size // config.tensor_parallel_degree
+        if config.tensor_model_parallel_size > 1 and config.vocab_size % config.tensor_model_parallel_size == 0:
+            vocab_size = config.vocab_size // config.tensor_model_parallel_size
         else:
             vocab_size = config.vocab_size
 

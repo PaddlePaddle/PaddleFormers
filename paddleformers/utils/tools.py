@@ -266,3 +266,69 @@ def device_guard(device="cpu", dev_id=0):
             paddle.set_device(origin_device)
 
     return _device_guard()
+
+
+class PaddleDeviceWrapper:
+    """
+    A wrapper class for PaddlePaddle's device-related functionalities, providing unified access
+    to both core device APIs and hardware-specific (e.g., CUDA) APIs.
+
+    This class dynamically resolves attributes by searching them in:
+    1. `paddle.device` (core APIs)
+    2. Hardware-specific modules (e.g., `paddle.device.cuda`)
+
+    Attributes:
+        paddle_device: The `paddle.device` module (core device APIs).
+        paddle_device_hardware: A hardware-specific module (e.g., `paddle.device.cuda`).
+
+    Example:
+        >>> paddle_device = PaddleDeviceWrapper()
+        >>> paddle_device.get_device()  # Calls `paddle.device.get_device()`
+        'gpu:0'
+        >>> paddle_device.cuda.get_device_count()  # Calls `paddle.device.cuda.get_device_count()`
+        1
+    """
+
+    def __init__(self):
+        self.paddle_device = paddle.device
+        self.paddle_device_hardware = self._get_available_hardware_modules()
+
+    def _get_available_hardware_modules(self):
+        """get available hardware modules"""
+        if get_env_device() == "gpu" or get_env_device() == "rocm":
+            return paddle.device.cuda
+        elif get_env_device() == "xpu":
+            return paddle.device.xpu
+        else:
+            return paddle.device
+
+    def get_nested_attr(self, module, attr_path, default=None):
+        """get nested attributes from a module"""
+        parts = attr_path.split(".")
+        current_module = module
+
+        try:
+            for part in parts:
+                if not hasattr(current_module, part):
+                    return default
+                current_module = getattr(current_module, part)
+
+            return current_module
+        except (AttributeError, TypeError):
+            return default
+
+    def __getattr__(self, name):
+        func = self.get_nested_attr(self.paddle_device, name)
+        if func is not None:
+            return func
+        else:
+            hardware_func = self.get_nested_attr(self.paddle_device_hardware, name)
+            if hardware_func is not None:
+                return hardware_func
+            else:
+                raise AttributeError(
+                    f" '{type(self.paddle_device_hardware).__name__}' object has no attribute '{name}'"
+                )
+
+
+paddle_device = PaddleDeviceWrapper()

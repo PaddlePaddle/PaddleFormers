@@ -19,14 +19,13 @@ import unittest
 
 import numpy as np
 import paddle
-from parameterized import parameterized
 
 from paddleformers.transformers import (
     Ernie4_5Config,
     Ernie4_5ForCausalLM,
     Ernie4_5Model,
 )
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 
 # from tests.testing_utils import slow
 from tests.transformers.test_configuration_common import ConfigTester
@@ -284,7 +283,7 @@ class Ernie4_5ModelTester:
     def create_and_check_gqa_model(self, config, input_ids, input_mask, *args):
         model = Ernie4_5ForCausalLM(config)
         config.num_key_value_heads = 8  # gqa
-        config.use_fused_rope = True
+        config.apply_rope_fusion = True
         model.eval()
 
         result = model(
@@ -308,6 +307,7 @@ class Ernie4_5ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
     all_model_classes = (Ernie4_5Model, Ernie4_5ForCausalLM)
     all_generative_model_classes = {Ernie4_5ForCausalLM: (Ernie4_5Model, "ernie4_5")}
 
+    @gpu_device_initializer(log_prefix="Ernie4_5ModelTest")
     def setUp(self):
         super().setUp()
 
@@ -444,6 +444,10 @@ class Ernie4_5GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
 class Ernie4_5CompatibilityTest(unittest.TestCase):
     test_model_id = "hf-internal-testing/tiny-random-Ernie4_5Model"
 
+    @gpu_device_initializer(log_prefix="Ernie4_5CompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
@@ -462,26 +466,28 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
         # 1. create common input
         input_ids = np.random.randint(100, 200, [1, 20])
 
-        # 2. forward the paddle model
-        from paddleformers.transformers import Ernie4_5Model
-
-        paddle_model = Ernie4_5Model.from_pretrained(self.torch_model_path, convert_from_hf=True, dtype="float32")
-        paddle_model.eval()
-        paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
-
-        # 3. forward the torch  model
+        # 2. forward the torch model
         import torch
-        from transformers import Ernie4_5Model
+        from transformers import Ernie4_5ForCausalLM
 
-        torch_model = Ernie4_5Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+        torch_model = Ernie4_5ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+
+        # 3. forward the paddle model
+        from paddleformers.transformers import Ernie4_5ForCausalLM
+
+        paddle_model = Ernie4_5ForCausalLM.from_pretrained(
+            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+        )
+        paddle_model.eval()
+        paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
         self.assertTrue(
             np.allclose(
                 paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                 torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                rtol=1e2,
+                rtol=1e-2,
             )
         )
 
@@ -492,19 +498,21 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch  model
+            # 2. forward the torch model
             import torch
-            from transformers import Ernie4_5Model
+            from transformers import Ernie4_5ForCausalLM
 
-            torch_model = Ernie4_5Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = Ernie4_5ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
-            # 2. forward the paddle model
-            from paddleformers.transformers import Ernie4_5Model
+            # 3. forward the paddle model
+            from paddleformers.transformers import Ernie4_5ForCausalLM
 
-            paddle_model = Ernie4_5Model.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
+            paddle_model = Ernie4_5ForCausalLM.from_pretrained(
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
@@ -512,50 +520,6 @@ class Ernie4_5CompatibilityTest(unittest.TestCase):
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    rtol=1e2,
+                    rtol=1e-2,
                 )
             )
-
-    @parameterized.expand([("Ernie4_5Model",), ("Ernie4_5ForCausalLM",)])
-    @require_package("transformers", "torch")
-    def test_ernie4_5_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
-        pytorch_class_name = pytorch_class_name or class_name
-        with tempfile.TemporaryDirectory() as tempdir:
-
-            # 1. create common input
-            input_ids = np.random.randint(100, 200, [1, 20])
-
-            # 2. forward the torch model
-            import torch
-            import transformers
-
-            torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-            # 3. forward the paddle model
-            from paddleformers import transformers
-
-            paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(tempdir, convert_from_hf=True, dtype="float32")
-            paddle_model.eval()
-
-            if class_name == "Ernie4_5Model":
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
-            else:
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
-
-            self.assertTrue(
-                np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e2,
-                )
-            )
-
-
-if __name__ == "__main__":
-    unittest.main()

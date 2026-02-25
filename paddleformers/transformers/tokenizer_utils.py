@@ -23,9 +23,15 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from tokenizers import AddedToken  # noqa: F401
 from transformers import BatchEncoding
-from transformers.tokenization_utils import (
-    PreTrainedTokenizer as PreTrainedTokenizer_tf,
-)
+
+try:
+    from transformers.tokenization_python import (
+        PreTrainedTokenizer as PreTrainedTokenizer_tf,
+    )
+except ImportError:
+    from transformers.tokenization_utils import PreTrainedTokenizer as PreTrainedTokenizer_tf
+
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase  # noqa: F401
 from transformers.tokenization_utils_base import (
     ADDED_TOKENS_FILE,
     CHAT_TEMPLATE_FILE,
@@ -33,10 +39,17 @@ from transformers.tokenization_utils_base import (
     SPECIAL_TOKENS_MAP_FILE,
     TOKENIZER_CONFIG_FILE,
 )
+
+try:
+    from transformers.tokenization_utils_tokenizers import (
+        PreTrainedTokenizerFast as PreTrainedTokenizerFast_tf,
+    )
+except ImportError:
+    from transformers.tokenization_utils_fast import PreTrainedTokenizerFast as PreTrainedTokenizerFast_tf
 from transformers.utils.generic import ExplicitEnum
 
 from ..utils import is_paddle_available
-from ..utils.download import DownloadSource, resolve_file_path
+from ..utils.download import resolve_file_path
 from ..utils.log import logger
 
 if is_paddle_available():
@@ -87,7 +100,9 @@ class PaddleTokenizerMixin:
         Only methods that actually exist in the class will be wrapped.
         """
         methods_to_wrap = [
-            "__call__",
+            # "__call__",
+            "_encode_plus",
+            "_batch_encode_plus",
             "pad",
             "encode_plus",
             "batch_encode_plus",
@@ -156,6 +171,31 @@ class PaddleTokenizerMixin:
             return result
 
         setattr(self, method_name, wrapper)
+
+    def __call__(self, *args, **kwargs):
+        import paddle
+
+        return_tensors = kwargs.get("return_tensors", None)
+        if return_tensors == "pd":
+            kwargs.pop("return_tensors", None)
+        result = super().__call__(*args, **kwargs)
+        if return_tensors == "pd":
+
+            def convert(inputs):
+                if isinstance(inputs, list):
+                    if len(inputs) > 0 and isinstance(inputs[0], int):
+                        return paddle.to_tensor([inputs])
+                    return paddle.to_tensor(inputs)
+                elif isinstance(inputs, int):
+                    return paddle.to_tensor(inputs)
+                elif isinstance(inputs, BatchEncoding):
+                    for k, v in inputs.items():
+                        inputs[k] = convert(v)
+                    return inputs
+                return inputs
+
+            result = convert(result)
+        return result
 
     def apply_chat_template(
         self,
@@ -232,6 +272,11 @@ class PaddleTokenizerMixin:
                 **kwargs,
             )
 
+    # No Mistral-specific regex checks are required.
+    @classmethod
+    def _patch_mistral_regex(cls, tokenizer, *args, **kwargs):
+        return tokenizer
+
     # Rewrite hf's tokenizer function from_pretrained
     @classmethod
     def from_pretrained(
@@ -246,14 +291,6 @@ class PaddleTokenizerMixin:
         if download_hub is None:
             download_hub = os.environ.get("DOWNLOAD_SOURCE", "huggingface")
         logger.info(f"Using download source: {download_hub}")
-
-        # If downloaded from hf, use the native hf from pretrained
-        if download_hub == DownloadSource.HUGGINGFACE:
-            return super().from_pretrained(
-                pretrained_model_name_or_path,
-                *args,
-                **kwargs,
-            )
 
         cache_dir = kwargs.pop("cache_dir", None)
         subfolder = kwargs.pop("subfolder", "")
@@ -270,6 +307,12 @@ class PaddleTokenizerMixin:
         }
         # get all tokenizer-related files
         vocab_files = {**cls.vocab_files_names, **additional_files_names}
+
+        if "PF_HOME" in os.environ:
+            home_path = os.environ["PF_HOME"]
+            home_model_path = os.path.join(home_path, pretrained_model_name_or_path)
+            if os.path.isfile(home_model_path) or os.path.isdir(home_model_path):
+                pretrained_model_name_or_path = home_model_path
 
         if os.path.isdir(pretrained_model_name_or_path):
             for file_id, file_name in vocab_files.items():
@@ -303,7 +346,7 @@ class PaddleTokenizerMixin:
                 cache_dir = os.path.dirname(resolved_vocab_files[file_id])
                 break
 
-        if not any(key in resolved_vocab_files for key in cls.vocab_files_names.keys()):
+        if not any(key in resolved_vocab_files for key in vocab_files.keys()):
             hf_link = f"https://huggingface.co/{pretrained_model_name_or_path}"
             modelscope_link = f"https://modelscope.cn/models/{pretrained_model_name_or_path}"
             encoded_model_name = pretrained_model_name_or_path.replace("/", "%2F")
@@ -334,6 +377,16 @@ class PaddleTokenizerMixin:
             local_files_only=True,
             **kwargs,
         )
+
+    def save_pretrained(self, save_directory, **kwargs):
+        save_files = super().save_pretrained(save_directory, **kwargs)
+
+        # NOTE: Compatibility fix for ERNIE tokenizer vocabulary saving
+        if self.__class__.__name__ == "LlamaTokenizer" and hasattr(self, "vocab_file"):
+            out_vocab_file = self.save_vocabulary(save_directory, kwargs.get("filename_prefix"))
+            save_files = save_files + out_vocab_file
+
+        return save_files
 
     def _encode_chat_inputs_openai_format(
         self,
@@ -602,5 +655,10 @@ def warp_tokenizer(hf_tokenizer_class: PreTrainedTokenizer_tf):
 
 
 class PreTrainedTokenizer(PaddleTokenizerMixin, PreTrainedTokenizer_tf):
+    def init(self, *args, **kwargs):
+        super().init(*args, **kwargs)
+
+
+class PreTrainedTokenizerFast(PaddleTokenizerMixin, PreTrainedTokenizerFast_tf):
     def init(self, *args, **kwargs):
         super().init(*args, **kwargs)

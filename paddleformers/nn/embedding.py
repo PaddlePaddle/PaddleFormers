@@ -65,6 +65,6 @@ class Embedding(GeneralInterface):
 
     @classmethod
     def get_embedding_type(self, config: PretrainedConfig):
-        if config.tensor_parallel_degree <= 1:
+        if config.tensor_model_parallel_size <= 1:
             return "default"
         return "vocab_parallel"

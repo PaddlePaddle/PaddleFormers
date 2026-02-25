@@ -42,7 +42,7 @@ class KTOCriterion(nn.Layer):
             self.kto_config = copy.deepcopy(config.kto_config)
         else:
             self.kto_config = kto_config
-        if self.config.tensor_parallel_output and self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_parallel_output and self.config.tensor_model_parallel_size > 1:
             self.logprobs = ParallelCrossEntropy()
         else:
             self.logprobs = nn.CrossEntropyLoss(reduction="none")
@@ -80,14 +80,14 @@ class KTOCriterion(nn.Layer):
     def kto_logps(self, logits, response_labels, response_kl_labels, response_indexs):
         """KTO logprobs"""
         use_fused_head_and_loss_fn = getattr(self.config, "use_fused_head_and_loss_fn", False)
-        use_sparse_head_and_loss_fn = getattr(self.config, "use_sparse_head_and_loss_fn", False)
+        use_filtered_label_loss = getattr(self.config, "use_filtered_label_loss", False)
         labels = response_labels + response_kl_labels
         if use_fused_head_and_loss_fn:
             hidden_states, weight, bias, transpose_y = logits
-        elif use_sparse_head_and_loss_fn:
+        elif use_filtered_label_loss:
             hidden_states, weight, bias = logits
-        if use_sparse_head_and_loss_fn:
-            if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel:
+        if use_filtered_label_loss:
+            if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel:
                 labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, self.ignore_label)
 
                 hidden_states = paddle.take_along_axis(hidden_states, sparse_tgt_idx, axis=0)
@@ -108,14 +108,14 @@ class KTOCriterion(nn.Layer):
                 None,
                 transpose_y,
                 self.config.vocab_size,
-                self.config.tensor_parallel_degree,
+                self.config.tensor_model_parallel_size,
                 self.config.tensor_parallel_output,
                 self.config.fused_linear,
                 getattr(self.config, "chunk_size", 1024),
                 return_token_loss=True,
                 ignore_index=self.ignore_label,
             )
-        elif use_sparse_head_and_loss_fn:
+        elif use_filtered_label_loss:
             logits = parallel_matmul(
                 hidden_states,
                 weight,
@@ -138,7 +138,7 @@ class KTOCriterion(nn.Layer):
 
         if len(response_indexs.shape) == 3:
             response_indexs = response_indexs[0]
-        if use_sparse_head_and_loss_fn:
+        if use_filtered_label_loss:
             chosen_logps_list = [
                 (per_token_logps[response_index[1] : response_index[2]]).sum()
                 for response_index in response_indexs

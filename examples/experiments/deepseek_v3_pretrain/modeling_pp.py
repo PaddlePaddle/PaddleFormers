@@ -767,6 +767,9 @@ class FusionFp8DecoderLayerNode(ScheduleNode):
         return inputs
 
     def post_process_backward(self, output_grad, event_to_wait=None):
+        if event_to_wait is not None:
+            event_to_wait.calc_stream_wait(self.moe_group.id)
+
         grad = self.post_process_node.backward(output_grad)
 
         if self.using_post_norm_recompute:
@@ -1438,7 +1441,7 @@ class DeepseekV2EmbeddingPipe(nn.Layer):
         self.config = config
         self.sequence_parallel = config.sequence_parallel
         self.hidden_size = config.hidden_size
-        if config.tensor_parallel_degree > 1 and config.vocab_size % config.tensor_parallel_degree == 0:
+        if config.tensor_model_parallel_size > 1 and config.vocab_size % config.tensor_model_parallel_size == 0:
             self.embed_tokens = fleet.meta_parallel.VocabParallelEmbedding(
                 config.vocab_size,
                 config.hidden_size,
@@ -1558,7 +1561,12 @@ class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
         elif attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.dtype == paddle.int64:
             attn_mask_startend_row_indices, position_ids = None, attn_mask_startend_row_indices
 
-        if self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
+        if (
+            self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+            and has_gradient
+        ):
             if attention_mask is not None or attn_mask_startend_row_indices is not None:
                 hidden_states = recompute(
                     super().forward,
@@ -1608,7 +1616,12 @@ class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
             return (hidden_states, residual, l_aux, intermediate_hidden_states, token_indices, token_probs)
 
         has_gradient = not hidden_states.stop_gradient
-        if self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
+        if (
+            self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+            and has_gradient
+        ):
             # for pretrain
             outputs = recompute(
                 attn_compute_func,
@@ -1683,7 +1696,12 @@ class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
                 dispatched_probs,
             ) = inputs
         has_gradient = not intermediate_hidden_states.stop_gradient
-        if self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
+        if (
+            self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+            and has_gradient
+        ):
             expert_output = recompute(
                 self.expert_forward_compute,
                 intermediate_hidden_states,
@@ -1710,7 +1728,12 @@ class DeepseekV2DecoderLayerPipe(DeepseekV2DecoderLayer):
         else:
             (hidden_states, residual, l_aux, combine_output) = inputs
         has_gradient = not hidden_states.stop_gradient
-        if self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
+        if (
+            self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+            and has_gradient
+        ):
             hidden_states = recompute(
                 self.post_combine_compute,
                 residual,
@@ -1884,7 +1907,12 @@ class DeepseekV2MTPLayerPipe(DeepseekV2MTPLayer):
         hidden_states = hidden_states_main_model
         for depth in range(self.config.num_nextn_predict_layers):
             inputs_embeds_cur_depth = inputs_embeds_cur_depth_list[depth]
-            if self.enable_recompute and self.config.recompute_granularity == "full" and has_gradient:
+            if (
+                self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
                 if attention_mask is not None or attn_mask_startend_row_indices is not None:
                     hidden_states = recompute(
                         super().forward,
@@ -2100,12 +2128,12 @@ class DeepseekV2ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
         # Enable_recompute defaults to False and is controlled by Trainer
         self.enable_recompute = False
         self.recompute_granularity = self.config.recompute_granularity
-        self.pp_recompute_interval = self.config.pp_recompute_interval
+        self.pp_recompute_interval = 1
         self.no_recompute_layers = config.no_recompute_layers if config.no_recompute_layers is not None else []
         if self.recompute_granularity == "full":
             assert len(self.no_recompute_layers) == 0, "for pp with full recompute, no_recompute_layers is not support"
 
-        virtual_pp_degree = getattr(self.config, "virtual_pp_degree", 1)
+        virtual_pipeline_model_parallel_size = getattr(self.config, "virtual_pipeline_model_parallel_size", 1)
         use_dualpipev = getattr(self.config, "use_dualpipev", False)
         if use_dualpipev:
             assert LocalSharedLayerDesc is not None, "LocalSharedLayerDesc is None, please update your paddle."
@@ -2115,11 +2143,11 @@ class DeepseekV2ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             return fleet.get_hybrid_communicate_group()
 
         hcg = get_hcg()
-        tensor_parallel_degree = max(hcg.get_model_parallel_world_size(), 1)
+        tensor_model_parallel_size = max(hcg.get_model_parallel_world_size(), 1)
         tensor_parallel_rank = max(hcg.get_model_parallel_rank(), 0)
 
-        # TODO: fix tensor_parallel_degree rewrite in here
-        config.tensor_parallel_degree = tensor_parallel_degree
+        # TODO: fix tensor_model_parallel_size rewrite in here
+        config.tensor_model_parallel_size = tensor_model_parallel_size
         config.tensor_parallel_rank = tensor_parallel_rank
 
         if config.tie_word_embeddings:
@@ -2181,9 +2209,9 @@ class DeepseekV2ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             return ret
 
         pp_nums = (
-            self.config["pipeline_parallel_degree"] * 2
+            self.config["pipeline_model_parallel_size"] * 2
             if self.config.use_dualpipev
-            else self.config["pipeline_parallel_degree"]
+            else self.config["pipeline_model_parallel_size"]
         )
         recompute_fwd_gate_up_list = compute_recompute_fwd_gate_up_list(
             pp_nums,
@@ -2233,11 +2261,6 @@ class DeepseekV2ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             self.add_sequential_layer(LayerDesc(DeepseekV2LMHeadPipe, config=config), "lm_head")
 
         recompute_interval = 0
-        if self.enable_recompute and self.recompute_granularity == "full":
-            assert self.config.pp_recompute_interval <= config.num_hidden_layers // (
-                virtual_pp_degree * get_hcg().topology().get_dim_size("pipe")
-            ), "pp recompute interval should smaller than num layers of each pp chunk"
-            recompute_interval = self.config.pp_recompute_interval
 
         seg_method = "layer:DeepseekV2DecoderLayer|DeepseekV2MTPLayerPipe"
         if config.num_hidden_layers % get_hcg().topology().get_dim_size("pipe") != 0:
@@ -2255,7 +2278,7 @@ class DeepseekV2ForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                 "offload": False,
                 "partition": False,
             },
-            num_virtual_pipeline_stages=virtual_pp_degree,
+            num_virtual_pipeline_stages=virtual_pipeline_model_parallel_size,
             use_dualpipev=use_dualpipev,
         )
         # You should call init here, since there is a  diamond inheritance problem

@@ -35,12 +35,21 @@ from paddle.distributed.fleet.utils.hybrid_parallel_util import (
 from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     is_sequence_parallel_parameter,
 )
+
+from ..utils.import_utils import is_paddlefleet_available
+
+# Conditionally import paddlefleet modules
+if is_paddlefleet_available():
+    from paddlefleet.models.gpt import GPTModel
+else:
+    GPTModel = None  # Define a mock or None when not available
+
 from tqdm.auto import tqdm
 
 from ..transformers.moe_gate import PretrainedMoEGate
 from ..transformers.moe_utils import offload, reload
 from ..utils.log import logger
-from .trainer_utils import IntervalStrategy, has_length
+from .trainer_utils import IntervalStrategy, get_last_checkpoint, has_length
 from .training_args import TrainingArguments
 
 __all__ = [
@@ -58,6 +67,7 @@ __all__ = [
     "MoeExpertsGradScaleCallback",
     "MoEGateSpGradSyncCallBack",
     "SPGradSyncCallback",
+    "EMAStateAssemblerCallback",
 ]
 
 
@@ -165,6 +175,7 @@ class TrainerControl:
     should_training_stop: bool = False
     should_epoch_stop: bool = False
     should_save: bool = False
+    should_save_hf: bool = False
     should_evaluate: bool = False
     should_log: bool = False
 
@@ -179,6 +190,7 @@ class TrainerControl:
     def _new_step(self):
         """Internal method that resets the variable for a new step."""
         self.should_save = False
+        self.should_save_hf = False
         self.should_evaluate = False
         self.should_log = False
 
@@ -316,6 +328,12 @@ class TrainerCallback:
         """
         pass
 
+    def on_save_hf(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        """
+        Event called after a huggingface checkpoint save.
+        """
+        pass
+
 
 class CallbackHandler(TrainerCallback):
     """Internal class that just calls the list of callbacks in order."""
@@ -396,6 +414,7 @@ class CallbackHandler(TrainerCallback):
         control.should_log = False
         control.should_evaluate = False
         control.should_save = False
+        control.should_save_hf = False
         return self.call_event("on_step_begin", args, state, control)
 
     def on_load_data_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, inputs: Dict):
@@ -420,6 +439,10 @@ class CallbackHandler(TrainerCallback):
     def on_save(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
         control.should_save = False
         return self.call_event("on_save", args, state, control)
+
+    def on_save_hf(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
+        control.should_save_hf = False
+        return self.call_event("on_save_hf", args, state, control)
 
     def on_log(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, logs, **kwargs):
         control.should_log = False
@@ -483,6 +506,14 @@ class DefaultFlowCallback(TrainerCallback):
         # End training
         if state.global_step >= state.max_steps:
             control.should_training_stop = True
+
+        # Save hf
+        if (
+            args.save_strategy == IntervalStrategy.STEPS
+            and args.save_hf_steps > 0
+            and state.global_step % args.save_hf_steps == 0
+        ):
+            control.should_save_hf = True
 
         return control
 
@@ -667,21 +698,29 @@ class FP8QuantWeightCallback(TrainerCallback):
         global skip_count
 
         if (not g_shard_bypass_dygraph_optimizer or skip_count == 0) and hasattr(model, "fp8_quant_weight"):
+            self.moe_weights_name = []
+            self.use_fp8 = True
+            if GPTModel is not None and isinstance(model, GPTModel):
+                self.use_fp8 = model.use_fp8()
+            if not self.use_fp8:
+                return
             model.fp8_quant_weight(True, quant_transpose=True)
             optimizer.clear_param_storage("moe_expert")
             optimizer.clear_param_storage("rms_linear")
             optimizer.clear_param_storage("memory_attn")
             optimizer.clear_param_storage("attn_out_project")
             optimizer.clear_param_storage("shared_expert")
-
-            self.moe_weights_name = []
+            if not args.offload_fp8_expert_master_weight:
+                return
             for param in optimizer._inner_opt._parameter_list:
                 color = getattr(param, "color", -1)
                 if isinstance(color, dict) and color["color"] == "moe_expert":
                     self.moe_weights_name.append(param.name)
 
             for name in self.moe_weights_name:
-                offload(optimizer._master_weights[name])
+                # NOTE(Waynezee): when moe_sharding_degree > 1, experts parameter's master_weight may exist in ranks of another moe_sharding_rank.
+                if name in optimizer._master_weights:
+                    offload(optimizer._master_weights[name])
 
         skip_count += 1
 
@@ -695,7 +734,8 @@ class FP8QuantWeightCallback(TrainerCallback):
 
         if (not g_shard_bypass_dygraph_optimizer) and hasattr(model, "fp8_quant_weight"):
             for name in self.moe_weights_name:
-                reload(optimizer._master_weights[name])
+                if name in optimizer._master_weights:
+                    reload(optimizer._master_weights[name])
 
 
 class MoECorrectionBiasAdjustCallback(TrainerCallback):
@@ -771,29 +811,17 @@ class MoeExpertsGradScaleCallback(TrainerCallback):
         """
         if not args.use_expert_parallel:
             raise ValueError("This callback should be used with expert parallel")
-        if args.expert_parallel_degree > 1:
-            self.expert_gradient_scaling_factor = 1.0 / args.expert_parallel_degree
-            if args.tensor_parallel_degree > 1:
-                self.expert_gradient_scaling_factor *= args.tensor_parallel_degree
+        if args.expert_model_parallel_size > 1:
+            self.expert_gradient_scaling_factor = 1.0 / args.expert_model_parallel_size
+            if args.tensor_model_parallel_size > 1:
+                self.expert_gradient_scaling_factor *= args.tensor_model_parallel_size
             logger.info(
                 f"EP-MoE is used, expert gradient scaling factor is set to {self.expert_gradient_scaling_factor}"
             )
 
     def on_optimizer_begin(self, args, state, control, **kwargs):
-        model = kwargs["model"]
-        param_count = 0
-        for p in model.parameters():
-            if not getattr(p, "no_sync", False):
-                continue
-            if hasattr(p, "is_moe_param") and p.is_moe_param:
-                with paddle.no_grad():
-                    if hasattr(p, "main_grad") and p.main_grad is not None:
-                        p.main_grad.scale_(self.expert_gradient_scaling_factor)
-                        param_count += 1
-                    elif p.grad is not None:
-                        p.grad.scale_(self.expert_gradient_scaling_factor)
-                        param_count += 1
-        logger.info("correct ep grad count:{}".format(param_count))
+        # moe_param grad scale for ep and tp is moved trainer.hybrid_parallel_scale_param_grad
+        pass
 
 
 class MoEGateSpGradSyncCallBack(TrainerCallback):
@@ -807,16 +835,19 @@ class MoEGateSpGradSyncCallBack(TrainerCallback):
         logger.info("MoEGateSpGradSyncCallBack Created")
 
     def on_optimizer_begin(self, args, state, control, **kwargs):
-        if args.tensor_parallel_degree > 1 and args.sequence_parallel:
+        if args.tensor_model_parallel_size > 1 and args.sequence_parallel:
             model = kwargs["model"]
             hcg = fleet.get_hybrid_communicate_group()
             pg = hcg.get_model_parallel_group().process_group
             for param in model.parameters():
-                if getattr(param, "is_gate", False):
-                    if hasattr(param, "main_grad"):
-                        pg.allreduce(param.main_grad).wait()
-                    else:
-                        pg.allreduce(param.grad).wait()
+                if not getattr(param, "is_gate", False):
+                    continue
+                grad = getattr(param, "main_grad", None)
+                if grad is None:
+                    grad = getattr(param, "grad", None)
+                if grad is None:
+                    continue
+                pg.allreduce(grad).wait()
 
             logger.info("MoEGate grad allreduced done")
 
@@ -849,3 +880,37 @@ class SPGradSyncCallback(TrainerCallback):
             fused_allreduce_gradients_with_group(self._sp_params, group=mp_group, scale=1.0)  # sum not mean
             another_time = time.time()
             logger.info(f"sync gradients takes {another_time - now} time")
+
+
+class EMAStateAssemblerCallback(TrainerCallback):
+    def __init__(self, ema_state_assembler):
+        self.ema_state_assembler = ema_state_assembler
+
+    def on_step_end(self, args, state, control, **kwargs):
+        start = time.time()
+        self.ema_state_assembler.run()
+        duration = time.time() - start
+        logger.info(f"[EMAStateAssembler] Assembling EMA state took {duration:.3f} seconds.")
+
+
+class InterleaveGateUpCallback(TrainerCallback):
+    def __init__(self, model, resume_from_checkpoint=None, output_dir=None):
+        self.model = model
+        self.resume_from_checkpoint = None
+        self.output_dir = output_dir
+
+    def interleave_gate_up_proj(self, w):
+        w_cloned = w.clone().detach()
+        I = w_cloned.shape[1] // 2
+        interleaved_w = paddle.stack([w_cloned[:, :I, :], w_cloned[:, I:, :]], dim=2).reshape(
+            w_cloned.shape[0], 2 * I, w_cloned.shape[2]
+        )
+        paddle.assign(interleaved_w, w)
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        if self.resume_from_checkpoint is not None or get_last_checkpoint(self.output_dir):
+            # NOTE(xingmingyyj) For a normal hot start from weights saved by FlexCheckpoint, we assume that the weights have already been interleaved.
+            return
+        for name, param in self.model.state_dict().items():
+            if "weight1" in name:
+                self.interleave_gate_up_proj(param)

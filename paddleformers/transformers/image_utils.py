@@ -16,30 +16,59 @@
 
 import os
 from collections import UserDict
-from typing import Dict, Iterable, List, Tuple, Union
+from dataclasses import dataclass
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 import paddle
-import PIL.Image
-import PIL.ImageOps
+import PIL
 import requests
 from packaging import version
 
+from ..utils.log import logger
 from .tokenizer_utils import ExplicitEnum
 
 IMAGENET_DEFAULT_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_DEFAULT_STD = [0.229, 0.224, 0.225]
 IMAGENET_STANDARD_MEAN = [0.5, 0.5, 0.5]
 IMAGENET_STANDARD_STD = [0.5, 0.5, 0.5]
+OPENAI_CLIP_MEAN = [0.48145466, 0.4578275, 0.40821073]
+OPENAI_CLIP_STD = [0.26862954, 0.26130258, 0.27577711]
+
+
+if version.parse(version.parse(PIL.__version__).base_version) >= version.parse("9.1.0"):
+    PILImageResampling = PIL.Image.Resampling
+else:
+    PILImageResampling = PIL.Image
+
+
+ImageInput = Union[
+    "PIL.Image.Image", np.ndarray, "paddle.Tensor", List["PIL.Image.Image"], List[np.ndarray], List["paddle.Tensor"]
+]
+
+
+pil_paddle_interpolation_mapping = {
+    PILImageResampling.NEAREST: "nearest",
+    PILImageResampling.BILINEAR: "bilinear",
+    PILImageResampling.BICUBIC: "bicubic",
+}
 
 
 def is_paddle_tensor(tensor):
     return paddle.is_tensor(tensor)
 
 
+def is_pil_image(img):
+    return isinstance(img, PIL.Image.Image)
+
+
+def is_numpy_array(img):
+    return isinstance(img, np.ndarray)
+
+
 def to_numpy(obj):
     """
-    Convert a TensorFlow tensor, PyTorch tensor, Numpy array or python list to a Numpy array.
+    Convert a Paddle tensor, Numpy array, python list or python dict to a Numpy array.
     """
     if isinstance(obj, (dict, UserDict)):
         return {k: to_numpy(v) for k, v in obj.items()}
@@ -51,24 +80,33 @@ def to_numpy(obj):
         return obj
 
 
-if version.parse(version.parse(PIL.__version__).base_version) >= version.parse("9.1.0"):
-    PILImageResampling = PIL.Image.Resampling
-else:
-    PILImageResampling = PIL.Image
-
-
-ImageInput = Union[
-    "PIL.Image.Image", np.ndarray, "paddle.Tensor", List["PIL.Image.Image"], List[np.ndarray], List["paddle.Tensor"]
-]  # noqa
-
-
 class ChannelDimension(ExplicitEnum):
     FIRST = "channels_first"
     LAST = "channels_last"
 
 
+class ImageType(ExplicitEnum):
+    PADDLE = "paddle"
+    PIL = "pillow"
+    NUMPY = "numpy"
+
+
+def get_image_type(image):
+    if is_paddle_tensor(image):
+        return ImageType.PADDLE
+    if is_pil_image(image):
+        return ImageType.PIL
+    if is_numpy_array(image):
+        return ImageType.NUMPY
+    raise ValueError(f"Unrecognized image type {type(image)}")
+
+
 def is_valid_image(img):
-    return isinstance(img, PIL.Image.Image) or isinstance(img, np.ndarray) or is_paddle_tensor(img)
+    return is_pil_image(img) or is_numpy_array(img) or is_paddle_tensor(img)
+
+
+def is_valid_list_of_images(images: list):
+    return images and all(is_valid_image(image) for image in images)
 
 
 def valid_images(imgs):
@@ -126,16 +164,95 @@ def make_list_of_images(images, expected_ndims: int = 3) -> List[ImageInput]:
     )
 
 
+def make_flat_list_of_images(
+    images: Union[list[ImageInput], ImageInput],
+    expected_ndims: int = 3,
+) -> ImageInput:
+    """
+    Ensure that the output is a flat list of images. If the input is a single image, it is converted to a list of length 1.
+    If the input is a nested list of images, it is converted to a flat list of images.
+    Args:
+        images (`Union[list[ImageInput], ImageInput]`):
+            The input image.
+        expected_ndims (`int`, *optional*, defaults to 3):
+            The expected number of dimensions for a single input image.
+    Returns:
+        list: A list of images or a 4d array of images.
+    """
+    # If the input is a nested list of images, we flatten it
+    if (
+        isinstance(images, (list, tuple))
+        and all(isinstance(images_i, (list, tuple)) for images_i in images)
+        and all(is_valid_list_of_images(images_i) or not images_i for images_i in images)
+    ):
+        return [img for img_list in images for img in img_list]
+
+    if isinstance(images, (list, tuple)) and is_valid_list_of_images(images):
+        if is_pil_image(images[0]) or images[0].ndim == expected_ndims:
+            return images
+        if images[0].ndim == expected_ndims + 1:
+            return [img for img_list in images for img in img_list]
+
+    if is_valid_image(images):
+        if is_pil_image(images) or images.ndim == expected_ndims:
+            return [images]
+        if images.ndim == expected_ndims + 1:
+            return list(images)
+
+    raise ValueError(f"Could not make a flat list of images from {images}")
+
+
+def make_nested_list_of_images(
+    images: Union[list[ImageInput], ImageInput],
+    expected_ndims: int = 3,
+) -> list[ImageInput]:
+    """
+    Ensure that the output is a nested list of images.
+    Args:
+        images (`Union[list[ImageInput], ImageInput]`):
+            The input image.
+        expected_ndims (`int`, *optional*, defaults to 3):
+            The expected number of dimensions for a single input image.
+    Returns:
+        list: A list of list of images or a list of 4d array of images.
+    """
+    # If it's a list of batches, it's already in the right format
+    if (
+        isinstance(images, (list, tuple))
+        and all(isinstance(images_i, (list, tuple)) for images_i in images)
+        and all(is_valid_list_of_images(images_i) or not images_i for images_i in images)
+    ):
+        return images
+
+    # If it's a list of images, it's a single batch, so convert it to a list of lists
+    if isinstance(images, (list, tuple)) and is_valid_list_of_images(images):
+        if is_pil_image(images[0]) or images[0].ndim == expected_ndims:
+            return [images]
+        if images[0].ndim == expected_ndims + 1:
+            return [list(image) for image in images]
+
+    # If it's a single image, convert it to a list of lists
+    if is_valid_image(images):
+        if is_pil_image(images) or images.ndim == expected_ndims:
+            return [[images]]
+        if images.ndim == expected_ndims + 1:
+            return [list(images)]
+
+    raise ValueError("Invalid input type. Must be a single image, a list of images, or a list of batches of images.")
+
+
 def to_numpy_array(img) -> np.ndarray:
     if not is_valid_image(img):
         raise ValueError(f"Invalid image type: {type(img)}")
 
-    if isinstance(img, PIL.Image.Image):
+    if is_pil_image(img):
         return np.array(img)
     return to_numpy(img)
 
 
-def infer_channel_dimension_format(image: np.ndarray) -> ChannelDimension:
+def infer_channel_dimension_format(
+    image: np.ndarray, num_channels: Optional[Union[int, tuple[int, ...]]] = None
+) -> ChannelDimension:
     """
     Infers the channel dimension format of `image`.
 
@@ -146,6 +263,9 @@ def infer_channel_dimension_format(image: np.ndarray) -> ChannelDimension:
     Returns:
         The channel dimension of the image.
     """
+    num_channels = num_channels if num_channels is not None else (1, 3)
+    num_channels = (num_channels,) if isinstance(num_channels, int) else num_channels
+
     if image.ndim == 3:
         first_dim, last_dim = 0, 2
     elif image.ndim == 4:
@@ -153,9 +273,14 @@ def infer_channel_dimension_format(image: np.ndarray) -> ChannelDimension:
     else:
         raise ValueError(f"Unsupported number of image dimensions: {image.ndim}")
 
-    if image.shape[first_dim] in (1, 3):
+    if image.shape[first_dim] in num_channels and image.shape[last_dim] in num_channels:
+        logger.warning(
+            f"The channel dimension is ambiguous. Got image shape {image.shape}. Assuming channels are the first dimension."
+        )
         return ChannelDimension.FIRST
-    elif image.shape[last_dim] in (1, 3):
+    elif image.shape[first_dim] in num_channels:
+        return ChannelDimension.FIRST
+    elif image.shape[last_dim] in num_channels:
         return ChannelDimension.LAST
     raise ValueError("Unable to infer channel dimension format")
 
@@ -201,6 +326,37 @@ def get_image_size(image: np.ndarray, channel_dim: ChannelDimension = None) -> T
         return image.shape[-3], image.shape[-2]
     else:
         raise ValueError(f"Unsupported data format: {channel_dim}")
+
+
+def get_image_size_for_max_height_width(
+    image_size: tuple[int, int],
+    max_height: int,
+    max_width: int,
+) -> tuple[int, int]:
+    """
+    Computes the output image size given the input image and the maximum allowed height and width. Keep aspect ratio.
+    Important, even if image_height < max_height and image_width < max_width, the image will be resized
+    to at least one of the edges be equal to max_height or max_width.
+
+    For example:
+        - input_size: (100, 200), max_height: 50, max_width: 50 -> output_size: (25, 50)
+        - input_size: (100, 200), max_height: 200, max_width: 500 -> output_size: (200, 400)
+
+    Args:
+        image_size (`tuple[int, int]`):
+            The image to resize.
+        max_height (`int`):
+            The maximum allowed height.
+        max_width (`int`):
+            The maximum allowed width.
+    """
+    height, width = image_size
+    height_scale = max_height / height
+    width_scale = max_width / width
+    min_scale = min(height_scale, width_scale)
+    new_height = int(height * min_scale)
+    new_width = int(width * min_scale)
+    return new_height, new_width
 
 
 def is_valid_annotation_coco_detection(annotation: Dict[str, Union[List, Tuple]]) -> bool:
@@ -266,7 +422,7 @@ def load_image(image: Union[str, "PIL.Image.Image"]) -> "PIL.Image.Image":
             raise ValueError(
                 f"Incorrect path or url, URLs must start with `http://` or `https://`, and {image} is not a valid path"
             )
-    elif isinstance(image, PIL.Image.Image):
+    elif is_pil_image(image):
         image = image
     else:
         raise ValueError(
@@ -275,6 +431,58 @@ def load_image(image: Union[str, "PIL.Image.Image"]) -> "PIL.Image.Image":
     image = PIL.ImageOps.exif_transpose(image)
     image = image.convert("RGB")
     return image
+
+
+def validate_preprocess_arguments(
+    do_rescale: Optional[bool] = None,
+    rescale_factor: Optional[float] = None,
+    do_normalize: Optional[bool] = None,
+    image_mean: Optional[Union[float, list[float]]] = None,
+    image_std: Optional[Union[float, list[float]]] = None,
+    do_pad: Optional[bool] = None,
+    pad_size: Optional[Union[dict[str, int], int]] = None,
+    do_center_crop: Optional[bool] = None,
+    crop_size: Optional[dict[str, int]] = None,
+    do_resize: Optional[bool] = None,
+    size: Optional[dict[str, int]] = None,
+    resample: Optional["PILImageResampling"] = None,
+    interpolation: Optional[str] = None,
+):
+    """
+    Checks validity of typically used arguments in an `ImageProcessor` `preprocess` method.
+    Raises `ValueError` if arguments incompatibility is caught.
+    Many incompatibilities are model-specific. `do_pad` sometimes needs `size_divisor`,
+    sometimes `size_divisibility`, and sometimes `size`. New models and processors added should follow
+    existing arguments when possible.
+
+    """
+    if do_rescale and rescale_factor is None:
+        raise ValueError("`rescale_factor` must be specified if `do_rescale` is `True`.")
+
+    if do_pad and pad_size is None:
+        # Processors pad images using different args depending on the model, so the below check is pointless
+        # but we keep it for BC for now. TODO: remove in v5
+        # Usually padding can be called with:
+        #   - "pad_size/size" if we're padding to specific values
+        #   - "size_divisor" if we're padding to any value divisible by X
+        #   - "None" if we're padding to the maximum size image in batch
+        raise ValueError(
+            "Depending on the model, `size_divisor` or `pad_size` or `size` must be specified if `do_pad` is `True`."
+        )
+
+    if do_normalize and (image_mean is None or image_std is None):
+        raise ValueError("`image_mean` and `image_std` must both be specified if `do_normalize` is `True`.")
+
+    if do_center_crop and crop_size is None:
+        raise ValueError("`crop_size` must be specified if `do_center_crop` is `True`.")
+
+    if interpolation is not None and resample is not None:
+        raise ValueError(
+            "Only one of `interpolation` and `resample` should be specified, depending on image processor type."
+        )
+
+    if do_resize and not (size is not None and (resample is not None or interpolation is not None)):
+        raise ValueError("`size` and `resample/interpolation` must be specified if `do_resize` is `True`.")
 
 
 class ImageFeatureExtractionMixin:
@@ -306,7 +514,7 @@ class ImageFeatureExtractionMixin:
         if is_paddle_tensor(image):
             image = image.cpu().numpy()
 
-        if isinstance(image, np.ndarray):
+        if is_numpy_array(image):
             if rescale is None:
                 # rescale default to the array being of floating type.
                 rescale = isinstance(image.flat[0], np.floating)
@@ -328,7 +536,7 @@ class ImageFeatureExtractionMixin:
                 The image to convert.
         """
         self._ensure_format_supported(image)
-        if not isinstance(image, PIL.Image.Image):
+        if not is_pil_image(image):
             return image
 
         return image.convert("RGB")
@@ -356,7 +564,7 @@ class ImageFeatureExtractionMixin:
         """
         self._ensure_format_supported(image)
 
-        if isinstance(image, PIL.Image.Image):
+        if is_pil_image(image):
             image = np.array(image)
 
         if is_paddle_tensor(image):
@@ -383,7 +591,7 @@ class ImageFeatureExtractionMixin:
         self._ensure_format_supported(image)
 
         # Do nothing if PIL image
-        if isinstance(image, PIL.Image.Image):
+        if is_pil_image(image):
             return image
 
         if is_paddle_tensor(image):
@@ -410,17 +618,17 @@ class ImageFeatureExtractionMixin:
         """
         self._ensure_format_supported(image)
 
-        if isinstance(image, PIL.Image.Image):
+        if is_pil_image(image):
             image = self.to_numpy_array(image, rescale=True)
         # If the input image is a PIL image, it automatically gets rescaled. If it's another
         # type it may need rescaling.
         elif rescale:
-            if isinstance(image, np.ndarray):
+            if is_numpy_array(image):
                 image = self.rescale(image.astype(np.float32), 1 / 255.0)
             elif is_paddle_tensor(image):
                 image = self.rescale(image.astype("float32"), 1 / 255.0)
 
-        if isinstance(image, np.ndarray):
+        if is_numpy_array(image):
             if not isinstance(mean, np.ndarray):
                 mean = np.array(mean).astype(image.dtype)
             if not isinstance(std, np.ndarray):
@@ -471,7 +679,7 @@ class ImageFeatureExtractionMixin:
 
         self._ensure_format_supported(image)
 
-        if not isinstance(image, PIL.Image.Image):
+        if not is_pil_image(image):
             image = self.to_pil_image(image)
 
         if isinstance(size, list):
@@ -525,7 +733,7 @@ class ImageFeatureExtractionMixin:
             size = (size, size)
 
         # PIL Image.size is (width, height) but NumPy array and paddle Tensors have (height, width)
-        if is_paddle_tensor(image) or isinstance(image, np.ndarray):
+        if is_paddle_tensor(image) or is_numpy_array(image):
             if image.ndim == 2:
                 image = self.expand_dims(image)
             image_shape = image.shape[1:] if image.shape[0] in [1, 3] else image.shape[:2]
@@ -538,7 +746,7 @@ class ImageFeatureExtractionMixin:
         right = left + size[1]  # In case size is odd, (image_shape[1] + size[1]) // 2 won't give the proper result.
 
         # For PIL Images we have a method to crop directly.
-        if isinstance(image, PIL.Image.Image):
+        if is_pil_image(image):
             return image.crop((left, top, right, bottom))
 
         # Check if image is in (n_channels, height, width) or (height, width, n_channels) format
@@ -546,7 +754,7 @@ class ImageFeatureExtractionMixin:
 
         # Transpose (height, width, n_channels) format images
         if not channel_first:
-            if isinstance(image, np.ndarray):
+            if is_numpy_array(image):
                 image = image.transpose(2, 0, 1)
             if is_paddle_tensor(image):
                 image = image.transpose([2, 0, 1])
@@ -557,7 +765,7 @@ class ImageFeatureExtractionMixin:
 
         # Otherwise, we may need to pad if the image is too small. Oh joy...
         new_shape = image.shape[:-2] + (max(size[0], image_shape[0]), max(size[1], image_shape[1]))
-        if isinstance(image, np.ndarray):
+        if is_numpy_array(image):
             new_image = np.zeros_like(image, shape=new_shape)
         elif is_paddle_tensor(image):
             new_image = paddle.zeros(new_shape, dtype=image.dtype)
@@ -591,7 +799,7 @@ class ImageFeatureExtractionMixin:
         """
         self._ensure_format_supported(image)
 
-        if isinstance(image, PIL.Image.Image):
+        if is_pil_image(image):
             image = self.to_numpy_array(image)
 
         return image[::-1, :, :]
@@ -613,9 +821,35 @@ class ImageFeatureExtractionMixin:
 
         self._ensure_format_supported(image)
 
-        if not isinstance(image, PIL.Image.Image):
+        if not is_pil_image(image):
             image = self.to_pil_image(image)
 
         return image.rotate(
             angle, resample=resample, expand=expand, center=center, translate=translate, fillcolor=fillcolor
         )
+
+
+def validate_kwargs(valid_processor_keys: list[str], captured_kwargs: list[str]):
+    unused_keys = set(captured_kwargs).difference(set(valid_processor_keys))
+    if unused_keys:
+        unused_key_str = ", ".join(unused_keys)
+        logger.warning(f"Unused or unrecognized kwargs: {unused_key_str}.")
+
+
+@dataclass(frozen=True)
+class SizeDict:
+    """
+    Hashable dictionary to store image size information.
+    """
+
+    height: Optional[int] = None
+    width: Optional[int] = None
+    longest_edge: Optional[int] = None
+    shortest_edge: Optional[int] = None
+    max_height: Optional[int] = None
+    max_width: Optional[int] = None
+
+    def __getitem__(self, key):
+        if hasattr(self, key):
+            return getattr(self, key)
+        raise KeyError(f"Key {key} not found in SizeDict.")

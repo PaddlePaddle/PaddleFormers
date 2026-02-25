@@ -41,7 +41,7 @@ class DPOCriterion(nn.Layer):
             self.dpo_config = copy.deepcopy(config.dpo_config)
         else:
             self.dpo_config = dpo_config
-        if self.config.tensor_parallel_output and self.config.tensor_parallel_degree > 1:
+        if self.config.tensor_parallel_output and self.config.tensor_model_parallel_size > 1:
             self.logprobs = ParallelCrossEntropy()
         else:
             self.logprobs = nn.CrossEntropyLoss(reduction="none")
@@ -135,16 +135,16 @@ class DPOCriterion(nn.Layer):
     ):
         """DPO logprobs"""
         use_fused_head_and_loss_fn = getattr(self.config, "use_fused_head_and_loss_fn", False)
-        use_sparse_head_and_loss_fn = getattr(self.config, "use_sparse_head_and_loss_fn", False)
+        use_filtered_label_loss = getattr(self.config, "use_filtered_label_loss", False)
         chunk_size = getattr(self.config, "chunk_size", 1024)
         labels = chosen_labels + rejected_labels
         if use_fused_head_and_loss_fn:
             hidden_states, weight, bias, transpose_y = logits
-        elif use_sparse_head_and_loss_fn:
+        elif use_filtered_label_loss:
             hidden_states, weight, bias = logits
 
-        if use_sparse_head_and_loss_fn:
-            if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel:
+        if use_filtered_label_loss:
+            if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel:
                 labels, sparse_tgt_idx = sequence_parallel_sparse_mask_labels(labels, 0)
 
                 hidden_states = paddle.gather(hidden_states, sparse_tgt_idx, axis=0)
@@ -157,7 +157,7 @@ class DPOCriterion(nn.Layer):
                 hidden_states = hidden_states.reshape([-1, hidden_states.shape[-1]])
                 hidden_states = paddle.gather(hidden_states, sparse_tgt_idx, axis=0)
         elif use_fused_head_and_loss_fn:
-            if self.config.tensor_parallel_degree > 1 and self.config.sequence_parallel:
+            if self.config.tensor_model_parallel_size > 1 and self.config.sequence_parallel:
                 hidden_states = GatherOp.apply(hidden_states)
                 hidden_states = hidden_states.reshape(
                     [
@@ -175,14 +175,14 @@ class DPOCriterion(nn.Layer):
                 None,
                 transpose_y,
                 self.config.vocab_size,
-                self.config.tensor_parallel_degree,
+                self.config.tensor_model_parallel_size,
                 self.config.tensor_parallel_output,
                 False,  # fused_linear
                 chunk_size,
                 return_token_loss=True,
                 ignore_index=0,
             )
-        elif use_sparse_head_and_loss_fn:
+        elif use_filtered_label_loss:
             logits = parallel_matmul(
                 hidden_states,
                 weight,
@@ -207,7 +207,7 @@ class DPOCriterion(nn.Layer):
             response_indexs = response_indexs[0]
 
         offset = 1 if self.ignore_eos_token else 0
-        if use_sparse_head_and_loss_fn:
+        if use_filtered_label_loss:
             chosen_logps = paddle.stack(
                 [
                     (
@@ -268,6 +268,12 @@ class DPOCriterion(nn.Layer):
             rejected_response_length = response_indexs[:, 3] - response_indexs[:, 2]
             chosen_logps /= chosen_response_length.astype("float32")
             rejected_logps /= rejected_response_length.astype("float32")
+        elif self.dpo_config.normalize_logps:
+            avg_response_length = (response_indexs[:, 3] - response_indexs[:, 1]) / 2
+            chosen_response_length = response_indexs[:, 2] - response_indexs[:, 1]
+            rejected_response_length = response_indexs[:, 3] - response_indexs[:, 2]
+            chosen_logps *= avg_response_length / chosen_response_length.astype("float32")
+            rejected_logps *= avg_response_length / rejected_response_length.astype("float32")
         return chosen_logps, rejected_logps, sft_loss * self.dpo_config.sft_loss_ratio
 
     def forward(

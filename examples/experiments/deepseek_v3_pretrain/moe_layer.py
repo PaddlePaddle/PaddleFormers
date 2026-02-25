@@ -50,9 +50,9 @@ except ImportError:
     deep_ep = None
 
 try:
-    import TokenDispatcherUtils as TDU
+    import paddlefleet as paddlefleet
 except ImportError:
-    TDU = None
+    paddlefleet = None
 
 
 def record_stream_for_multi_input(x):
@@ -103,17 +103,19 @@ class MoELayer(nn.Layer):
                 self.moe_group = dist.fleet.get_hybrid_communicate_group().expert_parallel_group
             self.moe_rank = dist.get_rank(self.moe_group)
             self.moe_rank = 0 if self.moe_rank < 0 else self.moe_rank
-            self.expert_parallel_degree = dist.get_world_size(self.moe_group)
-            self.expert_parallel_degree = 1 if self.expert_parallel_degree < 0 else self.expert_parallel_degree
-            self.moe_num_experts_per_device = self._parse_moe_expert_parallel(
-                self.moe_num_experts, self.expert_parallel_degree
+            self.expert_model_parallel_size = dist.get_world_size(self.moe_group)
+            self.expert_model_parallel_size = (
+                1 if self.expert_model_parallel_size < 0 else self.expert_model_parallel_size
             )
-            self.is_dummy_moe = False if self.expert_parallel_degree > 1 else True
+            self.moe_num_experts_per_device = self._parse_moe_expert_parallel(
+                self.moe_num_experts, self.expert_model_parallel_size
+            )
+            self.is_dummy_moe = False if self.expert_model_parallel_size > 1 else True
         else:
             # when moe_group is dummy, we don't need to use all_to_all
             self.moe_group = None
             self.moe_rank = 0
-            self.expert_parallel_degree = 1
+            self.expert_model_parallel_size = 1
             self.moe_num_experts_per_device = self.moe_num_experts
             self.is_dummy_moe = True
 
@@ -160,14 +162,14 @@ class MoELayer(nn.Layer):
             self.using_flex_token = True
             self.router.using_flex_token = True
 
-    def _parse_moe_expert_parallel(self, moe_num_experts, expert_parallel_degree):
+    def _parse_moe_expert_parallel(self, moe_num_experts, expert_model_parallel_size):
         assert (
-            moe_num_experts >= expert_parallel_degree
-        ), f"expert moe_num_experts={moe_num_experts} >= moe_world_size={expert_parallel_degree}"
+            moe_num_experts >= expert_model_parallel_size
+        ), f"expert moe_num_experts={moe_num_experts} >= moe_world_size={expert_model_parallel_size}"
         assert (
-            moe_num_experts % expert_parallel_degree == 0
-        ), f"expert moe_num_experts={moe_num_experts} % moe_world_size={expert_parallel_degree} == 0"
-        moe_num_experts_per_device = moe_num_experts // expert_parallel_degree
+            moe_num_experts % expert_model_parallel_size == 0
+        ), f"expert moe_num_experts={moe_num_experts} % moe_world_size={expert_model_parallel_size} == 0"
+        moe_num_experts_per_device = moe_num_experts // expert_model_parallel_size
         return moe_num_experts_per_device
 
     def _post_init(self):
@@ -254,13 +256,13 @@ class MoELayer(nn.Layer):
         tokens_per_expert = tokens_per_expert.detach()
         sorted_tokens_shape = sorted_tokens.shape
 
-        if self.expert_parallel_degree > 1:
-            tokens_per_ep_rank = tokens_per_expert.reshape([self.expert_parallel_degree, -1]).sum(axis=1)
+        if self.expert_model_parallel_size > 1:
+            tokens_per_ep_rank = tokens_per_expert.reshape([self.expert_model_parallel_size, -1]).sum(axis=1)
             tokens_per_expert_group = _AllToAll.apply(
                 [tokens_per_expert.shape[0]], tokens_per_expert, group=self.moe_group
             )
             output_splits = (
-                tokens_per_expert_group.reshape([self.expert_parallel_degree, -1]).sum(axis=1).cpu().tolist()
+                tokens_per_expert_group.reshape([self.expert_model_parallel_size, -1]).sum(axis=1).cpu().tolist()
             )
             input_split_sizes = tokens_per_ep_rank.cpu().tolist()
             gathered_tokens = _AllToAll.apply(
@@ -272,7 +274,7 @@ class MoELayer(nn.Layer):
             )
 
             tokens_per_expert_post_gather = tokens_per_expert_group.reshape(
-                [self.expert_parallel_degree, self.moe_num_experts_per_device]
+                [self.expert_model_parallel_size, self.moe_num_experts_per_device]
             ).sum(axis=0)
             gatherd_idxs = np.zeros(shape=(gathered_tokens.shape[0],), dtype=np.int32)
             s = 0
@@ -295,7 +297,7 @@ class MoELayer(nn.Layer):
             outputs.append(expert_out)
             start_idx = end_idx
         outs = paddle.cat(outputs, axis=0) if len(outputs) > 0 else paddle.to_tensor(0, dtype=sorted_tokens.dtype)
-        if self.expert_parallel_degree > 1:
+        if self.expert_model_parallel_size > 1:
             new_x = paddle.empty_like(outs)
             new_x[gatherd_idxs] = outs
             gathered_tokens = _AllToAll.apply(
@@ -320,6 +322,90 @@ class MoELayer(nn.Layer):
         )
 
         return final_out, l_aux, l_zloss
+
+    def expert_forward(self, dispatched_input):
+        outputs = []
+        chunks = paddle.split(dispatched_input, num_or_sections=self.get_tokens_per_expert(), axis=0)
+        for i, chunk in enumerate(chunks):
+            chunk = chunk.contiguous()
+            # assert chunk.shape[0] != 0, "Cannot dispatch empty input"
+            expert = self.experts[i + self.moe_rank * self.moe_num_experts_per_device]
+            outputs += [expert(chunk)]
+
+        return paddle.concat(outputs, axis=0)
+
+    def forward_flex_token(self, hidden_states: paddle.Tensor, probs=None, routing_map=None, l_aux=None, l_zloss=None):
+        _, _, d_model = hidden_states.shape
+        # reshaped_input = hidden_states.reshape([-1, d_model])
+        if self.using_post_norm_recompute:
+            assert probs is not None and routing_map is not None and l_aux is not None and l_zloss is not None
+        else:
+            probs, routing_map, l_aux, l_zloss = self.router(hidden_states)
+        if hasattr(self.config, "dsv3_use_fp8_gemm") and self.config.dsv3_use_fp8_gemm:
+            if hasattr(self.config, "dsv3_use_fp8_dispatch") and self.config.dsv3_use_fp8_dispatch:
+                output = FusionMoe.apply(
+                    hidden_states,
+                    probs,
+                    routing_map,
+                    self,
+                    recompute_fwd_gate_up=self.config.recompute_fwd_gate_up,
+                    is_split_group_gemm=self.config.is_split_group_gemm,
+                )
+            else:
+                hidden_states, token_indices, token_probs = self.token_dispatcher.pre_dispatch(
+                    hidden_states, probs, routing_map
+                )
+                output = FusionMoe.apply(
+                    hidden_states,
+                    token_indices,
+                    token_probs,
+                    self,
+                    recompute_fwd_gate_up=self.config.recompute_fwd_gate_up,
+                    is_split_group_gemm=self.config.is_split_group_gemm,
+                )
+        else:
+            (
+                dispatched_input,
+                token_permuted_indices,
+                prob_permuted_indices,
+                dispatched_probs,
+            ) = self.token_dispatcher.token_permutation(hidden_states, probs, routing_map)
+
+            expert_output = self.expert_forward(dispatched_input)
+            output, _ = self.token_dispatcher.token_unpermutation(
+                expert_output, token_permuted_indices, prob_permuted_indices, dispatched_probs, None
+            )
+        return output, l_aux, l_zloss
+
+    def get_tokens_per_expert(self):
+        return self.token_dispatcher._comm_manager.tokens_per_expert_list
+
+    def set_tokens_per_expert(self, tokens_per_expert_list):
+        self.token_dispatcher._comm_manager.tokens_per_expert_list = tokens_per_expert_list
+
+    def pre_dispatch_compute(self, hidden_states):
+        _, _, d_model = hidden_states.shape
+        probs, routing_map, l_aux, l_zloss = self.router(hidden_states)
+        hidden_states, token_indices, token_probs = self.token_dispatcher.pre_dispatch(
+            hidden_states, probs, routing_map
+        )
+        return l_aux, l_zloss, hidden_states, token_indices, token_probs
+
+    def post_dispatch_compute(self, hidden_states, dispatched_indices, dispatched_probs):
+        (global_input_tokens, token_permuted_indices, prob_permuted_indices) = self.token_dispatcher.post_dispatch(
+            hidden_states, dispatched_indices
+        )
+        return (global_input_tokens, token_permuted_indices, prob_permuted_indices)
+
+    def pre_combine_compute(self, hidden_states, token_permuted_indices, prob_permuted_indices, dispatched_probs):
+        hidden_states = self.token_dispatcher.pre_combine(
+            hidden_states, token_permuted_indices, prob_permuted_indices, dispatched_probs
+        )
+        return hidden_states
+
+    def post_combine_compute(self, hidden_states):
+        hidden_states = self.token_dispatcher.post_combine(hidden_states)
+        return hidden_states
 
 
 class MoEFlexTokenLayer(nn.Layer):
@@ -851,7 +937,7 @@ class FusionMlpNode:
                 assert (
                     self.experts_group_gemm_node.recompute_fwd_gate_up
                 ), "recompute_fwd_gate_up must be true when use_mlp_subbatch = True"
-                map_unzipped_indices_to_zipped = TDU.tokens_unzip_slice(
+                map_unzipped_indices_to_zipped = paddlefleet.extensions.ops.tokens_unzip_slice(
                     extract_first_if_tuple(hs_2d_dispatched),
                     zipped_expertwise_rowmap,
                     num_experts,
@@ -965,7 +1051,7 @@ class FusionMlpNode:
         padding_token_per_experts = [(x + 127) // 128 * 128 for x in self.tokens_per_expert]
 
         if self.mlp_bwd_subbatch_rows != 0 and total_unzipped_tokens > self.mlp_bwd_subbatch_rows * 2:
-            map_unzipped_indices_to_zipped = TDU.tokens_unzip_slice(
+            map_unzipped_indices_to_zipped = paddlefleet.extensions.ops.tokens_unzip_slice(
                 extract_first_if_tuple(hidden_states_out_grad),
                 self.unzip_node.zipped_expertwise_rowmap,
                 num_experts,
@@ -1009,7 +1095,7 @@ class FusionMlpNode:
             else:
                 unzipped_grad._clear_to_zero_allocation()
             hs_dispatched_grad = merge_subbatch_cast(output, paddle.bfloat16)
-            dispatched_probs_grad = TDU.tokens_zip_prob_seq_subbatch(
+            dispatched_probs_grad = paddlefleet.extensions.ops.tokens_zip_prob_seq_subbatch(
                 probs_grad_list, self.unzip_node.zipped_expertwise_rowmap, self.dispatched_indices, subbatch_rows
             )
             self.reset_statue()

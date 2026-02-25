@@ -56,11 +56,10 @@ moe_arguments = {
     "recompute": "true",
     "recompute_granularity": "full",
     "save_total_limit": 1,
-    "tensor_parallel_degree": 1,
-    "pipeline_parallel_degree": 1,
+    "tensor_model_parallel_size": 1,
+    "pipeline_model_parallel_size": 1,
     "sharding": "",
     "lora": "false",
-    "use_flash_attention": "false",
     "unified_checkpoint": 1,
     "continue_training": 0,
     "sequence_parallel": 0,
@@ -157,7 +156,7 @@ rng = np.random.default_rng(seed=seed)
 #         remove_ckpt(moe_arguments["output_dir"])
 
 #         train_args = self.configs["TP2Sharding4"]
-#         train_args.update({"sharding_parallel_config": "split_param"})
+#         train_args.update({"split_param": True})
 #         train_args.update({"amp_master_grad": True})
 #         self.runfirst(train_args)
 #         self.rerun(train_args)

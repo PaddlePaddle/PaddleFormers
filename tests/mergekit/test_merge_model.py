@@ -19,18 +19,23 @@ from tempfile import TemporaryDirectory
 from parameterized import parameterized
 
 from paddleformers.mergekit import MergeConfig, MergeModel
-from paddleformers.transformers import AutoModel
+from paddleformers.transformers import AutoModelForCausalLM
+from tests.testing_utils import require_package
 
 
 class TestMergeModel(unittest.TestCase):
     @parameterized.expand([("slerp",), ("della",), ("dare_linear",), ("ties",)])
     def test_merge_model_np(self, merge_method):
         with TemporaryDirectory() as tempdir:
-            model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert", dtype="bfloat16")
+            model = AutoModelForCausalLM.from_pretrained(
+                "PaddleFormers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16", load_checkpoint_format=""
+            )
             pd_path = os.path.join(tempdir, "pd_model")
-            model.save_pretrained(pd_path)
+            model.save_pretrained(pd_path, save_to_hf=False, save_checkpoint_format="")
             safe_path = os.path.join(tempdir, "safe_model")
-            model.save_pretrained(safe_path, safe_serialization="safetensors")
+            model.save_pretrained(
+                safe_path, safe_serialization="safetensors", save_to_hf=False, save_checkpoint_format=""
+            )
 
             # test mix
             merge_config = MergeConfig(
@@ -70,11 +75,15 @@ class TestMergeModel(unittest.TestCase):
     @parameterized.expand([("slerp",), ("della",), ("dare_linear",), ("ties",)])
     def test_merge_model_pd(self, merge_method):
         with TemporaryDirectory() as tempdir:
-            model = AutoModel.from_pretrained("Paddleformers/tiny-random-bert", dtype="bfloat16")
+            model = AutoModelForCausalLM.from_pretrained(
+                "PaddleFormers/tiny-random-qwen3", convert_from_hf=True, dtype="bfloat16", load_checkpoint_format=""
+            )
             pd_path = os.path.join(tempdir, "pd_model")
-            model.save_pretrained(pd_path)
+            model.save_pretrained(pd_path, save_to_hf=False, save_checkpoint_format="")
             safe_path = os.path.join(tempdir, "safe_model")
-            model.save_pretrained(safe_path, safe_serialization="safetensors")
+            model.save_pretrained(
+                safe_path, safe_serialization="safetensors", save_to_hf=False, save_checkpoint_format=""
+            )
 
             # test mix
             merge_config = MergeConfig(
@@ -111,6 +120,145 @@ class TestMergeModel(unittest.TestCase):
                 output_path=tempdir,
                 tensor_type="pd",
                 base_model_path=safe_path,
+            )
+            mergekit = MergeModel(merge_config)
+            mergekit.merge_model()
+
+    @require_package("transformers", "torch")
+    def test_fuse_qkv_lora_merge_torch(self):
+        with TemporaryDirectory() as tempdir:
+            # create torch model
+            from transformers import Qwen3Config, Qwen3ForCausalLM
+
+            torch_model_path = os.path.join(tempdir, "torch_model")
+            config = Qwen3Config(
+                hidden_size=16,
+                intermediate_size=1120,
+                num_hidden_layers=2,
+                num_attention_heads=4,
+                num_key_value_heads=2,
+            )
+            model = Qwen3ForCausalLM(config)
+            model.save_pretrained(torch_model_path)
+
+            # load torch base model with fc(fused qkv/ffn)
+            from paddleformers.transformers import Qwen3Config, Qwen3ForCausalLM
+
+            model_config = Qwen3Config.from_pretrained(torch_model_path)
+            fused_base_model = Qwen3ForCausalLM.from_pretrained(
+                torch_model_path,
+                config=model_config,
+                convert_from_hf=True,
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
+            )
+
+            # create lora model
+            from paddleformers.cli.utils import get_lora_target_modules
+            from paddleformers.peft import LoRAConfig, LoRAModel
+
+            target_modules = get_lora_target_modules(fused_base_model)
+            lora_config = LoRAConfig(
+                target_modules=target_modules,
+                r=8,
+                lora_alpha=4,
+            )
+            lora_model = LoRAModel(fused_base_model, lora_config)
+            lora_model_path = os.path.join(tempdir, "lora_model")
+            lora_model.save_pretrained(lora_model_path, save_checkpoint_format="flex_checkpoint")
+
+            # merge fused lora model
+            from paddleformers.mergekit import MergeConfig, MergeModel
+
+            output_path = os.path.join(tempdir, "merged_model")
+            merge_config = MergeConfig(
+                base_model_path=torch_model_path,
+                lora_model_path=lora_model_path,
+                output_path=output_path,
+                convert_from_hf=True,
+                save_to_hf=True,
+            )
+            mergekit = MergeModel(merge_config)
+            mergekit.merge_model()
+
+    def test_qdq_lora_merge(self):
+        with TemporaryDirectory() as tempdir:
+            import paddle.distributed as dist
+            from paddle.distributed import fleet
+
+            # init fleet
+            dist.init_parallel_env()
+            fleet.init(is_collective=True)
+            # create base model
+            from paddleformers.transformers import Qwen3Config, Qwen3ForCausalLM
+            from paddleformers.transformers.configuration_utils import (
+                QuantizationConfig,
+            )
+
+            base_model_path = os.path.join(tempdir, "base_model")
+
+            model_config = Qwen3Config(
+                hidden_size=64,
+                intermediate_size=640,
+                num_hidden_layers=2,
+                num_attention_heads=4,
+                num_key_value_heads=2,
+                torch_dtype="bfloat16",
+            )
+            base_model = Qwen3ForCausalLM(model_config)
+            base_model.save_pretrained(base_model_path)
+            # save base model with bfloat16
+            base_model = Qwen3ForCausalLM.from_pretrained(
+                base_model_path,
+                config=model_config,
+                convert_from_hf=True,
+                dtype="bfloat16",
+                load_checkpoint_format="flex_checkpoint",
+            )
+
+            quantization_config = {
+                "ignore_modules": [".*out_linear.*"],
+                "quantization_linear_list": [
+                    "model.layers.0.self_attn.qkv_proj",
+                    "model.layers.0.self_attn.o_proj",
+                    "model.layers.0.mlp.up_gate_proj",
+                    "model.layers.0.mlp.down_proj",
+                    "model.layers.1.self_attn.qkv_proj",
+                    "model.layers.1.self_attn.o_proj",
+                    "model.layers.1.mlp.up_gate_proj",
+                    "model.layers.1.mlp.down_proj",
+                ],
+                "weight_quantize_algo": {"weight_only_int8": [".*mlp.*", ".*self_attn.*"]},
+            }
+            quantization_config = QuantizationConfig.from_dict(quantization_config)
+            base_model.config["quantization_config"] = quantization_config
+            base_model.save_pretrained(base_model_path)
+
+            # create lora model
+            from paddleformers.cli.utils import get_lora_target_modules
+            from paddleformers.peft import LoRAConfig, LoRAModel
+
+            target_modules = get_lora_target_modules(base_model)
+            lora_config = LoRAConfig(
+                target_modules=target_modules,
+                r=8,
+                lora_alpha=4,
+            )
+            lora_model = LoRAModel(base_model, lora_config)
+            lora_model_path = os.path.join(tempdir, "lora_model")
+            lora_model.save_pretrained(lora_model_path, save_checkpoint_format="flex_checkpoint")
+
+            # merge lora model with qdq base model
+            from paddleformers.mergekit import MergeConfig, MergeModel
+
+            output_path = os.path.join(tempdir, "merged_model")
+            merge_config = MergeConfig(
+                base_model_path=base_model_path,
+                lora_model_path=lora_model_path,
+                output_path=output_path,
+                convert_from_hf=True,
+                save_to_hf=True,
+                merge_with_qdq_base_model=True,
             )
             mergekit = MergeModel(merge_config)
             mergekit.merge_model()

@@ -51,7 +51,7 @@ class TestTPSplitMerge(unittest.TestCase):
         weight_cases.append(py_safe_slice_[:])
 
         weight_value = py_safe_slice_[:]
-        tensor_parallel_degree = 2
+        tensor_model_parallel_size = 2
         is_column = True
         fuse_tensor_parts = 3
         num_kv_groups_list = [1, 2]
@@ -71,11 +71,11 @@ class TestTPSplitMerge(unittest.TestCase):
                 num_kv_groups = num_kv_groups_list[idx]
                 tp_splited_truth = tp_splited_truth_list[idx]
                 splited_list = []
-                for tensor_parallel_rank in range(tensor_parallel_degree):
+                for tensor_parallel_rank in range(tensor_model_parallel_size):
                     splited_list.append(
                         naive_fuse_split_tp(
                             weight,
-                            tensor_parallel_degree,
+                            tensor_model_parallel_size,
                             tensor_parallel_rank,
                             is_column,
                             fuse_tensor_parts,

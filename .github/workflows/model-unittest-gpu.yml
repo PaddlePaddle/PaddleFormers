@@ -32,9 +32,42 @@ defaults:
     shell: bash
 
 jobs:
+  check_skip:
+    name: Check skip-models-ci label
+    runs-on: ubuntu-latest
+
+    outputs:
+      skip: ${{ steps.check_skip.outputs.skip }}
+
+    steps:
+      - name: Check skip-models-ci label
+        id: check_skip
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
+            echo "PR labels: $labels"
+
+            if echo "$labels" | grep -q "skip-models-ci"; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip CI but mark success
+        if: steps.check_skip.outputs.skip == 'true'
+        run: |
+          echo "skip-models-ci label found"
+          echo "Downstream GPU jobs will be skipped"
+
   model-unittest-gpu-ci:
+    needs: check_skip
+    if: needs.check_skip.outputs.skip == 'false'
     name: model-unittest-gpu-ci
-    runs-on: ${{ inputs.runner || 'ernie-8gpu' }}
+    runs-on: ${{ inputs.runner || 'ernie-8gpu' || 'distrbute' }}
     steps:
       - name: Determine Image Name
         env:
@@ -45,13 +78,13 @@ jobs:
           else
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
           fi
-      
       - name: Run Container
         env:
           work_dir: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
-          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda126-Cudnn95-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
+          PIP_CACHE_DIR: /root/.cache/pip
+          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda12.6-Cudnn9.5-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
@@ -67,7 +100,8 @@ jobs:
           docker run -d -t ${GPU_OPTION} --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v ${work_dir}/../../..:${work_dir}/../../.. \
             -v ${work_dir}:/workspace \
-            -v /home/.cache/pip:/home/.cache/pip \
+            -v /home/.cache/:/root/.cache/ \
+            -v /home/paddle-1/models/:/home/models/ \
             -e "BRANCH=$BRANCH" \
             -e "AGILE_COMPILE_BRANCH=$AGILE_COMPILE_BRANCH" \
             -e "PR_ID=$PR_ID" \
@@ -81,6 +115,8 @@ jobs:
             -e "python_version=$python_version" \
             -e HF_PROXY_PATH=${work_dir}/../../../proxy_huggingface \
             -e AISTUDIO_PROXY_PATH=${work_dir}/../../../proxy_aistudio \
+            -e PF_HOME=/home/models/ \
+            -e PIP_CACHE_DIR \
             -w /workspace --privileged ${IMAGE_NAME}
             
       - name: Download Code
@@ -90,10 +126,11 @@ jobs:
             echo "Downloading PaddleFormers.tar"
             wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
             echo "Extracting PaddleFormers.tar"
+            rm -rf PaddleFormers
             tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
             echo "work_dir = ${work_dir}"
             source ${work_dir}/../../../proxy
-            cat ${work_dir}/../../../proxy
+            pip install uv
             cd PaddleFormers
             git config --global user.name "PaddleCI"
             git config --global user.email "paddle_ci@example.com"
@@ -117,7 +154,9 @@ jobs:
         run: |
           docker exec -t $container_name /bin/bash -c '
           ldconfig
-          pip config set global.cache-dir "/home/.cache/pip"
+          mkdir -p /root/.cache/pip
+          pip cache dir
+          uv cache dir
           set -e
           rm -rf /root/.cache/aistudio/
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
@@ -125,7 +164,7 @@ jobs:
           cp -r ${work_dir}/../../../models ./models
           echo "Check whether the local model file exists:"
           ls -l ./models
-          timeout 30m bash scripts/regression/ci_model_unittest.sh ${paddle_whl} ${AGILE_COMPILE_BRANCH}
+          bash -x scripts/regression/ci_model_unittest.sh ${paddle_whl} false ${AGILE_COMPILE_BRANCH}
           '
           
       - name: Upload Products

@@ -19,18 +19,11 @@ import paddle
 import paddle.distributed.fleet as fleet
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
     DygraphShardingOptimizer,
+    DygraphShardingOptimizerV2,
 )
 from paddle.distributed.fleet.utils.log_util import logger
 
 from paddleformers.utils.tools import get_env_device
-
-try:
-    from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
-        DygraphShardingOptimizerV2,
-    )
-except:
-    DygraphShardingOptimizerV2 = None
-
 
 from ....transformers.model_utils import unwrap_optimizer
 
@@ -102,7 +95,7 @@ def convert_opt_name_to_tname(tensor_names, opt_names):
                 opt_to_t[t] = t[: -len(s)]
                 _find = True
                 break
-        assert _find
+        assert _find, t
     return opt_to_t
 
 
@@ -609,12 +602,13 @@ def all_gather_state_dict(state_dict, filter_func, group):
             weight = weight.numpy()
         return weight
 
+    group_rank = max(group.rank, 0)
     state_dict = {k: map_func(v) for (k, v) in state_dict.items()}
 
     meta_dict = {}
     for (k, v) in state_dict.items():
         # src rank
-        meta_dict[k] = (v.dtype, v.shape, group.rank)
+        meta_dict[k] = (v.dtype, v.shape, group_rank)
 
     meta_dict_list = all_gather_simple_object(meta_dict, group)
 
@@ -628,7 +622,7 @@ def all_gather_state_dict(state_dict, filter_func, group):
     meta_list = sorted(meta_list, key=lambda x: x[0])
     for (k, meta) in meta_list:
         dtype, shape, rank = meta
-        if rank == group.rank:
+        if rank == group_rank:
             assert k in state_dict
             tensor = paddle.to_tensor(state_dict[k])
             del state_dict[k]
@@ -636,12 +630,13 @@ def all_gather_state_dict(state_dict, filter_func, group):
             tensor = paddle.to_tensor(np.empty(shape, dtype))
         logger.info(f"broadcast {k} from {rank}, group {group}")
         # broadcast the tensor
-        paddle.distributed.broadcast(
-            tensor,
-            src=group.ranks[rank],
-            group=group,
-            sync_op=True,
-        )
+        if group.nranks > 1:
+            paddle.distributed.broadcast(
+                tensor,
+                src=group.ranks[rank],
+                group=group,
+                sync_op=True,
+            )
         if filter_func(k):
             res[k] = tensor.cpu()
         del tensor
