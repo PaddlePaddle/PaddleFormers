@@ -19,7 +19,6 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
-import numpy as np
 import paddle
 import paddle.nn.functional as F
 from paddle import nn
@@ -88,6 +87,7 @@ def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim
     return q_embed, k_embed
 
 
+@paddle.jit.marker.unified
 def apply_rotary_pos_emb_vision(q, k, cos, sin):
     """Applies Rotary Position Embedding to the query and key tensors."""
     orig_q_dtype = q.dtype
@@ -401,6 +401,12 @@ class PaddleOCREncoder(nn.Layer):
         num_heads = config.num_attention_heads
         head_dim = embed_dim // num_heads
         self.layers = nn.LayerList([PaddleOCREncoderLayer(config) for _ in range(config.num_hidden_layers)])
+        # self.layers = nn.LayerList(
+        #     [
+        #         paddle.jit.to_static(PaddleOCREncoderLayer(config), backend=None)
+        #         for _ in range(config.num_hidden_layers)
+        #     ]
+        # )
         self.rotary_pos_emb = PaddleOCRVisionRotaryEmbedding(head_dim // 2)
 
     @staticmethod
@@ -475,7 +481,7 @@ class PaddleOCREncoder(nn.Layer):
         cu_seqlens_within_windows = nn.functional.pad(cu_seqlens_within_windows, (1, 0), value=0).astype("int32")
         return window_indices, cu_seqlens_within_windows
 
-    @paddle.jit.not_to_static
+    @paddle.jit.marker.unified
     def recompute_training(
         self,
         layer_module,
@@ -530,7 +536,7 @@ class PaddleOCREncoder(nn.Layer):
         vision_or_text = "vision"
         assert vision_or_text in ["vision", "text"]
         use_window_attn = window_size > 0 and vision_or_text == "vision"
-        use_rope = (use_rope is True) and (vision_or_text == "vision")
+        use_rope = use_rope and (vision_or_text == "vision")
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -541,12 +547,8 @@ class PaddleOCREncoder(nn.Layer):
         hidden_states = inputs_embeds
         attention_mask = attention_mask.to(inputs_embeds.dtype) if attention_mask is not None else None
 
-        if use_rope is True:
+        if use_rope:
             flatten_image_grid_thw = self.flatten_list(image_grid_thw)
-            assert sum([np.prod(x) for x in flatten_image_grid_thw]) == hidden_states.shape[1], (
-                flatten_image_grid_thw,
-                hidden_states.shape,
-            )
 
             if width_position_ids is None or height_position_ids is None:
                 width_position_ids, height_position_ids = self.get_position_ids_vectorized(image_grid_thw)
@@ -577,11 +579,6 @@ class PaddleOCREncoder(nn.Layer):
 
             if use_window_attn:
                 flatten_image_grid_thw = self.flatten_list(image_grid_thw)
-                assert (
-                    sum([np.prod(x.astype("float32").cpu().numpy()) for x in flatten_image_grid_thw])
-                    == hidden_states.shape[1]
-                ), (flatten_image_grid_thw, hidden_states.shape)
-
                 window_indices, cu_seqlens_within_windows = self.build_window_index(
                     flatten_image_grid_thw, window_size
                 )
@@ -869,17 +866,18 @@ class Projector(nn.Layer):
             config=text_config,
         )
 
-    def forward(self, image_features, image_grid_thw):
+    def forward(self, image_features, image_grid_thw, split_sections):
 
-        image_features_chunks = image_features.split(image_grid_thw.prod(axis=1).tolist(), axis=1)
+        image_features = image_features.squeeze(0)
+        image_features = self.pre_norm(image_features)  # shape: (T*H*W, D)
+        image_features_chunks = image_features.split(split_sections, axis=0)
+
         m1, m2 = self.merge_kernel_size
+        d = image_features.shape[-1]
 
-        processed_features = list()
-        for image_feature, image_grid in zip(image_features_chunks, image_grid_thw):
-            image_feature = image_feature.squeeze(0)
-            image_feature = self.pre_norm(image_feature)  # shape: (T*H*W, D)
-            t, h, w = image_grid
-            d = image_feature.shape[-1]
+        processed_features = []
+        for image_feature, (t, h, w) in zip(image_features_chunks, image_grid_thw):
+
             h_block = h // m1
             w_block = w // m2
 
@@ -895,6 +893,7 @@ class Projector(nn.Layer):
         return paddle.concat(processed_features, axis=0)
 
 
+@paddle.jit.marker.unified
 class PaddleOCRRotaryEmbedding(nn.Layer):
     def __init__(self, config: PaddleOCRVLConfig):
         super().__init__()
@@ -992,33 +991,33 @@ class Ernie4_5Attention(nn.Layer):
         assert (
             self.num_heads % self.num_key_value_heads == 0
         ), f"num_heads: {self.num_heads}, num_key_value_heads: {self.num_key_value_heads}"
-        kv_hidden_size = self.head_dim * config.num_key_value_heads
-        q_hidden_size = self.head_dim * config.num_attention_heads
+        self.kv_hidden_size = self.head_dim * config.num_key_value_heads
+        self.q_hidden_size = self.head_dim * config.num_attention_heads
 
         self.q_proj = GeneralLinear.create(
             self.hidden_size,
-            q_hidden_size,
+            self.q_hidden_size,
             has_bias=config.use_bias,
             config=config,
             tp_plan="colwise",
         )
         self.k_proj = GeneralLinear.create(
             self.hidden_size,
-            kv_hidden_size,
+            self.kv_hidden_size,
             has_bias=config.use_bias,
             config=config,
             tp_plan="colwise",
         )
         self.v_proj = GeneralLinear.create(
             self.hidden_size,
-            kv_hidden_size,
+            self.kv_hidden_size,
             has_bias=config.use_bias,
             config=config,
             tp_plan="colwise",
         )
 
         self.o_proj = GeneralLinear.create(
-            q_hidden_size,
+            self.q_hidden_size,
             self.hidden_size,
             has_bias=config.use_bias,
             config=config,
@@ -1062,9 +1061,21 @@ class Ernie4_5Attention(nn.Layer):
         else:
             bsz, q_len, _ = hidden_states.shape
 
-        query_states = self.q_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(2, 1)
-        key_states = self.k_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(2, 1)
-        value_states = self.v_proj(hidden_states).reshape([bsz, q_len, -1, self.head_dim]).transpose(2, 1)
+        query_states = (
+            self.q_proj(hidden_states)
+            .reshape([bsz, q_len, self.q_hidden_size // self.head_dim, self.head_dim])
+            .transpose(2, 1)
+        )
+        key_states = (
+            self.k_proj(hidden_states)
+            .reshape([bsz, q_len, self.kv_hidden_size // self.head_dim, self.head_dim])
+            .transpose(2, 1)
+        )
+        value_states = (
+            self.v_proj(hidden_states)
+            .reshape([bsz, q_len, self.kv_hidden_size // self.head_dim, self.head_dim])
+            .transpose(2, 1)
+        )
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         if self.config.apply_rope_fusion:
@@ -1099,6 +1110,7 @@ class Ernie4_5Attention(nn.Layer):
         return attn_output, attn_weights, past_key_values
 
 
+@paddle.jit.marker.unified
 class Ernie4_5DecoderLayer(nn.Layer):
     """A single transformer decoder layer in ERNIE model.
 
@@ -1209,7 +1221,7 @@ class Ernie4_5DecoderLayer(nn.Layer):
             outputs += (present_key_value,)
 
         # remove empty tuple for pipeline parallel
-        if type(outputs) is tuple and len(outputs) == 1:
+        if isinstance(outputs, tuple) and len(outputs) == 1:
             outputs = outputs[0]
         return outputs
 
@@ -1429,7 +1441,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
 
         self.rotary_emb = PaddleOCRRotaryEmbedding(config=config)
 
-    @paddle.jit.not_to_static
+    @paddle.jit.marker.unified
     def recompute_training(
         self,
         layer_module,
@@ -1612,16 +1624,16 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             all_hidden_states += (hidden_states,)
 
         if not return_dict:
-            return tuple(
-                v
-                for v in [
-                    hidden_states,
-                    past_key_values,
-                    all_hidden_states,
-                    all_self_attns,
-                ]
-                if v is not None
-            )
+            result_list = []
+            if hidden_states is not None:
+                result_list.append(hidden_states)
+            if past_key_values is not None:
+                result_list.append(past_key_values)
+            if all_hidden_states is not None:
+                result_list.append(all_hidden_states)
+            if all_self_attns is not None:
+                result_list.append(all_self_attns)
+            return result_list
 
         return BaseModelOutputWithPastAndCrossAttentions(
             last_hidden_state=hidden_states,
@@ -1668,6 +1680,10 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
         self.rope_deltas_var = ContextVar("rope_deltas", default=None)
+
+        # self.mlp_AR = paddle.jit.to_static(self.mlp_AR, backend=None)
+        # # self.visual = paddle.jit.to_static(self.visual, backend=None)
+        # self.model = paddle.jit.to_static(self.model, backend=None)
 
     def get_input_embeddings(self):
         return self.model.embed_tokens
@@ -1986,7 +2002,8 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
                 )
                 image_embeds = vision_outputs.last_hidden_state
 
-                image_embeds = self.mlp_AR(image_embeds, image_grid_thw)
+                split_sections = image_grid_thw.prod(axis=1).cpu().numpy().tolist()
+                image_embeds = self.mlp_AR(image_embeds, image_grid_thw, split_sections)
 
                 n_image_tokens = (input_ids == self.config.image_token_id).sum().item()
                 n_image_features = image_embeds.shape[0]
@@ -2057,8 +2074,8 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
             loss, _ = self.criterion(logits, labels, loss_mask)
 
         if not return_dict:
-            output = (logits,) + outputs[1:]
-            return (loss,) + output if loss is not None else output
+            output = [logits] + outputs[1:]
+            return [loss] + output if loss is not None else output
 
         return PaddleOCRVLCausalLMOutputWithPast(
             loss=loss,

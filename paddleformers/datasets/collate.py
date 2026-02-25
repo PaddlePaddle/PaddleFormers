@@ -52,9 +52,7 @@ def dpo_collate_fn(
     max_seq_len=None,
     padding_free=False,
     use_filtered_label_loss=True,
-    use_fused_head_and_loss_fn=True,
     use_response_score_delta=False,
-    packing=False,
 ):
     """Convert batch data into tensor for DPO.
 
@@ -64,10 +62,12 @@ def dpo_collate_fn(
         tokenizer (Tokenizer): Text tokenizer for processing sequence components.
         max_seq_len (int, optional): Maximum sequence length for padding/truncation.
             If None, will raise ValueError. Defaults to None.
+        padding_free (bool, optional): Whether to perform padding-free concatenation.
+            If True, concatenates sequences without explicit padding. Defaults to False.
         use_filtered_label_loss (bool, optional): Whether to use sparse indexing for loss calculation.
             Enables memory-efficient indexing for large sequences. Defaults to True.
-        use_fused_head_and_loss_fn (bool, optional): Whether to use fused kernel to calculate lm head and loss.
-            Optimizes for memory access patterns. Defaults to True.
+        use_response_score_delta (bool, optional): Whether to include response score deltas in the output.
+            If True, returns score deltas along with other tensors. Defaults to False.
 
     Returns:
         Dict[str, np.ndarray]: Processed tensor dictionary containing:
@@ -77,6 +77,7 @@ def dpo_collate_fn(
             - response_indexs (int32): Response span indices [batch_size, 4]
             - attention_mask (float32, optional): Attention mask matrix [batch_size, 1, max_seq_len, max_seq_len]
             - attn_mask_startend_row_indices (int32, optional): Sparse attention row indices [batch_size, max_seq_len]
+            - score_deltas (float32, optional): Response score deltas [batch_size, 1]. Only returned if use_response_score_delta is True.
     """
     # batch = [
     #     [Sequence1],             # sequences1, when packing = False, the sequences contains only 1 sample
@@ -183,6 +184,255 @@ def dpo_collate_fn(
             input_dict[key] = np.array(input_dict[key], dtype=np.float32)
         elif key == "attn_mask_startend_row_indices":
             input_dict[key] = np.array(input_dict[key], dtype=np.int32)[..., None]
+        else:
+            input_dict[key] = np.array(input_dict[key])
+
+    return input_dict
+
+
+def mm_dpo_collate_fn(
+    batch,
+    tokenizer,
+    training_args,
+    max_seq_len=None,
+    padding_free=False,
+    use_filtered_label_loss=True,
+    use_response_score_delta=False,
+    model=None,
+):
+    """Convert batch data into tensor for DPO.
+
+    Args:
+        batch (List[List[Sequence]]): Batch of input sequences containing multiple data samples.
+            Each sample is a list of Sequence objects containing tokenized data components.
+        tokenizer (Tokenizer): Text tokenizer for processing sequence components.
+        max_seq_len (int, optional): Maximum sequence length for padding/truncation.
+            If None, will raise ValueError. Defaults to None.
+        padding_free (bool, optional): Whether to perform padding-free concatenation.
+            If True, concatenates sequences without explicit padding. Defaults to False.
+        use_filtered_label_loss (bool, optional): Whether to use sparse indexing for loss calculation.
+            Enables memory-efficient indexing for large sequences. Defaults to True.
+        use_response_score_delta (bool, optional): Whether to include response score deltas in the output.
+            If True, returns score deltas along with other tensors. Defaults to False.
+        model (Optional[Union[LoRAModel, None]], optional): The model instance, used for certain attribute checks.
+            If provided, checks for specific attributes like "get_rope_index" and "get_token_type_ids".
+            Defaults to None.
+
+    Returns:
+        Dict[str, np.ndarray]: Processed tensor dictionary containing:
+            - input_ids (int32): Padded token ids [batch_size, max_seq_len]
+            - position_ids (int32): Position ids [batch_size, max_seq_len]
+            - response_labels (int32): Response labels [batch_size, max_seq_len]
+            - response_indexs (int32): Response span indices [batch_size, 4]
+            - attention_mask (float32, optional): Attention mask matrix [batch_size, 1, max_seq_len, max_seq_len]
+            - attn_mask_startend_row_indices (int32, optional): Sparse attention row indices [batch_size, max_seq_len]
+            - score_deltas (float32, optional): Response score deltas [batch_size, 1]. Only returned if use_response_score_delta is True.
+            - pixel_values (np.ndarray): Image pixel values [batch_size, num_channels, height, width]
+            - image_grid_thw (List[List[int]]): Image grid dimensions [batch_size, 3] (time, height, width)
+            - pixel_values_videos (np.ndarray): Video pixel values [batch_size, num_frames, num_channels, height, width]
+            - video_grid_thw (List[List[int]]): Video grid dimensions [batch_size, 3] (time, height, width)
+    """
+    # batch = [
+    #     [Sequence1],             # sequences1, when packing = False, the sequences contains only 1 sample
+    #     [Sequence2, Sequence3]   # sequences2, when packing = True, the sequences contains >= 1 samples
+    # ]
+
+    # 1.max_seq_len & get_rope_func & get_token_type_func
+    if padding_free:
+        batch = [sum(batch, [])]
+        max_seq_len = sum(len(sequence.token_ids) for sequences in batch for sequence in sequences)
+        # batch = [[Sequence1, Sequence2, Sequence3]]
+    if not max_seq_len:
+        max_seq_len = max(sum(len(sequence.token_ids) for sequence in sequences) for sequences in batch)
+    max_seq_len = calc_padding_size(max_seq_len, training_args)
+
+    if isinstance(model, LoRAModel):
+        model = model.model.base_model
+
+    if model is not None and hasattr(model, "get_rope_index"):
+        get_rope_func = model.get_rope_index  # transformers < 4.52.0 or lora
+    elif model is not None and hasattr(model, "model") and hasattr(model.model, "get_rope_index"):
+        get_rope_func = model.model.get_rope_index  # transformers >= 4.52.0
+    else:
+        get_rope_func = None
+    bs_idx_in_rope = 1
+
+    if model is not None and hasattr(model, "get_token_type_ids"):
+        get_token_type_func = model.get_token_type_ids  # transformers < 4.52.0
+    elif model is not None and hasattr(model, "model") and hasattr(model.model, "get_token_type_ids"):
+        get_token_type_func = model.model.get_token_type_ids  # transformers >= 4.52.0
+    else:
+        get_token_type_func = None
+
+    # 2.init input_dict
+    input_dict = {
+        "input_ids": [],
+        "position_ids": [],
+        "response_labels": [],
+        "response_indexs": [],
+    }
+    if use_response_score_delta:
+        input_dict["score_deltas"] = []
+
+    sequence = batch[0][0]
+    if sequence.attn_mask_startend_row_indices is not None:
+        input_dict["attn_mask_startend_row_indices"] = []
+        use_attn_mask_startend_row_indices = True
+    elif sequence.attention_mask is not None:
+        input_dict["attention_mask"] = []
+        use_attn_mask_startend_row_indices = False
+    else:
+        raise ValueError("attention_mask and attn_mask_startend_row_indices are both None.")
+
+    if get_token_type_func is not None:
+        input_dict["token_type_ids"] = []
+        input_dict["images"] = []
+        input_dict["grid_thw"] = []
+    else:
+        input_dict["pixel_values"] = []
+        input_dict["image_grid_thw"] = []
+        input_dict["pixel_values_videos"] = []
+        input_dict["video_grid_thw"] = []
+
+    # 3.iterate batch
+    sequence_sum_flatten = 0
+    for i, sequences in enumerate(batch):
+        # 3.1 input_ids & response_labels
+        difference = max_seq_len - sum([len(sequence.token_ids) for sequence in sequences])
+        padded_token_ids = sum([sequence.token_ids for sequence in sequences], []) + [0] * difference
+        input_dict["input_ids"].append(padded_token_ids)
+        input_dict["response_labels"].append(
+            sum([sequence.response_labels for sequence in sequences], []) + [-100] * difference
+        )
+
+        # 3.2 attention mask
+        if use_attn_mask_startend_row_indices:
+            start_row_indices = []
+            sequence_sum = 0
+            for sequence in sequences:
+                start_row_indices += [indice + sequence_sum for indice in sequence.attn_mask_startend_row_indices]
+                sequence_sum += len(sequence.token_ids)
+            input_dict["attn_mask_startend_row_indices"].append(
+                [start_row_indices + list(range(start_row_indices[-1], max_seq_len))]
+            )
+        else:
+            input_dict["attention_mask"].append(
+                # (s,s) -> (1,s,s)
+                np.expand_dims(
+                    # pad to max_loength
+                    np.pad(
+                        # block attention_mask
+                        block_diag(*[sequence.attention_mask for sequence in sequences]),
+                        pad_width=((0, difference), (0, difference)),
+                        mode="constant",
+                        constant_values=False,
+                    ),
+                    axis=0,
+                )
+            )
+
+        # 3.3 response_index & score_delta
+        sequence_sum = 0
+        for sequence in sequences:
+            # bs, chosen_response_start_index, rejeted_response_start_index, rejeted_response_end_index + 1
+            if use_filtered_label_loss:
+                # per_token_logps will be [batch_size * seq_len], the response_index is the absolute index of the batch
+                response_index = [
+                    i,
+                    sequence.response_index[0] + sequence_sum_flatten,
+                    sequence.response_index[1] + sequence_sum_flatten,
+                    sequence.response_index[2] + sequence_sum_flatten,
+                ]
+                sequence_sum_flatten += sequence.response_index[2]
+            else:
+                # per_token_logps will be [batch_size, seq_len], the response_index is the relative index of the sequences
+                response_index = [
+                    i,
+                    sequence.response_index[0] + sequence_sum,
+                    sequence.response_index[1] + sequence_sum,
+                    sequence.response_index[2] + sequence_sum,
+                ]
+                sequence_sum += len(sequence.token_ids)
+            input_dict["response_indexs"].append(response_index)
+            if use_response_score_delta:
+                input_dict["score_deltas"].append(sequence.score_delta)
+
+        # 3.4 vl-parameters & vl-position_ids
+        original_position_ids = []
+        pixel_values = []
+        image_grid_thw = []
+        pixel_values_videos = []
+        video_grid_thw = []
+        for seq in sequences:
+            mm_inputs = seq.mm_inputs
+            if "pixel_values" in mm_inputs:
+                pixel_values.append(mm_inputs["pixel_values"])
+            if "image_grid_thw" in mm_inputs:
+                image_grid_thw.extend(mm_inputs["image_grid_thw"])
+            if "pixel_values_videos" in mm_inputs:
+                pixel_values_videos.append(mm_inputs["pixel_values_videos"])
+            if "video_grid_thw" in mm_inputs:
+                video_grid_thw.extend(mm_inputs["video_grid_thw"])
+            if get_rope_func is not None:
+                chosen_len = seq.response_index[1] - seq.response_index[0]
+                rejected_len = seq.response_index[2] - seq.response_index[1]
+                chosen_input_ids = seq.token_ids[:-rejected_len]
+                rejected_input_ids = chosen_input_ids[:-chosen_len] + seq.token_ids[-rejected_len:]
+                func_params = inspect.signature(get_rope_func).parameters.keys()
+                filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
+
+                res_position_ids = []
+                for i, input_ids in enumerate([chosen_input_ids, rejected_input_ids]):
+                    if seq.has_mm[i]:
+                        pos_ids, rope_deltas = get_rope_func(input_ids=paddle.to_tensor([input_ids]), **filtered_args)
+                        res_position_ids.append(pos_ids)
+                    else:
+                        input_ids = paddle.to_tensor([input_ids])
+                        res_position_ids.append(
+                            paddle.arange(input_ids.shape[1]).view(1, 1, -1).expand(3, input_ids.shape[0], -1)
+                        )
+                original_position_ids.append(
+                    paddle.concat([res_position_ids[0], res_position_ids[1][:, :, -rejected_len:]], axis=-1)
+                )
+
+        if len(original_position_ids) > 0:
+            original_position_ids = paddle.concat(original_position_ids, axis=-1)
+            padded_position_ids = paddle.nn.functional.pad(
+                original_position_ids, pad=[0, max_seq_len - original_position_ids.shape[2]]
+            )
+        else:
+            padded_position_ids = []
+        if len(pixel_values) > 0:
+            pixel_values = paddle.concat(pixel_values, axis=0)
+        if len(pixel_values_videos) > 0:
+            pixel_values_videos = paddle.concat(pixel_values_videos, axis=0)
+
+        if get_token_type_func is not None:  # ernie45vl
+            bs_idx_in_rope = 0
+            padded_position_ids = padded_position_ids.transpose([1, 2, 0])
+            padded_token_type_ids, images, grid_thw = get_token_type_func(
+                paddle.to_tensor(padded_token_ids), pixel_values, image_grid_thw, pixel_values_videos, video_grid_thw
+            )
+            input_dict["position_ids"].append(padded_position_ids)
+            input_dict["token_type_ids"].append(padded_token_type_ids)
+            input_dict["images"].append(images)
+            input_dict["grid_thw"].append(grid_thw)
+        else:
+            input_dict["position_ids"].append(padded_position_ids)
+            input_dict["pixel_values"].append(pixel_values)
+            input_dict["image_grid_thw"].append(image_grid_thw)
+            input_dict["pixel_values_videos"].append(pixel_values_videos)
+            input_dict["video_grid_thw"].append(video_grid_thw)
+
+    # 4.convert to np.array & concat position_ids
+    for key in input_dict:
+        if key == "attention_mask":
+            input_dict[key] = np.array(input_dict[key], dtype=np.float32)
+        elif key == "attn_mask_startend_row_indices":
+            input_dict[key] = np.array(input_dict[key], dtype=np.int32)[..., None]
+        elif key == "position_ids":
+            input_dict[key] = paddle.concat(input_dict[key], axis=bs_idx_in_rope)
+            input_dict[key] = np.array(input_dict[key])
         else:
             input_dict[key] = np.array(input_dict[key])
 
