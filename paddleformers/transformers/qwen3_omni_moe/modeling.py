@@ -21,6 +21,9 @@ import numpy as np
 import paddle
 from paddle import nn
 from paddle.nn import functional as F
+from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+    build_sharded_state_dict,
+)
 
 from ..activations import ACT2FN
 from ..cache_utils import Cache, DynamicCache
@@ -56,26 +59,36 @@ from .configuration import (
 )
 from ..utils import logger
 
-
 import numpy as np
 import hashlib
+import traceback
 def compare_and_save(data, name: str, to_save: bool = False, print_tensor: bool = False):
-    if isinstance(data, paddle.Tensor):
-        data_float = data.astype("float32")
-    else:
-        data_float = data.float()
-    data_np = data_float.detach().cpu().numpy()
-    array_bytes = data_np.tobytes()
-    data_md5 = hashlib.md5(array_bytes).hexdigest()
-    print(f"{name} md5: {data_md5}")
-    if to_save:
-        file = "/root/paddlejob/workspace/env_run/wuhuiyue/helper/qwen3_omni_test/pd_" + name + ".npy"
-        np.save(file, data_np)
+    return 
     if print_tensor:
         print(
-            name, type(data), data.shape, data
+            name, type(data), data.shape if data is not None else None, data
         )
-    
+    try:
+        if isinstance(data, paddle.Tensor):
+            data_float = data.astype("float32")
+        else:
+            data_float = data.float().contiguous()
+        data_np = data_float.detach().cpu().numpy()
+        array_bytes = data_np.tobytes()
+        data_md5 = hashlib.md5(array_bytes).hexdigest()
+        print(f"{name} md5: {data_md5}")
+        if to_save:
+            file = "/root/paddlejob/workspace/env_run/wuhuiyue/helper/qwen3_omni_test/pd_" + name + ".npy"
+            np.save(file, data_np)
+    except:
+        print(traceback.format_exc())
+
+
+def hack_with_torch_file(name: str, dtype, place):
+    file = "/root/paddlejob/workspace/env_run/wuhuiyue/helper/qwen3_omni_test/torch_" + name + ".npy"
+    np_data = np.load(file)
+    pd_data = paddle.to_tensor(np_data).astype(dtype=dtype).to(place)
+    return pd_data
 
 # TODO torch.nn.utils.rnn.pad_sequence 暂无paddle实现，写一个替换
 def pad_sequence(
@@ -188,16 +201,21 @@ class Qwen3OmniMoePreTrainedModel(PretrainedModel):
         "k_proj", 
         "v_proj",
         "o_proj",
+        "out_proj",
         "gate",
         "fc1",
         "fc2",
         "conv_out",
-        "proj2",
         "qkv",
+        "proj",
         "linear_fc1",
         "linear_fc2",
         "mlp.0",
         "mlp.2",
+        "proj1",
+        "proj2",
+        "gate_up_proj",
+        "down_proj",
     ]
 
     @paddle.no_grad()
@@ -229,7 +247,7 @@ class Qwen3OmniMoePreTrainedModel(PretrainedModel):
     @classmethod
     def _gen_aoa_config(cls, config: Qwen3OmniMoeConfig):
         mapping = cls._checkpoint_conversion_mapping
-        llm_target = next((v for v in mapping.values() if "language_model" in v), "language_model")
+        llm_target = next((v for v in mapping.values() if "model" in v), "model")
         visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
         audio_target = next((v for v in mapping.values() if "audio_tower" in v), "audio_tower")
         llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
@@ -240,52 +258,54 @@ class Qwen3OmniMoePreTrainedModel(PretrainedModel):
         # attention qkv
         aoa_config = {
             "aoa_statements": [
-                f"thinker.audio_tower.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {audio_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
-                for x in ("q", "k", "v")
+                f"thinker.audio_tower.conv_out.weight^T -> {audio_prefix}conv_out.weight"
             ]
         }
-        aoa_config["aoa_statements"] += [
-            f"thinker.audio_tower.layers.$LAYER_ID.self_attn.{x}_proj.bias -> {audio_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias"
-            for x in ("q", "k", "v")
-        ]
-
-        aoa_config["aoa_statements"] += [
-            f"thinker.audio_tower.layers.$LAYER_ID.{x}.weight^T -> {audio_prefix}layers.$LAYER_ID.{x}.weight"
-            for x in ("self_attn.out_proj", "self_attn_layer_norm", "fc1", "fc2", "final_layer_norm")
-        ]
-        aoa_config["aoa_statements"] += [
-            f"thinker.audio_tower.layers.$LAYER_ID.{x}.bias -> {audio_prefix}layers.$LAYER_ID.{x}.bias"
-            for x in ("self_attn.out_proj", "self_attn_layer_norm", "fc1", "fc2", "final_layer_norm")
-        ]
-
-        aoa_config["aoa_statements"] += [
-            f"thinker.audio_tower.{x}.weight^T -> {audio_prefix}{x}.weight"
-            for x in ("ln_post", "conv2d1", "conv2d2", "conv2d3", "proj1", "proj2", "conv_out")
-        ]
-        aoa_config["aoa_statements"] += [
-            f"thinker.audio_tower.{x}.bias -> {audio_prefix}{x}.bias"
-            for x in ("ln_post", "conv2d1", "conv2d2", "conv2d3", "proj1", "proj2")
-        ]
+        for x in ("self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.out_proj", "fc1", "fc2"):
+            aoa_config["aoa_statements"] += [
+                f"thinker.audio_tower.layers.$LAYER_ID.{x}.weight^T -> {audio_prefix}layers.$LAYER_ID.{x}.weight",
+                f"thinker.audio_tower.layers.$LAYER_ID.{x}.bias -> {audio_prefix}layers.$LAYER_ID.{x}.bias",
+            ]
+        for x in ("self_attn_layer_norm", "final_layer_norm"):
+            aoa_config["aoa_statements"] += [
+                f"thinker.audio_tower.layers.$LAYER_ID.{x}.weight -> {audio_prefix}layers.$LAYER_ID.{x}.weight",
+                f"thinker.audio_tower.layers.$LAYER_ID.{x}.bias -> {audio_prefix}layers.$LAYER_ID.{x}.bias",
+            ]
+        for x in ("ln_post", "conv2d1", "conv2d2", "conv2d3", "proj1", "proj2"):
+            if x in ("proj1", "proj2"):
+                aoa_config["aoa_statements"] += [
+                    f"thinker.audio_tower.{x}.weight^T -> {audio_prefix}{x}.weight",
+                    f"thinker.audio_tower.{x}.bias -> {audio_prefix}{x}.bias",
+                ]
+            else:
+                aoa_config["aoa_statements"] += [
+                    f"thinker.audio_tower.{x}.weight -> {audio_prefix}{x}.weight",
+                    f"thinker.audio_tower.{x}.bias -> {audio_prefix}{x}.bias",
+                ]
 
         # visual
-        for x in ("ln_q", "mlp.0", "mlp.2"):
-            aoa_config["aoa_statements"] += [
-                f"thinker.visual.merger_list.{layer_id}.{x}.weight^T -> {visual_prefix}merger_list.{layer_id}.{x}.weight"
-                for layer_id in range(len(config.vision_config.deepstack_visual_indexes))
-            ]
-            aoa_config["aoa_statements"] += [
-                f"thinker.visual.merger_list.{layer_id}.{x}.bias-> {visual_prefix}merger_list.{layer_id}.{x}.bias"
-                for layer_id in range(len(config.vision_config.deepstack_visual_indexes))
-            ]
         aoa_config["aoa_statements"] += [
-            f"thinker.visual.merger.ln_q.weight^T -> {visual_prefix}merger.ln_q.weight",
+            f"thinker.visual.merger.ln_q.weight -> {visual_prefix}merger.ln_q.weight",
             f"thinker.visual.merger.ln_q.bias -> {visual_prefix}merger.ln_q.bias",
-            f"thinker.visual.patch_embed.proj.weight^T -> {visual_prefix}patch_embed.proj.weight",
+            f"thinker.visual.merger_list.$LAYER_ID.ln_q.weight -> {visual_prefix}merger_list.$LAYER_ID.ln_q.weight",
+            f"thinker.visual.merger_list.$LAYER_ID.ln_q.bias -> {visual_prefix}merger_list.$LAYER_ID.ln_q.bias",
+            f"thinker.visual.patch_embed.proj.weight -> {visual_prefix}patch_embed.proj.weight",
             f"thinker.visual.patch_embed.proj.bias -> {visual_prefix}patch_embed.proj.bias",
-            f"thinker.visual.pos_embed.weight^T -> {visual_prefix}pos_embed.weight",
+            f"thinker.visual.pos_embed.weight -> {visual_prefix}pos_embed.weight",
+            f"thinker.visual.blocks.$LAYER_ID.norm1.weight -> {visual_prefix}blocks.$LAYER_ID.norm1.weight",
+            f"thinker.visual.blocks.$LAYER_ID.norm1.bias -> {visual_prefix}blocks.$LAYER_ID.norm1.bias",
+            f"thinker.visual.blocks.$LAYER_ID.norm2.weight -> {visual_prefix}blocks.$LAYER_ID.norm2.weight",
+            f"thinker.visual.blocks.$LAYER_ID.norm2.bias -> {visual_prefix}blocks.$LAYER_ID.norm2.bias",
         ]
+        for x in ("mlp.0", "mlp.2"):
+            aoa_config["aoa_statements"] += [
+                f"thinker.visual.merger.{x}.weight^T -> {visual_prefix}merger.{x}.weight",
+                f"thinker.visual.merger.{x}.bias -> {visual_prefix}merger.{x}.bias",
+                f"thinker.visual.merger_list.$LAYER_ID.{x}.weight^T -> {visual_prefix}merger_list.$LAYER_ID.{x}.weight",
+                f"thinker.visual.merger_list.$LAYER_ID.{x}.bias-> {visual_prefix}merger_list.$LAYER_ID.{x}.bias",
+            ]
 
-        for x in ("norm1", "norm2", "attn.qkv", "attn.proj", "mlp.linear_fc1", "mlp.linear_fc2"):
+        for x in ("attn.qkv", "attn.proj", "mlp.linear_fc1", "mlp.linear_fc2"):
             aoa_config["aoa_statements"] += [
                 f"thinker.visual.blocks.{layer_id}.{x}.weight^T -> {visual_prefix}blocks.{layer_id}.{x}.weight"
                 for layer_id in range(config.vision_config.depth)
@@ -294,6 +314,51 @@ class Qwen3OmniMoePreTrainedModel(PretrainedModel):
                 f"thinker.visual.blocks.{layer_id}.{x}.bias -> {visual_prefix}blocks.{layer_id}.{x}.bias"
                 for layer_id in range(config.vision_config.depth)
             ]
+
+        # model
+        aoa_config["aoa_statements"] += [
+            f"thinker.model.norm.weight -> {llm_prefix}norm.weight",
+            f"thinker.model.embed_tokens.weight -> {llm_prefix}embed_tokens.weight",
+            f"thinker.model.layers.$LAYER_ID.self_attn.q_norm.weight -> {llm_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
+            f"thinker.model.layers.$LAYER_ID.self_attn.k_norm.weight -> {llm_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
+            f"thinker.model.layers.$LAYER_ID.mlp.gate.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.gate.weight",
+            f"thinker.model.layers.$LAYER_ID.input_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.input_layernorm.weight",
+            f"thinker.model.layers.$LAYER_ID.post_attention_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+        ]
+        aoa_config["aoa_statements"] += [
+            f"thinker.model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
+            for x in ("q", "k", "v", "o")
+        ]
+        if config.text_config.attention_bias:
+            aoa_config["aoa_statements"] += [
+                f"thinker.model.layers.$LAYER_ID.self_attn.{x}_proj.bias -> {llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias"
+                for x in ("q", "k", "v", "o")
+            ]
+
+        aoa_config["aoa_statements"] += [
+            f"thinker.model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, thinker.model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> thinker.model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_up_proj.weight, fused_ffn",
+            f"thinker.model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> thinker.model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+        ]
+        for layer_id in range(config.text_config.num_hidden_layers):
+            src_prefix = f"thinker.model.layers.{layer_id}"
+            tgt_prefix = f"{llm_prefix}layers.{layer_id}"
+            ep_weight1 = []
+            ep_weight2 = []
+            for expert_id in range(config.text_config.num_experts):
+                ep_weight1.append(f"{src_prefix}.mlp.experts.{expert_id}.gate_up_proj.weight")
+                ep_weight2.append(f"{src_prefix}.mlp.experts.{expert_id}.down_proj.weight")
+            group1 = ",".join(ep_weight1)
+            group2 = ",".join(ep_weight2)
+            aoa_config["aoa_statements"] += [
+                f"{group1} -> {tgt_prefix}.mlp.experts.gate_up_proj, axis=0"
+                f"{group2} -> {tgt_prefix}.mlp.experts.down_proj, axis=0"
+            ]
+        
+        # lm_head
+        if config.text_config.tie_word_embeddings:
+            aoa_config["aoa_statements"] += ["thinker.embed_tokens.weight -> lm_head.weight"]
+        else:
+            aoa_config["aoa_statements"] += ["thinker.lm_head.weight -> lm_head.weight"]
 
         return aoa_config
     
@@ -320,6 +385,7 @@ class Qwen3OmniMoePreTrainedModelForConditionalGeneration(Qwen3OmniMoePreTrained
     _checkpoint_conversion_mapping = {
         "^thinker.audio_tower": "audio_tower",
         "^thinker.visual": "visual",
+        "^thinker.model": "model",
     }
     input_modalities = ("image", "video", "audio", "text")
     _gen_aoa_config = Qwen3OmniMoePreTrainedModel._gen_aoa_config
@@ -987,10 +1053,14 @@ class Qwen3OmniMoeAudioEncoder(Qwen3OmniMoePreTrainedModel):
         # Split to chunk to avoid OOM during convolution
         padded_embeds = []
         # for chunk in padded_feature.split(self.conv_chunksize, axis=0):
+        #     padded_embed = F.gelu(self.conv2d1(chunk))
+        #     padded_embed = F.gelu(self.conv2d2(padded_embed))
+        #     padded_embed = F.gelu(self.conv2d3(padded_embed))
+        #     padded_embeds.append(padded_embed)
+
         batch_size = padded_feature.shape[0]
         chunk_size = self.conv_chunksize
-
-        for start in range(0, batch_size, chunk_size):
+        for i, start in enumerate(range(0, batch_size, chunk_size)):
             end = min(start + chunk_size, batch_size)
             chunk = padded_feature[start:end]
             if chunk.dtype != self.conv2d1.weight.dtype:
@@ -1002,9 +1072,19 @@ class Qwen3OmniMoeAudioEncoder(Qwen3OmniMoePreTrainedModel):
         padded_embed = paddle.cat(padded_embeds, dim=0)
         b, c, f, t = padded_embed.size()
         # padded_embed = self.conv_out(padded_embed.permute(0, 3, 1, 2).contiguous().view(b, t, c * f))
-        reshape_padded_embed = padded_embed.transpose([0, 3, 1, 2])  # permute
-        reshape_padded_embed = reshape_padded_embed.reshape([b, t, -1])
-        padded_embed = self.conv_out(reshape_padded_embed)
+        # reshape_padded_embed = padded_embed.transpose([0, 3, 1, 2])  # permute
+        # reshape_padded_embed = reshape_padded_embed.contiguous()
+        # reshape_padded_embed = reshape_padded_embed.reshape([b, t, -1])
+        padded_embed = self.conv_out(padded_embed.transpose([0, 3, 1, 2]).contiguous().reshape([b, t, -1]))
+        
+        # need to mock or hack
+        # self.positional_embedding.positional_embedding = (
+        #     hack_with_torch_file(
+        #         "positional_embedding_raw",
+        #         self.positional_embedding.positional_embedding.dtype,
+        #         self.positional_embedding.positional_embedding.place
+        #     )
+        # )
 
         positional_embedding = (
             self.positional_embedding.positional_embedding[: padded_embed.shape[1], :]
@@ -1577,8 +1657,10 @@ class Qwen3OmniMoeThinkerTextRotaryEmbedding(nn.Layer):
 
         # Compute the inverse frequencies
         inv_freq = 1.0 / (
-            base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).to(device=device, dtype=paddle.float) / dim)
+            base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32).to(device) / dim)
         )
+        # need to hack or mock
+        # inv_freq = hack_with_torch_file("inv_freq_in_init", inv_freq.dtype, inv_freq.place)
         return inv_freq, attention_factor
 
     @paddle.no_grad()
@@ -1629,17 +1711,6 @@ class Qwen3OmniMoeThinkerTextExperts(nn.Layer):
         self.num_experts = config.num_experts
         self.hidden_dim = config.hidden_size
         self.intermediate_dim = config.moe_intermediate_size
-        self.gate_proj = self.create_parameter(
-            shape=[self.num_experts, self.hidden_dim, self.intermediate_dim],
-            dtype=paddle.get_default_dtype(),
-            is_bias=False,
-        )
-        self.up_proj = self.create_parameter(
-            shape=[self.num_experts, self.hidden_dim, self.intermediate_dim],
-            dtype=paddle.get_default_dtype(),
-            is_bias=False,
-        )
-        # fuse to gate_up_proj
         self.gate_up_proj = self.create_parameter(
             shape=[self.num_experts, self.hidden_dim, 2 * self.intermediate_dim],
             dtype=paddle.get_default_dtype(),
@@ -1672,13 +1743,34 @@ class Qwen3OmniMoeThinkerTextExperts(nn.Layer):
                 continue
             top_k_pos, token_idx = paddle.where(expert_mask[expert_idx])
             current_state = hidden_states[token_idx]
-            gate, up = nn.functional.linear(current_state, self.gate_up_proj[expert_idx]).chunk(2, dim=-1)
+            gate, up = paddle.nn.functional.linear(
+                current_state, 
+                self.gate_up_proj[expert_idx]
+            ).chunk(2, dim=-1)
             current_hidden_states = self.act_fn(gate) * up
-            current_hidden_states = nn.functional.linear(current_hidden_states, self.down_proj[expert_idx])
+            current_hidden_states = paddle.nn.functional.linear(
+                current_hidden_states, 
+                self.down_proj[expert_idx]
+            )
             current_hidden_states = current_hidden_states * top_k_weights[token_idx, top_k_pos, None]
             final_hidden_states.index_add_(0, token_idx, current_hidden_states.to(final_hidden_states.dtype))
 
         return final_hidden_states
+
+    def sharded_state_dict(
+        self,
+        structured_name_prefix: str = "",
+    ):
+        state_dict = self.state_dict(structured_name_prefix="")
+        w1 = state_dict["gate_up_proj"].reshape(-1, self.gate_up_proj.shape[-1])
+        w2 = state_dict["down_proj"].reshape(-1, self.down_proj.shape[-1])
+        state_dict["gate_up_proj"] = w1
+        state_dict["down_proj"] = w2
+        sharded_dict = {}
+
+        sharded_dict = build_sharded_state_dict(state_dict, None, structured_name_prefix)
+
+        return sharded_dict
 
 
 class Qwen3OmniMoeThinkerTextTopKRouter(nn.Layer):
@@ -1690,16 +1782,16 @@ class Qwen3OmniMoeThinkerTextTopKRouter(nn.Layer):
         self.hidden_dim = config.hidden_size
         self.weight = nn.Parameter(paddle.zeros(self.hidden_dim, self.num_experts))
 
-    def forward(self, hidden_states, layer_idx):
+    def forward(self, hidden_states):
         hidden_states = hidden_states.reshape(-1, self.hidden_dim)
         router_logits = F.linear(hidden_states, self.weight)  # (seq_len, num_experts)
         router_logits = nn.functional.softmax(router_logits, dtype=paddle.float, dim=-1)
-        if layer_idx < 1:
+        if False:
             # use torch to mock
             import torch
-            torch_router_logits = torch.from_numpy(router_logits.detach().cpu().numpy()).to("cuda")
+            np_router_logits = router_logits.astype("float32").detach().cpu().numpy()
+            torch_router_logits = torch.from_numpy(np_router_logits).to(torch.float).to("cuda")
             torch_router_top_value, torch_router_indices = torch.topk(torch_router_logits, self.top_k, dim=-1) 
-            compare_and_save(torch_router_indices, "topk_torch_router_indices_after_topk", True, True)
             np_router_top_value = torch_router_top_value.float().detach().cpu().numpy()
             np_router_indices = torch_router_indices.float().detach().cpu().numpy()
             router_top_value = paddle.to_tensor(np_router_top_value, dtype="float32").cuda()
@@ -1720,11 +1812,11 @@ class Qwen3OmniMoeThinkerTextSparseMoeBlock(nn.Layer):
         self.experts = Qwen3OmniMoeThinkerTextExperts(config)
         self.gate = Qwen3OmniMoeThinkerTextTopKRouter(config)
 
-    def forward(self, hidden_states: paddle.Tensor, layer_idx) -> tuple[paddle.Tensor, paddle.Tensor]:
+    def forward(self, hidden_states: paddle.Tensor) -> tuple[paddle.Tensor, paddle.Tensor]:
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states_reshaped = hidden_states.view(-1, hidden_dim)
-        _, routing_weights, selected_experts = self.gate(hidden_states_reshaped, layer_idx)
-        final_hidden_states = self.experts(hidden_states_reshaped, selected_experts, routing_weights, layer_idx)
+        _, routing_weights, selected_experts = self.gate(hidden_states_reshaped)
+        final_hidden_states = self.experts(hidden_states_reshaped, selected_experts, routing_weights)
         return final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
 
 
@@ -1907,20 +1999,6 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Layer):
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
-        # if self.layer_idx < 1:
-        #     print(
-        #         "Qwen3OmniMoeThinkerTextAttention before attention layer_idx: ", self.layer_idx, ", "
-        #         "query_states: ", type(query_states), query_states.shape, query_states
-        #     )
-        #     print(
-        #         "Qwen3OmniMoeThinkerTextAttention before attention layer_idx: ", self.layer_idx, ", "
-        #         "key_states: ", type(key_states), key_states.shape, key_states
-        #     )
-        #     print(
-        #         "Qwen3OmniMoeThinkerTextAttention before attention layer_idx: ", self.layer_idx, ", "
-        #         "value_states: ", type(value_states), value_states.shape, value_states
-        #     )
-
         attn_output, attn_weights = attention_interface(
             self,
             query_states,
@@ -1933,29 +2011,9 @@ class Qwen3OmniMoeThinkerTextAttention(nn.Layer):
             **kwargs,
         )
 
-        import os
-        import numpy as np
-        # if self.layer_idx < 1:
-        #     print(
-        #         "Qwen3OmniMoeThinkerTextAttention after attention layer_idx: ", self.layer_idx, ", "
-        #         "attn_output: ", type(attn_output), attn_output.shape, attn_output
-        #     )
-        #     attn_output_before_o_proj = attn_output.astype("float32")
-        #     np_attn_output_before_o_proj = attn_output_before_o_proj.cpu().numpy()
-        #     np.save("/root/paddlejob/workspace/env_run/wuhuiyue/helper/qwen3_omni_test/pd_attn_output_before_o_proj.npy", np_attn_output_before_o_proj)
-
         attn_output = self.o_proj(attn_output)
         if not output_attentions:
             attn_weights = None
-
-        # if self.layer_idx < 1:
-        #     print(
-        #         "Qwen3OmniMoeThinkerTextAttention after o_proj layer_idx: ", self.layer_idx, ", "
-        #         "attn_output: ", type(attn_output), attn_output.shape, attn_output
-        #     )
-        #     attn_output_after_o_proj = attn_output.astype("float32")
-        #     np_attn_output_after_o_proj = attn_output_after_o_proj.cpu().numpy()
-        #     np.save("/root/paddlejob/workspace/env_run/wuhuiyue/helper/qwen3_omni_test/pd_attn_output_after_o_proj.npy", np_attn_output_after_o_proj)
 
         return attn_output, attn_weights
 
@@ -1971,7 +2029,7 @@ class Qwen3OmniMoeThinkerTextMLP(nn.Layer):
         self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias_attr=False)
         self.act_fn = ACT2FN[config.hidden_act]
 
-    def forward(self, x, layer_idx):
+    def forward(self, x):
         down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
         return down_proj
 
@@ -1979,7 +2037,6 @@ class Qwen3OmniMoeThinkerTextMLP(nn.Layer):
 class Qwen3OmniMoeThinkerTextDecoderLayer(nn.Layer):
     def __init__(self, config, layer_idx):
         super().__init__()
-        self.layer_idx = layer_idx
         self.self_attn = Qwen3OmniMoeThinkerTextAttention(config, layer_idx)
         if (layer_idx not in config.mlp_only_layers) and (
             config.num_experts > 0 and (layer_idx + 1) % config.decoder_sparse_step == 0
@@ -2035,6 +2092,7 @@ class Qwen3OmniMoeThinkerTextDecoderLayer(nn.Layer):
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
+        hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
         return hidden_states
 
@@ -2055,16 +2113,21 @@ class Qwen3OmniMoeThinkerTextPreTrainedModel(PretrainedModel):
         "k_proj", 
         "v_proj",
         "o_proj",
+        "out_proj",
         "gate",
         "fc1",
         "fc2",
         "conv_out",
-        "proj2",
         "qkv",
+        "proj",
         "linear_fc1",
         "linear_fc2",
         "mlp.0",
         "mlp.2",
+        "proj1",
+        "proj2",
+        "gate_up_proj",
+        "down_proj",
     ]
 
     @paddle.no_grad()
@@ -2212,7 +2275,7 @@ class Qwen3OmniMoeThinkerTextModel(Qwen3OmniMoePreTrainedModel):
         # create position embeddings to be shared across the decoder layers
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
-        for layer_idx, decoder_layer in enumerate(self.layers):
+        for decoder_layer in self.layers:
             layer_outputs = decoder_layer(
                 hidden_states,
                 attention_mask=attention_mask,
@@ -2223,7 +2286,6 @@ class Qwen3OmniMoeThinkerTextModel(Qwen3OmniMoePreTrainedModel):
                 **kwargs,
             )
             hidden_states = layer_outputs
-
             # add visual features to the hidden states of first several layers
             if deepstack_visual_embeds is not None and layer_idx in range(len(deepstack_visual_embeds)):
                 hidden_states = self._deepstack_process(
