@@ -22,10 +22,10 @@ from transformers.models.auto.configuration_auto import (
     model_type_to_module_name,
 )
 
-from PaddleFormers.paddleformers.utils.download.download import resolve_file_path
-from PaddleFormers.paddleformers.utils.log import logger
 from paddleformers.transformers import AutoConfig
 from paddleformers.transformers.processing_utils import PROCESSOR_NAME
+from paddleformers.utils.download.download import resolve_file_path
+from paddleformers.utils.log import logger
 
 from ..configuration_utils import PretrainedConfig
 from ..feature_extraction_utils import FeatureExtractionMixin

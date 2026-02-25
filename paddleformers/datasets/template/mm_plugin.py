@@ -777,7 +777,7 @@ class Qwen2VLPlugin(BasePlugin):
         )
 
         image = image.resize((resized_width, resized_height))
-
+        # image = super()._preprocess_image(image, **kwargs)
         if min(image.width, image.height) < 28:
             width, height = max(image.width, 28), max(image.height, 28)
             image = image.resize((width, height))

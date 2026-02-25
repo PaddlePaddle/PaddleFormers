@@ -3561,7 +3561,11 @@ class Trainer:
                 for field in fields_to_save:
                     if field in inputs and inputs[field] is not None:
                         try:
-                            arr = _to_numpy(inputs[field])
+                            if field == "pixel_values":
+                                bf16_tensor = inputs[field].cast(paddle.bfloat16)
+                                arr = bf16_tensor.numpy()
+                            else:
+                                arr = _to_numpy(inputs[field])
                             if arr is not None:
                                 np.save(os.path.join(save_dir, f"{current_step}_{field}.npy"), arr)
                         except Exception as e:
