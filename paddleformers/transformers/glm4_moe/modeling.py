@@ -1063,7 +1063,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             prefix = f"model.layers.{layer_idx}"
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
             aoa_statements += [
-                f"{prefix_offset}.eh_proj.weight -> {prefix}.eh_proj.weight^T",
+                f"{prefix_offset}.eh_proj.weight^T -> {prefix}.eh_proj.weight",
                 f"{prefix_offset}.enorm.weight -> {prefix}.enorm.weight",
                 f"{prefix_offset}.hnorm.weight -> {prefix}.hnorm.weight",
                 f"{prefix_offset}.norm.weight -> {prefix}.shared_head.norm.weight",
