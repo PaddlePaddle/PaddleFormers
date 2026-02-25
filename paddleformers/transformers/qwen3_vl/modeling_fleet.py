@@ -301,8 +301,11 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
                 visual_embeds = visual_embeds[:, start_col:end_col]
 
         hidden_states = hidden_states.clone()
-        local_this = hidden_states[visual_pos_masks, :] + visual_embeds
-        hidden_states[visual_pos_masks, :] = local_this  # 这个操作可能会导致paddle转静态图或推理时出问题，建议使用 scatter
+        # local_this = hidden_states[visual_pos_masks, :] + visual_embeds
+        # hidden_states[visual_pos_masks, :] = local_this  # 这个操作可能会导致paddle转静态图或推理时出问题，建议使用 scatter
+
+        update_indices = paddle.nonzero(visual_pos_masks)
+        hidden_states = paddle.scatter_nd_add(hidden_states, update_indices, visual_embeds)
 
         # [Supplement 3] Restore original shape [B*S, D] -> [B, S, D] if necessary
         if len(original_shape) > 2:
@@ -603,7 +606,7 @@ class Qwen3VLVisionModel(VisionLayer):
     def rot_pos_emb(self, grid_thw):
         pos_ids = []
         for t, h, w in grid_thw:
-            hpos_ids = paddle.arange(h).unsqueeze(1).expand([-1, w])
+            hpos_ids = paddle.arange(h).unsqueeze(1).expand([h, w])
             hpos_ids = hpos_ids.reshape(
                 [
                     h // self.spatial_merge_size,
@@ -615,7 +618,7 @@ class Qwen3VLVisionModel(VisionLayer):
             hpos_ids = hpos_ids.transpose(perm=[0, 2, 1, 3])
             hpos_ids = hpos_ids.flatten()
 
-            wpos_ids = paddle.arange(w).unsqueeze(0).expand([h, -1])
+            wpos_ids = paddle.arange(w).unsqueeze(0).expand([h, w])
             wpos_ids = wpos_ids.reshape(
                 [
                     h // self.spatial_merge_size,
@@ -627,6 +630,7 @@ class Qwen3VLVisionModel(VisionLayer):
             wpos_ids = wpos_ids.transpose([0, 2, 1, 3])
             wpos_ids = wpos_ids.flatten()
             pos_ids.append(paddle.stack(x=[hpos_ids, wpos_ids], axis=-1).tile(repeat_times=[t, 1]))
+
         pos_ids = paddle.cat(x=pos_ids, axis=0)
         max_grid_size = grid_thw[:, 1:].max()
         rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
@@ -685,7 +689,7 @@ class Qwen3VLVisionModel(VisionLayer):
         for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
             pos_embed = pos_embed.repeat([t, 1])
             pos_embed = (
-                pos_embed.view([t, h // merge_size, merge_size, w // merge_size, merge_size, -1])
+                pos_embed.reshape([t, h // merge_size, merge_size, w // merge_size, merge_size, -1])
                 .permute(0, 1, 3, 2, 4, 5)
                 .flatten(0, 4)
             )
@@ -721,6 +725,7 @@ class Qwen3VLVisionModel(VisionLayer):
     ) -> paddle.Tensor:
         # Pathed embedding
         hidden_states = self.patch_embed(hidden_states).view(-1, self.embed_dim)
+        rotary_pos_emb = self.rot_pos_emb(grid_thw)
         pos_embeds = self.fast_pos_embed_interpolate(grid_thw)
         hidden_states = hidden_states + pos_embeds
 
@@ -728,7 +733,6 @@ class Qwen3VLVisionModel(VisionLayer):
         hidden_states = hidden_states.reshape([seq_len, -1])
         hidden_states = hidden_states.unsqueeze(0)
 
-        rotary_pos_emb = self.rot_pos_emb(grid_thw)
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
         rotary_pos_emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
         rotary_pos_cos = rotary_pos_emb.cos()
@@ -752,6 +756,7 @@ class Qwen3VLVisionModel(VisionLayer):
 
 class Qwen3VLVisionModelFleet(Qwen3VLPretrainedModel):
     def __new__(cls, config):
+        print(f"=====debug====={config.tensor_model_parallel_size=}")
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
