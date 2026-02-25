@@ -1183,27 +1183,27 @@ class KimiK25Plugin(BasePlugin):
     def process_messages(self, messages, images, videos, audios, mm_inputs, processor):
         self._validate_input(processor, images, videos, audios)
         self._validate_messages(messages, images, videos, audios)
-        if self.expand_mm_tokens:
-            image_grid_hws = mm_inputs.get("grid_thws", [])
-        else:
-            image_grid_hws = [None] * len(images)
+        # if self.expand_mm_tokens:
+        #     image_grid_hws = mm_inputs.get("grid_thws", [])
+        # else:
+        #     image_grid_hws = [None] * len(images)
 
-        num_image_tokens = 0
-        image_processor = getattr(processor, "image_processor")
-        merge_length = getattr(image_processor, "merge_kernel_size") ** 2
+        # num_image_tokens = 0
+        # image_processor = getattr(processor, "image_processor")
+        # merge_length = getattr(image_processor, "merge_kernel_size") ** 2
         messages = deepcopy(messages)
         for message in messages:
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:
-                image_seqlen = (
-                    image_grid_hws[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
-                )
+                # image_seqlen = (
+                #     image_grid_hws[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                # )
                 content = content.replace(
                     IMAGE_PLACEHOLDER,
-                    f"<|media_start|>image<|media_content|>{self.image_token * image_seqlen}<|media_end|>",
+                    f"<|media_start|>image<|media_content|>{self.image_token * 1}<|media_end|>",
                     1,
                 )
-                num_image_tokens += 1
+                # num_image_tokens += 1
 
             message["content"] = content
 

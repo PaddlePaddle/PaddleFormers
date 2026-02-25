@@ -76,7 +76,11 @@ MAPPING_NAMES = OrderedDict(
 )
 
 MAPPING_SPACIAL_KEY = OrderedDict(
-    [("Gemma3", "Gemma3Text"), ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration")]
+    [
+        ("Gemma3", "Gemma3Text"),
+        ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration"),
+        ("KimiK25", "KimiK25ForConditionalGeneration"),
+    ]
 )
 CONFIGURATION_MODEL_MAPPING = OrderedDict([((), "Gemma3TextModel")])
 
@@ -116,9 +120,13 @@ def get_name_mapping(task="Model"):
     'Generator', 'Discriminator', 'ForConditionalGeneration'
     """
     NAME_MAPPING = OrderedDict()
+
     for key, value in MAPPING_NAMES.items():
+
         if key in MAPPING_SPACIAL_KEY and task == "Model":
             import_class = MAPPING_SPACIAL_KEY[key] + task
+            if key == "KimiK25":
+                import_class = "KimiK25ForConditionalGeneration"
         else:
             import_class = key + task
         new_key = key + "Model_Import_Class"
@@ -245,6 +253,7 @@ class _BaseAutoModelClass:
 
     @classmethod
     def from_config(cls, config, **kwargs):
+        cls._name_mapping = get_name_mapping()
         model_class = cls._get_model_class_from_config(None, None, config, is_lora=config.get("is_lora", False))
         return model_class._from_config(config, **kwargs)
 

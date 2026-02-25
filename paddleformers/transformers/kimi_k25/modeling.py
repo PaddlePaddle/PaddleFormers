@@ -285,6 +285,7 @@ class KimiK25VisionModelFleet(KimiK25PretrainedModel):
 
         model_provider_class = KimiK25VisionProvider
         model_provider = model_provider_class.from_config(config)
+
         vision_model = model_provider.provide()
         vision_model.config_to_save = config
 
@@ -402,11 +403,7 @@ class KimiK25ModelDist(MCoreLLaVAModel):
         language_transformer_config = config.text_config
         vision_transformer_config = config.vision_config
 
-        # vision_transformer_config.num_attention_heads = vision_transformer_config.vt_num_attention_heads
-        # vision_transformer_config.num_key_value_heads = language_transformer_config.num_key_value_heads
-
         self.model_version = vision_transformer_config.model_version if model_version is None else model_version
-        self._language_max_sequence_length = language_transformer_config.max_sequence_length
         assert self.model_version is not None
 
         self.config = config
@@ -429,7 +426,7 @@ class KimiK25ModelDist(MCoreLLaVAModel):
             #     vp_stage=vp_stage,
             # )
             # self._language_is_pipeline_parallel = language_transformer_config.pipeline_model_parallel_size > 1
-            self.language_model = DeepseekV3ForCausalLM(config.text_config)
+            self.language_model = DeepseekV3ForCausalLM(language_transformer_config)
 
         if add_encoder:
             self.vision_model = KimiK25VisionModelFleet(vision_transformer_config)
@@ -480,7 +477,7 @@ class KimiK25ModelDist(MCoreLLaVAModel):
 
         # 1. Create a mask to know where special image tokens are
         _token_occupation_table = paddle.ones_like(input_ids.flatten())
-        print(_token_occupation_table[input_ids.flatten() == image_token_index])
+
         _token_occupation_table[input_ids.flatten() == image_token_index] = paddle.tensor(
             feature_lengths, dtype=paddle.long, device=input_ids.device
         )
@@ -596,7 +593,9 @@ class KimiK25ModelDist(MCoreLLaVAModel):
 
             return startend_row_indices
 
-        attn_mask_startend_row_indices = (get_attn_mask_startend_row_indices(grid_thws),)
+        attn_mask_startend_row_indices = get_attn_mask_startend_row_indices(grid_thws)
+
+        pixel_values = pixel_values.to(self.config.params_dtype)
 
         input_dict = {
             "pixel_values": pixel_values,
@@ -690,8 +689,6 @@ class KimiK25ModelDist(MCoreLLaVAModel):
         **kwargs,
     ) -> paddle.Tensor:
         assert loss_mask is None, "loss_mask is not supported yet"
-        print("in forward input_ids: ", input_ids)
-        print("attention_mask: ", attention_mask)
         input_dict = self.get_inputs_embeds(input_ids, pixel_values, grid_thws, attention_mask, None, labels)
         labels = input_dict.get("labels", labels)
 
