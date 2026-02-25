@@ -172,6 +172,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     
     unset http_proxy && unset https_proxy
     set +e
+    export PYTHONFAULTHANDLER=1
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
@@ -179,12 +180,12 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo "python -m pytest -v -s -n 4 --dist no --maxfail=1 --retries 3 --retry-delay 1 --timeout 200 --durations 20 --alluredir=result --cov=paddleformers --cov-report=xml:coverage.xml ${PYTEST_ARGS}"
     eval timeout 10m python -m pytest -v -s -n 4 \
         --dist no \
-        --maxfail=1 \
+        --maxfail=10 \
         --retries 3 --retry-delay 1 \
         --timeout 200 --durations 20 \
         --alluredir=result \
         --cov=paddleformers \
-        --cov-report=xml:coverage.xml ${PYTEST_ARGS} > ${log_path}/unittest.log 2> >(tee -a ${log_path}/unittest.log >&2)
+        --cov-report=xml:coverage.xml ${PYTEST_ARGS} > ${log_path}/unittest.log 2>&1
     exit_code=$?
     print_info $exit_code unittest
     echo -e "\033[35m ---- Set PYTEST_EXECUTE_FLAG_FILE  \033[0m"
