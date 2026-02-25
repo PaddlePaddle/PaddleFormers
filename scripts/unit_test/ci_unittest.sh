@@ -59,6 +59,7 @@ install_requirements() {
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
     python -m pip install -U --no-cache-dir transformers
+    python -m pip install uv
     # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
     # echo "paddlepaddle-gpu @ https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/cbf3469113cd76b7d5f4cba7b8d7d5f55d9e9911/paddlepaddle_gpu-3.3.0-cp310-cp310-linux_x86_64.whl" >> requirements.txt
     python setup.py bdist_wheel > /dev/null
@@ -136,22 +137,54 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     kill_process
     install_requirements
     cd ${nlp_dir}
-    echo ' Testing all unittest cases '
+    # Read test whitelist configuration
+    wget -P ${nlp_dir}/scripts/unit_test \
+    https://paddle-qa.bj.bcebos.com/paddleformers/test_whitelist.conf
+    WHITELIST_FILE="${nlp_dir}/scripts/unit_test/test_whitelist.conf"
+    PYTEST_ARGS="tests/"
+    
+    if [ -f "${WHITELIST_FILE}" ]; then
+        echo "Reading test whitelist configuration from ${WHITELIST_FILE}"
+        SKIP_TESTS=""
+        while IFS= read -r line; do
+            # Skip empty lines and comments
+            [[ -z "${line}" || "${line}" =~ ^[[:space:]]*# ]] && continue
+            
+            # Check for skip: prefix
+            if [[ "${line}" =~ ^skip:(.*) ]]; then
+                test_pattern="${BASH_REMATCH[1]}"
+                if [ -n "${SKIP_TESTS}" ]; then
+                    SKIP_TESTS="${SKIP_TESTS} or ${test_pattern}"
+                else
+                    SKIP_TESTS="${test_pattern}"
+                fi
+            fi
+        done < "${WHITELIST_FILE}"
+        
+        # If there are tests to skip, add pytest arguments
+        if [ -n "${SKIP_TESTS}" ]; then
+            PYTEST_ARGS="-k \"not (${SKIP_TESTS})\" tests/"
+            echo "SKIP_TESTS: ${SKIP_TESTS}"
+        fi
+    else
+        echo "Test whitelist file not found: ${WHITELIST_FILE}, running all tests"
+    fi
+    
     unset http_proxy && unset https_proxy
     set +e
-    export PYTHONFAULTHANDLER=1
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
-    timeout 10m \
-    python -m pytest -v -s -n 4 \
+    echo "Final pytest command :"
+    echo "python -m pytest -v -s -n 4 --dist no --maxfail=1 --retries 3 --retry-delay 1 --timeout 200 --durations 20 --alluredir=result --cov=paddleformers --cov-report=xml:coverage.xml ${PYTEST_ARGS}"
+    eval timeout 10m python -m pytest -v -s -n 4 \
         --dist no \
-        --maxfail=10 \
+        --maxfail=1 \
         --retries 3 --retry-delay 1 \
         --timeout 200 --durations 20 \
         --alluredir=result \
         --cov=paddleformers \
-        --cov-report=xml:coverage.xml > ${log_path}/unittest.log 2>&1
+        --cov-report=xml:coverage.xml ${PYTEST_ARGS} > ${log_path}/unittest.log 2> >(tee -a ${log_path}/unittest.log >&2)
     exit_code=$?
     print_info $exit_code unittest
     echo -e "\033[35m ---- Set PYTEST_EXECUTE_FLAG_FILE  \033[0m"
