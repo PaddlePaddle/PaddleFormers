@@ -1661,6 +1661,13 @@ class Qwen3OmniMoeThinkerTextRotaryEmbedding(nn.Layer):
         )
         # need to hack or mock
         # inv_freq = hack_with_torch_file("inv_freq_in_init", inv_freq.dtype, inv_freq.place)
+        if False:
+            import torch
+            torch_inv_freq = 1.0 / (
+                    base ** (torch.arange(0, dim, 2, dtype=torch.int64).to(device=device, dtype=torch.float) / dim)
+            )
+            np_inv_freq = torch_inv_freq.float().detach().cpu().numpy()
+            inv_freq = paddle.to_tensor(np_inv_freq, dtype=paddle.float32).cuda()
         return inv_freq, attention_factor
 
     @paddle.no_grad()
@@ -2275,7 +2282,7 @@ class Qwen3OmniMoeThinkerTextModel(Qwen3OmniMoePreTrainedModel):
         # create position embeddings to be shared across the decoder layers
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
-        for decoder_layer in self.layers:
+        for layer_idx, decoder_layer in enumerate(self.layers):
             layer_outputs = decoder_layer(
                 hidden_states,
                 attention_mask=attention_mask,
