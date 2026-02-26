@@ -231,16 +231,9 @@ class Qwen2VLVideoProcessor(BaseVideoProcessor):
                 merge_size,
                 patch_size,
             )
+            patches = patches.cpu()
             patches = patches.permute(0, 3, 6, 4, 7, 2, 1, 5, 8).contiguous()
-            patches = patches.reshape(
-                [
-                    batch_size * grid_t,
-                    grid_h * grid_w,
-                    channel,
-                    temporal_patch_size,
-                    patch_size * patch_size,
-                ]
-            )
+            patches = patches.cuda()
             flatten_patches = patches.reshape(
                 [
                     batch_size,
