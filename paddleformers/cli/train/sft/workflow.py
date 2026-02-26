@@ -86,12 +86,11 @@ from paddleformers.cli.utils import (
 )
 
 
-def frozen_param_expect_mtp(model, config):
+def freeze_param_except_mtp(model, config):
     def extract_layer_idx(text):
         match = re.search(r"model.layers.(-?\d+\.?\d*)", text)
         if match:
             num_str = match.group(1)
-            # 区分整数和小数返回（避免123.0这种冗余浮点数）
             if "." in num_str:
                 return float(num_str)
             else:
@@ -691,7 +690,7 @@ def run_sft(
         data_args=data_args,
         callbacks=callbacks,
     )
-    frozen_param_expect_mtp(model, model_config)
+    freeze_param_except_mtp(model, model_config)
     trainable_parameters = [p for p in model.parameters() if not p.stop_gradient]
     trainer.set_optimizer_grouped_parameters(trainable_parameters)
 
