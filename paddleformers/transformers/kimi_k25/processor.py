@@ -46,7 +46,7 @@ class KimiK25Processor(ProcessorMixin):
         **kwargs,
     ):
         super().__init__(image_processor, tokenizer, chat_template=chat_template)
-        self.media_processor = image_processor
+        self.image_processor = self.media_processor = image_processor
         # A special temporal placeholder to be replaced by actual video placeholders
         self.video_placeholder = "<|kimi_k25_video_placeholder|>"
 
@@ -105,7 +105,7 @@ class KimiK25Processor(ProcessorMixin):
             updated_medias, video_prompts = self.preprocess_medias(medias, **kwargs)
             preprocessed = self.media_processor.preprocess(updated_medias, return_tensors=return_tensors)
             text = self.update_raw_text(text, video_prompts)
-            text_inputs = self.tokenizer(text, add_special_tokens=False, return_tensors=return_tensors)
+            text_inputs = self.tokenizer(text, add_special_tokens=False, return_tensors=return_tensors, **kwargs)
             return BatchFeature(data={**text_inputs, **preprocessed.data})
 
         if medias is None:
@@ -119,7 +119,7 @@ class KimiK25Processor(ProcessorMixin):
 
         text = self.update_raw_text(text, video_prompts)
 
-        text_inputs = self.tokenizer(text, add_special_tokens=False, return_tensors=return_tensors)
+        text_inputs = self.tokenizer(text, add_special_tokens=False, return_tensors=return_tensors, **kwargs)
         return BatchFeature(data={**text_inputs, **preprocessed.data})
 
     @staticmethod

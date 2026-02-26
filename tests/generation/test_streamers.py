@@ -21,11 +21,15 @@ import paddle
 from paddleformers.generation import TextIteratorStreamer, TextStreamer
 from paddleformers.transformers import AutoModelForCausalLM, AutoTokenizer
 from paddleformers.transformers.utils import CaptureStd
-from tests.testing_utils import slow
+from tests.testing_utils import gpu_device_initializer, slow
 from tests.transformers.test_modeling_common import ids_tensor
 
 
 class StreamerTester(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="StreamerTester")
+    def setUp(self):
+        pass
+
     def get_inputs(self, model):
         input_ids = ids_tensor([1, 5], vocab_size=model.config.vocab_size, dtype="int64")
         attention_mask = paddle.ones_like(input_ids, dtype="bool")

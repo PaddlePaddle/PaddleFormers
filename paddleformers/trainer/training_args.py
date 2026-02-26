@@ -1543,8 +1543,9 @@ class TrainingArguments:
             "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
         },
     )
-    fa_version: int = field(
-        default=2, metadata={"help": "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."}
+    fa_version: Optional[int] = field(
+        default=None,
+        metadata={"help": "FlashAttention or FlashMask version (2, 3, or 4). If None, version is auto-selected."},
     )
 
     using_sonic_moe: bool = field(
@@ -1579,20 +1580,43 @@ class TrainingArguments:
             os.environ["FLAGS_cudnn_deterministic"] = "1"
             os.environ["FLAGS_embedding_deterministic"] = "1"
 
-        if self.fa_version == 2 or self.fa_version == 3:
+        if self.fa_version is not None:
             if paddle.base.core.is_compiled_with_cuda():
+                assert self.fa_version in (
+                    2,
+                    3,
+                    4,
+                ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2, 3, and 4."
+            else:
+                assert (
+                    self.fa_version == 2
+                ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2 on non-CUDA devices."
+        else:
+            if paddle.base.core.is_compiled_with_cuda():
+                is_sm100 = (
+                    paddle_device.get_device_capability()[0] == 10 and paddle_device.get_device_capability()[1] == 0
+                )
                 is_sm90 = (
                     paddle_device.get_device_capability()[0] == 9 and paddle_device.get_device_capability()[1] == 0
                 )
-                if is_sm90:
-                    paddle.set_flags({"FLAGS_flash_attn_version": 3})
+                if is_sm100:
+                    self.fa_version = 4
+                elif is_sm90:
                     self.fa_version = 3
-                    warnings.warn("sm90 automatic set fa_version to fa3")
                 else:
-                    paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
-                    logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
+                    # Note(umiswing): always fallback to FA2
+                    self.fa_version = 2
+            else:
+                self.fa_version = 2
+        if paddle.base.core.is_compiled_with_cuda():
+            paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
         else:
-            raise ValueError(f"--fa_version should be 2 or 3, but got {self.fa_version}")
+            try:
+                paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
+            except Exception:
+                logger.warning("Flag FLAGS_flash_attn_version cannot set its value through this function.")
+
+        logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
 
         env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", -1))
         if env_local_rank != -1 and env_local_rank != self.local_rank and paddle.distributed.get_world_size() > 1:

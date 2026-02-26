@@ -1259,9 +1259,9 @@ class Trainer:
             def recover_params_from_master_weight(opt_state_dict, group):
                 master_weights = opt_state_dict["master_weights"]
                 tmp = OrderedDict()
-                (master_weights, tmp) = (tmp, master_weights)
+                master_weights, tmp = (tmp, master_weights)
                 # cast to before
-                for (k, v) in tmp.items():
+                for k, v in tmp.items():
                     name = v.name
                     master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
                     master_weights[k].name = name
@@ -3546,7 +3546,7 @@ class Trainer:
         loss = outputs["loss"] if isinstance(outputs, dict) else outputs
         if isinstance(outputs, dict):
             loss = outputs["loss"]
-        elif isinstance(outputs, tuple):
+        elif isinstance(outputs, (tuple, list)):
             loss = outputs[0]
         else:
             loss = outputs
