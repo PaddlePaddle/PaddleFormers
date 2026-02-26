@@ -2268,7 +2268,7 @@ class Qwen3OmniMoeThinkerTextModel(Qwen3OmniMoePreTrainedModel):
         # create position embeddings to be shared across the decoder layers
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
-        for decoder_layer in self.layers:
+        for layer_idx, decoder_layer in enumerate(self.layers):
             layer_outputs = decoder_layer(
                 hidden_states,
                 attention_mask=attention_mask,
