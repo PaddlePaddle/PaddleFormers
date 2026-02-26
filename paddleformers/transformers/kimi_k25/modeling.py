@@ -467,7 +467,6 @@ class KimiK25ModelDist(MCoreLLaVAModel):
         _, embed_dim = image_features[0].shape
         feature_lengths = [x.shape[0] for x in image_features]
         image_features = paddle.cat(image_features, dim=0)
-
         image_token_index: int = self.config.media_placeholder_token_id
         pad_token_id: int = self.config.pad_token_id
         ignore_index: int = self.config.ignore_index
@@ -536,7 +535,9 @@ class KimiK25ModelDist(MCoreLLaVAModel):
             (batch_size, max_embed_dim), True, dtype=paddle.bool, device=inputs_embeds.device
         )
         image_to_overwrite[batch_indices, text_to_overwrite] = False
-        image_to_overwrite &= image_to_overwrite.cumsum(-1) - 1 >= nb_image_pad[:, None].to(target_device)
+        image_to_overwrite &= image_to_overwrite.to(paddle.int32).cumsum(-1) - 1 >= nb_image_pad[:, None].to(
+            target_device
+        )
 
         if image_to_overwrite.sum() != image_features.shape[:-1].numel():
             raise ValueError(
@@ -546,15 +547,14 @@ class KimiK25ModelDist(MCoreLLaVAModel):
             )
 
         final_embedding[image_to_overwrite] = image_features.contiguous().reshape(-1, embed_dim).to(target_device)
-        final_attention_mask |= image_to_overwrite
+        final_attention_mask |= image_to_overwrite.to(paddle.int64)
         position_ids = (final_attention_mask.cumsum(-1) - 1).masked_fill_((final_attention_mask == 0), 1)
 
         # 6. Mask out the embedding at padding positions, as we later use the past_key_value value to determine the non-attended tokens.
         batch_indices, pad_indices = paddle.where(input_ids == pad_token_id)
         indices_to_mask = new_token_positions[batch_indices, pad_indices]
-
-        final_embedding[batch_indices, indices_to_mask] = 0
-
+        if indices_to_mask.size != 0:
+            final_embedding[batch_indices, indices_to_mask] = 0
         if labels is None:
             final_labels = None
 
@@ -664,9 +664,9 @@ class KimiK25ModelDist(MCoreLLaVAModel):
             position_ids = paddle.sum(attention_mask, dim=1).unsqueeze(-1) - 1
 
         input_dict = {
-            "inputs_embeds": inputs_embeds,
             "position_ids": position_ids,
             "attention_mask": attention_mask,
+            "inputs_embeds": inputs_embeds,
             "labels": labels,
             "past_key_values": past_key_values,
         }
@@ -692,7 +692,7 @@ class KimiK25ModelDist(MCoreLLaVAModel):
         input_dict = self.get_inputs_embeds(input_ids, pixel_values, grid_thws, attention_mask, None, labels)
         labels = input_dict.get("labels", labels)
 
-        output = self.language_model(input_dict)
+        output = self.language_model(**input_dict)
 
         return output
 
@@ -736,9 +736,7 @@ class KimiK25Model(KimiK25PretrainedModelFleet):
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
-        # criterion = None
-        # if have_criterion:
-        #     criterion = CriterionLayer(config.text_config)
+
         model_provider_class = KimiK25Provider
         model_provider = model_provider_class.from_config(config)
         KimiK25_model = KimiK25ModelDist(model_provider, model_version=config.model_type)
@@ -831,15 +829,9 @@ class KimiK25ForConditionalGeneration(KimiK25PretrainedModelFleet):
             **kwargs,
         )
 
-        logits = outputs
-
-        loss = None
-        if labels is not None:
-            loss, _ = self.criterion(logits, labels)
-
         return KimiK25CausalLMOutputWithPast(
-            loss=loss,
-            logits=logits,
+            loss=outputs.loss,
+            logits=outputs.logits,
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
