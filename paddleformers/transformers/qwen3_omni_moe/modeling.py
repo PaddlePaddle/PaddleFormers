@@ -507,7 +507,7 @@ class Qwen3OmniMoePreTrainedModel(PretrainedModel):
                 ep_weight2.append(f"{tgt_prefix}.mlp.experts.{expert_id}.down_proj.weight")
             group1 = ",".join(ep_weight1)
             group2 = ",".join(ep_weight2)
-            aoa_statements += [
+            aoa_config["aoa_statements"] += [
                 f"{src_prefix}.mlp.experts.gate_up_proj -> {group1}, axis=0"
                 f"{src_prefix}.mlp.experts.down_proj -> {group2}, axis=0"
             ]
