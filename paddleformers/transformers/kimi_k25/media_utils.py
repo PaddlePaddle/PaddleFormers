@@ -17,29 +17,40 @@ import io
 import math
 import os
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import List, Literal, Optional, TypedDict
+from typing import Any, List, Literal, Optional, TypedDict
 
 import numpy as np
 import paddle
 from PIL import Image
-from pydantic import BaseModel, Field
 
 from ...utils import is_decord_available
 from ...utils.log import logger
 from ..paddle_vision_utils import pad, resize
 
 
-class VideoSpec(BaseModel):
-    media_type: str = Literal["video"]
-    height: int = Field(..., gt=0, description="video frame height")
-    width: int = Field(..., gt=0, description="video frame width")
-    num_frames: int = Field(..., gt=0, description="num frames")
-    fps: float = Field(..., gt=0, description="average fps")
+@dataclass
+class VideoSpec:
+    media_type: str
+    height: int
+    width: int
+    num_frames: int
+    fps: float
+    key_indices: Optional[list[int]] = None
+    frame_time_info: Optional[dict[str, Any]] = None
 
-    # optional, help to accelerate video reading
-    key_indices: list[int] = Field(None, description="key indices")
-    frame_time_info: dict = Field(None, description="frame time info")
+    def __post_init__(self):
+        if self.height <= 0:
+            raise ValueError("height must be greater than 0")
+        if self.width <= 0:
+            raise ValueError("width must be greater than 0")
+        if self.num_frames <= 0:
+            raise ValueError("num_frames must be greater than 0")
+        if self.fps <= 0:
+            raise ValueError("fps must be greater than 0")
+        if self.media_type != "video":
+            raise ValueError("media_type must be 'video'")
 
 
 class ImageInput(TypedDict):

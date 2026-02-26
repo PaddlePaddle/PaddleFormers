@@ -21,6 +21,8 @@ import paddle.nn as nn
 
 from paddleformers.nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 
+from ..testing_utils import gpu_device_initializer
+
 
 def flashmask_to_densemask(startend_row_indices, num_key_value_groups, dtype, causal=True):
     """
@@ -100,6 +102,7 @@ class TestAttentionInterface(unittest.TestCase):
 
         return paddle.to_tensor(m, dtype="int32")
 
+    @gpu_device_initializer(log_prefix="TestAttentionInterface")
     def setUp(self):
         """Set up common parameters and tensors for all tests in this class."""
         paddle.seed(92)  # Set a fixed seed for reproducibility
