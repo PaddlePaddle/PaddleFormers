@@ -205,9 +205,7 @@ class Qwen3VLVideoProcessor(BaseVideoProcessor):
                     patch_size,
                 ]
             )
-            patches = patches.cpu()
-            patches = patches.transpose([0, 3, 6, 4, 7, 2, 1, 5, 8]).contiguous()
-            patches = patches.cuda()
+            patches = patches.transpose([0, 3, 6, 4, 7, 2, 1, 5, 8])
             flatten_patches = patches.reshape(
                 [
                     batch_size,

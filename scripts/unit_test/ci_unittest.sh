@@ -140,14 +140,12 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     unset http_proxy && unset https_proxy
     set +e
     export PYTHONFAULTHANDLER=1
-    export OMP_NUM_THREADS=1
-    export MKL_NUM_THREADS=1
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
     timeout 15m \
     python -m pytest -v -s -n 8 \
-        --dist no \
+        --dist loadscope \
         --maxfail=10 \
         --retries 3 --retry-delay 1 \
         --timeout 200 --durations 20 \
