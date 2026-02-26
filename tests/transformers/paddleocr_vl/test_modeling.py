@@ -438,6 +438,7 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                     md51 = model_state_1[k]._md5sum()
                     assert md51 == md52
 
+
 class PaddleOCRVLIntegrationTest(unittest.TestCase):
     @gpu_device_initializer(log_prefix="PaddleOCRVLIntegrationTest")
     def setUp(self):
