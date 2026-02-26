@@ -29,7 +29,7 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         cls.tmpdir = tempfile.mkdtemp()
 
         processor = Qwen3OmniMoeProcessor.from_pretrained(
-            "Qwen/Qwen3-Omni-30B-A3B-Instruct", download_hub="modelscope"
+            "PaddleFormers/tiny-random-qwen3omni", download_hub="aistudio"
         )
 
         processor.save_pretrained(cls.tmpdir)
@@ -39,6 +39,9 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     @gpu_device_initializer(log_prefix="Qwen3_Omni_ProcessorTest", gpu_id=0)
     def setUp(self):
         pass
+
+    def get_tokenizer(self, **kwargs):
+        return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).tokenizer
 
     def get_image_processor(self, **kwargs):
         return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).image_processor
