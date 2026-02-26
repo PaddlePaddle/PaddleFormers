@@ -330,7 +330,3 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         image_input = self.prepare_image_inputs()
         inputs = processor(text=input_str, images=image_input, return_tensors="pd")
         self.assertEqual(inputs[self.images_input_name].shape[0], 4)
-
-
-if __name__ == "__main__":
-    unittest.main()
