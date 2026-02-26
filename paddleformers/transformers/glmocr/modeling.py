@@ -31,37 +31,37 @@ import os
 import numpy as np
 import paddle
 
-# def _to_np_pd(v):
-#     if v is None:
-#         return None
-#     if isinstance(v, paddle.Tensor):
-#         v = v.detach()
-#         if v.dtype == paddle.bfloat16:
-#             v = v.astype("float32")
-#         return v.cpu().numpy()
-#     return v  # 可能是 numpy 或 python 标量
+def _to_np_pd(v):
+    if v is None:
+        return None
+    if isinstance(v, paddle.Tensor):
+        v = v.detach()
+        if v.dtype == paddle.bfloat16:
+            v = v.astype("float32")
+        return v.cpu().numpy()
+    return v  # 可能是 numpy 或 python 标量
 
-# def save_any_pd(save_dir: str, name: str, v):
-#     os.makedirs(save_dir, exist_ok=True)
+def save_any_pd(save_dir: str, name: str, v):
+    os.makedirs(save_dir, exist_ok=True)
 
-#     # 1) list/tuple：逐个保存
-#     if isinstance(v, (list, tuple)):
-#         # 额外保存一个“长度”，方便对齐
-#         np.save(os.path.join(save_dir, f"{name}_len.npy"), np.array([len(v)], dtype=np.int64))
-#         for i, item in enumerate(v):
-#             arr = _to_np_pd(item)
-#             if arr is None:
-#                 continue
-#             np.save(os.path.join(save_dir, f"{name}_{i:03d}.npy"), arr)
-#         return
+    # 1) list/tuple：逐个保存
+    if isinstance(v, (list, tuple)):
+        # 额外保存一个“长度”，方便对齐
+        np.save(os.path.join(save_dir, f"{name}_len.npy"), np.array([len(v)], dtype=np.int64))
+        for i, item in enumerate(v):
+            arr = _to_np_pd(item)
+            if arr is None:
+                continue
+            np.save(os.path.join(save_dir, f"{name}_{i:03d}.npy"), arr)
+        return
 
-#     # 2) 单个 tensor/array
-#     arr = _to_np_pd(v)
-#     if arr is None:
-#         # 保存一个标记文件，避免你以为没跑到
-#         np.save(os.path.join(save_dir, f"{name}_is_none.npy"), np.array([1], dtype=np.int8))
-#         return
-#     np.save(os.path.join(save_dir, f"{name}.npy"), arr)
+    # 2) 单个 tensor/array
+    arr = _to_np_pd(v)
+    if arr is None:
+        # 保存一个标记文件，避免你以为没跑到
+        np.save(os.path.join(save_dir, f"{name}_is_none.npy"), np.array([1], dtype=np.int8))
+        return
+    np.save(os.path.join(save_dir, f"{name}.npy"), arr)
 
 class GlmOcrRMSNorm(nn.Layer):
     def __init__(self, hidden_size, eps=1e-6):
@@ -1614,7 +1614,7 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
             cache_position=cache_position,
             **kwargs,
         )
-        # save_dir = "/home/work/zkx_test/glmocr_debug"
+        save_dir = "/home/work/zkx_test/glmocr_debug"
 
         hidden_states = outputs[0]
         # save_any_pd(save_dir, f"pd_generation_outputs_last_hidden_state", hidden_states)
@@ -1625,7 +1625,7 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
         else:
             slice_indices = logits_to_keep
         logits = self.lm_head(hidden_states[:, slice_indices, :])
-        # save_any_pd(save_dir, f"pd_generation_outputs_logits", logits)
+        save_any_pd(save_dir, f"pd_generation_outputs_logits_1", logits)
 
         loss = None
         if labels is not None:
