@@ -206,14 +206,15 @@ def get_deterministic_inputs(config, float32_switch = False):
     feature_attention_mask = paddle.ones([batch_size, feat_seq_length], dtype="int64").to(input_ids.place)
                                                                                                                     
     inputs_dict = {                                                                                                  
-        "input_ids": input_ids,                                                                                      
-        "attention_mask": attention_mask,                                                                            
-        "pixel_values": pixel_values,                                                                                
-        "image_grid_thw": pixel_grid_thw,                                                                            
-        "pixel_values_videos": pixel_values_videos,                                                                  
-        "video_grid_thw": video_grid_thw,                                                                            
-        "input_features": input_features,                                                                            
-        "feature_attention_mask": feature_attention_mask,                                                            
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "pixel_values": pixel_values,
+        "image_grid_thw": pixel_grid_thw,
+        "pixel_values_videos": pixel_values_videos,
+        "video_grid_thw": video_grid_thw,
+        "input_features": input_features,
+        "feature_attention_mask": feature_attention_mask,
+        "labels": input_ids.clone(),
     }                                                                                                                
                                                                                                                     
     # 打印输入信息                                                                                                   
@@ -325,7 +326,7 @@ def test_thinker_text_model():
 
     config = Qwen3OmniMoeThinkerConfig.from_pretrained(MODEL_PATH)
     config.dtype = "float32" if float32_switch else "bfloat16"
-    config.text_config.num_hidden_layers = 4
+    config.text_config.num_hidden_layers = 8
     config.text_config._attn_implementation = "eager"
     config.vision_config._attn_implementation = "eager"
     config.audio_config._attn_implementation = "eager"
@@ -349,12 +350,13 @@ def test_thinker_text_model():
     target_input_keys = (
         "input_ids",
         "attention_mask",
-        # "input_features",
-        # "feature_attention_mask",
-        # "image_grid_thw",
-        # "pixel_values",
-        # "pixel_values_videos",
-        # "video_grid_thw",
+        "input_features",
+        "feature_attention_mask",
+        "image_grid_thw",
+        "pixel_values",
+        "pixel_values_videos",
+        "video_grid_thw",
+        "labels",
     )
     inputs_dict = {k: v for k, v in origin_inputs_dict.items() if k in target_input_keys}
     for key, value in inputs_dict.items():                                                                           
@@ -365,7 +367,8 @@ def test_thinker_text_model():
 
     print("output_ids: ", type(output_ids), output_ids)
 
-    compare_and_save(output_ids.logits, "output_ids", True, False)
+    compare_and_save(output_ids.logits, "output_ids.logits", True, False)
+    compare_and_save(output_ids.loss[0], "output_ids.loss", True, False)
 
 
 def test_thinker_with_dumped_inputs(dumped_input_path=None):

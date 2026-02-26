@@ -90,6 +90,12 @@ def hack_with_torch_file(name: str, dtype, place):
     pd_data = paddle.to_tensor(np_data).astype(dtype=dtype).to(place)
     return pd_data
 
+
+mock_by_torch_topk = True
+mock_by_torch_layernorm = True
+mock_by_torch_inv_freq = True
+mock_by_torch_position_embedding = True
+
 # TODO torch.nn.utils.rnn.pad_sequence 暂无paddle实现，写一个替换
 def pad_sequence(
     sequences: Union[list[paddle.Tensor], paddle.Tensor],
@@ -174,11 +180,22 @@ class SinusoidsPositionEmbedding(nn.Layer):
         if channels % 2 != 0:
             raise ValueError("SinusoidsPositionEmbedding needs even channels input")
         log_timescale_increment = np.log(max_timescale) / (channels // 2 - 1)
-        inv_timescales = paddle.exp(-log_timescale_increment * paddle.arange(channels // 2).float())
-        scaled_time = paddle.arange(length).astype(inv_timescales.dtype)[:, np.newaxis] * inv_timescales[np.newaxis, :]
+        # need mock or hack
+        if mock_by_torch_position_embedding:
+            import torch
+            torch_inv_timescales = torch.exp(-log_timescale_increment * torch.arange(channels // 2).float())
+            torch_scaled_time = torch.arange(length)[:, np.newaxis] * torch_inv_timescales[np.newaxis, :]
+            torch_positional_embedding = torch.cat([torch.sin(torch_scaled_time), torch.cos(torch_scaled_time)], dim=1)
+            np_positional_embedding = torch_positional_embedding.float().detach().numpy()
+            positional_embedding = paddle.to_tensor(np_positional_embedding, dtype="float32").cuda()
+        else:
+            inv_timescales = paddle.exp(-log_timescale_increment * paddle.arange(channels // 2).float())
+            scaled_time = paddle.arange(length).astype(inv_timescales.dtype)[:, np.newaxis] * inv_timescales[np.newaxis, :]
+            positional_embedding = paddle.cat([paddle.sin(scaled_time), paddle.cos(scaled_time)], dim=1)
+
         self.register_buffer(
             "positional_embedding",
-            paddle.cat([paddle.sin(scaled_time), paddle.cos(scaled_time)], dim=1),
+            positional_embedding,
             persistent=False,
         )
 
@@ -237,11 +254,46 @@ class Qwen3OmniMoePreTrainedModel(PretrainedModel):
             )
         elif isinstance(module, SinusoidsPositionEmbedding):
             log_timescale_increment = np.log(module.max_timescale) / (module.channels // 2 - 1)
-            inv_timescales = paddle.exp(-log_timescale_increment * paddle.arange(module.channels // 2).float())
-            scaled_time = paddle.arange(module.length).astype(inv_timescales.dtype)[:, np.newaxis] * inv_timescales[np.newaxis, :]
-            module.positional_embedding.set_value(paddle.cat([paddle.sin(scaled_time), paddle.cos(scaled_time)], dim=1))
+            if mock_by_torch_position_embedding:
+                import torch
+                torch_inv_timescales = torch.exp(-log_timescale_increment * torch.arange(module.channels // 2).float())
+                np_inv_timescales = torch_inv_timescales.float().detach().numpy()
+                inv_timescales = paddle.to_tensor(np_inv_timescales, dtype="float32")
+            else:
+                inv_timescales = paddle.exp(-log_timescale_increment * paddle.arange(module.channels // 2).float())
+
+            if not mock_by_torch_position_embedding:
+                import torch
+                np_inv_timescales = inv_timescales.astype("float32").detach().numpy()
+                torch_inv_timescales = torch.from_numpy(np_inv_timescales).to(torch.float)
+                torch_scaled_time = torch.arange(module.length)[:, np.newaxis] * torch_inv_timescales[np.newaxis, :]
+                np_scaled_time = torch_scaled_time.float().detach().numpy()
+                scaled_time = paddle.to_tensor(np_scaled_time, dtype=inv_timescales.dtype)
+            else:
+                scaled_time = paddle.arange(module.length).astype(inv_timescales.dtype)[:, np.newaxis] * inv_timescales[np.newaxis, :]
+                
+            if mock_by_torch_position_embedding:
+                import torch
+                # torch_inv_timescales = torch.exp(-log_timescale_increment * torch.arange(module.channels // 2).float())
+                # np_inv_timescales = inv_timescales.astype("float32").detach().numpy()
+                # torch_inv_timescales = torch.from_numpy(np_inv_timescales).to(torch.float)
+                # torch_scaled_time = torch.arange(module.length)[:, np.newaxis] * torch_inv_timescales[np.newaxis, :]
+                np_scaled_time = scaled_time.astype("float32").detach().numpy()
+                torch_scaled_time = torch.from_numpy(np_scaled_time).to(torch.float)
+                torch_positional_embedding = torch.cat([torch.sin(torch_scaled_time), torch.cos(torch_scaled_time)], dim=1)
+                module.positional_embedding.set_value(paddle.to_tensor(torch_positional_embedding.numpy(), dtype="float32"))
+            else:
+                # inv_timescales = paddle.exp(-log_timescale_increment * paddle.arange(module.channels // 2).float())
+                # scaled_time = paddle.arange(module.length).astype(inv_timescales.dtype)[:, np.newaxis] * inv_timescales[np.newaxis, :]
+                module.positional_embedding.set_value(paddle.cat([paddle.sin(scaled_time), paddle.cos(scaled_time)], dim=1))
         elif isinstance(module, Qwen3OmniMoeVisionRotaryEmbedding):
-            inv_freq = 1.0 / (module.theta ** (paddle.arange(0, module.dim, 2, dtype=paddle.float) / module.dim))
+            if mock_by_torch_inv_freq:
+                import torch
+                torch_inv_freq = 1.0 / (module.theta ** (torch.arange(0, module.dim, 2, dtype=torch.float) / module.dim))
+                np_inv_freq = torch_inv_freq.float().detach().cpu().numpy()
+                inv_freq = paddle.to_tensor(np_inv_freq, dtype=paddle.float)
+            else:
+                inv_freq = 1.0 / (module.theta ** (paddle.arange(0, module.dim, 2, dtype=paddle.float) / module.dim))
             module.inv_freq.set_value(inv_freq)
 
     @classmethod
@@ -306,14 +358,11 @@ class Qwen3OmniMoePreTrainedModel(PretrainedModel):
             ]
 
         for x in ("attn.qkv", "attn.proj", "mlp.linear_fc1", "mlp.linear_fc2"):
-            aoa_config["aoa_statements"] += [
-                f"thinker.visual.blocks.{layer_id}.{x}.weight^T -> {visual_prefix}blocks.{layer_id}.{x}.weight"
-                for layer_id in range(config.vision_config.depth)
-            ]
-            aoa_config["aoa_statements"] += [
-                f"thinker.visual.blocks.{layer_id}.{x}.bias -> {visual_prefix}blocks.{layer_id}.{x}.bias"
-                for layer_id in range(config.vision_config.depth)
-            ]
+            for layer_id in range(config.vision_config.depth):
+                aoa_config["aoa_statements"] += [
+                    f"thinker.visual.blocks.{layer_id}.{x}.weight^T -> {visual_prefix}blocks.{layer_id}.{x}.weight",
+                    f"thinker.visual.blocks.{layer_id}.{x}.bias -> {visual_prefix}blocks.{layer_id}.{x}.bias",
+                ]
 
         # model
         aoa_config["aoa_statements"] += [
@@ -364,9 +413,119 @@ class Qwen3OmniMoePreTrainedModel(PretrainedModel):
     
     @classmethod
     def _gen_inv_aoa_config(cls, config: Qwen3OmniMoeConfig):
+        mapping = cls._checkpoint_conversion_mapping
+        llm_target = next((v for v in mapping.values() if "model" in v), "model")
+        visual_target = next((v for v in mapping.values() if "visual" in v), "visual")
+        audio_target = next((v for v in mapping.values() if "audio_tower" in v), "audio_tower")
+        llm_prefix = f"{llm_target}." if not llm_target.endswith(".") else llm_target
+        visual_prefix = f"{visual_target}." if not visual_target.endswith(".") else visual_target
+        audio_prefix = f"{audio_target}." if not audio_target.endswith(".") else audio_target
+
+        # audio_tower
         aoa_config = {
-            "aoa_statements": []
+            "aoa_statements": [
+                f"{audio_prefix}conv_out.weight^T -> thinker.audio_tower.conv_out.weight"
+            ]
         }
+        for x in ("self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.out_proj", "fc1", "fc2"):
+            aoa_config["aoa_statements"] += [
+                f"{audio_prefix}layers.$LAYER_ID.{x}.weight^T -> thinker.audio_tower.layers.$LAYER_ID.{x}.weight",
+                f"{audio_prefix}layers.$LAYER_ID.{x}.bias -> thinker.audio_tower.layers.$LAYER_ID.{x}.bias",
+            ]
+        for x in ("self_attn_layer_norm", "final_layer_norm"):
+            aoa_config["aoa_statements"] += [
+                f"{audio_prefix}layers.$LAYER_ID.{x}.weight -> thinker.audio_tower.layers.$LAYER_ID.{x}.weight",
+                f"{audio_prefix}layers.$LAYER_ID.{x}.bias -> thinker.audio_tower.layers.$LAYER_ID.{x}.bias",
+            ]
+        for x in ("ln_post", "conv2d1", "conv2d2", "conv2d3", "proj1", "proj2"):
+            if x in ("proj1", "proj2"):
+                aoa_config["aoa_statements"] += [
+                    f"{audio_prefix}{x}.weight^T -> thinker.audio_tower.{x}.weight",
+                    f"{audio_prefix}{x}.bias -> thinker.audio_tower.{x}.bias",
+                ]
+            else:
+                aoa_config["aoa_statements"] += [
+                    f"{audio_prefix}{x}.weight -> thinker.audio_tower.{x}.weight",
+                    f"{audio_prefix}{x}.bias -> thinker.audio_tower.{x}.bias",
+                ]
+        
+        # visual
+        aoa_config["aoa_statements"] += [
+            f"{visual_prefix}merger.ln_q.weight -> thinker.visual.merger.ln_q.weight",
+            f"{visual_prefix}merger.ln_q.bias -> thinker.visual.merger.ln_q.bias",
+            f"{visual_prefix}merger_list.$LAYER_ID.ln_q.weight -> thinker.visual.merger_list.$LAYER_ID.ln_q.weight",
+            f"{visual_prefix}merger_list.$LAYER_ID.ln_q.bias -> thinker.visual.merger_list.$LAYER_ID.ln_q.bias",
+            f"{visual_prefix}patch_embed.proj.weight -> thinker.visual.patch_embed.proj.weight",
+            f"{visual_prefix}patch_embed.proj.bias -> thinker.visual.patch_embed.proj.bias",
+            f"{visual_prefix}pos_embed.weight -> thinker.visual.pos_embed.weight",
+            f"{visual_prefix}blocks.$LAYER_ID.norm1.weight -> thinker.visual.blocks.$LAYER_ID.norm1.weight",
+            f"{visual_prefix}blocks.$LAYER_ID.norm1.bias -> thinker.visual.blocks.$LAYER_ID.norm1.bias",
+            f"{visual_prefix}blocks.$LAYER_ID.norm2.weight -> thinker.visual.blocks.$LAYER_ID.norm2.weight",
+            f"{visual_prefix}blocks.$LAYER_ID.norm2.bias -> thinker.visual.blocks.$LAYER_ID.norm2.bias",
+        ]
+        for x in ("mlp.0", "mlp.2"):
+            aoa_config["aoa_statements"] += [
+                f"{visual_prefix}merger.{x}.weight^T -> thinker.visual.merger.{x}.weight",
+                f"{visual_prefix}merger.{x}.bias -> thinker.visual.merger.{x}.bias",
+                f"{visual_prefix}merger_list.$LAYER_ID.{x}.weight^T -> thinker.visual.merger_list.$LAYER_ID.{x}.weight",
+                f"{visual_prefix}merger_list.$LAYER_ID.{x}.bias-> thinker.visual.merger_list.$LAYER_ID.{x}.bias",
+            ]
+        for x in ("attn.qkv", "attn.proj", "mlp.linear_fc1", "mlp.linear_fc2"):
+            for layer_id in range(config.vision_config.depth):
+                aoa_config["aoa_statements"] += [
+                    f"{visual_prefix}blocks.{layer_id}.{x}.weight^T -> thinker.visual.blocks.{layer_id}.{x}.weight",
+                    f"{visual_prefix}blocks.{layer_id}.{x}.bias -> thinker.visual.blocks.{layer_id}.{x}.bias",
+                ]
+
+        # model
+        aoa_config["aoa_statements"] += [
+            f"{llm_prefix}norm.weight -> thinker.model.norm.weight",
+            f"{llm_prefix}embed_tokens.weight -> thinker.model.embed_tokens.weight",
+            f"{llm_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> thinker.model.layers.$LAYER_ID.self_attn.q_norm.weight",
+            f"{llm_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> thinker.model.layers.$LAYER_ID.self_attn.k_norm.weight",
+            f"{llm_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> thinker.model.layers.$LAYER_ID.mlp.gate.weight",
+            f"{llm_prefix}layers.$LAYER_ID.input_layernorm.weight -> thinker.model.layers.$LAYER_ID.input_layernorm.weight",
+            f"{llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> thinker.model.layers.$LAYER_ID.post_attention_layernorm.weight",
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> thinker.model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+            for x in ("q", "k", "v", "o")
+        ]
+        if config.text_config.attention_bias:
+            aoa_config["aoa_statements"] += [
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.{x}_proj.bias -> thinker.model.layers.$LAYER_ID.self_attn.{x}_proj.bias"
+                for x in ("q", "k", "v", "o")
+            ]
+
+        for layer_id in range(config.text_config.num_hidden_layers):
+            src_prefix = f"{llm_prefix}layers.{layer_id}"
+            tgt_prefix = f"thinker.model.layers.{layer_id}"
+            ep_weight1 = []
+            ep_weight2 = []
+            for expert_id in range(config.text_config.num_experts):
+                ep_weight1.append(f"{tgt_prefix}.mlp.experts.{expert_id}.gate_up_proj.weight")
+                ep_weight2.append(f"{tgt_prefix}.mlp.experts.{expert_id}.down_proj.weight")
+            group1 = ",".join(ep_weight1)
+            group2 = ",".join(ep_weight2)
+            aoa_statements += [
+                f"{src_prefix}.mlp.experts.gate_up_proj -> {group1}, axis=0"
+                f"{src_prefix}.mlp.experts.down_proj -> {group2}, axis=0"
+            ]
+        aoa_config["aoa_statements"] += [
+            f"thinker.model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_up_proj.weight -> thinker.model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, thinker.model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
+        ]
+        aoa_config["aoa_statements"] += [
+            f"thinker.model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T -> thinker.model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight",
+            f"thinker.model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> thinker.model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight",
+            f"thinker.model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> thinker.model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
+        ]
+
+        # lm_head
+        if config.text_config.tie_word_embeddings:
+            aoa_config["aoa_statements"] += ["lm_head.weight -> thinker.embed_tokens.weight"]
+        else:
+            aoa_config["aoa_statements"] += ["lm_head.weight -> thinker.lm_head.weight"]
+
         return aoa_config
 
 
@@ -925,7 +1084,24 @@ class Qwen3OmniMoeAudioEncoderLayer(nn.Layer):
                 returned tensors for more detail.
         """
         residual = hidden_states
-        hidden_states = self.self_attn_layer_norm(hidden_states)
+
+        if mock_by_torch_layernorm:
+            import torch
+            self_attn_layer_norm = torch.nn.LayerNorm(self.embed_dim).cuda()
+            self_attn_layer_norm.weight.data = torch.from_numpy(
+                self.self_attn_layer_norm.weight.numpy()
+            ).cuda()
+            self_attn_layer_norm.bias.data = torch.from_numpy(
+                self.self_attn_layer_norm.bias.numpy()
+            ).cuda()
+            np_hidden_states = hidden_states.astype("float32").detach().cpu().numpy()
+            torch_hidden_states = torch.from_numpy(np_hidden_states).to(torch.float).to("cuda")
+            torch_hidden_states = self_attn_layer_norm(torch_hidden_states)
+            np_hidden_states = torch_hidden_states.float().detach().cpu().numpy()
+            hidden_states = paddle.to_tensor(np_hidden_states, dtype="float32").cuda()
+        else:
+            hidden_states = self.self_attn_layer_norm(hidden_states)
+
         hidden_states = self.self_attn(
             hidden_states=hidden_states,
             cu_seqlens=cu_seqlens,
@@ -934,7 +1110,24 @@ class Qwen3OmniMoeAudioEncoderLayer(nn.Layer):
         )
         hidden_states = residual + hidden_states
         residual = hidden_states
-        hidden_states = self.final_layer_norm(hidden_states)
+
+        if mock_by_torch_layernorm:
+            import torch
+            final_layer_norm = torch.nn.LayerNorm(self.embed_dim).cuda()
+            final_layer_norm.weight.data = torch.from_numpy(
+                self.final_layer_norm.weight.numpy()
+            ).cuda()
+            final_layer_norm.bias.data = torch.from_numpy(
+                self.final_layer_norm.bias.numpy()
+            ).cuda()
+            np_hidden_states = hidden_states.astype("float32").detach().cpu().numpy()
+            torch_hidden_states = torch.from_numpy(np_hidden_states).to(torch.float).to("cuda")
+            torch_hidden_states = final_layer_norm(torch_hidden_states)
+            np_hidden_states = torch_hidden_states.float().detach().cpu().numpy()
+            hidden_states = paddle.to_tensor(np_hidden_states, dtype="float32").cuda()
+        else:
+            hidden_states = self.final_layer_norm(hidden_states)
+
         hidden_states = self.fc1(hidden_states)
         hidden_states = self.activation_fn(hidden_states)
         hidden_states = self.fc2(hidden_states)
@@ -1077,14 +1270,6 @@ class Qwen3OmniMoeAudioEncoder(Qwen3OmniMoePreTrainedModel):
         # reshape_padded_embed = reshape_padded_embed.reshape([b, t, -1])
         padded_embed = self.conv_out(padded_embed.transpose([0, 3, 1, 2]).contiguous().reshape([b, t, -1]))
         
-        # need to mock or hack
-        # self.positional_embedding.positional_embedding = (
-        #     hack_with_torch_file(
-        #         "positional_embedding_raw",
-        #         self.positional_embedding.positional_embedding.dtype,
-        #         self.positional_embedding.positional_embedding.place
-        #     )
-        # )
 
         positional_embedding = (
             self.positional_embedding.positional_embedding[: padded_embed.shape[1], :]
@@ -1110,7 +1295,23 @@ class Qwen3OmniMoeAudioEncoder(Qwen3OmniMoePreTrainedModel):
 
             hidden_states = layer_outputs[0]
 
-        hidden_states = self.ln_post(hidden_states)
+        if mock_by_torch_layernorm:
+            import torch
+            ln_post = torch.nn.LayerNorm(self.config.d_model).cuda()
+            ln_post.weight.data = torch.from_numpy(
+                self.ln_post.weight.numpy()
+            ).cuda()
+            ln_post.bias.data = torch.from_numpy(
+                self.ln_post.bias.numpy()
+            ).cuda()
+            np_hidden_states = hidden_states.astype("float32").detach().cpu().numpy()
+            torch_hidden_states = torch.from_numpy(np_hidden_states).to(torch.float).to("cuda")
+            torch_hidden_states = ln_post(torch_hidden_states)
+            np_hidden_states = torch_hidden_states.float().detach().cpu().numpy()
+            hidden_states = paddle.to_tensor(np_hidden_states, dtype="float32").cuda()
+        else:
+            hidden_states = self.ln_post(hidden_states)
+        
         hidden_states = self.proj1(hidden_states)
         hidden_states = self.act(hidden_states)
         hidden_states = self.proj2(hidden_states)
@@ -1264,7 +1465,8 @@ class Qwen3OmniMoeVisionPatchMerger(nn.Layer):
         super().__init__()
         self.hidden_size = config.hidden_size * (config.spatial_merge_size**2)
         self.use_postshuffle_norm = use_postshuffle_norm
-        self.ln_q = nn.LayerNorm(self.hidden_size if use_postshuffle_norm else config.hidden_size, eps=1e-6)
+        self.norm_dim = self.hidden_size if use_postshuffle_norm else config.hidden_size
+        self.ln_q = nn.LayerNorm(self.norm_dim, eps=1e-6)
         self.mlp = nn.LayerList(
             [
                 nn.Linear(self.hidden_size, self.hidden_size),
@@ -1274,9 +1476,29 @@ class Qwen3OmniMoeVisionPatchMerger(nn.Layer):
         )
 
     def forward(self, hidden: paddle.Tensor) -> paddle.Tensor:
-        hidden = self.ln_q(hidden.view(-1, self.hidden_size) if self.use_postshuffle_norm else hidden).view(
-            -1, self.hidden_size
-        )
+        ln_q_input = hidden.view(-1, self.hidden_size) if self.use_postshuffle_norm else hidden
+        if mock_by_torch_layernorm:
+            import torch
+            ln_q = torch.nn.LayerNorm(self.norm_dim, eps=1e-6).cuda()
+            ln_q.weight.data = torch.from_numpy(
+                self.ln_q.weight.numpy()
+            ).cuda()
+            ln_q.bias.data = torch.from_numpy(
+                self.ln_q.bias.numpy()
+            ).cuda()
+
+            np_ln_q_input = ln_q_input.astype("float32").detach().cpu().numpy()
+            torch_ln_q_input = torch.from_numpy(np_ln_q_input).to(torch.float).to("cuda")
+            torch_hidden = ln_q(torch_ln_q_input).view(
+                -1, self.hidden_size
+            )
+            np_hidden = torch_hidden.float().detach().cpu().numpy()
+            hidden = paddle.to_tensor(np_hidden, dtype="float32").cuda()
+        else:
+            hidden = self.ln_q(ln_q_input).view(
+                -1, self.hidden_size
+            )
+
         for layer in self.mlp:
             hidden = layer(hidden)
         return hidden
@@ -1289,7 +1511,13 @@ class Qwen3OmniMoeVisionRotaryEmbedding(nn.Layer):
         super().__init__()
         self.dim = dim
         self.theta = theta
-        inv_freq = 1.0 / (theta ** (paddle.arange(0, dim, 2, dtype=paddle.float) / dim))
+        if mock_by_torch_inv_freq:
+            import torch
+            torch_inv_freq = 1.0 / (theta ** (torch.arange(0, dim, 2, dtype=torch.float) / dim))
+            np_inv_freq = torch_inv_freq.float().detach().cpu().numpy()
+            inv_freq = paddle.to_tensor(np_inv_freq, dtype=paddle.float)
+        else:
+            inv_freq = 1.0 / (theta ** (paddle.arange(0, dim, 2, dtype=paddle.float) / dim))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
     def forward(self, seqlen: int) -> paddle.Tensor:
@@ -1333,6 +1561,7 @@ class Qwen3OmniMoeVisionMLP(nn.Layer):
 class Qwen3OmniMoeVisionBlock(nn.Layer):
     def __init__(self, config, attn_implementation: str = "sdpa") -> None:
         super().__init__()
+        self.config = config
         self.norm1 = nn.LayerNorm(config.hidden_size, eps=1e-6)
         self.norm2 = nn.LayerNorm(config.hidden_size, eps=1e-6)
         self.attn = Qwen3OmniMoeVisionAttention(config=config)
@@ -1346,14 +1575,50 @@ class Qwen3OmniMoeVisionBlock(nn.Layer):
         position_embeddings: Optional[tuple[paddle.Tensor, paddle.Tensor]] = None,
         **kwargs,
     ) -> paddle.Tensor:
+        if mock_by_torch_layernorm:
+            import torch
+            norm1 = torch.nn.LayerNorm(self.config.hidden_size, eps=1e-6).cuda()
+            norm1.weight.data = torch.from_numpy(
+                self.norm1.weight.numpy()
+            ).cuda()
+            norm1.bias.data = torch.from_numpy(
+                self.norm1.bias.numpy()
+            ).cuda()
+            np_hidden_states = hidden_states.astype("float32").detach().cpu().numpy()
+            torch_hidden_states = torch.from_numpy(np_hidden_states).to(torch.float).to("cuda")
+            torch_hidden_states = norm1(torch_hidden_states)
+            np_hidden_states = torch_hidden_states.float().detach().cpu().numpy()
+            norm1_result = paddle.to_tensor(np_hidden_states, dtype="float32").cuda()
+        else:
+            norm1_result = self.norm1(hidden_states)
+
         hidden_states = hidden_states + self.attn(
-            self.norm1(hidden_states),
+            norm1_result,
             cu_seqlens=cu_seqlens,
             rotary_pos_emb=rotary_pos_emb,
             position_embeddings=position_embeddings,
             **kwargs,
         )
-        hidden_states = hidden_states + self.mlp(self.norm2(hidden_states))
+
+        if mock_by_torch_layernorm:
+            import torch
+            norm2 = torch.nn.LayerNorm(self.config.hidden_size, eps=1e-6).cuda()
+            norm2.weight.data = torch.from_numpy(
+                self.norm2.weight.numpy()
+            ).cuda()
+            norm2.bias.data = torch.from_numpy(
+                self.norm2.bias.numpy()
+            ).cuda()
+            np_hidden_states = hidden_states.astype("float32").detach().cpu().numpy()
+            torch_hidden_states = torch.from_numpy(np_hidden_states).to(torch.float).to("cuda")
+            torch_hidden_states = norm2(torch_hidden_states)
+            np_hidden_states = torch_hidden_states.float().detach().cpu().numpy()
+            norm2_result = paddle.to_tensor(np_hidden_states, dtype="float32").cuda()
+        else:
+            norm2_result = self.norm2(hidden_states)
+
+        hidden_states = hidden_states + self.mlp(norm2_result)
+        
         return hidden_states
 
 
@@ -1572,7 +1837,17 @@ class Qwen3OmniMoeVisionEncoder(Qwen3OmniMoePreTrainedModel):
         hidden_states = hidden_states.reshape(seq_len, -1)
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
         emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        position_embeddings = (emb.cos(), emb.sin())
+
+        if mock_by_torch_position_embedding:
+            import torch
+            np_emb = emb.astype("float32").detach().cpu().numpy()
+            torch_emb = torch.from_numpy(np_emb).to(torch.float).to("cuda")
+            torch_emb_cos, torch_emb_sin = torch_emb.cos(), torch_emb.sin()
+            np_emb_cos, np_emb_sin = torch_emb_cos.float().detach().cpu().numpy(), torch_emb_sin.float().detach().cpu().numpy()
+            emb_cos, emb_sin = paddle.to_tensor(np_emb_cos, dtype=emb.dtype).cuda(), paddle.to_tensor(np_emb_sin, dtype=emb.dtype).cuda()
+            position_embeddings = (emb_cos, emb_sin)
+        else:
+            position_embeddings = (emb.cos(), emb.sin())
 
         cu_seqlens = paddle.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
             dim=0,
@@ -1659,9 +1934,8 @@ class Qwen3OmniMoeThinkerTextRotaryEmbedding(nn.Layer):
         inv_freq = 1.0 / (
             base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32).to(device) / dim)
         )
-        # need to hack or mock
-        # inv_freq = hack_with_torch_file("inv_freq_in_init", inv_freq.dtype, inv_freq.place)
-        if False:
+        # need to mock or hack
+        if mock_by_torch_inv_freq:
             import torch
             torch_inv_freq = 1.0 / (
                     base ** (torch.arange(0, dim, 2, dtype=torch.int64).to(device=device, dtype=torch.float) / dim)
@@ -1793,7 +2067,7 @@ class Qwen3OmniMoeThinkerTextTopKRouter(nn.Layer):
         hidden_states = hidden_states.reshape(-1, self.hidden_dim)
         router_logits = F.linear(hidden_states, self.weight)  # (seq_len, num_experts)
         router_logits = nn.functional.softmax(router_logits, dtype=paddle.float, dim=-1)
-        if False:
+        if mock_by_torch_topk:
             # use torch to mock
             import torch
             np_router_logits = router_logits.astype("float32").detach().cpu().numpy()
@@ -1805,7 +2079,7 @@ class Qwen3OmniMoeThinkerTextTopKRouter(nn.Layer):
             router_indices = paddle.to_tensor(np_router_indices, dtype="int64").cuda()
         else:
             router_top_value, router_indices = paddle.topk(router_logits, self.top_k, dim=-1)  # (seq_len, top_k)
-            
+
         if self.norm_topk_prob:
             router_top_value /= router_top_value.sum(dim=-1, keepdim=True)
         router_top_value = router_top_value.to(router_logits.dtype)
@@ -2742,7 +3016,12 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
 
         loss = None
         if labels is not None:
-            loss = self.criterion(logits, labels)
+            # Shift labels for causal language modeling: token i predicts token i+1
+            # Pad labels at the end with ignore_index, then take labels[..., 1:]
+            shift_labels = paddle.nn.functional.pad(
+                labels, [0, 1], value=self.criterion.ignored_index
+            )[..., 1:]
+            loss = self.criterion(logits, shift_labels)
 
         aux_loss = None
         if output_router_logits:
