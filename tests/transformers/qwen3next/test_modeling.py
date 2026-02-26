@@ -305,9 +305,6 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
                 for k, v in model_state_2.items():
                     md52 = v._md5sum()
                     md51 = model_state_1[k]._md5sum()
-                    if k.endswith(".mlp.gate.weight"):
-                        md51 = model_state_1[k].cast("bfloat16")._md5sum()
-                        md52 = model_state_2[k].cast("bfloat16")._md5sum()
                     assert md51 == md52
 
 
