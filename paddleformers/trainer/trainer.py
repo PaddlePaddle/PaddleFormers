@@ -209,6 +209,7 @@ from .unified_checkpoint import UnifiedCheckpointHandler
 from .utils import reshard as reshard_util
 from .utils.async_save import AsyncSaver
 from .utils.ckpt_converter import CheckpointConverter
+from .utils.input_saver import InputSaver
 from .utils.reshard import SHARDING_STRATEGY_V1, split_opt_state
 from .utils.sharding_io import GroupGetter, to_device
 
@@ -3518,62 +3519,10 @@ class Trainer:
         else:
             labels = None
 
-        ################## Input Saving Debug Block ##################
-        import os
-
-        save_mode = os.getenv("FLAGS_save_inputs_mode", "").lower()  # "npz" for all, "npy" for selected fields
-        if save_mode in ("npz", "npy"):
-            save_dir = os.getenv("FLAGS_save_inputs_dir", f"./saved_inputs/pdformers/{save_mode}")
-            os.makedirs(save_dir, exist_ok=True)
-            current_step = self.state.global_step
-
-            def _to_numpy(value):
-                """Convert tensor/array to numpy array."""
-                if value is None:
-                    return None
-                # Handle paddle bfloat16
-                if hasattr(value, "dtype") and str(value.dtype) == "paddle.bfloat16":
-                    value = value.astype("float32")
-                if hasattr(value, "numpy"):  # paddle.Tensor
-                    return value.numpy()
-                elif isinstance(value, np.ndarray):
-                    return value
-                elif isinstance(value, (list, tuple)):
-                    try:
-                        return np.array(value)
-                    except:
-                        return None
-                return None
-
-            if save_mode == "npz":
-                # Save all inputs to a single npz file
-                dump_dict = {k: arr for k, v in inputs.items() if (arr := _to_numpy(v)) is not None}
-                np.savez(os.path.join(save_dir, f"inputs_step_{current_step}.npz"), **dump_dict)
-                logger.info(f"[Debug] Dumped all inputs to {save_dir}/inputs_step_{current_step}.npz")
-
-            elif save_mode == "npy":
-                # Save selected fields as separate npy files
-                fields_env = os.getenv(
-                    "FLAGS_save_inputs_fields",
-                    "input_ids, labels,position_ids, image_grid_thw, pixel_values, input_features",
-                )
-                fields_to_save = [f.strip() for f in fields_env.split(",")]
-                for field in fields_to_save:
-                    if field in inputs and inputs[field] is not None:
-                        try:
-                            if field == "pixel_values":
-                                bf16_tensor = inputs[field].cast(paddle.bfloat16)
-                                arr = bf16_tensor.numpy()
-                            else:
-                                arr = _to_numpy(inputs[field])
-                            if arr is not None:
-                                np.save(os.path.join(save_dir, f"{current_step}_{field}.npy"), arr)
-                        except Exception as e:
-                            logger.warning(f"[Debug] Failed to save {field}: {e}")
-                    else:
-                        logger.info(f"[Debug] Field {field} not found or is None.")
-                logger.info(f"[Debug] Saved step {current_step} fields to {save_dir}")
-        ################## End Input Saving Debug Block ##################
+        # Save inputs for debugging if enabled
+        if InputSaver.should_save():
+            saver = InputSaver()
+            saver.save_inputs(inputs, self.state.global_step)
 
         outputs = model(**inputs)
 
