@@ -206,7 +206,7 @@ class Glm4vImageProcessorFast(BaseImageProcessorFast):
                 patch_size,
             )
             # (grid_t, gh, gw, mh, mw, C, tp, ph, pw)
-            patches = patches.permute(0, 3, 6, 4, 7, 2, 1, 5, 8)
+            patches = patches.permute(0, 3, 6, 4, 7, 2, 1, 5, 8).contiguous()
 
             flatten_patches = patches.reshape(
                 [
