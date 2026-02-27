@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - develop
+      - release/*
 
 env:
   COMMIT_ID: ${{ github.sha }}
@@ -61,9 +62,7 @@ jobs:
           docker exec -t $container_name /bin/bash -c '
           rm -rf * .[^.]*
           echo "Downloading PaddleFormers.tar"
-          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
-          echo "Extracting PaddleFormers.tar"
-          tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+          git clone -b release/1.1 --depth=20 https://github.com/PaddlePaddle/PaddleFormers.git
           source $work_dir/../../../proxy
           cd PaddleFormers
           git config --global user.name "PaddleCE"
