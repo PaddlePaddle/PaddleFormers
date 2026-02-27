@@ -81,7 +81,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     num_nextn_predict_layers: Optional[int] = 1
     mtp_loss_scaling_factor: Optional[
         float
-    ] = 0.3  # https://arxiv.org/pdf/2508.06471 0.3 for the first 15T tokens, 0.1 for the remaining tokens.
+    ] = 0.1  # https://arxiv.org/pdf/2508.06471 0.3 for the first 15T tokens, 0.1 for the remaining tokens.
 
 
 @dataclass
@@ -91,7 +91,7 @@ class GLM45ModelProvider355B(GLMMoEModelProvider):
     """
 
     num_hidden_layers: int = 92
-    moe_num_experts: int = 160
+    n_routed_experts: int = 160
     hidden_size: int = 5120
     intermediate_size: int = 12288
     moe_layer_freq: Union[int, List[int]] = field(

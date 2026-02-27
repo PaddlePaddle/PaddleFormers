@@ -15,7 +15,7 @@ ignore_data_skip: 0
 # model
 model_name_or_path: model_configs/ERNIE-4.5-300B-A47B/
 tokenizer_name_or_path: examples/experiments/ernie_pretrain/ernie/src/tokenizers/tokenizer_model
-moe_use_aux_free_update_coef: 0.001
+moe_router_bias_update_rate: 0.001
 moe_with_send_router_loss: False
 moe_group: ep
 use_moe: true
@@ -94,7 +94,7 @@ enable_optimizer_timer: False
 gc_interval: 100000
 
 ernie_model_config:
-    multi_token_pred_depth: 1
+    num_nextn_predict_layers: 1
     use_ep_comm_overlap: false
     use_combine_before_a2a: true
     use_rms_qkv_recompute: true

@@ -1309,12 +1309,6 @@ class TrainingArguments:
             "help": "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines)."
         },
     )
-    mtp_loss_scaling_factor: float = field(
-        default=1.0,
-        metadata={
-            "help": "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues)."
-        },
-    )
     dp_allreduce_avg_in_gradinent_scale: bool = field(
         default=False,
         metadata={

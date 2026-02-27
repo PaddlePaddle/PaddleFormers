@@ -221,7 +221,7 @@ class PreTrainingArguments(TrainingArguments):
         default=False,
         metadata={"help": "print global grad-norm"},
     )
-    multi_token_pred_depth: Optional[int] = field(
+    num_nextn_predict_layers: Optional[int] = field(
         default=0,
         metadata={},
     )
@@ -245,7 +245,7 @@ class PreTrainingArguments(TrainingArguments):
         default=True,
         metadata={"help": "use callback for sequence parallel"},
     )
-    moe_use_aux_free_update_coef: float = field(
+    moe_router_bias_update_rate: float = field(
         default=1.0e-3,
         metadata={"help": "moe aux free update coef,"},
     )
