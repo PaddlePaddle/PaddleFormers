@@ -98,7 +98,7 @@ def freeze_param_except_mtp(model, config):
         return None
 
     # not sure can work on all model
-    jackpot = set(range(config.num_hidden_layers, config.num_hidden_layers + config.num_nextn_predict_layers))
+    jackpot = set(range(config.num_hidden_layers, config.num_hidden_layers + config.mtp_num_layers))
     for name, param in model.state_dict().items():
         layer_idx = extract_layer_idx(name)
         is_mtp = layer_idx in jackpot
@@ -297,6 +297,22 @@ def run_sft(
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
+
+    # autoregressive mtp training
+    activate_autoregressive_mtp_training = False
+    if model_config.mtp_num_layers > 1:
+        activate_autoregressive_mtp_training = True
+        tmp = model_config.mtp_num_layers
+        model_config.mtp_num_layers = model_config.num_nextn_predict_layers
+        model_config.num_nextn_predict_layers = tmp
+
+        tmp = training_args.mtp_num_layers
+        training_args.mtp_num_layers = training_args.num_nextn_predict_layers
+        training_args.num_nextn_predict_layers = tmp
+
+        logger.info(
+            f"MTP args changing for autoregressive mtp training, mtp_num_layers: {model_config.mtp_num_layers}, num_nextn_predict_layers: {model_config.num_nextn_predict_layers}!!"
+        )
 
     # Config for model using dropout, such as GPT.
     if hasattr(model_config, "hidden_dropout_prob"):
@@ -690,7 +706,10 @@ def run_sft(
         data_args=data_args,
         callbacks=callbacks,
     )
-    freeze_param_except_mtp(model, model_config)
+
+    if activate_autoregressive_mtp_training:
+        # activate autoregressive mtp training
+        freeze_param_except_mtp(model, model_config)
     trainable_parameters = [p for p in model.parameters() if not p.stop_gradient]
     trainer.set_optimizer_grouped_parameters(trainable_parameters)
 
