@@ -1212,6 +1212,10 @@ class TrainingArguments:
         metadata={"help": "pre allocate memory size GB"},
     )
     num_nextn_predict_layers: int = field(default=0, metadata={"help": "Number of nextn predict layers."})
+    mtp_distillation_loss: bool = field(default=False, metadata={"help": "Whether to use distillation MTP loss."})
+    mtp_num_layers: int = field(
+        default=0, metadata={"help": "Whether to use Autoregressive MTP Training, activate if > 1."}
+    )
     profile: bool = field(default=False, metadata={"help": "Enable nsys profiling."})
     profile_step_start: int = field(default=10, metadata={"help": "Step to start nsys profiling."})
     profile_step_end: int = field(default=12, metadata={"help": "Step to end nsys profiling."})
