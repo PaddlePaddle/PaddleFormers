@@ -151,3 +151,7 @@ class DataArguments:
         default=None,
         metadata={"help": "Register python file path for custom templates and mm_plugin."},
     )
+    processor_use_fast: bool = field(
+        default=None,
+        metadata={"help": "Whether to use fast processor."},
+    )

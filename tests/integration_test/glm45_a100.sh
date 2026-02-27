@@ -19,15 +19,20 @@ if [ -f 'PaddleFleet/.venv/bin/activate' ]; then
    source PaddleFleet/.venv/bin/activate
 fi
 
-wget -q --tries=5 --no-proxy https://xly-devops.cdn.bcebos.com/PaddleFleet/glm45/glm45_fleet.12-18.tar --no-check-certificate
-tar -xf glm45_fleet.12-18.tar # glm45_fleet
+if [ ! -d "$root_dir/glm45_fleet" ]; then
+  wget -q --tries=5 --no-proxy https://xly-devops.cdn.bcebos.com/PaddleFleet/glm45/glm45_fleet.12-18.tar --no-check-certificate
+  tar -xf glm45_fleet.12-18.tar
+fi
+
 cd $root_dir/glm45_fleet
 export cur_dir=$(pwd)
 
-config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_pt.yaml
-export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
-
-yq eval '.expert_model_parallel_size = 1
+step=$1
+if [[ ${step} == "pt" ]]; then
+  echo "Run GLM4.5 pretrain test"
+  config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_pt.yaml
+  export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
+  yq eval '.expert_model_parallel_size = 1
     | .num_hidden_layers = 2
     | .per_device_train_batch_size = 1
     | .use_expert_parallel = false
@@ -36,11 +41,72 @@ yq eval '.expert_model_parallel_size = 1
     | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
     | .model_name_or_path = strenv(cur_dir) + "/GLM-4.5-Air"
     | .logging_dir = strenv(cur_dir) + "/vdl_log"
-    | .output_dir = strenv(cur_dir) + "/checkpoints"' \
+    | .output_dir = strenv(cur_dir) + "/checkpoints/pretrain"' \
   $config_yaml > ${config_yaml}.tmp
-mv ${config_yaml}.tmp $config_yaml
+  mv ${config_yaml}.tmp $config_yaml
+elif [[ ${step} == "sft" ]]; then
+  echo "Run GLM4.5 sft test"
+  config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_sft.yaml
+  export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
+  yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+    | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
+    | .model_name_or_path = strenv(cur_dir) + "/checkpoints/pretrain"
+    | .logging_dir = strenv(cur_dir) + "/glm_full_pp_vdl_log"
+    | .use_expert_parallel = false
+    | .expert_model_parallel_size = 1
+    | .per_device_train_batch_size = 1
+    | .tensorwise_offload_optimizer = true
+    | .stage1_overlap = false
+    | .num_empty_layers_add_in_head = 0
+    | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"' \
+   $config_yaml > ${config_yaml}.tmp
+  mv ${config_yaml}.tmp $config_yaml
+elif [[ ${step} == "lora" ]]; then
+  echo "Run GLM4.5 multi lora test"
+  config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_lora.yaml
+  export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
+  yq '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+      | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
+      | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
+      | .logging_dir = strenv(cur_dir) + "/glm_full_single_lora_log"
+      | .output_dir = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"
+      | .num_empty_layers_add_in_tail = 0
+      | .use_expert_parallel = false
+      | .expert_model_parallel_size = 1
+      | del(.moe_token_dispatcher_type)' \
+    $config_yaml > ${config_yaml}.tmp
+  mv ${config_yaml}.tmp $config_yaml
+elif [[ ${step} == "dpo" ]]; then
+  echo "Run GLM4.5 dpo test"
+  config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_dpo.yaml
+  export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/dpo
+  yq '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+      | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
+      | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
+      | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_vdl_log"
+      | .num_empty_layers_add_in_tail = 0
+      | .use_expert_parallel = false
+      | .tensorwise_offload_optimizer = true
+      | .expert_model_parallel_size = 1
+      | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_ckpts"' \
+    $config_yaml > ${config_yaml}.tmp
+  mv ${config_yaml}.tmp $config_yaml
+elif [[ ${step} == "dpo_lora" ]]; then
+  echo "Run GLM4.5 dpo_lora test"
+  export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/dpo
+  config_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_dpo_lora.yaml
+  config_json=$CACHE_DIR/glm45/GLM-4.5-Air/config.json
+  yq '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+      | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
+      | .model_name_or_path = strenv(CACHE_DIR) + "/zai-org/GLM-4.5-Air-Base"
+      | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_lora_vdl_log"
+      | .use_expert_parallel = false
+      | .expert_model_parallel_size = 1
+      | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_lora_ckpts"' \
+    $config_yaml > ${config_yaml}.tmp
+  mv ${config_yaml}.tmp $config_yaml
+fi
 
-rm -rf checkpoints/
 rm -rf vdl_log/
 master=$(hostname -i)
 port=36677
@@ -49,9 +115,10 @@ unset http_proxy https_proxy
 
 export FLAGS_embedding_deterministic=1
 export FLAGS_cudnn_deterministic=1
+export FLAGS_use_stride_compute_kernel=False
 
-log_file=glm45_pt_a100.txt
-gt_loss_file=glm45_pt_multi_card_a100_gt_loss.txt
+log_file=glm45_${step}_multi_card_a100.txt
+gt_loss_file=glm45_${step}_multi_card_a100_gt_loss.txt
 
 set +e
 FLAGS_use_stride_compute_kernel=False NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./${log_file}

@@ -168,6 +168,8 @@ def freeze_model_parameters(model, freeze_config):
             if module_name in active_freeze_config:
                 param.stop_gradient = True
                 frozen_keys[module_name].append(name)
+            else:
+                param.stop_gradient = False
         else:
             param.stop_gradient = False
 

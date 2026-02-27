@@ -38,7 +38,10 @@ def calc_padding_size(seq_len: int, training_args) -> int:
     """
     cp_size = training_args.context_parallel_size
     sp_size = training_args.tensor_model_parallel_size if training_args.sequence_parallel else 1
-    padding_to_size = cp_size * sp_size * 2 if cp_size * sp_size > 1 else 1
+    padding_to_size = 2 if cp_size * sp_size > 1 else 1
+    if training_args.fp8:
+        padding_to_size = (padding_to_size + 3) // 4 * 4
+    padding_to_size = padding_to_size * cp_size * sp_size
     return math.ceil(seq_len / padding_to_size) * padding_to_size
 
 
@@ -217,6 +220,9 @@ def collate_fn(
     if not max_seq_len:
         max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
     max_seq_len = calc_padding_size(max_seq_len, training_args)
+    if training_args.num_nextn_predict_layers > 0:
+        # for easier implementation of the n-next-token prediction loss
+        max_seq_len += training_args.num_nextn_predict_layers
 
     for batch_sequence in batch:
         if len(batch_sequence) == 1 and isinstance(batch_sequence[0].position_ids[0], List):
@@ -335,6 +341,9 @@ def mm_collate_fn(
     if not max_seq_len:
         max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
     max_seq_len = calc_padding_size(max_seq_len, training_args)
+    if training_args.num_nextn_predict_layers > 0:
+        max_seq_len += training_args.num_nextn_predict_layers
+
     for batch_sequence in batch:
         original_token_ids = []
         original_position_ids = []
