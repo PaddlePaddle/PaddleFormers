@@ -57,7 +57,10 @@ paddleformers_build (){
     commit=${commit:-unknown}
     cp $formers_dir/dist/p****.whl ${upload_path}/
     cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-release-0.0.0-py3-none-any.whl
-    cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-release-${commit}-py3-none-any.whl
+    whl_file=$(ls $formers_dir/dist/paddleformers-*.whl)
+    base_name=$(basename $whl_file)
+    new_name=$(echo $base_name | sed "s/.post[0-9]\+/.&+${commit}/")
+    cp "$whl_file" "${upload_path}/${new_name}"
 }
 
 install_paddleformers(){

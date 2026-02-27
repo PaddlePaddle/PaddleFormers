@@ -62,9 +62,8 @@ jobs:
         run: |
           docker exec -t $container_name /bin/bash -c '
           rm -rf * .[^.]*
-          echo "Downloading PaddleFormers.tar"
-          git clone -b release/1.1 --depth=20 https://github.com/PaddlePaddle/PaddleFormers.git
           source $work_dir/../../../proxy
+          git clone -b release/1.1 --depth=20 https://github.com/PaddlePaddle/PaddleFormers.git
           cd PaddleFormers
           git config --global user.name "PaddleCE"
           git config --global user.email "paddle_ce@example.com"
