@@ -244,11 +244,11 @@ class Qwen3OmniMoeProcessor(ProcessorMixin):
                 if special_token == self.audio_token:
                     sample = sample.replace(self.audio_token, "<|audio_placeholder|>" * next(audio_lengths), 1)
                 elif special_token == self.image_token:
-                    image_seq_length = next(image_grid_thw).prod() // merge_length_image
+                    image_seq_length = next(image_grid_thw).prod().item() // merge_length_image
                     sample = sample.replace(self.image_token, "<|image_placeholder|>" * image_seq_length, 1)
                 elif special_token == self.video_token:
                     if not use_audio_in_video:
-                        video_seq_length = next(video_grid_thw).prod() // merge_length_video
+                        video_seq_length = next(video_grid_thw).prod().item() // merge_length_video
                         sample = sample.replace(self.video_token, "<|video_placeholder|>" * video_seq_length, 1)
                     else:
                         audio_token_indices = np.arange(next(audio_lengths))
