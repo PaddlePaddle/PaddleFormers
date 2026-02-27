@@ -29,11 +29,7 @@ get_diff_case(){
     git diff --numstat --name-only HEAD~1 HEAD
     for file_name in `git diff --numstat --name-only HEAD~1 HEAD`;do
         arr_file_name=(${file_name//// })
-        if [[ "${arr_file_name[0]}" == ".github" || "${arr_file_name[0]}" == "scripts" || "${arr_file_name[0]}" == "tests" ]]; then
-            continue
-        else
-            Build_list[${#Build_list[@]}]="paddleformers"
-        fi
+        Build_list[${#Build_list[@]}]="paddleformers"
     done
     echo ${Build_list[*]}
 }
@@ -96,7 +92,6 @@ fi
 
 echo -e "\033[32m ---- make PaddleFormers.tar.gz  \033[0m"
 cd ${formers_dir}
-git checkout develop
 cd /workspace
 tar -zcf PaddleFormers.tar.gz PaddleFormers/
 mv PaddleFormers.tar.gz ${upload_path}/
