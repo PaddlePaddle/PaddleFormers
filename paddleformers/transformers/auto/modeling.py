@@ -68,6 +68,7 @@ MAPPING_NAMES = OrderedDict(
         ("Qwen3VL", "qwen3_vl"),
         ("Qwen3VLMoe", "qwen3_vl_moe"),
         ("Glm4Moe", "glm4_moe"),
+        ("GlmMoeDsa", "glm_moe_dsa"),
         ("GptOss", "gpt_oss"),
         ("Phi3", "phi3"),
         ("Gemma3", "gemma3_text"),

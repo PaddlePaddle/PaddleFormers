@@ -297,6 +297,7 @@ TOOLS = {
     "qwen": QwenToolUtils(),
     "glm4": GLM4ToolUtils(),
     "glm4_moe": GLM4MOEToolUtils(),
+    "glm_moe_dsa": GLM4MOEToolUtils(),
     "llama3": Llama3ToolUtils(),
 }
 
