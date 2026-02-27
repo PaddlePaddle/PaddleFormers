@@ -423,7 +423,7 @@ class LlmMetaConfig:
         (
             "mtp_loss_scaling_factor",
             float,
-            1.0,
+            0.1,
             "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 0.1.",
         ),
     ]

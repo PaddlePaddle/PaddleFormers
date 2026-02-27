@@ -195,7 +195,7 @@ def mtp_sft_loss_forward(
     **kwargs
 ):
     num_nextn_predict_layers = self.config.get("num_nextn_predict_layers", 0)
-    mtp_loss_scaling_factor = self.config.get("mtp_loss_scaling_factor", 0.1)
+    mtp_loss_scaling_factor = self.config.get("mtp_loss_scaling_factor", 0.3)
     if num_nextn_predict_layers > 0:
         labels_ori = labels
         labels = labels[:, :-num_nextn_predict_layers]
