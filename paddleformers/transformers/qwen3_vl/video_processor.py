@@ -205,9 +205,17 @@ class Qwen3VLVideoProcessor(BaseVideoProcessor):
                     patch_size,
                 ]
             )
-            patches = patches.transpose([0, 3, 6, 1, 2, 4, 5, 7, 8]).contiguous()
-            patches = patches.transpose([0, 1, 2, 5, 7, 3, 4, 6, 8]).contiguous()
-            patches = patches.transpose([0, 1, 2, 3, 4, 6, 5, 7, 8]).contiguous()
+            patches = patches.transpose([0, 3, 6, 4, 7, 2, 1, 5, 8]).contiguous()
+            # In order to alleviate the issue of unit test ci hang, an additional reshaping was performed
+            patches = patches.reshape(
+                [
+                    bg_dim,
+                    grid_h * grid_w,
+                    channel,
+                    temporal_patch_size,
+                    patch_size * patch_size,
+                ]
+            )
             flatten_patches = patches.reshape(
                 [
                     batch_size,
