@@ -41,6 +41,11 @@ class BaseMixDataset(IterableDataset):
         """
         self.datasets_list = [task["dataset"] for task in multi_source_dataset._task_group]
         self.datasets_prob = [task["prob"] for task in multi_source_dataset._task_group]
+
+        # Normalize probabilities to ensure they sum to 1.0
+        prob_sum = sum(self.datasets_prob)
+        if not np.isclose(prob_sum, 1.0):
+            self.datasets_prob = [p / prob_sum for p in self.datasets_prob]
         self.mode = "upsampling" if dataset_config["mix_strategy"] == "interleave_under" else "oversampling"
         self.seed = dataset_config["random_seed"]
         self.rng = random.Random(self.seed)

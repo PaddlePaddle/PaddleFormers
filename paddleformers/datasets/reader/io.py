@@ -48,16 +48,20 @@ def load_txt(file_path):
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             return f.read()
-    except Exception:
-        raise ValueError(f"file {file_path} load failed")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"file {file_path} not exists")
+    except IOError as e:
+        raise ValueError(f"file {file_path} load failed: {e}")
 
 
 def load_csv(file_path):
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             return list(csv.reader(f))
-    except Exception:
-        raise ValueError(f"file {file_path} load failed")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"file {file_path} not exists")
+    except (IOError, csv.Error) as e:
+        raise ValueError(f"file {file_path} load failed: {e}")
 
 
 def load_parquet(file_path):
@@ -65,5 +69,7 @@ def load_parquet(file_path):
         table = pq.read_table(file_path)
         df = table.to_pandas()
         return df
-    except Exception:
-        raise ValueError(f"file {file_path} load failed")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"file {file_path} not exists")
+    except Exception as e:
+        raise ValueError(f"file {file_path} load failed: {e}")
