@@ -265,6 +265,7 @@ class _BaseAutoModelClass:
                 cls._name_mapping = get_name_mapping(task)
             else:
                 print("We only support task choice for AutoModel.")
+        cls._name_mapping = get_name_mapping()
         cache_dir = kwargs.get("cache_dir", None)
         download_hub = kwargs.get("download_hub", None)
         subfolder = kwargs.get("subfolder", "")

@@ -699,10 +699,7 @@ class KimiK25ModelDist(MCoreLLaVAModel):
 
 class KimiK25PretrainedModelFleet(PretrainedModel):
     config_class = KimiK25Config
-    base_model_prefix = "model"
-    input_modalities = ["image", "text"]
-    _no_split_modules = ["KimiK25TextTransformerLayer", "KimiK25VisionTransformerBlock"]
-    # _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
+
     transpose_weight_keys = [
         "q_proj",
         "k_proj",
@@ -720,11 +717,34 @@ class KimiK25PretrainedModelFleet(PretrainedModel):
 
     @classmethod
     def _gen_aoa_config(cls, config: KimiK25Config):
-        pass
+        # vision model
+        aoa_config = {"aoa_statements": []}
+        for i in range(config.vision_config.vt_num_hidden_layers):
+            for last_prefix in ["bias", "weight"]:
+                aoa_config["aoa_statements"] += [
+                    f"vision_tower.encoder.blocks.{i}.wo.{last_prefix} -> vision_tower.encoder.blocks.layers.{i}.self_attn.o_proj.{last_prefix}",
+                    f"vision_tower.encoder.blocks.{i}.wqkv.{last_prefix} -> vision_tower.encoder.blocks.layers.{i}.self_attn.qkv_proj.{last_prefix}",
+                    f"vision_tower.encoder.blocks.{i}.norm0.{last_prefix} -> vision_tower.encoder.blocks.layers.{i}.input_layernorm.{last_prefix}",
+                    f"vision_tower.encoder.blocks.{i}.norm1.{last_prefix} -> vision_tower.encoder.blocks.layers.{i}.post_attention_layernorm.{last_prefix}",
+                    f"vision_tower.encoder.blocks.{i}.mlp.fc0.{last_prefix} -> vision_tower.encoder.blocks.layers.{i}.mlp.up_gate_proj.{last_prefix}",
+                    f"vision_tower.encoder.blocks.{i}.mlp.fc1.{last_prefix} -> vision_tower.encoder.blocks.layers.{i}.mlp.down_proj.{last_prefix}",
+                ]
 
-    @classmethod
-    def _gen_inv_aoa_config(cls, config: KimiK25Config):
-        pass
+        for last_prefix in ["bias", "weight"]:
+            aoa_config["aoa_statements"] += [
+                f"vision_tower.encoder.final_layernorm.{last_prefix} -> vision_tower.encoder.blocks.final_layernorm.norm.{last_prefix}",
+                f"mm_projector.pre_norm.{last_prefix} -> vision_tower.encoder.blocks.mm_projector.pre_norm.{last_prefix}",
+                f"mm_projector.proj.0.{last_prefix} -> vision_tower.encoder.blocks.mm_projector.proj.up_gate_proj.{last_prefix}",
+                f"mm_projector.proj.2.{last_prefix} -> vision_tower.encoder.blocks.mm_projector.proj.down_proj.{last_prefix}",
+                f"vision_tower.patch_embed.proj.{last_prefix} -> vision_tower.encoder.blocks.patch_embed.proj.{last_prefix}",
+            ]
+        aoa_config["aoa_statements"] += [
+            "vision_tower.patch_embed.pos_emb.weight -> vision_tower.encoder.blocks.patch_embed.pos_emb.weight",
+        ]
+
+        # language model
+
+        return aoa_config
 
 
 class KimiK25Model(KimiK25PretrainedModelFleet):
@@ -741,7 +761,7 @@ class KimiK25Model(KimiK25PretrainedModelFleet):
         model_provider = model_provider_class.from_config(config)
         KimiK25_model = KimiK25ModelDist(model_provider, model_version=config.model_type)
         KimiK25_model._gen_aoa_config = cls._gen_aoa_config
-        KimiK25_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+
         KimiK25_model.config_to_save = config
 
         return KimiK25_model
@@ -769,19 +789,52 @@ class KimiK25ForConditionalGeneration(KimiK25PretrainedModelFleet):
         state_dict = super().state_dict(*args, **kwargs)
         # Remove existing language_model keys to avoid duplicates
         delete_key = []
+        replace_key = []
         for key in state_dict.keys():
-            if key.startswith("model.language_model."):
+            if key.startswith("model.vision_model."):
                 delete_key.append(key)
+            if key.startswith("model.language_model."):
+                replace_key.append(key)
+        for key in replace_key:
+            state_dict[key.replace("model.language_model.", "language_model.")] = state_dict.pop(key)
         for key in delete_key:
             state_dict.pop(key)
-        if self.model.language_model is not None:
-            # Get language_model's state_dict
-            language_state_dict = self.model.language_model.state_dict(*args, **kwargs)
+        if self.model.vision_model is not None:
+            # Get vision_model's state_dict
+            vision_state_dict = self.model.vision_model.state_dict(*args, **kwargs)
 
-            # Merge language_model parameters into main state_dict
-            for key, value in language_state_dict.items():
-                state_dict[key] = value
+            # Merge vision_model parameters into main state_dict
+            for key, value in vision_state_dict.items():
+                state_dict[key.replace("model.vision_model.", "vision_tower.encoder.blocks.")] = value
         return state_dict
+
+    def sharded_state_dict(self, *args, **kwargs):
+        # Override state_dict method to handle language_model's custom state_dict
+        sharded_state_dict = super().sharded_state_dict(*args, **kwargs)
+        # Remove existing language_model keys to avoid duplicates
+        delete_key = []
+        replace_key = []
+        for key in sharded_state_dict.keys():
+            if key.startswith("model.vision_model."):
+                delete_key.append(key)
+            if key.startswith("model.language_model."):
+                replace_key.append(key)
+        for key in replace_key:
+            new_key = key.replace("model.language_model.", "language_model.")
+            sharded_state_dict[new_key] = sharded_state_dict.pop(key)
+            sharded_state_dict[new_key].key = new_key
+        for key in delete_key:
+            sharded_state_dict.pop(key)
+        if self.model.vision_model is not None:
+            # Get vision_model's sharded_state_dict
+            vision_state_dict = self.model.vision_model.sharded_state_dict(*args, **kwargs)
+
+            # Merge vision_model parameters into main sharded_state_dict
+            for key, value in vision_state_dict.items():
+                new_key = key.replace("model.vision_model.", "vision_tower.encoder.blocks.")
+                value.key = new_key
+                sharded_state_dict[new_key] = value
+        return sharded_state_dict
 
     def forward(
         self,
