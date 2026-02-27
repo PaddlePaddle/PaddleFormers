@@ -55,4 +55,4 @@ bf16: true
 fp16_opt_level: O2
 unified_checkpoint: false
 
-# device: iluvatar_gpu
+device: iluvatar_gpu
