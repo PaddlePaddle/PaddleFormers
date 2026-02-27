@@ -355,7 +355,7 @@ class LlmMetaConfig:
             False,
             "Whether to enforce load balancing across MoE experts. Prevents overutilization of a small subset of experts. Defaults to True (critical optimization for MoE stability and efficiency).",
         ),
-        ("moe_router_load_balancing_type", str, "aux_loss", "Strategy for MoE expert load balancing."),
+        ("moe_router_load_balancing_type", str, "seq_aux_loss", "Strategy for MoE expert load balancing."),
         (
             "moe_router_bias_update_rate",
             float,
