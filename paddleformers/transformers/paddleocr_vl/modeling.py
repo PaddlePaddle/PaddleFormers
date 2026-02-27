@@ -515,6 +515,7 @@ class PaddleOCREncoder(nn.Layer):
             cu_seqlens=cu_seqlens,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             rope_emb=rope_emb,
+            preserve_external_rng_state=False,
         )
         return hidden_states
 
@@ -1481,6 +1482,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             output_attentions,
             past_key_values,
             use_cache,
+            preserve_external_rng_state=False,
         )
         return hidden_states
 
