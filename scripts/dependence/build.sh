@@ -29,11 +29,7 @@ get_diff_case(){
     git diff --numstat --name-only HEAD~1 HEAD
     for file_name in `git diff --numstat --name-only HEAD~1 HEAD`;do
         arr_file_name=(${file_name//// })
-        if [[ "${arr_file_name[0]}" == ".github" || "${arr_file_name[0]}" == "scripts" || "${arr_file_name[0]}" == "tests" ]]; then
-            continue
-        else
-            Build_list[${#Build_list[@]}]="paddleformers"
-        fi
+        Build_list[${#Build_list[@]}]="paddleformers"
     done
     echo ${Build_list[*]}
 }
@@ -61,7 +57,10 @@ paddleformers_build (){
     commit=${commit:-unknown}
     cp $formers_dir/dist/p****.whl ${upload_path}/
     cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-0.0.0-py3-none-any.whl
-    cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-${commit}-py3-none-any.whl
+    whl_file=$(ls $formers_dir/dist/paddleformers-*.whl)
+    base_name=$(basename $whl_file)
+    new_name=$(echo $base_name | sed "s/.dev[0-9]\+/.&+${commit}/")
+    cp "$whl_file" "${upload_path}/${new_name}"
 }
 
 install_paddleformers(){
