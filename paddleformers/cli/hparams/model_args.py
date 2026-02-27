@@ -156,17 +156,9 @@ class ModelArguments:
         default=False,
         metadata={"help": "Whether to apply group-wise processing to expert gate logits."},
     )
-    router_aux_loss_coef: Optional[float] = field(
-        default=1e-5,
-        metadata={"help": "Lambda value for moe aux loss."},
-    )
     moe_orthogonal_loss_lambda: Optional[float] = field(
         default=0.0,
         metadata={"help": "Lambda value for moe orthogonal loss."},
-    )
-    router_z_loss_coef: Optional[float] = field(
-        default=0.0,
-        metadata={"help": "Lambda value for moe z loss."},
     )
     moe_use_hard_gate: Optional[bool] = field(
         default=False,
