@@ -132,7 +132,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 
 * python ≥ 3.10
 * CUDA ≥ 12.0
-* PaddleFleet ≥ 0.1（仅为 GPU 训练功能依赖）
+* PaddleFleet ≥ 0.2（仅为 GPU 训练功能依赖）
 
 **安装依赖（GPU）**
 
@@ -180,11 +180,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 > git clone https://github.com/PaddlePaddle/PaddleFormers.git
 > cd PaddleFormers
 > # cuda12.6
-> python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+> python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
 > # cuda12.9
-> # python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+> # python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
 > # cuda13.0
-> # python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
+> # python -m pip install -e '.[paddlefleet]' --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
 > ```
 ------
 > **安装方案二：** 如果您不想拉取源码，可以基于下面的命令安装 PaddleFormers 和 PaddleFleet。
@@ -192,11 +192,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 > ```shell
 > # Install via pip
 > # cuda12.6
-> python -m pip install paddleformers[paddlefleet] --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+> python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
 > # cuda12.9
-> # python -m pip install paddleformers[paddlefleet] --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+> # python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
 > # cuda13.0
-> # python -m pip install paddleformers[paddlefleet] --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
+> # python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
 > ```
 ------
 > **安装方案三：** 如果您只需使用 tokenizer 或者 processor，可以通过以下命令安装，这种情况下不会安装训练相关的依赖，安装速度更加快。
@@ -238,9 +238,10 @@ tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B-Base")
 model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-0.6B-Base", dtype="bfloat16").eval()
 
 input_features = tokenizer("请给我一段大模型的简短介绍：", return_tensors="pd")
-outputs = model.generate(**input_features, max_new_tokens=128)
+outputs = model.generate(**input_features, max_new_tokens=256)
+output_ids = outputs[0].tolist()[0]
 
-print(tokenizer.batch_decode(outputs[0], skip_special_tokens=True))
+print(tokenizer.decode(output_ids, skip_special_tokens=True))
 ```
 
 **模型训练**

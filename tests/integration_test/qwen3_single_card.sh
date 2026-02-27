@@ -20,26 +20,6 @@ fi
 
 export root_dir=$(pwd)
 
-python -c "
-infile = '$root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py'
-print(infile)
-outfile = infile + '.new'
-with open(infile) as fin:
-    lines = fin.readlines()
-with open(outfile, 'w') as fout:
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        pad = line[:len(line)-len(line.lstrip())]
-        if line.lstrip().startswith('config.fuse_rms_norm = True'):
-            fout.write(pad + 'config.fuse_rms_norm = True\n')
-            fout.write(pad + 'config.router_aux_loss_coef = None\n')
-        else:
-            fout.write(line)
-        i += 1
-"
-mv $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/qwen3_moe/modeling.py
-
 config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3_pt.yaml
 yq eval '
   .save_steps = 100 |
@@ -103,6 +83,10 @@ python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --gt_file ./${gt_loss_file}
 
 if [ $? -ne 0 ]; then
+  if [ "${BRANCH}" != "develop" ]; then
+    echo "please update precision in develop and rerun this workflow"
+    exit 1
+  fi
   pushd $root_dir/PaddleFormers
   source /root/proxy
   bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
@@ -113,11 +97,11 @@ if [ $? -ne 0 ]; then
   popd
   rm ${gt_loss_file} && mv ${log_loss_file} ${gt_loss_file}
   if [ ! -f precision_list.txt ]; then
-    wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}/precision_list.txt
+    wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}/${PR_ID}/precision_list.txt
     if [ $? -ne 0 ]; then
       wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}_latest/precision_list.txt
-      python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}
+      python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}/${PR_ID}
     fi
   fi
-  python $root_dir/bos/BosClient.py ${gt_loss_file} paddle-github-action/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}
+  python $root_dir/bos/BosClient.py ${gt_loss_file} paddle-github-action/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}/${PR_ID}
 fi

@@ -528,7 +528,7 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"model.layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias -> {model_prefix}layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias, dtype='float32'",
-                f"model.layers.$LAYER_ID.mlp.gate.weight -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
+                f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
                 f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
                 f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
@@ -576,7 +576,7 @@ class Ernie4_5_MoePretrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias -> model.layers.$LAYER_ID.mlp.moe_statics.e_score_correction_bias",
-            f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight -> model.layers.$LAYER_ID.mlp.gate.weight",
+            f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.layers.$LAYER_ID.mlp.gate.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
@@ -1193,27 +1193,6 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_MoePretrainedModel):
 
         hidden_states = outputs.last_hidden_state
         mtp_outputs = outputs.mtp_outputs
-
-        if self.criterion.loss_type == "dpo":
-            logits = self.lm_head(hidden_states)
-            chosen_labels = kwargs.get("chosen_labels", None)
-            rejected_labels = kwargs.get("rejected_labels", None)
-            response_indexs = kwargs.get("response_indexs", None)
-            score_deltas = kwargs.get("score_deltas", None)
-            reference_chosen_logps = kwargs.get("reference_chosen_logps", None)
-            reference_rejected_logps = kwargs.get("reference_rejected_logps", None)
-            labels = (
-                chosen_labels,
-                rejected_labels,
-                response_indexs,
-                score_deltas,
-                reference_chosen_logps,
-                reference_rejected_logps,
-            )
-            return self.criterion(
-                logits,
-                labels,
-            )
 
         # if labels is None，means we need full output, instead of tensor_parallel_output
         # tensor_parallel_output is togather with ParallelCrossEntropy

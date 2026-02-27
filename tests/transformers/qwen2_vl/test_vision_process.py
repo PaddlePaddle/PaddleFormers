@@ -29,7 +29,7 @@ from tests.testing_utils import gpu_device_initializer
 class TestQwenVisionProcessing(unittest.TestCase):
     """Test cases for Qwen vision processing functions."""
 
-    @gpu_device_initializer(log_prefix="TestQwenVisionProcessing")
+    @gpu_device_initializer(log_prefix="TestQwenVisionProcessing", gpu_id=0)
     def setUp(self):
         """Set up test fixtures."""
         # Create test image
@@ -255,7 +255,12 @@ class TestQwenVisionProcessing(unittest.TestCase):
         ele = {"video": self.test_video_url}
         result = vision_process.fetch_video(ele, video_backend="paddlecodec")
 
+        import sys
+
+        del sys.modules["torchcodec"]
         import torchcodec
+
+        sys.modules["torchcodec"] = None
 
         if not getattr(torchcodec, "__is_paddle_compatible_library__", None):
             raise RuntimeError("Could not import 'torchcodec'. Please ensure it is installed.")

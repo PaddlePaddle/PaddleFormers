@@ -1,5 +1,6 @@
 parameterized
 torch>=2.1
+huggingface_hub>=1.3.0
 sacremoses
 pydantic
 hyperopt

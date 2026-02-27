@@ -22,7 +22,10 @@ from datasets import load_dataset
 from paddle.io import Dataset
 
 if TYPE_CHECKING:
-    from transformers.tokenization_utils import PreTrainedTokenizer
+    try:
+        from transformers.tokenization_python import PreTrainedTokenizer
+    except ImportError:
+        from transformers.tokenization_utils import PreTrainedTokenizer
 
 from transformers.utils import PaddingStrategy
 

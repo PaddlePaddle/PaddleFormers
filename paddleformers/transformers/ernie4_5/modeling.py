@@ -132,6 +132,7 @@ class Ernie4_5RotaryEmbedding(nn.Layer):
     def compute_default_rope_parameters(
         config: Optional[Ernie4_5Config] = None,
         seq_len: Optional[int] = None,
+        device: str = "cpu",
     ) -> tuple["paddle.Tensor", float]:
         """
         Computes the inverse frequencies according to the original RoPE implementation
@@ -140,6 +141,8 @@ class Ernie4_5RotaryEmbedding(nn.Layer):
                 The model configuration.
             seq_len (`int`, *optional*):
                 The current sequence length. Unused for this type of RoPE.
+             device (`str`, *optional*):
+                The current device.
         Returns:
             Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
             post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
@@ -150,7 +153,9 @@ class Ernie4_5RotaryEmbedding(nn.Layer):
         attention_factor = 1.0  # Unused in this type of RoPE
 
         # Compute the inverse frequencies
-        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        inv_freq = 1.0 / (
+            base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32).to(device) / dim)
+        )
         return inv_freq, attention_factor
 
     @dynamic_rope_update
@@ -848,27 +853,6 @@ class Ernie4_5ForCausalLM(Ernie4_5PretrainedModel):
         )
 
         hidden_states = outputs.last_hidden_state
-
-        if self.criterion.loss_type == "dpo":
-            logits = self.lm_head(hidden_states)
-            chosen_labels = kwargs.get("chosen_labels", None)
-            rejected_labels = kwargs.get("rejected_labels", None)
-            response_indexs = kwargs.get("response_indexs", None)
-            score_deltas = kwargs.get("score_deltas", None)
-            reference_chosen_logps = kwargs.get("reference_chosen_logps", None)
-            reference_rejected_logps = kwargs.get("reference_rejected_logps", None)
-            labels = (
-                chosen_labels,
-                rejected_labels,
-                response_indexs,
-                score_deltas,
-                reference_chosen_logps,
-                reference_rejected_logps,
-            )
-            return self.criterion(
-                logits,
-                labels,
-            )
 
         # if labels is None，means we need full output, instead of tensor_parallel_output
         # tensor_parallel_output is togather with ParallelCrossEntropy

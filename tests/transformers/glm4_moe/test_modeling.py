@@ -144,6 +144,7 @@ class Glm4MoeModelTester:
             dtype=self.dtype,
             slow_but_exact=self.slow_but_exact,
             activation_function=self.activation_function,
+            num_nextn_predict_layers=0,
         )
 
     def create_and_check_model(
@@ -382,6 +383,7 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                 "PaddleFormers/tiny-random-glm4moe-bf16",
                 download_hub="aistudio",
                 load_checkpoint_format="flex_checkpoint",
+                num_nextn_predict_layers=0,
             )
             model_state_1 = model1.state_dict()
 
@@ -389,7 +391,10 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
             with tempfile.TemporaryDirectory() as tmpdirname:
                 model1.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
                 model2 = model_class.from_pretrained(
-                    tmpdirname, convert_from_hf=True, load_checkpoint_format="flex_checkpoint"
+                    tmpdirname,
+                    convert_from_hf=True,
+                    load_checkpoint_format="flex_checkpoint",
+                    num_nextn_predict_layers=0,
                 )
                 model_state_2 = model2.state_dict()
 
@@ -408,11 +413,16 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
     base_model_class = Glm4MoeModel
 
+    @gpu_device_initializer(log_prefix="Glm4MoeModelIntegrationTest")
+    def setUp(self):
+        pass
+
     def test_inference_no_attention(self):
         model = Glm4MoeModel.from_pretrained(
             "PaddleFormers/tiny-random-glm4moe",
             download_hub="aistudio",
             load_checkpoint_format="flex_checkpoint",
+            num_nextn_predict_layers=0,
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -437,6 +447,7 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
             "PaddleFormers/tiny-random-glm4moe",
             download_hub="aistudio",
             load_checkpoint_format="flex_checkpoint",
+            num_nextn_predict_layers=0,
         )
         model.eval()
         input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
@@ -465,6 +476,7 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
             download_hub="aistudio",
             load_checkpoint_format="flex_checkpoint",
             fd_fallback=False,
+            num_nextn_predict_layers=0,
         )
         model_fd_fallback = Glm4MoeModel.from_pretrained(
             "PaddleFormers/tiny-random-glm4moe",
@@ -472,6 +484,7 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
             download_hub="aistudio",
             load_checkpoint_format="flex_checkpoint",
             fd_fallback=True,
+            num_nextn_predict_layers=0,
         )
         model_fd_fallback_fused_ffn = Glm4MoeModel.from_pretrained(
             "PaddleFormers/tiny-random-glm4moe",
@@ -479,6 +492,7 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
             download_hub="aistudio",
             load_checkpoint_format="flex_checkpoint",
             fd_fallback=True,
+            num_nextn_predict_layers=0,
         )
         input_ids = paddle.to_tensor([input_ids])
         with paddle.no_grad():
@@ -491,6 +505,10 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
 
 
 class Glm4MoeCompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Glm4MoeCompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
@@ -498,7 +516,7 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
 
         # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
-        config = Glm4MoeConfig(hidden_size=16, num_hidden_layers=8, num_attention_heads=8)
+        config = Glm4MoeConfig(hidden_size=16, num_hidden_layers=8, num_attention_heads=8, num_nextn_predict_layers=0)
         model = Glm4MoeForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
 
@@ -511,7 +529,9 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
         import torch
         from transformers import Glm4MoeForCausalLM
 
-        torch_model = Glm4MoeForCausalLM.from_pretrained(self.torch_model_path, dtype=torch.float32)
+        torch_model = Glm4MoeForCausalLM.from_pretrained(
+            self.torch_model_path, dtype=torch.float32, num_nextn_predict_layers=0
+        )
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
@@ -521,7 +541,10 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
         )
 
         paddle_model = Glm4MoeForCausalLM.from_pretrained(
-            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            self.torch_model_path,
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
+            num_nextn_predict_layers=0,
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
@@ -545,7 +568,9 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
             import torch
             from transformers import Glm4MoeForCausalLM
 
-            torch_model = Glm4MoeForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = Glm4MoeForCausalLM.from_pretrained(
+                self.torch_model_path, torch_dtype=torch.float32, num_nextn_predict_layers=0
+            )
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
@@ -556,7 +581,7 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
             )
 
             paddle_model = Glm4MoeForCausalLM.from_pretrained(
-                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint", num_nextn_predict_layers=0
             )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]

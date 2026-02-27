@@ -113,7 +113,7 @@ def show():
 
 # only use this file to contral the version
 
-__version__ = "1.0.1.post"
+__version__ = "1.1.0.post"
 
 if os.getenv(PADDLEFORMERS_STABLE_VERSION):
     __version__ = __version__.replace(".post", "")
@@ -204,7 +204,7 @@ try:
         install_requires=REQUIRED_PACKAGES,
         entry_points={"console_scripts": get_console_scripts()},
         extras_require={
-            "paddlefleet": ["paddlefleet==0.1.0.post20260128+10acae9ee51"],
+            "paddlefleet": ["paddlefleet==0.2.0.post20260213+ff7891ef795"],
         },
         python_requires=">=3.8",
         classifiers=[

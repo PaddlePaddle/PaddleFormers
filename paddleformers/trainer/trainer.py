@@ -45,6 +45,7 @@ import psutil
 from packaging import version
 from paddle import framework
 from paddle.base import core
+from paddle.distributed import ShardedWeight
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
 from paddle.distributed.fleet.meta_parallel import PipelineLayer
 
@@ -115,7 +116,10 @@ if is_paddlefleet_available():
 else:
     get_batch_on_this_cp_rank = None
 if TYPE_CHECKING:
-    from transformers.tokenization_utils import PreTrainedTokenizer
+    try:
+        from transformers.tokenization_python import PreTrainedTokenizer
+    except ImportError:
+        from transformers.tokenization_utils import PreTrainedTokenizer
 
 from paddle.framework.recall_error import LOSS_INF_ERROR, LOSS_NAN_ERROR
 
@@ -135,6 +139,7 @@ from ..utils import empty_device_cache, perf_utils
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.env import (
     EMA_STATE_DIC,
+    FLEX_CKPT_AUTO_GENERATED_METADATA,
     LORA_WEIGHTS_NAME,
     MASTER_WEIGHT_DIC,
     MODEL_META_NAME,
@@ -193,6 +198,7 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     has_length,
     init_optimizer,
     mock_offload_optimizer,
+    select_flex_ckpt_comm_method,
     set_random_seed,
     set_seed,
     should_skip_data,
@@ -595,6 +601,8 @@ class Trainer:
         if self.args.count_trained_tokens:
             self.trained_effective_tokens = 0
             self.trained_tokens = 0
+
+        self.global_training_logs = {}
 
     def _wrap_amp_model(self, args, model):
         logger.info("Using half precision")
@@ -1040,6 +1048,10 @@ class Trainer:
 
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
+        for key, sharded_weight in model_sharded_state_dict.items():
+            # NOTE(Waynezee): Only Tensor in Parameter will be used in FlexCheckpoint Save Scenario.
+            if isinstance(sharded_weight, ShardedWeight):
+                sharded_weight.local_tensor = paddle.Tensor(sharded_weight.local_tensor)
         model_state_dict_path = os.path.join(output_dir, MODEL_STATE_DIC)
         os.makedirs(model_state_dict_path, exist_ok=True)
         dist.save_state_dict(
@@ -1091,7 +1103,8 @@ class Trainer:
         model_states_path = os.path.join(resume_from_checkpoint, MODEL_STATE_DIC)
 
         hcg = dist.fleet.get_hybrid_communicate_group()
-        if self.args.flex_ckpt_comm_method == "parallel_broadcast":
+        flex_ckpt_comm_method = select_flex_ckpt_comm_method()
+        if flex_ckpt_comm_method == "parallel_broadcast":
             try:
                 pp_group = hcg.get_pipe_parallel_group()
                 if pp_group is None or pp_group.nranks < 1:
@@ -1123,6 +1136,16 @@ class Trainer:
 
             # when moe_sharding_group is None, we use the default process_group
             logger.info(f"Loading model weights from '{resume_from_checkpoint}' in safetensors format.")
+            metadata_path = os.path.join(resume_from_checkpoint, FLEX_CKPT_AUTO_GENERATED_METADATA)
+
+            # delete the metadata file if it exists
+            try:
+                os.remove(metadata_path)
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                logger.error(f"Failed to delete {metadata_path}: {e}")
+
             dist.load_state_dict(
                 model_sharded_state_dict,
                 resume_from_checkpoint,
@@ -1130,9 +1153,11 @@ class Trainer:
                 offload=self.args.load_via_cpu,
                 safetensors=True,
                 process_group=None,
-                comm_method=self.args.flex_ckpt_comm_method,
+                comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
             )
+            if hasattr(self.model, "_synchronize_shared_weights"):
+                self.model._synchronize_shared_weights()
             return
 
         state_dict_metadata = {}
@@ -1166,7 +1191,7 @@ class Trainer:
                 master_weights_path,
                 aoa_config=self.args.aoa_config,
                 offload=self.args.load_via_cpu,
-                comm_method=self.args.flex_ckpt_comm_method,
+                comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
             )
 
@@ -1176,7 +1201,7 @@ class Trainer:
                     opt_states_path,
                     aoa_config=self.args.aoa_config,
                     offload=self.args.load_via_cpu,
-                    comm_method=self.args.flex_ckpt_comm_method,
+                    comm_method=flex_ckpt_comm_method,
                     worker_groups=worker_groups,
                 )
                 self._load_scheduler(resume_from_checkpoint)
@@ -1224,7 +1249,7 @@ class Trainer:
                 model_states_path,
                 aoa_config=aoa_config,
                 offload=self.args.load_via_cpu,
-                comm_method=self.args.flex_ckpt_comm_method,
+                comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
             )
 
@@ -1234,9 +1259,9 @@ class Trainer:
             def recover_params_from_master_weight(opt_state_dict, group):
                 master_weights = opt_state_dict["master_weights"]
                 tmp = OrderedDict()
-                (master_weights, tmp) = (tmp, master_weights)
+                master_weights, tmp = (tmp, master_weights)
                 # cast to before
-                for (k, v) in tmp.items():
+                for k, v in tmp.items():
                     name = v.name
                     master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
                     master_weights[k].name = name
@@ -1924,7 +1949,15 @@ class Trainer:
 
             step = -1
 
+            # Data loading timing for global_step
+            _data_load_time_for_global_step = 0.0
+            _data_load_start_time = time.time()
+
             for step, inputs in enumerate(epoch_iterator):
+                # Record data loading time for this iteration
+                _data_load_end_time = time.time()
+                _data_load_time_for_global_step += _data_load_end_time - _data_load_start_time
+
                 if self.args.profile and step % self.args.gradient_accumulation_steps == 0:
                     perf_utils.switch_profile(
                         self.state.global_step,
@@ -1959,6 +1992,8 @@ class Trainer:
                     if steps_trained_in_current_epoch == 0:
                         self._load_rng_state(resume_from_checkpoint)
                     self.timers and self.timers("read-data").start()
+                    # Reset data loading timer for skipped steps
+                    _data_load_start_time = time.time()
                     continue
                 elif steps_trained_progress_bar is not None:
                     steps_trained_progress_bar.close()
@@ -2020,6 +2055,9 @@ class Trainer:
                         break
 
                     self.timers and self.timers("read-data").start()
+                    # Reset data loading timer for skipped data
+                    _data_load_time_for_global_step = 0.0
+                    _data_load_start_time = time.time()
                     continue
 
                 for inputs in inputs_list:
@@ -2189,7 +2227,6 @@ class Trainer:
                         self.callback_handler.on_optimizer_begin(
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
                         )
-
                         self.optimizer_step(args, model=model, parameters_list=parameters_list)
 
                         self.timers and self.timers("optimizer-step").stop()
@@ -2217,7 +2254,15 @@ class Trainer:
 
                         self.control = self.callback_handler.on_step_end(args, self.state, self.control)
                         self._maybe_log_save_evaluate(tr_loss, model, epoch, ignore_keys_for_eval, inputs=inputs)
+                        # Log data loading time for this global_step
+                        logger.info(
+                            f"[DataLoad global_step: {self.state.global_step}] "
+                            f"data_load_time: {_data_load_time_for_global_step * 1000:.2f} ms "
+                            f"(accumulated over {args.gradient_accumulation_steps} micro-batches)"
+                        )
                         self._print_timer()
+                        # Reset data loading timer for next global_step
+                        _data_load_time_for_global_step = 0.0
                         step_control = 0
                     else:
                         self.control = self.callback_handler.on_substep_end(args, self.state, self.control)
@@ -2228,6 +2273,9 @@ class Trainer:
 
                 if self.args.ignore_data_skip:
                     self.timers and self.timers("read-data").start()
+
+                # Reset start time for next iteration's data loading measurement
+                _data_load_start_time = time.time()
 
             if step < 0:
                 logger.warning(
@@ -2495,7 +2543,7 @@ class Trainer:
                         model_flops_per_token=model_flops_per_token,
                     )
                 )
-
+            logs.update(self.global_training_logs)
             self._total_loss_scalar += tr_loss_scalar
             self._globalstep_last_logged = self.state.global_step
             self._globalstep_last_start_time = time.time()
@@ -3084,9 +3132,39 @@ class Trainer:
 
             if fleet_env._user_defined_strategy.hybrid_configs["pp_configs"].sharding_comm_overlap:
                 hp_optim._sharding_enable = False
-            return hp_optim
+            dist_optimizer = hp_optim
         else:
-            return fleet.distributed_optimizer(optimizer)
+            dist_optimizer = fleet.distributed_optimizer(optimizer)
+        if isinstance(dist_optimizer, HybridParallelOptimizer) and self.args.max_grad_norm > 0:
+            gradclip = dist_optimizer._inner_opt._grad_clip
+            global_norm_func = gradclip._global_norm
+            training_logs = self.global_training_logs
+
+            @paddle.no_grad()
+            def new_global_norm_func(
+                self,
+                global_norm_var_dist,
+                global_norm_var_not_dist,
+                *args,
+            ):
+                if len(args) > 0:
+                    global_norm_func(global_norm_var_dist, global_norm_var_not_dist, *args)
+                    global_norm_var_dist_moe, global_norm_var_not_dist_moe = args
+                    global_norm_var_fp32 = paddle.sqrt(
+                        global_norm_var_dist
+                        + global_norm_var_not_dist
+                        + global_norm_var_dist_moe
+                        + global_norm_var_not_dist_moe
+                    )
+                else:
+                    global_norm_func(global_norm_var_dist, global_norm_var_not_dist)
+                    global_norm_var_fp32 = paddle.sqrt(global_norm_var_dist + global_norm_var_not_dist)
+                training_logs["global_norm"] = global_norm_var_fp32.item()
+
+            self.optimizer._inner_opt._grad_clip._global_norm = types.MethodType(
+                new_global_norm_func, dist_optimizer._inner_opt._grad_clip
+            )
+        return dist_optimizer
 
     def _wrap_model(self, model, training=True):
         if self.args.enable_auto_parallel:
@@ -3468,7 +3546,7 @@ class Trainer:
         loss = outputs["loss"] if isinstance(outputs, dict) else outputs
         if isinstance(outputs, dict):
             loss = outputs["loss"]
-        elif isinstance(outputs, tuple):
+        elif isinstance(outputs, (tuple, list)):
             loss = outputs[0]
         else:
             loss = outputs
@@ -4526,7 +4604,9 @@ class Trainer:
                 batch_size = observed_batch_size
 
             # Prediction step
-            loss, logits, labels = self.prediction_step(model, inputs, prediction_loss_only, ignore_keys=ignore_keys)
+            loss, logits, labels = self.prediction_step(
+                model, inputs, prediction_loss_only, ignore_keys=ignore_keys, step=step
+            )
 
             # Update containers on host
             if loss is not None:
@@ -4688,13 +4768,23 @@ class Trainer:
         inputs: Dict[str, Union[paddle.Tensor, Any]],
         prediction_loss_only: bool,
         ignore_keys: Optional[List[str]] = None,
+        step: int = -1,
     ) -> Tuple[Optional[paddle.Tensor], Optional[paddle.Tensor], Optional[paddle.Tensor]]:
         """
         prediction_step function for pipeline parallel mode.
         """
+        # drop last
+        if step == 0 or not hasattr(self, "_pp_eval_data_buffer"):
+            self._pp_eval_data_buffer = []
+        self._pp_eval_data_buffer.append(inputs)
+        if len(self._pp_eval_data_buffer) != self.args.gradient_accumulation_steps:
+            return (None, None, None)
+        inputs = self._pp_eval_data_buffer
+        self._pp_eval_data_buffer = []
         if hasattr(model, "_prepare_pipeline_inputs_func"):
-            inputs, labels = model._prepare_pipeline_inputs_func(inputs)
-            has_labels = labels is not None
+            data_provider = model._prepare_pipeline_inputs_func(inputs)
+            labels = None
+            has_labels = True
         else:
             has_labels = all(inputs.get(k) is not None for k in self.label_names)
             inputs = self._prepare_inputs(inputs)
@@ -4706,6 +4796,7 @@ class Trainer:
             else:
                 labels = None
             inputs = inputs.pop("input_ids")
+            data_provider = [inputs, labels]
         # train & eval share the same p2p_helper, so clear it before and after each step
         if hasattr(model, "_p2p_helper"):
             model._p2p_helper.clear_meta_cache()
@@ -4725,7 +4816,7 @@ class Trainer:
                         and isinstance(model, PaddleFleetParallelBase)
                     ):
                         inputs = _prepare_inputs_for_fleet(inputs)
-                    loss = model.eval_batch([inputs, labels], compute_loss=True)
+                    loss = model.eval_batch(data_provider, compute_loss=True)
                     # loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
                 loss = loss.mean().detach()
             else:
@@ -4742,6 +4833,7 @@ class Trainer:
         inputs: Dict[str, Union[paddle.Tensor, Any]],
         prediction_loss_only: bool,
         ignore_keys: Optional[List[str]] = None,
+        step: int = -1,
     ) -> Tuple[Optional[paddle.Tensor], Optional[paddle.Tensor], Optional[paddle.Tensor]]:
         """
         Perform an evaluation step on `model` using `inputs`.
@@ -4773,7 +4865,7 @@ class Trainer:
         ):
             # hack for pipeline mode
             inputs = self._prepare_inputs(inputs)
-            return self.prediction_pipeline_step(model, inputs, prediction_loss_only, ignore_keys)
+            return self.prediction_pipeline_step(model, inputs, prediction_loss_only, ignore_keys, step)
 
         has_labels = all(inputs.get(k) is not None for k in self.label_names)
         inputs = self._prepare_inputs(inputs)

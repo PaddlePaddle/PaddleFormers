@@ -788,6 +788,10 @@ class Qwen2_5_VLIntegrationTest(unittest.TestCase):
 
 
 class Qwen2_5_VLCompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Qwen2_5_VLCompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:

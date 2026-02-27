@@ -381,6 +381,10 @@ class GptOssModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
 class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
     base_model_class = GptOssModel
 
+    @gpu_device_initializer(log_prefix="GptOssModelIntegrationTest")
+    def setUp(self):
+        pass
+
     def test_inference_no_attention(self):
         model = GptOssModel.from_pretrained(
             "PaddleFormers/tiny-random-gptoss",
@@ -431,6 +435,10 @@ class GptOssModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
 
 
 class GptOssCompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="GptOssCompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:

@@ -370,6 +370,10 @@ class DeepseekV3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
 
 
 class DeepseekV3IntegrationTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="DeepseekV3IntegrationTest")
+    def setUp(self):
+        pass
+
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
         model = DeepseekV3ForCausalLM.from_pretrained(
@@ -459,6 +463,10 @@ class DeepseekV3IntegrationTest(unittest.TestCase):
 
 
 class DeepseekV3CompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="DeepseekV3CompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:

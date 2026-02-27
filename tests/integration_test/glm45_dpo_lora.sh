@@ -19,39 +19,15 @@ if [ -f 'PaddleFleet/.venv/bin/activate' ]; then
    source PaddleFleet/.venv/bin/activate
 fi
 
-export root_dir=$(pwd)
-python -c "
-infile = '$root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py'
-print(infile)
-outfile = infile + '.new'
-with open(infile) as fin:
-    lines = fin.readlines()
-with open(outfile, 'w') as fout:
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        pad = line[:len(line)-len(line.lstrip())]
-        if line.lstrip().startswith('config.fuse_rms_norm = True'):
-            fout.write(pad + 'config.fuse_rms_norm = False\n')
-        else:
-            fout.write(line)
-        i += 1
-"
-mv $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py.new $root_dir/PaddleFormers/paddleformers/transformers/glm4_moe/modeling.py
-
 cd $root_dir/glm45_fleet
 export cur_dir=$(pwd)
 
-# prepare dpo data
-wget https://paddle-qa.bj.bcebos.com/fleet/fleet_dpo.tar
-tar -xf fleet_dpo.tar
-
+export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/dpo
 config_dpo_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_dpo_lora.yaml
-
 config_json=$CACHE_DIR/glm45/GLM-4.5-Air/config.json
 
-yq '.train_dataset_path = strenv(cur_dir) + "/dpo_data/dpo_train.jsonl"
-    | .eval_dataset_path = strenv(cur_dir) + "/dpo_data/dpo_eval.jsonl"
+yq '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+    | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
     | .model_name_or_path = strenv(CACHE_DIR) + "/zai-org/GLM-4.5-Air-Base"
     | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_lora_vdl_log"
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_lora_ckpts"' \
@@ -112,6 +88,10 @@ python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --gt_file ./${gt_loss_file}
 
 if [ $? -ne 0 ]; then
+  if [ "${BRANCH}" != "develop" ]; then
+    echo "please update precision in develop and rerun this workflow"
+    exit 1
+  fi
   pushd $root_dir/PaddleFormers
   source /root/proxy
   bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
@@ -122,11 +102,11 @@ if [ $? -ne 0 ]; then
   popd
   rm ${gt_loss_file} && mv ${log_loss_file} ${gt_loss_file}
   if [ ! -f precision_list.txt ]; then
-    wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}/precision_list.txt
+    wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}/${PR_ID}/precision_list.txt
     if [ $? -ne 0 ]; then
       wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}_latest/precision_list.txt
-      python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}
+      python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}/${PR_ID}
     fi
   fi
-  python $root_dir/bos/BosClient.py ${gt_loss_file} paddle-github-action/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}
+  python $root_dir/bos/BosClient.py ${gt_loss_file} paddle-github-action/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}/${PR_ID}
 fi
