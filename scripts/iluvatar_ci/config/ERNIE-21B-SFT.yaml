@@ -15,7 +15,6 @@ template: ernie_nothink
 model_name_or_path: baidu/ERNIE-4.5-21B-A3B-PT
 _attn_implementation: eager
 num_hidden_layers: 4
-mtp_loss_scaling_factor: 1.0
 
 ### finetuning
 # base
@@ -56,4 +55,4 @@ bf16: true
 fp16_opt_level: O2
 unified_checkpoint: false
 
-device: iluvatar_gpu
+# device: iluvatar_gpu
