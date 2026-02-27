@@ -34,7 +34,7 @@ from paddle.distributed.fleet.meta_parallel import (
 )
 from paddle.incubate.nn import FusedLinear
 
-from ...transformers.model_utils import VLMS, copy_custom_py_files_from_source
+from ...transformers.model_utils import VLMS
 from ...utils.import_utils import is_paddlefleet_available
 
 # Conditionally import paddlefleet modules
@@ -697,13 +697,6 @@ class LoRAModel(nn.Layer):
                 if merge_tensor_parallel:
                     model_config_to_save.tensor_model_parallel_size = -1
                 model_config_to_save.save_pretrained(save_directory)
-
-            # Copy custom .py files from the original model directory
-            source_dir = getattr(self.model.config, "name_or_path", None)
-            if source_dir and os.path.isdir(source_dir):
-                copied_files = copy_custom_py_files_from_source(source_dir, save_directory)
-                if copied_files:
-                    logger.info(f"Copied custom .py files from {source_dir}: {copied_files}")
 
     def _find_and_replace_module(self, model, module_name, lora_config):
         parent_module = model

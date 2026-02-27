@@ -21,7 +21,6 @@ import inspect
 import json
 import os
 import re
-import shutil
 import sys
 import tempfile
 import warnings
@@ -271,51 +270,6 @@ def apply_chunking_to_forward(
         return paddle.cat(output_chunks, axis=chunk_dim)
 
     return forward_fn(*input_tensors)
-
-
-def copy_custom_py_files_from_source(source_dir: str, target_dir: str) -> List[str]:
-    """
-    Copy .py files from the source model directory to the target save directory.
-
-    This function copies custom Python files (e.g., custom modeling code, configuration code)
-    from the original model loading path to the save directory, making it easier to reload
-    the model with custom code.
-
-    Args:
-        source_dir (str): The source directory path where the model was loaded from.
-        target_dir (str): The target directory path where the model will be saved.
-
-    Returns:
-        List[str]: A list of copied file names.
-    """
-    copied_files = []
-
-    # Check if source_dir is a valid local directory
-    if not source_dir or not os.path.isdir(source_dir):
-        return copied_files
-
-    # Ensure target directory exists
-    os.makedirs(target_dir, exist_ok=True)
-
-    # Find all .py files in the source directory (not recursively)
-    py_files = [f for f in os.listdir(source_dir) if f.endswith(".py") and os.path.isfile(os.path.join(source_dir, f))]
-
-    for file_name in py_files:
-        source_path = os.path.join(source_dir, file_name)
-        target_path = os.path.join(target_dir, file_name)
-
-        # Skip if the source and target are the same file
-        if os.path.abspath(source_path) == os.path.abspath(target_path):
-            continue
-
-        try:
-            shutil.copy2(source_path, target_path)
-            copied_files.append(file_name)
-            logger.info(f"Copied custom Python file: {file_name}")
-        except Exception as e:
-            logger.warning(f"Failed to copy {file_name}: {e}")
-
-    return copied_files
 
 
 def unwrap_model(model, *args, **kwargs):
@@ -2927,10 +2881,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         file_list = resolved_sharded_files if is_sharded else [resolved_archive_file]
         ckpt_path = get_common_folder(file_list)
 
-        # Ensure name_or_path is set to resolved local path for copying custom files during save
-        if not config.name_or_path and ckpt_path:
-            config.name_or_path = ckpt_path
-
         # 3. init the model
         init_args = config["init_args"] or ()
         with ContextManagers(init_contexts):
@@ -3256,14 +3206,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         # Only save the model in distributed training setup
         model_to_save = unwrap_model(self)
-
-        # Copy custom .py files from the original model loading path (if any)
-        if is_main_process and hasattr(model_to_save, "config") and hasattr(model_to_save.config, "name_or_path"):
-            source_model_path = model_to_save.config.name_or_path
-            if source_model_path and os.path.isdir(source_model_path):
-                copied_files = copy_custom_py_files_from_source(source_model_path, save_directory)
-                if copied_files:
-                    logger.info(f"Copied {len(copied_files)} custom Python file(s) from {source_model_path}")
 
         if save_checkpoint_format == "flex_checkpoint":
             if not hasattr(self, "_gen_inv_aoa_config"):

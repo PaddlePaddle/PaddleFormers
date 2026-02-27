@@ -137,6 +137,7 @@ from ..transformers.segment_parallel_utils import (
 )
 from ..utils import empty_device_cache, perf_utils
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
+from ..utils.download import resolve_file_path
 from ..utils.env import (
     EMA_STATE_DIC,
     FLEX_CKPT_AUTO_GENERATED_METADATA,
@@ -155,6 +156,7 @@ from ..utils.env import (
     SAFE_MASTER_WEIGHTS_INDEX_NAME,
     SAFE_PEFT_WEIGHTS_INDEX_NAME,
     SAFE_WEIGHTS_INDEX_NAME,
+    SAFE_WEIGHTS_NAME,
     SCALER_NAME,
     SCHEDULER_NAME,
     TRAINER_STATE_NAME,
@@ -3727,6 +3729,29 @@ class Trainer:
             os.makedirs(signal_dir, exist_ok=True)
             global_rank = paddle.distributed.get_rank() if paddle.distributed.get_world_size() > 1 else -1
             paddle.save(self.state.global_step, os.path.join(signal_dir, f".model_weight.done.{global_rank}"))
+
+        if self.args.copy_custom_file_list:
+            resolve_result = resolve_file_path(
+                self.args.model_name_or_path,
+                [SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME],
+                download_hub=self.args.download_hub,
+            )
+            if resolve_result is not None:
+                resolve_path = os.path.dirname(resolve_result)
+                logger.info(f"base model path parsed:{resolve_path}")
+            else:
+                logger.error(f"{self.args.model_name_or_path} does not found.")
+
+            custom_file_list = self.args.copy_custom_file_list.split()
+
+            for file_name in custom_file_list:
+                src_file = os.path.join(resolve_path, file_name)
+                if os.path.isfile(src_file):
+                    dst_file = os.path.join(output_dir, file_name)
+                    shutil.copy2(src_file, dst_file)
+                    logger.info(f"Copied custom file: {file_name}")
+                else:
+                    logger.warning(f"File '{file_name}' not found in {resolve_path}")
 
     def _filter_moe_no_sync_optimizer_params(self):
         """
