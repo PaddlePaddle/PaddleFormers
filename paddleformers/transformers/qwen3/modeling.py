@@ -20,6 +20,7 @@
 """Paddle Qwen3 model."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Union
 
 import paddle
@@ -28,6 +29,8 @@ from paddle import Tensor, nn
 from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
+from paddleformers.transformers.gpt_provider import GPTModelProvider
+
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
@@ -35,7 +38,7 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Qwen3MLP
 from ...nn.norm import Norm as GeneralNorm
-from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..contrastive_loss import SimpleContrastiveLoss
@@ -53,6 +56,23 @@ from ..model_outputs import (
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import Qwen3Config
+
+
+@dataclass
+class Qwen3ModelProvider(GPTModelProvider):
+    """Base provider for Qwen3 Models."""
+
+    use_qk_norm: bool = True
+
+    bias_activation_fusion: bool = True
+    bias_dropout_fusion: bool = True
+
+    transform_rules = {
+        "dtype": "params_dtype",
+    }
+
+    persist_layer_norm: bool = True
+    share_embeddings_and_output_weights: bool = False
 
 
 def rotate_half(x):
@@ -92,6 +112,7 @@ class Qwen3Attention(nn.Layer):
 
         self.tensor_parallel = config.tensor_model_parallel_size > 1
         self.sequence_parallel = config.sequence_parallel
+        self.fuse_attention_qkv = config.fuse_attention_qkv
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
 
         if config.tensor_model_parallel_size > 1:
@@ -108,13 +129,36 @@ class Qwen3Attention(nn.Layer):
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.config.num_attention_heads * self.head_dim
 
-        self.qkv_proj = GeneralLinear.create(
-            config.hidden_size,
-            q_hidden_size + 2 * kv_hidden_size,
-            has_bias=config.attention_bias,
-            config=config,
-            tp_plan="colwise",
-        )
+        if not self.fuse_attention_qkv:
+            self.q_proj = GeneralLinear.create(
+                config.hidden_size,
+                q_hidden_size,
+                has_bias=config.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
+            self.k_proj = GeneralLinear.create(
+                config.hidden_size,
+                kv_hidden_size,
+                has_bias=config.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
+            self.v_proj = GeneralLinear.create(
+                config.hidden_size,
+                kv_hidden_size,
+                has_bias=config.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
+        else:
+            self.qkv_proj = GeneralLinear.create(
+                config.hidden_size,
+                q_hidden_size + 2 * kv_hidden_size,
+                has_bias=config.attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
 
         self.o_proj = GeneralLinear.create(
             q_hidden_size,
@@ -151,29 +195,46 @@ class Qwen3Attention(nn.Layer):
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         """Input shape: Batch x Time x Channel"""
-        mix_layer = self.qkv_proj(hidden_states)
-        if self.sequence_parallel:
-            max_sequence_length = self.config.max_sequence_length
-            bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
-            q_len = max_sequence_length
-            target_shape = [
-                bsz,
-                q_len,
-                self.num_key_value_heads,
-                (self.num_key_value_groups + 2) * self.head_dim,
-            ]
+        if not self.fuse_attention_qkv:
+            # [bs, seq_len, num_head * head_dim] -> [seq_len / n, bs, num_head * head_dim] (n is model parallelism)
+            query_states = self.q_proj(hidden_states)
+            key_states = self.k_proj(hidden_states)
+            value_states = self.v_proj(hidden_states)
+
+            if self.sequence_parallel:
+                max_sequence_length = self.config.max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
+                q_len = max_sequence_length
+            else:
+                bsz, q_len, _ = hidden_states.shape
+            # Add qk norm for Qwen3 model.
+            query_states = self.q_norm(query_states.reshape([bsz, q_len, -1, self.head_dim]))
+            key_states = self.k_norm(key_states.reshape([bsz, q_len, -1, self.head_dim]))
+            value_states = value_states.reshape([bsz, q_len, -1, self.head_dim])
         else:
-            target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
-        mix_layer = paddle.reshape_(mix_layer, target_shape)
-        query_states, key_states, value_states = paddle.split(
-            mix_layer,
-            num_or_sections=[self.num_key_value_groups * self.head_dim, self.head_dim, self.head_dim],
-            axis=-1,
-        )
-        if self.gqa_or_mqa:
-            query_states = paddle.reshape_(query_states, [0, 0, self.num_heads, self.head_dim])
-        query_states = self.q_norm(query_states)
-        key_states = self.k_norm(key_states)
+            mix_layer = self.qkv_proj(hidden_states)
+            if self.sequence_parallel:
+                max_sequence_length = self.config.max_sequence_length
+                bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
+                q_len = max_sequence_length
+                target_shape = [
+                    bsz,
+                    q_len,
+                    self.num_key_value_heads,
+                    (self.num_key_value_groups + 2) * self.head_dim,
+                ]
+            else:
+                target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
+            mix_layer = paddle.reshape_(mix_layer, target_shape)
+            query_states, key_states, value_states = paddle.split(
+                mix_layer,
+                num_or_sections=[self.num_key_value_groups * self.head_dim, self.head_dim, self.head_dim],
+                axis=-1,
+            )
+            if self.gqa_or_mqa:
+                query_states = paddle.reshape_(query_states, [0, 0, self.num_heads, self.head_dim])
+            query_states = self.q_norm(query_states)
+            key_states = self.k_norm(key_states)
 
         # [bs, seq_len, num_head, head_dim] -> [bs, num_head, seq_len, head_dim]
         query_states = query_states.transpose(1, 2)
@@ -216,7 +277,7 @@ class Qwen3DecoderLayer(nn.Layer):
 
         self.self_attn = Qwen3Attention(config, layer_idx)
 
-        self.mlp = Qwen3MLP(config, fuse_up_gate=True)
+        self.mlp = Qwen3MLP(config, fuse_up_gate=config.fuse_attention_ffn)
         self.input_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
@@ -282,77 +343,138 @@ class Qwen3PretrainedModel(PretrainedModel):
     @classmethod
     def _gen_aoa_config(cls, config: Qwen3Config):
         model_prefix = "" if cls == cls.base_model_class else "model."
+        is_fleet = getattr(cls, "is_fleet", False)
+
         aoa_config = {
             "aoa_statements": [
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
                 f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
-                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
                 f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"model.norm.weight -> {model_prefix}norm.weight",
-                f"model.layers.$LAYER_ID.self_attn.q_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
-                f"model.layers.$LAYER_ID.self_attn.k_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
             ]
         }
 
-        # attention qkv
-        aoa_config["aoa_statements"] += [
-            f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
-        ]
-        if config.attention_bias:
+        if is_fleet:
             aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
+                f"model.layers.$LAYER_ID.self_attn.q_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_layernorm.weight",
+                f"model.layers.$LAYER_ID.self_attn.k_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_layernorm.weight",
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
+                f"model.layers.$LAYER_ID.self_attn.q_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"model.layers.$LAYER_ID.self_attn.k_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
             ]
 
+        # attention qkv
+        if not config.fuse_attention_qkv:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
+            ]
+            if config.attention_bias:
+                aoa_config["aoa_statements"] += [
+                    f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                ]
+
         # FFN
-        aoa_config["aoa_statements"] += [
-            f"model.layers.$LAYER_ID.mlp.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
-        ]
+        if not config.fuse_attention_ffn:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.{p}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{p}_proj.weight"
+                for p in ("gate", "up")
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
+            ]
 
         # lm_head
         if config.tie_word_embeddings:
-            aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
+            if is_fleet:
+                aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}lm_head.weight"]
+            else:
+                aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
+        else:
+            if is_fleet:
+                aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}lm_head.weight"]
 
         return aoa_config
 
     @classmethod
     def _gen_inv_aoa_config(cls, config: Qwen3Config):
         model_prefix = "" if cls == cls.base_model_class else "model."
+        is_fleet = getattr(cls, "is_fleet", False)
+
         aoa_statements = [
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
-            f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
             f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
             f"{model_prefix}norm.weight -> model.norm.weight",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.layers.$LAYER_ID.self_attn.q_norm.weight",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.layers.$LAYER_ID.self_attn.k_norm.weight",
         ]
 
-        aoa_statements += [
-            f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
-        ]
-        for layer_id in range(config.num_hidden_layers):
-            for x in ("q", "k", "v"):
+        if is_fleet:
+            aoa_statements += [
+                f"{model_prefix}embedding.embed_tokens.weight -> model.embed_tokens.weight",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.q_layernorm.weight -> model.layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.k_layernorm.weight -> model.layers.$LAYER_ID.self_attn.k_norm.weight",
+            ]
+        else:
+            aoa_statements += [
+                f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.layers.$LAYER_ID.self_attn.k_norm.weight",
+            ]
+
+        if not config.fuse_attention_qkv:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.self_attn.{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.{x}_proj.weight"
+                for x in ("q", "k", "v")
+            ]
+        else:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
+            ]
+            for layer_id in range(config.num_hidden_layers):
+                for x in ("q", "k", "v"):
+                    aoa_statements += [
+                        f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight"
+                    ]
+            if config.attention_bias:
                 aoa_statements += [
-                    f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight"
+                    f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
                 ]
-        if config.attention_bias:
-            aoa_statements += [
-                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
-            ]
 
-        aoa_statements += [
-            f"{model_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.gate_proj.weight, model.layers.$LAYER_ID.mlp.up_proj.weight, fused_ffn",
-        ]
-        for layer_id in range(config.num_hidden_layers):
+        if not config.fuse_attention_ffn:
             aoa_statements += [
-                f"model.layers.{layer_id}.mlp.gate_proj.weight^T -> model.layers.{layer_id}.mlp.gate_proj.weight",
-                f"model.layers.{layer_id}.mlp.up_proj.weight^T -> model.layers.{layer_id}.mlp.up_proj.weight",
+                f"{model_prefix}layers.$LAYER_ID.mlp.{y}_proj.weight^T -> model.layers.$LAYER_ID.mlp.{y}_proj.weight"
+                for y in ("gate", "up")
             ]
+        else:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.gate_proj.weight, model.layers.$LAYER_ID.mlp.up_proj.weight, fused_ffn",
+            ]
+            for layer_id in range(config.num_hidden_layers):
+                aoa_statements += [
+                    f"model.layers.{layer_id}.mlp.gate_proj.weight^T -> model.layers.{layer_id}.mlp.gate_proj.weight",
+                    f"model.layers.{layer_id}.mlp.up_proj.weight^T -> model.layers.{layer_id}.mlp.up_proj.weight",
+                ]
 
         if config.tie_word_embeddings:
-            aoa_statements += ["lm_head.weight -> _"]
+            if is_fleet:
+                aoa_statements += [f"{model_prefix}lm_head.weight -> _"]
+            else:
+                aoa_statements += ["lm_head.weight -> _"]
+        else:
+            if is_fleet:
+                aoa_statements += [f"{model_prefix}lm_head.weight -> lm_head.weight"]
+
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config
 
@@ -377,7 +499,6 @@ class Qwen3RotaryEmbedding(nn.Layer):
     def compute_default_rope_parameters(
         config: Optional[Qwen3Config] = None,
         seq_len: Optional[int] = None,
-        device: str = "cpu",
     ) -> tuple["paddle.Tensor", float]:
         """
         Computes the inverse frequencies according to the original RoPE implementation
@@ -396,9 +517,7 @@ class Qwen3RotaryEmbedding(nn.Layer):
         attention_factor = 1.0  # Unused in this type of RoPE
 
         # Compute the inverse frequencies
-        inv_freq = 1.0 / (
-            base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32).to(device) / dim)
-        )
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
         return inv_freq, attention_factor
 
     @dynamic_rope_update
@@ -593,6 +712,30 @@ class Qwen3Model(Qwen3PretrainedModel):
 
 
 class Qwen3ForCausalLM(Qwen3PretrainedModel):
+    is_fleet = True
+
+    def __new__(cls, config):
+        # Hybrid parallel config convert.
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+
+        model_provider_class = Qwen3ModelProvider
+        model_provider = model_provider_class.from_config(config)
+        loss_fn = None
+        if getattr(config, "dpo_config", None):
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
+        gpt_model = model_provider.provide(loss_fn=loss_fn)
+        gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
+        return gpt_model
+
+
+class Qwen3ForCausalLMDecapitated(Qwen3PretrainedModel):
     enable_to_static_method = True
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -921,7 +1064,33 @@ class Qwen3SentenceEmbedding(Qwen3PretrainedModel):
         return last_hidden_states
 
 
-class Qwen3ForCausalLMPipe(GeneralModelForCausalLMPipe):
+class Qwen3ForCausalLMPipe(Qwen3PretrainedModel, GeneralModelForCausalLMPipe):
+    is_fleet = True
+
+    def __new__(cls, config):
+        # Hybrid parallel config convert.
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+
+        model_provider_class = Qwen3ModelProvider
+        model_provider = model_provider_class.from_config(config)
+        loss_fn = None
+        if getattr(config, "dpo_config", None):
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
+        gpt_model = model_provider.provide(loss_fn=loss_fn)
+        gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        if not hasattr(config, "architectures"):
+            config.architectures = [cls.__name__.replace("Pipe", "")]
+        gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
+        return gpt_model
+
+
+class Qwen3ForCausalLMPipeDecapitated(GeneralModelForCausalLMPipe):
     config_class = Qwen3Config
     _decoder_layer_cls = Qwen3DecoderLayer
     _get_tensor_parallel_mappings = Qwen3Model._get_tensor_parallel_mappings
@@ -942,4 +1111,6 @@ __all__ = [
     "Qwen3ForSequenceClassification",
     "Qwen3ForTokenClassification",
     "Qwen3SentenceEmbedding",
+    "Qwen3ForCausalLMDecapitated",
+    "Qwen3ForCausalLMPipeDecapitated",
 ]
