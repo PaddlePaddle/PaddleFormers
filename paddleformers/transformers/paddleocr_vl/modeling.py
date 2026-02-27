@@ -226,8 +226,6 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
 
         self.num_patches = (self.image_size // self.patch_size) ** 2  # 729
         self.num_positions = self.num_patches
-        self.cache_position_embedding = dict()
-        self.cache_position_count = dict()
         self.position_embedding = GeneralEmbedding.create(
             config=config, num_embeddings=self.num_positions, embedding_dim=self.embed_dim
         )
@@ -258,29 +256,33 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
             patch_embeds = self.patch_embedding(
                 pixel_values.astype(dtype=target_dtype)
             )  # shape = [*, channel, grid, grid]
-            embeddings = patch_embeds.flatten(-3)
+            patch_embeds = patch_embeds.flatten(-3)
+            position_embeddings = paddle.empty_like(patch_embeds)
 
-            image_grid_thw = image_grid_thw.cpu().numpy()
-            split_lengths = image_grid_thw.prod(axis=1).tolist()
-            image_embeddings = paddle.split(embeddings, num_or_sections=split_lengths, axis=0)
-
-            tmp_embeddings = []
-            for (t, h, w), image_embedding in zip(image_grid_thw, image_embeddings):
-                position_embedding = (
-                    nn.functional.interpolate(
-                        patch_pos_embed,
-                        size=(h, w),
-                        mode="bilinear",
-                        align_corners=False,
+            intra_batch_cache = {}
+            start = 0
+            for t, h, w in image_grid_thw.tolist():
+                hw = (h, w)
+                if hw not in intra_batch_cache:
+                    position_embedding = (
+                        nn.functional.interpolate(
+                            patch_pos_embed,
+                            size=hw,
+                            mode="bilinear",
+                            align_corners=False,
+                        )
+                        .flatten(-2)
+                        .squeeze(0)
+                        .T
                     )
-                    .flatten(-2)
-                    .squeeze(0)
-                    .T.tile([t, 1])
+                    intra_batch_cache[hw] = position_embedding
+                end = start + t * h * w
+                position_embeddings[start:end] = (
+                    intra_batch_cache[hw] if t == 1 else intra_batch_cache[hw].tile([t, 1])
                 )
-
-                tmp_embeddings.append(image_embedding + position_embedding)
-            embeddings = paddle.concat(tmp_embeddings, axis=0).unsqueeze(0)
-            return embeddings
+                start = end
+            embeddings = position_embeddings + patch_embeds
+            return embeddings.unsqueeze(0)
         else:
             raise NotImplementedError(str(pixel_values.shape))
 
