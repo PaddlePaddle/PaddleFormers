@@ -22,11 +22,15 @@ from paddleformers.transformers import AutoFeatureExtractor, WhisperFeatureExtra
 
 class AutoFeatureExtractorTest(unittest.TestCase):
     def test_feature_extraction_from_pretrained(self):
-        processor = AutoFeatureExtractor.from_pretrained("Qwen/Qwen3-Omni-30B-A3B-Instruct")
+        processor = AutoFeatureExtractor.from_pretrained(
+            "PaddleFormers/tiny-random-qwen3omni", download_hub="aistudio"
+        )
         self.assertIsInstance(processor, WhisperFeatureExtractor)
 
     def test_feature_extraction_save_pretrained(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            feature_extractor = AutoFeatureExtractor.from_pretrained("Qwen/Qwen3-Omni-30B-A3B-Instruct")
+            feature_extractor = AutoFeatureExtractor.from_pretrained(
+                "PaddleFormers/tiny-random-qwen3omni", download_hub="aistudio"
+            )
             feature_extractor.save_pretrained(tmpdir)
             self.assertTrue(os.path.exists(os.path.join(tmpdir, "preprocessor_config.json")))

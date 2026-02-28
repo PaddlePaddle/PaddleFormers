@@ -39,13 +39,13 @@ class TestHFMultiSourceAudioProcessor(unittest.TestCase):
     @skip_for_none_ce_case
     def test_model_scope(self):
         feature_extractor = AutoFeatureExtractor.from_pretrained(
-            "Qwen/Qwen3-Omni-30B-A3B-Instruct", download_hub="modelscope"
+            "PaddleFormers/tiny-random-qwen3omni", download_hub="aistudio"
         )
         self.preprocess(feature_extractor)
 
     @skip_for_none_ce_case
     def test_hf_hub(self):
         feature_extractor = AutoFeatureExtractor.from_pretrained(
-            "Qwen/Qwen3-Omni-30B-A3B-Instruct", download_hub="huggingface"
+            "PaddleFormers/tiny-random-qwen3omni", download_hub="aistudio"
         )
         self.preprocess(feature_extractor)
