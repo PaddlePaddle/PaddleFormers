@@ -25,7 +25,6 @@ from paddle.distributed import fleet
 from paddleformers.nn.embedding import Embedding
 from paddleformers.transformers import LlamaConfig
 from tests.parallel_launch import TestMultipleGpus
-from tests.testing_utils import require_paddle_at_least_2_gpu
 
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -115,8 +114,6 @@ class TestEmbedding(TestMultipleGpus):
         self.assertIn("other_param", processed)
         print("paddleformers.nn.Embedding: test_process_kwargs_vocab_parallel: success")
 
-    # def test_create_vocab_parallel_embedding(self):
-    #     self.run_2gpu(__file__)
 
     def test_register_new_embedding(self):
         class MyEmbedding(nn.Layer):
