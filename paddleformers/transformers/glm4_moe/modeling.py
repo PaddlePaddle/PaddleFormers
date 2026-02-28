@@ -79,7 +79,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     share_embeddings_and_output_weights: bool = False
 
     apply_rope_fusion: bool = True
-    mtp_loss_scaling_factor: float = 0.3
+    mtp_loss_scaling_factor: float = 0.1
     recompute_granularity: str = None
     virtual_pipeline_model_parallel_size: int = None
 
