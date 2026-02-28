@@ -1,5 +1,6 @@
 from ..configuration_utils import PretrainedConfig
 
+
 class Qwen3_5VisionConfig(PretrainedConfig):
     model_type = "qwen3_5"
     base_config_key = "vision_config"
@@ -34,5 +35,6 @@ class Qwen3_5VisionConfig(PretrainedConfig):
         self.out_hidden_size = out_hidden_size
         self.num_position_embeddings = num_position_embeddings
         self.initializer_range = initializer_range
+
 
 __all__ = ["Qwen3_5VisionConfig"]
