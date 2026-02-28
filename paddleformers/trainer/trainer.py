@@ -3730,7 +3730,7 @@ class Trainer:
             global_rank = paddle.distributed.get_rank() if paddle.distributed.get_world_size() > 1 else -1
             paddle.save(self.state.global_step, os.path.join(signal_dir, f".model_weight.done.{global_rank}"))
 
-        if self.args.copy_custom_file_list:
+        if getattr(self.args, "copy_custom_file_list", None):
             resolve_result = resolve_file_path(
                 self.args.model_name_or_path,
                 [SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME],
