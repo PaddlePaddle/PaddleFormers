@@ -4,8 +4,9 @@ from paddle import nn
 
 from ..model_outputs import BaseModelOutputWithPooling
 from .configuration import Qwen3_5VisionConfig
-from ..qwen3_vl.modeling import  Qwen3VLVisionModel, Qwen3VLVisionBlock
+from ..qwen3_vl.modeling import Qwen3VLVisionModel, Qwen3VLVisionBlock
 from typing import Optional
+
 
 class Qwen3_5VisionModel(Qwen3VLVisionModel):
     config_class = Qwen3_5VisionConfig
@@ -13,7 +14,7 @@ class Qwen3_5VisionModel(Qwen3VLVisionModel):
 
     def __init__(self, config, *inputs, **kwargs) -> None:
         super().__init__(config, *inputs, **kwargs)
-        if not hasattr(self, 'pos_embed'):
+        if not hasattr(self, "pos_embed"):
             self.pos_embed = nn.Embedding(config.num_position_embeddings, config.hidden_size)
         del self.deepstack_visual_indexes
         del self.deepstack_merger_list
@@ -47,7 +48,7 @@ class Qwen3_5VisionModel(Qwen3VLVisionModel):
             # Select dtype based on the following factors:
             #  - FA2 requires that cu_seqlens_q must have dtype int32
             #  - paddle.onnx.export requires that cu_seqlens_q must have same dtype as grid_thw
-            dtype=grid_thw.dtype if not paddle.in_dynamic_mode() else 'int32',
+            dtype=grid_thw.dtype if not paddle.in_dynamic_mode() else "int32",
         )
         cu_seqlens = F.pad(cu_seqlens, [1, 0], value=0)
 
@@ -65,5 +66,6 @@ class Qwen3_5VisionModel(Qwen3VLVisionModel):
             last_hidden_state=hidden_states,
             pooler_output=merged_hidden_states,
         )
+
 
 __all__ = ["Qwen3_5VisionModel"]
