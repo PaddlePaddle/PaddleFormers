@@ -115,6 +115,7 @@ jobs:
             -e "BRANCH=$BRANCH" \
             -e "AGILE_COMPILE_BRANCH=$AGILE_COMPILE_BRANCH" \
             -e "PR_ID=$PR_ID" \
+            -e CUDA_VISIBLE_DEVICES=${GPU_DEVICES} \
             -e "COMMIT_ID=$COMMIT_ID" \
             -e "work_dir=$work_dir" \
             -e "ci_scripts=$ci_scripts" \
