@@ -156,6 +156,9 @@ import_structure = {
     "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
+    "kimi_k25.vision_processor": ["KimiK25VisionProcessor"],
+    "kimi_k25.processor": ["KimiK25Processor"],
+    "kimi_k25.tokenizer": ["TikTokenTokenizer"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
     "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
     "llama.configuration": [
@@ -358,6 +361,7 @@ if TYPE_CHECKING:
     from .glm4_moe import *
     from .glm4v_moe import *
     from .gpt_oss import *
+    from .kimi_k25 import *
     from .phi3 import *
     from .gemma3_text import *
 else:

@@ -214,6 +214,7 @@ class Qwen3VLVisionAttention(nn.Layer):
         cu_seqlens: paddle.Tensor,
         rotary_pos_emb: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[tuple[paddle.Tensor, paddle.Tensor]] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> paddle.Tensor:
         seq_length = hidden_states.shape[0]
@@ -229,26 +230,17 @@ class Qwen3VLVisionAttention(nn.Layer):
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
-        lengths = cu_seqlens[1:] - cu_seqlens[:-1]
-        splits = [
-            paddle.split(tensor, lengths.tolist(), axis=2) for tensor in (query_states, key_states, value_states)
-        ]
-        attn_outputs = [
-            attention_interface(
-                self,
-                q,
-                k,
-                v,
-                attention_mask=None,
-                attn_mask_startend_row_indices=None,
-                scaling=self.scaling,
-                dropout=0.0 if not self.training else self.attention_dropout,
-                is_causal=False,
-                **kwargs,
-            )[0]
-            for q, k, v in zip(*splits)
-        ]
-        attn_output = paddle.cat(attn_outputs, axis=-2)
+        attn_output, attn_weights = attention_interface(
+            self,
+            query_states,
+            key_states,
+            value_states,
+            attention_mask=None,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            dropout=0.0 if not self.training else self.attention_dropout,
+            scaling=self.scaling,
+            **kwargs,
+        )
 
         attn_output = attn_output.reshape([seq_length, -1]).contiguous()
         attn_output = self.proj(attn_output)
@@ -269,6 +261,7 @@ class Qwen3VLVisionBlock(nn.Layer):
         cu_seqlens: paddle.Tensor,
         rotary_pos_emb: Optional[paddle.Tensor] = None,
         position_embeddings: Optional[tuple[paddle.Tensor, paddle.Tensor]] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> paddle.Tensor:
         hidden_states = hidden_states + self.attn(
@@ -276,6 +269,7 @@ class Qwen3VLVisionBlock(nn.Layer):
             cu_seqlens=cu_seqlens,
             rotary_pos_emb=rotary_pos_emb,
             position_embeddings=position_embeddings,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             **kwargs,
         )
         hidden_states = hidden_states + self.mlp(self.norm2(hidden_states))
@@ -675,6 +669,21 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
             axis=0, dtype="int32"
         )
         cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
+
+        lengths = cu_seqlens[1:] - cu_seqlens[:-1]
+        indices_per_segment = paddle.stack(
+            [
+                cu_seqlens[1:],
+                paddle.full_like(cu_seqlens[1:], cu_seqlens[-1]),
+                paddle.zeros_like(cu_seqlens[:-1]),
+                cu_seqlens[:-1],
+            ],
+            axis=1,
+        )
+        attn_mask_startend_row_indices = paddle.repeat_interleave(indices_per_segment, lengths, axis=0)[
+            None, None, ...
+        ]
+
         deepstack_feature_lists = []
         for layer_num, blk in enumerate(self.blocks):
             cu_seqlens_now = cu_seqlens
@@ -691,12 +700,14 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
                     hidden_states,
                     cu_seqlens=cu_seqlens_now,
                     position_embeddings=position_embeddings,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 )
             else:
                 hidden_states = blk(
                     hidden_states,
                     cu_seqlens=cu_seqlens_now,
                     position_embeddings=position_embeddings,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 )
             if layer_num in self.deepstack_visual_indexes:
                 deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(layer_num)](

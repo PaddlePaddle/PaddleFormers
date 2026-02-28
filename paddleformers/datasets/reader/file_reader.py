@@ -119,7 +119,7 @@ class FileReader(BaseReader):
         for item in res:
             try:
                 convert_data = self.convertor_map[self._file_type](item)
-                checked_data = self.data_check(convert_data)
+                checked_data = self._data_check(convert_data)
             except Exception as e:
                 logger.warning(f"preprocess data error: {e}, data: {str(item)[:30]}")
                 continue
@@ -130,11 +130,12 @@ class FileReader(BaseReader):
             if self._split_multi_turn:
                 assistant_index = 0
                 for index, turn in enumerate(checked_data["messages"]):
-                    if "assistant" in turn["role"] and checked_data["label"][assistant_index]:
-                        new_data = copy.deepcopy(checked_data)
-                        new_data["messages"] = checked_data["messages"][: index + 1]
-                        new_data["label"] = [1]
-                        yield new_data
+                    if "assistant" in turn["role"]:
+                        if checked_data["label"][assistant_index]:
+                            new_data = copy.deepcopy(checked_data)
+                            new_data["messages"] = checked_data["messages"][: index + 1]
+                            new_data["label"] = [1]
+                            yield new_data
                         assistant_index += 1
             else:
                 yield checked_data
@@ -143,7 +144,7 @@ class FileReader(BaseReader):
         _, ext = os.path.splitext(self._file_path)
         return ext.lower()
 
-    def data_check(self, data):
+    def _data_check(self, data):
         if not data:
             return None
 

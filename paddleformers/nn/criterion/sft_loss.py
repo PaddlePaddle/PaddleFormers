@@ -195,7 +195,7 @@ def mtp_sft_loss_forward(
     **kwargs
 ):
     num_nextn_predict_layers = self.config.get("num_nextn_predict_layers", 0)
-    multi_token_pred_lambda = self.config.get("multi_token_pred_lambda", 0.3)
+    mtp_loss_scaling_factor = self.config.get("mtp_loss_scaling_factor", 0.1)
     if num_nextn_predict_layers > 0:
         labels_ori = labels
         labels = labels[:, :-num_nextn_predict_layers]
@@ -230,11 +230,11 @@ def mtp_sft_loss_forward(
     if num_nextn_predict_layers > 0:
         loss = add_loss(
             loss,
-            multi_token_pred_lambda * sum([x for x in mtp_loss_res]) / len(mtp_loss_res),
+            mtp_loss_scaling_factor * sum([x for x in mtp_loss_res]) / len(mtp_loss_res),
         )
 
     if loss_sum is not None:
-        loss_sum = loss_sum + multi_token_pred_lambda * sum([x.detach() for x in mtp_loss_res_sum]) / len(
+        loss_sum = loss_sum + mtp_loss_scaling_factor * sum([x.detach() for x in mtp_loss_res_sum]) / len(
             mtp_loss_res_sum
         )
 

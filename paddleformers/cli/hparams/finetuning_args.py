@@ -71,10 +71,6 @@ class PreTrainingArguments(TrainingArguments):
         default=1,
         metadata={"help": "the logging interval of global_training_logs"},
     )
-    multi_token_pred_depth: Optional[int] = field(
-        default=0,
-        metadata={},
-    )
     num_consecutive: int = field(
         default=1,
         metadata={"help": "H5 file consecutive num."},
@@ -282,7 +278,6 @@ class FinetuningArguments(
         default=False,
         metadata={"help": "whether to use fp8 training"},
     )
-    multi_token_pred_lambda: float = field(default=0.3, metadata={"help": "multi token pred lambda"})
     use_recompute_mtp: bool = field(default=False, metadata={"help": "Whether to use recompute_mtp"})
 
     # NOTE(gongenlei): new add autotuner_benchmark

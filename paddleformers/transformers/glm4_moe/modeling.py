@@ -79,7 +79,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     share_embeddings_and_output_weights: bool = False
 
     apply_rope_fusion: bool = True
-    mtp_loss_scaling_factor: float = 0.3
+    mtp_loss_scaling_factor: float = 0.1
     recompute_granularity: str = None
     virtual_pipeline_model_parallel_size: int = None
 
@@ -1063,7 +1063,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             prefix = f"model.layers.{layer_idx}"
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
             aoa_statements += [
-                f"{prefix_offset}.eh_proj.weight -> {prefix}.eh_proj.weight^T",
+                f"{prefix_offset}.eh_proj.weight^T -> {prefix}.eh_proj.weight",
                 f"{prefix_offset}.enorm.weight -> {prefix}.enorm.weight",
                 f"{prefix_offset}.hnorm.weight -> {prefix}.hnorm.weight",
                 f"{prefix_offset}.norm.weight -> {prefix}.shared_head.norm.weight",
