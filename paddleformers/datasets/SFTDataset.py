@@ -76,6 +76,7 @@ class SFTDataSet(IterableDataset):
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
+        self.dtype = dataset_config.get("dtype", None)
         if self.is_pretraining and self.packing and self.truncate_packing:
             logger.info("[dataflow] pretrain dataflow using truncate packing.")
 
@@ -486,6 +487,7 @@ class SFTDataSet(IterableDataset):
                     audlens=[len(audios)],
                     batch_ids=None,
                     messages=messages,
+                    dtype=self.dtype,
                 )
                 messages = self.template.mm_plugin.process_messages(
                     messages, images, videos, audios, mm_inputs, self.processor

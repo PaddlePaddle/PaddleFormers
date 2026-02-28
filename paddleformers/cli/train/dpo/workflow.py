@@ -309,6 +309,7 @@ def run_dpo(
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
         "use_filtered_label_loss": model_config.use_filtered_label_loss,
+        "dtype": training_args.compute_type,
     }
 
     dataset_config.update(

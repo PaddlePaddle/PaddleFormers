@@ -377,7 +377,7 @@ def run_sft(
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
     processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
-
+    compute_type = "bfloat16" if training_args.compute_type == "bf16" else training_args.compute_type
     dataset_config = {
         "tokenizer": tokenizer,
         "processor": processor,
@@ -397,6 +397,7 @@ def run_sft(
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
+        "dtype": compute_type,
     }
 
     dataset_config.update(
