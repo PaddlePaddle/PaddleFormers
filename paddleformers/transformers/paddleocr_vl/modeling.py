@@ -515,6 +515,7 @@ class PaddleOCREncoder(nn.Layer):
             cu_seqlens=cu_seqlens,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             rope_emb=rope_emb,
+            preserve_external_rng_state=False,
         )
         return hidden_states
 
@@ -1481,6 +1482,7 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             output_attentions,
             past_key_values,
             use_cache,
+            preserve_external_rng_state=False,
         )
         return hidden_states
 
@@ -2005,21 +2007,8 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
                 split_sections = image_grid_thw.prod(axis=1).cpu().numpy().tolist()
                 image_embeds = self.mlp_AR(image_embeds, image_grid_thw, split_sections)
 
-                n_image_tokens = (input_ids == self.config.image_token_id).sum().item()
-                n_image_features = image_embeds.shape[0]
-                if n_image_tokens != n_image_features:
-                    raise ValueError(
-                        f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {n_image_features}"
-                    )
-
                 mask = input_ids == self.config.image_token_id
-                mask_unsqueezed = mask.unsqueeze(-1)
-                mask_expanded = mask_unsqueezed.expand_as(inputs_embeds)
-                image_mask = mask_expanded
-
-                image_embeds = image_embeds.astype(inputs_embeds.dtype)
-
-                inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
+                inputs_embeds[mask] = image_embeds
 
         if attention_mask is not None and attention_mask.dtype != paddle.bool:
             attention_mask = paddle.cast(attention_mask, paddle.bool)

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - develop
+      - release/*
 
 env:
   COMMIT_ID: ${{ github.sha }}
