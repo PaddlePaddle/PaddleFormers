@@ -38,7 +38,7 @@ save_steps: 400
 save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 8
-logging_dir: ./PaddleOCR-VL-SFT-Bengali-lora/tensorboard_logs/
+logging_dir: ./PaddleOCR-VL-SFT-Bengali-lora/visualdl_logs/
 output_dir: ./PaddleOCR-VL-SFT-Bengali-lora
 disable_tqdm: true
 eval_accumulation_steps: 16
@@ -64,11 +64,9 @@ recompute_method: uniform
 recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
+pre_alloc_memory: 16
 
 # save
 unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
-
-# other
-report_to: tensorboard
