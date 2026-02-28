@@ -8,7 +8,6 @@ on:
 
 env:
   COMMIT_ID: ${{ github.sha }}
-  BRANCH: ${{ github.ref_name }}
   TASK: PaddleFormers-CE-${{ github.sha }}-build
   CE_name: build-ce
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
@@ -34,6 +33,7 @@ jobs:
           paddle: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda126-Cudnn95-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          BRANCH=${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
           DOCKER_VER=$(docker version --format '{{.Server.Version}}' | cut -d. -f1,2)
           if (( $(echo "$DOCKER_VER < 19.03" | bc -l) )); then
@@ -44,7 +44,7 @@ jobs:
           echo "DOCKER_VER=${DOCKER_VER}"
           echo "GPU_OPTION=${GPU_OPTION}"
           docker run -d -t ${GPU_OPTION} --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
-            -v $work_dir/../../..:$work_dir/../../.. \
+            -v $work_di/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
             -v /home/paddle-1/models/:/home/models/ \
