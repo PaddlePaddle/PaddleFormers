@@ -1,11 +1,9 @@
-from typing import Optional
-
 import paddle
 import paddle.nn.functional as F
 from paddle import nn
 
 from ..model_outputs import BaseModelOutputWithPooling
-from ..qwen3_vl.modeling import Qwen3VLVisionBlock, Qwen3VLVisionModel
+from ..qwen3_vl.modeling import Qwen3VLVisionModel
 from .configuration import Qwen3_5VisionConfig
 
 
