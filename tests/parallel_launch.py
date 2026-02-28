@@ -21,16 +21,12 @@ import sys
 import time
 import unittest
 
-import paddle
 from paddle.distributed.utils.launch_utils import (
     TrainerProc,
     find_free_ports,
     get_cluster,
-    terminate_local_procs,
     watch_local_trainers,
 )
-
-from paddleformers.utils.downloader import get_path_from_url_with_filelock
 
 logger = logging.getLogger("root")
 
