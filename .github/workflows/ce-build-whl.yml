@@ -69,9 +69,6 @@ jobs:
           rm -rf PaddleFormers
           tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
           source $work_dir/../../../proxy
-          export http_proxy=http://bdhttp:ff015d42d2e77bcf1df0b20fbb848340@180.76.138.26:18801
-          export https_proxy=http://bdhttp:ff015d42d2e77bcf1df0b20fbb848340@180.76.138.26:18801
-          export proxy=http://bdhttp:ff015d42d2e77bcf1df0b20fbb848340@180.76.138.26:18801
           cd PaddleFormers
           git config --global user.name "PaddleCE"
           git config --global user.email "paddle_ce@example.com"
