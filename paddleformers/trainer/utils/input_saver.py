@@ -51,7 +51,7 @@ class InputSaver:
 
         fields_env = os.getenv(
             "FLAGS_save_inputs_fields",
-            "input_ids, labels, position_ids, image_grid_thw, pixel_values, input_features",
+            "input_ids, labels, position_ids, image_grid_thw, pixel_values, input_features, pixel_values_videos, video_grid_thw, attn_mask_start_row_indices",
         )
         return [f.strip() for f in fields_env.split(",") if f.strip()]
 
@@ -59,12 +59,12 @@ class InputSaver:
         """Convert tensor/array to numpy array."""
         if value is None:
             return None
-
-        # Handle paddle bfloat16
-        if hasattr(value, "dtype") and str(value.dtype) == "paddle.bfloat16":
-            value = value.astype("float32")
-
-        if hasattr(value, "numpy"):  # paddle.Tensor
+        print(value.dtype)
+        if hasattr(value, "dtype") and value.dtype == paddle.bfloat16:
+            value = paddle.cast(value, "float32")
+        if hasattr(value, "cpu"):
+            return value.cpu().numpy()
+        elif hasattr(value, "numpy"):
             return value.numpy()
         elif isinstance(value, np.ndarray):
             return value
@@ -111,16 +111,10 @@ class InputSaver:
         for field in self.fields_to_save:
             if field in inputs and inputs[field] is not None:
                 try:
-                    if field == "pixel_values":
-                        # Special handling for pixel_values to preserve bfloat16
-                        bf16_tensor = inputs[field].cast(paddle.bfloat16)
-                        arr = bf16_tensor.numpy()
-                    else:
-                        arr = self._to_numpy(inputs[field])
-
+                    arr = self._to_numpy(inputs[field])
                     if arr is not None:
                         file_path = os.path.join(self.save_dir, f"{step}_{field}.npy")
-                        np.save(file_path, arr)
+                    np.save(file_path, arr)
                 except Exception as e:
                     logger.warning(f"[Debug] Failed to save {field}: {e}")
             else:
