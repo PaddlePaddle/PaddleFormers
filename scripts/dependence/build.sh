@@ -20,19 +20,9 @@ mkdir -p /workspace/PaddleFormers/build_logs
 export log_path=/workspace/PaddleFormers/build_logs
 mkdir -p /workspace/PaddleFormers/upload
 upload_path=/workspace/PaddleFormers/upload
-export Build_list=()
 
 python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
-
-get_diff_case(){
-    git diff --numstat --name-only HEAD~1 HEAD
-    for file_name in `git diff --numstat --name-only HEAD~1 HEAD`;do
-        arr_file_name=(${file_name//// })
-        Build_list[${#Build_list[@]}]="paddleformers"
-    done
-    echo ${Build_list[*]}
-}
 
 install_paddle(){
     echo -e "\033[35m ---- Install paddlepaddle-gpu  \033[0m"
@@ -51,58 +41,43 @@ paddleformers_build (){
 
     python -m pip install -r requirements.txt
     python setup.py bdist_wheel
-    python -m pip install --ignore-installed  dist/p****.whl --force-reinstall --no-dependencies
+
+    echo "install_formers_post_whl"
+    cd ../
+    python -m pip install --upgrade pip
+    python -m pip install --ignore-installed  PaddleFormers/dist/p****.whl --no-cache-dir --force-reinstall --no-dependencies
+    cd -
+    echo "waiting for import paddleformers..."
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
     commit=$(python -c "import paddleformers; print(paddleformers.version.commit)")
     commit=${commit:-unknown}
     cp $formers_dir/dist/p****.whl ${upload_path}/
-    cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-release-0.0.0-py3-none-any.whl
-    cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-release-${commit}-py3-none-any.whl
-}
+    cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-0.0.0-py3-none-any.whl
+    
+    whl_file=$(ls $formers_dir/dist/paddleformers-*.whl)
+    base_name=$(basename $whl_file)
+    new_name=$(echo $base_name | sed "s/\.post[0-9]\+/&+${commit}/")
+    echo "commit whl: $new_name"
+    cp "$whl_file" "${upload_path}/${new_name}"
 
-install_paddleformers(){
-    echo "install_formers_develop"
-    python -m pip install --user https://paddleformers.bj.bcebos.com/wheels/paddleformers-0.0.0-py3-none-any.whl --no-cache-dir
+    echo "install_formers_commit_whl"
+    python -m pip install --user "${upload_path}/${new_name}" --no-cache-dir --force-reinstall --no-dependencies
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
 }
 
-contain_case(){
-    local e
-    for e in "${@:2}";do
-        if [[ "$e" == "$1" ]];then
-            return 1
-        fi
-    done
-    return 0
-}
-
-### main
+# main
 cd ${formers_dir}
-get_diff_case
-Build_list=($(awk -v RS=' ' '!a[$1]++' <<< ${Build_list[*]}))
-if [[ ${#Build_list[*]} -ne 0 ]];then
-    echo -e "\033[31m ---- Build_list length: ${#Build_list[*]}, cases: ${Build_list[*]} \033[0m"
-    echo -e "\033[31m ============================= \033[0m"
-    # install_paddle
-    if [[ $(contain_case paddleformers ${Build_list[@]}; echo $?) -eq 1 ]];then
-        paddleformers_build
-    fi
-else
-    echo -e "\033[32m Don't need build any whl  \033[0m"
-fi
-
+echo -e "\033[32m ---- build paddleformers whl  \033[0m"
+paddleformers_build
 
 echo -e "\033[32m ---- make PaddleFormers.tar.gz  \033[0m"
 cd ${formers_dir}
-cd /workspace
-tar -zcf PaddleFormers.tar.gz PaddleFormers/
-mv PaddleFormers.tar.gz ${upload_path}/
-
-
-# upload in .github/workflows/ce-build-whl.yml
-# if [ -e "${upload_path}" ] && [ "$(ls -A "${upload_path}/")" ]; then
-#     cd ${upload_path} && ls -A "${upload_path}"
-#     python /workspace/../../../bos/BosClient.py ${upload_path} 'paddleformers/wheels'
-#     rm -rf ${upload_path}
-#     echo -e "\033[32m upload wheels SUCCESS \033[0m"
-# fi
+# paddleformer.tar only include the develop branch
+if [ -n "$BRANCH" ] && [ "$BRANCH" = "develop" ]; then
+    echo "Checkout branch $BRANCH"
+    cd /workspace
+    tar -zcf PaddleFormers.tar.gz PaddleFormers/
+    mv PaddleFormers.tar.gz ${upload_path}/
+else
+    echo "No BRANCH specified, skip checkout"
+fi

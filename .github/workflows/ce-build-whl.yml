@@ -1,13 +1,14 @@
 name: Build Whl CE
 
 on:
-  push:
+  pull_request:
     branches:
       - develop
       - release/*
 
 env:
   COMMIT_ID: ${{ github.sha }}
+  BRANCH: ${{ github.ref_name }}
   TASK: PaddleFormers-CE-${{ github.sha }}-build
   CE_name: build-ce
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
@@ -47,7 +48,7 @@ jobs:
             -v $work_dir:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
             -v /home/paddle-1/models/:/home/models/ \
-            -e BRANCH \
+            -e "BRANCH=$BRANCH" \
             -e COMMIT_ID \
             -e work_dir \
             -e ce_scripts \
@@ -63,14 +64,23 @@ jobs:
           docker exec -t $container_name /bin/bash -c '
           rm -rf * .[^.]*
           echo "Downloading PaddleFormers.tar"
-          git clone -b release/1.1 --depth=20 https://github.com/PaddlePaddle/PaddleFormers.git
+          wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+          echo "Extracting PaddleFormers.tar"
+          rm -rf PaddleFormers
+          tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
           source $work_dir/../../../proxy
+          export http_proxy=http://bdhttp:ff015d42d2e77bcf1df0b20fbb848340@180.76.138.26:18801
+          export https_proxy=http://bdhttp:ff015d42d2e77bcf1df0b20fbb848340@180.76.138.26:18801
+          export proxy=http://bdhttp:ff015d42d2e77bcf1df0b20fbb848340@180.76.138.26:18801
           cd PaddleFormers
           git config --global user.name "PaddleCE"
           git config --global user.email "paddle_ce@example.com"
           git pull
           git submodule update --init --recursive --force
-          git checkout -b $COMMIT_ID $COMMIT_ID
+          git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
+          echo "Checking out ${BRANCH}..."
+          git fetch upstream ${BRANCH}:${BRANCH}
+          git checkout ${BRANCH}
           git log --pretty=oneline -10
           '
 
