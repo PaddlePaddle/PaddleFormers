@@ -134,6 +134,15 @@ class ProcessorTesterMixin:
             return video_input
         return [video_input] * batch_size
 
+    def prepare_audio_inputs(self, batch_size: int | None = None):
+        """This function prepares a list of numpy videos."""
+        sampling_rate = 16000
+        duration = 1.0  # seconds
+        audio_array = np.random.randn(int(sampling_rate * duration)).astype(np.float32)
+        if batch_size is None:
+            return audio_array
+        return [audio_array] * batch_size
+
     def test_processor_to_json_string(self):
         processor = self.get_processor()
         obj = json.loads(processor.to_json_string())
