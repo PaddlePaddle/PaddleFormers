@@ -114,7 +114,6 @@ class TestEmbedding(TestMultipleGpus):
         self.assertIn("other_param", processed)
         print("paddleformers.nn.Embedding: test_process_kwargs_vocab_parallel: success")
 
-
     def test_register_new_embedding(self):
         class MyEmbedding(nn.Layer):
             def __init__(self, num_embeddings, embedding_dim, **kwargs):

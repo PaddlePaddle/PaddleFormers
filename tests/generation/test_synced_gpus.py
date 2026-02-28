@@ -26,7 +26,6 @@ from paddleformers.transformers import AutoConfig, AutoModelForCausalLM, AutoTok
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from tests.transformers.test_modeling_common import ids_tensor
 
-
 if __name__ == "__main__":
     model_config = AutoConfig.from_pretrained("Paddleformers/tiny-random-llama")
     model_config.fuse_rms_norm = False

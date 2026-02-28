@@ -167,6 +167,7 @@ def start_local_trainers(
 
     return procs
 
+
 class TestMultipleWithGloo(unittest.TestCase):
     def run_2cpu(self, target_file_name):
 
