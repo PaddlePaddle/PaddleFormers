@@ -44,7 +44,7 @@ jobs:
           echo "DOCKER_VER=${DOCKER_VER}"
           echo "GPU_OPTION=${GPU_OPTION}"
           docker run -d -t ${GPU_OPTION} --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
-            -v $work_di/../../..:$work_dir/../../.. \
+            -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
             -v /home/paddle-1/models/:/home/models/ \
