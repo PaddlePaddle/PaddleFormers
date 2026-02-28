@@ -273,7 +273,7 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
                         )
                         .flatten(-2)
                         .squeeze(0)
-                        .T
+                        .T.astype(target_dtype)
                     )
                     intra_batch_cache[hw] = position_embedding
                 end = start + t * h * w
