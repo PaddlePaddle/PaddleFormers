@@ -2880,6 +2880,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         file_list = resolved_sharded_files if is_sharded else [resolved_archive_file]
         ckpt_path = get_common_folder(file_list)
+
         # 3. init the model
         init_args = config["init_args"] or ()
         with ContextManagers(init_contexts):

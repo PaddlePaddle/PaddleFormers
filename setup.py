@@ -113,13 +113,13 @@ def show():
 
 # only use this file to contral the version
 
-__version__ = "1.1.0.post"
+__version__ = "1.1.0.dev"
 
 if os.getenv(PADDLEFORMERS_STABLE_VERSION):
-    __version__ = __version__.replace(".post", "")
+    __version__ = __version__.replace(".dev", "")
 else:
     formatted_date = datetime.now().date().strftime("%Y%m%d")
-    __version__ = __version__.replace(".post", ".post{}".format(formatted_date))
+    __version__ = __version__.replace(".dev", ".dev{}".format(formatted_date))
 
 
 # write the version information for the develop version

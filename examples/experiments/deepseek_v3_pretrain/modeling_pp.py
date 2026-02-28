@@ -337,7 +337,7 @@ class DecoderLayerNode(ScheduleNode):
 
         self.mlp_layer = mlp_layer
         self.moe_group = mlp_layer.moe_group
-        self.moe_num_experts = mlp_layer.moe_num_experts
+        self.n_routed_experts = mlp_layer.n_routed_experts
 
         self.states = None
         self.hidden_states_meta = None
@@ -363,7 +363,7 @@ class DecoderLayerNode(ScheduleNode):
                 intermediate_hidden_states,
                 token_indices,
                 token_probs,
-                self.moe_num_experts,
+                self.n_routed_experts,
                 self.moe_group,
                 previous_event=previous_event,
                 async_finish=True,

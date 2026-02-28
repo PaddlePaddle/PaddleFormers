@@ -419,6 +419,19 @@ class Glm4vMoePreTrainedModel(PretrainedModel):
     _keep_in_fp32_modules = ["mlp.gate.weight", "e_score_correction_bias"]
     config_class = Glm4vMoeConfig
 
+    transpose_weight_keys = [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "qkv_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+        "qkv",
+        "proj",
+    ]
+
     input_modalities = ("text", "image", "video")
 
     @classmethod
