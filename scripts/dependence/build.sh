@@ -97,16 +97,8 @@ fi
 
 echo -e "\033[32m ---- make PaddleFormers.tar.gz  \033[0m"
 cd ${formers_dir}
+# paddleformer.tar only include the develop branch
 git checkout develop
 cd /workspace
 tar -zcf PaddleFormers.tar.gz PaddleFormers/
 mv PaddleFormers.tar.gz ${upload_path}/
-
-
-# upload in .github/workflows/ce-build-whl.yml
-# if [ -e "${upload_path}" ] && [ "$(ls -A "${upload_path}/")" ]; then
-#     cd ${upload_path} && ls -A "${upload_path}"
-#     python /workspace/../../../bos/BosClient.py ${upload_path} 'paddleformers/wheels'
-#     rm -rf ${upload_path}
-#     echo -e "\033[32m upload wheels SUCCESS \033[0m"
-# fi
