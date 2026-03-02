@@ -211,6 +211,7 @@ from .unified_checkpoint import UnifiedCheckpointHandler
 from .utils import reshard as reshard_util
 from .utils.async_save import AsyncSaver
 from .utils.ckpt_converter import CheckpointConverter
+from .utils.input_saver import InputSaver
 from .utils.reshard import SHARDING_STRATEGY_V1, split_opt_state
 from .utils.sharding_io import GroupGetter, to_device
 
@@ -445,6 +446,7 @@ class Trainer:
         self.processing_class = processing_class
         self.optimizer, self.lr_scheduler = optimizers
 
+        self.inputsaver = InputSaver()
         self.label_smoother = None
         self.state = TrainerState()
         self.control = TrainerControl()
@@ -3535,6 +3537,10 @@ class Trainer:
                 labels = inputs["generator_labels"]
         else:
             labels = None
+
+        # Save inputs for debugging if enabled
+        if InputSaver.should_save():
+            self.inputsaver.save_inputs(inputs, self.state.global_step)
 
         outputs = model(**inputs)
 
