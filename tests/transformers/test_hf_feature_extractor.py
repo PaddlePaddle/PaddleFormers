@@ -24,17 +24,29 @@ from tests.testing_utils import skip_for_none_ce_case
 class TestHFMultiSourceAudioProcessor(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        import requests
-
-        AUDIO_URL = "https://paddlenlp.bj.bcebos.com/models/community/paddlemix/audio-files/wave.wav"
-        audio_response = requests.get(AUDIO_URL)
-        with open("./cough.wav", "wb") as f:
-            f.write(audio_response.content)
-        cls.audio = process_audio_info("./wave.wav")
+        conversation = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "audio",
+                        "audio": "https://paddlenlp.bj.bcebos.com/models/community/paddlemix/audio-files/wave.wav",
+                    },
+                ],
+            },
+        ]
+        cls.audio = process_audio_info(conversation, use_audio_in_video=True)
 
     def preprocess(self, feature_extractor):
         inputs = feature_extractor(self.audio, return_tensors="pd")
-        self.assertIsInstance(inputs["pixel_values"], paddle.Tensor)
+        self.assertIsInstance(inputs["input_features"], paddle.Tensor)
+
+    # TODO: Temporarily use repo_id oftiny model, replace later.
+    def test_aistudio(self):
+        feature_extractor = AutoFeatureExtractor.from_pretrained(
+            "PaddleFormers/tiny-random-qwen3omni", download_hub="aistudio"
+        )
+        self.preprocess(feature_extractor)
 
     @skip_for_none_ce_case
     def test_model_scope(self):
