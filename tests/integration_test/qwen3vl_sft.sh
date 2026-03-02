@@ -27,6 +27,8 @@ if [[ "$step" == "moe" ]]; then
     export output_dir=$root_dir/checkpoints/qwen3vl-moe
     if [ $machine == "a100" ]; then
         export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft_moe_a100.yaml
+    else
+      exit 0
     fi
 elif [[ "$step" == "tp8" ]]; then
     export config_yaml=$root_dir/PaddleFormers/tests/config/ci/qwen3vl_sft.yaml
