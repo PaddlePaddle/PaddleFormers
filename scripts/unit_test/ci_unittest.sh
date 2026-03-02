@@ -141,9 +141,11 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     cd ${nlp_dir}
     echo ' Testing all unittest cases '
     unset http_proxy && unset https_proxy
+    export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}
+    echo "export CUDA_VISIBLE_DEVICES=: ${CUDA_VISIBLE_DEVICES}"
     set +e
     export PYTHONFAULTHANDLER=1
-    export CUDA_VISIBLE_DEVICES=
+    
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
