@@ -50,6 +50,7 @@ class LayerNorm(nn.LayerNorm):
             mark_as_sequence_parallel_parameter(self.bias)
 
 
+@paddle.jit.marker.unified
 class RMSNorm(nn.Layer):
     def __init__(self, config: PretrainedConfig, hidden_size=None, norm_eps=None, input_is_parallel=False, **kwargs):
         super().__init__()
@@ -65,7 +66,6 @@ class RMSNorm(nn.Layer):
         if input_is_parallel:
             self.enable_sequence_parallel()
 
-    @paddle.jit.marker.unified
     def forward(self, hidden_states):
         current_device = detect_device()
         if self.config.get("fuse_rms_norm", True) and current_device != "iluvatar_gpu":

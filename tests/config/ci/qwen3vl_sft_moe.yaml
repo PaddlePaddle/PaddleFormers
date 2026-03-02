@@ -97,7 +97,7 @@ dataloader_shuffle: false
 
 benchmark: false
 report_to: none
-dataloader_num_workers: 8
+dataloader_num_workers: 0
 prefetch_factor: 8
 
 # profile: true

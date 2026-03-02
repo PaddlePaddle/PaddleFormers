@@ -136,15 +136,15 @@ class ErnieEmbeddingPipe(nn.Layer):
 
         emb = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
-        if self.config.multi_token_pred_depth > 0:
+        if self.config.num_nextn_predict_layers > 0:
             if self.config.enable_mtp_magic_send:
-                emb = emb[:, : -self.config.multi_token_pred_depth, :]
+                emb = emb[:, : -self.config.num_nextn_predict_layers, :]
                 if self.sequence_parallel:
                     emb = emb.reshape([-1, emb.shape[-1]])
                     emb = ScatterOp.apply(emb)
             else:
-                inputs_embeds_extra = emb[:, -self.config.multi_token_pred_depth :, :]
-                inputs_embeds = emb[:, : -self.config.multi_token_pred_depth, :]
+                inputs_embeds_extra = emb[:, -self.config.num_nextn_predict_layers :, :]
+                inputs_embeds = emb[:, : -self.config.num_nextn_predict_layers, :]
                 inputs_embeds_ori = inputs_embeds
                 batch_size, seq_length, _ = inputs_embeds.shape
 
@@ -152,7 +152,7 @@ class ErnieEmbeddingPipe(nn.Layer):
                     inputs_embeds = inputs_embeds.reshape([-1, inputs_embeds.shape[-1]])
                     inputs_embeds = ScatterOp.apply(inputs_embeds)
                 mtp_emb_res = [inputs_embeds]
-                for depth in range(self.config.multi_token_pred_depth):
+                for depth in range(self.config.num_nextn_predict_layers):
                     inputs_embeds_mtp = paddle.concat(
                         [
                             inputs_embeds_ori[:, (depth + 1) :, :],
@@ -179,9 +179,9 @@ class ErnieEmbeddingPipe(nn.Layer):
             attention_mask.stop_gradient = True
 
         if attn_mask_startend_row_indices is not None:
-            if self.config.multi_token_pred_depth > 0:
+            if self.config.num_nextn_predict_layers > 0:
                 attn_mask_startend_row_indices = attn_mask_startend_row_indices[
-                    :, :, : -self.config.multi_token_pred_depth
+                    :, :, : -self.config.num_nextn_predict_layers
                 ].contiguous()
 
         ret = (emb,)
@@ -193,7 +193,7 @@ class ErnieEmbeddingPipe(nn.Layer):
             ret += (inbatch_pack_offset.clone(),)
         if attn_mask_startend_row_indices is not None:
             ret += (paddle.empty(0), paddle.empty(0), attn_mask_startend_row_indices)
-        if self.config.multi_token_pred_depth > 0 and not self.config.enable_mtp_magic_send:
+        if self.config.num_nextn_predict_layers > 0 and not self.config.enable_mtp_magic_send:
             ret += (input_ids,)
             assert len(ret) == 2, "mtp only support one input which is input_ids"
         if len(ret) == 1:
@@ -245,11 +245,11 @@ class ErnieDecoderLayerPipe(ErnieDecoderLayer):
         self.use_mem_eff_attn = config.use_mem_eff_attn
 
     def forward(self, args):
-        if self.config.multi_token_pred_depth > 0 and not self.config.enable_mtp_magic_send:
+        if self.config.num_nextn_predict_layers > 0 and not self.config.enable_mtp_magic_send:
             res = args[0]
-            tensor_list = paddle.split(res, self.config.multi_token_pred_depth + 1)
-            inputs_embeds = tensor_list[-self.config.multi_token_pred_depth :]
-            args = tuple(tensor_list[: -self.config.multi_token_pred_depth])
+            tensor_list = paddle.split(res, self.config.num_nextn_predict_layers + 1)
+            inputs_embeds = tensor_list[-self.config.num_nextn_predict_layers :]
+            args = tuple(tensor_list[: -self.config.num_nextn_predict_layers])
         else:
             res = None
 
@@ -340,7 +340,7 @@ class ErnieDecoderLayerPipe(ErnieDecoderLayer):
             ret += (paddle.empty(0), paddle.empty(0), attn_mask_startend_row_indices)
         if len(ret) == 1:
             (ret,) = ret
-        if self.config.multi_token_pred_depth > 0:
+        if self.config.num_nextn_predict_layers > 0:
             if self.config.enable_mtp_magic_send:
                 ret = (ret,) if isinstance(ret, paddle.Tensor) else ret
             else:
@@ -355,15 +355,15 @@ class RMSNormPipe(RMSNorm):
         mark_as_sequence_parallel_parameter(self.weight)
 
     def forward(self, args):
-        if self.config.multi_token_pred_depth > 0:
+        if self.config.num_nextn_predict_layers > 0:
             if self.config.enable_mtp_magic_send:
-                assert len(args) == self.config.multi_token_pred_depth + 1, "the length is not valid in mtp"
+                assert len(args) == self.config.num_nextn_predict_layers + 1, "the length is not valid in mtp"
                 mtp_outputs = []
                 for hidden_states in args:
                     mtp_outputs.append(super().forward(hidden_states))
                 return mtp_outputs
             else:
-                tensor_list = paddle.split(args[0], self.config.multi_token_pred_depth + 1)
+                tensor_list = paddle.split(args[0], self.config.num_nextn_predict_layers + 1)
                 mtp_outputs = []
                 for hidden_states in tensor_list:
                     mtp_outputs.append(super().forward(hidden_states))
@@ -384,7 +384,7 @@ class RMSNormPipe(RMSNorm):
 
 class ErnieMoELMHeadPipe(ErnieMoELMHead):
     def forward(self, args):
-        if self.config.multi_token_pred_depth > 0:
+        if self.config.num_nextn_predict_layers > 0:
             logits = list()
             for _hidden_states in args:
                 logits.append(super().forward(_hidden_states))
@@ -401,14 +401,16 @@ class MTPLayer(nn.Layer):
         self.config = config
         if self.config.use_recompute_mtp:
             self.config.use_recompute = False
-        assert self.config.multi_token_pred_depth > 0, "Adding MTPLayer must assign value to multi_token_pred_depth"
+        assert (
+            self.config.num_nextn_predict_layers > 0
+        ), "Adding MTPLayer must assign value to num_nextn_predict_layers"
 
         self.mtp_block = paddle.nn.LayerList(
-            [ErnieDecoderLayer(config, layer_idx) for layer_idx in range(self.config.multi_token_pred_depth)]
+            [ErnieDecoderLayer(config, layer_idx) for layer_idx in range(self.config.num_nextn_predict_layers)]
         )
         Norm = RMSNorm
-        self.mtp_hidden_norm = paddle.nn.LayerList([Norm(config) for _ in range(self.config.multi_token_pred_depth)])
-        self.mtp_emb_norm = paddle.nn.LayerList([Norm(config) for _ in range(self.config.multi_token_pred_depth)])
+        self.mtp_hidden_norm = paddle.nn.LayerList([Norm(config) for _ in range(self.config.num_nextn_predict_layers)])
+        self.mtp_emb_norm = paddle.nn.LayerList([Norm(config) for _ in range(self.config.num_nextn_predict_layers)])
 
         LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else paddle.nn.Linear
         self.mtp_linear_proj = paddle.nn.LayerList(
@@ -418,7 +420,7 @@ class MTPLayer(nn.Layer):
                     self.config.hidden_size,
                     bias_attr=config.use_bias,
                 )
-                for _ in range(self.config.multi_token_pred_depth)
+                for _ in range(self.config.num_nextn_predict_layers)
             ]
         )
         if config.sequence_parallel:
@@ -444,18 +446,18 @@ class MTPLayer(nn.Layer):
             else:
                 hidden_states, inputs_embeds = args
                 attn_mask_startend_row_indices = None
-            inputs_embeds_extra = inputs_embeds[:, -self.config.multi_token_pred_depth :, :]
-            inputs_embeds = inputs_embeds[:, : -self.config.multi_token_pred_depth, :]
+            inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]
+            inputs_embeds = inputs_embeds[:, : -self.config.num_nextn_predict_layers, :]
             inputs_embeds_ori = inputs_embeds
         else:
             res = args[0]
-            tensor_list = paddle.split(res, self.config.multi_token_pred_depth + 1)
+            tensor_list = paddle.split(res, self.config.num_nextn_predict_layers + 1)
             hidden_states = tensor_list[0]
             inputs_embeds_cur_depth_list = tensor_list[1:]
             attn_mask_startend_row_indices = None
 
         output_list = [hidden_states]
-        for depth in range(self.config.multi_token_pred_depth):
+        for depth in range(self.config.num_nextn_predict_layers):
             if self.config.enable_mtp_magic_send:
                 inputs_embeds_cur_depth = paddle.concat(
                     [
@@ -518,7 +520,7 @@ class ErniePretrainingCriterionPipe(ErniePretrainingCriterion):
         super().__init__(config)
 
     def forward(self, logits, labels):
-        if self.config.multi_token_pred_depth > 0:
+        if self.config.num_nextn_predict_layers > 0:
             mtp_logits = logits[1:]
             logits = logits[0]
             loss, loss_sum = super().forward(logits, labels, mtp_logits=mtp_logits)
@@ -892,7 +894,7 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
             assert max(insert_empty_layer) < config.num_hidden_layers, "empty layers location exceed the num layers"
         logger.info(f"use insert_empty_layer: {insert_empty_layer}")
 
-        if config.multi_token_pred_depth == 0:
+        if config.num_nextn_predict_layers == 0:
             self.add_sequential_layer(LayerDesc(self.ErnieEmbeddingPipeClass, config=config), "ernie")
         else:
             if config.enable_mtp_magic_send:
@@ -929,7 +931,7 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                     f"empty.layers.{i}",
                 )
 
-        if config.multi_token_pred_depth > 0:
+        if config.num_nextn_predict_layers > 0:
             if config.enable_mtp_magic_send:
                 self.add_sequential_layer(
                     SharedLayerDesc(
@@ -941,7 +943,7 @@ class ErnieMoEForCausalLMPipe(PipelinePretrainedModel, PipelineLayer):
                     "embed_share",
                 )
             self.add_sequential_layer(LayerDesc(self.MTPLayerClass, config=config), "ernie")
-            num_empty_layers = num_empty_layers - config.multi_token_pred_depth
+            num_empty_layers = num_empty_layers - config.num_nextn_predict_layers
 
         if config.num_empty_layers_add_in_tail:
             for n in range(num_empty_layers):

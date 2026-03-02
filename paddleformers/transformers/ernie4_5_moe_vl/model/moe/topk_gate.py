@@ -196,12 +196,12 @@ class TopKGate(nn.Layer):
         self.use_correction_bias = config.moe_use_aux_free  # true
         self.use_token_type_bias = config.get("moe_use_token_type_bias", False)
 
-        if config.moe_gate_act == "softmax":
+        if config.scoring_func == "softmax":
             self.act = partial(F.softmax, axis=-1)  # [S,E]
-        elif config.moe_gate_act == "sigmoid":
+        elif config.scoring_func == "sigmoid":
             self.act = F.sigmoid
         else:
-            raise ValueError(f"{config.moe_gate_act} is not supported.")
+            raise ValueError(f"{config.scoring_func} is not supported.")
         self.no_jitter = True
         self.expert_drop = False
         self.eye_matrix = None
@@ -209,13 +209,13 @@ class TopKGate(nn.Layer):
         self.norm_gate_logits = config.moe_norm_gate_logits  # true
         self.one = paddle.ones([], dtype="float32")
 
-        self.moe_aux_loss_lambda = paddle.to_tensor(config.moe_aux_loss_lambda, dtype="float32")
-        self.moe_z_loss_lambda = paddle.to_tensor(config.moe_z_loss_lambda, dtype="float32")
+        self.router_aux_loss_coef = paddle.to_tensor(config.router_aux_loss_coef, dtype="float32")
+        self.router_z_loss_coef = paddle.to_tensor(config.router_z_loss_coef, dtype="float32")
         self.moe_orthogonal_loss_lambda = paddle.to_tensor(config.moe_orthogonal_loss_lambda, dtype="float32")
-        if self.moe_aux_loss_lambda.ndim == 0:
-            self.moe_aux_loss_lambda = self.moe_aux_loss_lambda.unsqueeze(0)
-        if self.moe_z_loss_lambda.ndim == 0:
-            self.moe_z_loss_lambda = self.moe_z_loss_lambda.unsqueeze(0)
+        if self.router_aux_loss_coef.ndim == 0:
+            self.router_aux_loss_coef = self.router_aux_loss_coef.unsqueeze(0)
+        if self.router_z_loss_coef.ndim == 0:
+            self.router_z_loss_coef = self.router_z_loss_coef.unsqueeze(0)
         if self.moe_orthogonal_loss_lambda.ndim == 0:
             self.moe_orthogonal_loss_lambda = self.moe_orthogonal_loss_lambda.unsqueeze(0)
 
@@ -266,7 +266,7 @@ class TopKGate(nn.Layer):
         logger.info(
             f"{config.moe_gate}: w/ capacity: {self.cap} experts:{self.num_experts} "
             f"use_token_type_bias:{self.use_token_type_bias} "
-            f"gate_act:{config.moe_gate_act} "
+            f"gate_act:{config.scoring_func} "
             f"norm_gate_logits={self.norm_gate_logits} use_correction_bias={self.use_correction_bias}"
         )
 
@@ -276,8 +276,8 @@ class TopKGate(nn.Layer):
         """
         if self.config.multimodel_experts:
             # support setting lambda for each expert group
-            self.moe_z_loss_lambda = self.moe_z_loss_lambda.expand(len(self.num_experts))
-            self.moe_aux_loss_lambda = self.moe_aux_loss_lambda.expand(len(self.num_experts))
+            self.router_z_loss_coef = self.router_z_loss_coef.expand(len(self.num_experts))
+            self.router_aux_loss_coef = self.router_aux_loss_coef.expand(len(self.num_experts))
             self.moe_orthogonal_loss_lambda = self.moe_orthogonal_loss_lambda.expand(len(self.num_experts))
 
             for i, num_experts in enumerate(self.num_experts):

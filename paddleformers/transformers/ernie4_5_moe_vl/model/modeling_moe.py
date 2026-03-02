@@ -1442,9 +1442,9 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
             if self.config.num_nextn_predict_layers > 0:
                 loss = add_loss(
                     loss,
-                    self.config.multi_token_pred_lambda * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
+                    self.config.mtp_loss_scaling_factor * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
                 )
-                loss_sum = loss_sum + self.config.multi_token_pred_lambda * sum(
+                loss_sum = loss_sum + self.config.mtp_loss_scaling_factor * sum(
                     [x[1].detach() for x in mtp_loss_res]
                 ) / len(mtp_loss_res)
         else:
@@ -1452,7 +1452,7 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
             if self.config.num_nextn_predict_layers > 0:
                 loss = add_loss(
                     loss,
-                    self.config.multi_token_pred_lambda * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
+                    self.config.mtp_loss_scaling_factor * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
                 )
 
         if router_loss is not None and isinstance(router_loss, paddle.Tensor):
