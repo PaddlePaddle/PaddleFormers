@@ -122,7 +122,7 @@ class GlmMoeDsaConfig(PretrainedConfig):
             Whether fastdeploy fallback.
     """
 
-    model_type = "glm4_moe"
+    model_type = "glm_moe_dsa"
     keys_to_ignore_at_inference = ["past_key_values"]
 
     def __init__(

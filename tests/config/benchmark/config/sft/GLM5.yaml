@@ -126,3 +126,4 @@ template_backend: custom
 template: glm_moe_dsa
 
 multi_latent_attention: true
+use_qk_norm: true
