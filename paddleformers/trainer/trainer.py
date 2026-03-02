@@ -2557,7 +2557,7 @@ class Trainer:
                     logs.update(
                         {k: v.item() if hasattr(v, "item") else v for k, v in LanguageLoss.mtp_loss_tracker.items()}
                     )
-            except ImportError:
+            except (ImportError, AttributeError):
                 pass
 
             self._total_loss_scalar += tr_loss_scalar
