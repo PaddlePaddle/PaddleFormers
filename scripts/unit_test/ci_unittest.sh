@@ -142,7 +142,6 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     echo ' Testing all unittest cases '
     unset http_proxy && unset https_proxy
     export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}
-    echo "export CUDA_VISIBLE_DEVICES=: ${CUDA_VISIBLE_DEVICES}"
     set +e
     export PYTHONFAULTHANDLER=1
     

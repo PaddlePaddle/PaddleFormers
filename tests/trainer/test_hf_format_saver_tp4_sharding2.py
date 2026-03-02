@@ -33,7 +33,6 @@ from paddleformers.transformers.linear_utils import (
     RowParallelLinear,
 )
 from paddleformers.transformers.model_utils import HFFormatFullParamSaver
-from tests.parallel_launch import TestMultipleGpus
 from tests.testing_utils import require_paddle_at_least_8_gpu, skip_for_none_ce_case
 
 # Add path
