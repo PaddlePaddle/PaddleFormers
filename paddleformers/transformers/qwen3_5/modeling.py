@@ -70,11 +70,26 @@ class Qwen3_5VisionModel(Qwen3VLVisionModel):
         )
         cu_seqlens = F.pad(cu_seqlens, [1, 0], value=0)
 
+        lengths = cu_seqlens[1:] - cu_seqlens[:-1]
+        indices_per_segment = paddle.stack(
+            [
+                cu_seqlens[1:],
+                paddle.full_like(cu_seqlens[1:], cu_seqlens[-1]),
+                paddle.zeros_like(cu_seqlens[:-1]),
+                cu_seqlens[:-1],
+            ],
+            axis=1,
+        )
+        attn_mask_startend_row_indices = paddle.repeat_interleave(indices_per_segment, lengths, axis=0)[
+            None, None, ...
+        ]
+
         for blk in self.blocks:
             hidden_states = blk(
                 hidden_states,
                 cu_seqlens=cu_seqlens,
                 position_embeddings=position_embeddings,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 **kwargs,
             )
 
