@@ -41,7 +41,7 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
+            labels=$(gh api -H "Accept: application/vnd.github+json" /repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels | jq '[.[].name]')
             echo "PR labels: $labels"
 
             if echo "$labels" | grep -q "skip-fleet-models-ci"; then
