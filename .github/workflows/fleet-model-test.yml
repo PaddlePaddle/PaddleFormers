@@ -39,6 +39,8 @@ jobs:
       - name: Check skip-fleet-models-ci label
         id: check_skip
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             labels=$(gh api -H "Accept: application/vnd.github+json" /repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels | jq '[.[].name]')
