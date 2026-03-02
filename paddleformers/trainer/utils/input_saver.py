@@ -43,6 +43,9 @@ class InputSaver:
         self.save_mode = os.getenv("FLAGS_save_inputs_mode", "").lower()
         self.save_dir = os.getenv("FLAGS_save_inputs_dir", f"./saved_inputs/{self.save_mode}")
         self.fields_to_save = self._parse_fields_to_save()
+        # clear dir
+        if os.path.exists(self.save_dir):
+            os.system(f"rm -rf {self.save_dir}")
 
     def _parse_fields_to_save(self) -> list:
         """Parse comma-separated fields to save from environment variable."""
@@ -87,7 +90,6 @@ class InputSaver:
             return
 
         os.makedirs(self.save_dir, exist_ok=True)
-
         if self.save_mode == "npz":
             self._save_as_npz(inputs, step)
         elif self.save_mode == "npy":

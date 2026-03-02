@@ -446,6 +446,7 @@ class Trainer:
         self.processing_class = processing_class
         self.optimizer, self.lr_scheduler = optimizers
 
+        self.inputsaver = InputSaver()
         self.label_smoother = None
         self.state = TrainerState()
         self.control = TrainerControl()
@@ -3525,8 +3526,7 @@ class Trainer:
 
         # Save inputs for debugging if enabled
         if InputSaver.should_save():
-            saver = InputSaver()
-            saver.save_inputs(inputs, self.state.global_step)
+            self.inputsaver.save_inputs(inputs, self.state.global_step)
 
         outputs = model(**inputs)
 

@@ -604,7 +604,6 @@ def mm_collate_fn(
         video_grid_thw = []
         input_features = []
         feature_attention_mask = []
-        video_second_per_grid = []
         for seq in batch_sequence:
             original_token_ids.append(seq.token_ids)
             mm_inputs = seq.mm_inputs
@@ -625,8 +624,9 @@ def mm_collate_fn(
                 filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
                 attn_mask = gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
                 filtered_args["attention_mask"] = paddle.to_tensor(attn_mask[0, 0, -1:, :])
-                filtered_args["second_per_grids"] = mm_inputs["video_second_per_grid"]
-                # assert (filtered_args["attention_mask"] == 1).all()
+                filtered_args["second_per_grids"] = mm_inputs.get(
+                    "video_second_per_grid"
+                )  # assert (filtered_args["attention_mask"] == 1).all()
                 position_ids, rope_deltas = get_rope_func(input_ids=paddle.to_tensor([seq.token_ids]), **filtered_args)
                 original_position_ids.append(position_ids)
 
