@@ -27,16 +27,19 @@ import os
 import random
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import BinaryIO, Optional
+from typing import Any, BinaryIO, Optional
 
-# import librosa
+import librosa
 import numpy as np
+import paddle
 import requests
 from decord import VideoReader, cpu
 from PIL import Image
 from PIL.Image import Image as ImageObject
 from transformers.image_utils import is_valid_image
 from typing_extensions import override
+
+from paddleformers.transformers.qwen2_vl.vision_process import fetch_video
 
 from ...utils.log import logger
 from .augment_utils import (
@@ -47,6 +50,47 @@ from .augment_utils import (
     RandomSingleSidePadding,
     transforms,
 )
+
+
+def round_by_factor(number: int, factor: int) -> int:
+    """Returns the closest integer to 'number' that is divisible by 'factor'."""
+    return round(number / factor) * factor
+
+
+def ceil_by_factor(number: int, factor: int) -> int:
+    """Returns the smallest integer greater than or equal to 'number' that is divisible by 'factor'."""
+    return math.ceil(number / factor) * factor
+
+
+def floor_by_factor(number: int, factor: int) -> int:
+    """Returns the largest integer less than or equal to 'number' that is divisible by 'factor'."""
+    return math.floor(number / factor) * factor
+
+
+def smart_resize(height: int, width: int, factor: int, min_pixels: int, max_pixels: int):
+    """
+    Rescales the image so that the following conditions are met:
+
+    1. Both dimensions (height and width) are divisible by 'factor'.
+    2. The total number of pixels is within the range ['min_pixels', 'max_pixels'].
+    3. The aspect ratio of the image is maintained as closely as possible.
+    """
+    if max(height, width) / min(height, width) > 200:
+        raise ValueError(
+            f"absolute aspect ratio must be smaller than 200, got {max(height, width) / min(height, width)}"
+        )
+    h_bar = max(factor, round_by_factor(height, factor))
+    w_bar = max(factor, round_by_factor(width, factor))
+    if h_bar * w_bar > max_pixels:
+        beta = math.sqrt((height * width) / max_pixels)
+        h_bar = floor_by_factor(height / beta, factor)
+        w_bar = floor_by_factor(width / beta, factor)
+    elif h_bar * w_bar < min_pixels:
+        beta = math.sqrt(min_pixels / (height * width))
+        h_bar = ceil_by_factor(height * beta, factor)
+        w_bar = ceil_by_factor(width * beta, factor)
+    return h_bar, w_bar
+
 
 IMAGE_PLACEHOLDER = os.getenv("IMAGE_PLACEHOLDER", "<image>")
 VIDEO_PLACEHOLDER = os.getenv("VIDEO_PLACEHOLDER", "<video>")
@@ -239,9 +283,7 @@ class MMPluginMixin:
         results, sampling_rates = [], []
         for audio in audios:
             if not isinstance(audio, np.ndarray):
-                # audio, sampling_rate = librosa.load(audio, sr=sampling_rate)
-                audio, sampling_rate = None, None
-
+                audio, _ = librosa.load(audio, sr=sampling_rate, mono=True)
             results.append(audio)
             sampling_rates.append(sampling_rate)
 
@@ -726,7 +768,22 @@ class Qwen2VLPlugin(BasePlugin):
 
     @override
     def _preprocess_image(self, image, **kwargs):
-        image = super()._preprocess_image(image, **kwargs)
+        # Default factor for Qwen2-VL is 28 (14*2)
+        factor = kwargs.get("factor", 28)
+        image_min_pixels = kwargs.get("image_min_pixels", 32 * 32)
+        image_max_pixels = kwargs.get("image_max_pixels", 768 * 768)
+
+        # Use smart_resize instead of super()._preprocess_image
+        resized_height, resized_width = smart_resize(
+            height=image.height,
+            width=image.width,
+            factor=factor,
+            min_pixels=image_min_pixels,
+            max_pixels=image_max_pixels,
+        )
+
+        image = image.resize((resized_width, resized_height))
+
         if min(image.width, image.height) < 28:
             width, height = max(image.width, 28), max(image.height, 28)
             image = image.resize((width, height))
@@ -738,6 +795,9 @@ class Qwen2VLPlugin(BasePlugin):
         if image.height / image.width > 200:
             width, height = image.width, image.width * 180
             image = image.resize((width, height))
+
+        if image.mode != "RGB":
+            image = image.convert("RGB")
 
         return image
 
@@ -863,6 +923,175 @@ class Qwen2VLPlugin(BasePlugin):
                 num_video_tokens += 1
 
             message["content"] = content
+
+        return messages
+
+
+@dataclass
+class Qwen2OmniPlugin(Qwen2VLPlugin):
+    audio_bos_token: str = "<|audio_start|>"
+    audio_eos_token: str = "<|audio_end|>"
+
+    @override
+    def _get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ) -> None:
+        image_processor = getattr(processor, "image_processor", None)
+        video_processor = getattr(processor, "video_processor", None)
+        feature_extractor = getattr(processor, "feature_extractor", None)
+        mm_inputs = {}
+        if len(images) != 0:
+            images = self._regularize_images(
+                images,
+                image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
+                image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
+            )["images"]
+            mm_inputs.update(image_processor(images, return_tensors="pd"))
+
+        if len(videos) != 0:
+            video_metadata = []
+            processed_videos = []
+            for video in videos:
+                processed_videos.append(fetch_video({"video": video}))
+                video_metadata.append(
+                    {
+                        "fps": getattr(processor, "video_fps", 24.0),
+                        "duration": len(video),
+                        "total_num_frames": len(video),
+                    }
+                )
+            mm_inputs.update(
+                video_processor(videos=processed_videos, video_metadata=video_metadata, return_metadata=True)
+            )
+            fps = kwargs.get("fps", 1.0)
+            fps = [fps] * len(videos)
+            mm_inputs["video_second_per_grid"] = paddle.to_tensor(
+                [video_processor.temporal_patch_size / fps[i] for i in range(len(fps))]
+            )
+        if len(audios) != 0:
+            audios = self._regularize_audios(
+                audios,
+                sampling_rate=getattr(processor, "audio_sampling_rate", 16000),
+            )["audios"]
+            mm_inputs.update(
+                feature_extractor(
+                    audios,
+                    sampling_rate=getattr(processor, "audio_sampling_rate", 16000),
+                    return_attention_mask=True,
+                    padding=False,
+                    return_tensors="pd",
+                )
+            )
+            mm_inputs["feature_attention_mask"] = mm_inputs.pop("attention_mask", None)
+
+        # Convert floating point tensors to target dtype if specified
+        target_dtype = kwargs.get("dtype", None)
+        if target_dtype:
+            mm_inputs = self._to_float_dtype(mm_inputs, target_dtype)
+        else:
+            logger.warning("Not specified dtype, use float32 by default.")
+        return mm_inputs
+
+    @staticmethod
+    def _to_float_dtype(data: Any, dtype: str) -> Any:
+        """Change the float inputs to a dtype (e.g., 'bfloat16').
+
+        Args:
+            data: Input data which can be a nested structure containing Paddle tensors.
+            dtype: Target dtype string (e.g., 'bfloat16', 'float32', 'float16').
+
+        Returns:
+            Data with float tensors converted to the target dtype.
+        """
+        if paddle is None:
+            return data
+
+        if isinstance(data, dict):
+            return {k: Qwen2OmniPlugin._to_float_dtype(v, dtype) for k, v in data.items()}
+        elif isinstance(data, (list, tuple)):
+            return type(data)(Qwen2OmniPlugin._to_float_dtype(v, dtype) for v in data)
+        elif isinstance(data, paddle.Tensor):
+            if data.dtype in [paddle.float32, paddle.float64, paddle.float16, paddle.bfloat16]:
+                return paddle.cast(data, dtype)
+        return data
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ) -> list[dict[str, str]]:
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        num_image_tokens, num_video_tokens, num_audio_tokens = 0, 0, 0
+        messages = deepcopy(messages)
+        image_processor = getattr(processor, "image_processor")
+
+        merge_length = getattr(image_processor, "merge_size") ** 2
+        use_audio_in_video = getattr(processor, "use_audio_in_video", False)
+
+        if self.expand_mm_tokens:
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            video_grid_thw = mm_inputs.get("video_grid_thw", [])
+            if "feature_attention_mask" in mm_inputs:
+                if processor.__class__.__name__ == "Qwen3OmniMoeProcessor":  # for qwen3omni
+                    input_lengths = mm_inputs["feature_attention_mask"].sum(-1)
+                    input_lengths_leave = input_lengths % 100
+                    feature_lengths = (input_lengths_leave - 1) // 2 + 1
+                    audio_lengths = ((feature_lengths - 1) // 2 + 1 - 1) // 2 + 1 + (input_lengths // 100) * 13
+                else:
+                    input_lengths = (mm_inputs["feature_attention_mask"].sum(-1).numpy() - 1) // 2 + 1
+                    audio_lengths = (input_lengths - 2) // 2 + 1
+        else:
+            image_grid_thw = [None] * len(images)
+            video_grid_thw = [None] * len(videos)
+            audio_lengths = [None] * len(audios)
+
+        for message in messages:
+            content = message["content"]
+            while IMAGE_PLACEHOLDER in content:
+                image_seqlen = (
+                    image_grid_thw[num_image_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                )
+                content = content.replace(
+                    IMAGE_PLACEHOLDER,
+                    f"{self.vision_bos_token}{self.image_token * image_seqlen}{self.vision_eos_token}",
+                    1,
+                )
+                num_image_tokens += 1
+            if use_audio_in_video and len(audios) and len(videos):
+                raise NotImplementedError
+            else:
+                while AUDIO_PLACEHOLDER in content:
+                    audio_seqlen = audio_lengths[num_audio_tokens].prod().item() if self.expand_mm_tokens else 1
+                    content = content.replace(
+                        AUDIO_PLACEHOLDER,
+                        f"{self.audio_bos_token}{self.audio_token * audio_seqlen}{self.audio_eos_token}",
+                        1,
+                    )
+                    num_audio_tokens += 1
+
+                while VIDEO_PLACEHOLDER in content:
+                    video_seqlen = (
+                        video_grid_thw[num_video_tokens].prod().item() // merge_length if self.expand_mm_tokens else 1
+                    )
+                    content = content.replace(
+                        VIDEO_PLACEHOLDER,
+                        f"{self.vision_bos_token}{self.video_token * video_seqlen}{self.vision_eos_token}",
+                        1,
+                    )
+                    num_video_tokens += 1
+
+                message["content"] = content
 
         return messages
 
@@ -1189,6 +1418,7 @@ PLUGINS = {
     "qwen3_vl": Qwen3VLPlugin,
     "glm4v": GLM4VPlugin,
     "gemma3": Gemma3Plugin,
+    "qwen2_omni": Qwen2OmniPlugin,
 }
 
 
