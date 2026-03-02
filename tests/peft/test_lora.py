@@ -23,11 +23,8 @@ import paddle
 from parameterized import parameterized
 
 from paddleformers.peft.lora import LoRAConfig, LoRALinear, LoRAModel
-from paddleformers.transformers import (
-    AutoModelForCausalLM,
-    Glm4MoeModel,
-    Qwen3ForCausalLM,
-)
+from paddleformers.transformers import AutoModelForCausalLM, Glm4MoeModel
+from paddleformers.transformers import Qwen3ForCausalLMDeprecated as Qwen3ForCausalLM
 
 from ..testing_utils import gpu_device_initializer
 
