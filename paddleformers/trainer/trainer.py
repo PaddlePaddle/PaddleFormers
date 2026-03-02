@@ -2546,6 +2546,20 @@ class Trainer:
                     )
                 )
             logs.update(self.global_training_logs)
+
+            # Add MTP loss metrics if available
+            try:
+                from paddlefleet.models.common.language_loss.language_loss import (
+                    LanguageLoss,
+                )
+
+                if LanguageLoss.mtp_loss_tracker:
+                    logs.update(
+                        {k: v.item() if hasattr(v, "item") else v for k, v in LanguageLoss.mtp_loss_tracker.items()}
+                    )
+            except ImportError:
+                pass
+
             self._total_loss_scalar += tr_loss_scalar
             self._globalstep_last_logged = self.state.global_step
             self._globalstep_last_start_time = time.time()
