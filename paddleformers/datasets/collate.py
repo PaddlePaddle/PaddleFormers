@@ -621,6 +621,9 @@ def mm_collate_fn(
                 filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
                 position_ids, rope_deltas = get_rope_func(input_ids=paddle.to_tensor([seq.token_ids]), **filtered_args)
                 original_position_ids.append(position_ids)
+            else:
+                position_ids = paddle.arange(len(seq.token_ids)).unsqueeze(0).unsqueeze(0)
+                original_position_ids.append(position_ids)
 
         if len(original_position_ids) > 0:
             original_position_ids = paddle.concat(original_position_ids, axis=-1)

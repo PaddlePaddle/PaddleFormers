@@ -443,6 +443,42 @@ class KimiK25ModelDist(MCoreLLaVAModel):
 
         self.model_type = ModelType.encoder_or_decoder
 
+    def _merge_input_ids_with_image_features_training(
+        self,
+        image_features: list[paddle.Tensor],
+        inputs_embeds: paddle.Tensor,
+        input_ids: paddle.Tensor,
+    ):
+        """
+        Merge image features into inputs_embeds by replacing placeholder tokens in-place.
+        The number of placeholder tokens in input_ids must equal the total number of image
+        feature tokens. attention_mask and position_ids are not modified.
+
+        Args:
+            image_features: List of tensors, each of shape (num_tokens_i, embed_dim).
+            inputs_embeds: Shape (batch_size, sequence_length, embed_dim).
+            input_ids: Shape (batch_size, sequence_length).
+            attention_mask: Shape (batch_size, sequence_length). Passed through unchanged.
+            labels: Shape (batch_size, sequence_length), optional. Passed through unchanged.
+        """
+        image_features = paddle.cat(image_features, dim=0)
+        image_token_index: int = self.config.media_placeholder_token_id
+
+        # Find all placeholder positions and replace with image features
+        image_mask = input_ids == image_token_index
+        num_placeholders = image_mask.sum().item()
+        num_image_tokens = image_features.shape[0]
+
+        if num_placeholders != num_image_tokens:
+            raise ValueError(
+                f"The number of image placeholder tokens ({num_placeholders}) does not match "
+                f"the number of image feature tokens ({num_image_tokens})."
+            )
+
+        inputs_embeds[image_mask] = image_features.to(dtype=inputs_embeds.dtype, device=inputs_embeds.device)
+
+        return inputs_embeds
+
     def _merge_input_ids_with_image_features(
         self,
         image_features: list[paddle.Tensor],
@@ -613,22 +649,33 @@ class KimiK25ModelDist(MCoreLLaVAModel):
         attention_mask: paddle.Tensor | None = None,
         past_key_values: list[paddle.FloatTensor] | None = None,
         labels: paddle.Tensor | None = None,
+        position_ids: paddle.Tensor | None = None,
     ):
         # 1. Extra the input embeddings
         inputs_embeds = self.language_model.get_input_embeddings()(input_ids)
-
         # 2. Merge text and images
         if pixel_values is not None and len(pixel_values) > 0 and input_ids.shape[1] != 1:
             image_features = self._extract_image_features(pixel_values, grid_thws)
             image_features = image_features["hidden_states"]
 
-            inputs_embeds, attention_mask, labels, position_ids = self._merge_input_ids_with_image_features(
-                image_features,
-                inputs_embeds,
-                input_ids,
-                attention_mask,
-                labels,
-            )
+            num_image_tokens = sum([image.shape[0] for image in image_features])
+            image_token_index: int = self.config.media_placeholder_token_id
+
+            # Find all placeholder positions and replace with image features
+            image_mask = input_ids == image_token_index
+            num_placeholders = image_mask.sum().item()
+            if num_placeholders == num_image_tokens:
+                inputs_embeds = self._merge_input_ids_with_image_features_training(
+                    image_features, inputs_embeds, input_ids
+                )
+            else:
+                inputs_embeds, attention_mask, labels, position_ids = self._merge_input_ids_with_image_features(
+                    image_features,
+                    inputs_embeds,
+                    input_ids,
+                    attention_mask,
+                    labels,
+                )
 
         # In case input_ids.shape[1] == 1 & pixel_values==None & past_key_values != None, we are in the case of
         # generation with cache
@@ -689,11 +736,12 @@ class KimiK25ModelDist(MCoreLLaVAModel):
         **kwargs,
     ) -> paddle.Tensor:
         assert loss_mask is None, "loss_mask is not supported yet"
-        input_dict = self.get_inputs_embeds(input_ids, pixel_values, grid_thws, attention_mask, None, labels)
+        input_dict = self.get_inputs_embeds(
+            input_ids, pixel_values, grid_thws, attention_mask, None, labels, position_ids
+        )
         labels = input_dict.get("labels", labels)
 
         output = self.language_model(**input_dict)
-
         return output
 
 
@@ -719,25 +767,43 @@ class KimiK25PretrainedModelFleet(PretrainedModel):
     def _gen_aoa_config(cls, config: KimiK25Config):
         # vision model
         aoa_config = {"aoa_statements": []}
+        # qkv
+        aoa_config["aoa_statements"] += [
+            stmt
+            for i in range(config.vision_config.vt_num_hidden_layers)
+            for stmt in (
+                f"vision_tower.encoder.blocks.{i}.wqkv.weight -> vision_tower.encoder.blocks.layers.{i}.self_attn.q.weight, vision_tower.encoder.blocks.layers.{i}.self_attn.k.weight, vision_tower.encoder.blocks.layers.{i}.self_attn.v.weight,axis=0",
+                f"vision_tower.encoder.blocks.layers.{i}.self_attn.q.weight^T, vision_tower.encoder.blocks.layers.{i}.self_attn.k.weight^T, vision_tower.encoder.blocks.layers.{i}.self_attn.v.weight^T -> vision_tower.encoder.blocks.layers.{i}.self_attn.qkv_proj.weight,fused_qkv, num_heads={config.vision_config.vt_num_attention_heads}, num_key_value_groups={config.vision_config.vt_num_attention_heads}",
+                f"vision_tower.encoder.blocks.{i}.wqkv.bias ->vision_tower.encoder.blocks.layers.{i}.self_attn.q.bias, vision_tower.encoder.blocks.layers.{i}.self_attn.k.bias, vision_tower.encoder.blocks.layers.{i}.self_attn.v.bias,axis=0",
+                f"vision_tower.encoder.blocks.layers.{i}.self_attn.q.bias, vision_tower.encoder.blocks.layers.{i}.self_attn.k.bias, vision_tower.encoder.blocks.layers.{i}.self_attn.v.bias -> vision_tower.encoder.blocks.layers.{i}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.vision_config.vt_num_attention_heads}, num_key_value_groups={config.vision_config.vt_num_attention_heads}, axis=0",
+                f"vision_tower.encoder.blocks.{i}.wo.weight^T -> vision_tower.encoder.blocks.layers.{i}.self_attn.o_proj.weight",
+                f"vision_tower.encoder.blocks.{i}.wo.bias -> vision_tower.encoder.blocks.layers.{i}.self_attn.o_proj.bias",
+            )
+        ]
         for i in range(config.vision_config.vt_num_hidden_layers):
             for last_prefix in ["bias", "weight"]:
                 aoa_config["aoa_statements"] += [
-                    f"vision_tower.encoder.blocks.{i}.wo.{last_prefix} -> vision_tower.encoder.blocks.layers.{i}.self_attn.o_proj.{last_prefix}",
-                    f"vision_tower.encoder.blocks.{i}.wqkv.{last_prefix} -> vision_tower.encoder.blocks.layers.{i}.self_attn.qkv_proj.{last_prefix}",
                     f"vision_tower.encoder.blocks.{i}.norm0.{last_prefix} -> vision_tower.encoder.blocks.layers.{i}.input_layernorm.{last_prefix}",
                     f"vision_tower.encoder.blocks.{i}.norm1.{last_prefix} -> vision_tower.encoder.blocks.layers.{i}.post_attention_layernorm.{last_prefix}",
-                    f"vision_tower.encoder.blocks.{i}.mlp.fc0.{last_prefix} -> vision_tower.encoder.blocks.layers.{i}.mlp.up_gate_proj.{last_prefix}",
-                    f"vision_tower.encoder.blocks.{i}.mlp.fc1.{last_prefix} -> vision_tower.encoder.blocks.layers.{i}.mlp.down_proj.{last_prefix}",
+                ]
+            for o_last_prefix, n_last_prefix in zip(["bias", "weight^T"], ["bias", "weight"]):
+                aoa_config["aoa_statements"] += [
+                    f"vision_tower.encoder.blocks.{i}.mlp.fc0.{o_last_prefix} -> vision_tower.encoder.blocks.layers.{i}.mlp.up_gate_proj.{n_last_prefix}",
+                    f"vision_tower.encoder.blocks.{i}.mlp.fc1.{o_last_prefix} -> vision_tower.encoder.blocks.layers.{i}.mlp.down_proj.{n_last_prefix}",
                 ]
 
         for last_prefix in ["bias", "weight"]:
             aoa_config["aoa_statements"] += [
                 f"vision_tower.encoder.final_layernorm.{last_prefix} -> vision_tower.encoder.blocks.final_layernorm.norm.{last_prefix}",
                 f"mm_projector.pre_norm.{last_prefix} -> vision_tower.encoder.blocks.mm_projector.pre_norm.{last_prefix}",
-                f"mm_projector.proj.0.{last_prefix} -> vision_tower.encoder.blocks.mm_projector.proj.up_gate_proj.{last_prefix}",
-                f"mm_projector.proj.2.{last_prefix} -> vision_tower.encoder.blocks.mm_projector.proj.down_proj.{last_prefix}",
                 f"vision_tower.patch_embed.proj.{last_prefix} -> vision_tower.encoder.blocks.patch_embed.proj.{last_prefix}",
             ]
+        for o_last_prefix, n_last_prefix in zip(["bias", "weight^T"], ["bias", "weight"]):
+            aoa_config["aoa_statements"] += [
+                f"mm_projector.proj.0.{o_last_prefix} -> vision_tower.encoder.blocks.mm_projector.proj.up_gate_proj.{n_last_prefix}",
+                f"mm_projector.proj.2.{o_last_prefix} -> vision_tower.encoder.blocks.mm_projector.proj.down_proj.{n_last_prefix}",
+            ]
+
         aoa_config["aoa_statements"] += [
             "vision_tower.patch_embed.pos_emb.weight -> vision_tower.encoder.blocks.patch_embed.pos_emb.weight",
         ]
