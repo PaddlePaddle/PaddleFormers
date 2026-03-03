@@ -18,6 +18,7 @@ from __future__ import annotations
 import inspect
 import json
 import os
+import random
 import tempfile
 from pathlib import Path
 
@@ -28,6 +29,8 @@ from PIL import Image
 from paddleformers.transformers.auto.processing import processor_class_from_name
 
 from .test_utils import check_json_file_has_correct_format
+
+global_rng = random.Random()
 
 MODALITY_INPUT_DATA = {
     "images": [
@@ -54,6 +57,20 @@ def prepare_image_inputs():
     image_inputs = [np.random.randint(255, size=(3, 30, 400), dtype=np.uint8)]
     image_inputs = [Image.fromarray(np.moveaxis(x, 0, -1)) for x in image_inputs]
     return image_inputs
+
+
+def floats_list(shape, scale=1.0, rng=None, name=None):
+    """Creates a random float32 tensor"""
+    if rng is None:
+        rng = global_rng
+
+    values = []
+    for batch_idx in range(shape[0]):
+        values.append([])
+        for _ in range(shape[1]):
+            values[-1].append(rng.random() * scale)
+
+    return values
 
 
 class ProcessorTesterMixin:
@@ -136,12 +153,11 @@ class ProcessorTesterMixin:
 
     def prepare_audio_inputs(self, batch_size: int | None = None):
         """This function prepares a list of numpy videos."""
-        sampling_rate = 16000
-        duration = 1.0  # seconds
-        audio_array = np.random.randn(int(sampling_rate * duration)).astype(np.float32)
+        raw_speech = floats_list((1, 1000))
+        raw_speech = [np.asarray(audio) for audio in raw_speech]
         if batch_size is None:
-            return audio_array
-        return [audio_array] * batch_size
+            return raw_speech
+        return raw_speech * batch_size
 
     def test_processor_to_json_string(self):
         processor = self.get_processor()
