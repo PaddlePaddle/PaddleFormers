@@ -14,8 +14,6 @@
 # limitations under the License.
 from __future__ import annotations
 
-import gc
-import shutil
 import tempfile
 import unittest
 
@@ -282,33 +280,32 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_for_causal_lm(*config_and_inputs)
 
-    @unittest.skip("TODO: Temporarily skipped")
     def test_save_load(self):
         for model_class in self.all_model_classes:
-            tmpdirname = tempfile.mkdtemp()
-            try:
-                config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
-                model = model_class(config)
+            # test from_pretrained
+            model1 = model_class.from_pretrained(
+                "PaddleFormers/tiny-random-qwen3next",
+                download_hub="aistudio",
+                load_checkpoint_format="flex_checkpoint",
+                num_nextn_predict_layers=0,
+            )
+            model_state_1 = model1.state_dict()
 
-                model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-
-                model = None
-                gc.collect()
-
-                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
-
-                model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
-
-                model_state_1 = model1.state_dict()
+            # test save_pretrained
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                model1.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+                model2 = model_class.from_pretrained(
+                    tmpdirname,
+                    convert_from_hf=True,
+                    load_checkpoint_format="flex_checkpoint",
+                    num_nextn_predict_layers=0,
+                )
                 model_state_2 = model2.state_dict()
 
-                for k, v in model_state_1.items():
-                    md51 = v._md5sum()
-                    md52 = model_state_2[k]._md5sum()
+                for k, v in model_state_2.items():
+                    md52 = v._md5sum()
+                    md51 = model_state_1[k]._md5sum()
                     assert md51 == md52
-
-            finally:
-                shutil.rmtree(tmpdirname, ignore_errors=True)
 
 
 class Qwen3NextIntegrationTest(unittest.TestCase):

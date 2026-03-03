@@ -419,6 +419,19 @@ class Glm4vMoePreTrainedModel(PretrainedModel):
     _keep_in_fp32_modules = ["mlp.gate.weight", "e_score_correction_bias"]
     config_class = Glm4vMoeConfig
 
+    transpose_weight_keys = [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "qkv_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+        "qkv",
+        "proj",
+    ]
+
     input_modalities = ("text", "image", "video")
 
     @classmethod
@@ -1838,7 +1851,7 @@ class Glm4vMoeForConditionalGeneration(Glm4vMoePreTrainedModel):
 
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
-        logits = self.lm_head(hidden_states[:, slice_indices, :])
+        logits = self.lm_head(hidden_states[..., slice_indices, :])
 
         loss = None
         if labels is not None:
