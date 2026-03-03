@@ -28,7 +28,7 @@ from paddleformers.transformers.image_utils import (
     get_image_size,
 )
 from paddleformers.transformers.qwen3_vl.video_processor import smart_resize
-from tests.testing_utils import gpu_device_initializer
+from tests.testing_utils import gpu_device_initializer, slow
 
 from ..test_video_processing_common import (
     VideoProcessingTestMixin,
@@ -173,6 +173,7 @@ class Qwen3VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
             self.assertEqual(video_processor.min_pixels, 256 * 256)
             self.assertEqual(video_processor.max_pixels, 640 * 640)
 
+    @slow
     def test_call_paddle(self):
         """
         Tests processing Paddle tensor inputs.
@@ -197,6 +198,7 @@ class Qwen3VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
                 expected_output_video_shape,
             )
 
+    @slow
     def test_call_numpy(self):
         """
         Tests processing Numpy array inputs.
@@ -217,6 +219,7 @@ class Qwen3VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
             expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(video_inputs)
             self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
 
+    @slow
     def test_nested_input(self):
         """
         Tests processing nested lists of inputs.
@@ -232,6 +235,7 @@ class Qwen3VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
             expected_output_video_shape = self.video_processor_tester.expected_output_video_shape([video_inputs[0]])
             self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
 
+    @slow
     def test_call_sample_frames(self):
         """
         Tests frame sampling functionality.

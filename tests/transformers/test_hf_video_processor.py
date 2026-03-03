@@ -18,7 +18,7 @@ import unittest
 import paddle
 
 from paddleformers.transformers import AutoVideoProcessor
-from tests.testing_utils import gpu_device_initializer, skip_for_none_ce_case
+from tests.testing_utils import gpu_device_initializer, skip_for_none_ce_case, slow
 
 
 class TestHFMultiSourceVideoProcessor(unittest.TestCase):
@@ -74,6 +74,7 @@ class TestHFMultiSourceVideoProcessor(unittest.TestCase):
         video_processor = AutoVideoProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", download_hub="huggingface")
         self.preprocess(video_processor)
 
+    @slow
     def test_preprocess_consistency_with_hf_static(self):
         video_processor = AutoVideoProcessor.from_pretrained("PaddleFormers/tiny-random-qwen25vlv2")
         self.preprocess(video_processor)
