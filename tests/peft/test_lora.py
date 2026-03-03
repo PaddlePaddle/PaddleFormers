@@ -29,8 +29,14 @@ from paddleformers.transformers import (
     Qwen3ForCausalLM,
 )
 
+from ..testing_utils import gpu_device_initializer
+
 
 class TestLoraLayer(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="TestLoraLayer")
+    def setUp(self):
+        pass
+
     def test_r_raise_exception(self):
         with self.assertRaises(ValueError):
             LoRALinear(in_features=16, out_features=8, r=0, lora_dropout=0.1, lora_alpha=8)
@@ -50,7 +56,7 @@ class TestLoraLayer(unittest.TestCase):
         lora_layer = LoRALinear(in_features=16, out_features=8, r=4)
         lora_layer.train()
         train_result = lora_layer(x)
-        train_weight = copy.deepcopy(lora_layer.weight)  # deep copy since this is a pointer
+        train_weight = copy.deepcopy(lora_layer.weight)  # deep copy since this is a pointer.
         lora_layer.eval()
         eval_result = lora_layer(x)
         eval_weight = lora_layer.weight
