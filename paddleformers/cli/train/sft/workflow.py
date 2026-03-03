@@ -312,7 +312,7 @@ def run_sft(
     freeze_config = getattr(training_args, "freeze_config", "")
     if freeze_config:
         model_config.freeze_vision_model = "freeze_vision" in freeze_config
-        model_config.freeze_langurage_model = "freeze_llm" in freeze_config
+        model_config.freeze_language_model = "freeze_llm" in freeze_config
         model_config.freeze_vision_projection = "freeze_aligner" in freeze_config
 
     logger.info(f"Final model config: {model_config}")
