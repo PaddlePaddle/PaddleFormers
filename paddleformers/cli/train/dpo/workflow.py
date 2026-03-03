@@ -73,6 +73,10 @@ def run_dpo(
     set_random_seed(seed_=training_args.seed)
     set_seed(training_args.seed)
 
+    training_args.model_name_or_path = model_args.model_name_or_path
+    training_args.download_hub = model_args.download_hub
+    training_args.copy_custom_file_list = model_args.copy_custom_file_list
+
     avaible_attn_impl = AttentionInterface._global_mapping.keys()
     if model_args._attn_implementation not in avaible_attn_impl:
         raise ValueError(
