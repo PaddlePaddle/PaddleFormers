@@ -59,15 +59,17 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
             else 0
         )
 
-        # layer 0
-        aoa_config["aoa_statements"] += [
-            f"model.layers.0.mlp.down_proj.weight^T -> {model_prefix}layers.{num_head_empty_layers}.mlp.down_proj.weight"
-        ]
-        aoa_config["aoa_statements"] += [
-            f"model.layers.0.mlp.gate_proj.weight^T, model.layers.0.mlp.up_proj.weight^T -> {model_prefix}layers.{num_head_empty_layers}.mlp.up_gate_proj.weight, fused_ffn",
-        ]
-
         num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
+
+        # dense layer dense2moe
+        for layer_idx in reversed(range(0, config.first_k_dense_replace)):
+            layer_idx_offset = layer_idx + num_head_empty_layers
+            aoa_config["aoa_statements"] += [
+                f"model.layers.{layer_idx}.mlp.down_proj.weight^T -> {model_prefix}layers.{layer_idx_offset}.mlp.down_proj.weight"
+            ]
+            aoa_config["aoa_statements"] += [
+                f"model.layers.{layer_idx}.mlp.gate_proj.weight^T, model.layers.{layer_idx}.mlp.up_proj.weight^T -> {model_prefix}layers.{layer_idx_offset}.mlp.up_gate_proj.weight, fused_ffn",
+            ]
 
         for layer_idx in reversed(range(num_hidden_layers, num_hidden_layers + num_nextn_predict_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
@@ -107,7 +109,7 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
                         f"{prefix}.self_attn.kv_a_layernorm.weight -> {prefix_offset}.self_attn.kv_a_layernorm.weight",
                     ]
         # layer1 - layer_num_hidden_layers
-        for layer_idx in reversed(range(1, num_hidden_layers + num_nextn_predict_layers)):
+        for layer_idx in reversed(range(config.first_k_dense_replace, num_hidden_layers + num_nextn_predict_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix = f"model.layers.{layer_idx}"
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
