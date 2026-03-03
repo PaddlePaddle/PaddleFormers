@@ -31,37 +31,37 @@ import os
 import numpy as np
 import paddle
 
-def _to_np_pd(v):
-    if v is None:
-        return None
-    if isinstance(v, paddle.Tensor):
-        v = v.detach()
-        if v.dtype == paddle.bfloat16:
-            v = v.astype("float32")
-        return v.cpu().numpy()
-    return v  # 可能是 numpy 或 python 标量
+# def _to_np_pd(v):
+#     if v is None:
+#         return None
+#     if isinstance(v, paddle.Tensor):
+#         v = v.detach()
+#         if v.dtype == paddle.bfloat16:
+#             v = v.astype("float32")
+#         return v.cpu().numpy()
+#     return v  # 可能是 numpy 或 python 标量
 
-def save_any_pd(save_dir: str, name: str, v):
-    os.makedirs(save_dir, exist_ok=True)
+# def save_any_pd(save_dir: str, name: str, v):
+#     os.makedirs(save_dir, exist_ok=True)
 
-    # 1) list/tuple：逐个保存
-    if isinstance(v, (list, tuple)):
-        # 额外保存一个“长度”，方便对齐
-        np.save(os.path.join(save_dir, f"{name}_len.npy"), np.array([len(v)], dtype=np.int64))
-        for i, item in enumerate(v):
-            arr = _to_np_pd(item)
-            if arr is None:
-                continue
-            np.save(os.path.join(save_dir, f"{name}_{i:03d}.npy"), arr)
-        return
+#     # 1) list/tuple：逐个保存
+#     if isinstance(v, (list, tuple)):
+#         # 额外保存一个“长度”，方便对齐
+#         np.save(os.path.join(save_dir, f"{name}_len.npy"), np.array([len(v)], dtype=np.int64))
+#         for i, item in enumerate(v):
+#             arr = _to_np_pd(item)
+#             if arr is None:
+#                 continue
+#             np.save(os.path.join(save_dir, f"{name}_{i:03d}.npy"), arr)
+#         return
 
-    # 2) 单个 tensor/array
-    arr = _to_np_pd(v)
-    if arr is None:
-        # 保存一个标记文件，避免你以为没跑到
-        np.save(os.path.join(save_dir, f"{name}_is_none.npy"), np.array([1], dtype=np.int8))
-        return
-    np.save(os.path.join(save_dir, f"{name}.npy"), arr)
+#     # 2) 单个 tensor/array
+#     arr = _to_np_pd(v)
+#     if arr is None:
+#         # 保存一个标记文件，避免你以为没跑到
+#         np.save(os.path.join(save_dir, f"{name}_is_none.npy"), np.array([1], dtype=np.int8))
+#         return
+#     np.save(os.path.join(save_dir, f"{name}.npy"), arr)
 
 class GlmOcrRMSNorm(nn.Layer):
     def __init__(self, hidden_size, eps=1e-6):
@@ -153,7 +153,7 @@ def eager_attention_forward(
         attn_weights = attn_weights + causal_mask
 
     # attn_weights = nn.functional.softmax(attn_weights, axis=-1)
-    attn_weights = nn.functional.softmax(attn_weights.astype("float16"), axis=-1).astype(query.dtype)
+    attn_weights = nn.functional.softmax(attn_weights.astype("float32"), axis=-1).astype(query.dtype)    
     attn_weights = nn.functional.dropout(attn_weights, p=dropout, training=module.training)
     attn_output = paddle.matmul(attn_weights, value_states)
     attn_output = attn_output.transpose([0, 2, 1, 3])
@@ -167,12 +167,6 @@ def rotate_half_llm(x):
     return paddle.stack((-x2, x1), axis=-1).flatten(-2)
 
 def apply_rotary_pos_emb(q, k, cos, sin):
-    """
-    q, k:      [B, H, T, D]
-    cos, sin:  [1, 1, T, rotary_dim]  or  [T, rotary_dim]
-    return:    q_embed, k_embed with shape [B, H, T, D]
-    """
-
     # -------- 保证 cos/sin 至少是 4D --------
     if cos.ndim == 2:        # [T, D]
         cos = cos.unsqueeze(0).unsqueeze(0)
@@ -181,27 +175,26 @@ def apply_rotary_pos_emb(q, k, cos, sin):
         cos = cos.unsqueeze(1)
         sin = sin.unsqueeze(1)
 
-    # -------- 先把 cos/sin cast 到 q 的 dtype，避免混精 --------
-    cos = cos.astype(q.dtype)
-    sin = sin.astype(q.dtype)
+    # -------- 先转float32，保证repeat_interleave可以运行 --------
+    cos = cos.astype("float32")
+    sin = sin.astype("float32")
 
     # -------- interleave 成偶奇旋转格式 --------
-    # 你的 cos/sin 来自 emb=[freq,freq]，这里保持你原逻辑
     cos = cos[..., : cos.shape[-1] // 2].repeat_interleave(2, axis=-1)
     sin = sin[..., : sin.shape[-1] // 2].repeat_interleave(2, axis=-1)
 
+    # -------- repeat之后再转回q的dtype --------
+    cos = cos.astype(q.dtype)
+    sin = sin.astype(q.dtype)
+
     rotary_dim = cos.shape[-1]
 
-    # -------- split q / k --------
     q_rot, q_pass = q[..., :rotary_dim], q[..., rotary_dim:]
     k_rot, k_pass = k[..., :rotary_dim], k[..., rotary_dim:]
 
-    # -------- apply rotary --------
     q_rot = (q_rot * cos) + (rotate_half_llm(q_rot) * sin)
     k_rot = (k_rot * cos) + (rotate_half_llm(k_rot) * sin)
 
-    # -------- 关键修复：concat 前 dtype 统一 --------
-    # Paddle 可能发生 type promotion，使 q_rot/k_rot 变成 float32
     if q_pass.dtype != q_rot.dtype:
         q_pass = q_pass.astype(q_rot.dtype)
     if k_pass.dtype != k_rot.dtype:
@@ -245,7 +238,8 @@ class GlmOcrTextAttention(nn.Layer):
         position_embeddings: tuple[paddle.Tensor, paddle.Tensor] | None = None,
         attention_mask: paddle.Tensor | None = None,
         past_key_values: Cache | None = None,
-        cache_position: paddle.LongTensor | None = None
+        cache_position: paddle.LongTensor | None = None,
+        attn_mask_startend_row_indices: paddle.LongTensor | None = None
     ) -> tuple[paddle.Tensor, paddle.Tensor | None, tuple[paddle.Tensor] | None]:
         bsz, q_len, _ = hidden_states.shape
 
@@ -273,7 +267,8 @@ class GlmOcrTextAttention(nn.Layer):
             query_states,
             key_states,
             value_states,
-            attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,  # flashmask 用这个
+            attention_mask=attention_mask,                                   # eager/sdpa 用这个，进 **kwargs
             dropout=0.0 if not self.training else self.attention_dropout,
             scaling=self.scaling,
         )
@@ -340,6 +335,7 @@ class GlmOcrTextDecoderLayer(nn.Layer):
         use_cache: Optional[bool] = False,
         cache_position: Optional[paddle.Tensor] = None,
         output_attentions: bool = False,
+        attn_mask_startend_row_indices=None, 
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
         residual = hidden_states
@@ -355,6 +351,7 @@ class GlmOcrTextDecoderLayer(nn.Layer):
             past_key_values=past_key_values,
             # use_cache=use_cache,
             cache_position=cache_position,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             # output_attentions=output_attentions,
             # **kwargs,
         )
@@ -380,18 +377,23 @@ class GlmOcrPreTrainedModel(PretrainedModel):
     _no_split_modules = ["GlmOcrTextDecoderLayer", "GlmOcrVisionBlock"]
     _keys_to_ignore_on_load_unexpected = [r"model\.language_model\.layers\.16.*"]
 
-    # transpose_weight_keys = [
-    #     "qkv",          # visual.blocks.*.attn.qkv.weight
-    #     "proj",         # visual.blocks.*.attn.proj.weight + merger.proj.weight
-    #     "q_proj",
-    #     "k_proj",
-    #     "v_proj",
-    #     "o_proj",
-    #     "gate_proj",    # visual MLP + merger.gate_proj
-    #     "up_proj",      # visual MLP + merger.up_proj
-    #     "down_proj",    # visual MLP + merger.down_proj + text MLP down_proj
-    #     "gate_up_proj", # text MLP fused
-    # ]
+    transpose_weight_keys = [
+    r"attn\.qkv",
+    r"attn\.proj",
+    r"merger\.proj",
+    r"merger\.gate_proj",
+    r"merger\.up_proj",
+    r"merger\.down_proj",
+    r"mlp\.gate_proj",
+    r"mlp\.up_proj",
+    r"mlp\.down_proj",
+    r"self_attn\.q_proj",
+    r"self_attn\.k_proj",
+    r"self_attn\.v_proj",
+    r"self_attn\.o_proj",
+    r"mlp\.gate_up_proj",
+    r"lm_head",
+]
 
     def _init_weights(self, layer):
         super()._init_weights(layer)
@@ -405,8 +407,7 @@ class GlmOcrPreTrainedModel(PretrainedModel):
         print("🔥 AOA CALLED")
         model_prefix = "model"
         aoa_statements = []
-        aoa_statements += ["lm_head.weight^T -> lm_head.weight",
-]
+        aoa_statements += ["lm_head.weight^T -> lm_head.weight",]
 
         # ========== Text Embedding / Final Norm ==========
         aoa_statements += [
@@ -497,6 +498,120 @@ class GlmOcrPreTrainedModel(PretrainedModel):
             ]
 
         return {"aoa_statements": aoa_statements}
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: GlmOcrConfig):
+        """
+        Inverse AOA config: convert current Paddle model state_dict keys/layout
+        back to the original checkpoint keys/layout.
+
+        Inversion rule:
+        - "A -> B"   becomes "B -> A"
+        - "A^T -> B" becomes "B^T -> A"
+        """
+        print("🔥 INV AOA CALLED")
+        model_prefix = "model"
+
+        aoa_statements = []
+
+        # ========== lm_head ==========
+        # forward:  lm_head.weight^T -> lm_head.weight
+        # inverse:  lm_head.weight^T -> lm_head.weight  (same key, but transpose direction is reversed)
+        aoa_statements += ["lm_head.weight^T -> lm_head.weight"]
+
+        # ========== Text Embedding / Final Norm ==========
+        # forward: model.language_model.xxx -> model.language_model.xxx (with prefix)
+        # inverse: right -> left
+        aoa_statements += [
+            f"{model_prefix}.language_model.embed_tokens.weight -> model.language_model.embed_tokens.weight",
+            f"{model_prefix}.language_model.norm.weight        -> model.language_model.norm.weight",
+        ]
+
+        # ========== Vision patch embed ==========
+        aoa_statements += [
+            f"{model_prefix}.visual.patch_embed.proj.weight -> model.visual.patch_embed.proj.weight",
+            f"{model_prefix}.visual.patch_embed.proj.bias   -> model.visual.patch_embed.proj.bias",
+        ]
+
+        # ========== Vision blocks ==========
+        for i in range(config.vision_config.depth):
+            # forward:
+            #   src = model.visual.blocks.i
+            #   dst = model.visual.blocks.i (with prefix)
+            # inverse:
+            #   dst[...] -> src[...]
+            src = f"model.visual.blocks.{i}"
+            dst = f"{model_prefix}.visual.blocks.{i}"
+
+            aoa_statements += [
+                # Norm
+                f"{dst}.norm1.weight -> {src}.norm1.weight",
+                f"{dst}.norm2.weight -> {src}.norm2.weight",
+
+                # ===== Attention =====
+                f"{dst}.attn.qkv.weight^T  -> {src}.attn.qkv.weight",
+                f"{dst}.attn.qkv.bias      -> {src}.attn.qkv.bias",
+                f"{dst}.attn.proj.weight^T -> {src}.attn.proj.weight",
+                f"{dst}.attn.proj.bias     -> {src}.attn.proj.bias",
+
+                # Q/K norm
+                f"{dst}.attn.q_norm.weight -> {src}.attn.q_norm.weight",
+                f"{dst}.attn.k_norm.weight -> {src}.attn.k_norm.weight",
+
+                # ===== MLP (SwiGLU) =====
+                f"{dst}.mlp.gate_proj.weight^T -> {src}.mlp.gate_proj.weight",
+                f"{dst}.mlp.gate_proj.bias     -> {src}.mlp.gate_proj.bias",
+
+                f"{dst}.mlp.up_proj.weight^T   -> {src}.mlp.up_proj.weight",
+                f"{dst}.mlp.up_proj.bias       -> {src}.mlp.up_proj.bias",
+
+                f"{dst}.mlp.down_proj.weight^T -> {src}.mlp.down_proj.weight",
+                f"{dst}.mlp.down_proj.bias     -> {src}.mlp.down_proj.bias",
+            ]
+
+        # ========== Vision merger ==========
+        aoa_statements += [
+            f"{model_prefix}.visual.merger.proj.weight^T                -> model.visual.merger.proj.weight",
+
+            f"{model_prefix}.visual.merger.post_projection_norm.weight -> model.visual.merger.post_projection_norm.weight",
+            f"{model_prefix}.visual.merger.post_projection_norm.bias   -> model.visual.merger.post_projection_norm.bias",
+
+            f"{model_prefix}.visual.merger.gate_proj.weight^T          -> model.visual.merger.gate_proj.weight",
+            f"{model_prefix}.visual.merger.up_proj.weight^T            -> model.visual.merger.up_proj.weight",
+            f"{model_prefix}.visual.merger.down_proj.weight^T          -> model.visual.merger.down_proj.weight",
+        ]
+
+        # ========== Vision downsample ==========
+        aoa_statements += [
+            f"{model_prefix}.visual.downsample.weight -> model.visual.downsample.weight",
+            f"{model_prefix}.visual.downsample.bias   -> model.visual.downsample.bias",
+
+            f"{model_prefix}.visual.post_layernorm.weight -> model.visual.post_layernorm.weight",
+        ]
+
+        # ========== Text blocks ==========
+        for i in range(config.text_config.num_hidden_layers):
+            src = f"model.language_model.layers.{i}"
+            dst = f"{model_prefix}.language_model.layers.{i}"
+
+            aoa_statements += [
+                # ===== Attention =====
+                f"{dst}.self_attn.q_proj.weight^T -> {src}.self_attn.q_proj.weight",
+                f"{dst}.self_attn.k_proj.weight^T -> {src}.self_attn.k_proj.weight",
+                f"{dst}.self_attn.v_proj.weight^T -> {src}.self_attn.v_proj.weight",
+                f"{dst}.self_attn.o_proj.weight^T -> {src}.self_attn.o_proj.weight",
+
+                # ===== MLP =====
+                f"{dst}.mlp.gate_up_proj.weight^T -> {src}.mlp.gate_up_proj.weight",
+                f"{dst}.mlp.down_proj.weight^T    -> {src}.mlp.down_proj.weight",
+
+                # ===== Norm =====
+                f"{dst}.input_layernorm.weight          -> {src}.input_layernorm.weight",
+                f"{dst}.post_attention_layernorm.weight -> {src}.post_attention_layernorm.weight",
+                f"{dst}.post_self_attn_layernorm.weight -> {src}.post_self_attn_layernorm.weight",
+                f"{dst}.post_mlp_layernorm.weight       -> {src}.post_mlp_layernorm.weight",
+            ]
+
+        return {"aoa_statements": aoa_statements}
 
 
 
@@ -516,37 +631,59 @@ def rotate_half(x):
     x2 = x[..., x.shape[-1] // 2 :]
     return paddle.concat((-x2, x1), axis=-1)
 
+# def apply_rotary_pos_emb_vision(q, k, cos, sin):
+#     # q,k: [seq, heads, head_dim]
+#     # cos,sin: [seq, rotary_dim]  (rotary_dim <= head_dim)
+
+#     # 对齐广播：变成 [seq, 1, rotary_dim]
+#     cos = cos[:q.shape[0], :].unsqueeze(1)  # [seq, 1, rotary_dim]
+#     sin = sin[:q.shape[0], :].unsqueeze(1)
+
+#     # 先把 cos/sin 对齐到 q 的 dtype（这一步你已经做了）
+#     cos = cos.astype(q.dtype)
+#     sin = sin.astype(q.dtype)
+
+#     rotary_dim = cos.shape[-1]
+
+#     q_rot, q_pass = q[:, :, :rotary_dim], q[:, :, rotary_dim:]
+#     k_rot, k_pass = k[:, :, :rotary_dim], k[:, :, rotary_dim:]
+
+#     q_embed = (q_rot * cos) + (rotate_half(q_rot) * sin)
+#     k_embed = (k_rot * cos) + (rotate_half(k_rot) * sin)
+
+#     # ===== 关键修复：concat 前 dtype 统一 =====
+#     if q_pass.dtype != q_embed.dtype:
+#         q_pass = q_pass.astype(q_embed.dtype)
+#     if k_pass.dtype != k_embed.dtype:
+#         k_pass = k_pass.astype(k_embed.dtype)
+
+#     q = paddle.concat([q_embed, q_pass], axis=-1)
+#     k = paddle.concat([k_embed, k_pass], axis=-1)
+#     return q, k
+
 def apply_rotary_pos_emb_vision(q, k, cos, sin):
-    # q,k: [seq, heads, head_dim]
-    # cos,sin: [seq, rotary_dim]  (rotary_dim <= head_dim)
-
-    # 对齐广播：变成 [seq, 1, rotary_dim]
-    cos = cos[:q.shape[0], :].unsqueeze(1)  # [seq, 1, rotary_dim]
-    sin = sin[:q.shape[0], :].unsqueeze(1)
-
-    # 先把 cos/sin 对齐到 q 的 dtype（这一步你已经做了）
-    cos = cos.astype(q.dtype)
-    sin = sin.astype(q.dtype)
-
-    rotary_dim = cos.shape[-1]
-
-    q_rot, q_pass = q[:, :, :rotary_dim], q[:, :, rotary_dim:]
-    k_rot, k_pass = k[:, :, :rotary_dim], k[:, :, rotary_dim:]
-
-    q_embed = (q_rot * cos) + (rotate_half(q_rot) * sin)
-    k_embed = (k_rot * cos) + (rotate_half(k_rot) * sin)
-
-    # ===== 关键修复：concat 前 dtype 统一 =====
-    if q_pass.dtype != q_embed.dtype:
-        q_pass = q_pass.astype(q_embed.dtype)
-    if k_pass.dtype != k_embed.dtype:
-        k_pass = k_pass.astype(k_embed.dtype)
-
-    q = paddle.concat([q_embed, q_pass], axis=-1)
-    k = paddle.concat([k_embed, k_pass], axis=-1)
-    return q, k
-
-
+    # q, k: [seq, heads, head_dim]
+    # cos, sin: [seq, rotary_dim]
+    orig_q_dtype = q.dtype
+    orig_k_dtype = k.dtype
+    
+    # 全部转 float32 计算，对齐 PyTorch
+    q = q.astype("float32")
+    k = k.astype("float32")
+    
+    # [seq, rotary_dim] -> [seq, 1, rotary_dim]，对齐 PyTorch unsqueeze(-2)
+    cos = cos.unsqueeze(-2).astype("float32")
+    sin = sin.unsqueeze(-2).astype("float32")
+    
+    # 对整个 head_dim 做旋转，不做 rotary_dim 切分
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    
+    # 转回原始 dtype
+    q_embed = q_embed.astype(orig_q_dtype)
+    k_embed = k_embed.astype(orig_k_dtype)
+    
+    return q_embed, k_embed
 
 class GlmOcrVisionAttention(nn.Layer):
     def __init__(self, config: GlmOcrVisionConfig) -> None:
@@ -577,105 +714,71 @@ class GlmOcrVisionAttention(nn.Layer):
     ) -> paddle.Tensor:
 
         seq_length = hidden_states.shape[0]
-        x = hidden_states
-        # save_any_pd(save_dir, f"pd_visionattn_in", x)
-        
-        # 计算qkv
-        qkv = self.qkv(hidden_states)
-        # save_any_pd(save_dir, "pd_visionattn_qkv", qkv)
 
-        
-        # 重塑形状: [seq_len, 3, num_heads, head_dim]
+        qkv = self.qkv(hidden_states)
         qkv = qkv.reshape([seq_length, 3, self.num_heads, -1])
-        
-        # 重新排列维度: [3, seq_len, num_heads, head_dim]
         qkv = qkv.transpose([1, 0, 2, 3])
-        
-        # 分解为query, key, value
         query_states, key_states, value_states = qkv[0], qkv[1], qkv[2]
-        # save_any_pd(save_dir, "pd_visionattn_q_pre_norm", query_states)
-        # save_any_pd(save_dir, "pd_visionattn_k_pre_norm", key_states)
-        # 应用RMSNorm
+
         query_states = self.q_norm(query_states)
-        # save_any_pd(save_dir, f"pd_visionattn_qnorm", query_states)
         key_states = self.k_norm(key_states)
-        # save_any_pd(save_dir, f"pd_visionattn_knorm", key_states)
-        
-        # 应用旋转位置编码
+
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb_vision(query_states, key_states, cos, sin)
-        
-        # save_any_pd(save_dir, f"pd_visionattn_qpos", query_states)
-        # save_any_pd(save_dir, f"pd_visionattn_kpos", key_states)
-        # 调整维度顺序: [seq_len, num_heads, head_dim] -> [1, seq_len, num_heads, head_dim]
+
+        # [seq, heads, dim] -> [1, heads, seq, dim]
         query_states = query_states.transpose([1, 0, 2]).unsqueeze(0)
         key_states = key_states.transpose([1, 0, 2]).unsqueeze(0)
         value_states = value_states.transpose([1, 0, 2]).unsqueeze(0)
-        
-        # 获取注意力函数接口
-        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
-        # save_any_pd(save_dir, f"pd_visionattn_q", query_states)
-        # save_any_pd(save_dir, f"pd_visionattn_k", key_states)
-        # save_any_pd(save_dir, f"pd_visionattn_v", value_states)
-        
-        # if is_flash_attention_requested(self.config):
-        #     # Flash Attention: 使用cu_seqlens处理可变长度注意力
-        #     max_seqlen = (cu_seqlens[1:] - cu_seqlens[:-1]).max()
-            
-        #     attn_output, _ = attention_interface(
-        #         self,
-        #         query_states,
-        #         key_states,
-        #         value_states,
-        #         attention_mask=None,
-        #         scaling=self.scaling,
-        #         dropout=0.0 if not self.training else self.attention_dropout,
-        #         cu_seq_lens_q=cu_seqlens,
-        #         cu_seq_lens_k=cu_seqlens,
-        #         max_length_q=max_seqlen,
-        #         max_length_k=max_seqlen,
-        #         is_causal=False,
-        #         **kwargs,
-        #     )
-        # else:
-        # 其他实现: 分别处理每个chunk
-        lengths = cu_seqlens[1:] - cu_seqlens[:-1]
-        total = int(lengths.sum().item())
-        seq_axis = int(query_states.shape[2])
-        if total != seq_axis:
-            raise ValueError(f"[VisionAttention] split mismatch: sum(lengths)={total} != seq={seq_axis}, lengths={lengths.numpy().tolist()}, cu_seqlens={cu_seqlens.numpy().tolist()}")
 
-        
-        # 分割tensor
-        query_splits = paddle.split(query_states, lengths.numpy().tolist(), axis=2)
-        key_splits = paddle.split(key_states, lengths.numpy().tolist(), axis=2)
-        value_splits = paddle.split(value_states, lengths.numpy().tolist(), axis=2)
-        
-        attn_outputs = []
-        for q, k, v in zip(query_splits, key_splits, value_splits):
-            attn_out, _ = attention_interface(
+        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+
+        if self.config._attn_implementation == "eager":
+            # eager 模式：split 循环处理每段，保持原有逻辑
+            lengths = cu_seqlens[1:] - cu_seqlens[:-1]
+            query_splits = paddle.split(query_states, lengths.numpy().tolist(), axis=2)
+            key_splits = paddle.split(key_states, lengths.numpy().tolist(), axis=2)
+            value_splits = paddle.split(value_states, lengths.numpy().tolist(), axis=2)
+
+            attn_outputs = []
+            for q, k, v in zip(query_splits, key_splits, value_splits):
+                attn_out, _ = attention_interface(
+                    self, q, k, v,
+                    attention_mask=None,
+                    scaling=self.scaling,
+                    dropout=0.0 if not self.training else self.attention_dropout,
+                    is_causal=False,
+                )
+                attn_outputs.append(attn_out)
+
+            attn_output = paddle.concat(attn_outputs, axis=1)
+            attn_output = attn_output.reshape([seq_length, -1])
+
+        else:
+            # flashmask 模式：构建 startend_row_indices，一次性调用
+            cu_seqlens_rm_first = cu_seqlens[1:]
+            cu_seqlens_rm_last  = cu_seqlens[:-1]
+            repeats = (cu_seqlens_rm_first - cu_seqlens_rm_last).astype("int32")
+
+            end_indices   = paddle.repeat_interleave(cu_seqlens_rm_first, repeats).reshape([1, 1, -1, 1])
+            start_indices = paddle.repeat_interleave(cu_seqlens_rm_last,  repeats).reshape([1, 1, -1, 1])
+            # shape[-1] == 2 且 is_causal=False -> flashmask 会用双边 mask
+            attn_mask_startend_row_indices = paddle.concat([end_indices, start_indices], axis=-1)
+
+            attn_output, _ = attention_interface(
                 self,
-                q,
-                k,
-                v,
+                query_states,
+                key_states,
+                value_states,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 attention_mask=None,
                 scaling=self.scaling,
                 dropout=0.0 if not self.training else self.attention_dropout,
                 is_causal=False,
-                **kwargs,
             )
-            attn_outputs.append(attn_out)
-        
-        # 拼接结果
-        attn_output = paddle.concat(attn_outputs, axis=1)
-        attn_output = attn_output.reshape([seq_length, -1])
-        # save_any_pd(save_dir, f"pd_visionattn_before_proj", attn_output)
+            attn_output = attn_output.reshape([seq_length, -1])
 
-        # 投影层
         attn_output = self.proj(attn_output)
-        # save_any_pd(save_dir, f"pd_visionattn_out", attn_output)
-
-        
         return attn_output
 
 
@@ -1085,11 +1188,14 @@ class GlmOcrTextModel(GlmOcrPreTrainedModel):
         inputs_embeds: Optional[paddle.Tensor] = None,      # float
         use_cache: Optional[bool] = None,
         cache_position: Optional[paddle.Tensor] = None,     # int64
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         **kwargs,
     ) -> Any:
         if (input_ids is None) == (inputs_embeds is None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
 
+        # 把判断改为
+        use_cache = use_cache if use_cache is not None else True  # 默认开启
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)
 
@@ -1125,7 +1231,6 @@ class GlmOcrTextModel(GlmOcrPreTrainedModel):
             position_ids = position_ids[1:]         # [3, bs, seq]
         else:
             text_position_ids = None
-        attn_mask_startend_row_indices = None
         mask_kwargs = {
             "config": self.config,
             "inputs_embeds": inputs_embeds,
@@ -1136,12 +1241,14 @@ class GlmOcrTextModel(GlmOcrPreTrainedModel):
             "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
-        causal_mask, _ = create_causal_mask_and_row_indices(**mask_kwargs)
+        causal_mask, attn_mask_startend_row_indices= create_causal_mask_and_row_indices(**mask_kwargs)
 
         hidden_states = inputs_embeds
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
-
+        for key in ["attn_mask_startend_row_indices", "attention_mask", "cache_position", 
+                "past_key_values", "position_embeddings"]:
+            kwargs.pop(key, None)
         for decoder_layer in self.layers:
             hidden_states = decoder_layer(
                 hidden_states,
@@ -1149,6 +1256,7 @@ class GlmOcrTextModel(GlmOcrPreTrainedModel):
                 past_key_values=past_key_values,
                 cache_position=cache_position,
                 position_embeddings=position_embeddings,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,  # ← 新增
                 **kwargs,
             )
 
@@ -1469,6 +1577,7 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
         self,
         input_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[Any] = None,
+        attn_mask_startend_row_indices: Optional[Any] = None,
         position_ids: Optional[paddle.Tensor] = None,
         past_key_values: Optional["Cache"] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
@@ -1503,15 +1612,38 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
         # x = inputs_embeds
         # save_any_pd(save_dir, f"pd_input_embeds_final", x)
 
-        # ---- position_ids ----
+        # # ---- position_ids ----
+        # if position_ids is None:
+        #     position_ids, rope_deltas_calc = self.get_rope_index(
+        #         input_ids,
+        #         image_grid_thw=image_grid_thw,
+        #         video_grid_thw=video_grid_thw,
+        #         attention_mask=attention_mask,
+        #     )
+        #     self.rope_deltas = rope_deltas_calc
         if position_ids is None:
-            position_ids, rope_deltas_calc = self.get_rope_index(
-                input_ids,
-                image_grid_thw=image_grid_thw,
-                video_grid_thw=video_grid_thw,
-                attention_mask=attention_mask,
+            # Paddle 没有 is_torchdynamo_compiling，直接用非编译逻辑
+            prefill_stage = (
+                (cache_position is not None and int(cache_position[0].item()) == 0)
+                or (past_key_values is None or past_key_values.get_seq_length() == 0)
             )
-            self.rope_deltas = rope_deltas_calc
+            
+            if prefill_stage or self.rope_deltas is None:
+                position_ids, rope_deltas_calc = self.get_rope_index(
+                    input_ids,
+                    image_grid_thw=image_grid_thw,
+                    video_grid_thw=video_grid_thw,
+                    attention_mask=attention_mask,
+                )
+                self.rope_deltas = rope_deltas_calc
+            else:
+                batch_size, seq_length, _ = inputs_embeds.shape
+                delta = cache_position[0].astype("int64") + self.rope_deltas.astype("int64")
+                delta = delta.tile([batch_size // delta.shape[0], 1])
+                position_ids = paddle.arange(seq_length, dtype="int64")
+                position_ids = position_ids.reshape([1, -1]).expand([batch_size, -1])
+                position_ids = position_ids + delta
+                position_ids = position_ids.unsqueeze(0).expand([3, -1, -1])
 
         # ---- 调 language model ----
         outputs = self.language_model(
@@ -1521,6 +1653,7 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
             cache_position=cache_position,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             **kwargs,
         )
         
@@ -1547,9 +1680,9 @@ class GlmOcrCausalLMOutputWithPast(ModelOutput):
 
     loss: Optional[paddle.Tensor] = None
     logits: Optional[paddle.Tensor] = None
-    past_key_values: Optional["Cache"] = None
-    hidden_states: Optional[Tuple[paddle.Tensor, ...]] = None
-    attentions: Optional[Tuple[paddle.Tensor, ...]] = None
+    past_key_values: Optional[Cache] = None
+    hidden_states: Optional[tuple[paddle.Tensor]] = None
+    attentions: Optional[tuple[paddle.Tensor]] = None
     rope_deltas: Optional[paddle.Tensor] = None
 
 
@@ -1562,7 +1695,10 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
         super().__init__(config)
         self.model = GlmOcrModel(config)
         self.lm_head = nn.Linear(config.text_config.hidden_size, config.text_config.vocab_size, bias_attr= False)
-        # self.criterion = CriterionLayer(config.text_config)
+        self.criterion = CriterionLayer(config)
+        attn_impl = getattr(config, "_attn_implementation", "eager")
+        config.vision_config._attn_implementation = attn_impl
+        config.text_config._attn_implementation = attn_impl
         # self.tie_weights()
 
     def get_input_embeddings(self):
@@ -1587,20 +1723,21 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
 
     def forward(
         self,
-        input_ids: Optional[paddle.Tensor] = None,
-        attention_mask: Optional[paddle.Tensor] = None,
-        position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[Any] = None,
-        inputs_embeds: Optional[paddle.Tensor] = None,
-        labels: Optional[paddle.Tensor] = None,
-        pixel_values: Optional[paddle.Tensor] = None,
-        pixel_values_videos: Optional[paddle.Tensor] = None,
-        image_grid_thw: Optional[paddle.Tensor] = None,
-        video_grid_thw: Optional[paddle.Tensor] = None,
-        cache_position: Optional[paddle.Tensor] = None,
-        logits_to_keep: Union[int, paddle.Tensor] = 0,
+        input_ids=None,
+        attention_mask=None,
+        position_ids=None,
+        past_key_values=None,
+        inputs_embeds=None,
+        labels=None,
+        pixel_values=None,
+        pixel_values_videos=None,
+        image_grid_thw=None,
+        video_grid_thw=None,
+        cache_position=None,
+        logits_to_keep=0,
+        return_dict: Optional[bool] = True,
         **kwargs,
-    ):
+    )-> Union[tuple, GlmOcrCausalLMOutputWithPast]:
         outputs = self.model(
             input_ids=input_ids,
             pixel_values=pixel_values,
@@ -1612,29 +1749,27 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
             cache_position=cache_position,
+            return_dict=return_dict,
             **kwargs,
         )
-        save_dir = "/home/work/zkx_test/glmocr_debug"
-
-        hidden_states = outputs[0]
-        # save_any_pd(save_dir, f"pd_generation_outputs_last_hidden_state", hidden_states)
-
-
+        hidden_states = outputs.last_hidden_state
         if isinstance(logits_to_keep, int):
             slice_indices = slice(-logits_to_keep, None) if logits_to_keep > 0 else slice(None, None)
         else:
             slice_indices = logits_to_keep
+      
+        # logits = self.lm_head(hidden_states[:, slice_indices, :])  # [B,T',V]
         logits = self.lm_head(hidden_states[:, slice_indices, :])
-        save_any_pd(save_dir, f"pd_generation_outputs_logits_1", logits)
-
         loss = None
         if labels is not None:
-            loss = self.loss_function(
-                logits=logits,
-                labels=labels,
-                vocab_size=self.config.text_config.vocab_size,
-            )
-
+            loss, _ = self.criterion(logits, labels)
+        # ✅ 关键：支持 tuple 返回，让 update_model_kwargs_for_generation 能抓到 past
+        if not return_dict:
+            # 这里 tuple 的第2个元素必须是 past_key_values（且不是 Tensor）
+            if loss is None:
+                return (logits, outputs.past_key_values)
+            else:
+                return (loss, logits, outputs.past_key_values)
         return GlmOcrCausalLMOutputWithPast(
             loss=loss,
             logits=logits,
@@ -1643,7 +1778,6 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
             attentions=outputs.attentions,
             rope_deltas=outputs.rope_deltas,
         )
-
     def prepare_inputs_for_generation(
         self,
         input_ids,
@@ -1657,53 +1791,42 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
         pixel_values_videos=None,
         image_grid_thw=None,
         video_grid_thw=None,
-        is_first_iteration=False,
         **kwargs,
     ):
-        # ===== 第一步：判断是否是prefill =====
-        is_prefill = (past_key_values is None) or (
-            hasattr(past_key_values, 'get_seq_length') 
-            and past_key_values.get_seq_length() == 0
-        )
-        
-        # ===== 第二步：decode阶段裁剪input_ids（在super()之前！）=====
-        if not is_prefill and use_cache:
-            input_ids = input_ids[:, -1:]
+        batch_size, seq_length = input_ids.shape  # 截断前的真实长度！
 
-            # ✅ decode 阶段别再传 full-length attention_mask（最稳）
-            attention_mask = None
+        # 在截断前计算 cache_position
+        if past_key_values is None:
+            cache_position = paddle.arange(seq_length)
+        else:
+            # seq_length 是完整 input_ids 长度，最后一个 token 的位置就是 seq_length-1
+            cache_position = paddle.to_tensor([seq_length - 1])
 
-            # ✅ 也别依赖外部 cache_position（交给 forward 用 past_len + rope_deltas）
-            cache_position = None
-
-            # ✅ decode 不重复传视觉输入
-            pixel_values = None
-            pixel_values_videos = None
-            image_grid_thw = None
-            video_grid_thw = None
-        
-        # ===== 第三步：调用super() =====
+        # 阻止 super() 计算并覆盖 position_ids，传入一个占位值
+        # super() 会把 kwargs 里的 position_ids 塞进 model_inputs
+        # 所以我们传一个标记，事后覆盖
+        kwargs.pop("position_ids", None)  # 清掉，防止 super() 用旧值
         model_inputs = super().prepare_inputs_for_generation(
             input_ids,
             past_key_values=past_key_values,
             attention_mask=attention_mask,
             inputs_embeds=inputs_embeds,
             cache_position=cache_position,
-            position_ids=position_ids,
+            position_ids=None,  # 不让 super() 处理 position_ids
             pixel_values=pixel_values,
             pixel_values_videos=pixel_values_videos,
             image_grid_thw=image_grid_thw,
             video_grid_thw=video_grid_thw,
             use_cache=use_cache,
-            is_first_iteration=is_first_iteration,
             **kwargs,
         )
 
-        # ===== 第四步：position_ids由forward内部算，置None =====
+        # 强制覆盖：position_ids 在 forward() 里通过 rope_deltas 计算
         model_inputs["position_ids"] = None
+        model_inputs["cache_position"] = cache_position  # 确保不被 super() 覆盖
 
-        # ===== 第五步：decode阶段不重复传图像 =====
-        if not is_prefill and use_cache:
+        # decode 阶段清除视觉输入
+        if cache_position[0] != 0:
             model_inputs["pixel_values"] = None
             model_inputs["pixel_values_videos"] = None
             model_inputs["image_grid_thw"] = None
@@ -1711,6 +1834,37 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
 
         return model_inputs
 
+    def update_model_kwargs_for_generation(self, outputs, model_kwargs, is_encoder_decoder=False, **kwargs):
+        # ---- 1) update past_key_values ----
+        if isinstance(outputs, tuple):
+            if len(outputs) >= 2 and not isinstance(outputs[1], paddle.Tensor):
+                model_kwargs["past_key_values"] = outputs[1]
+            elif len(outputs) >= 3 and not isinstance(outputs[2], paddle.Tensor):
+                model_kwargs["past_key_values"] = outputs[2]
+        elif hasattr(outputs, "past_key_values"):
+            model_kwargs["past_key_values"] = outputs.past_key_values
+
+        # ---- 2) update attention_mask (关键) ----
+        attn = model_kwargs.get("attention_mask", None)
+        if (not is_encoder_decoder) and (attn is not None):
+            if len(attn.shape) == 2:
+                # [B, S] -> [B, S+1]
+                model_kwargs["attention_mask"] = paddle.cat(
+                    [attn, paddle.ones([attn.shape[0], 1], dtype=attn.dtype)],
+                    axis=-1,
+                )
+            elif len(attn.shape) == 4:
+                # [B, 1, 1, S] -> [B, 1, 1, S+1] 或类似实现
+                model_kwargs["attention_mask"] = paddle.cat(
+                    [attn, paddle.ones([*attn.shape[:3], 1], dtype=attn.dtype)],
+                    axis=-1,
+                )[:, :, -1:, :]
+            else:
+                # 其它形状就别硬搞，避免更诡异的广播
+                model_kwargs["attention_mask"] = None
+
+        return model_kwargs
+    
     def _get_image_nums_and_video_nums(
         self,
         input_ids: Optional[paddle.Tensor],

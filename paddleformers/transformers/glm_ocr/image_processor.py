@@ -70,7 +70,6 @@ def make_batched_images(images) -> List[ImageInput]:
 
     raise ValueError(f"Could not make batched images from {images}")
 
-
 def smart_resize(
     num_frames: int,
     height: int,
@@ -199,8 +198,25 @@ class Glm46VImageProcessor(BaseImageProcessor):
         self.patch_size = patch_size
         self.temporal_patch_size = temporal_patch_size
         self.merge_size = merge_size
-        # Keep `size` dict for compatibility
         self.size = {"shortest_edge": min_pixels, "longest_edge": max_pixels}
+
+
+    def get_smarted_resize(self, height, width, min_pixels=None, max_pixels=None):
+        actual_min_pixels = min_pixels if min_pixels is not None else self.min_pixels
+        actual_max_pixels = max_pixels if max_pixels is not None else self.max_pixels
+        resized_height, resized_width = smart_resize(
+            self.temporal_patch_size,
+            height,
+            width,
+            temporal_factor=self.temporal_patch_size,
+            factor=self.patch_size * self.merge_size,
+            min_pixels=actual_min_pixels,
+            max_pixels=actual_max_pixels,
+        )
+        return (resized_height, resized_width), (
+            resized_height // self.patch_size,
+            resized_width // self.patch_size,
+        )
 
     def set_pixels(self, min_pixels: Optional[int] = None, max_pixels: Optional[int] = None, msg: str = ""):
         """Dynamically update min/max pixel constraints."""

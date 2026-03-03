@@ -206,30 +206,46 @@ class GlmOcrConfig(PretrainedConfig):
     model_type = "glm_ocr"
     sub_configs = {"vision_config": GlmOcrVisionConfig, "text_config": GlmOcrTextConfig}
     keys_to_ignore_at_inference = ["past_key_values"]
+    
+    def __setattr__(self, key, value):
+        # 同步到 text_config
+        if (
+            (text_config := super().__getattribute__("__dict__").get("text_config")) is not None
+            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+            and key in text_config.__dict__
+        ):
+            setattr(text_config, key, value)
+        # 同步到 vision_config
+        if (
+            (vision_config := super().__getattribute__("__dict__").get("vision_config")) is not None
+            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+            and key in vision_config.__dict__
+        ):
+            setattr(vision_config, key, value)
+        super().__setattr__(key, value)
 
-    # def __init__(
-    #     self,
-    #     text_config=None,
-    #     vision_config=None,
-    #     image_token_id=59280,
-    #     video_token_id=59281,
-    #     image_start_token_id=59256,
-    #     image_end_token_id=59257,
-    #     video_start_token_id=59258,
-    #     video_end_token_id=59259,
-    #     tie_word_embeddings=False,
-    #     **kwargs,
-    # ):
+    def __getattribute__(self, key):
+        if "text_config" in super().__getattribute__("__dict__") and key not in [
+            "_name_or_path",
+            "model_type", 
+            "dtype",
+            "_attn_implementation_internal",
+        ]:
+            text_config = super().__getattribute__("text_config")
+            if key in text_config.__dict__:
+                return getattr(text_config, key)
+        return super().__getattribute__(key)
+    
     def __init__(
         self,
         text_config = None,
         vision_config = None,
-        image_start_token_id = 31996,
-        image_end_token_id   = 31997,
-        video_start_token_id = 31998,
-        video_end_token_id   = 31999,
-        image_token_id       = 31990,
-        video_token_id       = 31991,
+        image_start_token_id = 59256,
+        image_end_token_id   = 59257,
+        video_start_token_id = 59258,
+        video_end_token_id   = 59259,
+        image_token_id       = 59280,
+        video_token_id       = 59281,
         tie_word_embeddings=False,
         **kwargs,
     ):
@@ -246,7 +262,7 @@ class GlmOcrConfig(PretrainedConfig):
             self.text_config = self.sub_configs["text_config"](**kwargs)
         else:
             self.text_config = text_config
-
+        
         self.image_token_id = image_token_id
         self.video_token_id = video_token_id
         self.video_start_token_id = video_start_token_id
@@ -256,5 +272,6 @@ class GlmOcrConfig(PretrainedConfig):
         self.tie_word_embeddings = tie_word_embeddings
 
         super().__init__(**kwargs)
+        self.vocab_size = self.text_config.vocab_size
 
 __all__ = ["GlmOcrConfig", "GlmOcrTextConfig", "GlmOcrVisionConfig"]
