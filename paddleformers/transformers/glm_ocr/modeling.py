@@ -31,38 +31,6 @@ import os
 import numpy as np
 import paddle
 
-# def _to_np_pd(v):
-#     if v is None:
-#         return None
-#     if isinstance(v, paddle.Tensor):
-#         v = v.detach()
-#         if v.dtype == paddle.bfloat16:
-#             v = v.astype("float32")
-#         return v.cpu().numpy()
-#     return v  # 可能是 numpy 或 python 标量
-
-# def save_any_pd(save_dir: str, name: str, v):
-#     os.makedirs(save_dir, exist_ok=True)
-
-#     # 1) list/tuple：逐个保存
-#     if isinstance(v, (list, tuple)):
-#         # 额外保存一个“长度”，方便对齐
-#         np.save(os.path.join(save_dir, f"{name}_len.npy"), np.array([len(v)], dtype=np.int64))
-#         for i, item in enumerate(v):
-#             arr = _to_np_pd(item)
-#             if arr is None:
-#                 continue
-#             np.save(os.path.join(save_dir, f"{name}_{i:03d}.npy"), arr)
-#         return
-
-#     # 2) 单个 tensor/array
-#     arr = _to_np_pd(v)
-#     if arr is None:
-#         # 保存一个标记文件，避免你以为没跑到
-#         np.save(os.path.join(save_dir, f"{name}_is_none.npy"), np.array([1], dtype=np.int8))
-#         return
-#     np.save(os.path.join(save_dir, f"{name}.npy"), arr)
-
 class GlmOcrRMSNorm(nn.Layer):
     def __init__(self, hidden_size, eps=1e-6):
         """
@@ -77,11 +45,9 @@ class GlmOcrRMSNorm(nn.Layer):
         self.variance_epsilon = eps
 
     def forward(self, hidden_states):
-        # 保存输入数据类型
 
         input_dtype = hidden_states.dtype
         
-        # 转换为float32进行计算（保持与PyTorch一致）
         hidden_states = hidden_states.astype('float32')
         
         # 计算方差
@@ -109,19 +75,6 @@ class GlmOcrVisionMlp(nn.Layer):
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(self, hidden_state):
-        # x = hidden_state
-        # gate = self.gate_proj(hidden_state)          # 线性: gate path
-        # act = self.act_fn(gate)                      # 激活
-        # up = self.up_proj(hidden_state)              # 线性: up path
-        # mul = act * up                               # 逐元素乘
-        # out = self.down_proj(mul)                    # 线性: down
-        # save_dir = "/home/work/zkx_test/glmocr_debug"
-        # save_any_pd(save_dir, f"pd_x",x)
-        # save_any_pd(save_dir, f"pd_gate",gate)
-        # save_any_pd(save_dir, f"pd_act",act)
-        # save_any_pd(save_dir, f"pd_up",up)
-        # save_any_pd(save_dir, f"pd_mul",mul)
-        # save_any_pd(save_dir, f"pd_out",out)
         return self.down_proj(self.act_fn(self.gate_proj(hidden_state)) * self.up_proj(hidden_state))
 
 def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
@@ -404,7 +357,6 @@ class GlmOcrPreTrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_aoa_config(cls, config: GlmOcrConfig):
-        print("🔥 AOA CALLED")
         model_prefix = "model"
         aoa_statements = []
         aoa_statements += ["lm_head.weight^T -> lm_head.weight",]
@@ -631,36 +583,6 @@ def rotate_half(x):
     x2 = x[..., x.shape[-1] // 2 :]
     return paddle.concat((-x2, x1), axis=-1)
 
-# def apply_rotary_pos_emb_vision(q, k, cos, sin):
-#     # q,k: [seq, heads, head_dim]
-#     # cos,sin: [seq, rotary_dim]  (rotary_dim <= head_dim)
-
-#     # 对齐广播：变成 [seq, 1, rotary_dim]
-#     cos = cos[:q.shape[0], :].unsqueeze(1)  # [seq, 1, rotary_dim]
-#     sin = sin[:q.shape[0], :].unsqueeze(1)
-
-#     # 先把 cos/sin 对齐到 q 的 dtype（这一步你已经做了）
-#     cos = cos.astype(q.dtype)
-#     sin = sin.astype(q.dtype)
-
-#     rotary_dim = cos.shape[-1]
-
-#     q_rot, q_pass = q[:, :, :rotary_dim], q[:, :, rotary_dim:]
-#     k_rot, k_pass = k[:, :, :rotary_dim], k[:, :, rotary_dim:]
-
-#     q_embed = (q_rot * cos) + (rotate_half(q_rot) * sin)
-#     k_embed = (k_rot * cos) + (rotate_half(k_rot) * sin)
-
-#     # ===== 关键修复：concat 前 dtype 统一 =====
-#     if q_pass.dtype != q_embed.dtype:
-#         q_pass = q_pass.astype(q_embed.dtype)
-#     if k_pass.dtype != k_embed.dtype:
-#         k_pass = k_pass.astype(k_embed.dtype)
-
-#     q = paddle.concat([q_embed, q_pass], axis=-1)
-#     k = paddle.concat([k_embed, k_pass], axis=-1)
-#     return q, k
-
 def apply_rotary_pos_emb_vision(q, k, cos, sin):
     # q, k: [seq, heads, head_dim]
     # cos, sin: [seq, rotary_dim]
@@ -734,7 +656,6 @@ class GlmOcrVisionAttention(nn.Layer):
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         if self.config._attn_implementation == "eager":
-            # eager 模式：split 循环处理每段，保持原有逻辑
             lengths = cu_seqlens[1:] - cu_seqlens[:-1]
             query_splits = paddle.split(query_states, lengths.numpy().tolist(), axis=2)
             key_splits = paddle.split(key_states, lengths.numpy().tolist(), axis=2)
@@ -798,41 +719,14 @@ class GlmOcrVisionBlock(nn.Layer):
         position_embeddings: Optional[Tuple[paddle.Tensor, paddle.Tensor]] = None,
         **kwargs,
     ) -> paddle.Tensor:
-        # hidden_states = hidden_states + self.attn(
-        #     self.norm1(hidden_states),
-        #     cu_seqlens=cu_seqlens,
-        #     rotary_pos_emb=rotary_pos_emb,
-        #     position_embeddings=position_embeddings,
-        #     **kwargs,
-        # )
-        # hidden_states = hidden_states + self.mlp(self.norm2(hidden_states))
-        # return hidden_states
-
-        x0 = hidden_states
-
-        n1 = self.norm1(x0)
-        a1 = self.attn(
-            n1,
+        hidden_states = hidden_states + self.attn(
+            self.norm1(hidden_states),
             cu_seqlens=cu_seqlens,
             rotary_pos_emb=rotary_pos_emb,
             position_embeddings=position_embeddings,
             **kwargs,
         )
-        x1 = x0 + a1
-
-        n2 = self.norm2(x1)
-        m2 = self.mlp(n2)
-        x2 = x1 + m2
-
-        hidden_states = x2
-        # save_dir = "/home/work/zkx_test/glmocr_debug"
-        # save_any_pd(save_dir, f"pd_x0_in", x0)
-        # save_any_pd(save_dir, f"pd_n1_norm1", n1)
-        # save_any_pd(save_dir, f"pd_a1_attn", a1)
-        # save_any_pd(save_dir, f"pd_x1_after_attn_res", x1)
-        # save_any_pd(save_dir, f"pd_n2_norm2", n2)
-        # save_any_pd(save_dir, f"pd_m2_mlp", m2)
-        # save_any_pd(save_dir, f"pd_x2_out", x2)
+        hidden_states = hidden_states + self.mlp(self.norm2(hidden_states))
         return hidden_states
 
 class GlmOcrVisionPatchMerger(nn.Layer):
@@ -873,23 +767,6 @@ class GlmOcrVisionPatchEmbed(nn.Layer):
         )
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
-        # # Expect 2D: [N, 3*T*P*P]
-        # if hidden_states.ndim != 2:
-        #     raise ValueError(f"Route-2 patch_embed expects 2D [N, {self.in_channels}*T*P*P], got {hidden_states.shape}")
-
-        # N, D = hidden_states.shape
-        # expected = self.in_channels * self.temporal_patch_size * self.patch_size * self.patch_size
-        # if int(D) != int(expected):
-        #     raise ValueError(
-        #         f"Patch vector dim mismatch: got D={D}, expected {expected} "
-        #         f"(C={self.in_channels}, T={self.temporal_patch_size}, P={self.patch_size})"
-        #     )
-
-        # x = hidden_states.reshape([N, self.in_channels, self.temporal_patch_size, self.patch_size, self.patch_size])
-        # x = x.astype(self.proj.weight.dtype)
-        # x = self.proj(x)
-        # x = x.reshape([N, self.embed_dim])
-        # return x
         target_dtype = self.proj.weight.dtype
         hidden_states = hidden_states.reshape(
             [-1, self.in_channels, self.temporal_patch_size, self.patch_size, self.patch_size]
@@ -1296,19 +1173,6 @@ def masked_scatter(inputs: paddle.Tensor, mask: paddle.Tensor, updates: paddle.T
     x_new = paddle.scatter(x, idx, upd, overwrite=True)
     return x_new.reshape(inputs.shape)
 
-
-def _diag_from_4d_full_attention(attn4d: paddle.Tensor) -> paddle.Tensor:
-    """
-    对齐 torch: torch.diagonal(attn[:,0], dim1=1, dim2=2)
-    假设 attn4d: [B, 1, S, S] 或 [B, H?, S, S]（你原代码是 [:,0]）
-    返回: [B, S]
-    """
-    # 取 head=0 通道
-    x = attn4d[:, 0]  # [B, S, S]
-    # 对角线：axis1=1, axis2=2 -> [B, S]
-    return paddle.diagonal(x, axis1=1, axis2=2)
-
-
 class GlmOcrModel(GlmOcrPreTrainedModel):
     base_model_prefix = "model"
     _checkpoint_conversion_mapping = {}
@@ -1608,19 +1472,6 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
             video_embeds = paddle.concat(video_embeds_list, axis=0).astype(inputs_embeds.dtype)
             _, video_mask = self.get_placeholder_mask(input_ids, inputs_embeds, video_features=video_embeds)
             inputs_embeds = masked_scatter(inputs_embeds, video_mask, video_embeds)
-        # save_dir = "/home/work/zkx_test/glmocr_debug"
-        # x = inputs_embeds
-        # save_any_pd(save_dir, f"pd_input_embeds_final", x)
-
-        # # ---- position_ids ----
-        # if position_ids is None:
-        #     position_ids, rope_deltas_calc = self.get_rope_index(
-        #         input_ids,
-        #         image_grid_thw=image_grid_thw,
-        #         video_grid_thw=video_grid_thw,
-        #         attention_mask=attention_mask,
-        #     )
-        #     self.rope_deltas = rope_deltas_calc
         if position_ids is None:
             # Paddle 没有 is_torchdynamo_compiling，直接用非编译逻辑
             prefill_stage = (
@@ -1763,9 +1614,7 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
         loss = None
         if labels is not None:
             loss, _ = self.criterion(logits, labels)
-        # ✅ 关键：支持 tuple 返回，让 update_model_kwargs_for_generation 能抓到 past
         if not return_dict:
-            # 这里 tuple 的第2个元素必须是 past_key_values（且不是 Tensor）
             if loss is None:
                 return (logits, outputs.past_key_values)
             else:
@@ -1802,9 +1651,6 @@ class GlmOcrForConditionalGeneration(GlmOcrPreTrainedModel, GenerationMixin):
             # seq_length 是完整 input_ids 长度，最后一个 token 的位置就是 seq_length-1
             cache_position = paddle.to_tensor([seq_length - 1])
 
-        # 阻止 super() 计算并覆盖 position_ids，传入一个占位值
-        # super() 会把 kwargs 里的 position_ids 塞进 model_inputs
-        # 所以我们传一个标记，事后覆盖
         kwargs.pop("position_ids", None)  # 清掉，防止 super() 用旧值
         model_inputs = super().prepare_inputs_for_generation(
             input_ids,
