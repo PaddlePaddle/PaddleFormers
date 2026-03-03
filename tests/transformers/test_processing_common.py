@@ -136,7 +136,7 @@ class ProcessorTesterMixin:
 
     def prepare_audio_inputs(self, batch_size: int | None = None):
         """This function prepares a list of numpy videos."""
-        sampling_rate = 16000
+        sampling_rate = 1000  # Avoid excessively long single test duration
         duration = 1.0  # seconds
         audio_array = np.random.randn(int(sampling_rate * duration)).astype(np.float32)
         if batch_size is None:
