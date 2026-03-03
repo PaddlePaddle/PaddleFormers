@@ -695,15 +695,34 @@ class MergeModel:
 
         # get transpose_weight_keys
         if self.merge_config.convert_from_hf:
-            config_dict = PretrainedConfig.get_config_dict(self.merge_config.base_model_path)[0]
+            base_model_config = PretrainedConfig.from_pretrained(self.merge_config.base_model_path)
             name_mapping = get_name_mapping()
             model_class_name = None
             for key, value in name_mapping.items():
-                if value == config_dict["model_type"]:
+                if value == base_model_config.model_type:
                     model_class_name = key
                     break
-            import_class = importlib.import_module(f"paddleformers.transformers.{config_dict['model_type']}.modeling")
-            self.transpose_weight_keys = getattr(import_class, model_class_name).transpose_weight_keys
+            import_class = importlib.import_module(
+                f"paddleformers.transformers.{base_model_config.model_type}.modeling"
+            )
+            # parser aoa statements
+            aoa_config = getattr(import_class, model_class_name)._gen_aoa_config(base_model_config)
+            transpose_weight_keys_set = set()
+            for aoa_state in aoa_config["aoa_statements"]:
+                left_parts = aoa_state.split("->")[0].strip().split(",")
+                for full_key_name in left_parts:
+                    full_key_name = full_key_name.strip()
+                    if full_key_name.endswith(".weight^T"):
+                        part_key_name = full_key_name.split(".")[-2]
+                        if part_key_name.isdigit() or part_key_name in {"$LAYER_ID", "$EXPERT_ID"}:
+                            prev_part_key_name = full_key_name.split(".")[-3]
+                            if part_key_name.isdigit():
+                                transpose_weight_keys_set.add(f"{prev_part_key_name}\.{part_key_name}")
+                            else:
+                                transpose_weight_keys_set.add(f"{prev_part_key_name}\.\d+")
+                        else:
+                            transpose_weight_keys_set.add(part_key_name)
+            self.transpose_weight_keys = list(transpose_weight_keys_set)
 
         # Initialize new index
         index = {}

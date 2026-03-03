@@ -447,7 +447,7 @@ class Gemma3TextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
 
 class Gemma3TextIntegrationTest(unittest.TestCase):
     base_model_class = Gemma3TextModel
-    test_dtype = "float32"  # "bfloat16"
+    test_dtype = "float32"  # bfloat16
 
     @gpu_device_initializer(log_prefix="Gemma3TextIntegrationTest")
     def setUp(self):

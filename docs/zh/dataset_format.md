@@ -429,7 +429,7 @@ wget https://paddleformers.bj.bcebos.com/datasets/release/v1.0/dpo_online_data_e
 mkdir -p data/dpo && tar -xf dpo_online_data_erniekit.tar.gz -C data/dpo/
 ```
 
-## 2.4. 多模态指令微调（SFT） 数据格式
+## 2.4. 多模态指令微调（SFT）数据格式
 
 <details>
   <summary><b>messages 格式（点击展开/收起）</b></summary>
@@ -555,7 +555,86 @@ wget https://paddleformers.bj.bcebos.com/datasets/release/v1.0/sft_vl_data_ernie
 mkdir -p data/sft-vl && tar -xf sft_vl_data_erniekit.tar.gz -C data/sft-vl
 ```
 
-## 2.5. 新增数据格式支持
+## 2.5. 多模态直接偏好优化（DPO）数据格式
+
+<details>
+  <summary><b>messages 格式（点击展开/收起）</b></summary>
+
+------
+>
+> 使用 `messages` 格式需要在 `train(/eval)_dataset_type` 处指定为 `messages`
+>
+> 多模态 DPO 数据流在纯文本 DPO 格式的基础上扩展支持多模态输入，内容中可以包含 `<image>`, `<video>`, `<audio>` 标签来引用多模态资源。包含以下字段：
+>
+> * `messages` : `List(dict)`, 对话历史列表, 包含 `role` (`"user"` 或 `"assistant"`) 和 `content` (`str`) 字段。
+> * `chosen_response` : `List(dict)`, 偏好（chosen）的系统回复, 包含 `role` (`"assistant"`) 和 `content` (`str`) 等字段。
+> * `rejected_response` : `List(dict)`, 非偏好（rejected）的系统回复, 包含 `role` (`"assistant"`) 和 `content` (`str`) 等字段。
+> * `images` : `List(str)`, 图像资源的本地路径或在线 URL 列表
+> * `videos` : `List(str)`, 视频资源的本地路径或在线 URL 列表
+> * `audios` : `List(str)`, 音频资源的本地路径或在线 URL 列表
+>
+> 样例数据（包含图像的多模态 DPO）：
+>
+> ```json
+> {
+>     "messages": [
+>         {
+>             "role": "system",
+>             "content": "你是一个多模态AI助手，可以理解和描述图像内容。"
+>         },
+>         {
+>             "role": "user", 
+>             "content": "请描述一下<image>中的场景"
+>         }
+>     ],
+>     "chosen_response": [{
+>         "role": "assistant",
+>         "content": "这张图片展示了一个阳光明媚的公园场景，有绿树、草坪和散步的人们。"
+>     }],
+>     "rejected_response": [{
+>         "role": "assistant", 
+>         "content": "图片里有些东西，但我不太确定具体是什么。"
+>     }]
+>     "images": ["/path/to/image.jpg"],
+> }
+> ```
+>
+> 样例数据（包含图像和视频的多模态 DPO）：
+>
+> ```json
+> {
+>     "messages": [
+>         {
+>             "role": "user",
+>             "content": "<image>中的动物和<video>中的动物有什么不同？"
+>         }
+>     ],
+>     "chosen_response": [{
+>         "role": "assistant",
+>         "content": "图片中的是一只静态的猫，而视频展示的是一只正在奔跑的狗，它们在物种和行为上都有显著差异。"
+>     }],
+>     "rejected_response": [{
+>         "role": "assistant",
+>         "content": "它们都是动物，没什么不同。"
+>     }]
+>     "images": ["/path/to/animal1.jpg"],
+>     "videos": ["/path/to/animal2.mp4"],
+> }
+> ```
+>
+------
+
+</details>
+
+为了方便测试，我们也提供了用于快速训练的 demo 数据：
+
+```shell
+# messages格式
+wget https://paddleformers.bj.bcebos.com/datasets/release/v1.0/dpo_vl_data_messages.tar.gz
+mkdir -p data/dpo-vl && tar -xf dpo_vl_data_messages.tar.gz -C data/dpo-vl
+```
+
+## 2.6. 新增数据格式支持
 
 PaddleFormers 支持多种不同的数据格式处理，我们通过将其他数据格式转换为 messages 格式来实现该功能
 

@@ -19,14 +19,28 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
+    "configuration": ["Glm4vMoeConfig", "Glm4vMoeTextConfig", "Glm4vMoeVisionConfig"],
+    "modeling": [
+        "Glm4vMoeForConditionalGeneration",
+        "Glm4vMoeModel",
+        "Glm4vMoePreTrainedModel",
+        "Glm4vMoeTextModel",
+        "Glm4vMoeVisionModel",
+    ],
+    # TODO: might be moved to glm4v in the future
     "image_processor": ["Glm4vImageProcessor"],
     "image_processor_fast": ["Glm4vImageProcessorFast"],
+    "processor": ["Glm4vProcessor"],
+    "video_processor": ["Glm4vVideoProcessor"],
 }
 
 if TYPE_CHECKING:
+    from .configuration import *
     from .image_processor import *
     from .image_processor_fast import *
-
+    from .modeling import *
+    from .processor import *
+    from .video_processor import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

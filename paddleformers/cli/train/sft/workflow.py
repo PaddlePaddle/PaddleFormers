@@ -304,6 +304,13 @@ def run_sft(
         model_config.vision_config.recompute_method = model_config.recompute_method
         model_config.vision_config.recompute_num_layers = model_config.recompute_num_layers
 
+    # Sync freeze_config to model_config so that Fleet model providers can read it
+    freeze_config = getattr(training_args, "freeze_config", "")
+    if freeze_config:
+        model_config.freeze_vision_model = "freeze_vision" in freeze_config
+        model_config.freeze_langurage_model = "freeze_llm" in freeze_config
+        model_config.freeze_vision_projection = "freeze_aligner" in freeze_config
+
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 
@@ -364,7 +371,7 @@ def run_sft(
     if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, Llama3Tokenizer):
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
+    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
 
     dataset_config = {
         "tokenizer": tokenizer,
@@ -557,14 +564,14 @@ def run_sft(
     # padding to the maximum seq length in batch data when max_seq_len is None
     if getattr(model, "is_fleet", False) and not model_args.lora:
         if training_args.per_device_train_batch_size > 1:
-            max_seq_len = data_args.max_seq_len + model_config.num_nextn_predict_layers
+            max_seq_len = data_args.max_seq_len
             logger.warning(f"Setting max_seq_len to {max_seq_len} for mbs > 1 using PaddleFleet model.")
         else:
             max_seq_len = None
             logger.warning("Setting max_seq_len to None for mbs = 1 using PaddleFleet Model.")
     else:
         max_seq_len = (
-            data_args.max_seq_len + model_config.num_nextn_predict_layers
+            data_args.max_seq_len
             if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
             else None
         )

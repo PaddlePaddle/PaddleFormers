@@ -50,6 +50,7 @@ class LayerNorm(nn.LayerNorm):
             mark_as_sequence_parallel_parameter(self.bias)
 
 
+@paddle.jit.marker.unified
 class RMSNorm(nn.Layer):
     def __init__(self, config: PretrainedConfig, hidden_size=None, norm_eps=None, input_is_parallel=False, **kwargs):
         super().__init__()
@@ -70,11 +71,7 @@ class RMSNorm(nn.Layer):
         if self.config.get("fuse_rms_norm", True) and current_device != "iluvatar_gpu":
             return fused_rms_norm_ext(hidden_states, self.weight, self.variance_epsilon)[0].astype(self.weight.dtype)
 
-        if paddle.in_dynamic_mode():
-            with paddle.amp.auto_cast(False):
-                variance = hidden_states.astype("float32").pow(2).mean(-1, keepdim=True)
-                hidden_states = paddle.rsqrt(variance + self.variance_epsilon) * hidden_states
-        else:
+        with paddle.amp.auto_cast(False):
             variance = hidden_states.astype("float32").pow(2).mean(-1, keepdim=True)
             hidden_states = paddle.rsqrt(variance + self.variance_epsilon) * hidden_states
 
