@@ -27,7 +27,7 @@ import os
 import random
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union
+from typing import Any, BinaryIO, Optional
 
 import librosa
 import numpy as np
@@ -40,6 +40,9 @@ from transformers.image_utils import is_valid_image
 from typing_extensions import override
 
 from paddleformers.transformers.qwen2_vl.vision_process import fetch_video
+from paddleformers.transformers.qwen3_omni_moe.processor import (
+    Qwen3OmniMoeProcessorKwargs,
+)
 
 from ...utils.log import logger
 from .augment_utils import (
@@ -50,9 +53,6 @@ from .augment_utils import (
     RandomSingleSidePadding,
     transforms,
 )
-
-# import paddle.nn.functional as F
-
 
 
 def round_by_factor(number: int, factor: int) -> int:
@@ -958,39 +958,33 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
             mm_inputs.update(image_processor(images, return_tensors="pd"))
 
         if len(videos) != 0:
-            # videos = self._regularize_videos(
-            #     videos,
-            #     image_max_pixels=getattr(processor, "video_max_pixels", 256 * 256),
-            #     image_min_pixels=getattr(processor, "video_min_pixels", 16 * 16),
-            #     video_fps=getattr(processor, "video_fps", 2.0),
-            #     video_maxlen=getattr(processor, "video_maxlen", 128),
-            # )
-            # video_metadata = [
-            #     {"fps": getattr(processor, "video_fps", 24.0), "duration": len(video), "total_num_frames": len(video)}
-            #     for video in videos["videos"]
-            # ]
-            # mm_inputs.update(
-            #     video_processor(videos=videos["videos"], video_metadata=video_metadata, return_metadata=True)
-            # )
-            video_metadata = []
-            processed_videos = []
-            for video in videos:
-                processed_videos.append(fetch_video({"video": video}))
-                video_metadata.append(
-                    {
-                        "fps": getattr(processor, "video_fps", 24.0),
-                        "duration": len(video),
-                        "total_num_frames": len(video),
-                    }
+            if processor.__class__.__name__ == "Qwen3OmniMoeProcessor":  # for qwen3omni
+                videos_kwargs = Qwen3OmniMoeProcessorKwargs._defaults.get("videos_kwargs")
+                # seconds_per_chunk = videos_kwargs.pop("seconds_per_chunk", None)
+                # position_id_per_seconds = videos_kwargs.pop("position_id_per_seconds", None)
+                # use_audio_in_video = videos_kwargs.pop("use_audio_in_video", False)
+                fps = videos_kwargs.get("fps", 1.0)
+                processed_videos = []
+                for video in videos:
+                    processed_videos.append(fetch_video({"video": video}))
+                video_inputs = video_processor(videos=processed_videos, **videos_kwargs, return_tensors="pd")
+                mm_inputs.update(video_inputs)
+                fps = [fps] * len(processed_videos)
+                mm_inputs["video_second_per_grid"] = paddle.to_tensor(
+                    [video_processor.temporal_patch_size / fps[i] for i in range(len(fps))]
                 )
-            mm_inputs.update(
-                video_processor(videos=processed_videos, video_metadata=video_metadata, return_metadata=True)
-            )
-            fps = kwargs.get("fps", 1.0)
-            fps = [fps] * len(videos)
-            mm_inputs["video_second_per_grid"] = paddle.to_tensor(
-                [video_processor.temporal_patch_size / fps[i] for i in range(len(fps))]
-            )
+            else:
+                video_data = self._regularize_videos(
+                    videos,
+                    image_max_pixels=getattr(processor, "video_max_pixels", 256 * 256),
+                    image_min_pixels=getattr(processor, "video_min_pixels", 16 * 16),
+                    video_fps=getattr(processor, "video_fps", 2.0),
+                    video_maxlen=getattr(processor, "video_maxlen", 128),
+                )
+                mm_inputs.update(video_processor(videos=video_data["videos"], return_tensors="pd"))
+                mm_inputs["video_second_per_grid"] = paddle.to_tensor(
+                    [video_processor.temporal_patch_size / fps[i] for i in range(len(fps))]
+                )
         if len(audios) != 0:
             audios = self._regularize_audios(
                 audios,
@@ -1012,7 +1006,7 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
         if target_dtype:
             mm_inputs = self._to_float_dtype(mm_inputs, target_dtype)
         else:
-            logger.warning(f"Not specified dtype, use float32 by default.")
+            logger.warning("Not specified dtype, use float32 by default.")
         return mm_inputs
 
     @staticmethod
