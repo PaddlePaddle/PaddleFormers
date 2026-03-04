@@ -149,7 +149,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
     timeout 25m \
-    python -m pytest -v -s -n 2 \
+    python -m pytest -v -s -n 1 \
         --dist no \
         --maxfail=10 \
         --retries 3 --retry-delay 1 \
