@@ -2548,6 +2548,20 @@ class Trainer:
                     )
                 )
             logs.update(self.global_training_logs)
+
+            # Add MTP loss metrics if available
+            try:
+                from paddlefleet.models.common.language_loss.language_loss import (
+                    LanguageLoss,
+                )
+
+                if LanguageLoss.mtp_loss_tracker:
+                    logs.update(
+                        {k: v.item() if hasattr(v, "item") else v for k, v in LanguageLoss.mtp_loss_tracker.items()}
+                    )
+            except (ImportError, AttributeError):
+                pass
+
             self._total_loss_scalar += tr_loss_scalar
             self._globalstep_last_logged = self.state.global_step
             self._globalstep_last_start_time = time.time()
@@ -4835,8 +4849,9 @@ class Trainer:
             inputs = inputs.pop("input_ids")
             data_provider = [inputs, labels]
         # train & eval share the same p2p_helper, so clear it before and after each step
-        if hasattr(model, "_p2p_helper") or need_clear:
-            model._p2p_helper.clear_meta_cache()
+        if need_clear:
+            if hasattr(model, "_p2p_helper"):
+                model._p2p_helper.clear_meta_cache()
 
         with paddle.no_grad():
             if has_labels:
@@ -4859,8 +4874,9 @@ class Trainer:
             else:
                 raise ValueError("pipeline mode eval need label!")
         # train & eval share the same p2p_helper, so clear it before and after each step
-        if hasattr(model, "_p2p_helper") or need_clear:
-            model._p2p_helper.clear_meta_cache()
+        if need_clear:
+            if hasattr(model, "_p2p_helper"):
+                model._p2p_helper.clear_meta_cache()
 
         return (loss, None, labels)
 

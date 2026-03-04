@@ -869,31 +869,110 @@ class Projector(nn.Layer):
             config=text_config,
         )
 
-    def forward(self, image_features, image_grid_thw, split_sections):
+    def forward(self, image_features, image_grid_thw):
 
-        image_features = image_features.squeeze(0)
-        image_features = self.pre_norm(image_features)  # shape: (T*H*W, D)
-        image_features_chunks = image_features.split(split_sections, axis=0)
+        # ==========================================
+        # DEBUG ONLY: Naive Loop-based Implementation
+        # ==========================================
+        # The following block is kept for debugging and readability purposes.
+        # It relies on dynamically splitting the features and executing a Python-level loop
+        # to reshape and merge each image patch according to its block size.
+        # However, dynamically splitting tensors and running explicit loops in Python
+        # introduces severe kernel scheduling overhead, redundant data movements (due to
+        # repeated reshapes/transposes), and high VRAM fragmentation, leading to bottlenecked throughput.
+
+        # split_sections = image_grid_thw.prod(axis=1).cpu().numpy().tolist()
+        # image_features = image_features.squeeze(0)
+        # image_features = self.pre_norm(image_features)  # shape: (T*H*W, D)
+        # image_features_chunks = image_features.split(split_sections, axis=0)
+
+        # m1, m2 = self.merge_kernel_size
+        # d = image_features.shape[-1]
+
+        # processed_features = []
+        # for image_feature, (t, h, w) in zip(image_features_chunks, image_grid_thw):
+
+        #     h_block = h // m1
+        #     w_block = w // m2
+
+        #     image_feature = image_feature.reshape([t, h_block, m1, w_block, m2, d])
+        #     image_feature = image_feature.transpose([0, 1, 3, 2, 4, 5])
+        #     image_feature = image_feature.reshape([t * h_block * w_block, m1 * m2 * d])
+
+        #     hidden_states = self.linear_1(image_feature)
+        #     hidden_states = self.act(hidden_states)
+        #     hidden_states = self.linear_2(hidden_states)
+        #     processed_features.append(hidden_states)
+
+        # return paddle.concat(processed_features, axis=0)
+
+        # ==========================================
+        # OPTIMIZED: Vectorized Index-Gather Approach
+        # ==========================================
+        # To resolve the bottlenecks mentioned above, this optimized implementation
+        # completely eliminates the Python-level loop and the dynamic tensor transpositions.
+        # Instead, we compute the target memory indices for all patches globally in advance.
+        # By utilizing `paddle.gather`, we extract the exact layout of pixels needed and
+        # reorganize them into a contiguous memory block in a single step.
+        # This allows us to apply the linear transformations collectively,
+        # significantly maximizing GPU utilization and throughput.
 
         m1, m2 = self.merge_kernel_size
-        d = image_features.shape[-1]
+        x = self.pre_norm(image_features.squeeze(0))
+        _, d = x.shape
 
-        processed_features = []
-        for image_feature, (t, h, w) in zip(image_features_chunks, image_grid_thw):
+        T = image_grid_thw[:, 0]
+        H = image_grid_thw[:, 1]
+        W = image_grid_thw[:, 2]
 
-            h_block = h // m1
-            w_block = w // m2
+        H_blocks = H // m1
+        W_blocks = W // m2
+        num_blocks_per_sample = T * H_blocks * W_blocks
 
-            image_feature = image_feature.reshape([t, h_block, m1, w_block, m2, d])
-            image_feature = image_feature.transpose([0, 1, 3, 2, 4, 5])
-            image_feature = image_feature.reshape([t * h_block * w_block, m1 * m2 * d])
+        block_boundaries = paddle.cumsum(num_blocks_per_sample, axis=0)
+        total_blocks = block_boundaries[-1]
 
-            hidden_states = self.linear_1(image_feature)
-            hidden_states = self.act(hidden_states)
-            hidden_states = self.linear_2(hidden_states)
-            processed_features.append(hidden_states)
+        global_block_ids = paddle.arange(total_blocks, dtype="int64")
 
-        return paddle.concat(processed_features, axis=0)
+        sample_indices = paddle.bucketize(global_block_ids, block_boundaries, right=True)
+
+        W_curr = W[sample_indices]
+        W_blk_curr = W_blocks[sample_indices]
+        H_blk_curr = H_blocks[sample_indices]
+
+        boundaries_pad = F.pad(block_boundaries, pad=[1, 0], value=0)
+        sample_start_offsets = boundaries_pad[sample_indices]
+
+        local_block_idx = global_block_ids - sample_start_offsets
+
+        w_b = local_block_idx % W_blk_curr
+        remain = local_block_idx // W_blk_curr
+        h_b = remain % H_blk_curr
+        t = remain // H_blk_curr
+
+        num_pixels_per_sample = T * H * W
+        pixel_boundaries = F.pad(paddle.cumsum(num_pixels_per_sample, axis=0), pad=[1, 0], value=0)
+        pixel_start_offsets = pixel_boundaries[:-1][sample_indices]
+
+        inner_grid = paddle.arange(m1 * m2, dtype="int64").unsqueeze(0)
+        m1_idx = inner_grid // m2
+        m2_idx = inner_grid % m2
+
+        h_origin = (h_b * m1).unsqueeze(1)
+        w_origin = (w_b * m2).unsqueeze(1)
+
+        t_stride = t * (H[sample_indices] * W[sample_indices])
+        h_stride = (h_origin + m1_idx) * W_curr.unsqueeze(1)
+        w_stride = w_origin + m2_idx
+
+        final_gather_indices = pixel_start_offsets.unsqueeze(1) + t_stride.unsqueeze(1) + h_stride + w_stride
+
+        x_gathered = paddle.gather(x, final_gather_indices.flatten())
+        x_merged = x_gathered.reshape([total_blocks, m1 * m2 * d])
+
+        hidden_states = self.linear_2(self.act(self.linear_1(x_merged)))
+
+        return hidden_states
 
 
 @paddle.jit.marker.unified
@@ -2005,9 +2084,7 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
                     window_size=-1,
                 )
                 image_embeds = vision_outputs.last_hidden_state
-
-                split_sections = image_grid_thw.prod(axis=1).cpu().numpy().tolist()
-                image_embeds = self.mlp_AR(image_embeds, image_grid_thw, split_sections)
+                image_embeds = self.mlp_AR(image_embeds, image_grid_thw)
 
                 mask = input_ids == self.config.image_token_id
                 inputs_embeds[mask] = image_embeds

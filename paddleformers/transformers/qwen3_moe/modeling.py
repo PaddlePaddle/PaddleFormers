@@ -71,6 +71,7 @@ class Qwen3MoEModelProvider(GPTModelProvider):
         "expert_parallel_degree": "expert_model_parallel_size",
         "dtype": "params_dtype",
         "num_experts": "n_routed_experts",
+        "num_local_experts": "n_routed_experts",
     }
 
     rotary_base: float = 1000000.0
@@ -786,8 +787,11 @@ class Qwen3MoePretrainedModel(PretrainedModel):
     def _gen_aoa_config(cls, config: Qwen3MoeConfig):
         if hasattr(config, "n_routed_experts"):
             num_experts = config.n_routed_experts
+        elif hasattr(config, "num_local_experts"):
+            num_experts = config.num_local_experts
         else:
             num_experts = config.num_experts
+
         model_prefix = "" if cls == cls.base_model_class else "model."
         using_sonic_moe = config.using_sonic_moe
         aoa_config = {
@@ -891,8 +895,11 @@ class Qwen3MoePretrainedModel(PretrainedModel):
     def _gen_inv_aoa_config(cls, config: Qwen3MoeConfig):
         if hasattr(config, "n_routed_experts"):
             num_experts = config.n_routed_experts
+        elif hasattr(config, "num_local_experts"):
+            num_experts = config.num_local_experts
         else:
             num_experts = config.num_experts
+
         model_prefix = "" if cls == cls.base_model_class else "model."
         using_sonic_moe = config.using_sonic_moe
         aoa_statements = [
