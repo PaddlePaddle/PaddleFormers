@@ -15,7 +15,6 @@
 
 """Paddle PaddleOCR-VL model."""
 
-from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
@@ -1683,7 +1682,6 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         self.vocab_size = config.vocab_size
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
-        self.rope_deltas_var = ContextVar("rope_deltas", default=None)
 
         # self.mlp_AR = paddle.jit.to_static(self.mlp_AR, backend=None)
         # # self.visual = paddle.jit.to_static(self.visual, backend=None)
@@ -1774,103 +1772,53 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         """
         spatial_merge_size = self.config.vision_config.spatial_merge_size
         image_token_id = self.config.image_token_id
-        video_token_id = self.config.video_token_id
-        vision_start_token_id = self.config.vision_start_token_id
+
         mrope_position_deltas = []
         if input_ids is not None and (image_grid_thw is not None or video_grid_thw is not None):
-            total_input_ids = input_ids
-            if attention_mask is None:
-                attention_mask = paddle.ones_like(total_input_ids)
-            position_ids = paddle.ones(
-                3,
-                input_ids.shape[0],
-                input_ids.shape[1],
-                dtype=input_ids.dtype,
-            )
-            image_index, video_index = 0, 0
-            for i, input_ids in enumerate(total_input_ids):
-                input_ids = input_ids[attention_mask[i] == 1]
-                image_nums, video_nums = 0, 0
-                vision_start_indices = paddle.nonzero(input_ids == vision_start_token_id).squeeze(1)
-                vision_tokens = input_ids[vision_start_indices + 1]
-                image_nums = (vision_tokens == image_token_id).sum()
-                video_nums = (vision_tokens == video_token_id).sum()
-                input_tokens = input_ids.tolist()
-                llm_pos_ids_list: list = []
-                st = 0
-                remain_images, remain_videos = image_nums, video_nums
-                for _ in range(image_nums + video_nums):
-                    if image_token_id in input_tokens and remain_images > 0:
-                        ed_image = input_tokens.index(image_token_id, st)
-                    else:
-                        ed_image = len(input_tokens) + 1
-                    if video_token_id in input_tokens and remain_videos > 0:
-                        ed_video = input_tokens.index(video_token_id, st)
-                    else:
-                        ed_video = len(input_tokens) + 1
-                    if ed_image < ed_video:
-                        t, h, w = (
-                            image_grid_thw[image_index][0],
-                            image_grid_thw[image_index][1],
-                            image_grid_thw[image_index][2],
-                        )
-                        second_per_grid_t = 0
-                        image_index += 1
-                        remain_images -= 1
-                        ed = ed_image
 
-                    else:
-                        t, h, w = (
-                            video_grid_thw[video_index][0],
-                            video_grid_thw[video_index][1],
-                            video_grid_thw[video_index][2],
-                        )
-                        if second_per_grid_ts is not None:
-                            second_per_grid_t = second_per_grid_ts[video_index]
-                        else:
-                            second_per_grid_t = 1.0
-                        video_index += 1
-                        remain_videos -= 1
-                        ed = ed_video
-                    llm_grid_t, llm_grid_h, llm_grid_w = (
-                        t.item(),
-                        h.item() // spatial_merge_size,
-                        w.item() // spatial_merge_size,
-                    )
-                    text_len = ed - st
+            batch_size, seq_len = input_ids.shape
+            position_ids = paddle.ones([3, batch_size, seq_len], dtype=input_ids.dtype)
+            mrope_position_deltas = []
 
-                    st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
-                    llm_pos_ids_list.append(paddle.arange(text_len).reshape((1, -1)).expand((3, -1)) + st_idx)
+            for i in range(batch_size):
+                curr_input_ids = input_ids[i]
+                valid_seq_len = curr_input_ids.shape[0]
 
-                    if paddle.is_tensor(second_per_grid_t):
-                        second_per_grid_t = second_per_grid_t.detach().item()
-                    range_tensor = paddle.arange(llm_grid_t).reshape((-1, 1))
-                    expanded_range = range_tensor.expand((-1, llm_grid_h * llm_grid_w))
+                image_mask = curr_input_ids == image_token_id
+                image_start_idx = image_mask.astype("int32").argmax().item()
 
-                    time_tensor = expanded_range * second_per_grid_t * self.config.vision_config.tokens_per_second
+                t, h, w = image_grid_thw[i]
 
-                    time_tensor_long = time_tensor.astype("int64")
-                    t_index = time_tensor_long.flatten()
+                grid_t = t
+                grid_h = h // spatial_merge_size
+                grid_w = w // spatial_merge_size
 
-                    h_index = (
-                        paddle.arange(llm_grid_h).reshape((1, -1, 1)).expand((llm_grid_t, -1, llm_grid_w)).flatten()
-                    )
-                    w_index = (
-                        paddle.arange(llm_grid_w).reshape((1, 1, -1)).expand((llm_grid_t, llm_grid_h, -1)).flatten()
-                    )
-                    llm_pos_ids_list.append(paddle.stack([t_index, h_index, w_index]) + text_len + st_idx)
-                    st = ed + llm_grid_t * llm_grid_h * llm_grid_w
+                num_image_tokens = grid_t * grid_h * grid_w
+                max_grid_size = max(grid_t, grid_h, grid_w)
 
-                if st < len(input_tokens):
-                    st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
-                    text_len = len(input_tokens) - st
-                    llm_pos_ids_list.append(paddle.arange(text_len).reshape((1, -1)).expand((3, -1)) + st_idx)
+                # Segment A
+                pos_text_before = paddle.arange(image_start_idx).expand([3, -1])
 
-                llm_positions = paddle.concat(llm_pos_ids_list, axis=1).reshape((3, -1))
-                position_ids[..., i, attention_mask[i] == 1] = llm_positions
-                mrope_position_deltas.append(llm_positions.max() + 1 - len(total_input_ids[i]))
-            mrope_position_deltas = paddle.to_tensor(mrope_position_deltas).unsqueeze(1)
-            return position_ids, mrope_position_deltas
+                # Segment B
+                t_grid, h_grid, w_grid = paddle.meshgrid(
+                    paddle.arange(grid_t), paddle.arange(grid_h), paddle.arange(grid_w)
+                )
+                pos_image = paddle.stack([t_grid.flatten(), h_grid.flatten(), w_grid.flatten()]) + image_start_idx
+
+                # Segment C
+                text_after_len = valid_seq_len - image_start_idx - num_image_tokens
+                text_after_start_idx = image_start_idx + max_grid_size
+                pos_text_after = paddle.arange(text_after_len).expand([3, -1]) + text_after_start_idx
+
+                llm_positions = paddle.concat([pos_text_before, pos_image, pos_text_after], axis=1)
+                position_ids[:, i] = llm_positions
+
+                delta = max_grid_size - num_image_tokens
+                mrope_position_deltas.append(delta)
+
+            deltas_tensor = paddle.to_tensor(mrope_position_deltas, dtype=input_ids.dtype).unsqueeze(1)
+
+            return position_ids, deltas_tensor
         else:
             if attention_mask is not None:
                 position_ids = attention_mask.long().cumsum(-1) - 1
@@ -1969,8 +1917,6 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        curr_rope_deltas = self.rope_deltas_var.get()
-
         if inputs_embeds is None:
             inputs_embeds = self.model.embed_tokens(input_ids)
             if pixel_values is not None:
@@ -2015,34 +1961,6 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         if attention_mask is not None and attention_mask.dtype != paddle.bool:
             attention_mask = paddle.cast(attention_mask, paddle.bool)
 
-        if position_ids is None and (attention_mask is None or attention_mask.ndim == 2):
-            # calculate RoPE index once per generation in the pre-fill stage only
-            if curr_rope_deltas is None or past_key_values is None or past_key_values.get_seq_length() == 0:
-                position_ids, rope_deltas = self.get_rope_index(
-                    input_ids,
-                    image_grid_thw,
-                    video_grid_thw,
-                    second_per_grid_ts,
-                    attention_mask,
-                )
-                self.rope_deltas_var.set(rope_deltas)
-            # then use the prev pre-calculated rope-deltas to get the correct position ids
-            else:
-                batch_size, seq_length, _ = inputs_embeds.shape
-                delta = (
-                    (past_key_values.get_seq_length() + curr_rope_deltas)
-                    if past_key_values is not None and past_key_values.get_seq_length() > 0
-                    else 0
-                )
-                position_ids = paddle.arange(seq_length)
-                position_ids = position_ids.reshape((1, -1)).expand((batch_size, -1))
-                if (
-                    past_key_values is not None and past_key_values.get_seq_length() > 0
-                ):  # otherwise `deltas` is an int `0`
-                    delta = delta.repeat_interleave(batch_size // delta.shape[0], axis=0)
-                position_ids = position_ids.add(delta)
-                position_ids = position_ids.unsqueeze(0).expand((3, -1, -1))
-
         outputs = self.model(
             input_ids=None,
             position_ids=position_ids,
@@ -2074,37 +1992,8 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
-            rope_deltas=curr_rope_deltas,
+            rope_deltas=None,
         )
-
-    def _get_image_nums_and_video_nums(
-        self,
-        input_ids: Optional[paddle.Tensor],
-    ) -> Tuple[paddle.Tensor, paddle.Tensor]:
-        """
-        Get the number of images and videos for each sample to calculate the separation length of the sample tensor.
-        These parameters are not passed through the processor to avoid unpredictable impacts from interface modifications.
-
-        Args:
-            input_ids (`paddle.Tensor` of shape `(batch_size, sequence_length)`):
-                Indices of input sequence tokens in the vocabulary.
-
-        Returns:
-            image_nums (`paddle.Tensor` of shape `(batch_size, num_images_sample)`)
-            video_nums (`paddle.Tensor` of shape `(batch_size, num_videos_sample)`)
-        """
-        image_token_id = self.config.image_token_id
-        video_token_id = self.config.video_token_id
-        vision_start_token_id = self.config.vision_start_token_id
-
-        vision_start_mask = input_ids == vision_start_token_id
-        vision_first_mask = paddle.roll(vision_start_mask, shifts=1, axis=1)
-        image_mask = input_ids == image_token_id
-        video_mask = input_ids == video_token_id
-        image_nums = paddle.sum(vision_first_mask & image_mask, axis=1)
-        video_nums = paddle.sum(vision_first_mask & video_mask, axis=1)
-
-        return image_nums, video_nums
 
 
 __all__ = ["PaddleOCRVLForConditionalGeneration"]
