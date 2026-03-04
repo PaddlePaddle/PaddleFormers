@@ -15,6 +15,7 @@
 
 """Paddle PaddleOCR-VL model."""
 
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
@@ -1682,6 +1683,7 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         self.vocab_size = config.vocab_size
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
+        self.rope_deltas_var = ContextVar("rope_deltas", default=None)
 
         # self.mlp_AR = paddle.jit.to_static(self.mlp_AR, backend=None)
         # # self.visual = paddle.jit.to_static(self.visual, backend=None)
@@ -1917,6 +1919,8 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+        curr_rope_deltas = self.rope_deltas_var.get()
+
         if inputs_embeds is None:
             inputs_embeds = self.model.embed_tokens(input_ids)
             if pixel_values is not None:
@@ -1961,6 +1965,34 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
         if attention_mask is not None and attention_mask.dtype != paddle.bool:
             attention_mask = paddle.cast(attention_mask, paddle.bool)
 
+        if position_ids is None and (attention_mask is None or attention_mask.ndim == 2):
+            # calculate RoPE index once per generation in the pre-fill stage only
+            if curr_rope_deltas is None or past_key_values is None or past_key_values.get_seq_length() == 0:
+                position_ids, rope_deltas = self.get_rope_index(
+                    input_ids,
+                    image_grid_thw,
+                    video_grid_thw,
+                    second_per_grid_ts,
+                    attention_mask,
+                )
+                self.rope_deltas_var.set(rope_deltas)
+            # then use the prev pre-calculated rope-deltas to get the correct position ids
+            else:
+                batch_size, seq_length, _ = inputs_embeds.shape
+                delta = (
+                    (past_key_values.get_seq_length() + curr_rope_deltas)
+                    if past_key_values is not None and past_key_values.get_seq_length() > 0
+                    else 0
+                )
+                position_ids = paddle.arange(seq_length)
+                position_ids = position_ids.reshape((1, -1)).expand((batch_size, -1))
+                if (
+                    past_key_values is not None and past_key_values.get_seq_length() > 0
+                ):  # otherwise `deltas` is an int `0`
+                    delta = delta.repeat_interleave(batch_size // delta.shape[0], axis=0)
+                position_ids = position_ids.add(delta)
+                position_ids = position_ids.unsqueeze(0).expand((3, -1, -1))
+
         outputs = self.model(
             input_ids=None,
             position_ids=position_ids,
@@ -1992,7 +2024,7 @@ class PaddleOCRVLForConditionalGeneration(Ernie4_5PretrainedModel, GenerationMix
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
-            rope_deltas=None,
+            rope_deltas=curr_rope_deltas,
         )
 
 
