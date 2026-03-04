@@ -64,7 +64,7 @@ class Qwen3VLTextProvider(GPTModelProvider):
     position_embedding_type: str = "rope"
     use_qk_norm: bool = True
     specific_embedding: type = Qwen3VLTextEmbedding
-    specific_transformre_layer: type = Qwen3VLTextTransformerLayer
+    specific_transformer_layer: type = Qwen3VLTextTransformerLayer
     max_sequence_length: int = 262144
     multimodal_embedding: bool = False
     _save_to_hf: bool = False
@@ -369,14 +369,15 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             f"{visual_prefix}merger.mlp.down_proj.weight^T -> model.visual.merger.linear_fc2.weight",
             f"{visual_prefix}merger.mlp.down_proj.bias -> model.visual.merger.linear_fc2.bias",
         ]
-        aoa_config["aoa_statements"] += [
-            f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.mlp.up_gate_proj.weight^T -> model.visual.deepstack_merger_list.$LAYER_ID.linear_fc1.weight",
-            f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.mlp.up_gate_proj.bias -> model.visual.deepstack_merger_list.$LAYER_ID.linear_fc1.bias",
-            f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.mlp.down_proj.weight^T -> model.visual.deepstack_merger_list.$LAYER_ID.linear_fc2.weight",
-            f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.mlp.down_proj.bias -> model.visual.deepstack_merger_list.$LAYER_ID.linear_fc2.bias",
-            f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.norm.weight -> model.visual.deepstack_merger_list.$LAYER_ID.norm.weight",
-            f"{visual_prefix}decoder.deepstack_merger_list.$LAYER_ID.norm.bias -> model.visual.deepstack_merger_list.$LAYER_ID.norm.bias",
-        ]
+        for i, deepstack_idx in enumerate(config.vision_config.deepstack_visual_indexes):
+            aoa_config["aoa_statements"] += [
+                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc1.weight^T -> model.visual.deepstack_merger_list.{i}.linear_fc1.weight",
+                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc1.bias -> model.visual.deepstack_merger_list.{i}.linear_fc1.bias",
+                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc2.weight^T -> model.visual.deepstack_merger_list.{i}.linear_fc2.weight",
+                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc2.bias -> model.visual.deepstack_merger_list.{i}.linear_fc2.bias",
+                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.norm.weight -> model.visual.deepstack_merger_list.{i}.norm.weight",
+                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.norm.bias -> model.visual.deepstack_merger_list.{i}.norm.bias",
+            ]
 
         # attention qkv
         aoa_config["aoa_statements"] += [
