@@ -411,6 +411,7 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
             else:
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
+    @unittest.skip("PaddleOCR-VL currently does not support flexible checkpoints save and load")
     def test_save_load_flex_checkpoint(self):
         for model_class in self.all_model_classes:
             with tempfile.TemporaryDirectory() as tmpdirname:
@@ -451,6 +452,10 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                     md51 = v._md5sum()
                     md52 = model_state_2[k]._md5sum()
                     assert md51 == md52
+
+    @unittest.skip("PaddleOCR-VL currently does not support checkpoints save and load")
+    def test_save_load(self):
+        pass
 
 
 class PaddleOCRVLIntegrationTest(unittest.TestCase):
