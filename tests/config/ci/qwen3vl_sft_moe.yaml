@@ -31,7 +31,7 @@ evaluation_strategy: steps
 save_steps: 10
 save_strategy: steps
 logging_steps: 1
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 2
 logging_dir: ./vdl_log
 output_dir: ./checkpoints/qwen3-vl-sft-full
 disable_tqdm: true
@@ -98,7 +98,6 @@ dataloader_shuffle: false
 benchmark: false
 report_to: none
 dataloader_num_workers: 0
-prefetch_factor: 8
 
 # profile: true
 # profile_step_start: 1
