@@ -39,8 +39,6 @@ from PIL.Image import Image as ImageObject
 from transformers.image_utils import is_valid_image
 from typing_extensions import override
 
-from paddleformers.transformers.qwen2_vl.vision_process import fetch_video
-
 from ...utils.log import logger
 from .augment_utils import (
     JpegCompression,
@@ -954,22 +952,31 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
             mm_inputs.update(image_processor(images, return_tensors="pd"))
 
         if len(videos) != 0:
-            video_metadata = []
-            processed_videos = []
-            for video in videos:
-                processed_videos.append(fetch_video({"video": video}))
-                video_metadata.append(
-                    {
-                        "fps": getattr(processor, "video_fps", 24.0),
-                        "duration": len(video),
-                        "total_num_frames": len(video),
-                    }
+            if processor.__class__.__name__ == "Qwen3OmniMoeProcessor":  # for qwen3omni
+                from paddleformers.transformers.qwen2_vl.vision_process import (
+                    fetch_video,
                 )
-            mm_inputs.update(
-                video_processor(videos=processed_videos, video_metadata=video_metadata, return_metadata=True)
-            )
-            fps = kwargs.get("fps", 1.0)
-            fps = [fps] * len(videos)
+                from paddleformers.transformers.qwen3_omni_moe.processor import (
+                    Qwen3OmniMoeProcessorKwargs,
+                )
+
+                videos_kwargs = Qwen3OmniMoeProcessorKwargs._defaults.get("videos_kwargs")
+                fps = videos_kwargs.get("fps", 1.0)
+                processed_videos = []
+                for video in videos:
+                    processed_videos.append(fetch_video({"video": video}))
+                video_inputs = video_processor(videos=processed_videos, **videos_kwargs, return_tensors="pd")
+                mm_inputs.update(video_inputs)
+                fps = [fps] * len(processed_videos)
+            else:
+                video_data = self._regularize_videos(
+                    videos,
+                    image_max_pixels=getattr(processor, "video_max_pixels", 256 * 256),
+                    image_min_pixels=getattr(processor, "video_min_pixels", 16 * 16),
+                    video_fps=getattr(processor, "video_fps", 2.0),
+                    video_maxlen=getattr(processor, "video_maxlen", 128),
+                )
+                mm_inputs.update(video_processor(videos=video_data["videos"], return_tensors="pd"))
             mm_inputs["video_second_per_grid"] = paddle.to_tensor(
                 [video_processor.temporal_patch_size / fps[i] for i in range(len(fps))]
             )
