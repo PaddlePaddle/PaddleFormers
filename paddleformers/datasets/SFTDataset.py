@@ -342,9 +342,9 @@ class SFTDataSet(IterableDataset):
             while True:
                 yield from self.__iter_func()
 
-    def _encode_pretraining_example(self, example, actual_example_num):
+    def _encode_pretraining_messages(self, messages, actual_example_num):
         # tokens
-        content = example["messages"][0]["content"]
+        content = messages[0]["content"]
         tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(content))
         # Add an EOS token at the end of each sample
         tokens = tokens + [self.tokenizer.eos_token_id]
@@ -358,7 +358,7 @@ class SFTDataSet(IterableDataset):
         audios = example.get("audios", [])
 
         if len(images) == 0 and len(videos) == 0 and len(audios) == 0:
-            tokens = self._encode_pretraining_example(example, actual_example_num)
+            tokens = self._encode_pretraining_messages(messages, actual_example_num)
             if len(tokens) > self.max_seq_len + 1:
                 # Truncate the sequence to the maximum length
                 tokens = tokens[: self.max_seq_len + 1]
@@ -399,7 +399,7 @@ class SFTDataSet(IterableDataset):
             # label shift
             labels = labels[1:] + [-100]
 
-            pos_ids = list(range(len(tokens)))
+            pos_ids = list(range(len(tokens)))  # only pure text, mm_position_ids will be reconstructed in collate.py
 
             if all(x == -100 for x in labels):
                 logger.warning(f"[SKIP] all labels set to 0: {example}")
@@ -436,14 +436,6 @@ class SFTDataSet(IterableDataset):
                 audios=audios,
                 mm_inputs=mm_inputs,
             )
-
-    def _encode_pretraining_messages(self, messages, actual_example_num):
-        # tokens
-        content = messages[0]["content"]
-        tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(content))
-        # Add an EOS token at the end of each sample
-        tokens = tokens + [self.tokenizer.eos_token_id]
-        return tokens
 
     def _postprocess_sequence(self, example, actual_example_num):
         """Process code completion examples into token sequences.
@@ -593,7 +585,7 @@ class SFTDataSet(IterableDataset):
             if len(tokens) > self.max_seq_len:
                 raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
-        pos_ids = list(range(len(tokens)))
+        pos_ids = list(range(len(tokens)))  # only pure text, mm_position_ids will be reconstructed in collate.py
 
         if all(x == -100 for x in labels):
             logger.warning(f"[SKIP] all labels set to 0: {example}")

@@ -31,6 +31,7 @@ import_structure = {
     ],
     "collate": [
         "dpo_collate_fn",
+        "mm_dpo_collate_fn",
         "collate_fn",
         "mm_collate_fn",
         "pad_batch_data",
