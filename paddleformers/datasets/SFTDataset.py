@@ -500,6 +500,7 @@ class SFTDataSet(IterableDataset):
 
         tokens_chunks = []
         labels_chunks = []
+        accumulated_tokens_len = 0
 
         for turn_index in range(len(encoded_pairs) - 1, -1, -1):
             tokens_src, tokens_target = encoded_pairs[turn_index]
@@ -541,7 +542,8 @@ class SFTDataSet(IterableDataset):
             tokens_chunks.append(tokens_src + tokens_target)
             labels_chunks.append(labels_src + labels_target)
 
-            cur_len += len(tokens_src) + len(tokens_target)
+            accumulated_tokens_len += len(tokens_src) + len(tokens_target)
+            cur_len = accumulated_tokens_len
 
         tokens_chunks.reverse()
         labels_chunks.reverse()

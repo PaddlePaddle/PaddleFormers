@@ -610,6 +610,10 @@ def mm_collate_fn(
                 pixel_values.append(mm_inputs["pixel_values"])
             if "image_grid_thw" in mm_inputs:
                 image_grid_thw.extend(mm_inputs["image_grid_thw"])
+            if "pixel_values_videos" in mm_inputs:
+                pixel_values_videos.append(mm_inputs["pixel_values_videos"])
+            if "video_grid_thw" in mm_inputs:
+                video_grid_thw.extend(mm_inputs["video_grid_thw"])
             if get_rope_func is not None:
                 filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
                 position_ids, _ = get_rope_func(input_ids=paddle.to_tensor([seq.token_ids]), **filtered_args)
@@ -636,6 +640,8 @@ def mm_collate_fn(
         )
         if len(pixel_values) > 0:
             pixel_values = paddle.concat(pixel_values, axis=0)
+        if len(pixel_values_videos) > 0:
+            pixel_values_videos = paddle.concat(pixel_values_videos, axis=0)
         if get_token_type_func is not None:  # ernie45vl
             bs_idx_in_rope = 0
             padded_position_ids = padded_position_ids.transpose([1, 2, 0])
