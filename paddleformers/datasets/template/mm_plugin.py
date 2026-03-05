@@ -39,7 +39,7 @@ from PIL.Image import Image as ImageObject
 from transformers.image_utils import is_valid_image
 from typing_extensions import override
 
-from paddleformers.transformers.qwen2_vl.vision_process import fetch_video
+from paddleformers.transformers.qwen2_vl.vision_process import fetch_image, fetch_video
 from paddleformers.transformers.qwen3_omni_moe.processor import (
     Qwen3OmniMoeProcessorKwargs,
 )
@@ -53,11 +53,12 @@ from .augment_utils import (
     RandomSingleSidePadding,
     transforms,
 )
-from paddleformers.transformers.qwen2_vl.vision_process import fetch_image
 
 IMAGE_PLACEHOLDER = os.getenv("IMAGE_PLACEHOLDER", "<image>")
 VIDEO_PLACEHOLDER = os.getenv("VIDEO_PLACEHOLDER", "<video>")
 AUDIO_PLACEHOLDER = os.getenv("AUDIO_PLACEHOLDER", "<audio>")
+os.environ["https_proxy"] = os.environ.get("HTTPS_PROXY", "")
+os.environ["http_proxy"] = os.environ.get("HTTP_PROXY", "")
 
 
 def _make_batched_images(images, imglens: list[int]):
@@ -150,8 +151,6 @@ class MMPluginMixin:
             )
 
     def _file_download(self, url: str) -> bytes:
-        os.environ["https_proxy"] = os.environ.get("HTTPS_PROXY", "")
-        os.environ["http_proxy"] = os.environ.get("HTTP_PROXY", "")
         if url.startswith("http"):
             response = requests.get(url)
             bytes_data = response.content
@@ -898,7 +897,7 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
             processed_images = []
             for image in images:
                 _image = fetch_image({"image": image})
-                processed_images.append(_image)     
+                processed_images.append(_image)
             mm_inputs.update(image_processor(processed_images, return_tensors="pd"))
 
         if len(videos) != 0:
@@ -912,7 +911,7 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
                 for video in videos:
                     _video = fetch_video({"video": video})
                     if isinstance(_video, paddle.Tensor):
-                        _video = paddle.cast(_video, "uint8")           
+                        _video = paddle.cast(_video, "uint8")
                     processed_videos.append(_video)
                 video_inputs = video_processor(videos=processed_videos, **videos_kwargs, return_tensors="pd")
                 mm_inputs.update(video_inputs)
