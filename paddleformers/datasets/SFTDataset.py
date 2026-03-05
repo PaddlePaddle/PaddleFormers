@@ -15,9 +15,8 @@
 import multiprocessing as mp
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 from itertools import chain
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import numpy as np
 from paddle.io import IterableDataset
