@@ -2099,6 +2099,23 @@ class Trainer:
                             self.trained_effective_tokens += (inputs["input_ids"] != self.args.pad_token_id).sum()
                             self.trained_tokens += inputs["input_ids"].numel()
 
+                    # Save inputs for debugging if enabled
+                    if InputSaver.should_save():
+                        self.inputsaver.save_inputs(inputs, self.state.global_step)
+                        self.state.global_step += 1
+                        self.state.epoch = epoch + (step + 1) / steps_in_epoch
+                        self.state.consumed_samples = (
+                            self.state.global_step
+                            * args.per_device_train_batch_size
+                            * args.gradient_accumulation_steps
+                            * args.dataset_world_size
+                        )
+                        self.control = self.callback_handler.on_step_end(args, self.state, self.control)
+                        if self.control.should_epoch_stop or self.control.should_training_stop:
+                            return TrainOutput(self.state.global_step, 0.0, None)
+                        else:
+                            continue
+
                     if not self.args.enable_auto_parallel:
                         with sync_context:
                             if "step_control" in inspect.signature(self.training_step).parameters:
@@ -3537,10 +3554,6 @@ class Trainer:
                 labels = inputs["generator_labels"]
         else:
             labels = None
-
-        # Save inputs for debugging if enabled
-        if InputSaver.should_save():
-            self.inputsaver.save_inputs(inputs, self.state.global_step)
 
         outputs = model(**inputs)
 
