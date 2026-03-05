@@ -222,6 +222,15 @@ class LoRAModel(nn.Layer):
             self.is_pipelinemodel = True
             self.model._single_to_pp_mapping = None
 
+        # For composite models (e.g., VL models), the inner language_model may be a
+        # PaddleFleet PipelineLayer. Invalidate its cached name mapping so it gets
+        # rebuilt on next state_dict() call with the newly added LoRA parameter keys.
+        if not self.is_pipelinemodel and is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
+            for sublayer in self.model.sublayers():
+                if isinstance(sublayer, PaddleFleetPipelineLayer):
+                    sublayer._pipeline_name_mapping = None
+                    sublayer._pp_to_single_mapping = None
+
         self.use_paddlefleet = False
         if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
             if isinstance(self.model, PaddleFleetPipelineLayer):
@@ -573,6 +582,11 @@ class LoRAModel(nn.Layer):
 
         if self.is_pipelinemodel:
             self.model._single_to_pp_mapping = None
+        if not self.is_pipelinemodel and is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
+            for sublayer in self.model.sublayers():
+                if isinstance(sublayer, PaddleFleetPipelineLayer):
+                    sublayer._pipeline_name_mapping = None
+                    sublayer._pp_to_single_mapping = None
         if (
             self.is_pipelinemodel
             and merge_tensor_parallel
