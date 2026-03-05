@@ -422,7 +422,7 @@ class PaddleOCREncoder(nn.Layer):
         return tmp_image_grid_thw
 
     @staticmethod
-    def get_position_ids_vectorized(image_grid_thw):
+    def get_position_ids_vectorized(image_grid_thw, dtype="int64"):
 
         t = image_grid_thw[:, 0]
         h = image_grid_thw[:, 1]
@@ -430,11 +430,11 @@ class PaddleOCREncoder(nn.Layer):
 
         hw = h * w
         lengths = t * hw  # [N]
-        ends = paddle.cumsum(lengths)  # [N]
+        ends = paddle.cumsum(lengths, dtype=dtype)  # [N]
         starts = ends - lengths  # [N]
         total_len = ends[-1]
 
-        global_pids = paddle.arange(total_len, dtype="int64")
+        global_pids = paddle.arange(total_len, dtype=dtype)
         sample_ids = paddle.searchsorted(ends, global_pids, right=True)
 
         start_g = paddle.gather(starts, sample_ids)  # [total_len]
@@ -550,58 +550,45 @@ class PaddleOCREncoder(nn.Layer):
         hidden_states = inputs_embeds
         attention_mask = attention_mask.to(inputs_embeds.dtype) if attention_mask is not None else None
 
-        if use_rope:
-            flatten_image_grid_thw = self.flatten_list(image_grid_thw)
-
-            if width_position_ids is None or height_position_ids is None:
-                width_position_ids, height_position_ids = self.get_position_ids_vectorized(image_grid_thw)
-
-            window_indices, cu_seqlens_within_windows = None, None
-
-            if use_window_attn:
-                window_indices, cu_seqlens_within_windows = self.build_window_index(
-                    flatten_image_grid_thw, window_size
-                )
-                reversed_window_indices = window_indices.argsort()
-                height_position_ids = height_position_ids[window_indices]
-                width_position_ids = width_position_ids[window_indices]
-
-            pids = paddle.stack([height_position_ids, width_position_ids], axis=-1).astype(paddle.int64)
-            max_grid_size = pids.max() + 1
-            rope_emb_max_grid = self.rotary_pos_emb(max_grid_size)
-
-            rope_emb = rope_emb_max_grid[pids].flatten(1)
-
-            rope_emb = rope_emb.tile((1, 2))
-            rope_emb = (rope_emb.cos(), rope_emb.sin())
-
-        else:
-            rope_emb = None
-
-            window_indices, cu_seqlens_within_windows = None, None
-
-            if use_window_attn:
-                flatten_image_grid_thw = self.flatten_list(image_grid_thw)
-                window_indices, cu_seqlens_within_windows = self.build_window_index(
-                    flatten_image_grid_thw, window_size
-                )
-                reversed_window_indices = window_indices.argsort()
-
+        window_indices = None
         if use_window_attn:
-            assert cu_seqlens_within_windows is not None
+            flatten_image_grid_thw = self.flatten_list(image_grid_thw)
+            window_indices, cu_seqlens_within_windows = self.build_window_index(flatten_image_grid_thw, window_size)
+            assert cu_seqlens_within_windows
+            reversed_window_indices = window_indices.argsort()
             attn_cu_seqlens = cu_seqlens_within_windows
             hidden_states = hidden_states[:, window_indices, :]
         else:
             attn_cu_seqlens = cu_seqlens
 
-        if cu_seqlens is not None and attention_mask is None:
-            cu_seqlens_rm_first = cu_seqlens[1:]
-            cu_seqlens_rm_last = cu_seqlens[:-1]
-            repeats = cu_seqlens_rm_first - cu_seqlens_rm_last
+        rope_emb = None
+        if use_rope:
+            if width_position_ids is None or height_position_ids is None:
+                width_position_ids, height_position_ids = self.get_position_ids_vectorized(
+                    image_grid_thw, dtype="int64"
+                )
 
-            startend_row_indices_lts = paddle.repeat_interleave(cu_seqlens_rm_first, repeats).reshape([1, 1, -1, 1])
-            startend_row_indices_ute = paddle.repeat_interleave(cu_seqlens_rm_last, repeats).reshape([1, 1, -1, 1])
-            startend_row_indices = paddle.concat([startend_row_indices_lts, startend_row_indices_ute], axis=-1)
+            if use_window_attn:
+                height_position_ids = height_position_ids[window_indices]
+                width_position_ids = width_position_ids[window_indices]
+
+            pids = paddle.stack([height_position_ids, width_position_ids], axis=-1)
+            max_grid_size = image_grid_thw[:, 1:].max()
+            rope_emb_max_grid = self.rotary_pos_emb(
+                max_grid_size
+            )  # TODO: Pre-compute RoPE embeddings by specifying a static `max_grid_size` during initialization to avoid redundant computation on the fly.
+
+            rope_emb = rope_emb_max_grid[pids].flatten(1)
+            rope_emb = (rope_emb.cos().tile((1, 2)), rope_emb.sin().tile((1, 2)))
+
+        if cu_seqlens is not None and attention_mask is None:
+            seq_ends = cu_seqlens[1:]
+            seq_starts = cu_seqlens[:-1]
+            repeats = seq_ends - seq_starts
+
+            start_end_stacked = paddle.stack([seq_ends, seq_starts], axis=-1)
+            startend_row_indices = paddle.repeat_interleave(start_end_stacked, repeats, axis=0)
+            startend_row_indices = startend_row_indices.reshape([1, 1, -1, 2])
 
         for encoder_layer in self.layers:
             if output_hidden_states:
