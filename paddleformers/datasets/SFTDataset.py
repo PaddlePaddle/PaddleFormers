@@ -251,10 +251,7 @@ class SFTDataSet(IterableDataset):
         else:
             # Single process mode
             for _ in range(len(self.mix_datasets)):
-                try:
-                    example = next(dataset_iterator)
-                except StopIteration:
-                    break
+                example = next(dataset_iterator)
                 try:
                     result = processor_func(example, actual_example_num)
                 except Exception as e:
