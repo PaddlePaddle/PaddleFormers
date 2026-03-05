@@ -520,7 +520,7 @@ def run_sft(
 
     callbacks = []
     if getattr(model_config, "topk_method", None) == "noaux_tc":
-        callbacks += [MoECorrectionBiasAdjustCallback(lr=0)]
+        callbacks += [MoECorrectionBiasAdjustCallback(lr=training_args.moe_correction_bias_lr)]
 
     if training_args.use_expert_parallel:
         callbacks += [MoeExpertsGradScaleCallback(training_args)]
