@@ -253,6 +253,7 @@ class SFTDataSet(IterableDataset):
                             self.estimate = False
                             yield []
                 if len(batch_sequence) > 0:
+                    # Yield left batch sequence
                     yield batch_sequence
             else:
                 if not self.greedy_intokens:
