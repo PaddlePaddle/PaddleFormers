@@ -137,6 +137,7 @@ from ..transformers.segment_parallel_utils import (
 )
 from ..utils import empty_device_cache, perf_utils
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
+from ..utils.download import resolve_file_path
 from ..utils.env import (
     EMA_STATE_DIC,
     FLEX_CKPT_AUTO_GENERATED_METADATA,
@@ -155,6 +156,7 @@ from ..utils.env import (
     SAFE_MASTER_WEIGHTS_INDEX_NAME,
     SAFE_PEFT_WEIGHTS_INDEX_NAME,
     SAFE_WEIGHTS_INDEX_NAME,
+    SAFE_WEIGHTS_NAME,
     SCALER_NAME,
     SCHEDULER_NAME,
     TRAINER_STATE_NAME,
@@ -2544,6 +2546,20 @@ class Trainer:
                     )
                 )
             logs.update(self.global_training_logs)
+
+            # Add MTP loss metrics if available
+            try:
+                from paddlefleet.models.common.language_loss.language_loss import (
+                    LanguageLoss,
+                )
+
+                if LanguageLoss.mtp_loss_tracker:
+                    logs.update(
+                        {k: v.item() if hasattr(v, "item") else v for k, v in LanguageLoss.mtp_loss_tracker.items()}
+                    )
+            except (ImportError, AttributeError):
+                pass
+
             self._total_loss_scalar += tr_loss_scalar
             self._globalstep_last_logged = self.state.global_step
             self._globalstep_last_start_time = time.time()
@@ -2611,6 +2627,8 @@ class Trainer:
                     self.tokenizer.save_pretrained(ckpt_path)
                 if self.processing_class is not None:
                     self.processing_class.save_pretrained(ckpt_path)
+                if getattr(self.args, "copy_custom_file_list", None):
+                    self.copy_custom_files(ckpt_path)
                 self.control = self.callback_handler.on_save_hf(self.args, self.state, self.control)
 
     def log_trained_tokens(self):
@@ -3728,6 +3746,30 @@ class Trainer:
             global_rank = paddle.distributed.get_rank() if paddle.distributed.get_world_size() > 1 else -1
             paddle.save(self.state.global_step, os.path.join(signal_dir, f".model_weight.done.{global_rank}"))
 
+    def copy_custom_files(self, output_dir):
+
+        resolve_result = resolve_file_path(
+            self.args.model_name_or_path,
+            [SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME],
+            download_hub=self.args.download_hub,
+        )
+        if resolve_result is not None:
+            resolve_path = os.path.dirname(resolve_result)
+            logger.info(f"base model path parsed:{resolve_path}")
+        else:
+            logger.error(f"{self.args.model_name_or_path} does not found.")
+
+        custom_file_list = self.args.copy_custom_file_list.split()
+
+        for file_name in custom_file_list:
+            src_file = os.path.join(resolve_path, file_name)
+            if os.path.isfile(src_file):
+                dst_file = os.path.join(output_dir, file_name)
+                shutil.copy2(src_file, dst_file)
+                logger.info(f"Copied custom file: {file_name}")
+            else:
+                logger.warning(f"File '{file_name}' not found in {resolve_path}")
+
     def _filter_moe_no_sync_optimizer_params(self):
         """
         filter optimizer params which should not sync
@@ -4148,6 +4190,8 @@ class Trainer:
                     self.tokenizer.save_pretrained(output_dir)
                 if self.processing_class is not None:
                     self.processing_class.save_pretrained(output_dir)
+                if getattr(self.args, "copy_custom_file_list", None):
+                    self.copy_custom_files(output_dir)
                 # Good practice: save your training arguments together with the trained model
                 paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
             if self.args.save_checkpoint_format == "unified_checkpoint":
@@ -4769,6 +4813,7 @@ class Trainer:
         prediction_loss_only: bool,
         ignore_keys: Optional[List[str]] = None,
         step: int = -1,
+        need_clear: bool = True,
     ) -> Tuple[Optional[paddle.Tensor], Optional[paddle.Tensor], Optional[paddle.Tensor]]:
         """
         prediction_step function for pipeline parallel mode.
@@ -4798,8 +4843,9 @@ class Trainer:
             inputs = inputs.pop("input_ids")
             data_provider = [inputs, labels]
         # train & eval share the same p2p_helper, so clear it before and after each step
-        if hasattr(model, "_p2p_helper"):
-            model._p2p_helper.clear_meta_cache()
+        if need_clear:
+            if hasattr(model, "_p2p_helper"):
+                model._p2p_helper.clear_meta_cache()
 
         with paddle.no_grad():
             if has_labels:
@@ -4822,8 +4868,9 @@ class Trainer:
             else:
                 raise ValueError("pipeline mode eval need label!")
         # train & eval share the same p2p_helper, so clear it before and after each step
-        if hasattr(model, "_p2p_helper"):
-            model._p2p_helper.clear_meta_cache()
+        if need_clear:
+            if hasattr(model, "_p2p_helper"):
+                model._p2p_helper.clear_meta_cache()
 
         return (loss, None, labels)
 

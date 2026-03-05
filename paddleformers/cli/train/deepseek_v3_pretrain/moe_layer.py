@@ -75,7 +75,7 @@ class MoELayer(nn.Layer):
     def __init__(
         self,
         config,
-        moe_num_experts: int,
+        n_routed_experts: int,
         expert_class: nn.Layer,
         expert_kwargs: dict,
         gate: PretrainedMoEGate,
@@ -88,7 +88,7 @@ class MoELayer(nn.Layer):
 
         self.config = config
 
-        self.moe_num_experts = moe_num_experts
+        self.n_routed_experts = n_routed_experts
         self.capacity = capacity
 
         try:
@@ -108,8 +108,8 @@ class MoELayer(nn.Layer):
             self.expert_model_parallel_size = (
                 1 if self.expert_model_parallel_size < 0 else self.expert_model_parallel_size
             )
-            self.moe_num_experts_per_device = self._parse_moe_expert_parallel(
-                self.moe_num_experts, self.expert_model_parallel_size
+            self.n_routed_experts_per_device = self._parse_moe_expert_parallel(
+                self.n_routed_experts, self.expert_model_parallel_size
             )
             self.is_dummy_moe = False if self.expert_model_parallel_size > 1 else True
         else:
@@ -117,15 +117,15 @@ class MoELayer(nn.Layer):
             self.moe_group = None
             self.moe_rank = 0
             self.expert_model_parallel_size = 1
-            self.moe_num_experts_per_device = self.moe_num_experts
+            self.n_routed_experts_per_device = self.n_routed_experts
             self.is_dummy_moe = True
 
         self.all_to_all_dropout = all_to_all_dropout
         self.enable_recompute = False
 
         self.experts = nn.LayerList([])
-        for i in range(self.moe_num_experts):
-            if i // self.moe_num_experts_per_device == self.moe_rank:
+        for i in range(self.n_routed_experts):
+            if i // self.n_routed_experts_per_device == self.moe_rank:
                 self.experts.append(expert_class(**expert_kwargs))
             else:
                 self.experts.append(None)
@@ -136,10 +136,10 @@ class MoELayer(nn.Layer):
         self.router = gate
         self.ep_size = dist.get_world_size(self.moe_group)
         self.moe_router_topk = gate.top_k
-        self.num_local_experts = moe_num_experts // self.ep_size
+        self.num_local_experts = n_routed_experts // self.ep_size
         if self.moe_group is not None:
             self.token_dispatcher = MoEFlexTokenDispatcher(
-                self.num_local_experts, self.moe_router_topk, self.moe_num_experts, self.moe_group
+                self.num_local_experts, self.moe_router_topk, self.n_routed_experts, self.moe_group
             )
         self.token_drop_steps = config.token_drop_steps if hasattr(config, "token_drop_steps") else None
         self.using_flex_token = False
@@ -163,15 +163,15 @@ class MoELayer(nn.Layer):
             self.using_flex_token = True
             self.router.using_flex_token = True
 
-    def _parse_moe_expert_parallel(self, moe_num_experts, expert_model_parallel_size):
+    def _parse_moe_expert_parallel(self, n_routed_experts, expert_model_parallel_size):
         assert (
-            moe_num_experts >= expert_model_parallel_size
-        ), f"expert moe_num_experts={moe_num_experts} >= moe_world_size={expert_model_parallel_size}"
+            n_routed_experts >= expert_model_parallel_size
+        ), f"expert n_routed_experts={n_routed_experts} >= moe_world_size={expert_model_parallel_size}"
         assert (
-            moe_num_experts % expert_model_parallel_size == 0
-        ), f"expert moe_num_experts={moe_num_experts} % moe_world_size={expert_model_parallel_size} == 0"
-        moe_num_experts_per_device = moe_num_experts // expert_model_parallel_size
-        return moe_num_experts_per_device
+            n_routed_experts % expert_model_parallel_size == 0
+        ), f"expert n_routed_experts={n_routed_experts} % moe_world_size={expert_model_parallel_size} == 0"
+        n_routed_experts_per_device = n_routed_experts // expert_model_parallel_size
+        return n_routed_experts_per_device
 
     def _post_init(self):
         for p in self.gate.parameters():
@@ -275,12 +275,12 @@ class MoELayer(nn.Layer):
             )
 
             tokens_per_expert_post_gather = tokens_per_expert_group.reshape(
-                [self.expert_model_parallel_size, self.moe_num_experts_per_device]
+                [self.expert_model_parallel_size, self.n_routed_experts_per_device]
             ).sum(axis=0)
             gatherd_idxs = np.zeros(shape=(gathered_tokens.shape[0],), dtype=np.int32)
             s = 0
             for i, k in enumerate(tokens_per_expert_group.cpu().numpy()):
-                gatherd_idxs[s : s + k] = i % self.moe_num_experts_per_device
+                gatherd_idxs[s : s + k] = i % self.n_routed_experts_per_device
                 s += k
             gatherd_idxs = gatherd_idxs.argsort()
             sorted_tokens = gathered_tokens[gatherd_idxs]
@@ -292,7 +292,7 @@ class MoELayer(nn.Layer):
             end_idx = start_idx + num_tokens
             if num_tokens == 0:
                 continue
-            expert = self.experts[i + self.moe_rank * self.moe_num_experts_per_device]
+            expert = self.experts[i + self.moe_rank * self.n_routed_experts_per_device]
             tokens_for_this_expert = sorted_tokens[start_idx:end_idx]
             expert_out = expert(tokens_for_this_expert)
             outputs.append(expert_out)
@@ -330,7 +330,7 @@ class MoELayer(nn.Layer):
         for i, chunk in enumerate(chunks):
             chunk = chunk.contiguous()
             # assert chunk.shape[0] != 0, "Cannot dispatch empty input"
-            expert = self.experts[i + self.moe_rank * self.moe_num_experts_per_device]
+            expert = self.experts[i + self.moe_rank * self.n_routed_experts_per_device]
             outputs += [expert(chunk)]
 
         return paddle.concat(outputs, axis=0)
@@ -410,17 +410,17 @@ class MoELayer(nn.Layer):
 
 
 class MoEFlexTokenLayer(nn.Layer):
-    def __init__(self, config, moe_num_experts, expert_class, expert_kwargs, gate, moe_group):
+    def __init__(self, config, n_routed_experts, expert_class, expert_kwargs, gate, moe_group):
 
         super().__init__()
         self.config = config
         self.moe_group = moe_group
         self.ep_size = dist.get_world_size(self.moe_group)
         self.moe_router_topk = gate.top_k
-        self.moe_num_experts = moe_num_experts
-        self.num_local_experts = moe_num_experts // self.ep_size
+        self.n_routed_experts = n_routed_experts
+        self.num_local_experts = n_routed_experts // self.ep_size
         self.token_dispatcher = MoEFlexTokenDispatcher(
-            self.num_local_experts, self.moe_router_topk, self.moe_num_experts, moe_group
+            self.num_local_experts, self.moe_router_topk, self.n_routed_experts, moe_group
         )
 
         self.experts = nn.LayerList([expert_class(**expert_kwargs)] * self.num_local_experts)

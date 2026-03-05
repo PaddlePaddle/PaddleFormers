@@ -28,7 +28,7 @@ from tqdm.auto import tqdm
 
 from ..peft import LoRAConfig
 from ..quantization.quantization_utils import convert_to_quantize_dequantize_state_dict
-from ..transformers import PretrainedConfig
+from ..transformers import AutoConfig, PretrainedConfig
 from ..transformers.auto.modeling import get_name_mapping
 from ..transformers.configuration_utils import QuantizationConfig
 from ..transformers.conversion_utils import ConversionMixin
@@ -695,7 +695,7 @@ class MergeModel:
 
         # get transpose_weight_keys
         if self.merge_config.convert_from_hf:
-            base_model_config = PretrainedConfig.from_pretrained(self.merge_config.base_model_path)
+            base_model_config = AutoConfig.from_pretrained(self.merge_config.base_model_path)
             name_mapping = get_name_mapping()
             model_class_name = None
             for key, value in name_mapping.items():

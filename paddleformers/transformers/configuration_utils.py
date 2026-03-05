@@ -359,8 +359,8 @@ class LlmMetaConfig:
         (
             "moe_router_bias_update_rate",
             float,
-            0.01,
-            "Update rate for MoE router biases (only effective if `moe_router_enable_expert_bias=True`). Controls the magnitude of bias adjustments to prevent unstable updates. Defaults to 0.01.",
+            0.001,
+            "Update rate for MoE router biases (only effective if `moe_router_enable_expert_bias=True`). Controls the magnitude of bias adjustments to prevent unstable updates. Defaults to 0.001.",
         ),
         (
             "moe_shared_expert_overlap",
@@ -417,8 +417,8 @@ class LlmMetaConfig:
         (
             "mtp_loss_scaling_factor",
             float,
-            1.0,
-            "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues).",
+            0.1,
+            "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 0.1.",
         ),
     ]
 
