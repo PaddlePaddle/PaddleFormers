@@ -585,7 +585,7 @@ class PaddleOCREncoder(nn.Layer):
             )  # TODO: Pre-compute RoPE embeddings by specifying a static `max_grid_size` during initialization to avoid redundant computation on the fly.
 
             rope_emb = rope_emb_max_grid[pids].flatten(1)
-            rope_emb = (rope_emb.cos().tile((1, 2)), rope_emb.sin().tile((1, 2)))
+            rope_emb = (rope_emb.cos(), rope_emb.sin())
 
         if cu_seqlens is not None and attention_mask is None:
             seq_ends = cu_seqlens[1:]
