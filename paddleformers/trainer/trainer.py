@@ -2102,7 +2102,7 @@ class Trainer:
                     # Save inputs for debugging if enabled
                     if InputSaver.should_save():
                         self.inputsaver.save_inputs(inputs, self.state.global_step)
-                    if not os.getenv("SKIP_TRAINING", "0").lower() in ("1", "true", "t"):
+                    if os.getenv("SKIP_TRAINING", "0").lower() in ("1", "true", "t"):
                         self.state.global_step += 1
                         self.state.epoch = epoch + (step + 1) / steps_in_epoch
                         self.state.consumed_samples = (
@@ -2113,7 +2113,10 @@ class Trainer:
                         )
                         self.control = self.callback_handler.on_step_end(args, self.state, self.control)
                         if self.control.should_epoch_stop or self.control.should_training_stop:
-                            return TrainOutput(self.state.global_step, 0.0, None)
+                            metrics = speed_metrics(
+                                "train", start_time, num_samples=num_train_samples, num_steps=self.state.max_steps
+                            )
+                            return TrainOutput(self.state.global_step, 0.0, metrics)
                         else:
                             continue
 
