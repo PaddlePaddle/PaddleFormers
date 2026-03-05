@@ -457,7 +457,7 @@ def collate_fn(
             - labels: Shifted labels for prediction
     """
     input_keys = ["input_ids", "labels", "position_ids"]
-    if training_args.num_nextn_predict_layers > 0:
+    if training_args.num_nextn_predict_layers > 0 and not training_args.mtp_weight_only:
         input_keys.append("nbatch_pack_offset")
     if model_args.use_attn_mask_startend_row_indices:
         input_keys.append("attn_mask_startend_row_indices")
@@ -470,7 +470,7 @@ def collate_fn(
     if not max_seq_len:
         max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
     max_seq_len = calc_padding_size(max_seq_len, training_args)
-    if training_args.num_nextn_predict_layers > 0:
+    if training_args.num_nextn_predict_layers > 0 and not training_args.mtp_weight_only:
         max_seq_len += training_args.num_nextn_predict_layers
 
     for batch_sequence in batch:
@@ -493,7 +493,7 @@ def collate_fn(
             ]
         )
 
-        if training_args.num_nextn_predict_layers > 0:
+        if training_args.num_nextn_predict_layers > 0 and not training_args.mtp_weight_only:
             # each sequence end index
             batch_sequence_len = [len(sequence) for sequence in original_position_ids]
             nbatch_pack_offset = [0] * sum(batch_sequence_len)
@@ -576,7 +576,7 @@ def mm_collate_fn(
         input_keys.append("pixel_values_videos")
         input_keys.append("video_grid_thw")
 
-    if training_args.num_nextn_predict_layers > 0:
+    if training_args.num_nextn_predict_layers > 0 and not training_args.mtp_weight_only:
         input_keys.append("nbatch_pack_offset")
     if model_args.use_attn_mask_startend_row_indices:
         input_keys.append("attn_mask_startend_row_indices")
@@ -590,7 +590,7 @@ def mm_collate_fn(
     if not max_seq_len:
         max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
     max_seq_len = calc_padding_size(max_seq_len, training_args)
-    if training_args.num_nextn_predict_layers > 0:
+    if training_args.num_nextn_predict_layers > 0 and not training_args.mtp_weight_only:
         max_seq_len += training_args.num_nextn_predict_layers
 
     for batch_sequence in batch:
@@ -665,7 +665,7 @@ def mm_collate_fn(
                 ]
             )
 
-        if training_args.num_nextn_predict_layers > 0:
+        if training_args.num_nextn_predict_layers > 0 and not training_args.mtp_weight_only:
             # each sequence end index
             batch_sequence_len = [len(sequence) for sequence in original_token_ids]
             nbatch_pack_offset = [0] * sum(batch_sequence_len)

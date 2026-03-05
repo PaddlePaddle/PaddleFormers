@@ -410,6 +410,12 @@ class LlmMetaConfig:
             False,
             "Whether to use SonicMoE as the computation backend for the moelayer.",
         ),
+        (
+            "mtp_weight_only",
+            bool,
+            False,
+            "When True, use WeightOnlyMTPLayer (holds weights but skips MTP computation and embedding processing).",
+        ),
     ]
 
     mtp_attributes = [

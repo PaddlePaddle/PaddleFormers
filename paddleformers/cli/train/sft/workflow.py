@@ -117,7 +117,8 @@ def create_pretrained_dataset(training_args, data_args, model_args):
         data_impl="mmap",
         splits_string=data_args.split,
         train_val_test_num_samples=train_val_test_num_samples,
-        seq_length=data_args.max_seq_len + training_args.num_nextn_predict_layers,
+        seq_length=data_args.max_seq_len
+        + (training_args.num_nextn_predict_layers if not training_args.mtp_weight_only else 0),
         seed=training_args.seed,
         skip_warmup=True,
         data_cache_path=None,
@@ -151,7 +152,8 @@ def create_pretrained_dataset(training_args, data_args, model_args):
             return_list[-1].append(
                 gen_attn_mask_startend_row_indices(
                     oral_position_ids,
-                    data_args.max_seq_len + training_args.num_nextn_predict_layers,
+                    data_args.max_seq_len
+                    + (training_args.num_nextn_predict_layers if not training_args.mtp_weight_only else 0),
                     model_args.use_global_causal_attn,
                 )[:, :, :-1, :]
             )

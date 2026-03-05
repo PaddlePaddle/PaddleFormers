@@ -1549,6 +1549,13 @@ class TrainingArguments:
         },
     )
 
+    mtp_weight_only: bool = field(
+        default=False,
+        metadata={
+            "help": "When True, use WeightOnlyMTPLayer (holds weights but skips MTP computation and embedding processing)."
+        },
+    )
+
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
         if in_auto_parallel_align_mode():
