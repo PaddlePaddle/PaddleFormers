@@ -209,16 +209,16 @@ class SFTDataSet(IterableDataset):
                 recv_idx = 0
                 prefetch_size = self.dataset_num_proc * 2
                 result_buffer = {}  # Buffer for out-of-order results
+                total_samples = len(self.mix_datasets)
 
                 # Pre-fill the queue
                 for _ in range(prefetch_size):
-                    try:
-                        example = next(dataset_iterator)
-                        self._in_queue.put((send_idx, example, actual_example_num))
-                        send_idx += 1
-                        pending += 1
-                    except StopIteration:
+                    if send_idx >= total_samples:
                         break
+                    example = next(dataset_iterator)
+                    self._in_queue.put((send_idx, example, actual_example_num))
+                    send_idx += 1
+                    pending += 1
 
                 # Process data in streaming fashion, maintaining order
                 while pending > 0:
@@ -226,13 +226,11 @@ class SFTDataSet(IterableDataset):
                     pending -= 1
 
                     # Try to add one more item
-                    try:
+                    if send_idx < total_samples:
                         example = next(dataset_iterator)
                         self._in_queue.put((send_idx, example, actual_example_num))
                         send_idx += 1
                         pending += 1
-                    except StopIteration:
-                        pass
 
                     # Store result in buffer
                     result_buffer[idx] = result

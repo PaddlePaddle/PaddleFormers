@@ -143,13 +143,11 @@ class ConcatDataset(BaseMixDataset):
         """
         if self.random_shuffle:
             self.epoch_np_rng.shuffle(self.indices)
-        # print('self.indices : ', self.indices)
 
         for i in self.indices:
             yield self.data[i]
 
         # self.epoch_index += 1
-        # print('self.epoch_index + self.seed : ', self.epoch_index + self.seed)
         # self.epoch_np_rng = np.random.RandomState(self.epoch_index + self.seed)
 
     def __len__(self):
