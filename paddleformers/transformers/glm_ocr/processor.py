@@ -1,5 +1,6 @@
 from typing import Optional, Union
 import numpy as np
+import paddle
 
 from ..image_processing_utils import BatchFeature
 from ..image_utils import ImageInput
@@ -15,9 +16,9 @@ class GlmOcrProcessorKwargs(ProcessingKwargs, total=False):
 
 
 class GlmOcrProcessor(ProcessorMixin):
-    attributes = ["image_processor", "tokenizer"]  # ✅ 关键：删掉 video_processor
+    attributes = ["image_processor", "tokenizer"]  
     image_processor_class = "AutoImageProcessor"
-    tokenizer_class = ("GlmOcrTokenizer", "GlmOcrTokenizerFast")
+    tokenizer_class = ("PreTrainedTokenizer", "PreTrainedTokenizerFast")
 
     def __init__(self, image_processor=None, tokenizer=None, chat_template=None, **kwargs):
         self.image_token = "<|image|>" if not hasattr(tokenizer, "image_token") else tokenizer.image_token
@@ -26,7 +27,139 @@ class GlmOcrProcessor(ProcessorMixin):
             if getattr(tokenizer, "image_token_id", None)
             else tokenizer.convert_tokens_to_ids(self.image_token)
         )
-        super().__init__(image_processor, tokenizer, chat_template=chat_template)  # ✅ 现在只需要 2 个
+        super().__init__(image_processor, tokenizer, chat_template=chat_template)  
+    
+
+    def apply_chat_template(
+        self,
+        conversation,
+        chat_template: Optional[str] = None,
+        **kwargs,
+    ):
+        """
+        PaddleFormers GlmOcrProcessor fallback apply_chat_template.
+
+        This method intentionally bypasses ProcessorMixin.apply_chat_template to avoid
+        processing_utils kwargs-grouping issues (mm_load_kwargs/template_kwargs).
+        It formats messages using tokenizer.apply_chat_template (text-only),
+        then calls __call__(images=..., text=...) to build multimodal tensors.
+        """
+        tokenize = kwargs.get("tokenize", False)
+        add_generation_prompt = kwargs.get("add_generation_prompt", False)
+        return_dict = kwargs.get("return_dict", False)
+        return_tensors = kwargs.get("return_tensors", None)
+
+    # If user only wants the rendered string, we can return it directly.
+    # If tokenize/return_dict requested, we will build full BatchFeature via __call__.
+
+        def _load_image_from_url_or_path(u: str):
+            # Best-effort local path support (HF examples often pass local path via "url")
+            try:
+                from PIL import Image
+                return Image.open(u).convert("RGB")
+            except Exception:
+                # If PIL not available or file not found, just raise with context
+                raise ValueError(f"Failed to load image from path/url: {u}")
+
+        def _flatten_conv_and_collect_images(conv_one):
+            """
+            conv_one: list[dict] with {"role":..., "content":...}
+            Returns: (flat_conv_for_tokenizer, images_list)
+            flat_conv_for_tokenizer uses content as a STRING with image tokens inserted.
+            """
+            images = []
+            flat_conv = []
+
+            for msg in conv_one:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+
+                # content can be str or list of {"type": "...", ...}
+                if isinstance(content, list):
+                    parts = []
+                    for item in content:
+                        t = item.get("type", None)
+                        if t == "image":
+                            # Paddle tests sometimes pass {"type":"image","image": PIL.Image}
+                            if "image" in item and item["image"] is not None:
+                                images.append(item["image"])
+                            elif "url" in item and item["url"] is not None:
+                                images.append(_load_image_from_url_or_path(item["url"]))
+                            else:
+                                raise ValueError("Image item must contain either 'image' or 'url'.")
+                            parts.append(self.image_token)
+                        elif t == "text":
+                            parts.append(item.get("text", ""))
+                        else:
+                            # Unknown part: try to treat as text if possible
+                            if "text" in item:
+                                parts.append(item["text"])
+                    content_str = "".join(parts)
+                else:
+                    content_str = str(content)
+
+                flat_conv.append({"role": role, "content": content_str})
+
+            return flat_conv, images
+
+        # Normalize to batch or single
+        is_batched = isinstance(conversation, list) and len(conversation) > 0 and isinstance(conversation[0], list)
+
+        if not is_batched:
+            conv_list = [conversation]
+        else:
+            conv_list = conversation
+
+        rendered_texts = []
+        all_images = []
+
+        for conv_one in conv_list:
+            flat_conv, images = _flatten_conv_and_collect_images(conv_one)
+            all_images.extend(images)
+
+            # Render text via tokenizer (NOT ProcessorMixin) to avoid mm_load_kwargs bug
+            if hasattr(self.tokenizer, "apply_chat_template"):
+                rendered = self.tokenizer.apply_chat_template(
+                    flat_conv,
+                    chat_template=chat_template,
+                    tokenize=False,  # render only; tokenization handled in __call__
+                    add_generation_prompt=add_generation_prompt,
+                )
+            else:
+                # Minimal fallback if tokenizer lacks apply_chat_template
+                # (keeps basic semantics; may be less faithful than real template)
+                rendered = ""
+                for m in flat_conv:
+                    rendered += f"{m['role']}: {m['content']}\n"
+                if add_generation_prompt:
+                    rendered += "assistant: "
+            rendered_texts.append(rendered)
+
+        # If user only wants the rendered string (HF-style)
+        if not tokenize and not return_dict:
+            return rendered_texts[0] if not is_batched else rendered_texts
+
+        # Build multimodal tensors via existing __call__
+        # We pass return_tensors through text_kwargs (your __call__ pops it from text_kwargs)
+        # Also preserve padding option if provided.
+        padding = kwargs.get("padding", False)
+
+        # __call__ expects either a single text or list; we already have list
+        features = self(
+            images=all_images if len(all_images) > 0 else None,
+            text=rendered_texts if is_batched or len(rendered_texts) > 1 else rendered_texts[0],
+            padding=padding,
+            return_tensors=return_tensors,
+        )
+
+        # ProcessorMixin.apply_chat_template in HF returns dict-like when return_dict=True.
+        # BatchFeature is dict-like enough for tests; keep it.
+        if return_dict:
+            return features
+
+        # If return_dict=False but tokenize=True, try to mimic returning tokenized ids.
+        # We'll return input_ids (and pixel_values exist in features if images were provided).
+        return features["input_ids"]
 
     def __call__(
         self,
@@ -63,7 +196,7 @@ class GlmOcrProcessor(ProcessorMixin):
         return_mm_token_type_ids = output_kwargs["text_kwargs"].pop("return_mm_token_type_ids", False)
 
         text_inputs = self.tokenizer(text, **output_kwargs["text_kwargs"], return_tensors=None)
-        self._check_special_mm_tokens(text, text_inputs, modalities=["image"])  # ✅ 删掉 video
+        self._check_special_mm_tokens(text, text_inputs, modalities=["image"])  
 
         if return_mm_token_type_ids:
             array_ids = np.array(text_inputs["input_ids"])
@@ -71,7 +204,7 @@ class GlmOcrProcessor(ProcessorMixin):
             mm_token_type_ids[array_ids == self.image_token_id] = 1
             text_inputs["mm_token_type_ids"] = mm_token_type_ids.tolist()
 
-        return BatchFeature(data={**text_inputs, **image_inputs}, tensor_type=return_tensors)  # ✅ 删 videos_inputs
+        return BatchFeature(data={**text_inputs, **image_inputs}, tensor_type=return_tensors)  
 
     def _get_num_multimodal_tokens(self, image_sizes=None, **kwargs):
         vision_data = {}
@@ -92,6 +225,8 @@ class GlmOcrProcessor(ProcessorMixin):
     def post_process_image_text_to_text(
         self, generated_outputs, skip_special_tokens=True, clean_up_tokenization_spaces=False, **kwargs
     ):
+        if isinstance(generated_outputs, paddle.Tensor):
+            generated_outputs = generated_outputs.numpy()
         return self.tokenizer.batch_decode(
             generated_outputs,
             skip_special_tokens=skip_special_tokens,
