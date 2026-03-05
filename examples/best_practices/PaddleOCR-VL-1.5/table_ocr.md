@@ -1,25 +1,5 @@
 # 基于 PaddleOCR-VL-1.5微调表格数据
 
-- [基于 PaddleOCR-VL-1.5微调表格数据](#基于 paddleocr-vl-15微调表格数据)
-  - [任务简介](#任务简介)
-  - [任务准备](#任务准备)
-    - [模型准备](#模型准备)
-    - [数据集准备](#数据集准备)
-  - [训练配置](#训练配置)
-  - [SFT 训练](#sft-训练)
-    - [SFT 全参训练](#sft-全参训练)
-    - [SFT LoRA 训练](#sft-lora-训练)
-  - [模型结构说明](#模型结构说明)
-    - [SFT 全参](#sft-全参)
-    - [SFT LoRA](#sft-lora)
-  - [推理](#推理)
-    - [单样本推理](#单样本推理)
-    - [测试集评估](#测试集评估)
-    - [部署推理](#部署推理)
-  - [注意事项](#注意事项)
-    - [更多硬件上的使用说明](#更多硬件上的使用说明)
-
-
 ## 任务简介
 PaddleOCR-VL-1.5 是 PaddleOCR-VL 的全新升级版本，作为一款 0.9B 参数量的超轻量级视觉语言模型 (VLM)，它在 OmniDocBench v1.5 上取得了 94.5% 的 SOTA 准确率，刷新了文档解析领域的性能标杆。该模型不仅延续了前代的高效特性，更在表格、公式及文本识别方面实现了显著提升。
 
@@ -39,12 +19,12 @@ PaddleOCR-VL-1.5 是 PaddleOCR-VL 的全新升级版本，作为一款 0.9B 参�
 * **嵌套与多层表头**：表头具有层级结构，需要模型理解父子层级。
 * **空白表格元素**：表格具有大量的空白元素，需要模型正确处理数据稀疏场景。
 
-本教程旨在提供基于 PaddleFormers 微调 PaddleOCR-VL-1.5 模型适配复杂表格识别任务的微调教程，值得一提的是 PaddleOCR-VL-1.5 已经具有很强的复杂表格识别能力（可通过 [PaddleOCR 官网](https://aistudio.baidu.com/paddleocr) 在线体验），本教程着重于展示如何使用复杂表格数据微调模型，资源需求和运行耗时见下方表格：
+本教程旨在提供基于 PaddleFormers 微调 PaddleOCR-VL-1.5 模型适配复杂表格识别任务的微调教程，值得一提的是 PaddleOCR-VL-1.5 已经具有很强的复杂表格识别能力（可通过 [PaddleOCR 官网](https://aistudio.baidu.com/paddleocr) 在线体验），资源需求和运行耗时见下方表格：
 
 |硬件|SFT|显存|用时|
 |-|-|-|-|
-|8*A800|全参|37|45min|
-|8*A800|LoRA|33|47min|
+|8*A800|全参|46|4h 26min|
+|8*A800|LoRA|42|4h 30min|
 
 
 
@@ -57,14 +37,14 @@ PaddleFormers 通过在训练配置文件中指定字段`model_name_or_path`来�
 ### 数据集准备
 **Demo 数据**
 
-为了方便起见，我们提供了一个快速上手的复杂表格 Table 数据集，可用于微调 PaddleOCR-VL-1.5-0.9B 对复杂表格进行识别，该数据集为程序生成的复杂表格结构，实际内容不具备现实意义，使用以下命令下载：
+为了方便起见，我们提供了一个快速上手的复杂表格 Table 数据集，可用于微调 PaddleOCR-VL-1.5-0.9B 对复杂表格进行识别，该数据集为程序生成的复杂表格结构，实际内容不具备现实意义，使用以下命令下载并解压到 `./complex_table` 目录（数据集大小约 33 G）：
 
 ```bash
-wget https://paddleformers.bj.bcebos.com/datasets/ocr-vl/ocr_vl_sft_table_train.jsonl
-wget https://paddleformers.bj.bcebos.com/datasets/ocr-vl/ocr_vl_sft_table_test.jsonl
-wget https://paddleformers.bj.bcebos.com/datasets/ocr-vl/ocr_vl_sft_table_val.jsonl
+wget https://paddleformers.bj.bcebos.com/datasets/ocr-vl/complex_table_dataset.tar
+mkdir -p ./complex_table
+tar -xvf complex_table_dataset.tar -C ./complex_table
 ```
-其中包含训练集 `ocr_vl_sft_table_train.jsonl`、验证集 `ocr_vl_sft_table_val.jsonl` 和测试集 `ocr_vl_sft_table_test.jsonl`，对应含有 27k、2k 和 1k 的数据。示例如下：
+其中包含训练集 `complex_table_train.jsonl`、验证集 `complex_table_val.jsonl` 和测试集 `complex_table_test.jsonl`，对应含有 12 万、1 万和 2 万的数据。示例如下：
 
 <div align="center">
   <img width="500" alt="table_train_example" src="./assets/table_train_example.png" />
@@ -74,9 +54,9 @@ wget https://paddleformers.bj.bcebos.com/datasets/ocr-vl/ocr_vl_sft_table_val.js
 {
     "messages": [
         {"role": "user", "content": "<image>Table Recognition:"},
-        {"role": "assistant", "content": "<fcel>Customs Bond for Import/Export Compliance Assurance<fcel>Private Placement Memorandums<fcel>Human Resources Policies<fcel>Personality Assessments Conducted<fcel>Red Hat Certified Engineer<fcel>试用结束日期<fcel>Research Project Data Sharing Agreements with OtherInstitutions<fcel>Third-Party Audits<fcel>患者复诊退费记录核对情况<fcel>研究课题验收情况<fcel>公共场所卫生许可证延续情况<fcel>客户项目目标<fcel>食品安全管理人员<fcel>细胞治疗技术研发情况<fcel>科技管理记录（科技普及管理）<fcel>Machine Learning in Construction<fcel>税务稽查结果<fcel>宠物保险信息<fcel>药品生产地址<fcel>患者复诊其他费用核对记录<nl><fcel>Biometric System Integration with QR Codes forItem Tracking<ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><lcel><ecel><ecel><nl><fcel>参与人员角色<ecel><ecel><ecel><fcel>Current Address<ecel><ecel><ecel><fcel>[dozens]<ecel><fcel>Total Cost of Ownership<fcel>[Ah]<fcel>紧急联系人<fcel>这时，陕北、晋北、冀北和内蒙古草原上的诸少数民族也强大起来，不断掳掠秦、赵、燕三国北部边境<ecel><ecel><ecel><ecel><fcel>g/s<fcel>损<nl><fcel>设备实际安装跟踪<ecel><fcel>She spent her earliest years reading classic literature, and writingpoetry. In 1989 the building was heavily damaged by fire,but it has since been restored.<ecel><fcel>Cash Flow from Operations<ecel><ecel><fcel>[dB/m]<ecel><ecel><fcel>工作经历<ecel><fcel>患者个人史<fcel>Current Address<fcel>产品退货率降低措施<ecel><fcel>Launch Promotional Activities<ecel><fcel>*<ecel><nl><fcel>活动预算分配<ecel><ecel><fcel>玉溪<fcel>医疗联合体建设情况<fcel>-160<ecel><fcel>百<ecel><ecel><ecel><ecel><ecel><ecel><fcel>95499.016<ecel><ecel><fcel>西双版纳傣族自治州<ecel><fcel>现金收入合计<nl><fcel>统计信息分析应用<ecel><ecel><ecel><ecel><ecel><fcel>凭证<ecel><fcel>Appraisals<ecel><ecel><fcel>62771.565<ecel><ecel><fcel>New Mexico, French Polynesia<ecel><ucel><fcel>Days Payable Outstanding (DPO)<ecel><ecel><nl><fcel>Mergers and Acquisitions (M&A) Activities<ecel><ecel><ecel><ecel><ecel><fcel>Architectural Firms<ecel><lcel><lcel><ecel><fcel>哈密<ecel><ecel><lcel><lcel><ucel><fcel>Financial Controls and Internal Audit<fcel>应贷科目<ecel><nl><fcel>股东持股比例变动<ecel><ecel><fcel>附<ecel><fcel>Personal Property Litigation Attorney<fcel>ID Number<ecel><ecel><fcel>She spent her earliest years reading classic literature, and writingpoetry.<ecel><ecel><fcel>Employment Period<ecel><fcel>患者就诊需求<fcel>路<ucel><ecel><lcel><lcel><nl><fcel>孕产妇死亡率<ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><fcel>铜仁<fcel>网站用户忠诚度计划实施<ecel><fcel>工资条<ecel><ecel><ecel><ucel><ecel><ecel><ecel><nl><fcel>Estate Planning Considerations<ecel><fcel>Graduation Date<fcel><<fcel>(phots)<ecel><ecel><fcel>南平<fcel>摊销费<ecel><fcel>(percentRH)<ecel><ecel><ecel><ecel><ecel><ucel><fcel>品牌合作形式<ecel><ecel><nl><fcel>New Product Development Cycles Defined Implemented<ecel><fcel>额<ecel><ecel><ecel><ecel><fcel>13088.834<ecel><fcel>景点旅游宣传推广方案实施方案实施<ecel><lcel><lcel><lcel><lcel><lcel><ecel><fcel>(mg/dL)<ucel><ecel><nl><fcel>High-Touch Trading Fees<ecel><ecel><fcel>cP<ecel><ecel><ecel><ecel><ecel><fcel>[DWTs]<ecel><fcel>60497.569<ecel><fcel>(tbsp)<fcel>销售净利率<lcel><fcel>戳<ecel><ucel><ecel><nl><fcel>患者家属健康教育内容<ecel><ecel><ecel><ecel><ecel><fcel>dozen<fcel>图木舒克<ecel><ecel><fcel>165<ecel><fcel>锡林郭勒盟<ecel><ecel><fcel>[Gal]<ecel><fcel>收<fcel>[BRLs]<fcel>2023.07-2024.06<nl><fcel>Interpreters (biotechnology conferences)<ecel><fcel>销售主管<ecel><fcel>每股股利<fcel>年龄<ecel><ecel><ecel><ecel><ecel><ecel><fcel>Degree<ecel><fcel>四平<fcel>Field Length<ecel><ecel><fcel>Gbps<ecel><nl><fcel>患者理财计划实施时间<ecel><ecel><fcel>产品设计<fcel>Robotics Training<fcel>晋城<ecel><fcel>入<fcel>Career Objective<ecel><ecel><ecel><ecel><ecel><ecel><fcel>5年工作经验<ecel><ecel><fcel>信用评级<ecel><nl><fcel>医疗保障基金飞行检查<ecel><fcel>3.77<ecel><fcel>190<ecel><ecel><lcel><lcel><lcel><lcel><lcel><lcel><lcel><lcel><lcel><fcel>Self Evaluation<ecel><fcel>(HRBs)<ecel><nl><fcel>商品保质期<ecel><ecel><fcel>[kat]<fcel>124<fcel>0.66<fcel>89<ecel><fcel>(pg/mL)<ecel><ecel><ecel><fcel>培训虚拟现实技术应用<ecel><fcel>*<ecel><ecel><ecel><ecel><fcel>82091.066<nl><fcel>业务培训记录<ecel><ecel><fcel>参赛成绩<fcel>Position<ecel><ecel><ecel><fcel>伊春<fcel>0.59<ecel><ecel><ecel><fcel>Certifications<ecel><ecel><ecel><fcel>4.10<ecel><fcel>Waste Diversion Program Effectiveness Metrics Analysis Report<nl><fcel>Workshop Location<ecel><ecel><fcel>97945.062<fcel>项目经理<ecel><ecel><ecel><ecel><fcel>$70k-$80k per year<fcel>千<fcel>31岁<fcel>海口<fcel>数据分析日期<ecel><fcel>固定资产加速折旧<fcel>委<fcel>-42<ecel><fcel>System Log<nl><fcel>Cloud Security Assessments<ecel><fcel>API Terms of Use<ecel><ecel><fcel>列<ecel><ecel><fcel>凭证<ecel><ecel><ecel><ecel><ecel><fcel>VPN Username<ecel><ecel><fcel>Microaggressions Awareness Programs<ecel><ecel><nl><fcel>产品市场定位精准调整<ecel><ecel><ecel><ucel><fcel>[HBs]<ecel><fcel>(Bq)<ecel><fcel>$60k-$100k per year<fcel>学习空间大小<ecel><ecel><fcel>工作时间<fcel>结余<fcel>年<fcel>株洲<ecel><fcel>230602194903270826<fcel>36907.351<nl><fcel>医疗机构其他费用占比变更情况<lcel><ecel><ecel><ucel><fcel>Within 3 months<fcel>-179<ecel><ecel><ecel><fcel>Costa Rican<ecel><fcel>98708.512<ecel><ecel><ecel><ecel><ecel><ecel><ecel><nl><fcel>Promotion Code<ecel><fcel>广告创意执行<ecel><ucel><fcel>Hotel Pool Towel Replacement Policy<ecel><fcel>Cash Flow Statements<fcel>扬州<ecel><fcel>Gender<ecel><fcel>11176.107<ecel><ecel><fcel>百<ecel><fcel>193<ecel><fcel>共青团员<nl>"}
-        ],
-    "images": ["https://paddle-model-ecology.bj.bcebos.com/PPOCRVL/dataset/gen_from_jiaxuan/gen_1120/group2/imgs/border_2708_2LJ8OKTVBR68OTZRA5WZ_0.png"]}
+        {"role": "assistant", "content": "<fcel>E-commerce Sales Data<fcel>颁奖机构<fcel>Bureau of Industry and Security for ExportRegulations<fcel>原材料实际质量<fcel>Union Representation Details<lcel><lcel><lcel><fcel>目前影像学检查结果<fcel>Art Exhibition Theme<fcel>Alternative Medicine<fcel>期货交割记录<nl><fcel>环保项目公众参与度<fcel>女性<fcel>Immediately<fcel>普通话二级甲等<fcel>昂歌信息科技有限公司学院<fcel>西藏自治区市<fcel>785-42-0107<fcel>Other<ecel><ecel><ucel><ecel><nl><fcel>股利分配决策分析<ecel><fcel>Dec 2022-Jul 2025<fcel>改革, 坚持, 比重<ecel><fcel>English TOEFL 100<fcel>Kevin Villegas 278.788.0670<lcel><lcel><lcel><ucel><fcel>2023.09-2025.04<nl><fcel>Economic Forecasting Models<fcel>739.316.3006<fcel>20k-15k<fcel>15915523931<fcel>accessories, sitting, bids<fcel>吸纳, 拓宽, 打牢<fcel>Within 1 month<ecel><fcel>2025-12<fcel>PMP<ucel><ecel><nl><fcel>Employee Wellness Program Date<ecel><ecel><fcel>20k-15k<fcel>随时<ecel><fcel>Immediately<fcel>1969-06-24<fcel>博士<fcel>产品经理<ucel><ecel><nl><fcel>Sales Training Programs<fcel>迪摩科技有限公司职业技术学院<fcel>项目经理<fcel>$80k-$70k per year<fcel>2023.08-2025.12<fcel>Brianna Carroll (715)258-3235<fcel>Democrat<fcel>产品总监<fcel>2005-05-19<fcel>Master<ucel><ecel><nl><fcel>收藏情况<fcel>2021-08<ecel><fcel>跨领域从业者<fcel>Do you come here often? Initially composing light-hearted and irreverentworks, he also wrote serious, sombre and religious pieces beginningin the 1930s.<fcel>Jones, Crawford and Freeman<fcel>2021.08-2025.12<ecel><fcel>Senior Developer<lcel><ucel><ecel><nl><fcel>Metz Standards<fcel>义渠是西北黄土高原上的强国，自春秋至战国，与秦抗衡百余年 匈奴、东胡等游牧民族更是军事素质高，作战能力强<fcel>$80k-$80k per year<fcel>随着各国之间政治、经济关系的加强，诸夏文化与秦、楚、吴、越文化的交流与融合，统一的趋向日益强烈 军队逐渐改变成步兵和骑兵，并以军功论赏和升迁，因此军队的战斗力增强，所向无敌<fcel>Chilean<ecel><fcel>Japanese JLPT N1<fcel>群众<fcel>Within 3 months<fcel>海创网络有限公司大学<ucel><fcel>Business Administration<nl><fcel>特殊检查宣教内容<ecel><ecel><ecel><fcel>15287 Alexis Isle Suite 568, Banksshire, Idaho<fcel>Associate<fcel>中共党员<ecel><fcel>Schmidt-Martinez<fcel>Colorado, Guatemala<fcel>核心开发<fcel>高级工程师<nl><fcel>HL7 Interfaces<ecel><fcel>泰国<fcel>男性<ecel><fcel>$60k-$70k per year<fcel>671-94-2297<ecel><fcel>Minnesota, Bangladesh<fcel>Sep 2024-Apr 2025<fcel>howephilip@example.net<ecel><nl>"}
+    ],
+    "images": ["images/9c1e1573af7c_border_211_CSQ3XM27W0EXMQI0T8N5_0.png"]}
 ```
 一个 SFT 数据样本中需包含以下字段：
 
@@ -123,7 +103,7 @@ wget https://paddleformers.bj.bcebos.com/datasets/ocr-vl/ocr_vl_sft_table_val.js
 ## 训练配置
 我们针对区域识别示例数据集提供了配置文件，其中的关键训练超参数如下：
 
-* `num_train_epochs=2`：训练的 epoch 数。
+* `num_train_epochs=1`：训练的 epoch 数。
 * `warmup_ratio=0.01`：线性预热步数，根据任务困难程度调整，此处建议设置成训练步数的 1%。
 * `per_device_train_batch_size=8`：每张卡的 batch size 大小，建议根据显存占用情况调整。
 * `max_seq_len=16384`：最大序列长度，超出该长度的数据将被截断或者丢弃。建议在训练前估计数据集中数据长度的范围，防止大部分数据被截断从而影响训练效果。
@@ -329,9 +309,9 @@ register_template(
 ### data
 train_dataset_type: messages
 eval_dataset_type: messages
-train_dataset_path: ./ocr_vl_sft_table_train.jsonl
+train_dataset_path: ./complex_table/complex_table_train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./ocr_vl_sft_table_val.jsonl
+eval_dataset_path: ./complex_table/complex_table_val.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 16384
 padding_free: True
@@ -345,6 +325,7 @@ custom_register_path: ./paddleocr_vl_v15_template.py
 ### model
 model_name_or_path: PaddlePaddle/PaddleOCR-VL-1.5
 _attn_implementation: flashmask
+copy_custom_file_list: "configuration_paddleocr_vl.py image_processing_paddleocr_vl.py modeling_paddleocr_vl.py processing_paddleocr_vl.py"
 
 ### finetuning
 # base
@@ -355,7 +336,7 @@ do_train: true
 do_eval: true
 per_device_eval_batch_size: 8
 per_device_train_batch_size: 8
-num_train_epochs: 2
+num_train_epochs: 1
 max_steps: -1
 max_estimate_samples: 500
 eval_steps: 400
@@ -405,9 +386,9 @@ load_checkpoint_format: "flex_checkpoint"
 ### data
 train_dataset_type: messages
 eval_dataset_type: messages
-train_dataset_path: ./ocr_vl_sft_table_train.jsonl
+train_dataset_path: ./complex_table/complex_table_train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./ocr_vl_sft_table_val.jsonl
+eval_dataset_path: ./complex_table/complex_table_val.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 16384
 padding_free: True
@@ -423,6 +404,7 @@ model_name_or_path: PaddlePaddle/PaddleOCR-VL-1.5
 _attn_implementation: flashmask
 lora: true
 lora_rank: 8
+copy_custom_file_list: "configuration_paddleocr_vl.py image_processing_paddleocr_vl.py modeling_paddleocr_vl.py processing_paddleocr_vl.py"
 
 ### finetuning
 # base
@@ -433,7 +415,7 @@ do_train: true
 do_eval: true
 per_device_eval_batch_size: 8
 per_device_train_batch_size: 8
-num_train_epochs: 2
+num_train_epochs: 1
 max_steps: -1
 max_estimate_samples: 500
 eval_steps: 400
@@ -484,9 +466,9 @@ load_checkpoint_format: "flex_checkpoint"
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 paddleformers-cli train examples/best_practices/PaddleOCR-VL-1.5/paddleocr-vl_full_16k_table_config.yaml \
                         model_name_or_path=./PaddlePaddle/PaddleOCR-VL-1.5 \
-                        train_dataset_path=./ocr_vl_sft_table_train.jsonl \
-                        eval_dataset_path=./ocr_vl_sft_table_val.jsonl \
-                        pre_alloc_memory=30
+                        train_dataset_path=./complex_table/complex_table_train.jsonl \
+                        eval_dataset_path=./complex_table/complex_table_val.jsonl \
+                        pre_alloc_memory=39
 ```
 设置 `pre_alloc_memory` 预分配显存从而减少显存碎片，根据序列长度、批大小和硬件显存调整。
 
@@ -515,9 +497,9 @@ visualdl --logdir ./PaddleOCR-VL-1.5-SFT-Table/visualdl_logs/ --port 8084
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 paddleformers-cli train examples/best_practices/PaddleOCR-VL-1.5/paddleocr-vl_lora_16k_table_config.yaml \
                         model_name_or_path=./PaddlePaddle/PaddleOCR-VL-1.5 \
-                        train_dataset_path=./ocr_vl_sft_table_train.jsonl \
-                        eval_dataset_path=./ocr_vl_sft_table_val.jsonl \
-                        pre_alloc_memory=26
+                        train_dataset_path=./complex_table/complex_table_train.jsonl \
+                        eval_dataset_path=./complex_table/complex_table_val.jsonl \
+                        pre_alloc_memory=35
 ```
 
 
@@ -590,8 +572,8 @@ model.visual.config._attn_implementation = "flashmask"
 
 processor = AutoProcessor.from_pretrained(model_path)
 
-image_path = "https://paddle-model-ecology.bj.bcebos.com/PPOCRVL/dataset/gen_from_jiaxuan/gen_1120/group2/imgs/border_430_ERAO2IY99P8C8153A6E5_0.png"
-image = Image.open(BytesIO(requests.get(image_path).content)).convert("RGB")
+image_path = "./complex_table/images/d9315261d816_border_2476_2N2P46P1TUIH2B9FQSHF_0.png"
+image = Image.open(image_path).convert("RGB")
 
 PROMPTS = {
     "ocr": "OCR:",
@@ -633,9 +615,8 @@ with paddle.no_grad():
     output_text = processor.decode(generated_ids, skip_special_tokens=True)
 
 print(output_text)
-
-# GT = <fcel>Name<fcel>专业<fcel>Career Objective<fcel>公司名称<fcel>学历<fcel>Expected Salary<fcel>Self Evaluation<fcel>Age<fcel>Project Role<fcel>电子邮箱<fcel>Registered Residence<fcel>身份证号<fcel>专业<fcel>Graduation Date<fcel>学历<nl><fcel>Emergency Contact<ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><nl><fcel>Education<ecel><ecel><fcel>湘西土家族苗族自治州<fcel>(m3/s)<ecel><ecel><fcel>1799.171<ecel><fcel>Current Address<fcel>万<fcel>Zero Defect Metrics<ucel><fcel>项目经验<ecel><nl><fcel>身份证号<ecel><ecel><fcel>38319.16<ucel><ecel><ecel><fcel>留学生培养情况<ecel><ucel><ecel><ecel><ucel><ecel><fcel>mOsm<nl><fcel>Marital Status<ecel><fcel>-144<fcel>(nanosecs)<ucel><ecel><ecel><fcel>捆<ecel><ucel><fcel>宜宾<ecel><ucel><fcel>内部交易抵销<fcel>李秀英<nl><fcel>工作内容<ecel><fcel>锡林郭勒盟<ecel><ucel><ecel><fcel>230111197902277412<fcel>89340.869<ecel><ucel><fcel>Supplier Negotiation and Contracting Strategies<fcel>未收金额<ucel><fcel>尺码<ecel><nl><ucel><ecel><ecel><fcel>个税起征点<ucel><ecel><ecel><ecel><ecel><ucel><fcel>市场增加值<fcel>[mmHg]<ucel><ecel><ecel><nl><ucel><ecel><ecel><ecel><ucel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ucel><ecel><ecel><nl><ucel><ecel><ecel><fcel>事假扣款<ucel><fcel>凭证<ecel><fcel>邯郸<ucel><ecel><ecel><ecel><ucel><ecel><fcel>摘要<nl><ucel><ecel><ecel><fcel>g<ucel><ecel><ecel><ecel><ucel><ecel><ecel><ecel><fcel>自我评价<fcel>(tbsp)<ecel><nl><ucel><ecel><ecel><ecel><ucel><ecel><ecel><ecel><ucel><ecel><ecel><fcel>Bachelor<fcel>遵义<fcel>分<ecel><nl><ucel><ecel><fcel>Quantum Computing<ecel><ucel><fcel>Interbank Networks<fcel>雅安<ecel><ucel><fcel>19287.44<fcel>栋<ucel><fcel>朝阳<ecel><ecel><nl><ucel><ecel><fcel>双<ecel><ucel><ecel><fcel>增值税<ecel><ucel><ecel><fcel>账面数量<ucel><fcel>Hobbies<fcel>Male<ecel><nl><ucel><ecel><ecel><lcel><ucel><ecel><ecel><fcel>5552.122<ecel><fcel>Online Learning in Compliance Modelsfor Economics<fcel>海西蒙古族藏族自治州<ecel><fcel>Wb<ecel><fcel>kg/h<nl><ucel><ecel><fcel>kgf<fcel>新兴市场开拓成效<ucel><ecel><ucel><ucel><ecel><ecel><fcel>电子邮箱<fcel>应贷科目<fcel>(ug/m3)<fcel>(srs)<ecel><nl>
-# Excepted Answer = <fcel>Name<fcel>专业<fcel>Career Objective<fcel>公司名称<fcel>学历<fcel>Expected Salary<fcel>Self Evaluation<fcel>Age<fcel>Project Role<fcel>电子邮箱<fcel>Registered Residence<fcel>身份证号<fcel>专业<fcel>Graduation Date<fcel>学历<nl><fcel>Emergency Contact<ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><nl><fcel>Education<ecel><ecel><fcel>湘西土家族苗族自治州<fcel>(m3/s)<ecel><ecel><fcel>1799.171<ecel><fcel>Current Address<fcel>万<fcel>Zero Defect Metrics<ucel><fcel>项目经验<ecel><nl><fcel>身份证号<ecel><ecel><fcel>38319.16<ucel><ecel><ecel><fcel>留学生培养情况<ecel><ucel><ecel><ecel><ucel><ecel><fcel>mOsm<nl><fcel>Marital Status<ecel><fcel>-144<fcel>(nanosecs)<ucel><ecel><ecel><fcel>捆<ecel><ucel><fcel>宜宾<ecel><ucel><fcel>内部交易抵销<fcel>李秀英<nl><fcel>工作内容<ecel><fcel>锡林郭勒盟<ecel><ucel><ecel><fcel>230111197902277412<fcel>89340.869<ecel><ucel><fcel>Supplier Negotiation and Contracting Strategies<fcel>未收金额<ucel><fcel>尺码<ecel><nl><ucel><ecel><ecel><fcel>个税起征点<ucel><ecel><ecel><ecel><ecel><ucel><fcel>市场增加值<fcel>[mmHg]<ucel><ecel><ecel><nl><ucel><ecel><ecel><ecel><ucel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ucel><ecel><ecel><nl><ucel><ecel><ecel><fcel>事假扣款<ucel><fcel>凭证<ecel><fcel>邯郸<ucel><ecel><ecel><ecel><ucel><ecel><fcel>摘要<nl><ucel><ecel><ecel><fcel>g<ucel><ecel><ecel><ecel><ucel><ecel><ecel><ecel><fcel>自我评价<fcel>(tbsp)<ecel><nl><ucel><ecel><ecel><ecel><ucel><ecel><ecel><ecel><ucel><ecel><ecel><fcel>Bachelor<fcel>遵义<fcel>分<ecel><nl><ucel><ecel><fcel>Quantum Computing<ecel><ucel><fcel>Interbank Networks<fcel>雅安<ecel><ucel><fcel>19287.44<fcel>栋<ucel><fcel>朝阳<ecel><ecel><nl><ucel><ecel><fcel>双<ecel><ucel><ecel><fcel>增值税<ecel><ucel><ecel><fcel>账面数量<ucel><fcel>Hobbies<fcel>Male<ecel><nl><ucel><ecel><ecel><lcel><ucel><ecel><ecel><fcel>5552.122<ecel><fcel>Online Learning in Compliance Modelsfor Economics<fcel>海西蒙古族藏族自治州<ecel><fcel>Wb<ecel><fcel>kg/h<nl><ucel><ecel><fcel>kgf<fcel>新兴市场开拓成效<ucel><ecel><ucel><ucel><ecel><ecel><fcel>电子邮箱<fcel>应贷科目<fcel>(ug/m3)<fcel>(srs)<ecel><nl>
+# GT = <fcel>Position<fcel>Phone Number<fcel>项目经验<fcel>兴趣爱好<fcel>Ethnicity<fcel>毕业院校<fcel>到岗时间<fcel>自我评价<fcel>Job Description<fcel>语言能力<fcel>Phone Number<fcel>Availability<nl><fcel>项目角色<fcel>兴趣爱好<fcel>Registered Residence<fcel>毕业院校<fcel>语言能力<fcel>职位<fcel>技能专长<fcel>Employment Period<fcel>Language Proficiency<fcel>工作经历<fcel>公司名称<fcel>Job Description<nl><fcel>姓名<fcel>电子邮箱<fcel>Widowed<fcel>$80k-$70k per year<fcel>Project premier<fcel>75 years old<ucel><fcel>Product Manager<fcel>Master<fcel>yong24@example.org<fcel>Male<fcel>813 Samantha Branch, Port Edward, Virginia<nl><fcel>Project Role<fcel>项目描述<fcel>惠派国际公司传媒有限公司<ecel><ecel><ecel><ucel><fcel>2020-01<fcel>630101195903312489<fcel>Master<fcel>昭王时，秦开质于东胡，他智勇双全，东胡王甚信之，因此行动自由，得以了解东胡南部的山川险要、布防情况与军队的活动规律 自此兵力遂强<fcel>natian@example.net<nl><fcel>兴趣爱好<fcel>教育背景<ecel><fcel>Product Manager<fcel>530926194912044335<ecel><ucel><ecel><ecel><ecel><ecel><fcel>PhD<nl><fcel>兴趣爱好<fcel>Major<fcel>887-47-5598<ecel><fcel>532530194409137547<fcel>Master<ucel><fcel>turnerchristopher@example.net<fcel>10k-25k<fcel>项目经理<ecel><fcel>主体, 惠及, 保护, 途径, 监督<nl><fcel>教育背景<fcel>性别<ecel><fcel>吴淑英 18859020112<ecel><fcel>Haskell features a type system with type inference and lazyevaluation. Haskell is a standardized, general-purpose purely functional programming language,with non-strict semantics and strong static typing.<ucel><fcel>Japanese JLPT N1<fcel>1983-12-17<ecel><fcel>$60k-$100k per year<fcel>Immediately<nl><fcel>Major<fcel>民族<fcel>Salvadorian<ecel><fcel>130527194508081214<fcel>5 years experience<ucel><fcel>Ariana Berry (509)652-3851x6189<fcel>130125198909285959<ecel><fcel>Democrat<fcel>法语流利<nl><fcel>身份证号<fcel>Company<fcel>2017-10<fcel>PhD<fcel>内蒙古自治区哈尔滨县南京路<fcel>许芳<fcel>随时<ecel><fcel>数字100信息有限公司职业技术学院<ecel><fcel>Cross-domain professional<fcel>丧偶<nl><fcel>Skills<fcel>政治面貌<ecel><ecel><fcel>西藏自治区佳县马鞍山街T座<fcel>25k-25k<fcel>CPA<fcel>北马里亚纳群岛<fcel>Immediately<fcel>2024.02-2025.12<fcel>20k-35k<fcel>Fluent French<nl>
+# Expected Answer = <fcel>Position<fcel>Phone Number<fcel>项目经验<fcel>兴趣爱好<fcel>Ethnicity<fcel>毕业院校<fcel>到岗时间<fcel>自我评价<fcel>Job Description<fcel>语言能力<fcel>Phone Number<fcel>Availability<nl><fcel>项目角色<fcel>兴趣爱好<fcel>Registered Residence<fcel>毕业院校<fcel>语言能力<fcel>职位<fcel>技能专长<fcel>Employment Period<fcel>Language Proficiency<fcel>工作经历<fcel>公司名称<fcel>Job Description<nl><fcel>姓名<fcel>电子邮箱<fcel>Widowed<fcel>$80k-$70k per year<fcel>Project premier<fcel>75 years old<ucel><fcel>Product Manager<fcel>Master<fcel>yong24@example.org<fcel>Male<fcel>813 Samantha Branch, Port Edward, Virginia<nl><fcel>Project Role<fcel>项目描述<fcel>惠派国际公司传媒有限公司<ecel><ecel><ecel><ucel><fcel>2020-01<fcel>630101195903312489<fcel>Master<fcel>昭王时，秦开质于东胡，他智勇双全，东胡王甚信之，因此行动自由，得以了解东胡南部的山川险要、布防情况与军队的活动规律 自此兵力遂强<fcel>natian@example.net<nl><fcel>兴趣爱好<fcel>教育背景<ecel><fcel>Product Manager<fcel>530926194912044335<ecel><ucel><ecel><ecel><ecel><ecel><fcel>PhD<nl><fcel>兴趣爱好<fcel>Major<fcel>887-47-5598<ecel><fcel>532530194409137547<fcel>Master<ucel><fcel>turnerchristopher@example.net<fcel>10k-25k<fcel>项目经理<ecel><fcel>主体, 惠及, 保护, 途径, 监督<nl><fcel>教育背景<fcel>性别<ecel><fcel>吴淑英 18859020112<ecel><fcel>Haskell features a type system with type inference and lazyevaluation. Haskell is a standardized, general-purpose purely functional programming language,with non-strict semantics and strong static typing.<ucel><fcel>Japanese JLPT N1<fcel>1983-12-17<ecel><fcel>$60k-$100k per year<fcel>Immediately<nl><fcel>Major<fcel>民族<fcel>Salvadorian<ecel><fcel>130527194508081214<fcel>5 years experience<ucel><fcel>Ariana Berry (509)652-3851x6189<fcel>130125198909285959<ecel><fcel>Democrat<fcel>法语流利<nl><fcel>身份证号<fcel>Company<fcel>2017-10<fcel>PhD<fcel>内蒙古自治区哈尔滨县南京路<fcel>许芳<fcel>随时<ecel><fcel>数字100信息有限公司职业技术学院<ecel><fcel>Cross-domain professional<fcel>丧偶<nl><fcel>Skills<fcel>政治面貌<ecel><ecel><fcel>西藏自治区佳县马鞍山街T座<fcel>25k-25k<fcel>CPA<fcel>北马里亚纳群岛<fcel>Immediately<fcel>2024.02-2025.12<fcel>20k-35k<fcel>Fluent French<nl>
 ```
 </details>
 
@@ -658,7 +639,7 @@ python otsl2html.py
 ```python
 from paddlex.inference.pipelines.paddleocr_vl.uilts import convert_otsl_to_html
 
-table_otsl = "<fcel>Name<fcel>专业<fcel>Career Objective<fcel>公司名称<fcel>学历<fcel>Expected Salary<fcel>Self Evaluation<fcel>Age<fcel>Project Role<fcel>电子邮箱<fcel>Registered Residence<fcel>身份证号<fcel>专业<fcel>Graduation Date<fcel>学历<nl><fcel>Emergency Contact<ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><nl><fcel>Education<ecel><ecel><fcel>湘西土家族苗族自治州<fcel>(m3/s)<ecel><ecel><fcel>1799.171<ecel><fcel>Current Address<fcel>万<fcel>Zero Defect Metrics<ucel><fcel>项目经验<ecel><nl><fcel>身份证号<ecel><ecel><fcel>38319.16<ucel><ecel><ecel><fcel>留学生培养情况<ecel><ucel><ecel><ecel><ucel><ecel><fcel>mOsm<nl><fcel>Marital Status<ecel><fcel>-144<fcel>(nanosecs)<ucel><ecel><ecel><fcel>捆<ecel><ucel><fcel>宜宾<ecel><ucel><fcel>内部交易抵销<fcel>李秀英<nl><fcel>工作内容<ecel><fcel>锡林郭勒盟<ecel><ucel><ecel><fcel>230111197902277412<fcel>89340.869<ecel><ucel><fcel>Supplier Negotiation and Contracting Strategies<fcel>未收金额<ucel><fcel>尺码<ecel><nl><ucel><ecel><ecel><fcel>个税起征点<ucel><ecel><ecel><ecel><ecel><ucel><fcel>市场增加值<fcel>[mmHg]<ucel><ecel><ecel><nl><ucel><ecel><ecel><ecel><ucel><ecel><ecel><ecel><ecel><ecel><ecel><ecel><ucel><ecel><ecel><nl><ucel><ecel><ecel><fcel>事假扣款<ucel><fcel>凭证<ecel><fcel>邯郸<ucel><ecel><ecel><ecel><ucel><ecel><fcel>摘要<nl><ucel><ecel><ecel><fcel>g<ucel><ecel><ecel><ecel><ucel><ecel><ecel><ecel><fcel>自我评价<fcel>(tbsp)<ecel><nl><ucel><ecel><ecel><ecel><ucel><ecel><ecel><ecel><ucel><ecel><ecel><fcel>Bachelor<fcel>遵义<fcel>分<ecel><nl><ucel><ecel><fcel>Quantum Computing<ecel><ucel><fcel>Interbank Networks<fcel>雅安<ecel><ucel><fcel>19287.44<fcel>栋<ucel><fcel>朝阳<ecel><ecel><nl><ucel><ecel><fcel>双<ecel><ucel><ecel><fcel>增值税<ecel><ucel><ecel><fcel>账面数量<ucel><fcel>Hobbies<fcel>Male<ecel><nl><ucel><ecel><ecel><lcel><ucel><ecel><ecel><fcel>5552.122<ecel><fcel>Online Learning in Compliance Modelsfor Economics<fcel>海西蒙古族藏族自治州<ecel><fcel>Wb<ecel><fcel>kg/h<nl><ucel><ecel><fcel>kgf<fcel>新兴市场开拓成效<ucel><ecel><ucel><ucel><ecel><ecel><fcel>电子邮箱<fcel>应贷科目<fcel>(ug/m3)<fcel>(srs)<ecel><nl>"
+table_otsl = "<fcel>Position<fcel>Phone Number<fcel>项目经验<fcel>兴趣爱好<fcel>Ethnicity<fcel>毕业院校<fcel>到岗时间<fcel>自我评价<fcel>Job Description<fcel>语言能力<fcel>Phone Number<fcel>Availability<nl><fcel>项目角色<fcel>兴趣爱好<fcel>Registered Residence<fcel>毕业院校<fcel>语言能力<fcel>职位<fcel>技能专长<fcel>Employment Period<fcel>Language Proficiency<fcel>工作经历<fcel>公司名称<fcel>Job Description<nl><fcel>姓名<fcel>电子邮箱<fcel>Widowed<fcel>$80k-$70k per year<fcel>Project premier<fcel>75 years old<ucel><fcel>Product Manager<fcel>Master<fcel>yong24@example.org<fcel>Male<fcel>813 Samantha Branch, Port Edward, Virginia<nl><fcel>Project Role<fcel>项目描述<fcel>惠派国际公司传媒有限公司<ecel><ecel><ecel><ucel><fcel>2020-01<fcel>630101195903312489<fcel>Master<fcel>昭王时，秦开质于东胡，他智勇双全，东胡王甚信之，因此行动自由，得以了解东胡南部的山川险要、布防情况与军队的活动规律 自此兵力遂强<fcel>natian@example.net<nl><fcel>兴趣爱好<fcel>教育背景<ecel><fcel>Product Manager<fcel>530926194912044335<ecel><ucel><ecel><ecel><ecel><ecel><fcel>PhD<nl><fcel>兴趣爱好<fcel>Major<fcel>887-47-5598<ecel><fcel>532530194409137547<fcel>Master<ucel><fcel>turnerchristopher@example.net<fcel>10k-25k<fcel>项目经理<ecel><fcel>主体, 惠及, 保护, 途径, 监督<nl><fcel>教育背景<fcel>性别<ecel><fcel>吴淑英 18859020112<ecel><fcel>Haskell features a type system with type inference and lazyevaluation. Haskell is a standardized, general-purpose purely functional programming language,with non-strict semantics and strong static typing.<ucel><fcel>Japanese JLPT N1<fcel>1983-12-17<ecel><fcel>$60k-$100k per year<fcel>Immediately<nl><fcel>Major<fcel>民族<fcel>Salvadorian<ecel><fcel>130527194508081214<fcel>5 years experience<ucel><fcel>Ariana Berry (509)652-3851x6189<fcel>130125198909285959<ecel><fcel>Democrat<fcel>法语流利<nl><fcel>身份证号<fcel>Company<fcel>2017-10<fcel>PhD<fcel>内蒙古自治区哈尔滨县南京路<fcel>许芳<fcel>随时<ecel><fcel>数字100信息有限公司职业技术学院<ecel><fcel>Cross-domain professional<fcel>丧偶<nl><fcel>Skills<fcel>政治面貌<ecel><ecel><fcel>西藏自治区佳县马鞍山街T座<fcel>25k-25k<fcel>CPA<fcel>北马里亚纳群岛<fcel>Immediately<fcel>2024.02-2025.12<fcel>20k-35k<fcel>Fluent French<nl>"
 
 table_html = convert_otsl_to_html(table_otsl)
 
@@ -681,10 +662,16 @@ with open("table_test_html.html", "w", encoding="utf-8") as f:
 print("Save to table_test_html.html")
 
 ```
-
 </details>
 
 得到的 HTML 格式表格如下：
+
+<div align="center">
+  <img width="500" alt="table_test_html" src="./assets/table_test_html.png" />
+</div>
+
+<details>
+  <summary><b> HTML 源文件（点击展开/收起）</b></summary>
 
 ```html
 <html><head>
@@ -698,23 +685,18 @@ td, th {
   padding: 8px;
 }
 </style>
-</head><body><table><tr><td>Name</td><td>专业</td><td>Career Objective</td><td>公司名称</td><td>学历</td><td>Expected Salary</td><td>Self Evaluation</td><td>Age</td><td>Project Role</td><td>电子邮箱</td><td>Registered Residence</td><td>身份证号</td><td>专业</td><td>Graduation Date</td><td>学历</td></tr><tr><td>Emergency Contact</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td rowspan="8"></td><td></td><td></td></tr><tr><td>Education</td><td></td><td></td><td>湘西土家族苗族自治州</td><td rowspan="13">(m3/s)</td><td></td><td></td><td>1799.171</td><td></td><td rowspan="5">Current Address</td><td>万</td><td>Zero Defect Metrics</td><td>项目经验</td><td></td></tr><tr><td>身份证号</td><td></td><td></td><td>38319.16</td><td></td><td></td><td>留学生培养情况</td><td></td><td></td><td></td><td></td><td>mOsm</td></tr><tr><td>Marital Status</td><td></td><td>-144</td><td>(nanosecs)</td><td></td><td></td><td>捆</td><td></td><td>宜宾</td><td></td><td>内部交易抵销</td><td>李秀英</td></tr><tr><td rowspan="10">工作内容</td><td></td><td>锡林郭勒盟</td><td></td><td></td><td>230111197902277412</td><td>89340.869</td><td></td><td>Supplier Negotiation and Contracting Strategies</td><td>未收金额</td><td>尺码</td><td></td></tr><tr><td></td><td></td><td>个税起征点</td><td></td><td></td><td></td><td></td><td>市场增加值</td><td>[mmHg]</td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td><td></td><td></td><td rowspan="6"></td><td></td><td></td><td></td><td></td><td></td></tr><tr><td></td><td></td><td>事假扣款</td><td>凭证</td><td></td><td>邯郸</td><td></td><td></td><td></td><td></td><td>摘要</td></tr><tr><td></td><td></td><td>g</td><td></td><td></td><td></td><td></td><td></td><td></td><td>自我评价</td><td>(tbsp)</td><td></td></tr><tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td rowspan="3">Bachelor</td><td>遵义</td><td>分</td><td></td></tr><tr><td></td><td>Quantum Computing</td><td></td><td>Interbank Networks</td><td>雅安</td><td></td><td>19287.44</td><td>栋</td><td>朝阳</td><td></td><td></td></tr><tr><td></td><td>双</td><td></td><td></td><td>增值税</td><td></td><td></td><td>账面数量</td><td>Hobbies</td><td>Male</td><td></td></tr><tr><td></td><td colspan="2"></td><td></td><td rowspan="2"></td><td rowspan="2">5552.122</td><td></td><td>Online Learning in Compliance Modelsfor Economics</td><td>海西蒙古族藏族自治州</td><td></td><td>Wb</td><td></td><td>kg/h</td></tr><tr><td></td><td>kgf</td><td>新兴市场开拓成效</td><td></td><td></td><td></td><td>电子邮箱</td><td>应贷科目</td><td>(ug/m3)</td><td>(srs)</td><td></td></tr></table></body></html>
+</head><body><table><tr><td>Position</td><td>Phone Number</td><td>项目经验</td><td>兴趣爱好</td><td>Ethnicity</td><td>毕业院校</td><td>到岗时间</td><td>自我评价</td><td>Job Description</td><td>语言能力</td><td>Phone Number</td><td>Availability</td></tr><tr><td>项目角色</td><td>兴趣爱好</td><td>Registered Residence</td><td>毕业院校</td><td>语言能力</td><td>职位</td><td rowspan="7">技能专长</td><td>Employment Period</td><td>Language Proficiency</td><td>工作经历</td><td>公司名称</td><td>Job Description</td></tr><tr><td>姓名</td><td>电子邮箱</td><td>Widowed</td><td>$80k-$70k per year</td><td>Project premier</td><td>75 years old</td><td>Product Manager</td><td>Master</td><td>yong24@example.org</td><td>Male</td><td>813 Samantha Branch, Port Edward, Virginia</td></tr><tr><td>Project Role</td><td>项目描述</td><td>惠派国际公司传媒有限公司</td><td></td><td></td><td></td><td>2020-01</td><td>630101195903312489</td><td>Master</td><td>昭王时，秦开质于东胡，他智勇双全，东胡王甚信之，因此行动自由，得以了解东胡南部的山川险要、布防情况与军队的活动规律 自此兵力遂强</td><td>natian@example.net</td></tr><tr><td>兴趣爱好</td><td>教育背景</td><td></td><td>Product Manager</td><td>530926194912044335</td><td></td><td></td><td></td><td></td><td></td><td>PhD</td></tr><tr><td>兴趣爱好</td><td>Major</td><td>887-47-5598</td><td></td><td>532530194409137547</td><td>Master</td><td>turnerchristopher@example.net</td><td>10k-25k</td><td>项目经理</td><td></td><td>主体, 惠及, 保护, 途径, 监督</td></tr><tr><td>教育背景</td><td>性别</td><td></td><td>吴淑英 18859020112</td><td></td><td>Haskell features a type system with type inference and lazyevaluation. Haskell is a standardized, general-purpose purely functional programming language,with non-strict semantics and strong static typing.</td><td>Japanese JLPT N1</td><td>1983-12-17</td><td></td><td>$60k-$100k per year</td><td>Immediately</td></tr><tr><td>Major</td><td>民族</td><td>Salvadorian</td><td></td><td>130527194508081214</td><td>5 years experience</td><td>Ariana Berry (509)652-3851x6189</td><td>130125198909285959</td><td></td><td>Democrat</td><td>法语流利</td></tr><tr><td>身份证号</td><td>Company</td><td>2017-10</td><td>PhD</td><td>内蒙古自治区哈尔滨县南京路</td><td>许芳</td><td>随时</td><td></td><td>数字100信息有限公司职业技术学院</td><td></td><td>Cross-domain professional</td><td>丧偶</td></tr><tr><td>Skills</td><td>政治面貌</td><td></td><td></td><td>西藏自治区佳县马鞍山街T座</td><td>25k-25k</td><td>CPA</td><td>北马里亚纳群岛</td><td>Immediately</td><td>2024.02-2025.12</td><td>20k-35k</td><td>Fluent French</td></tr></table></body></html>
 ```
-<div align="center">
-  <img width="500" alt="table_test_html" src="./assets/table_test_html.png" />
-</div>
+</details>
 
 ### 测试集评估
 微调前后的模型测试集评估结果如下：
 
-|Model|Avg. NED||Avg. TEDS||
+|Model|Avg. NED<br>(structure)|Avg. NED<br>(overall)|Avg. TEDS<br>(structure)|Avg. TEDS<br>(overall)|
 |-|-|-|-|-|
-||structure|overall|structure|overall|
 |PaddleOCR-VL-1.5|0.9906|0.9683|0.9867|0.9661|
-|PaddleOCR-VL-1.5Table-SFT (Full)|0.9925|0.9749|0.9899|0.96740|
-|PaddleOCR-VL-1.5Table-SFT (LoRA)|0.9909|0.9703|0.9872|0.9687|
-
-从指标中可以看到，微调前后模型的性能提升并不会很大，符合训练损失曲线的观察。在微调模型前应该先使用任务数据在基座模型上进行测试，如果指标结果不符合预期再收集任务数据进行微调。
+|PaddleOCR-VL-1.5-<br>Table-SFT (Full)|0.9925|0.9749|0.9899|0.96740|
+|PaddleOCR-VL-1.5-<br>Table-SFT (LoRA)|0.9909|0.9703|0.9872|0.9687|
 
 ### 部署推理
 部署 PaddleOCR-VL-1.5 模型，请参考 [PaddleFormers - 模型部署文档](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/docs/zh/deployment_guide.md) 和 [FastDeploy - PaddleOCR-VL-0.9B Best Practices](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)

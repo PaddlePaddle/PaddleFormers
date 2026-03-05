@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: messages
 eval_dataset_type: messages
-train_dataset_path: ./ocr_vl_sft_table_train.jsonl
+train_dataset_path: ./complex_table/complex_table_train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./ocr_vl_sft_table_val.jsonl
+eval_dataset_path: ./complex_table/complex_table_val.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 16384
 padding_free: True
@@ -13,13 +13,13 @@ mix_strategy: concat
 template_backend: custom
 template: paddleocr_vl_v15
 custom_register_path: ./paddleocr_vl_v15_template.py
-                
 
 ### model
 model_name_or_path: PaddlePaddle/PaddleOCR-VL-1.5
 _attn_implementation: flashmask
 lora: true
 lora_rank: 8
+copy_custom_file_list: "configuration_paddleocr_vl.py image_processing_paddleocr_vl.py modeling_paddleocr_vl.py processing_paddleocr_vl.py"
 
 ### finetuning
 # base
@@ -30,7 +30,7 @@ do_train: true
 do_eval: true
 per_device_eval_batch_size: 8
 per_device_train_batch_size: 8
-num_train_epochs: 2
+num_train_epochs: 1
 max_steps: -1
 max_estimate_samples: 500
 eval_steps: 400
