@@ -29,6 +29,11 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
 )
 from paddle.incubate.nn.functional import fused_rotary_position_embedding as fused_rope
 
+from paddleformers.triton_kernels import (
+    apply_rotary_pos_emb_vision as apply_rotary_pos_emb_vision_triton,
+)
+from paddleformers.utils.tools import dispatch_to
+
 from ...generation import GenerationMixin
 from ...nn.activation import ACT2FN
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
@@ -87,17 +92,18 @@ def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim
     return q_embed, k_embed
 
 
-@paddle.jit.marker.unified
+@dispatch_to(apply_rotary_pos_emb_vision_triton, cond=lambda *arg: True)  # TODO: update this condtion function
 def apply_rotary_pos_emb_vision(q, k, cos, sin):
     """Applies Rotary Position Embedding to the query and key tensors."""
     orig_q_dtype = q.dtype
     orig_k_dtype = k.dtype
-    with paddle.amp.auto_cast(False):
-        q, k = q.astype(dtype="float32"), k.astype(dtype="float32")
-        cos, sin = cos.unsqueeze(-2).astype(dtype="float32"), sin.unsqueeze(-2).astype(dtype="float32")
-        q_embed = (q * cos) + (rotate_half(q) * sin)
-        k_embed = (k * cos) + (rotate_half(k) * sin)
-        return q_embed.astype(orig_q_dtype), k_embed.astype(orig_k_dtype)
+    cos = cos.tile((1, 2))
+    sin = sin.tile((1, 2))
+    q, k = q.astype(dtype="float32"), k.astype(dtype="float32")
+    cos, sin = cos.unsqueeze(-2).astype(dtype="float32"), sin.unsqueeze(-2).astype(dtype="float32")
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed.astype(orig_q_dtype), k_embed.astype(orig_k_dtype)
 
 
 def apply_fused_rope(query_states, key_states, rope_theta):
