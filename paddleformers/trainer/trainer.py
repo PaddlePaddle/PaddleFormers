@@ -2102,6 +2102,7 @@ class Trainer:
                     # Save inputs for debugging if enabled
                     if InputSaver.should_save():
                         self.inputsaver.save_inputs(inputs, self.state.global_step)
+                    if not os.getenv("SKIP_TRAINING", "0").lower() in ("1", "true", "t"):
                         self.state.global_step += 1
                         self.state.epoch = epoch + (step + 1) / steps_in_epoch
                         self.state.consumed_samples = (
