@@ -16,9 +16,10 @@ import numpy as np
 import paddle
 from paddle.nn.functional.common import interpolate
 
-# paddle.set_device('cpu')
-x = np.load("../tmp/share_video.npy")
+paddle.set_device('cpu')
+x = np.load("../tmp/pd_itplt.npy")
 print(x.shape)
-res = interpolate(paddle.to_tensor(x), size=[532, 952], mode="bicubic", align_corners=False, antialias=True)
+x = paddle.to_tensor(x).cast('uint8')
+res = interpolate(x, size=[532, 952], mode="bicubic", align_corners=False, antialias=True)
 np.save("../tmp/pd_itplt", res.cpu().numpy())
 print(res.shape, res.dtype)
