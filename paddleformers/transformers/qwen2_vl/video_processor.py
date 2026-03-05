@@ -182,18 +182,24 @@ class Qwen2VLVideoProcessor(BaseVideoProcessor):
             height, width = get_image_size(stacked_videos[0], channel_dim=ChannelDimension.FIRST)
             resized_height, resized_width = height, width
             if do_resize:
-                resized_height, resized_width = smart_resize(
+                resized_height, resized_width = smart_resize( # check size args
                     height,
                     width,
                     factor=patch_size * merge_size,
                     min_pixels=size["shortest_edge"],
                     max_pixels=size["longest_edge"],
                 )
-                stacked_videos = self.resize(
+                stacked_videos = self.resize( #interpolate diff
                     image=stacked_videos,
                     size=SizeDict(height=resized_height, width=resized_width),
                     interpolation=interpolation,
                 )
+            # import numpy as np
+            # try:
+            #     arr = np.load("/root/paddlejob/workspace/env_run/chenxuran/tmp/sw_resize.npy")
+            # except:
+            #     raise Exception("np load failed")
+            # stacked_videos = paddle.from_numpy(arr)
             resized_videos_grouped[shape] = stacked_videos
         resized_videos = reorder_videos(resized_videos_grouped, grouped_videos_index)
 

@@ -155,7 +155,7 @@ def resize(
         if need_cast:
             image = image.to(dtype=paddle.float32)
 
-        image = interpolate(
+        image = interpolate( #diff happens
             image,
             size=[new_height, new_width],
             mode=interpolation,

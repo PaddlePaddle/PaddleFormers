@@ -441,7 +441,7 @@ def fetch_video(
             min_pixels=min_pixels,
             max_pixels=max_pixels,
         )
-    video = paddle_resize(
+    video = paddle_resize(#interpolate diff
         video,
         [resized_height, resized_width],
         interpolation="bicubic",
