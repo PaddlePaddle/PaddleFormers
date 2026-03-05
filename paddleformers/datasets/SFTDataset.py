@@ -250,7 +250,7 @@ class SFTDataSet(IterableDataset):
                 self._stop_workers()
         else:
             # Single process mode
-            while True:
+            for _ in range(len(self.mix_datasets)):
                 try:
                     example = next(dataset_iterator)
                 except StopIteration:
