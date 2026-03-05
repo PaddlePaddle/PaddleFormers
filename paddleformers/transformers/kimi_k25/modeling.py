@@ -46,8 +46,6 @@ class KimiK25TextProvider(GPTModelProvider):
 
     transform_rules = {
         "dtype": "params_dtype",
-        "depth": "num_hidden_layers",
-        "num_experts_per_tok": "n_routed_experts",
     }
 
     def __post_init__(self):
@@ -625,6 +623,7 @@ class KimiK25PretrainedModelFleet(PretrainedModel):
         aoa_config["aoa_statements"] += [
             "language_model.model.embed_tokens.weight -> language_model.model.embedding.embed_tokens.weight",
             "language_model.lm_head.weight -> language_model.model.lm_head.weight ",
+            "language_model.model.layers.1.mlp.gate.weight -> language_model.model.layers.1.mlp.gate.weight, src_dtype='bfloat16',dst_dtype='float32'",
         ]
         # MLA
         for layer_id in range(config.text_config.num_hidden_layers):
