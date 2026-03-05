@@ -2939,6 +2939,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 copied_init_args = copy.deepcopy(init_args)
                 copied_model_kwargs = copy.deepcopy(model_kwargs)
                 copied_model = cls(copied_config, *copied_init_args, **copied_model_kwargs)
+            cls.set_random_seed(
+                cls,
+            )
             model = cls(config, *init_args, **model_kwargs)
 
         if (
@@ -2956,6 +2959,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     "the model must implement the _gen_aoa_config function to provide checkpoint conversion rules."
                 )
             aoa_config = cls._gen_aoa_config(config)
+            print("aoa_config ", aoa_config)
             sharded_state_dict = model.sharded_state_dict()
             metadata_path = os.path.join(ckpt_path, FLEX_CKPT_AUTO_GENERATED_METADATA)
 
