@@ -78,7 +78,7 @@ class GlmOcrModelTester:
 
         self.vision_spatial_merge_size = vision_spatial_merge_size
         # Number of image tokens per image after expansion = spatial_merge_size^2
-        self.num_image_tokens = vision_spatial_merge_size ** 2
+        self.num_image_tokens = vision_spatial_merge_size**2
         self.seq_length = seq_length + self.num_image_tokens
 
         # text
@@ -179,9 +179,9 @@ class GlmOcrModelTester:
         #   merged tokens = (4/2) * (4/2) * 1 = 4 ✓
         #
         # pixel_values shape: [batch_size * 16, C, temporal_patch_size, patch_size, patch_size]
-        self.grid_thw = [1, 4, 4]   # t, h, w (for prepare_config_and_inputs_for_common)
+        self.grid_thw = [1, 4, 4]  # t, h, w (for prepare_config_and_inputs_for_common)
         t, h, w = self.grid_thw
-        total_raw_patches = t * h * w   # = 16
+        total_raw_patches = t * h * w  # = 16
         pixel_values = floats_tensor(
             [
                 self.batch_size * total_raw_patches,
@@ -200,28 +200,22 @@ class GlmOcrModelTester:
         # prefix token ids must be < vocab_size and not conflict with special tokens
         prefix = [1, 100, 101, 102]
         # Each image expands to num_image_tokens image tokens
-        image_tokens = [self.image_token_id] * self.num_image_tokens   # 4 tokens
+        image_tokens = [self.image_token_id] * self.num_image_tokens  # 4 tokens
         suffix = [200, 201, 202, 203, 204]
 
         ids_list = prefix + image_tokens + suffix
-        input_ids = paddle.to_tensor(ids_list, dtype="int64").expand(
-            [self.batch_size, -1]
-        )
+        input_ids = paddle.to_tensor(ids_list, dtype="int64").expand([self.batch_size, -1])
 
         # labels: mask image region and prefix with -100, only compute loss on suffix
         labels_list = ([-100] * (len(prefix) + self.num_image_tokens)) + suffix
-        labels = paddle.to_tensor(labels_list, dtype="int64").expand(
-            [self.batch_size, -1]
-        )
+        labels = paddle.to_tensor(labels_list, dtype="int64").expand([self.batch_size, -1])
 
         attention_mask = paddle.ones(input_ids.shape, dtype="int64")
 
         # image_grid_thw: [batch_size * num_images_per_sample, 3]
 
         t, h, w = self.grid_thw
-        image_grid_thw = paddle.to_tensor(
-            [[t, h, w]] * self.batch_size, dtype="int64"
-        )
+        image_grid_thw = paddle.to_tensor([[t, h, w]] * self.batch_size, dtype="int64")
 
         inputs_dict = {
             "input_ids": input_ids,
@@ -239,9 +233,7 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
     """
 
     all_model_classes = (GlmOcrForConditionalGeneration,)
-    all_generative_model_classes = {
-        GlmOcrForConditionalGeneration: {GlmOcrForConditionalGeneration, "glmocr"}
-    }
+    all_generative_model_classes = {GlmOcrForConditionalGeneration: {GlmOcrForConditionalGeneration, "glmocr"}}
     max_new_tokens = 3
 
     @gpu_device_initializer(log_prefix="GlmOcrModelTest")
@@ -391,15 +383,12 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
             model = model_class(config).eval()
             outputs = model(**inputs_dict)
             self.assertIsNotNone(outputs.loss)
-            self.assertEqual(outputs.loss.shape, [])   # scalar
+            self.assertEqual(outputs.loss.shape, [])  # scalar
 
     def test_forward_without_images(self):
         """Pure text input (no pixel_values / image_grid_thw) should not raise error."""
         config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        text_only = {
-            k: v for k, v in inputs_dict.items()
-            if k not in ("pixel_values", "image_grid_thw")
-        }
+        text_only = {k: v for k, v in inputs_dict.items() if k not in ("pixel_values", "image_grid_thw")}
         # Replace image tokens with padding so shapes stay consistent
         input_ids = text_only["input_ids"].clone()
         image_tok = self.model_tester.image_token_id
@@ -422,11 +411,11 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
         config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
         for model_class in self.all_model_classes:
             model = model_class(config).eval()
-            _ = model(**inputs_dict)   # baseline: no error
+            _ = model(**inputs_dict)  # baseline: no error
 
             # Remove image_grid_thw but keep image tokens in input_ids → count mismatch → error
             curr = copy.deepcopy(inputs_dict)
-            curr["image_grid_thw"] = curr["image_grid_thw"][:0]   # empty
+            curr["image_grid_thw"] = curr["image_grid_thw"][:0]  # empty
             curr["pixel_values"] = curr["pixel_values"][:0]
 
             with self.assertRaises(ValueError):
@@ -445,43 +434,30 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
             if model.config.is_encoder_decoder:
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + 1)
             else:
-                self.assertTrue(
-                    output_generate[0].shape[1]
-                    == self.max_new_tokens + inputs_dict["input_ids"].shape[1]
-                )
+                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
     def test_beam_search_generate(self):
         for model_class in self.all_generative_model_classes:
             config, inputs_dict = self.prepare_config_and_inputs_for_generate()
             model = model_class(config).eval()
             beam_kwargs, _ = self._get_beam_scorer_and_kwargs(1, 1)
-            output_generate = self._beam_search_generate(
-                model=model, inputs_dict=inputs_dict, beam_kwargs=beam_kwargs
-            )
+            output_generate = self._beam_search_generate(model=model, inputs_dict=inputs_dict, beam_kwargs=beam_kwargs)
 
             if model.config.is_encoder_decoder:
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + 1)
             else:
-                self.assertTrue(
-                    output_generate[0].shape[1]
-                    == self.max_new_tokens + inputs_dict["input_ids"].shape[1]
-                )
+                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
     def test_sample_generate(self):
         for model_class in self.all_generative_model_classes:
             config, inputs_dict = self.prepare_config_and_inputs_for_generate()
             model = model_class(config).eval()
-            output_generate = self._sample_generate(
-                model=model, inputs_dict=inputs_dict, num_return_sequences=1
-            )
+            output_generate = self._sample_generate(model=model, inputs_dict=inputs_dict, num_return_sequences=1)
 
             if model.config.is_encoder_decoder:
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + 1)
             else:
-                self.assertTrue(
-                    output_generate[0].shape[1]
-                    == self.max_new_tokens + inputs_dict["input_ids"].shape[1]
-                )
+                self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
     # ------------------------------------------------------------------ #
     #  KV Cache                                                           #
@@ -615,6 +591,7 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
 #  Integration test                                                    #
 # ------------------------------------------------------------------ #
 
+
 class GlmOcrIntegrationTest(unittest.TestCase):
     """End-to-end test using a tiny pretrained checkpoint."""
 
@@ -622,11 +599,11 @@ class GlmOcrIntegrationTest(unittest.TestCase):
     def setUp(self):
         # NOTE: replace with actual tiny checkpoint path once available
         self.model = GlmOcrForConditionalGeneration.from_pretrained(
-            "/root/paddlejob/workspace/env_run/zoukexin/glm_ocr_hf",
+            "PaddleFormers/tiny-random-glmocr",
             dtype="float32",
             load_checkpoint_format="flex_checkpoint",
         )
-        self.processor = AutoProcessor.from_pretrained("/root/paddlejob/workspace/env_run/zoukexin/glm_ocr_hf")
+        self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-glmocr")
 
         image_path = (
             "https://paddle-model-ecology.bj.bcebos.com/PPOCRVL/dataset/exam_paper_0829/part_0000/img_000040676.png"
@@ -656,10 +633,23 @@ class GlmOcrIntegrationTest(unittest.TestCase):
         # -------------------------
         EXPECTED_INPUT_IDS = paddle.to_tensor(
             [
-                59248, 59250, 59253, 10,
-                59280, 59280, 59280, 59280, 59280,
-                59280, 59280, 59280, 59280, 59280,
-                59280, 59280, 59280,
+                59248,
+                59250,
+                59253,
+                10,
+                59280,
+                59280,
+                59280,
+                59280,
+                59280,
+                59280,
+                59280,
+                59280,
+                59280,
+                59280,
+                59280,
+                59280,
+                59280,
             ],
             dtype="int64",
         )
@@ -674,11 +664,31 @@ class GlmOcrIntegrationTest(unittest.TestCase):
         # -------------------------
         EXPECTED_PIXEL_SLICE = paddle.to_tensor(
             [
-                1.9303361177444458, 1.9303361177444458, 1.9303361177444458, 1.9303361177444458, 1.9303361177444458,
-                1.9303361177444458, 1.901139497756958,  1.9303361177444458, 1.9303361177444458, 1.8427457809448242,
-                1.9303361177444458, 1.9303361177444458, 1.9303361177444458, 1.9303361177444458, 1.9303361177444458,
-                1.9303361177444458, 1.9303361177444458, 1.9303361177444458, 1.9303361177444458, 1.9303361177444458,
-                1.9303361177444458, 1.9157379865646362, 1.9303361177444458, 1.9303361177444458, 1.9303361177444458,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.901139497756958,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.8427457809448242,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.9157379865646362,
+                1.9303361177444458,
+                1.9303361177444458,
+                1.9303361177444458,
             ],
             dtype="float32",
         )
@@ -701,12 +711,36 @@ class GlmOcrIntegrationTest(unittest.TestCase):
         logits = output.logits.astype("float32")
         EXPECTED_LOGITS_SLICE = paddle.to_tensor(
             [
-                2.4954674243927, 0.8813060522079468, 0.5799996852874756, 0.987726628780365, 1.316436529159546,
-                0.5093486905097961, 1.4151250123977661, 0.5429880619049072, -0.7440788149833679, -0.9492800235748291,
-                -0.770682692527771, 3.098405361175537, -0.9962925910949707, 0.5345796346664429, 1.3059613704681396,
-                1.2443833351135254, 0.6356707215309143, 0.6909863948822021, 1.3643234968185425, 1.0174578428268433,
-                0.7767274379730225, 1.158482313156128, 1.5546430349349976, 1.5881377458572388, 1.6245638132095337,
-                0.9027527570724487, 0.8254456520080566, 0.8291380405426025, 1.2830607891082764, 1.1274772882461548,
+                0.0739683136343956,
+                -0.010490708984434605,
+                -0.01828090474009514,
+                -0.1487439125776291,
+                0.09513020515441895,
+                -0.10917816311120987,
+                0.265825480222702,
+                -0.09701524674892426,
+                -0.08476560562849045,
+                0.015599575825035572,
+                -0.16371792554855347,
+                0.07208860665559769,
+                -0.11039764434099197,
+                -0.04978354275226593,
+                -0.0139118991792202,
+                0.019330939278006554,
+                -0.14393363893032074,
+                -0.12189751863479614,
+                -0.05219394713640213,
+                -0.02151140756905079,
+                0.11024126410484314,
+                0.015893785282969475,
+                0.08080123364925385,
+                0.13594745099544525,
+                -0.014004693366587162,
+                -0.03796566277742386,
+                -0.13894250988960266,
+                0.1163255125284195,
+                -0.03998023644089699,
+                -0.04189044609665871,
             ],
             dtype="float32",
         )

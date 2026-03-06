@@ -16,7 +16,6 @@ from paddleformers.transformers.glm_ocr.image_processor import Glm46VImageProces
 
 
 class GlmOcrImageProcessorTest(unittest.TestCase):
-
     @classmethod
     def setUpClass(cls):
         import requests
@@ -25,8 +24,7 @@ class GlmOcrImageProcessorTest(unittest.TestCase):
         IMAGE_URL = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg"
         response = requests.get(IMAGE_URL, stream=True)
         cls.image = Image.open(response.raw).convert("RGB")
-        cls.model_path = "/root/paddlejob/workspace/env_run/zoukexin/tiny-random-glmocr-bf16"
-
+        cls.model_path = "PaddleFormers/tiny-random-glmocr"
 
     def test_image_processor_output_keys(self):
         """Verify that output contains pixel_values and image_grid_thw"""
@@ -71,9 +69,7 @@ class GlmOcrImageProcessorTest(unittest.TestCase):
         inputs1 = processor(self.image, return_tensors="pd")
         inputs2 = processor2(self.image, return_tensors="pd")
 
-        self.assertTrue(
-            paddle.allclose(inputs1["pixel_values"], inputs2["pixel_values"])
-        )
+        self.assertTrue(paddle.allclose(inputs1["pixel_values"], inputs2["pixel_values"]))
 
     def test_auto_image_processor(self):
         """Verify that AutoImageProcessor correctly loads Glm46VImageProcessor"""

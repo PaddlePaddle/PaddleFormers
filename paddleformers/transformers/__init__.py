@@ -298,7 +298,7 @@ import_structure = {
     "glm4v_moe.processor": ["Glm4vProcessor"],
     "glm4v_moe.video_processor": ["Glm4vVideoProcessor"],
     "glm4v_moe": [],
-    "glm_ocr.configuration": ["GlmOcrConfig", "GlmOcrTextConfig", "GlmOcrVisionConfig"],    
+    "glm_ocr.configuration": ["GlmOcrConfig", "GlmOcrTextConfig", "GlmOcrVisionConfig"],
     "glm_ocr.modeling": [
         "GlmOcrForConditionalGeneration",
         "GlmOcrModel",

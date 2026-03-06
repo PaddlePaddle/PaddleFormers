@@ -70,6 +70,7 @@ def make_batched_images(images) -> List[ImageInput]:
 
     raise ValueError(f"Could not make batched images from {images}")
 
+
 def smart_resize(
     num_frames: int,
     height: int,
@@ -100,9 +101,7 @@ def smart_resize(
         `Tuple[int, int]`: Resized (height, width).
     """
     if num_frames < temporal_factor:
-        raise ValueError(
-            f"num_frames={num_frames} must be >= temporal_factor={temporal_factor}"
-        )
+        raise ValueError(f"num_frames={num_frames} must be >= temporal_factor={temporal_factor}")
 
     # Ensure minimum spatial size
     if height < factor or width < factor:
@@ -199,7 +198,6 @@ class Glm46VImageProcessor(BaseImageProcessor):
         self.temporal_patch_size = temporal_patch_size
         self.merge_size = merge_size
         self.size = {"shortest_edge": min_pixels, "longest_edge": max_pixels}
-
 
     def get_smarted_resize(self, height, width, min_pixels=None, max_pixels=None):
         actual_min_pixels = min_pixels if min_pixels is not None else self.min_pixels
@@ -325,6 +323,7 @@ class Glm46VImageProcessor(BaseImageProcessor):
 
         # Use the size of the first frame as the reference for smart_resize
         from ..image_utils import get_image_size
+
         height, width = get_image_size(images_np[0], channel_dim=input_data_format)
         resized_height, resized_width = height, width
 
@@ -344,6 +343,7 @@ class Glm46VImageProcessor(BaseImageProcessor):
                 )
                 # PIL resize expects (width, height)
                 from PIL import Image as PILImage
+
                 pil_img = PILImage.fromarray(
                     image.transpose(1, 2, 0).astype(np.uint8)
                     if input_data_format == ChannelDimension.FIRST
@@ -357,7 +357,7 @@ class Glm46VImageProcessor(BaseImageProcessor):
                 _cur_format = input_data_format
 
             if do_rescale:
-                image = (image.astype(np.float32) * rescale_factor)
+                image = image.astype(np.float32) * rescale_factor
 
             if do_normalize:
                 image = image.astype(np.float32)
@@ -479,9 +479,7 @@ class Glm46VImageProcessor(BaseImageProcessor):
             images = make_batched_images(images)
 
         if images is not None and not valid_images(images):
-            raise ValueError(
-                "Invalid image type. Must be of type PIL.Image.Image, numpy.ndarray, or paddle.Tensor."
-            )
+            raise ValueError("Invalid image type. Must be of type PIL.Image.Image, numpy.ndarray, or paddle.Tensor.")
 
         data = {}
         if images is not None:

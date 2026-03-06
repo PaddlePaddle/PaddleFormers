@@ -1180,6 +1180,7 @@ class Gemma3Plugin(BasePlugin):
         mm_inputs.pop("num_crops", None)
         return mm_inputs
 
+
 @dataclass
 class GlmOcrPlugin(BasePlugin):
     """
@@ -1270,6 +1271,7 @@ class GlmOcrPlugin(BasePlugin):
         # 5) mask：这些 token 不参与 loss（和你原先 PaddleOCRVLPlugin 一致）
         self.masked_tokens = [self.image_token, self.image_bos_token, self.image_eos_token]
         return messages
+
 
 PLUGINS = {
     "base": BasePlugin,

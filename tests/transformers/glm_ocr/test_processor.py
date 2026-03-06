@@ -30,9 +30,7 @@ class Glm46VProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmpdir = tempfile.mkdtemp()
-        processor = Glm46VProcessor.from_pretrained(
-            "/root/paddlejob/workspace/env_run/zoukexin/tiny-random-glmocr-bf16"
-        )
+        processor = Glm46VProcessor.from_pretrained("PaddleFormers/tiny-random-glmocr")
         processor.save_pretrained(cls.tmpdir)
         cls.image_token = processor.image_token
 
@@ -122,7 +120,7 @@ class Glm46VProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         inputs = processor(text=input_str, images=image_input, return_tensors="pd")
 
         # The prod of image_grid_thw divided by merge_size^2 should equal the number of expanded image tokens
-        merge_length = processor.image_processor.merge_size ** 2
+        merge_length = processor.image_processor.merge_size**2
         expected_num_image_tokens = inputs["image_grid_thw"][0].prod().item() // merge_length
         actual_num_image_tokens = (inputs["input_ids"] == processor.image_token_id).sum().item()
 
@@ -139,10 +137,8 @@ class Glm46VProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         input_str = f"{processor.image_token} and {processor.image_token}"
         inputs = processor(text=input_str, images=two_images, return_tensors="pd")
 
-        merge_length = processor.image_processor.merge_size ** 2
-        expected_total = sum(
-            thw.prod().item() // merge_length for thw in inputs["image_grid_thw"]
-        )
+        merge_length = processor.image_processor.merge_size**2
+        expected_total = sum(thw.prod().item() // merge_length for thw in inputs["image_grid_thw"])
         actual_total = (inputs["input_ids"] == processor.image_token_id).sum().item()
 
         self.assertEqual(actual_total, expected_total)
@@ -165,7 +161,7 @@ class Glm46VProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         input_ids = np.array(inputs["input_ids"])
 
         # Image token positions should be 1, others should be 0
-        image_token_mask = (input_ids == processor.image_token_id)
+        image_token_mask = input_ids == processor.image_token_id
         self.assertTrue(np.all(mm_ids[image_token_mask] == 1))
         self.assertTrue(np.all(mm_ids[~image_token_mask] == 0))
 
@@ -198,16 +194,17 @@ class Glm46VProcessorTest(ProcessorTesterMixin, unittest.TestCase):
 
         test_text = ["hello world", "paddle ocr"]
         encoded = tokenizer(test_text, return_tensors="pd", padding=True)
-        decoded = processor.post_process_image_text_to_text(
-            encoded["input_ids"], skip_special_tokens=True
-        )
+        decoded = processor.post_process_image_text_to_text(encoded["input_ids"], skip_special_tokens=True)
 
         self.assertEqual(len(decoded), 2)
         for original, result in zip(test_text, decoded):
             self.assertIn(original, result)
 
-    def test_apply_chat_template_assistant_mask(self): pass
-    def test_chat_template_jinja_kwargs(self): pass
+    def test_apply_chat_template_assistant_mask(self):
+        pass
+
+    def test_chat_template_jinja_kwargs(self):
+        pass
 
     def _test_apply_chat_template(
         self,

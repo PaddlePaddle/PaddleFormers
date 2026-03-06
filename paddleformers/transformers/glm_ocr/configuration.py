@@ -1,3 +1,16 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """ GlmOCR model configuration."""
 
@@ -90,7 +103,6 @@ class GlmOcrVisionConfig(PretrainedConfig):
         self.attention_dropout = attention_dropout
 
 
-
 class GlmOcrTextConfig(PretrainedConfig):
 
     model_type = "glm_ocr_text"
@@ -149,7 +161,7 @@ class GlmOcrTextConfig(PretrainedConfig):
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
         self.attention_dropout = attention_dropout
-    
+
         self.rope_parameters = rope_parameters or {}
         self.rope_parameters.setdefault("mrope_section", list(mrope_section))
         self.pad_token_id = pad_token_id
@@ -157,7 +169,6 @@ class GlmOcrTextConfig(PretrainedConfig):
         self.rope_theta = rope_theta
         standardize_rope_params(self, rope_theta=rope_theta)
         rope_config_validation(self, ignore_keys={"mrope_section"})
-
 
 
 class GlmOcrConfig(PretrainedConfig):
@@ -206,7 +217,7 @@ class GlmOcrConfig(PretrainedConfig):
     model_type = "glm_ocr"
     sub_configs = {"vision_config": GlmOcrVisionConfig, "text_config": GlmOcrTextConfig}
     keys_to_ignore_at_inference = ["past_key_values"]
-    
+
     def __setattr__(self, key, value):
         # 同步到 text_config
         if (
@@ -227,7 +238,7 @@ class GlmOcrConfig(PretrainedConfig):
     def __getattribute__(self, key):
         if "text_config" in super().__getattribute__("__dict__") and key not in [
             "_name_or_path",
-            "model_type", 
+            "model_type",
             "dtype",
             "_attn_implementation_internal",
         ]:
@@ -235,17 +246,17 @@ class GlmOcrConfig(PretrainedConfig):
             if key in text_config.__dict__:
                 return getattr(text_config, key)
         return super().__getattribute__(key)
-    
+
     def __init__(
         self,
-        text_config = None,
-        vision_config = None,
-        image_start_token_id = 59256,
-        image_end_token_id   = 59257,
-        video_start_token_id = 59258,
-        video_end_token_id   = 59259,
-        image_token_id       = 59280,
-        video_token_id       = 59281,
+        text_config=None,
+        vision_config=None,
+        image_start_token_id=59256,
+        image_end_token_id=59257,
+        video_start_token_id=59258,
+        video_end_token_id=59259,
+        image_token_id=59280,
+        video_token_id=59281,
         tie_word_embeddings=False,
         **kwargs,
     ):
@@ -262,7 +273,7 @@ class GlmOcrConfig(PretrainedConfig):
             self.text_config = self.sub_configs["text_config"](**kwargs)
         else:
             self.text_config = text_config
-        
+
         self.image_token_id = image_token_id
         self.video_token_id = video_token_id
         self.video_start_token_id = video_start_token_id
@@ -273,5 +284,6 @@ class GlmOcrConfig(PretrainedConfig):
 
         super().__init__(**kwargs)
         self.vocab_size = self.text_config.vocab_size
+
 
 __all__ = ["GlmOcrConfig", "GlmOcrTextConfig", "GlmOcrVisionConfig"]
