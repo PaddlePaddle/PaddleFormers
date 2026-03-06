@@ -147,8 +147,8 @@ class ConcatDataset(BaseMixDataset):
         for i in self.indices:
             yield self.data[i]
 
-        # self.epoch_index += 1
-        # self.epoch_np_rng = np.random.RandomState(self.epoch_index + self.seed)
+        self.epoch_index += 1
+        self.epoch_np_rng = np.random.RandomState(self.epoch_index + self.seed)
 
     def __len__(self):
         """Returns the total size of the dataset."""
