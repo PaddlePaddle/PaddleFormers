@@ -290,3 +290,34 @@ def apply_rotary_pos_emb_vision(q, k, cos, sin):
         q_out, k_out: Same shape and dtype as input
     """
     return ApplyRotaryPosEmbVision.apply(q, k, cos, sin)
+
+
+def _run_once(fn):
+    """Decorator that caches the result of a function after first call."""
+    result = None
+    has_run = False
+
+    def wrapper(*args, **kwargs):
+        nonlocal result, has_run
+        if not has_run:
+            result = fn(*args, **kwargs)
+            has_run = True
+        return result
+
+    return wrapper
+
+
+@_run_once
+def _check_triton_available(*args, **kwargs):
+    """Check if triton is available and version >= 3.0.0"""
+    try:
+        import triton
+
+        version = getattr(triton, "__version__")
+        major = int(version.split(".")[0])
+        return major >= 3
+    except ImportError:
+        return False
+
+
+apply_rotary_pos_emb_vision.is_available = _check_triton_available

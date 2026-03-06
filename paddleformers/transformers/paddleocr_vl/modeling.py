@@ -92,7 +92,7 @@ def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim
     return q_embed, k_embed
 
 
-@dispatch_to(apply_rotary_pos_emb_vision_triton, cond=lambda *arg: True)  # TODO: update this condtion function
+@dispatch_to(apply_rotary_pos_emb_vision_triton, cond=apply_rotary_pos_emb_vision_triton.is_available)
 def apply_rotary_pos_emb_vision(q, k, cos, sin):
     """Applies Rotary Position Embedding to the query and key tensors."""
     orig_q_dtype = q.dtype
