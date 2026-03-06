@@ -6,7 +6,7 @@ from ...utils.lazy_import import _LazyModule
 
 import_structure = {
     "image_processor": ["Glm46VImageProcessor"],
-    "processor": ["GlmOcrProcessor"],
+    "processor": ["Glm46VProcessor"],
     "configuration": ["GlmOcrConfig", "GlmOcrTextConfig", "GlmOcrVisionConfig"],  # 补上这两个
     "modeling": ["GlmOcrForConditionalGeneration"],
 }

@@ -20,17 +20,17 @@ import unittest
 
 import numpy as np
 
-from paddleformers.transformers import AutoProcessor, GlmOcrProcessor
+from paddleformers.transformers import AutoProcessor, Glm46VProcessor
 from tests.transformers.test_processing_common import ProcessorTesterMixin
 
 
-class GlmOcrProcessorTest(ProcessorTesterMixin, unittest.TestCase):
-    processor_class = GlmOcrProcessor
+class Glm46VProcessorTest(ProcessorTesterMixin, unittest.TestCase):
+    processor_class = Glm46VProcessor
 
     @classmethod
     def setUpClass(cls):
         cls.tmpdir = tempfile.mkdtemp()
-        processor = GlmOcrProcessor.from_pretrained(
+        processor = Glm46VProcessor.from_pretrained(
             "/root/paddlejob/workspace/env_run/zoukexin/tiny-random-glmocr-bf16"
         )
         processor.save_pretrained(cls.tmpdir)
@@ -71,9 +71,9 @@ class GlmOcrProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         tokenizer = self.get_tokenizer()
         image_processor = self.get_image_processor()
 
-        processor = GlmOcrProcessor(tokenizer=tokenizer, image_processor=image_processor)
+        processor = Glm46VProcessor(tokenizer=tokenizer, image_processor=image_processor)
         processor.save_pretrained(self.tmpdir)
-        processor = GlmOcrProcessor.from_pretrained(self.tmpdir)
+        processor = Glm46VProcessor.from_pretrained(self.tmpdir)
 
         self.assertEqual(processor.tokenizer.get_vocab(), tokenizer.get_vocab())
         self.assertEqual(processor.image_processor.to_json_string(), image_processor.to_json_string())
@@ -83,7 +83,7 @@ class GlmOcrProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
 
-        processor = GlmOcrProcessor(tokenizer=tokenizer, image_processor=image_processor)
+        processor = Glm46VProcessor(tokenizer=tokenizer, image_processor=image_processor)
 
         image_input = self.prepare_image_inputs()
 
@@ -97,7 +97,7 @@ class GlmOcrProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         image_processor = self.get_image_processor()
         tokenizer = self.get_tokenizer()
 
-        processor = GlmOcrProcessor(tokenizer=tokenizer, image_processor=image_processor)
+        processor = Glm46VProcessor(tokenizer=tokenizer, image_processor=image_processor)
 
         input_str = "lower newer"
         image_input = self.prepare_image_inputs()

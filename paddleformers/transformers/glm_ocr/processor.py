@@ -1,4 +1,19 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from typing import Optional, Union
+
 import numpy as np
 import paddle
 
@@ -6,7 +21,9 @@ from ..image_processing_utils import BatchFeature
 from ..image_utils import ImageInput
 from ..processing_utils import MultiModalData, ProcessingKwargs, ProcessorMixin, Unpack
 from ..tokenizer_utils_base import PreTokenizedInput, TextInput
-class GlmOcrProcessorKwargs(ProcessingKwargs, total=False):
+
+
+class Glm46VProcessorKwargs(ProcessingKwargs, total=False):
     _defaults = {
         "text_kwargs": {
             "padding": False,
@@ -15,8 +32,8 @@ class GlmOcrProcessorKwargs(ProcessingKwargs, total=False):
     }
 
 
-class GlmOcrProcessor(ProcessorMixin):
-    attributes = ["image_processor", "tokenizer"]  
+class Glm46VProcessor(ProcessorMixin):
+    attributes = ["image_processor", "tokenizer"]
     image_processor_class = "AutoImageProcessor"
     tokenizer_class = ("PreTrainedTokenizer", "PreTrainedTokenizerFast")
 
@@ -27,8 +44,7 @@ class GlmOcrProcessor(ProcessorMixin):
             if getattr(tokenizer, "image_token_id", None)
             else tokenizer.convert_tokens_to_ids(self.image_token)
         )
-        super().__init__(image_processor, tokenizer, chat_template=chat_template)  
-    
+        super().__init__(image_processor, tokenizer, chat_template=chat_template)
 
     def apply_chat_template(
         self,
@@ -37,7 +53,7 @@ class GlmOcrProcessor(ProcessorMixin):
         **kwargs,
     ):
         """
-        PaddleFormers GlmOcrProcessor fallback apply_chat_template.
+        PaddleFormers Glm46VProcessor fallback apply_chat_template.
 
         This method intentionally bypasses ProcessorMixin.apply_chat_template to avoid
         processing_utils kwargs-grouping issues (mm_load_kwargs/template_kwargs).
@@ -49,13 +65,14 @@ class GlmOcrProcessor(ProcessorMixin):
         return_dict = kwargs.get("return_dict", False)
         return_tensors = kwargs.get("return_tensors", None)
 
-    # If user only wants the rendered string, we can return it directly.
-    # If tokenize/return_dict requested, we will build full BatchFeature via __call__.
+        # If user only wants the rendered string, we can return it directly.
+        # If tokenize/return_dict requested, we will build full BatchFeature via __call__.
 
         def _load_image_from_url_or_path(u: str):
             # Best-effort local path support (HF examples often pass local path via "url")
             try:
                 from PIL import Image
+
                 return Image.open(u).convert("RGB")
             except Exception:
                 # If PIL not available or file not found, just raise with context
@@ -165,10 +182,10 @@ class GlmOcrProcessor(ProcessorMixin):
         self,
         images: Optional[ImageInput] = None,
         text: Union[TextInput, PreTokenizedInput, list[TextInput], list[PreTokenizedInput]] = None,
-        **kwargs: Unpack[GlmOcrProcessorKwargs],
+        **kwargs: Unpack[Glm46VProcessorKwargs],
     ) -> BatchFeature:
         output_kwargs = self._merge_kwargs(
-            GlmOcrProcessorKwargs,
+            Glm46VProcessorKwargs,
             tokenizer_init_kwargs=self.tokenizer.init_kwargs,
             **kwargs,
         )
@@ -196,7 +213,7 @@ class GlmOcrProcessor(ProcessorMixin):
         return_mm_token_type_ids = output_kwargs["text_kwargs"].pop("return_mm_token_type_ids", False)
 
         text_inputs = self.tokenizer(text, **output_kwargs["text_kwargs"], return_tensors=None)
-        self._check_special_mm_tokens(text, text_inputs, modalities=["image"])  
+        self._check_special_mm_tokens(text, text_inputs, modalities=["image"])
 
         if return_mm_token_type_ids:
             array_ids = np.array(text_inputs["input_ids"])
@@ -204,12 +221,12 @@ class GlmOcrProcessor(ProcessorMixin):
             mm_token_type_ids[array_ids == self.image_token_id] = 1
             text_inputs["mm_token_type_ids"] = mm_token_type_ids.tolist()
 
-        return BatchFeature(data={**text_inputs, **image_inputs}, tensor_type=return_tensors)  
+        return BatchFeature(data={**text_inputs, **image_inputs}, tensor_type=return_tensors)
 
     def _get_num_multimodal_tokens(self, image_sizes=None, **kwargs):
         vision_data = {}
         if image_sizes is not None:
-            images_kwargs = GlmOcrProcessorKwargs._defaults.get("images_kwargs", {})
+            images_kwargs = Glm46VProcessorKwargs._defaults.get("images_kwargs", {})
             images_kwargs.update(kwargs)
             merge_size = images_kwargs.get("merge_size", None) or self.image_processor.merge_size
 
@@ -235,4 +252,4 @@ class GlmOcrProcessor(ProcessorMixin):
         )
 
 
-__all__ = ["GlmOcrProcessor"]
+__all__ = ["Glm46VProcessor"]
