@@ -3612,8 +3612,77 @@ class Trainer:
         if self.args.pipeline_model_parallel_size > 1:
             return self.training_pipeline_step(model, inputs)
 
+        # Buffer micro-batch data for token-weighted accumulation loss.
+        # Similar to training_pipeline_step: buffer until all acc steps are collected,
+        # then compute total tokens and process all micro-batches with token-weighted loss.
+        if self.args.gradient_accumulation_steps > 1 and not self._enable_delay_scale_loss():
+            if not hasattr(self, "_acc_data_buffer"):
+                self._acc_data_buffer = []
+            self._acc_data_buffer.append(inputs)
+
+            if len(self._acc_data_buffer) < self.args.gradient_accumulation_steps:
+                # Not all micro-batches collected yet, return 0 (no forward/backward)
+                return paddle.to_tensor(0.0)
+
+            # All micro-batches collected, process them with token-weighted loss
+            buffered_inputs = self._acc_data_buffer
+            self._acc_data_buffer = []
+
+            # Prepare all inputs and count valid tokens per micro-batch
+            prepared_list = []
+            token_counts = []
+            for inp in buffered_inputs:
+                prepared = self._prepare_inputs(inp)
+                prepared_list.append(prepared)
+                if "labels" in prepared:
+                    try:
+                        token_counts.append(int((prepared["labels"] != -100).sum().item()))
+                    except (TypeError, AttributeError):
+                        token_counts.append(0)
+                else:
+                    token_counts.append(0)
+
+            total_tokens = sum(token_counts)
+            # logger.info(f"[ACC_LOSS_WEIGHTED] total_tokens={total_tokens}, " f"per_micro_batch={token_counts}")
+
+            # Forward-backward each micro-batch with token-weighted loss
+            model.train()
+            weighted_loss_sum = paddle.to_tensor(0.0)
+            for i, (prepared, tokens_i) in enumerate(zip(prepared_list, token_counts)):
+                with self.autocast_smart_context_manager():
+                    loss = self.compute_loss(model, prepared)
+
+                # raw_loss_val = loss.item() if isinstance(loss, paddle.Tensor) else float(loss)
+
+                if total_tokens > 0 and tokens_i > 0:
+                    weight = tokens_i / total_tokens
+                    loss_for_backward = loss * weight
+                else:
+                    loss_for_backward = loss / self.args.gradient_accumulation_steps
+
+                # logger.info(
+                #     f"[ACC_LOSS_WEIGHTED] micro-batch {i}: raw_loss={raw_loss_val:.6f}, "
+                #     f"tokens={tokens_i}, weight={weight:.6f}, "
+                #     f"weighted_loss={loss_for_backward.item():.6f}"
+                # )
+
+                if self.do_grad_scaling:
+                    self.scaler.scale(loss_for_backward).backward()
+                else:
+                    loss_for_backward.backward()
+
+                weighted_loss_sum += loss_for_backward.detach()
+
+            if not self.args.enable_auto_parallel:
+                return weighted_loss_sum
+            if isinstance(weighted_loss_sum, paddle.Tensor):
+                return weighted_loss_sum.detach() if weighted_loss_sum._is_initialized() else float(0.0)
+            return float(weighted_loss_sum)
+
+        # Original behavior for gradient_accumulation_steps == 1 or delay_scale_loss
         model.train()
         inputs = self._prepare_inputs(inputs)
+
         with self.autocast_smart_context_manager():
             loss = self.compute_loss(model, inputs)
 
