@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import copy
-import tempfile
 import unittest
 from io import BytesIO
 

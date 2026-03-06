@@ -9,9 +9,7 @@
 import tempfile
 import unittest
 
-import numpy as np
 import paddle
-from PIL import Image
 
 from paddleformers.transformers import AutoImageProcessor
 from paddleformers.transformers.glm_ocr.image_processor import Glm46VImageProcessor

@@ -900,7 +900,6 @@ class GlmOcrTextModel(GlmOcrPreTrainedModel):
             position_ids = position_ids.unsqueeze(0).expand([3, position_ids.shape[0], -1])
 
         if len(position_ids.shape) == 3 and position_ids.shape[0] == 4:
-            text_position_ids = position_ids[0]    
             position_ids = position_ids[1:]        
         else:
             text_position_ids = None
@@ -1077,8 +1076,6 @@ class GlmOcrModel(GlmOcrPreTrainedModel):
                 for r in range(3):
                     row = position_ids[r, i] 
                     row = paddle.scatter(row, idx_tensor, llm_positions[r])
-                    position_ids_list = [position_ids[r] if r_idx != i else row.unsqueeze(0) 
-                                        for r_idx in range(position_ids.shape[1])]
                     position_ids[r, i] = paddle.scatter(position_ids[r, i], idx_tensor, llm_positions[r])
 
                 mrope_position_deltas.append(int(paddle.max(llm_positions).item()) + 1 - input_ids.shape[1])
