@@ -155,7 +155,7 @@ class Qwen2_5_VLProcessor(ProcessorMixin):
             for i in range(len(text)):
                 while self.image_token in text[i]:
                     num_image_tokens = image_grid_thw[index].prod() // merge_length
-                    text[i] = text[i].replace(self.image_token, "<|placeholder|>" * num_image_tokens.item(), 1)
+                    text[i] = text[i].replace(self.image_token, "<|placeholder|>" * num_image_tokens, 1)
                     index += 1
                 text[i] = text[i].replace("<|placeholder|>", self.image_token)
 
@@ -165,7 +165,7 @@ class Qwen2_5_VLProcessor(ProcessorMixin):
             for i in range(len(text)):
                 while self.video_token in text[i]:
                     num_video_tokens = video_grid_thw[index].prod() // merge_length
-                    text[i] = text[i].replace(self.video_token, "<|placeholder|>" * num_video_tokens.item(), 1)
+                    text[i] = text[i].replace(self.video_token, "<|placeholder|>" * num_video_tokens, 1)
                     index += 1
                 text[i] = text[i].replace("<|placeholder|>", self.video_token)
 

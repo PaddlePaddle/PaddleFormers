@@ -14,6 +14,7 @@
 
 import os
 from dataclasses import dataclass, field
+from itertools import chain
 from typing import Dict, List
 
 import numpy as np
@@ -117,6 +118,11 @@ class SFTDataSet(IterableDataset):
             self.max_estimate_samples = len(self.mix_datasets)
 
         self.last_printed_percent = 0
+        self.enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
+
+        self.sep_token_len = 0
+        if self.use_template and self.template_backend != "jinja":
+            self.sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
 
     def __len__(self):
         return len(self.mix_datasets)
@@ -490,33 +496,30 @@ class SFTDataSet(IterableDataset):
 
         num_reserved_tokens_for_each_dialog = 1
         num_reserved_tokens_for_each_turn = 8
-
         cur_len = num_reserved_tokens_for_each_dialog
 
-        turn_index = len(encoded_pairs) - 1
+        tokens_chunks = []
+        labels_chunks = []
+        accumulated_tokens_len = 0
 
-        tokens = []
-        labels = []
-        while turn_index >= 0:
+        for turn_index in range(len(encoded_pairs) - 1, -1, -1):
             tokens_src, tokens_target = encoded_pairs[turn_index]
             if len(tokens_target) == 0:
                 logger.warning(f"[SKIP] The length of encoded assistant tokens is 0: {example}")
                 return None
-            if len(tokens_src) + len(tokens_target) > (
-                self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn
-            ):
-                if len(images) != 0 or len(videos) != 0 or len(audios) != 0:
+            remaining_len = self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn
+            if len(tokens_src) + len(tokens_target) > remaining_len:
+                if images or videos or audios:
                     # If there is multimodal data, do not truncate it; just discard it directly.
                     sub_src = example["messages"][0]["content"].strip()[:50]
                     logger.warning(f"[SKIP] This data is too long: {sub_src}...")
                     return None
                 # If the source (src) exceeds length limit, discard this round of conversation data
                 # If the target (tgt) exceeds length limit, truncate it
-                if len(tokens_src) > self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn:
+                if len(tokens_src) > remaining_len:
                     break
                 else:
-                    reverse_len = self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn - len(tokens_src)
-                    tokens_target = tokens_target[:reverse_len]
+                    tokens_target = tokens_target[: remaining_len - len(tokens_src)]
 
             labels_src = [-100] * len(tokens_src)
 
@@ -526,22 +529,26 @@ class SFTDataSet(IterableDataset):
             if not self.use_template or self.template_backend == "jinja":
                 labels_target = tokens_target
             else:
-                sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
                 if turn_index != (len(encoded_pairs) - 1):
-                    labels_target = tokens_target[: len(tokens_target) - sep_token_len] + [-100] * sep_token_len
+                    labels_target = (
+                        tokens_target[: len(tokens_target) - self.sep_token_len] + [-100] * self.sep_token_len
+                    )
                 else:
                     labels_target = tokens_target
 
             if not example["label"][turn_index]:
                 labels_target = [-100] * len(labels_target)
-            tokens = tokens_src + tokens_target + tokens
-            labels = labels_src + labels_target + labels
 
-            assert len(tokens) == len(labels), f"{len(tokens)}-{len(labels)}"
+            tokens_chunks.append(tokens_src + tokens_target)
+            labels_chunks.append(labels_src + labels_target)
 
-            cur_len = len(tokens)
+            accumulated_tokens_len += len(tokens_src) + len(tokens_target)
+            cur_len = accumulated_tokens_len
 
-            turn_index -= 1
+        tokens_chunks.reverse()
+        labels_chunks.reverse()
+        tokens = list(chain.from_iterable(tokens_chunks))
+        labels = list(chain.from_iterable(labels_chunks))
 
         # Not even one turn can be added, so need to do warning and skip this example
         if len(tokens) <= num_reserved_tokens_for_each_dialog + num_reserved_tokens_for_each_turn:
@@ -549,52 +556,45 @@ class SFTDataSet(IterableDataset):
                 # For print log
                 sub_src = example["messages"][0]["content"].strip()[:50]
                 sub_tgt = example["messages"][-1]["content"].strip()[-50:]
-                if len(tokens) > 0:
-                    logger.warning(f"This data is too short: '{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
-                else:
-                    logger.warning(f"This data is too long: '{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
+                msg = "too short" if len(tokens) > 0 else "too long"
+                logger.warning(f"This data is {msg}: '{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
             except Exception:
                 logger.warning("[SKIP] wrong example")
             return None
 
         if self.use_template:
             # add dynamic eos
-            if self.template_backend == "custom":
-                suffix_ids = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
-            else:
-                suffix_ids = [self.tokenizer.eos_token_id]
+            suffix_ids = (
+                self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
+                if self.template_backend == "custom"
+                else [self.tokenizer.eos_token_id]
+            )
             self._add_dynamic_eos(tokens, labels, suffix_ids)
+
             # Maybe left truncated, so need to add begin_token
-            if self.auto_add_bos and self.begin_token_id:
-                if tokens[0] != self.begin_token_id:
-                    tokens = [self.begin_token_id] + tokens
-                    labels = [-100] + labels
-                    if len(tokens) > self.max_seq_len:
-                        raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+            if self.auto_add_bos and self.begin_token_id and tokens[0] != self.begin_token_id:
+                tokens = [self.begin_token_id] + tokens
+                labels = [-100] + labels
+
             # Add EOS token at the end
             if self.efficient_eos:
-                tokens = tokens + suffix_ids
-                labels = labels + suffix_ids
-                if len(tokens) > self.max_seq_len:
-                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
-            # label shift
-            labels = labels[1:] + [-100]
-        else:
-            # label shift
-            labels = labels[1:] + [-100]
-            if len(tokens) > self.max_seq_len:
-                raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+                tokens.extend(suffix_ids)
+                labels.extend(suffix_ids)
+
+        # label shift
+        labels = labels[1:] + [-100]
+        if len(tokens) > self.max_seq_len:
+            raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
         pos_ids = list(range(len(tokens)))  # only pure text, mm_position_ids will be reconstructed in collate.py
 
         if all(x == -100 for x in labels):
-            logger.warning(f"[SKIP] all labels set to 0: {example}")
+            logger.warning(f"[SKIP] all labels set to -100: {example}")
             return None
 
         assert len(tokens) == len(labels), f"{len(tokens)}-{len(labels)}"
 
-        enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
-        if enable_dataset_debug:
+        if self.enable_dataset_debug:
             logger.info("\n" + "=" * 50)
             logger.info("[dataset debug] Debug mode enabled")
             if hasattr(self, "tokenizer"):
