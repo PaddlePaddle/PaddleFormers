@@ -30,12 +30,14 @@ import paddle.nn.functional as F
 from paddle.distributed.fleet.utils import recompute
 from paddlefleet import parallel_state, tensor_parallel
 from paddlefleet.fusions.fused_bias_dropout import get_bias_dropout_add
+from paddlefleet.models.backends import LocalSpecProvider
 from paddlefleet.models.common.vision_layer.vision_layer import VisionLayer
 from paddlefleet.models.multimodal.llava_model import LLaVAModel as MCoreLLaVAModel
 from paddlefleet.packed_seq_params import PackedSeqParams
 from paddlefleet.process_groups_config import ProcessGroupCollection
 from paddlefleet.spec_utils import LayerSpec
-from paddlefleet.tensor_parallel.layers import ColumnParallelLinear, RowParallelLinear
+
+# from paddlefleet.tensor_parallel.layers import ColumnParallelLinear, RowParallelLinear
 from paddlefleet.transformer.attention import SelfAttention, SelfAttentionSublayersSpec
 from paddlefleet.transformer.dot_product_attention import DotProductAttention
 from paddlefleet.transformer.enums import AttnMaskType, ModelType
@@ -78,7 +80,9 @@ def get_layer_spec(is_vit, normalization) -> LayerSpec:
     else:
         raise RuntimeError(f"Unknown normalization: {normalization}")
 
-    mlp = get_mlp_module_spec(use_te=False)
+    # Use LocalSpecProvider to get correct Linear class based on tp_world_size
+    backend = LocalSpecProvider()
+    mlp = get_mlp_module_spec(use_te=False, backend=backend)
 
     return LayerSpec(
         layer=TransformerLayer,
@@ -88,9 +92,9 @@ def get_layer_spec(is_vit, normalization) -> LayerSpec:
                 layer=SelfAttention,
                 extra_kwargs={"attn_mask_type": attn_mask_type},
                 sublayers_spec=SelfAttentionSublayersSpec(
-                    qkv_proj=ColumnParallelLinear,
+                    qkv_proj=backend.column_parallel_linear(),
                     core_attention=DotProductAttention,
-                    o_proj=RowParallelLinear,
+                    o_proj=backend.row_parallel_linear(),
                     q_norm=IdentityOp,
                     k_norm=IdentityOp,
                 ),
@@ -103,12 +107,14 @@ def get_layer_spec(is_vit, normalization) -> LayerSpec:
     )
 
 
-def get_mlp_module_spec(use_te: bool = True) -> LayerSpec:
+def get_mlp_module_spec(use_te: bool = True, backend: LocalSpecProvider = None) -> LayerSpec:
+    if backend is None:
+        backend = LocalSpecProvider()
     return LayerSpec(
         layer=MLP,
         sublayers_spec=MLPSublayersSpec(
-            up_gate_proj=ColumnParallelLinear,
-            down_proj=RowParallelLinear,
+            up_gate_proj=backend.column_parallel_linear(),
+            down_proj=backend.row_parallel_linear(),
         ),
     )
 
@@ -301,8 +307,11 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
                 visual_embeds = visual_embeds[:, start_col:end_col]
 
         hidden_states = hidden_states.clone()
-        local_this = hidden_states[visual_pos_masks, :] + visual_embeds
-        hidden_states[visual_pos_masks, :] = local_this  # 这个操作可能会导致paddle转静态图或推理时出问题，建议使用 scatter
+        # local_this = hidden_states[visual_pos_masks, :] + visual_embeds
+        # hidden_states[visual_pos_masks, :] = local_this  # 这个操作可能会导致paddle转静态图或推理时出问题，建议使用 scatter
+
+        update_indices = paddle.nonzero(visual_pos_masks)
+        hidden_states = paddle.scatter_nd_add(hidden_states, update_indices, visual_embeds)
 
         # [Supplement 3] Restore original shape [B*S, D] -> [B, S, D] if necessary
         if len(original_shape) > 2:
@@ -603,7 +612,7 @@ class Qwen3VLVisionModel(VisionLayer):
     def rot_pos_emb(self, grid_thw):
         pos_ids = []
         for t, h, w in grid_thw:
-            hpos_ids = paddle.arange(h).unsqueeze(1).expand([-1, w])
+            hpos_ids = paddle.arange(h).unsqueeze(1).expand([h, w])
             hpos_ids = hpos_ids.reshape(
                 [
                     h // self.spatial_merge_size,
@@ -615,7 +624,7 @@ class Qwen3VLVisionModel(VisionLayer):
             hpos_ids = hpos_ids.transpose(perm=[0, 2, 1, 3])
             hpos_ids = hpos_ids.flatten()
 
-            wpos_ids = paddle.arange(w).unsqueeze(0).expand([h, -1])
+            wpos_ids = paddle.arange(w).unsqueeze(0).expand([h, w])
             wpos_ids = wpos_ids.reshape(
                 [
                     h // self.spatial_merge_size,
@@ -627,6 +636,7 @@ class Qwen3VLVisionModel(VisionLayer):
             wpos_ids = wpos_ids.transpose([0, 2, 1, 3])
             wpos_ids = wpos_ids.flatten()
             pos_ids.append(paddle.stack(x=[hpos_ids, wpos_ids], axis=-1).tile(repeat_times=[t, 1]))
+
         pos_ids = paddle.cat(x=pos_ids, axis=0)
         max_grid_size = grid_thw[:, 1:].max()
         rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
@@ -641,8 +651,8 @@ class Qwen3VLVisionModel(VisionLayer):
         weight_list = [[] for _ in range(4)]
 
         for t, h, w in zip(grid_ts, grid_hs, grid_ws):
-            h_idxs = paddle.linspace(0, self.num_grid_per_side - 1, h)
-            w_idxs = paddle.linspace(0, self.num_grid_per_side - 1, w)
+            h_idxs = paddle.linspace(0, self.num_grid_per_side - 1, int(h))
+            w_idxs = paddle.linspace(0, self.num_grid_per_side - 1, int(w))
 
             h_idxs_floor = h_idxs.int()
             w_idxs_floor = w_idxs.int()
@@ -685,7 +695,7 @@ class Qwen3VLVisionModel(VisionLayer):
         for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
             pos_embed = pos_embed.repeat([t, 1])
             pos_embed = (
-                pos_embed.view([t, h // merge_size, merge_size, w // merge_size, merge_size, -1])
+                pos_embed.reshape([t, h // merge_size, merge_size, w // merge_size, merge_size, -1])
                 .permute(0, 1, 3, 2, 4, 5)
                 .flatten(0, 4)
             )
@@ -697,8 +707,10 @@ class Qwen3VLVisionModel(VisionLayer):
         self,
         grid_thw: paddle.Tensor,
     ):
-        seqlens = paddle.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).contiguous()
+        # seqlens = paddle.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).contiguous()
+        seqlens = grid_thw[:, 1] * grid_thw[:, 2]
         cu_seqlens = seqlens.cumsum(dim=0, dtype=paddle.int32)
+        # cu_seqlens = (grid_thw[:, 1] * grid_thw[:, 2]).cumsum(dim=0, dtype=paddle.int32)
         cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0).contiguous()
         cu_seqlens = cu_seqlens.squeeze().contiguous()
 
@@ -721,6 +733,7 @@ class Qwen3VLVisionModel(VisionLayer):
     ) -> paddle.Tensor:
         # Pathed embedding
         hidden_states = self.patch_embed(hidden_states).view(-1, self.embed_dim)
+        rotary_pos_emb = self.rot_pos_emb(grid_thw)
         pos_embeds = self.fast_pos_embed_interpolate(grid_thw)
         hidden_states = hidden_states + pos_embeds
 
@@ -728,13 +741,12 @@ class Qwen3VLVisionModel(VisionLayer):
         hidden_states = hidden_states.reshape([seq_len, -1])
         hidden_states = hidden_states.unsqueeze(0)
 
-        rotary_pos_emb = self.rot_pos_emb(grid_thw)
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
         rotary_pos_emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
         rotary_pos_cos = rotary_pos_emb.cos()
         rotary_pos_sin = rotary_pos_emb.sin()
         rotary_pos_emb = rotary_pos_emb[:, None, None, :]
-        rotary_pos_emb = rotary_pos_emb.transpose([1, 0])
+        rotary_pos_emb = rotary_pos_emb.transpose([1, 0, 2, 3])
 
         packed_seq_params = self.get_packed_seq_params(grid_thw)
 
@@ -752,6 +764,7 @@ class Qwen3VLVisionModel(VisionLayer):
 
 class Qwen3VLVisionModelFleet(Qwen3VLPretrainedModel):
     def __new__(cls, config):
+        print(f"=====debug====={config.tensor_model_parallel_size=}")
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)

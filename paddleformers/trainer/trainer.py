@@ -80,6 +80,7 @@ from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_sta
 from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     obtain_optimizer_parameters_list,
 )
+from paddle.distributed.fsdp.fully_shard import fully_shard
 
 _obtain_optimizer_parameters_list = obtain_optimizer_parameters_list
 
@@ -1412,10 +1413,12 @@ class Trainer:
         # Do nothing when not in auto parallel mode.
         if not self.args.enable_auto_parallel:
             return
-        self.optimizer = parallelize.parallelize_optimizer(
-            self.optimizer,
-            config=self.auto_dist_config,
-        )
+        # self.optimizer = parallelize.parallelize_optimizer(
+        #     self.optimizer,
+        #     config=self.auto_dist_config,
+        # )
+        model = fully_shard(model, mesh=self.global_mesh)
+
         if hasattr(self.optimizer, "_enable_tensor_fusion") and self.args.tensor_fusion:
             self.optimizer._enable_tensor_fusion()
         if hasattr(self.optimizer, "_enable_sharding_overlap") and self.args.overlap:
@@ -1446,6 +1449,8 @@ class Trainer:
                 A list of keys in the output of your model (if it is a dictionary) that should be ignored when
                 gathering predictions for evaluation during the training.
         """
+        if self.args.enable_auto_parallel:
+            dist.enable_auto_dp()
         args = self.args
         self.is_in_train = True
 
@@ -1799,7 +1804,7 @@ class Trainer:
     def _get_inputs_list(self, inputs):
         inputs_list = [inputs]
         if self.args.enable_auto_parallel:
-            inputs_list = self._split_batches_for_accumulation(inputs)
+            # inputs_list = self._split_batches_for_accumulation(inputs)
             for inputs in inputs_list:
                 if self.args.sep_parallel_size > 1 and self.args.split_inputs_sequence_dim:
                     inputs = auto_split_inputs_sequence_dim(inputs)
@@ -3484,6 +3489,17 @@ class Trainer:
         if self.args.past_index >= 0 and self._past is not None:
             inputs["mems"] = self._past
 
+        # For auto parallel VL models, convert VL-related DistTensors to local tensors.
+        # Vision Model uses Python for loops over grid_thw (data-dependent control flow),
+        # which cannot be handled by auto parallel. Each rank processes its own local data.
+        # if getattr(self.args, "enable_auto_parallel", False):
+        #     vl_keys = ["pixel_values", "image_grid_thw", "pixel_values_videos", "video_grid_thw"]
+        #     for key in vl_keys:
+        #         if key in inputs and inputs[key] is not None:
+        #             tensor = inputs[key]
+        #             if hasattr(tensor, "_local_value"):
+        #                 inputs[key] = tensor._local_value()
+
         return inputs
 
     def autocast_smart_context_manager(self):
@@ -3535,7 +3551,7 @@ class Trainer:
                 labels = inputs["generator_labels"]
         else:
             labels = None
-
+        # print(f"===debug==={inputs=}")
         outputs = model(**inputs)
 
         if self.criterion is not None:
