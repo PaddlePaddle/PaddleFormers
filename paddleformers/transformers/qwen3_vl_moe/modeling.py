@@ -55,6 +55,25 @@ from .configuration import (
 )
 
 
+import numpy as np
+import hashlib
+def compare_and_save(data, name: str, to_save: bool = False, print_tensor: bool = False):
+    if isinstance(data, paddle.Tensor):
+        data_float = data.astype("float32")
+    else:
+        data_float = data.float()
+    data_np = data_float.detach().cpu().numpy()
+    array_bytes = data_np.tobytes()
+    data_md5 = hashlib.md5(array_bytes).hexdigest()
+    print(f"{name} md5: {data_md5}")
+    if to_save:
+        file = "/root/paddlejob/workspace/env_run/wuhuiyue/helper/qwen3_omni_test/pd_" + name + ".npy"
+        np.save(file, data_np)
+    if print_tensor:
+        print(
+            name, type(data), data.shape, data
+        )
+
 class Qwen3VLMoeTextExperts(nn.Layer):
     def __init__(self, config):
         super().__init__()
@@ -74,7 +93,10 @@ class Qwen3VLMoeTextExperts(nn.Layer):
             is_bias=False,
         )
 
-    def forward(self, hidden_states, top_k_index, top_k_weights):
+    def forward(self, hidden_states, top_k_index, top_k_weights, layer_idx):
+        if layer_idx < 1:
+            compare_and_save(self.gate_up_proj, "expert_gate_up_proj", False, True)
+            compare_and_save(self.down_proj, "expert_down_proj", False, True)
         final_hidden_states = paddle.zeros_like(hidden_states)
         with paddle.no_grad():
             expert_mask = paddle.nn.functional.one_hot(top_k_index, num_classes=self.num_experts)
@@ -1076,11 +1098,11 @@ class Qwen3VLMoeTextSparseMoeBlock(nn.Module):
         # since all the models use norm_topk_prob, we don't need to have a extra check for it
         # self.norm_topk_prob = config.norm_topk_prob
 
-    def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
+    def forward(self, hidden_states: paddle.Tensor, layer_idx) -> paddle.Tensor:
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states_reshaped = hidden_states.view(-1, hidden_dim)
         _, routing_weights, selected_experts = self.gate(hidden_states_reshaped)
-        final_hidden_states = self.experts(hidden_states_reshaped, selected_experts, routing_weights)
+        final_hidden_states = self.experts(hidden_states_reshaped, selected_experts, routing_weights, layer_idx)
         return final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
 
 
@@ -1353,7 +1375,7 @@ class Qwen3VLMoeTextDecoderLayer(nn.Layer):
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
+        hidden_states = self.mlp(hidden_states, self.layer_idx)
         hidden_states = residual + hidden_states
 
         outputs = (hidden_states,)
