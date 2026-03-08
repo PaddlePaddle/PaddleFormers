@@ -18,14 +18,18 @@ import json
 import pyarrow.parquet as pq
 
 
-def load_json(file_path):
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        raise FileNotFoundError(f"file {file_path} not exists")
-    except json.JSONDecodeError:
-        pass  # fallback to JSONL
+def load_json(file_path, lazy=True):
+    print(f"json file path: {file_path}")
+    # try:
+    #     with open(file_path, "r", encoding="utf-8") as f:
+    #         return json.load(f)
+    # except FileNotFoundError:
+    #     raise FileNotFoundError(f"file {file_path} not exists")
+    # except json.JSONDecodeError:
+    #     pass  # fallback to JSONL
+
+    if lazy:
+        return _load_json_lazy(file_path)
 
     res = []
     with open(file_path, "r", encoding="utf-8") as file:
@@ -36,7 +40,22 @@ def load_json(file_path):
                 res.append(json.loads(line))
             except json.JSONDecodeError as e:
                 raise json.JSONDecodeError(f"JSONL parse error at line {i}: {e.msg}", e.doc, e.pos)
+    print(f"JSONL parse success, total lines: {len(res)}")
     return res
+
+
+def _load_json_lazy(file_path):
+    """Lazy load JSONL file as generator to reduce memory usage."""
+    with open(file_path, "r", encoding="utf-8") as file:
+        for i, line in enumerate(file, 1):
+            if not line.strip():
+                continue
+            try:
+                if i % 1000 == 0:
+                    print(f"Processing line {i}...")
+                yield json.loads(s=line)
+            except json.JSONDecodeError as e:
+                raise json.JSONDecodeError(f"JSONL parse error at line {i}: {e.msg}", e.doc, e.pos)
 
 
 def load_txt(file_path):

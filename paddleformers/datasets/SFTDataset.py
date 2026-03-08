@@ -14,6 +14,7 @@
 
 import multiprocessing as mp
 import os
+import time
 from dataclasses import dataclass, field
 from itertools import chain
 from typing import Dict, List, Optional
@@ -123,6 +124,7 @@ class SFTDataSet(IterableDataset):
             self.max_estimate_samples = len(self.mix_datasets)
 
         self.last_printed_percent = 0
+        self._estimate_start_time = None
         self.enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
 
         self.sep_token_len = 0
@@ -135,6 +137,8 @@ class SFTDataSet(IterableDataset):
         self.workers: List[mp.Process] = []
         self._workers_started = False
         self._current_processor_func = None
+
+        self.iter_all_examples = False
 
     def __len__(self):
         return len(self.mix_datasets)
@@ -214,6 +218,7 @@ class SFTDataSet(IterableDataset):
                 # Pre-fill the queue
                 for _ in range(prefetch_size):
                     if send_idx >= total_samples:
+                        self.iter_all_examples = True
                         break
                     example = next(dataset_iterator)
                     self._in_queue.put((send_idx, example, actual_example_num))
@@ -231,6 +236,8 @@ class SFTDataSet(IterableDataset):
                         self._in_queue.put((send_idx, example, actual_example_num))
                         send_idx += 1
                         pending += 1
+                        if send_idx >= total_samples:
+                            self.iter_all_examples = True
 
                     # Store result in buffer
                     result_buffer[idx] = result
@@ -243,6 +250,7 @@ class SFTDataSet(IterableDataset):
                             yield res
                         else:
                             if self.estimate:
+                                self.used_estimate_samples += actual_example_num
                                 self.unused_samples += actual_example_num
             finally:
                 self._stop_workers()
@@ -260,6 +268,8 @@ class SFTDataSet(IterableDataset):
                 else:
                     if self.estimate:
                         self.unused_samples += actual_example_num
+                        self.used_estimate_samples += actual_example_num
+            self.iter_all_examples = True
 
     def _process_sequence(self, example, actual_example_num):
         """Process a single example into a sequence."""
@@ -437,7 +447,7 @@ class SFTDataSet(IterableDataset):
                         yield batch_sequence
                 else:
                     # Pseudo multiple rounds + group greedy intokens.
-                    buffer_size = 500
+                    buffer_size = 1000
                     sequences_buffer = []
                     data_iter = self._get_processed_data_iterator(
                         dataset_iterator, actual_example_num, self._process_sequence
@@ -765,9 +775,12 @@ class SFTDataSet(IterableDataset):
 
     def print_max_steps_estimate_progress(self):
         current_percent = (self.used_estimate_samples / self.max_estimate_samples) * 100
+        if self._estimate_start_time is None:
+            self._estimate_start_time = time.time()
         # Print progress at every 5% interval.
         if int(current_percent) // 5 > self.last_printed_percent // 5:
-            print(f"[Estimate Max Steps Progress]: {current_percent:.0f}%")
+            elapsed = time.time() - self._estimate_start_time
+            print(f"[Estimate Max Steps Progress]: {current_percent:.0f}% (elapsed: {elapsed:.1f}s)")
             self.last_printed_percent = current_percent
 
     @staticmethod

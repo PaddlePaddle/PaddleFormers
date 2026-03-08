@@ -15,6 +15,7 @@
 """Useful data utility."""
 
 import json
+import time
 from itertools import islice
 from typing import List, Tuple
 
@@ -197,6 +198,7 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
     """
     train_dataset.estimate = True
     logger.info("Start to estimate max training steps...")
+    estimate_start_time = time.time()
 
     max_samples = train_dataset.max_estimate_samples
 
@@ -216,6 +218,9 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
             train_batches += 1
             for sequence in sequences:
                 train_tokens += len(sequence.token_ids)
+
+        estimate_elapsed = time.time() - estimate_start_time
+        print(f"[Estimate Max Steps Progress]: 100% (total elapsed: {estimate_elapsed:.1f}s)")
 
         train_tokens *= training_args.num_train_epochs
         train_batches *= training_args.num_train_epochs
