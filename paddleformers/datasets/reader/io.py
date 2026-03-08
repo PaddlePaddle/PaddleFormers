@@ -13,49 +13,44 @@
 # limitations under the License.
 
 import csv
-import json
+import time
 
+import orjson
 import pyarrow.parquet as pq
 
 
-def load_json(file_path, lazy=True):
+def load_json(file_path):
     print(f"json file path: {file_path}")
-    # try:
-    #     with open(file_path, "r", encoding="utf-8") as f:
-    #         return json.load(f)
-    # except FileNotFoundError:
-    #     raise FileNotFoundError(f"file {file_path} not exists")
-    # except json.JSONDecodeError:
-    #     pass  # fallback to JSONL
+    try:
+        with open(file_path, "rb") as f:
+            return orjson.loads(f.read())
+    except FileNotFoundError:
+        raise FileNotFoundError(f"file {file_path} not exists")
+    except orjson.JSONDecodeError:
+        pass  # fallback to JSONL
 
-    if lazy:
-        return _load_json_lazy(file_path)
-
-    res = []
-    with open(file_path, "r", encoding="utf-8") as file:
-        for i, line in enumerate(file, 1):
-            if not line.strip():
-                continue
-            try:
-                res.append(json.loads(line))
-            except json.JSONDecodeError as e:
-                raise json.JSONDecodeError(f"JSONL parse error at line {i}: {e.msg}", e.doc, e.pos)
-    print(f"JSONL parse success, total lines: {len(res)}")
-    return res
+    return _load_json_lazy(file_path)
 
 
 def _load_json_lazy(file_path):
     """Lazy load JSONL file as generator to reduce memory usage."""
-    with open(file_path, "r", encoding="utf-8") as file:
-        for i, line in enumerate(file, 1):
-            if not line.strip():
-                continue
-            try:
-                if i % 1000 == 0:
-                    print(f"Processing line {i}...")
-                yield json.loads(s=line)
-            except json.JSONDecodeError as e:
-                raise json.JSONDecodeError(f"JSONL parse error at line {i}: {e.msg}", e.doc, e.pos)
+    t_start = time.perf_counter()
+    count = 0
+    try:
+        with open(file_path, "rb") as file:
+            for i, line in enumerate(file, 1):
+                if not line.strip():
+                    continue
+                try:
+                    yield orjson.loads(line)
+                    count += 1
+                except orjson.JSONDecodeError as e:
+                    raise ValueError(f"JSONL parse error at line {i}: {e}")
+    finally:
+        elapsed = time.perf_counter() - t_start
+        print(
+            f"[load json] done. total: {count} lines, elapsed: {elapsed:.2f}s, speed: {count/elapsed if elapsed > 0 else float('inf'):.0f} lines/s"
+        )
 
 
 def load_txt(file_path):

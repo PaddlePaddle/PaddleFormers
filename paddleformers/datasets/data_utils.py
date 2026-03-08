@@ -212,12 +212,16 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
     if train_dataset.max_estimate_samples > 0:
         train_batches = 0
         train_tokens = 0
-        for sequences in train_dataset:
-            if not train_dataset.estimate:
-                break
-            train_batches += 1
-            for sequence in sequences:
-                train_tokens += len(sequence.token_ids)
+        _iter = iter(train_dataset)
+        try:
+            for sequences in _iter:
+                if not train_dataset.estimate:
+                    break
+                train_batches += 1
+                for sequence in sequences:
+                    train_tokens += len(sequence.token_ids)
+        finally:
+            _iter.close()
 
         estimate_elapsed = time.time() - estimate_start_time
         print(f"[Estimate Max Steps Progress]: 100% (total elapsed: {estimate_elapsed:.1f}s)")
