@@ -578,7 +578,7 @@ class GlmOcrModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase
     def test_resize_tokens_embeddings(self):
         pass
 
-    @unittest.skip("GlmOcr currently does not support flexible checkpoint save and load")
+    @unittest.skip("GlmOcr currently does not support flex checkpoint save and load")
     def test_save_load_flex_checkpoint(self):
         pass
 
@@ -597,6 +597,10 @@ class GlmOcrIntegrationTest(unittest.TestCase):
 
     @gpu_device_initializer(log_prefix="GlmOcrIntegrationTest")
     def setUp(self):
+        pass
+
+    @classmethod
+    def setUpClass(self):
         # NOTE: replace with actual tiny checkpoint path once available
         self.model = GlmOcrForConditionalGeneration.from_pretrained(
             "PaddleFormers/tiny-random-glmocr",
