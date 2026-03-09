@@ -41,7 +41,7 @@ from .modeling_base import KimiK25CausalLMOutputWithPast, KimiK25PretrainedModel
 @dataclass
 class KimiK25TextProvider(GPTModelProvider):
     """
-    Base config for Qwen3 Models.
+    Base config for Kimi-K25 Models.
     """
 
     transform_rules = {
