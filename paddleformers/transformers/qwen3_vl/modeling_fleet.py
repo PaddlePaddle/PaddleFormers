@@ -237,7 +237,6 @@ class Qwen3VLProvider(TransformerConfig):
             or parallel_state.get_pipeline_model_parallel_rank() >= self.encoder_pipeline_model_parallel_size,
             drop_vision_class_token=self.drop_vision_class_token,
             vp_stage=vp_stage,
-            criterion=loss_fn,
         )
 
         return model
