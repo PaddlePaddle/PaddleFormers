@@ -428,6 +428,8 @@ def run_sft(
     )
     # make offline dataset
     if data_args.make_offline_data:
+        import time
+
         if tokenizer.vocab_size < 2**16 - 1:
             save_dtype = np.uint16
         else:
@@ -482,6 +484,8 @@ def run_sft(
                 output_file_dict[field.name] = output_path
             train_builder = SFTMMapIndexedDatasetBuilder(output_file_dict, save_dtype, index_file=index_file)
             train_sample_generator = DataGenerator(train_dataset)
+            count = 0
+            start_time = time.time()
 
             with ThreadPoolExecutor(max_workers=2) as executor:
                 future = executor.submit(fetch_and_serialize, train_sample_generator, save_dtype)
@@ -491,6 +495,11 @@ def run_sft(
                     for serialized in serialized_sequences:
                         train_builder.add_item_bytes(serialized)
                     train_builder.end_document()
+                    count += 1
+                    if count % 1000 == 0:
+                        logger.info(
+                            f"Processed {count} samples in {time.time()-start_time:.2f} seconds, average speed: {count/(time.time()-start_time):.2f} samples/second"
+                        )
             train_builder.finalize(train_output_idx_files)
             logger.info(f"{runtime_timer.log()}")
 
@@ -518,17 +527,10 @@ def run_sft(
                 output_path = os.path.join(eval_dir, f"{field.name}.bin")
                 output_file_dict[field.name] = output_path
             eval_builder = SFTMMapIndexedDatasetBuilder(output_file_dict, save_dtype, index_file=index_file)
-            eval_sample_generator = DataGenerator(eval_dataset)
-
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                # 预先提交第一个任务（数据读取+序列化都在 worker 里）
-                future = executor.submit(fetch_and_serialize, eval_sample_generator, save_dtype)
-                while not eval_dataset.iter_all_examples:
-                    serialized_sequences = future.result()
-                    future = executor.submit(fetch_and_serialize, eval_sample_generator, save_dtype)
-                    for serialized in serialized_sequences:
-                        eval_builder.add_item_bytes(serialized)
-                    eval_builder.end_document()
+            for sequences in eval_dataset:
+                for sequence in sequences:
+                    eval_builder.add_item(sequence)
+                eval_builder.end_document()
             eval_builder.finalize(eval_output_idx_files)
             logger.info(f"{runtime_timer.log()}")
         logger.info("Make SFT Offline DataSet Done.")
