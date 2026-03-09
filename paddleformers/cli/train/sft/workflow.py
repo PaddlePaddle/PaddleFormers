@@ -405,6 +405,7 @@ def run_sft(
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
+        "dataset_num_proc": finetuning_args.dataset_num_proc,
     }
 
     dataset_config.update(
@@ -661,7 +662,7 @@ def run_sft(
 
     callbacks = []
     if getattr(model_config, "topk_method", None) == "noaux_tc":
-        callbacks += [MoECorrectionBiasAdjustCallback(lr=0)]
+        callbacks += [MoECorrectionBiasAdjustCallback(lr=training_args.moe_correction_bias_lr)]
 
     if training_args.use_expert_parallel:
         callbacks += [MoeExpertsGradScaleCallback(training_args)]

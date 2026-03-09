@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import multiprocessing as mp
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List
+from itertools import chain
+from typing import Dict, List, Optional
 
 import numpy as np
 from paddle.io import IterableDataset
@@ -60,6 +62,10 @@ class SFTDataSet(IterableDataset):
 
         # parameter init
         self.tokenizer = dataset_config.get("tokenizer", None)
+        self.dataset_num_proc = dataset_config.get("dataset_num_proc", 1)
+        if not self.dataset_num_proc:
+            self.dataset_num_proc = 1
+        logger.info(f"self.dataset_num_proc: {self.dataset_num_proc}")
         self.processor = dataset_config.get("processor", None)
         self.max_seq_len = dataset_config.get("max_seq_len", 8192)
         self.template = dataset_config.get("template_instance", None)
@@ -117,9 +123,182 @@ class SFTDataSet(IterableDataset):
             self.max_estimate_samples = len(self.mix_datasets)
 
         self.last_printed_percent = 0
+        self.enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
+
+        self.sep_token_len = 0
+        if self.use_template and self.template_backend != "jinja":
+            self.sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
+
+        # multiprocessing initialization
+        self._in_queue: Optional[mp.Queue] = None
+        self._out_queue: Optional[mp.Queue] = None
+        self.workers: List[mp.Process] = []
+        self._workers_started = False
+        self._current_processor_func = None
 
     def __len__(self):
         return len(self.mix_datasets)
+
+    def _start_workers(self, processor_func):
+        """Start worker processes for parallel data processing.
+
+        Args:
+            processor_func: The processing function to use in workers.
+        """
+        if self._workers_started:
+            return
+        self._current_processor_func = processor_func
+        self._in_queue = mp.Queue()
+        self._out_queue = mp.Queue()
+        for _ in range(self.dataset_num_proc):
+            worker = mp.Process(target=self._worker_loop, daemon=True)
+            worker.start()
+            self.workers.append(worker)
+        self._workers_started = True
+
+    def _stop_workers(self):
+        """Stop all worker processes."""
+        if not self._workers_started:
+            return
+        for worker in self.workers:
+            if worker.is_alive():
+                worker.terminate()
+                worker.join(timeout=1)
+        self.workers = []
+        if self._in_queue:
+            self._in_queue.close()
+        if self._out_queue:
+            self._out_queue.close()
+        self._in_queue = None
+        self._out_queue = None
+        self._workers_started = False
+        self._current_processor_func = None
+
+    def _worker_loop(self):
+        """Worker process main loop."""
+        while True:
+            try:
+                i, example, actual_example_num = self._in_queue.get()
+                result = None
+                try:
+                    result = self._current_processor_func(example, actual_example_num)
+                except Exception as e:
+                    # result remains None, will be counted as unused_samples in _get_processed_data_iterator
+                    print(f"Warning: Error processing example in worker, skipping. Error: {str(e)}")
+                self._out_queue.put((i, result))
+            except Exception:
+                break
+
+    def _get_processed_data_iterator(self, dataset_iterator, actual_example_num, processor_func):
+        """Get an iterator that yields processed data, using multiprocessing if enabled.
+
+        Args:
+            dataset_iterator: Raw data iterator.
+            actual_example_num: Number of examples used.
+            processor_func: Function to process each example.
+
+        Yields:
+            Processed results in order (skips None results).
+        """
+        if self.dataset_num_proc > 1:
+            # Multiprocessing mode
+            self._start_workers(processor_func)
+            try:
+                pending = 0
+                send_idx = 0
+                recv_idx = 0
+                prefetch_size = self.dataset_num_proc * 2
+                result_buffer = {}  # Buffer for out-of-order results
+                total_samples = len(self.mix_datasets)
+
+                # Pre-fill the queue
+                for _ in range(prefetch_size):
+                    if send_idx >= total_samples:
+                        break
+                    example = next(dataset_iterator)
+                    self._in_queue.put((send_idx, example, actual_example_num))
+                    send_idx += 1
+                    pending += 1
+
+                # Process data in streaming fashion, maintaining order
+                while pending > 0:
+                    idx, result = self._out_queue.get()
+                    pending -= 1
+
+                    # Try to add one more item
+                    if send_idx < total_samples:
+                        example = next(dataset_iterator)
+                        self._in_queue.put((send_idx, example, actual_example_num))
+                        send_idx += 1
+                        pending += 1
+
+                    # Store result in buffer
+                    result_buffer[idx] = result
+
+                    # Yield results in order, skip None
+                    while recv_idx in result_buffer:
+                        res = result_buffer.pop(recv_idx)
+                        recv_idx += 1
+                        if res is not None:
+                            yield res
+                        else:
+                            if self.estimate:
+                                self.unused_samples += actual_example_num
+            finally:
+                self._stop_workers()
+        else:
+            # Single process mode
+            for _ in range(len(self.mix_datasets)):
+                example = next(dataset_iterator)
+                try:
+                    result = processor_func(example, actual_example_num)
+                except Exception as e:
+                    print(f"Warning: Error processing example, skipping. Error: {str(e)}")
+                    result = None
+                if result is not None:
+                    yield result
+                else:
+                    if self.estimate:
+                        self.unused_samples += actual_example_num
+
+    def _process_sequence(self, example, actual_example_num):
+        """Process a single example into a sequence."""
+        if self.is_pretraining:
+            return self._postprocess_pretraining_sequence(example, actual_example_num)
+        else:
+            return self._postprocess_sequence(example, actual_example_num)
+
+    def _process_pretraining_tokens(self, example, actual_example_num):
+        """Process a pretraining example into tokens."""
+        return self._encode_pretraining_messages(example["messages"], actual_example_num)
+
+    def _generate_greedy_packs_from_sequences(self, sequences):
+        """Generate packed sequences using greedy strategy from pre-processed sequences.
+
+        Args:
+            sequences: List of pre-processed Sequence objects.
+
+        Returns:
+            list: List of packed sequences.
+        """
+        left_len = np.zeros([len(sequences)]) - 1
+        left_len[0] = self.max_seq_len
+        generate_packs = [[] for _ in range(len(sequences))]
+        index = 0
+        left_index = 0
+
+        while index < len(sequences):
+            sequence = sequences[index]
+            max_left_index = left_len.argmax()
+            if len(sequence.token_ids) <= left_len[max_left_index]:
+                generate_packs[max_left_index].append(sequence)
+                left_len[max_left_index] -= len(sequence.token_ids)
+                index += 1
+            else:
+                left_index += 1
+                left_len[left_index] = self.max_seq_len
+
+        return generate_packs
 
     def __iter_func(self):
 
@@ -135,19 +314,10 @@ class SFTDataSet(IterableDataset):
         if self.is_pretraining and self.packing and self.truncate_packing:
             take_lengths = []
             buffer = []
-            for _ in range(len(self.mix_datasets)):
-                example = next(dataset_iterator)
-                try:
-                    tokens = self._encode_pretraining_messages(example["messages"], actual_example_num)
-                except Exception as e:
-                    print(f"Warning: Error processing example, skipping. Error: {str(e)}")
-                    if self.estimate:
-                        self.unused_samples += actual_example_num
-                    continue
-                if tokens is None:
-                    if self.estimate:
-                        self.unused_samples += actual_example_num
-                    continue
+            data_iter = self._get_processed_data_iterator(
+                dataset_iterator, actual_example_num, self._process_pretraining_tokens
+            )
+            for tokens in data_iter:
                 if self.estimate:
                     self.used_samples += actual_example_num
 
@@ -216,23 +386,11 @@ class SFTDataSet(IterableDataset):
                 yield batch_sequence
         else:
             if not self.packing:
-                for _ in range(len(self.mix_datasets)):
-                    example = next(dataset_iterator)
-                    try:
-                        if self.is_pretraining:
-                            sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
-                        else:
-                            sequence = self._postprocess_sequence(example, actual_example_num)
-                    except Exception as e:
-                        print(f"Warning: Error processing example, skipping. Error: {str(e)}")
-                        if self.estimate:
-                            self.unused_samples += actual_example_num
-                        continue
-                    # unused_samples and used_samples are used to calculate skip_samples and actual_train_samples
-                    if sequence is None:
-                        if self.estimate:
-                            self.unused_samples += actual_example_num
-                        continue
+                # No packing mode
+                data_iter = self._get_processed_data_iterator(
+                    dataset_iterator, actual_example_num, self._process_sequence
+                )
+                for sequence in data_iter:
                     if self.estimate:
                         self.used_samples += actual_example_num
                     batch_sequence, cur_len = [sequence], len(sequence.token_ids)
@@ -250,23 +408,11 @@ class SFTDataSet(IterableDataset):
                     yield batch_sequence
             else:
                 if not self.greedy_intokens:
-                    # base
-                    for _ in range(len(self.mix_datasets)):
-                        example = next(dataset_iterator)
-                        try:
-                            if self.is_pretraining:
-                                sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
-                            else:
-                                sequence = self._postprocess_sequence(example, actual_example_num)
-                        except Exception as e:
-                            print(f"Warning: Error processing example, skipping. Error: {str(e)}")
-                            if self.estimate:
-                                self.unused_samples += actual_example_num
-                            continue
-                        if sequence is None:
-                            if self.estimate:
-                                self.unused_samples += actual_example_num
-                            continue
+                    # base packing mode
+                    data_iter = self._get_processed_data_iterator(
+                        dataset_iterator, actual_example_num, self._process_sequence
+                    )
+                    for sequence in data_iter:
                         if self.estimate:
                             self.used_samples += actual_example_num
                         if cur_len + len(sequence.token_ids) <= self.max_seq_len:
@@ -292,23 +438,23 @@ class SFTDataSet(IterableDataset):
                 else:
                     # Pseudo multiple rounds + group greedy intokens.
                     buffer_size = 500
-                    examples = []
-                    actual_example_num_list = []
-                    i = 0
-                    for _ in range(len(self.mix_datasets)):
-                        example = next(dataset_iterator)
-                        if i < buffer_size:
-                            examples.append(example)
-                            actual_example_num_list.append(actual_example_num)
-                            i += 1
-                        else:
-                            # Running greedy strategy in examples.
-                            generate_packs = self._generate_greedy_packs(examples, actual_example_num_list)
+                    sequences_buffer = []
+                    data_iter = self._get_processed_data_iterator(
+                        dataset_iterator, actual_example_num, self._process_sequence
+                    )
+                    for sequence in data_iter:
+                        if self.estimate:
+                            self.used_samples += actual_example_num
+
+                        sequences_buffer.append(sequence)
+
+                        if len(sequences_buffer) >= buffer_size:
+                            # Running greedy strategy in sequences_buffer.
+                            generate_packs = self._generate_greedy_packs_from_sequences(sequences_buffer)
                             for pack in generate_packs:
                                 if len(pack) > 0:
                                     yield pack
-                            examples = [example]
-                            i = 1
+                            sequences_buffer = []
 
                         if self.estimate:
                             self.used_estimate_samples += actual_example_num
@@ -316,8 +462,8 @@ class SFTDataSet(IterableDataset):
                             # Stop estimation if the number of samples used in estimation is larger than max_estimate_samples
                             if self.used_estimate_samples >= self.max_estimate_samples:
                                 # Yield left packs before estimation ends
-                                if len(examples) > 0:
-                                    generate_packs = self._generate_greedy_packs(examples, actual_example_num_list)
+                                if len(sequences_buffer) > 0:
+                                    generate_packs = self._generate_greedy_packs_from_sequences(sequences_buffer)
                                     for pack in generate_packs:
                                         if len(pack) > 0:
                                             yield pack
@@ -325,8 +471,8 @@ class SFTDataSet(IterableDataset):
                                 self.estimate = False
                                 yield []
 
-                    if len(examples) > 0:
-                        generate_packs = self._generate_greedy_packs(examples, actual_example_num_list)
+                    if len(sequences_buffer) > 0:
+                        generate_packs = self._generate_greedy_packs_from_sequences(sequences_buffer)
                         for pack in generate_packs:
                             if len(pack) > 0:
                                 yield pack
@@ -490,33 +636,30 @@ class SFTDataSet(IterableDataset):
 
         num_reserved_tokens_for_each_dialog = 1
         num_reserved_tokens_for_each_turn = 8
-
         cur_len = num_reserved_tokens_for_each_dialog
 
-        turn_index = len(encoded_pairs) - 1
+        tokens_chunks = []
+        labels_chunks = []
+        accumulated_tokens_len = 0
 
-        tokens = []
-        labels = []
-        while turn_index >= 0:
+        for turn_index in range(len(encoded_pairs) - 1, -1, -1):
             tokens_src, tokens_target = encoded_pairs[turn_index]
             if len(tokens_target) == 0:
                 logger.warning(f"[SKIP] The length of encoded assistant tokens is 0: {example}")
                 return None
-            if len(tokens_src) + len(tokens_target) > (
-                self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn
-            ):
-                if len(images) != 0 or len(videos) != 0 or len(audios) != 0:
+            remaining_len = self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn
+            if len(tokens_src) + len(tokens_target) > remaining_len:
+                if images or videos or audios:
                     # If there is multimodal data, do not truncate it; just discard it directly.
                     sub_src = example["messages"][0]["content"].strip()[:50]
                     logger.warning(f"[SKIP] This data is too long: {sub_src}...")
                     return None
                 # If the source (src) exceeds length limit, discard this round of conversation data
                 # If the target (tgt) exceeds length limit, truncate it
-                if len(tokens_src) > self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn:
+                if len(tokens_src) > remaining_len:
                     break
                 else:
-                    reverse_len = self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn - len(tokens_src)
-                    tokens_target = tokens_target[:reverse_len]
+                    tokens_target = tokens_target[: remaining_len - len(tokens_src)]
 
             labels_src = [-100] * len(tokens_src)
 
@@ -526,22 +669,26 @@ class SFTDataSet(IterableDataset):
             if not self.use_template or self.template_backend == "jinja":
                 labels_target = tokens_target
             else:
-                sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
                 if turn_index != (len(encoded_pairs) - 1):
-                    labels_target = tokens_target[: len(tokens_target) - sep_token_len] + [-100] * sep_token_len
+                    labels_target = (
+                        tokens_target[: len(tokens_target) - self.sep_token_len] + [-100] * self.sep_token_len
+                    )
                 else:
                     labels_target = tokens_target
 
             if not example["label"][turn_index]:
                 labels_target = [-100] * len(labels_target)
-            tokens = tokens_src + tokens_target + tokens
-            labels = labels_src + labels_target + labels
 
-            assert len(tokens) == len(labels), f"{len(tokens)}-{len(labels)}"
+            tokens_chunks.append(tokens_src + tokens_target)
+            labels_chunks.append(labels_src + labels_target)
 
-            cur_len = len(tokens)
+            accumulated_tokens_len += len(tokens_src) + len(tokens_target)
+            cur_len = accumulated_tokens_len
 
-            turn_index -= 1
+        tokens_chunks.reverse()
+        labels_chunks.reverse()
+        tokens = list(chain.from_iterable(tokens_chunks))
+        labels = list(chain.from_iterable(labels_chunks))
 
         # Not even one turn can be added, so need to do warning and skip this example
         if len(tokens) <= num_reserved_tokens_for_each_dialog + num_reserved_tokens_for_each_turn:
@@ -549,52 +696,45 @@ class SFTDataSet(IterableDataset):
                 # For print log
                 sub_src = example["messages"][0]["content"].strip()[:50]
                 sub_tgt = example["messages"][-1]["content"].strip()[-50:]
-                if len(tokens) > 0:
-                    logger.warning(f"This data is too short: '{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
-                else:
-                    logger.warning(f"This data is too long: '{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
+                msg = "too short" if len(tokens) > 0 else "too long"
+                logger.warning(f"This data is {msg}: '{{'src':[{sub_src}, ……],'tgt':[……{sub_tgt}]}}'")
             except Exception:
                 logger.warning("[SKIP] wrong example")
             return None
 
         if self.use_template:
             # add dynamic eos
-            if self.template_backend == "custom":
-                suffix_ids = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
-            else:
-                suffix_ids = [self.tokenizer.eos_token_id]
+            suffix_ids = (
+                self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
+                if self.template_backend == "custom"
+                else [self.tokenizer.eos_token_id]
+            )
             self._add_dynamic_eos(tokens, labels, suffix_ids)
+
             # Maybe left truncated, so need to add begin_token
-            if self.auto_add_bos and self.begin_token_id:
-                if tokens[0] != self.begin_token_id:
-                    tokens = [self.begin_token_id] + tokens
-                    labels = [-100] + labels
-                    if len(tokens) > self.max_seq_len:
-                        raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+            if self.auto_add_bos and self.begin_token_id and tokens[0] != self.begin_token_id:
+                tokens = [self.begin_token_id] + tokens
+                labels = [-100] + labels
+
             # Add EOS token at the end
             if self.efficient_eos:
-                tokens = tokens + suffix_ids
-                labels = labels + suffix_ids
-                if len(tokens) > self.max_seq_len:
-                    raise RuntimeError(f"token_ids is too long: {len(tokens)}")
-            # label shift
-            labels = labels[1:] + [-100]
-        else:
-            # label shift
-            labels = labels[1:] + [-100]
-            if len(tokens) > self.max_seq_len:
-                raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+                tokens.extend(suffix_ids)
+                labels.extend(suffix_ids)
+
+        # label shift
+        labels = labels[1:] + [-100]
+        if len(tokens) > self.max_seq_len:
+            raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
         pos_ids = list(range(len(tokens)))  # only pure text, mm_position_ids will be reconstructed in collate.py
 
         if all(x == -100 for x in labels):
-            logger.warning(f"[SKIP] all labels set to 0: {example}")
+            logger.warning(f"[SKIP] all labels set to -100: {example}")
             return None
 
         assert len(tokens) == len(labels), f"{len(tokens)}-{len(labels)}"
 
-        enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
-        if enable_dataset_debug:
+        if self.enable_dataset_debug:
             logger.info("\n" + "=" * 50)
             logger.info("[dataset debug] Debug mode enabled")
             if hasattr(self, "tokenizer"):
@@ -622,55 +762,6 @@ class SFTDataSet(IterableDataset):
             audios=audios,
             mm_inputs=mm_inputs,
         )
-
-    def _generate_greedy_packs(self, examples, actual_example_num_list):
-        """Generate packed sequences using greedy strategy.
-
-        Args:
-            examples: List of examples to pack.
-            actual_example_num_list: List of example counts.
-
-        Returns:
-            list: List of packed sequences.
-        """
-
-        left_len = np.zeros([len(examples)]) - 1
-        left_len[0] = self.max_seq_len  # At the beginning, only the first pack is valid.
-        generate_packs = [[] for i in range(len(examples))]
-        index = 0
-        left_index = 0
-
-        while index < len(examples):
-            try:
-                if self.is_pretraining:
-                    sequence = self._postprocess_pretraining_sequence(examples[index], actual_example_num_list[index])
-                else:
-                    sequence = self._postprocess_sequence(examples[index], actual_example_num_list[index])
-            except Exception as e:
-                print(f"Warning: Error processing example, skipping. Error: {str(e)}")
-                if self.estimate:
-                    self.unused_samples += actual_example_num_list[index]
-                index += 1
-                continue
-            if sequence is None:
-                if self.estimate:
-                    self.unused_samples += actual_example_num_list[index]
-                index += 1
-                continue
-
-            max_left_index = left_len.argmax()
-            # Put the current sequence into the largest left space valid pack.
-            if len(sequence.token_ids) <= left_len[max_left_index]:
-                generate_packs[max_left_index].append(sequence)
-                left_len[max_left_index] -= len(sequence.token_ids)
-                if self.estimate:
-                    self.used_samples += actual_example_num_list[index]
-                index += 1
-            else:
-                left_index += 1
-                left_len[left_index] = self.max_seq_len
-
-        return generate_packs
 
     def print_max_steps_estimate_progress(self):
         current_percent = (self.used_estimate_samples / self.max_estimate_samples) * 100

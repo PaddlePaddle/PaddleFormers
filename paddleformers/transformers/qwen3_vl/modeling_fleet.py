@@ -184,6 +184,7 @@ class Qwen3VLProvider(TransformerConfig):
     def provide(self, tokenizer=None, vp_stage: int | None = None) -> "Qwen3VLModelDist":
         self.text_config.scatter_embedding_sequence_parallel = False
         self.text_config.tensor_model_parallel_size = self.tensor_model_parallel_size
+        self.text_config.tensor_parallel_output = self.tensor_parallel_output
         self.text_config.sequence_parallel = self.sequence_parallel
         self.text_config.context_parallel_size = self.context_parallel_size
         self.vision_config.tensor_model_parallel_size = self.tensor_model_parallel_size
@@ -236,6 +237,7 @@ class Qwen3VLProvider(TransformerConfig):
             or parallel_state.get_pipeline_model_parallel_rank() >= self.encoder_pipeline_model_parallel_size,
             drop_vision_class_token=self.drop_vision_class_token,
             vp_stage=vp_stage,
+            criterion=loss_fn,
         )
 
         return model

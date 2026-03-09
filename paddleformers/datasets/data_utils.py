@@ -309,7 +309,11 @@ def get_worker_sliced_iterator(dataset):
     """
     # 1. Get the full original iterator
     # Ensure the input is converted to an iterator so islice works correctly
-    dataset_iterator = iter(dataset)
+    def infinite_iterator(iterable):
+        while True:
+            yield from iter(iterable)
+
+    dataset_iterator = infinite_iterator(dataset)
 
     # 2. Retrieve Paddle worker information
     worker_info = paddle.io.get_worker_info()

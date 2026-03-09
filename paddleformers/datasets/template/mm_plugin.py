@@ -51,6 +51,8 @@ from .augment_utils import (
 IMAGE_PLACEHOLDER = os.getenv("IMAGE_PLACEHOLDER", "<image>")
 VIDEO_PLACEHOLDER = os.getenv("VIDEO_PLACEHOLDER", "<video>")
 AUDIO_PLACEHOLDER = os.getenv("AUDIO_PLACEHOLDER", "<audio>")
+os.environ["https_proxy"] = os.environ.get("HTTPS_PROXY", "")
+os.environ["http_proxy"] = os.environ.get("HTTP_PROXY", "")
 
 
 def _make_batched_images(images, imglens: list[int]):
@@ -143,8 +145,6 @@ class MMPluginMixin:
             )
 
     def _file_download(self, url: str) -> bytes:
-        os.environ["https_proxy"] = os.environ.get("HTTPS_PROXY", "")
-        os.environ["http_proxy"] = os.environ.get("HTTP_PROXY", "")
         if url.startswith("http"):
             response = requests.get(url)
             bytes_data = response.content
