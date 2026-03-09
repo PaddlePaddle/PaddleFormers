@@ -75,7 +75,6 @@ sharding: stage1
 bf16: true
 amp_master_grad: true
 fp16_opt_level: O2
-use_attn_mask_startend_row_indices: true
 moe_router_force_load_balancing: false
 pre_alloc_memory: 60
 tensorwise_offload_optimizer: true

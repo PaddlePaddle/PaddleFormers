@@ -113,7 +113,14 @@ class MultiSourceDataset(IterableDataset):
                 }
             )
         # filter zero probability task
-        tasks = [task for task in tasks if task["prob"] > 0]
+        filtered_tasks = []
+        filtered_sub_dataset_type = []
+        for i, task in enumerate(tasks):
+            if task["prob"] > 0:
+                filtered_tasks.append(task)
+                filtered_sub_dataset_type.append(sub_dataset_type[i])
+        tasks = filtered_tasks
+        sub_dataset_type = filtered_sub_dataset_type
         self._task_group = tasks
         supported_type = ["erniekit", "messages"]
         for idx, task in enumerate(self._task_group):
@@ -127,7 +134,7 @@ class MultiSourceDataset(IterableDataset):
                     split_multi_turn=dataset_config.get("split_multi_turn", False),
                     template_backend=dataset_config.get("template_backend", "jinja"),
                 )
-            if os.path.isdir(task["filepath"]):
+            elif os.path.isdir(task["filepath"]):
                 task["dataset"] = FileListReader(
                     file_path=task["filepath"],
                     file_type=each_sub_dataset_type,
@@ -168,7 +175,7 @@ class MultiSourceDataset(IterableDataset):
         while True:
             task = rng.choices(self._task_group, weights=probs)[0]
             try:
-                yield from task["iterator"]
+                yield next(task["iterator"])
             except StopIteration:
                 task["iterator"] = iter(task["dataset"])
-                yield from task["iterator"]
+                yield next(task["iterator"])

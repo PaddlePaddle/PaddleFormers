@@ -27,32 +27,36 @@ def load_json(file_path):
     except json.JSONDecodeError:
         pass  # fallback to JSONL
 
-    try:
-        res = []
-        with open(file_path, "r", encoding="utf-8") as file:
-            for line in file:
+    res = []
+    with open(file_path, "r", encoding="utf-8") as file:
+        for i, line in enumerate(file, 1):
+            if not line.strip():
+                continue
+            try:
                 res.append(json.loads(line))
-            return res
-    except FileNotFoundError:
-        raise FileNotFoundError(f"file {file_path} not exists")
-    except json.JSONDecodeError as e:
-        raise json.JSONDecodeError(f"JSON parse error: {e.msg}", e.doc, e.pos)
+            except json.JSONDecodeError as e:
+                raise json.JSONDecodeError(f"JSONL parse error at line {i}: {e.msg}", e.doc, e.pos)
+    return res
 
 
 def load_txt(file_path):
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             return f.read()
-    except Exception:
-        raise ValueError(f"file {file_path} load failed")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"file {file_path} not exists")
+    except IOError as e:
+        raise ValueError(f"file {file_path} load failed: {e}")
 
 
 def load_csv(file_path):
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             return list(csv.reader(f))
-    except Exception:
-        raise ValueError(f"file {file_path} load failed")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"file {file_path} not exists")
+    except (IOError, csv.Error) as e:
+        raise ValueError(f"file {file_path} load failed: {e}")
 
 
 def load_parquet(file_path):
@@ -60,5 +64,7 @@ def load_parquet(file_path):
         table = pq.read_table(file_path)
         df = table.to_pandas()
         return df
-    except Exception:
-        raise ValueError(f"file {file_path} load failed")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"file {file_path} not exists")
+    except Exception as e:
+        raise ValueError(f"file {file_path} load failed: {e}")

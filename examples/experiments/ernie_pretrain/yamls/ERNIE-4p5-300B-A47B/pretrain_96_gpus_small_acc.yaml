@@ -13,12 +13,12 @@ model_args:
     num_consecutive: 32
 
     enable_global_training_logs: False
-    moe_use_aux_free_update_coef: 0.001
+    moe_router_bias_update_rate: 0.001
     global_logging_interval: 10
     enable_mtp_magic_send: True
 
     model_config:
-        multi_token_pred_depth: 1
+        num_nextn_predict_layers: 1
         use_ep_comm_overlap: false
         use_combine_before_a2a: true
         use_quant_before_a2a: true

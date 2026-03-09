@@ -51,6 +51,7 @@ class Ernie4_5_VLTokenizer(PreTrainedTokenizer):
         sep_token="<sep>",
         unk_token="<unk>",
         additional_special_tokens=None,
+        special_tokens_pattern="cls_sep",
         **kwargs,
     ):
         """
@@ -89,6 +90,7 @@ class Ernie4_5_VLTokenizer(PreTrainedTokenizer):
             sep_token=sep_token,
             unk_token=unk_token,
             additional_special_tokens=additional_special_tokens,
+            special_tokens_pattern=special_tokens_pattern,
             **kwargs,
         )
 

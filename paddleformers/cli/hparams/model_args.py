@@ -59,7 +59,7 @@ class ErniePretrainArgument:
     use_rms_qkv_recompute: bool = field(default=False, metadata={"help": "Whether to use rms qkv recompute"})
     moe_logging: bool = field(default=False, metadata={"help": "Whether to use moe logging"})
     use_recompute: bool = field(default=False, metadata={"help": "Whether to use recompute"})
-    multi_token_pred_depth: int = field(default=0, metadata={"help": "Multi token pred depth"})
+    num_nextn_predict_layers: int = field(default=0, metadata={"help": "Multi token pred depth"})
     use_fp8_mlp: bool = field(default=False, metadata={"help": "Whether to use fp8 mlp"})
     num_hidden_layers: int = field(default=2, metadata={"help": "Number of hidden layers"})
     num_empty_layers_add_in_tail: int = field(default=0, metadata={"help": "Number of empty layers add in tail"})
@@ -133,6 +133,17 @@ class ModelArguments:
             "help": "The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `None`."
         },
     )
+    copy_custom_file_list: str = field(
+        default="",
+        metadata={
+            "help": (
+                "Custom files to copy from the loaded checkpoint (model_name_or_path) to the output checkpoint."
+                "Support specific filenames (space-separated)"
+                "Examples:\n"
+                '  --copy_custom_file_list "modeling.py configuration.py"\n'
+            )
+        },
+    )
     neftune: bool = field(default=False, metadata={"help": "Whether to apply NEFT"})
     neftune_noise_alpha: float = field(default=5.0, metadata={"help": "NEFT noise alpha"})
 
@@ -156,17 +167,9 @@ class ModelArguments:
         default=False,
         metadata={"help": "Whether to apply group-wise processing to expert gate logits."},
     )
-    moe_aux_loss_lambda: Optional[float] = field(
-        default=1e-5,
-        metadata={"help": "Lambda value for moe aux loss."},
-    )
     moe_orthogonal_loss_lambda: Optional[float] = field(
         default=0.0,
         metadata={"help": "Lambda value for moe orthogonal loss."},
-    )
-    moe_z_loss_lambda: Optional[float] = field(
-        default=0.0,
-        metadata={"help": "Lambda value for moe z loss."},
     )
     moe_use_hard_gate: Optional[bool] = field(
         default=False,

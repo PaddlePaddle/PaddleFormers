@@ -196,6 +196,8 @@ import_structure = {
         "Qwen2_5_VLTextModel",
     ],
     "qwen2_5_vl.processor": ["Qwen2_5_VLProcessor"],
+    "qwen3_5.configuration": ["Qwen3_5VisionConfig"],
+    "qwen3_5.modeling": ["Qwen3_5VisionModel"],
     "qwen3_vl.configuration": ["Qwen3VLConfig", "Qwen3VLTextConfig"],
     "qwen3_vl.modeling": [
         "Qwen3VLForConditionalGeneration",
@@ -268,6 +270,7 @@ import_structure = {
     "paddleocr_vl": [],
     "qwen2_5_vl": [],
     "qwen3_vl": [],
+    "qwen3_5": [],
     "qwen3_vl_moe": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
@@ -357,6 +360,7 @@ if TYPE_CHECKING:
     from .qwen3_moe import *
     from .qwen3_next import *
     from .qwen3_vl import *
+    from .qwen3_5 import *
     from .qwen3_vl_moe import *
     from .glm4_moe import *
     from .glm4v_moe import *
