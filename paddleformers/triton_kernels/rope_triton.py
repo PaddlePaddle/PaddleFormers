@@ -20,10 +20,24 @@
 
 import paddle
 
-paddle.enable_compat(scope={"triton"})
+# NOTE: Currently, global enabling is NOT supported.
+# paddle.enable_compat(scope={"triton"})
 
-import triton
-import triton.language as tl
+try:
+    import triton
+    import triton.language as tl
+except:
+    raise RuntimeError("Triton is not installed" "Please run 'python -m pip install triton>=3.1' to install Triton.")
+
+try:
+    import use_triton_in_paddle
+
+    use_triton_in_paddle.make_triton_compatible_with_paddle()
+except:
+    raise RuntimeError(
+        "Triton is installed, but not yet compatible with Paddle. "
+        "Please run 'python -m pip install use-triton-in-paddle' to enable Triton support in Paddle."
+    )
 
 
 @triton.jit
