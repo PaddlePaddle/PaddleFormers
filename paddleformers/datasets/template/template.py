@@ -792,6 +792,15 @@ register_template(
     chat_sep="<｜end▁of▁sentence｜>",
 )
 
+register_template(
+    name="kimi_k2",
+    format_system=StringFormatter(slots=["{{content}}\n\n"]),
+    format_user=StringFormatter(slots=["<｜User｜>{{content}}\n\n<｜Assistant｜>"]),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    chat_sep="<｜end▁of▁sentence｜>",
+)
+
 
 def _get_gpt_oss_prefix():
     today = datetime.now().strftime("%Y-%m-%d")
