@@ -30,7 +30,7 @@ from paddleformers.transformers import (
 )
 from paddleformers.transformers.video_utils import load_video
 from paddleformers.utils.log import logger
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -373,6 +373,7 @@ class Glm4vMoeModelTester:
         self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
 
+@gpu_device_initializer(log_prefix="Glm4vMoeModelTest")
 class Glm4vMoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
     base_model_class = Glm4vMoeModel
     return_dict = False
@@ -475,6 +476,7 @@ class Glm4vMoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         assert output[0].shape == [1, 2]
 
 
+@gpu_device_initializer(log_prefix="Glm4vMoeIntegrationTest")
 class Glm4vMoeIntegrationTest(unittest.TestCase):
     base_model_class = Glm4vMoeModel
     test_dtype = "float32"  # "bfloat16"

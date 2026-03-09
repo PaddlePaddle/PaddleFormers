@@ -24,6 +24,7 @@ import numpy as np
 import paddle
 
 from paddleformers.transformers import AutoProcessor, Glm4vProcessor
+from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_processing_common import ProcessorTesterMixin
 
 
@@ -39,6 +40,11 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         )
         processor.save_pretrained(cls.tmpdir)
         cls.image_token = processor.image_token
+
+    # Use GPU 0 to prevent CUDA illegal memory access during resize
+    @gpu_device_initializer(log_prefix="Glm4vMoeProcessorTest", gpu_id=0)
+    def setUp(self):
+        pass
 
     def get_tokenizer(self, **kwargs):
         return AutoProcessor.from_pretrained(self.tmpdir, **kwargs).tokenizer
@@ -324,64 +330,3 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         image_input = self.prepare_image_inputs()
         inputs = processor(text=input_str, images=image_input, return_tensors="pd")
         self.assertEqual(inputs[self.images_input_name].shape[0], 4)
-
-    # pass temporarily
-    def test_doubly_passed_kwargs(self):
-        pass
-
-    def test_doubly_passed_kwargs_video(self):
-        pass
-
-    def test_image_processor_defaults_preserved_by_image_kwargs(self):
-        pass
-
-    def test_kwargs_overrides_default_image_processor_kwargs(self):
-        pass
-
-    def test_kwargs_overrides_default_tokenizer_kwargs(self):
-        pass
-
-    def test_kwargs_overrides_default_tokenizer_kwargs_video(self):
-        pass
-
-    def test_kwargs_overrides_default_video_processor_kwargs(self):
-        pass
-
-    def test_overlapping_text_image_kwargs_handling(self):
-        pass
-
-    def test_processor_from_and_save_pretrained_as_nested_dict(self):
-        pass
-
-    def test_structured_kwargs_nested(self):
-        pass
-
-    def test_structured_kwargs_nested_from_dict(self):
-        pass
-
-    def test_structured_kwargs_nested_from_dict_video(self):
-        pass
-
-    def test_structured_kwargs_nested_video(self):
-        pass
-
-    def test_tokenizer_defaults_preserved_by_kwargs(self):
-        pass
-
-    def test_tokenizer_defaults_preserved_by_kwargs_video(self):
-        pass
-
-    def test_unstructured_kwargs(self):
-        pass
-
-    def test_unstructured_kwargs_batched(self):
-        pass
-
-    def test_unstructured_kwargs_batched_video(self):
-        pass
-
-    def test_unstructured_kwargs_video(self):
-        pass
-
-    def test_video_processor_defaults_preserved_by_video_kwargs(self):
-        pass

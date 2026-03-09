@@ -1,0 +1,112 @@
+# stage
+stage: ernie_pretrain
+
+# data
+dataset_type: pretrain
+input_dir: "1.0 /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/eb45_industrycorpus2_94k"
+split: "998,1,1"
+data_load_process_num: 40
+max_seq_len: 4096
+base_seq_length: 4096
+dataloader_num_workers: 8
+prefetch_factor: 32
+ignore_data_skip: 0
+
+# model
+model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/ERNIE-4.5-21B-A3B-Base-PT/
+tokenizer_name_or_path: examples/experiments/ernie_pretrain/ernie/src/tokenizers/tokenizer_model
+moe_router_bias_update_rate: 0.001
+moe_with_send_router_loss: False
+moe_group: ep
+use_moe: true
+
+# train
+output_dir: ./output/eb45_21b_pt
+num_consecutive: 32
+enable_global_training_logs: False
+global_logging_interval: 1
+enable_mtp_magic_send: True
+do_train: True
+overwrite_output_dir: 1
+disable_tqdm: 1
+logging_steps: 1
+eval_steps: 1000000
+eval_iters: -1
+save_steps: 100
+max_steps: 10
+adam_beta1: 0.9
+adam_beta2: 0.95
+adam_epsilon: 1e-8
+learning_rate: 3.14e-4
+min_lr: 3.14e-6
+gradient_accumulation_steps: 2
+per_device_train_batch_size: 2
+lr_scheduler: wsd:603000
+decay_function: 1-sqrt
+max_grad_norm: 1.0
+weight_decay: 0.1
+warmup_steps: 2000
+save_total_limit: 5
+bf16: True
+fp16_opt_level: "O2"
+scale_loss: 4096
+seed: 42
+use_train_part_sharding: 1
+pre_alloc_memory: 60
+offload_optim: true
+pipeline_model_parallel_size: 4
+use_expert_parallel: True
+expert_model_parallel_size: 8
+amp_master_grad: 1
+report_to: none
+global_batch_size: 128
+from_scratch: 1
+use_ortho_loss_callback: true
+same_data: True
+enable_timer: 1
+skip_load_data_seq_cache: 1
+
+# sharding_parallel_config
+split_param: true
+sharding_comm_buffer_size_MB: 2048
+
+# pipeline_parallel_config
+pp_delay_scale_loss: true
+overlap_p2p_comm: true
+best_unbalanced_scheduler: true
+
+# tensor_parallel_config
+skip_profile_timer: False
+load_sharded_model: True
+save_sharded_model: True
+ignore_load_lr_and_optim: False
+enable_optimizer_timer: False
+gc_interval: 100000
+
+# ernie_model_config
+ernie_model_config:
+    use_quant_before_a2a: true
+    use_async_a2a: false
+    use_rms_qkv_recompute: true
+    moe_logging: true
+    use_recompute: false
+    num_nextn_predict_layers: 1
+    use_fp8_mlp: true
+    num_hidden_layers: 28
+    num_empty_layers_add_in_tail: 0
+    use_fp8_fuse_node: true
+    use_ep_comm_overlap: false
+    fp8_mem_configs:
+        recompute_fwd_gate_up: false
+        dequant_input: true
+        shared_expert: false
+    fp8_fused_ops_configs:
+        stack_quant: true
+        swiglu_probs_bwd: true
+        split_group_gemm: true
+        spaq: true
+        transpose_split_quant: true
+    use_combine_before_a2a: true
+
+# benchmark
+benchmark: true
