@@ -454,7 +454,7 @@ class SFTDataSet(IterableDataset):
                         yield batch_sequence
                 else:
                     # Pseudo multiple rounds + group greedy intokens.
-                    buffer_size = 1000
+                    buffer_size = 500
                     sequences_buffer = []
                     data_iter = self._get_processed_data_iterator(
                         dataset_iterator, actual_example_num, self._process_sequence
