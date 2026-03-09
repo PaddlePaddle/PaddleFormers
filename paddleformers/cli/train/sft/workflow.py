@@ -17,7 +17,6 @@
 import gc
 import math
 import os
-import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
 from functools import partial
@@ -448,6 +447,18 @@ def run_sft(
         logger.info(f"training_args.sharding_parallel_size: {training_args.sharding_parallel_size}")
         logger.info(f"global_batch_size: {global_batch_size}")
 
+        def fetch_and_serialize(generator, dtype):
+            """在 worker 线程中同时完成数据读取和 numpy 转换"""
+            sample = next(generator)
+            result = []
+            for sequence in sample:
+                serialized = []
+                for key in train_builder._data_file_dict.keys():
+                    tensor = np.array(getattr(sequence, key), dtype=dtype)
+                    serialized.append((key, tensor.tobytes(order="C"), tensor.size))
+                result.append(serialized)
+            return result
+
         if (
             training_args.do_train
             and data_args.train_dataset_path
@@ -464,7 +475,6 @@ def run_sft(
                 sub_dataset_type=data_args.train_dataset_type,
                 **dataset_config,
             )
-
             output_file_dict = {}
             train_dir = os.path.join(data_args.dataset_output_dir, "train")
             index_file = os.path.join(data_args.dataset_output_dir, "train", "index.idx")
@@ -472,79 +482,57 @@ def run_sft(
                 output_path = os.path.join(train_dir, f"{field.name}.bin")
                 output_file_dict[field.name] = output_path
             train_builder = SFTMMapIndexedDatasetBuilder(output_file_dict, save_dtype, index_file=index_file)
-
             train_sample_generator = DataGenerator(train_dataset)
-            used_samples = 0
-
-            def fetch_and_serialize(generator, dtype):
-                """在 worker 线程中同时完成数据读取和 numpy 转换"""
-                sample = next(generator)
-                result = []
-                for sequence in sample:
-                    serialized = []
-                    for key in train_builder._data_file_dict.keys():
-                        tensor = np.array(getattr(sequence, key), dtype=dtype)
-                        serialized.append((key, tensor.tobytes(order="C"), tensor.size))
-                    result.append(serialized)
-                return result
 
             with ThreadPoolExecutor(max_workers=2) as executor:
                 # 预先提交第一个任务（数据读取+序列化都在 worker 里）
                 future = executor.submit(fetch_and_serialize, train_sample_generator, save_dtype)
-                begin_time = time.time()
-
                 while not train_dataset.iter_all_examples:
-                    # 等待当前任务完成
                     serialized_sequences = future.result()
-
-                    # 立刻提交下一个任务（与下面的写文件 overlap）
                     future = executor.submit(fetch_and_serialize, train_sample_generator, save_dtype)
-
-                    # 主线程写文件（此时 worker 已在并行读取下一条数据）
                     for serialized in serialized_sequences:
                         train_builder.add_item_bytes(serialized)
                     train_builder.end_document()
-                    used_samples += 1
-                    if used_samples % 1000 == 0:
-                        elapsed = time.time() - begin_time
-                        logger.info(
-                            f"Processed sample {used_samples}, "
-                            f"overall: {elapsed * 1000:.1f} ms, "
-                            f"avg: {elapsed / used_samples * 1000:.2f} ms/sample"
-                        )
             train_builder.finalize(train_output_idx_files)
             logger.info(f"{runtime_timer.log()}")
 
-        # if (
-        #     training_args.do_eval
-        #     and data_args.eval_dataset_path
-        #     and training_args.should_load_dataset
-        #     and paddle.distributed.get_rank() == 0
-        # ):
-        #     runtime_timer.start("Create SFT Eval MapDataset")
-        #     os.makedirs(os.path.join(data_args.dataset_output_dir, "eval"), exist_ok=True)
+        if (
+            training_args.do_eval
+            and data_args.eval_dataset_path
+            and training_args.should_load_dataset
+            and paddle.distributed.get_rank() == 0
+        ):
+            runtime_timer.start("Create SFT Eval MapDataset")
+            os.makedirs(os.path.join(data_args.dataset_output_dir, "eval"), exist_ok=True)
 
-        #     eval_output_idx_files = os.path.join(data_args.dataset_output_dir, "eval", "index.idx")
-        #     eval_dataset = create_dataset_sft(
-        #         task_group=data_args.eval_dataset_path,
-        #         task_group_prob=data_args.eval_dataset_prob,
-        #         sub_dataset_type=data_args.eval_dataset_type,
-        #         is_valid=True,
-        #         **dataset_config,
-        #     )
-        #     output_file_dict = {}
-        #     eval_dir = os.path.join(data_args.dataset_output_dir, "eval")
-        #     field in fields(dataclass):
-        #         output_path = os.path.join(eval_dir, f"{field.name}.bin")
-        #         output_file_dict[field.name] = output_path
-        #     eval_builder = SFTMMapIndexedDatasetBuilder(output_file_dict, save_dtype, index_file=index_file)
+            eval_output_idx_files = os.path.join(data_args.dataset_output_dir, "eval", "index.idx")
+            eval_dataset = create_dataset_sft(
+                task_group=data_args.eval_dataset_path,
+                task_group_prob=data_args.eval_dataset_prob,
+                sub_dataset_type=data_args.eval_dataset_type,
+                is_valid=True,
+                **dataset_config,
+            )
+            output_file_dict = {}
+            eval_dir = os.path.join(data_args.dataset_output_dir, "eval")
+            index_file = os.path.join(data_args.dataset_output_dir, "eval", "index.idx")
+            for field in fields(dataclass):
+                output_path = os.path.join(eval_dir, f"{field.name}.bin")
+                output_file_dict[field.name] = output_path
+            eval_builder = SFTMMapIndexedDatasetBuilder(output_file_dict, save_dtype, index_file=index_file)
+            eval_sample_generator = DataGenerator(eval_dataset)
 
-        #     for sequences in eval_dataset:
-        #         for sequence in sequences:
-        #             eval_builder.add_item(sequence)
-        #         eval_builder.end_document()
-        #     eval_builder.finalize(eval_output_idx_files)
-        #     logger.info(f"{runtime_timer.log()}")
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                # 预先提交第一个任务（数据读取+序列化都在 worker 里）
+                future = executor.submit(fetch_and_serialize, eval_sample_generator, save_dtype)
+                while not eval_dataset.iter_all_examples:
+                    serialized_sequences = future.result()
+                    future = executor.submit(fetch_and_serialize, eval_sample_generator, save_dtype)
+                    for serialized in serialized_sequences:
+                        eval_builder.add_item_bytes(serialized)
+                    eval_builder.end_document()
+            eval_builder.finalize(eval_output_idx_files)
+            logger.info(f"{runtime_timer.log()}")
         logger.info("Make SFT Offline DataSet Done.")
         return
 
