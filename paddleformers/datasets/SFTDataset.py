@@ -183,8 +183,6 @@ class SFTDataSet(IterableDataset):
 
     def _worker_loop(self):
         """Worker process main loop."""
-        # After fork, the child inherits the full parent memory (including mix_datasets).
-        # Explicitly release objects that workers don't need so the OS can reclaim pages.
         self.mix_datasets = None
         while True:
             try:
@@ -570,8 +568,7 @@ class SFTDataSet(IterableDataset):
 
             assert len(tokens) == len(labels), f"{len(tokens)}-{len(labels)}"
 
-            enable_dataset_debug = self.enable_dataset_debug
-            if enable_dataset_debug:
+            if self.enable_dataset_debug:
                 logger.info("\n" + "=" * 50)
                 logger.info("[dataset debug] Debug mode enabled")
                 if hasattr(self, "tokenizer"):

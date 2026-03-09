@@ -448,7 +448,6 @@ def run_sft(
         logger.info(f"global_batch_size: {global_batch_size}")
 
         def fetch_and_serialize(generator, dtype):
-            """在 worker 线程中同时完成数据读取和 numpy 转换"""
             sample = next(generator)
             result = []
             for sequence in sample:
@@ -485,7 +484,6 @@ def run_sft(
             train_sample_generator = DataGenerator(train_dataset)
 
             with ThreadPoolExecutor(max_workers=2) as executor:
-                # 预先提交第一个任务（数据读取+序列化都在 worker 里）
                 future = executor.submit(fetch_and_serialize, train_sample_generator, save_dtype)
                 while not train_dataset.iter_all_examples:
                     serialized_sequences = future.result()
@@ -632,10 +630,10 @@ def run_sft(
                     * training_args.gradient_accumulation_steps
                     * training_args.dataset_world_size
                 )
-                print("len(train_dataset):", len(train_dataset))
-                print("global_batch_size:", global_batch_size)
                 training_args.max_steps = math.ceil(len(train_dataset) / global_batch_size)
-                print("training_args.max_steps:", training_args.max_steps)
+                logger.info(
+                    f"len(train_dataset): {len(train_dataset)}, global_batch_size: {global_batch_size}, training_args.max_steps: {training_args.max_steps}"
+                )
 
         if paddle.distributed.get_world_size() > 1:
             paddle.distributed.barrier()

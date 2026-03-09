@@ -802,15 +802,11 @@ class SFTMMapIndexedDatasetBuilder(object):
     def __init__(self, output_file_dict, dtype, index_file=None):
         self._data_file_dict = {}
         for key, filename in output_file_dict.items():
-            # 4MB write buffer 减少 syscall 次数
             self._data_file_dict[key] = open(filename, "ab", buffering=4 * 1024 * 1024)
         self.output_file_dict = output_file_dict
         self._dtype = dtype
-        # 每个 field 的文档级写缓冲，end_document 时一次性 write
         self._write_buf = {key: [] for key in output_file_dict}
 
-        # If an existing index file is provided and exists, restore its state
-        # so that _sizes and _doc_idx stay in sync with the already-appended bin data.
         if index_file is not None and os.path.exists(index_file):
             existing = SFTMMapIndexedDataset.Index(index_file, skip_warmup=True)
             self._sizes = existing._sizes.tolist()
@@ -829,19 +825,14 @@ class SFTMMapIndexedDatasetBuilder(object):
             self._data_file_dict[key].write(tensor.tobytes(order="C"))
 
     def add_item_bytes(self, serialized):
-        """Write pre-serialized bytes produced by serialize_sequence().
-        serialized: list of (key, raw_bytes, tensor_size) tuples for one sequence.
-        Mirrors the same size-recording logic as add_item().
-        """
         add_sequence_len = False
         for key, data, size in serialized:
             if size > 1 and not add_sequence_len:
                 self._sizes.append(size)
                 add_sequence_len = True
-            self._write_buf[key].append(data)  # 先积攒，不立即 write
+            self._write_buf[key].append(data)
 
     def end_document(self):
-        # 每个 field 只做一次 write，减少 syscall
         for key, buf in self._write_buf.items():
             if buf:
                 self._data_file_dict[key].write(b"".join(buf))
