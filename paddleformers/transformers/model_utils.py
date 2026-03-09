@@ -3206,6 +3206,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         # Only save the model in distributed training setup
         model_to_save = unwrap_model(self)
+        logger.DEBUG(f"Model_Testing config: {self.config}")
+        logger.DEBUG(f"Model_Testing config: {model_to_save.config}")
 
         if save_checkpoint_format == "flex_checkpoint":
             if not hasattr(self, "_gen_inv_aoa_config"):
