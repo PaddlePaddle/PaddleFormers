@@ -3207,10 +3207,13 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Only save the model in distributed training setup
         model_to_save = unwrap_model(self)
 
+        # Testing
+        config_to_save_test = copy.deepcopy(model_to_save.config)
+
         if save_checkpoint_format == "flex_checkpoint":
             if not hasattr(self, "_gen_inv_aoa_config"):
                 if hasattr(self, "_gen_aoa_config"):
-                    aoa_config = self._gen_aoa_config(model_to_save.config)
+                    aoa_config = self._gen_aoa_config(config_to_save_test)
                     aoa_config["aoa_config_reverse"] = True
                     logger.warning("There is no _gen_inv_aoa_config, so we auto-derived it from _gen_aoa_config.")
                 else:

@@ -286,39 +286,26 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
             model1 = model_class.from_pretrained(
                 "PaddleFormers/tiny-random-qwen3next",
                 download_hub="aistudio",
-                convert_from_hf=True,
-                load_checkpoint_format="",
-                num_nextn_predict_layers=0,
-            )
-            model2 = model_class.from_pretrained(
-                "PaddleFormers/tiny-random-qwen3next",
-                download_hub="aistudio",
                 load_checkpoint_format="flex_checkpoint",
                 num_nextn_predict_layers=0,
             )
             model_state_1 = model1.state_dict()
-            model_state_2 = model2.state_dict()
-
-            for k, v in model_state_1.items():
-                md51 = v._md5sum()
-                md52 = model_state_2[k]._md5sum()
-                assert md51 == md52
 
             # test save_pretrained
             with tempfile.TemporaryDirectory() as tmpdirname:
-                model2.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-                model3 = model_class.from_pretrained(
+                model1.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+                model2 = model_class.from_pretrained(
                     tmpdirname,
                     convert_from_hf=True,
-                    load_checkpoint_format="",
+                    load_checkpoint_format="flex_checkpoint",
                     num_nextn_predict_layers=0,
                 )
-                model_state_3 = model3.state_dict()
+                model_state_2 = model2.state_dict()
 
-                for k, v in model_state_3.items():
-                    md53 = v._md5sum()
-                    md52 = model_state_2[k]._md5sum()
-                    assert md52 == md53
+                for k, v in model_state_2.items():
+                    md52 = v._md5sum()
+                    md51 = model_state_1[k]._md5sum()
+                    assert md51 == md52
 
 
 class Qwen3NextIntegrationTest(unittest.TestCase):

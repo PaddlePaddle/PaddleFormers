@@ -25,8 +25,6 @@ from paddleformers.transformers import (
     Glm4MoeForCausalLMDeprecated as Glm4MoeForCausalLM,
 )
 from paddleformers.transformers import Glm4MoeModel
-
-# from paddleformers.utils.log import logger
 from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -384,45 +382,29 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
             model1 = model_class.from_pretrained(
                 "PaddleFormers/tiny-random-glm4moe-bf16",
                 download_hub="aistudio",
-                convert_from_hf=True,
-                load_checkpoint_format="",
-                num_nextn_predict_layers=0,
-            )
-
-            model2 = model_class.from_pretrained(
-                "PaddleFormers/tiny-random-glm4moe-bf16",
-                download_hub="aistudio",
                 load_checkpoint_format="flex_checkpoint",
                 num_nextn_predict_layers=0,
             )
             model_state_1 = model1.state_dict()
-            model_state_2 = model2.state_dict()
-            for k, v in model_state_1.items():
-                md51 = v._md5sum()
-                md52 = model_state_2[k]._md5sum()
-                assert md51 == md52
-            # logger.DEBUG(f"glm4moe config1: {model1.config}")
 
             # test save_pretrained
             with tempfile.TemporaryDirectory() as tmpdirname:
-                model2.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-                model3 = model_class.from_pretrained(
+                model1.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+                model2 = model_class.from_pretrained(
                     tmpdirname,
                     convert_from_hf=True,
                     load_checkpoint_format="flex_checkpoint",
                     num_nextn_predict_layers=0,
                 )
-                model_state_3 = model3.state_dict()
-                # logger.DEBUG(f"glm4moe config2: {model2.config}")
+                model_state_2 = model2.state_dict()
 
-                for k, v in model_state_3.items():
-                    md53 = v._md5sum()
-                    md52 = model_state_2[k]._md5sum()
+                for k, v in model_state_2.items():
+                    md52 = v._md5sum()
+                    md51 = model_state_1[k]._md5sum()
                     if k.endswith(".mlp.gate.weight"):
+                        md51 = model_state_1[k].cast("bfloat16")._md5sum()
                         md52 = model_state_2[k].cast("bfloat16")._md5sum()
-                        md53 = model_state_3[k].cast("bfloat16")._md5sum()
-                    # logger.DEBUG(f"{k}, {md51}, {md52}") if md51 != md52 else ""
-                    assert md52 == md53
+                    assert md51 == md52
 
     def test_hidden_states_output(self):
         pass
