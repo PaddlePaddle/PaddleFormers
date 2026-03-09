@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import multiprocessing as mp
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from itertools import chain
 from typing import Dict, List, Optional
@@ -132,15 +132,75 @@ class SFTDataSet(IterableDataset):
             self.sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
 
         # multiprocessing initialization
-        self._executor: Optional[ThreadPoolExecutor] = None
+        self._in_queue: Optional[mp.Queue] = None
+        self._out_queue: Optional[mp.Queue] = None
+        self.workers: List[mp.Process] = []
+        self._workers_started = False
+        self._current_processor_func = None
 
         self.iter_all_examples = False
 
     def __len__(self):
         return len(self.mix_datasets)
 
+    def _start_workers(self, processor_func):
+        """Start worker processes for parallel data processing.
+
+        Args:
+            processor_func: The processing function to use in workers.
+        """
+        if self._workers_started:
+            return
+        self._current_processor_func = processor_func
+        prefetch_size = self.dataset_num_proc * 2
+        self._in_queue = mp.Queue(maxsize=prefetch_size)
+        self._out_queue = mp.Queue(maxsize=prefetch_size)
+        for _ in range(self.dataset_num_proc):
+            worker = mp.Process(target=self._worker_loop, daemon=True)
+            worker.start()
+            self.workers.append(worker)
+        self._workers_started = True
+
+    def _stop_workers(self):
+        """Stop all worker processes."""
+        if not self._workers_started:
+            return
+        for worker in self.workers:
+            if worker.is_alive():
+                worker.terminate()
+                worker.join(timeout=1)
+        self.workers = []
+        if self._in_queue:
+            self._in_queue.cancel_join_thread()
+            self._in_queue.close()
+        if self._out_queue:
+            self._out_queue.cancel_join_thread()
+            self._out_queue.close()
+        self._in_queue = None
+        self._out_queue = None
+        self._workers_started = False
+        self._current_processor_func = None
+
+    def _worker_loop(self):
+        """Worker process main loop."""
+        # After fork, the child inherits the full parent memory (including mix_datasets).
+        # Explicitly release objects that workers don't need so the OS can reclaim pages.
+        self.mix_datasets = None
+        while True:
+            try:
+                i, example, actual_example_num = self._in_queue.get()
+                result = None
+                try:
+                    result = self._current_processor_func(example, actual_example_num)
+                except Exception as e:
+                    # result remains None, will be counted as unused_samples in _get_processed_data_iterator
+                    print(f"Warning: Error processing example in worker, skipping. Error: {str(e)}")
+                self._out_queue.put((i, result))
+            except Exception:
+                break
+
     def _get_processed_data_iterator(self, dataset_iterator, actual_example_num, processor_func):
-        """Get an iterator that yields processed data, using thread pool if enabled.
+        """Get an iterator that yields processed data, using multiprocessing if enabled.
 
         Args:
             dataset_iterator: Raw data iterator.
@@ -151,49 +211,55 @@ class SFTDataSet(IterableDataset):
             Processed results in order (skips None results).
         """
         if self.dataset_num_proc > 1:
-            # Thread pool mode: Rust-based tokenizer releases GIL, enabling true parallelism.
-            # No memory duplication (threads share address space), no pickle needed.
-            prefetch_size = self.dataset_num_proc * 4
-            total_samples = len(self.mix_datasets)
-            send_idx = 0
-            recv_idx = 0
-            pending_futures = {}  # idx -> Future
+            # Multiprocessing mode
+            self._start_workers(processor_func)
+            try:
+                pending = 0
+                send_idx = 0
+                recv_idx = 0
+                prefetch_size = self.dataset_num_proc * 2
+                result_buffer = {}  # Buffer for out-of-order results
+                total_samples = len(self.mix_datasets)
 
-            if self._executor is None:
-                self._executor = ThreadPoolExecutor(max_workers=self.dataset_num_proc)
+                # Pre-fill the queue
+                for _ in range(prefetch_size):
+                    if send_idx >= total_samples:
+                        self.iter_all_examples = True
+                        break
+                    example = next(dataset_iterator)
+                    self._in_queue.put((send_idx, example, actual_example_num))
+                    send_idx += 1
+                    pending += 1
 
-            def _submit_one():
-                nonlocal send_idx
-                if send_idx >= total_samples:
-                    self.iter_all_examples = True
-                    return False
-                example = next(dataset_iterator)
-                fut = self._executor.submit(processor_func, example, actual_example_num)
-                pending_futures[send_idx] = fut
-                send_idx += 1
-                return True
+                # Process data in streaming fashion, maintaining order
+                while pending > 0:
+                    idx, result = self._out_queue.get()
+                    pending -= 1
 
-            # Pre-fill the pipeline
-            for _ in range(prefetch_size):
-                if not _submit_one():
-                    break
+                    # Try to add one more item
+                    if send_idx < total_samples and send_idx - recv_idx < prefetch_size:
+                        example = next(dataset_iterator)
+                        self._in_queue.put((send_idx, example, actual_example_num))
+                        send_idx += 1
+                        pending += 1
+                        if send_idx >= total_samples:
+                            self.iter_all_examples = True
 
-            while recv_idx < send_idx:
-                fut = pending_futures.pop(recv_idx)
-                recv_idx += 1
-                # Submit next while waiting for current
-                _submit_one()
-                try:
-                    result = fut.result()
-                except Exception as e:
-                    print(f"Warning: Error processing example in thread, skipping. Error: {str(e)}")
-                    result = None
-                if result is not None:
-                    yield result
-                else:
-                    if self.estimate:
-                        self.used_estimate_samples += actual_example_num
-                        self.unused_samples += actual_example_num
+                    # Store result in buffer
+                    result_buffer[idx] = result
+
+                    # Yield results in order, skip None
+                    while recv_idx in result_buffer:
+                        res = result_buffer.pop(recv_idx)
+                        recv_idx += 1
+                        if res is not None:
+                            yield res
+                        else:
+                            if self.estimate:
+                                self.used_estimate_samples += actual_example_num
+                                self.unused_samples += actual_example_num
+            finally:
+                self._stop_workers()
         else:
             # Single process mode
             for _ in range(len(self.mix_datasets)):
