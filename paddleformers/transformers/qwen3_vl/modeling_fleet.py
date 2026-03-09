@@ -684,8 +684,8 @@ class Qwen3VLVisionModel(VisionLayer):
         merge_size = self.spatial_merge_size
         for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
             # Convert to Python int to avoid NumPy 2.x compatibility issues
-            h_merged = max(1, int(h) // int(merge_size))
-            w_merged = max(1, int(w) // int(merge_size))
+            h_merged = int(h) // int(merge_size)
+            w_merged = int(w) // int(merge_size)
             pos_embed = (
                 pos_embed.view([t, h_merged, merge_size, w_merged, merge_size, -1])
                 .permute(0, 1, 3, 2, 4, 5)
