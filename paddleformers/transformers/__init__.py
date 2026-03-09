@@ -162,7 +162,7 @@ import_structure = {
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
     "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
     "kimi_k2.configuration": ["KimiK2Config"],
-    "kimi_k2.modeling": ["KimiK2Provider", "KimiK2PretrainedModel", "KimiK2ForCausalLM", "Kimik2ForCausalLMPipe"],
+    "kimi_k2.modeling": ["KimiK2ForCausalLM", "KimiK2ForCausalLMPipe"],
     "kimi_k2.tokenizer": ["TikTokenTokenizer"],
     "llama.configuration": [
         "LlamaConfig",

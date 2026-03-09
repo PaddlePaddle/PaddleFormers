@@ -112,8 +112,9 @@ class KimiK2ForCausalLM(KimiK2PretrainedModel):
         # Check if mtp_block_spec parameter is supported
         config.multi_latent_attention = True
         model_provider_class = KimiK2Provider
-        model_provider = model_provider_class.from_config(config)
 
+        model_provider = model_provider_class.from_config(config)
+        print("model_provider=", model_provider)
         KimiK25_model = model_provider.provide()
         KimiK25_model._gen_aoa_config = cls._gen_aoa_config
 
@@ -122,7 +123,7 @@ class KimiK2ForCausalLM(KimiK2PretrainedModel):
         return KimiK25_model
 
 
-class Kimik2ForCausalLMPipe(KimiK2PretrainedModel, GeneralModelForCausalLMPipe):
+class KimiK2ForCausalLMPipe(KimiK2PretrainedModel, GeneralModelForCausalLMPipe):
     is_fleet = True
 
     def __new__(cls, config):

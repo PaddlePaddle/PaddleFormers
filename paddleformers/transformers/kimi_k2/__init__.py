@@ -21,7 +21,7 @@ import_structure = {
     "modeling": [
         "KimiK2PretrainedModel",
         "KimiK2ForCausalLM",
-        "Kimik2ForCausalLMPipe",
+        "KimiK2ForCausalLMPipe",
     ],
     "tokenization": [
         "TikTokenTokenizer",
