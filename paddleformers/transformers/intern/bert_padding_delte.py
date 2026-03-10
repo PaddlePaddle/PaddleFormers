@@ -18,7 +18,6 @@ from functools import reduce
 
 import paddle
 import paddle.nn.functional as F
-from einops import rearrange, repeat
 
 
 class IndexFirstAxis(paddle.autograd.PyLayer):
@@ -29,7 +28,7 @@ class IndexFirstAxis(paddle.autograd.PyLayer):
         ctx.first_axis_dim, other_shape = input.shape[0], input.shape[1:]
         second_dim = reduce(operator.mul, other_shape, 1)
         return paddle.take_along_axis(
-            arr=rearrange(input, "b ... -> b (...)"), axis=0, indices=repeat(indices, "z -> z d", d=second_dim)
+            arr=input.reshape([input.shape[0], -1]), axis=0, indices=indices.unsqueeze(-1).expand([-1, second_dim])
         ).reshape([-1, *other_shape])
 
     @staticmethod
@@ -38,12 +37,12 @@ class IndexFirstAxis(paddle.autograd.PyLayer):
         (indices,) = ctx.saved_tensor()
         assert grad_output.ndim >= 2
         other_shape = grad_output.shape[1:]
-        grad_output = rearrange(grad_output, "b ... -> b (...)")
+        grad_output = grad_output.reshape([grad_output.shape[0], -1])
         grad_input = paddle.zeros(shape=[ctx.first_axis_dim, tuple(grad_output.shape)[1]], dtype=grad_output.dtype)
 
         grad_input.put_along_axis_(
             axis=0,
-            indices=repeat(indices, "z -> z d", d=tuple(grad_output.shape)[1]),
+            indices=indices.unsqueeze(-1).expand([-1, tuple(grad_output.shape)[1]]),
             values=grad_output,
         )
         return grad_input.reshape([ctx.first_axis_dim, *other_shape]), None
@@ -90,7 +89,7 @@ def unpad_input(hidden_states, attention_mask):
     cu_seqlens = F.pad(paddle.cumsum(seqlens_in_batch, axis=0), [1, 0])
 
     return (
-        index_first_axis(rearrange(hidden_states, "b s ... -> (b s) ..."), indices),
+        index_first_axis(hidden_states.reshape([-1] + list(hidden_states.shape[2:])), indices),
         indices,
         cu_seqlens,
         max_seqlen_in_batch,
@@ -108,4 +107,4 @@ def pad_input(hidden_states, indices, batch, seqlen):
         hidden_states: (batch, seqlen, ...)
     """
     output = index_put_first_axis(hidden_states, indices, batch * seqlen)
-    return rearrange(output, "(b s) ... -> b s ...", b=batch)
+    return output.reshape([batch, seqlen] + list(output.shape[1:]))

@@ -59,8 +59,8 @@ class InternLM2Config(PretrainedConfig):
             Whether to tie weight embeddings
         Example:
     """
-    model_type = 'internlm2'
-    _auto_class = 'AutoConfig'
+    model_type = "internlm2"
+    _auto_class = "AutoConfig"
 
     def __init__(  # pylint: disable=W0102
         self,
@@ -70,7 +70,7 @@ class InternLM2Config(PretrainedConfig):
         num_hidden_layers=32,
         num_attention_heads=32,
         num_key_value_heads=None,
-        hidden_act='silu',
+        hidden_act="silu",
         max_position_embeddings=2048,
         initializer_range=0.02,
         rms_norm_eps=1e-6,
@@ -82,7 +82,7 @@ class InternLM2Config(PretrainedConfig):
         bias=True,
         rope_theta=10000,
         rope_scaling=None,
-        attn_implementation='eager',
+        attn_implementation="eager",
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -107,7 +107,7 @@ class InternLM2Config(PretrainedConfig):
 
         self.attn_implementation = attn_implementation
         if self.attn_implementation is None:
-            self.attn_implementation = 'eager'
+            self.attn_implementation = "eager"
         super().__init__(
             pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,
@@ -125,12 +125,12 @@ class InternLM2Config(PretrainedConfig):
 
         if not isinstance(self.rope_scaling, dict) or len(self.rope_scaling) != 2:
             raise ValueError(
-                '`rope_scaling` must be a dictionary with with two fields, `type` and `factor`, '
-                f'got {self.rope_scaling}'
+                "`rope_scaling` must be a dictionary with with two fields, `type` and `factor`, "
+                f"got {self.rope_scaling}"
             )
-        rope_scaling_type = self.rope_scaling.get('type', None)
-        rope_scaling_factor = self.rope_scaling.get('factor', None)
-        if rope_scaling_type is None or rope_scaling_type not in ['linear', 'dynamic']:
+        rope_scaling_type = self.rope_scaling.get("type", None)
+        rope_scaling_factor = self.rope_scaling.get("factor", None)
+        if rope_scaling_type is None or rope_scaling_type not in ["linear", "dynamic"]:
             raise ValueError(
                 f"`rope_scaling`'s type field must be one of ['linear', 'dynamic'], got {rope_scaling_type}"
             )

@@ -16,26 +16,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ Paddle InternLM2 model."""
+import logging
 import math
-import queue
-import threading
 import warnings
 from typing import List, Optional, Tuple, Union
 
 import paddle
 import paddle.nn.functional as F
-from einops import rearrange
 from paddle import nn
-from paddle.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
+from paddle.nn import CrossEntropyLoss
+
+from paddleformers.transformers import PretrainedModel
 from paddleformers.transformers.activations import ACT2FN
 from paddleformers.transformers.model_outputs import (
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
 )
-from paddleformers.transformers import PretrainedModel
-
-
-import logging
 
 from .configuration import InternLM2Config
 
@@ -343,17 +339,15 @@ class InternLM2Attention(nn.Layer):
             qkv_states = self.wqkv(hidden_states.cast("bfloat16"))
         # [1, 1847, 4096]
 
-        qkv_states = rearrange(
-            qkv_states,
-            "b q (h gs d) -> b q h gs d",
-            gs=2 + self.num_key_value_groups,
-            d=self.head_dim,
-        )
+        gs = 2 + self.num_key_value_groups
+        d = self.head_dim
+        h = qkv_states.shape[-1] // (gs * d)
+        qkv_states = qkv_states.reshape([bsz, q_len, h, gs, d])
         # [1, 1847, 8, 4, 128]
 
         query_states = qkv_states[..., : self.num_key_value_groups, :]
-        query_states = rearrange(
-            query_states, "b q h gs d -> b q (h gs) d"
+        query_states = query_states.reshape(
+            [bsz, q_len, -1, self.head_dim]
         )  # [1, 1847, 8, 2, 128]->[1, 1847, 16, 128]
         key_states = qkv_states[..., -2, :]  # [1, 1847, 8, 128]
         value_states = qkv_states[..., -1, :]  # [1, 1847, 8, 128]
@@ -448,24 +442,22 @@ class InternLM2FlashAttention2(InternLM2Attention):
 
         qkv_states = self.wqkv(hidden_states)  # [1, 1847, 4096]
 
-        qkv_states = rearrange(
-            qkv_states,
-            "b q (h gs d) -> b q h gs d",
-            gs=2 + self.num_key_value_groups,
-            d=self.head_dim,
-        )
+        gs = 2 + self.num_key_value_groups
+        d = self.head_dim
+        h = qkv_states.shape[-1] // (gs * d)
+        qkv_states = qkv_states.reshape([bsz, q_len, h, gs, d])
         # [1, 1847, 8, 4, 128]
 
         query_states = qkv_states[..., : self.num_key_value_groups, :]
-        query_states = rearrange(query_states, "b q h gs d -> b q (h gs) d")
+        query_states = query_states.reshape([bsz, q_len, self.num_heads * self.num_key_value_groups, self.head_dim])
         key_states = qkv_states[..., -2, :]
         value_states = qkv_states[..., -1, :]
 
-        ### new added
+        # new added
         query_states = query_states.transpose([0, 2, 1, 3])
         key_states = key_states.transpose([0, 2, 1, 3])
         value_states = value_states.transpose([0, 2, 1, 3])
-        ###
+        #
 
         kv_seq_len = key_states.shape[-2]
         if past_key_value is not None:

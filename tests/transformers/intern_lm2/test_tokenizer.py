@@ -20,12 +20,11 @@ from paddleformers.transformers.intern_lm2.tokenizer import InternLM2Tokenizer
 
 model_path = "learncat/internlm2_tiny_paddle"
 
-class TestTokenizer(unittest.TestCase):
 
+class TestTokenizer(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tokenizer = InternLM2Tokenizer.from_pretrained(model_path)
-
 
     def test_slow_tokenizer_from_pretrained(self):
         self.assertTrue(self.tokenizer is not None)

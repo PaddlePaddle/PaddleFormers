@@ -19,24 +19,24 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-	"tokenizer": ["InternLM2Tokenizer"],
-	"configuration": ["InternLM2Config"],
-	"modeling": [
-		"InternLM2DecoderLayer",
-		"InternLM2Model",
-		"InternLM2ForCausalLM",
-		"InternLM2PretrainedModel",
-	],
+    "tokenizer": ["InternLM2Tokenizer"],
+    "configuration": ["InternLM2Config"],
+    "modeling": [
+        "InternLM2DecoderLayer",
+        "InternLM2Model",
+        "InternLM2ForCausalLM",
+        "InternLM2PretrainedModel",
+    ],
 }
 
 if TYPE_CHECKING:
-	from .configuration import *
-	from .modeling import *
-	from .tokenizer import *
+    from .configuration import *
+    from .modeling import *
+    from .tokenizer import *
 else:
-	sys.modules[__name__] = _LazyModule(
-		__name__,
-		globals()["__file__"],
-		import_structure,
-		module_spec=__spec__,
-	)
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

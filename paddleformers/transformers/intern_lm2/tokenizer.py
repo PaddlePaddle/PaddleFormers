@@ -23,10 +23,10 @@ from shutil import copyfile
 from typing import Any, Dict, List, Optional, Tuple
 
 import sentencepiece as spm
-from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
 from tokenizers import AddedToken
-from paddleformers.transformers.tokenizer_utils_base import TextInput
 
+from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
+from paddleformers.transformers.tokenizer_utils_base import TextInput
 from paddleformers.utils.log import logger
 
 VOCAB_FILES_NAMES = {"vocab_file": "./tokenizer.model"}
