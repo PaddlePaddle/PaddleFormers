@@ -288,7 +288,7 @@ class WhisperFeatureExtractor(SequenceFeatureExtractor):
 
         input_features = padded_inputs.get("input_features").transpose(2, 0, 1)
 
-        input_features = self._paddle_extract_fbank_features(input_features[0], device="cpu")
+        input_features = self._paddle_extract_fbank_features(input_features[0], device="gpu")
 
         if isinstance(input_features[0], List):
             padded_inputs["input_features"] = [np.asarray(feature, dtype=np.float32) for feature in input_features]
