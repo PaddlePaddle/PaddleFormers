@@ -429,10 +429,7 @@ class Qwen2CompatibilityTest(unittest.TestCase):
 
         # 2. forward the torch model
         import torch
-
-        from paddleformers.transformers import (
-            Qwen2ForCausalLMDeprecated as Qwen2ForCausalLM,
-        )
+        from transformers import Qwen2ForCausalLM
 
         torch_model = Qwen2ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
         torch_model.eval()
