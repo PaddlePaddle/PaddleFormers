@@ -32,7 +32,7 @@ save_steps: 500
 save_strategy: steps
 logging_steps: 1
 save_total_limit: 1
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 32
 logging_dir: ./vdl_log_sft_full_tp_8B_coco
 output_dir: ./checkpoints/qwen3-vl-sft-full-tp-8B_coco
 disable_tqdm: true
@@ -44,7 +44,7 @@ warmup_steps: 20
 learning_rate: 1.0e-5
 
 # performance
-tensor_model_parallel_size: 4
+tensor_model_parallel_size: 2
 pipeline_model_parallel_size: 1
 sharding: stage1
 recompute_granularity: full
@@ -58,3 +58,5 @@ load_checkpoint_format: "flex_checkpoint"
 freeze_config: freeze_vision freeze_aligner
 
 benchmark: true
+dataloader_num_workers: 8
+prefetch_factor: 8

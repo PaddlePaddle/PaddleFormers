@@ -6,7 +6,7 @@ train_dataset_prob: "1.0"
 eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/coco_grounding/val.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
-packing: false
+packing: true
 mix_strategy: concat
 template_backend: custom
 template: qwen3_vl
@@ -31,7 +31,7 @@ evaluation_strategy: steps
 save_steps: 500
 save_strategy: steps
 logging_steps: 1
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 16
 logging_dir: ./vdl_log
 output_dir: ./checkpoints/qwen3-vl-sft-full
 disable_tqdm: true
@@ -61,7 +61,7 @@ moe_grouped_gemm: true
 moe_deep_gemm: true
 
 apply_rope_fusion: False
-# moe_router_force_load_balancing: true
+moe_router_force_load_balancing: false
 
 # sharding
 split_param: true
