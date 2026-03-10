@@ -1045,6 +1045,10 @@ class PretrainedConfig:
         output_config_file = os.path.join(save_directory, CONFIG_NAME)
 
         self.to_json_file(output_config_file, use_diff=True)
+        if hasattr(self, "head_dim"):
+            logger.error(f"save_pretrained: {self.head_dim}")
+        else:
+            logger.error("save_pretrained has no head_dim")
         logger.info(f"Configuration saved in {output_config_file}")
 
     @classmethod
@@ -1311,23 +1315,25 @@ class PretrainedConfig:
         Returns:
             `Dict[str, Any]`: Dictionary of all the attributes that make up this configuration instance,
         """
+        if hasattr(self, "head_dim"):
+            logger.error(f"to_diff_dict: {self.head_dim}")
+        else:
+            logger.error("to_diff_dict has no head_dim")
         config_dict = self.to_dict(saving_file=saving_file)
-        logger.error(f"config_dict: {config_dict}")
+        # logger.info(f"config_dict: {config_dict}")
 
         # get the default config dict
         default_config_dict = PretrainedConfig().to_dict(saving_file=saving_file)
-        logger.error(f"default_config_dict: {default_config_dict}")
+        # logger.info(f"default_config_dict: {default_config_dict}")
 
         # get class specific config dict
         class_config_dict = self.__class__().to_dict(saving_file=saving_file) if not self.is_composition else {}
-        logger.error(f"class_config_dict: {class_config_dict}")
+        # logger.info(f"class_config_dict: {class_config_dict}")
 
         serializable_config_dict = {}
 
         # only serialize values that differ from the default config
         for key, value in config_dict.items():
-            if key == "head_dim":
-                logger.error("have head_dim")
             white_list = ["tie_word_embeddings"]
             if key in white_list:
                 serializable_config_dict[key] = value
@@ -1359,7 +1365,6 @@ class PretrainedConfig:
                 serializable_config_dict[key] = value
 
         self._remove_keys_not_serialized(serializable_config_dict, saving_file)
-        logger.error(f"to_diff_dict:{serializable_config_dict}")
         return serializable_config_dict
 
     def register_unsavable_keys(self, keys):
