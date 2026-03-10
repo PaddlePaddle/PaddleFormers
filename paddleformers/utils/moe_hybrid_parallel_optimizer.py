@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 import paddle
 import paddle.distributed as dist
 from paddle.autograd import no_grad
@@ -19,6 +21,9 @@ from paddle.distributed.fleet.base.topology import ParallelMode
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
     DygraphShardingOptimizer,
     DygraphShardingOptimizerV2,
+)
+from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer_v3 import (
+    DygraphShardingOptimizerV3,
 )
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_optimizer import (
     HybridParallelOptimizer as HPBase,
@@ -349,10 +354,16 @@ class MoEHybridParallelOptimizer(HPBase):
             split_param = strategy.hybrid_configs["sharding_configs"].split_param
             assert (
                 hcg.get_sharding_parallel_world_size() >= 1 and split_param is True
-            ), "Hybrid expert parallel only supports ShardingV2 now"
+            ), "Hybrid expert parallel only supports ShardingV2/V3 now"
         if hcg.get_sharding_parallel_world_size() > 1:
             split_param = strategy.hybrid_configs["sharding_configs"].split_param
-            ShardingOptimizer = DygraphShardingOptimizerV2 if split_param else DygraphShardingOptimizer
+            use_sharding_v3 = os.environ.get("FLAGS_sharding_v3", "0") == "1"
+            if use_sharding_v3 and split_param:
+                ShardingOptimizer = DygraphShardingOptimizerV3
+            elif split_param:
+                ShardingOptimizer = DygraphShardingOptimizerV2
+            else:
+                ShardingOptimizer = DygraphShardingOptimizer
             optimizer = ShardingOptimizer(optimizer, hcg)
 
         self._enable_timer = strategy.hybrid_configs["enable_optimizer_timer"]
@@ -390,6 +401,7 @@ class MoEHybridParallelOptimizer(HPBase):
                     MixPrecisionOptimizer,
                     DygraphShardingOptimizer,
                     DygraphShardingOptimizerV2,
+                    DygraphShardingOptimizerV3,
                 ),
             )
 

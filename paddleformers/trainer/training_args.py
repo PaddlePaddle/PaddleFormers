@@ -1528,6 +1528,17 @@ class TrainingArguments:
             "help": "Enable parameter sharding to distribute model parameters across devices, reducing memory footprint per GPU (ZeRO-style optimization)."
         },
     )
+    sharding_v3: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Enable ShardingV3 (hybrid tensor-wise + element-wise) for Muon optimizer. "
+                "2D Muon parameters are assigned as whole tensors to ranks (no sharding gather), "
+                "while non-2D AdamW parameters use element-wise splitting for memory balance. "
+                "Requires split_param=True and Muon optimizer. Set FLAGS_sharding_v3=1."
+            )
+        },
+    )
     sd_sharding_comm_overlap: bool = field(
         default=False,
         metadata={
@@ -2094,6 +2105,16 @@ class TrainingArguments:
                         if self.split_param:
                             strategy.hybrid_configs["sharding_configs"].split_param = True
                             assert self.amp_master_grad, "Currently sharding stage1 v2 only support amp_master_grad"
+
+                        if self.sharding_v3:
+                            os.environ["FLAGS_sharding_v3"] = "1"
+                            assert self.split_param, "sharding_v3 requires split_param=True"
+                            logger.info("ShardingV3 enabled via sharding_v3=True")
+                        else:
+                            os.environ["FLAGS_sharding_v3"] = "0"
+
+                        if self.tensorwise_offload_optimizer:
+                            os.environ["FLAGS_tensorwise_offload_optimizer"] = "1"
 
                         if self.sd_release_grads:
                             strategy.hybrid_configs["sharding_configs"].release_gradients = True

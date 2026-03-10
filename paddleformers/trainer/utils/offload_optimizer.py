@@ -92,6 +92,60 @@ def hack_offload_optimizer(mode=None):
 
     setattr(opt_type, "_insert_sync", new_insert_sync)
 
+    # Step 4: mock Muon._muon_update and Muon._apply_optimize
+    # Muon's _muon_update is pure Python (paddle.lerp + paddle.assign),
+    # so it bypasses the _C_ops.adamw_ patch above. We need explicit
+    # reload/offload for Muon's momentum_buffer and master_weights.
+    try:
+        from paddle.optimizer.muon import Muon
+
+        # 4a: Patch _muon_update (staticmethod) — per-param momentum offload
+        origin_muon_update = Muon._muon_update
+
+        def new_muon_update(param, grad, lr, momentum_buffer, *args, **kwargs):
+            reload(momentum_buffer)
+            ret = origin_muon_update(param, grad, lr, momentum_buffer, *args, **kwargs)
+            is_offload_opt = getattr(param, "is_offload_opt", True)
+            if is_offload_opt:
+                offload(momentum_buffer)
+            return ret
+
+        Muon._muon_update = staticmethod(new_muon_update)
+
+        # 4b: Patch _apply_optimize — reload/offload master_weights around Muon updates
+        origin_muon_apply = Muon._apply_optimize
+
+        def new_muon_apply(self, loss, startup_program, params_grads):
+            # Reload master_weights to GPU before Muon update
+            # (needed after checkpoint restore where master_weights may be on CPU/pinned)
+            mw_dict = getattr(self, "_master_weights", None)
+            if mw_dict:
+                for param, grad in params_grads:
+                    if grad is None:
+                        continue
+                    mw = mw_dict.get(param.name)
+                    if mw is not None and isinstance(mw, paddle.Tensor):
+                        reload(mw)
+
+            ret = origin_muon_apply(self, loss, startup_program, params_grads)
+
+            # Offload master_weights back to CPU pinned after Muon update
+            if mw_dict:
+                for param, grad in params_grads:
+                    if grad is None:
+                        continue
+                    mw = mw_dict.get(param.name)
+                    if mw is not None and isinstance(mw, paddle.Tensor):
+                        is_offload_opt = getattr(param, "is_offload_opt", True)
+                        if is_offload_opt:
+                            offload(mw)
+            return ret
+
+        Muon._apply_optimize = new_muon_apply
+
+    except ImportError:
+        pass
+
 
 def hack_offload_optimizer_eb5():
     # Step 1: mock _add_accumulator

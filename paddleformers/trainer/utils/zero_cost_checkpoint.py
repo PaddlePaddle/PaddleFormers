@@ -39,6 +39,13 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer import (
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
     DygraphShardingOptimizerV2,
 )
+
+try:
+    from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer_v3 import (
+        DygraphShardingOptimizerV3,
+    )
+except ImportError:
+    DygraphShardingOptimizerV3 = None
 from paddle.distributed.fleet.meta_parallel import PipelineLayer
 from paddle.distributed.flex_checkpoint.dcp.metadata import (
     LocalTensorIndex,
@@ -1432,7 +1439,10 @@ class DistInfoCollectorValidator:
             optimizer = unwrap_optimizer(optimizer, DygraphShardingOptimizer)
             param2rank = {k: v for (k, v) in optimizer._param2rank.items()}
         else:
-            pp_overlap = unwrap_optimizer(optimizer, DygraphShardingOptimizerV2).pp_overlap
+            _opt = unwrap_optimizer(optimizer, DygraphShardingOptimizerV3) if DygraphShardingOptimizerV3 else None
+            if _opt is None:
+                _opt = unwrap_optimizer(optimizer, DygraphShardingOptimizerV2)
+            pp_overlap = _opt.pp_overlap
 
         structure_name_mapping = {}
         param_meta = {}
