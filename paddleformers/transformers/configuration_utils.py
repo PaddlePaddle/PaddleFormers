@@ -1321,14 +1321,26 @@ class PretrainedConfig:
             logger.error("to_diff_dict has no head_dim")
         config_dict = self.to_dict(saving_file=saving_file)
         # logger.info(f"config_dict: {config_dict}")
+        if "head_dim" in config_dict:
+            logger.error(f"config_dict: {config_dict['head_dim']}")
+        else:
+            logger.error("config_dict has no head_dim")
 
         # get the default config dict
         default_config_dict = PretrainedConfig().to_dict(saving_file=saving_file)
         # logger.info(f"default_config_dict: {default_config_dict}")
+        if "head_dim" in default_config_dict:
+            logger.error(f"default_config_dict: {default_config_dict['head_dim']}")
+        else:
+            logger.error("default_config_dict has no head_dim")
 
         # get class specific config dict
         class_config_dict = self.__class__().to_dict(saving_file=saving_file) if not self.is_composition else {}
         # logger.info(f"class_config_dict: {class_config_dict}")
+        if "head_dim" in class_config_dict:
+            logger.error(f"class_config_dict: {class_config_dict['head_dim']}")
+        else:
+            logger.error("class_config_dict has no head_dim")
 
         serializable_config_dict = {}
 
