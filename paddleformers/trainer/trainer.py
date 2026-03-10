@@ -925,7 +925,7 @@ class Trainer:
 
     def _create_zcc_manager_instance(self, unwrapped_model, zcc_worker_class):
         """Create ZCC manager instance with appropriate configuration."""
-        if isinstance(self.model, PipelineLayer):
+        if isinstance(self.model, PipelineLayer) and self.args.pipeline_model_parallel_size > 1:
             pipeline_hooks_capacity = (
                 unwrapped_model.forward_pipeline_parallel_hook_capacity
                 + unwrapped_model.backward_pipeline_parallel_hook_capacity
@@ -1019,7 +1019,7 @@ class Trainer:
         self.zcc_manager = self._create_zcc_manager_instance(unwrapped_model, zcc_worker_class)
 
         # Register pipeline hooks if using pipeline parallelism
-        if isinstance(self.model, PipelineLayer):
+        if isinstance(self.model, PipelineLayer) and self.args.pipeline_model_parallel_size > 1:
             self._register_pipeline_hooks(unwrapped_model)
 
         # Add callback and handle checkpoint resumption
@@ -3581,6 +3581,9 @@ class Trainer:
 
         if self.args.pipeline_model_parallel_size > 1:
             return self.training_pipeline_step(model, inputs)
+
+        if hasattr(model, "_prepare_unified_non_pp_data"):
+            model._prepare_unified_non_pp_data(inputs)
 
         model.train()
         inputs = self._prepare_inputs(inputs)
