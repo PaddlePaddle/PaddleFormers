@@ -373,7 +373,6 @@ class Glm4vMoeModelTester:
         self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
 
-@gpu_device_initializer(log_prefix="Glm4vMoeModelTest")
 class Glm4vMoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
     base_model_class = Glm4vMoeModel
     return_dict = False
@@ -382,6 +381,7 @@ class Glm4vMoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
     all_model_classes = (Glm4vMoeModel, Glm4vMoeForConditionalGeneration)
     all_generative_model_classes = {Glm4vMoeForConditionalGeneration: {Glm4vMoeModel, "glm4v_moe"}}
 
+    @gpu_device_initializer(log_prefix="Glm4vMoeModelTest")
     def setUp(self):
         super().setUp()
         self.model_tester = Glm4vMoeModelTester(self)
@@ -476,7 +476,6 @@ class Glm4vMoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         assert output[0].shape == [1, 2]
 
 
-@gpu_device_initializer(log_prefix="Glm4vMoeIntegrationTest")
 class Glm4vMoeIntegrationTest(unittest.TestCase):
     base_model_class = Glm4vMoeModel
     test_dtype = "float32"  # "bfloat16"
@@ -485,7 +484,12 @@ class Glm4vMoeIntegrationTest(unittest.TestCase):
     image_url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg"
     video_url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
 
+    @gpu_device_initializer(log_prefix="Glm4vMoeIntegrationTest")
     def setUp(self):
+        pass
+
+    @classmethod
+    def setUpClass(self):
         self.model = Glm4vMoeForConditionalGeneration.from_pretrained(
             self.model_path, download_hub="aistudio", convert_from_hf=True, dtype=self.test_dtype
         )

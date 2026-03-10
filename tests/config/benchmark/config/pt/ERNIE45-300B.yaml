@@ -41,7 +41,7 @@ adam_beta2: 0.95
 adam_epsilon: 1e-8
 learning_rate: 2.2e-4
 min_lr: 2.2e-5
-gradient_accumulation_steps: 2835
+gradient_accumulation_steps: 16
 per_device_train_batch_size: 1
 per_device_eval_batch_size: 1
 lr_scheduler: wsd:231084
@@ -68,6 +68,7 @@ expert_model_parallel_size: 8
 sharding: "stage1"
 sharding_parallel_size: 8
 amp_master_grad: 1
+global_batch_size: 128
 
 # pipeline_parallel_config
 pp_delay_scale_loss: true
