@@ -3234,9 +3234,13 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 model_to_save.config.dtype = str(dtype).split(".")[1]
             if config_to_save is None:
                 if hasattr(model_to_save, "config_to_save"):
-                    config_to_save = copy.deepcopy(model_to_save.config_to_save)
+                    # config_to_save = copy.deepcopy(model_to_save.config_to_save)
+                    config_to_save = model_to_save.config_to_save.__class__.from_dict(
+                        model_to_save.config_to_save.to_dict()
+                    )
                 else:
-                    config_to_save = copy.deepcopy(model_to_save.config)
+                    # config_to_save = copy.deepcopy(model_to_save.config)
+                    config_to_save = model_to_save.config.__class__.from_dict(model_to_save.config.to_dict())
                     logger.error(f"model_utils config_to_save: {config_to_save}")
                     # Attach architecture to the config
                     if not config_to_save.architectures:
