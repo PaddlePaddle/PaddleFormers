@@ -33,13 +33,59 @@ except:
     qlora_weight_linear = None
     qlora_weight_quantize = None
 
+from ..utils.import_utils import is_paddlefleet_available
 from ..utils.log import logger
 from .qat_utils import quantize
 from .quantization_linear import (
     ColumnParallelQuantizationLinear,
     QuantizationLinear,
     RowParallelQuantizationLinear,
+    dequant_weight,
 )
+
+# Conditionally import paddlefleet modules
+if is_paddlefleet_available():
+    from paddlefleet.parallel_state import (
+        get_tensor_model_parallel_group,
+        get_tensor_model_parallel_world_size,
+    )
+    from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
+    from paddlefleet.tensor_parallel import (
+        ColumnParallelLinear as FleetColumnParallelLinear,
+    )
+    from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
+
+    from .quantization_linear import (
+        FleetColumnParallelQuantizationLinear,
+        FleetQuantizationLinear,
+        FleetRowParallelQuantizationLinear,
+    )
+else:
+    # Define mock objects or alternative implementations when paddlefleet is not available
+    def get_tensor_model_parallel_group():
+        return None
+
+    def get_tensor_model_parallel_world_size():
+        return 1
+
+    class PaddleFleetPipelineLayer:
+        pass
+
+    class FleetColumnParallelLinear:
+        pass
+
+    class FleetRowParallelLinear:
+        pass
+
+    class FleetColumnParallelQuantizationLinear:
+        pass
+
+    class FleetQuantizationLinear:
+        pass
+
+    class FleetRowParallelQuantizationLinear:
+        pass
+
 
 LINEAR_CLASSES = [
     nn.Linear,
@@ -48,6 +94,8 @@ LINEAR_CLASSES = [
     RowParallelLinear,
     ColumnSequenceParallelLinear,
     RowSequenceParallelLinear,
+    FleetColumnParallelLinear,
+    FleetRowParallelLinear,
 ]
 
 
@@ -139,6 +187,75 @@ def replace_with_quantization_linear(model, quantization_config, llm_int8_thresh
                     input_is_parallel=True,
                     sequence_parallel=True,
                 )
+            elif is_paddlefleet_available() and (
+                isinstance(child, FleetColumnParallelLinear) or isinstance(child, FleetRowParallelLinear)
+            ):
+                if child.world_size == 1:
+                    if getattr(child.weight, "transpose_weight", False):
+                        out_feature, in_features = child.weight.shape[0], child.weight.shape[1]
+                    else:
+                        in_features, out_feature = child.weight.shape[0], child.weight.shape[1]
+                    quant_linear = FleetQuantizationLinear(
+                        in_features=in_features,
+                        out_features=out_feature,
+                        skip_bias_add=child.skip_bias_add,
+                        quantization_config=quantization_config,
+                        weight_quantize_algo=weight_quantize_algo,
+                        dtype=child._dtype,
+                        bias_attr=bias_attr,
+                        mp_moe=getattr(child.weight, "mp_moe", False),
+                        is_distributed=getattr(child.weight, "is_distributed", False),
+                    )
+                elif isinstance(child, FleetRowParallelLinear):
+                    if child.sequence_parallel:
+                        quant_linear = FleetRowParallelQuantizationLinear(
+                            input_size_per_partition=child.weight.shape[0],
+                            out_features=child.weight.shape[1],
+                            skip_bias_add=child.skip_bias_add,
+                            quantization_config=quantization_config,
+                            weight_quantize_algo=weight_quantize_algo,
+                            dtype=child._dtype,
+                            bias_attr=bias_attr,
+                            input_is_parallel=True,
+                            sequence_parallel=True,
+                        )
+                    else:
+                        quant_linear = FleetRowParallelQuantizationLinear(
+                            input_size_per_partition=child.weight.shape[0],
+                            out_features=child.weight.shape[1],
+                            skip_bias_add=child.skip_bias_add,
+                            quantization_config=quantization_config,
+                            weight_quantize_algo=weight_quantize_algo,
+                            dtype=child._dtype,
+                            bias_attr=bias_attr,
+                            input_is_parallel=child.input_is_parallel,
+                            mp_skip_c_identity=child.mp_skip_c_identity,
+                        )
+                elif isinstance(child, FleetColumnParallelLinear):
+                    if child.sequence_parallel:
+                        quant_linear = FleetColumnParallelQuantizationLinear(
+                            in_features=child.weight.shape[0],
+                            output_size_per_partition=child.weight.shape[1],
+                            skip_bias_add=child.skip_bias_add,
+                            quantization_config=quantization_config,
+                            weight_quantize_algo=weight_quantize_algo,
+                            dtype=child._dtype,
+                            bias_attr=bias_attr,
+                            gather_output=False,
+                            sequence_parallel=True,
+                        )
+                    else:
+                        quant_linear = FleetColumnParallelQuantizationLinear(
+                            in_features=child.weight.shape[0],
+                            output_size_per_partition=child.weight.shape[1],
+                            skip_bias_add=child.skip_bias_add,
+                            quantization_config=quantization_config,
+                            weight_quantize_algo=weight_quantize_algo,
+                            dtype=child._dtype,
+                            bias_attr=bias_attr,
+                            gather_output=child.gather_output,
+                            mp_skip_c_identity=child.mp_skip_c_identity,
+                        )
             setattr(parent, last, quant_linear)
             del child
 
@@ -237,6 +354,130 @@ def convert_to_quantize_state_dict(state_dict, quantization_linear_list, quantiz
             convert_to_weight_quantize_state_dict(state_dict, name, quantization_config, dtype, weight_quantize_algo)
         elif weight_quantize_algo in ["fp4", "nf4"]:
             convert_to_qlora_state_dict(state_dict, name, quantization_config, dtype, weight_quantize_algo)
+        else:
+            raise NotImplementedError(
+                f"Please check the quantization_config.weight_quantize_algo: {quantization_config.weight_quantize_algo}"
+            )
+    return state_dict
+
+
+def convert_to_weight_quantize_dequantize_state_dict(state_dict, name, quantization_config, weight_quantize_algo):
+    weight_name = name + ".weight"
+    if weight_name in state_dict:
+        # gpu weight_quantize will fix in future
+        tensor = state_dict.pop(weight_name)
+        origin_dtype = tensor.dtype
+        target_weight = paddle.to_tensor(tensor).cuda()
+
+        if weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
+            quant_weight, weight_scale = quantize(
+                target_weight,
+                weight_quantize_algo,
+                "weight",
+                quantization_config,
+                side="left",
+                apply_hadamard=quantization_config.apply_hadamard,
+            )
+        else:
+            quant_weight, weight_scale = weight_quantize(
+                x=target_weight,
+                algo=weight_quantize_algo,
+                group_size=quantization_config.group_size,
+            )
+
+        quant_dequant_weight = dequant_weight(
+            quant_weight,
+            quantization_config,
+            weight_quantize_algo,
+            str(origin_dtype),
+            weight_scale,
+            None,
+            None,
+        )
+        state_dict[weight_name] = quant_dequant_weight
+        del target_weight
+    return state_dict
+
+
+def convert_to_qlora_dequantize_state_dict(state_dict, name, quantization_config, weight_quantize_algo):
+    if qlora_weight_quantize is None:
+        raise ImportError(
+            "Please run the following commands to install qlora related package first: \n"
+            "1) git clone https://github.com/PaddlePaddle/PaddleSlim \n"
+            "2) cd PaddleSlim \n"
+            "3) python ./csrc/setup_cuda.py install"
+        )
+    weight_name = name + ".weight"
+    quant_weight_name = name + ".quant_weight"
+    if not quantization_config.qlora_weight_double_quant:
+        weight_scale_name = name + ".weight_scale"
+    else:
+        qweight_scale_name = name + ".qweight_scale"
+        double_weight_scale_name = name + ".double_weight_scale"
+        quant_sacle_offset_name = name + ".weight_scale_offset"
+
+    if weight_name in state_dict:
+        tensor = state_dict.pop(weight_name)
+        origin_dtype = tensor.dtype
+        origin_shape = tensor.shape
+        target_weight = paddle.to_tensor(tensor).cuda()
+
+        qlora_state_dict = qlora_weight_quantize(
+            weight=target_weight,
+            quant_algo=weight_quantize_algo,
+            double_quant=quantization_config.qlora_weight_double_quant,
+            block_size=quantization_config.qlora_weight_blocksize,
+            double_quant_block_size=quantization_config.qlora_weight_double_quant_block_size,
+            linear_name=name,
+            return_dict=True,
+        )
+
+        quant_weight = qlora_state_dict[quant_weight_name]
+        if quantization_config.qlora_weight_double_quant:
+            qweight_scale = qlora_state_dict[qweight_scale_name]
+            double_weight_scale = qlora_state_dict[double_weight_scale_name]
+            quant_sacle_offset = qlora_state_dict[quant_sacle_offset_name]
+            quant_state = (qweight_scale, double_weight_scale, quant_sacle_offset)
+            weight_scale = None
+        else:
+            quant_state = None
+            weight_scale = qlora_state_dict[weight_scale_name]
+
+        quant_dequant_weight = dequant_weight(
+            quant_weight,
+            quantization_config,
+            weight_quantize_algo,
+            str(origin_dtype),
+            weight_scale,
+            quant_state,
+            [origin_shape[0]],
+        )
+
+        state_dict[weight_name] = quant_dequant_weight
+        del target_weight
+    return state_dict
+
+
+def convert_to_quantize_dequantize_state_dict(state_dict, quantization_linear_list, quantization_config):
+    for name in quantization_linear_list:
+        # Get quantization algorithm
+        weight_quantize_algo = parse_weight_quantize_algo(quantization_config, name)
+        if weight_quantize_algo is None:
+            continue
+        # Convert state dict
+        if weight_quantize_algo in [
+            "weight_only_int8",
+            "weight_only_int4",
+            "llm.int8",
+            "a8w8linear",
+            "a8w4linear",
+            "fp8linear",
+        ]:
+            convert_to_weight_quantize_dequantize_state_dict(
+                state_dict, name, quantization_config, weight_quantize_algo
+            )
+        elif weight_quantize_algo in ["fp4", "nf4"]:
+            convert_to_qlora_dequantize_state_dict(state_dict, name, quantization_config, weight_quantize_algo)
         else:
             raise NotImplementedError(
                 f"Please check the quantization_config.weight_quantize_algo: {quantization_config.weight_quantize_algo}"

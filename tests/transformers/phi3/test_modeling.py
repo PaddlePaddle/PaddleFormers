@@ -19,10 +19,9 @@ import unittest
 
 import numpy as np
 import paddle
-from parameterized import parameterized
 
 from paddleformers.transformers import Phi3Config, Phi3ForCausalLM, Phi3Model
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -304,6 +303,7 @@ class Phi3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
     return_dict = False
     use_labels = False
 
+    @gpu_device_initializer(log_prefix="Phi3ModelTest")
     def setUp(self):
         super().setUp()
         self.model_tester = Phi3ModelTester(self)
@@ -380,7 +380,6 @@ class Phi3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
                     if k.endswith(".mlp.gate_up_proj.weight"):
                         md52 = model_state_2[k].cast("bfloat16")._md5sum()
                         md53 = model_state_3[k].cast("bfloat16")._md5sum()
-                    print(k)
                     assert md52 == md53
 
     def test_attention_outputs(self):
@@ -412,6 +411,10 @@ class Phi3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
 
 
 class Phi3IntegrationTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Phi3IntegrationTest")
+    def setUp(self):
+        pass
+
     def test_model_tiny_logits(self):
         input_ids = [[1, 306, 4658, 278, 6593, 310, 2834, 338]]
 
@@ -419,8 +422,7 @@ class Phi3IntegrationTest(unittest.TestCase):
             "PaddleFormers/tiny-random-phi4",
             download_hub="aistudio",
             dtype="float32",
-            convert_from_hf=True,
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
 
         input_ids = paddle.to_tensor(input_ids)
@@ -476,6 +478,10 @@ class Phi3GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
 
 
 class Phi3CompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Phi3CompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
@@ -488,48 +494,54 @@ class Phi3CompatibilityTest(unittest.TestCase):
 
     @require_package("transformers", "torch")
     def test_Phi3_converter(self):
+        # 1. create common input
         input_ids = np.random.randint(100, 200, [1, 20])
 
-        from paddleformers.transformers import Phi3Model
+        # 2. forward the torch model
+        import torch
+        from transformers import Phi3ForCausalLM
 
-        paddle_model = Phi3Model.from_pretrained(
-            self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+        torch_model = Phi3ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+        torch_model.eval()
+        torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+
+        # 3. forward the paddle model
+        from paddleformers.transformers import Phi3ForCausalLM
+
+        paddle_model = Phi3ForCausalLM.from_pretrained(
+            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
-
-        import torch
-        from transformers import Phi3Model
-
-        torch_model = Phi3Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-        torch_model.eval()
-        torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
         self.assertTrue(
             np.allclose(
                 paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                 torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                rtol=1e2,
+                rtol=1e-2,
             )
         )
 
     @require_package("transformers", "torch")
     def test_Phi3_converter_from_local_dir(self):
         with tempfile.TemporaryDirectory() as tempdir:
+            # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
+            # 2. forward the torch model
             import torch
-            from transformers import Phi3Model
+            from transformers import Phi3ForCausalLM
 
-            torch_model = Phi3Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = Phi3ForCausalLM.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
-            from paddleformers.transformers import Phi3Model
+            # 3. forward the paddle model
+            from paddleformers.transformers import Phi3ForCausalLM
 
-            paddle_model = Phi3Model.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            paddle_model = Phi3ForCausalLM.from_pretrained(
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
             paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
@@ -538,48 +550,7 @@ class Phi3CompatibilityTest(unittest.TestCase):
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    rtol=1e2,
+                    atol=1e-3,
+                    rtol=1e-2,
                 )
             )
-
-    @parameterized.expand([("Phi3Model",), ("Phi3ForCausalLM",)])
-    @require_package("transformers", "torch")
-    def test_Phi3_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
-        pytorch_class_name = pytorch_class_name or class_name
-        with tempfile.TemporaryDirectory() as tempdir:
-            input_ids = np.random.randint(100, 200, [1, 20])
-
-            import torch
-            import transformers
-
-            torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-            from paddleformers import transformers
-
-            paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
-            )
-            paddle_model.eval()
-
-            if class_name == "Phi3Model":
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
-            else:
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
-
-            self.assertTrue(
-                np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e2,
-                )
-            )
-
-
-if __name__ == "__main__":
-    unittest.main()

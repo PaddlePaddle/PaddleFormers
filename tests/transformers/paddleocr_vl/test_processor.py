@@ -80,7 +80,7 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
 
         self.assertEqual(processor.tokenizer.get_vocab(), tokenizer.get_vocab())
         self.assertEqual(processor.image_processor.to_json_string(), image_processor.to_json_string())
-        self.assertEqual(processor.tokenizer.__class__.__name__, "LlamaTokenizerFast")
+        self.assertEqual(processor.tokenizer.__class__.__name__, "LlamaTokenizer")
         self.assertEqual(processor.image_processor.__class__.__name__, "PaddleOCRVLImageProcessor")
 
     def test_image_processor(self):

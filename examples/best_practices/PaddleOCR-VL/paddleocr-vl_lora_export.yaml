@@ -2,3 +2,4 @@
 fine_tuning: LoRA
 model_name_or_path: PaddlePaddle/PaddleOCR-VL
 output_dir: ./PaddleOCR-VL-SFT-Bengali-lora
+copy_custom_file_list: "configuration_paddleocr_vl.py image_processing_paddleocr_vl.py modeling_paddleocr_vl.py processing_paddleocr_vl.py"

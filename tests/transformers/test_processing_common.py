@@ -25,7 +25,9 @@ import numpy as np
 import paddle
 from PIL import Image
 
-from paddleformers.transformers.auto.processing import processor_class_from_name
+from paddleformers.transformers.processing_utils import (
+    MODALITY_TO_AUTOPROCESSOR_MAPPING,
+)
 
 from .test_utils import check_json_file_has_correct_format
 
@@ -67,16 +69,12 @@ class ProcessorTesterMixin:
         return {}
 
     def get_component(self, attribute, **kwargs):
-        assert attribute in self.processor_class.attributes
-        component_class_name = getattr(self.processor_class, f"{attribute}_class")
-        if isinstance(component_class_name, tuple):
-            if attribute == "image_processor":
-                component_class_name = component_class_name[0]
-            else:
-                component_class_name = component_class_name[-1]
-
-        component_class = processor_class_from_name(component_class_name)
-        component = component_class.from_pretrained(self.tmpdir, **kwargs)  # noqa
+        if attribute not in MODALITY_TO_AUTOPROCESSOR_MAPPING and "tokenizer" in attribute:
+            auto_processor_class = MODALITY_TO_AUTOPROCESSOR_MAPPING["tokenizer"]
+            component = auto_processor_class.from_pretrained(self.tmpdir, subfolder=attribute, **kwargs)  # noqa
+        else:
+            auto_processor_class = MODALITY_TO_AUTOPROCESSOR_MAPPING[attribute]
+            component = auto_processor_class.from_pretrained(self.tmpdir, **kwargs)  # noqa
         if "tokenizer" in attribute and not component.pad_token:
             component.pad_token = "[TEST_PAD]"
             if component.pad_token_id is None:
@@ -86,7 +84,7 @@ class ProcessorTesterMixin:
 
     def prepare_components(self):
         components = {}
-        for attribute in self.processor_class.attributes:
+        for attribute in self.processor_class.get_attributes():
             component = self.get_component(attribute)
             components[attribute] = component
 
@@ -182,16 +180,13 @@ class ProcessorTesterMixin:
             self.assertEqual(processor_second.to_dict(), processor_first.to_dict())
 
             # Try to load each attribute separately from saved directory
-            for attribute in processor_first.attributes:
-                attribute_class_name = getattr(processor_first, f"{attribute}_class")
-                if isinstance(attribute_class_name, tuple):
-                    if attribute == "image_processor":
-                        attribute_class_name = attribute_class_name[0]
-                    else:
-                        attribute_class_name = attribute_class_name[-1]
-
-                attribute_class = processor_class_from_name(attribute_class_name)
-                attribute_reloaded = attribute_class.from_pretrained(tmpdir)
+            for attribute in processor_first.get_attributes():
+                if attribute not in MODALITY_TO_AUTOPROCESSOR_MAPPING and "tokenizer" in attribute:
+                    auto_processor_class = MODALITY_TO_AUTOPROCESSOR_MAPPING["tokenizer"]
+                    attribute_reloaded = auto_processor_class.from_pretrained(tmpdir, subfolder=attribute)
+                else:
+                    auto_processor_class = MODALITY_TO_AUTOPROCESSOR_MAPPING[attribute]
+                    attribute_reloaded = auto_processor_class.from_pretrained(tmpdir)
                 attribute_first = getattr(processor_first, attribute)
 
                 # tokenizer repr contains model-path from where we loaded
@@ -199,9 +194,6 @@ class ProcessorTesterMixin:
                     self.assertEqual(repr(attribute_first), repr(attribute_reloaded))
 
     def test_model_input_names(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
         processor = self.get_processor()
 
         text = self.prepare_text_inputs(modalities=["image", "video"])
@@ -408,9 +400,6 @@ class ProcessorTesterMixin:
         self.assertEqual(inputs[self.text_input_name].shape[-1], 76)
 
     def test_tokenizer_defaults_preserved_by_kwargs_video(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
         processor_components = self.prepare_components()
@@ -429,9 +418,6 @@ class ProcessorTesterMixin:
         We then check that the mean of the pixel_values is less than or equal to 0 after processing.
         Since the original pixel_values are in [0, 255], this is a good indicator that the rescale_factor is indeed applied.
         """
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
         processor_components = self.prepare_components()
@@ -450,9 +436,6 @@ class ProcessorTesterMixin:
         self.assertLessEqual(inputs[self.videos_input_name][0].mean(), 0)
 
     def test_kwargs_overrides_default_tokenizer_kwargs_video(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
         processor_components = self.prepare_components()
@@ -473,9 +456,6 @@ class ProcessorTesterMixin:
         self.assertEqual(inputs[self.text_input_name].shape[-1], 162)
 
     def test_kwargs_overrides_default_video_processor_kwargs(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
         processor_components = self.prepare_components()
@@ -501,9 +481,6 @@ class ProcessorTesterMixin:
         self.assertLessEqual(inputs[self.videos_input_name][0].mean(), 0)
 
     def test_unstructured_kwargs_video(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
         processor_components = self.prepare_components()
@@ -526,32 +503,31 @@ class ProcessorTesterMixin:
         self.assertLessEqual(inputs[self.videos_input_name][0].mean(), 0)
         self.assertEqual(inputs[self.text_input_name].shape[-1], 176)
 
-    # TODO: Re-enable this test case once paddle.Tensor support the more tensor dimensions.
-    # def test_unstructured_kwargs_batched_video(self):
-    #     if "video_processor" not in self.processor_class.attributes:
-    #         self.skipTest(f"video_processor attribute not present in {self.processor_class}")
-    #     processor_components = self.prepare_components()
-    #     processor_kwargs = self.prepare_processor_dict()
-    #     processor = self.processor_class(**processor_components, **processor_kwargs)
+    def test_unstructured_kwargs_batched_video(self):
+        if "video_processor" not in self.processor_class.attributes:
+            self.skipTest(f"video_processor attribute not present in {self.processor_class}")
+        processor_components = self.prepare_components()
+        processor_kwargs = self.prepare_processor_dict()
+        processor = self.processor_class(**processor_components, **processor_kwargs)
 
-    #     input_str = self.prepare_text_inputs(batch_size=2, modalities="video")
-    #     video_input = self.prepare_video_inputs(batch_size=2)
-    #     inputs = processor(
-    #         text=input_str,
-    #         videos=video_input,
-    #         do_sample_frames=False,
-    #         return_tensors="pd",
-    #         do_rescale=True,
-    #         rescale_factor=-1.0,
-    #         padding="longest",
-    #         max_length=176,
-    #     )
+        input_str = self.prepare_text_inputs(batch_size=2, modalities="video")
+        video_input = self.prepare_video_inputs(batch_size=2)
+        inputs = processor(
+            text=input_str,
+            videos=video_input,
+            do_sample_frames=False,
+            return_tensors="pd",
+            do_rescale=True,
+            rescale_factor=-1.0,
+            padding="longest",
+            max_length=176,
+        )
 
-    #     self.assertLessEqual(inputs[self.videos_input_name][0].mean(), 0)
-    #     self.assertTrue(
-    #         len(inputs[self.text_input_name][0]) == len(inputs[self.text_input_name][1])
-    #         and len(inputs[self.text_input_name][1]) < 176
-    #     )
+        self.assertLessEqual(inputs[self.videos_input_name][0].mean(), 0)
+        self.assertTrue(
+            len(inputs[self.text_input_name][0]) == len(inputs[self.text_input_name][1])
+            and len(inputs[self.text_input_name][1]) < 176
+        )
 
     def test_doubly_passed_kwargs_video(self):
         if "video_processor" not in self.processor_class.attributes:
@@ -573,9 +549,6 @@ class ProcessorTesterMixin:
             )
 
     def test_structured_kwargs_nested_video(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
         processor_components = self.prepare_components()
@@ -598,9 +571,6 @@ class ProcessorTesterMixin:
         self.assertEqual(inputs[self.text_input_name].shape[-1], 176)
 
     def test_structured_kwargs_nested_from_dict_video(self):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
         processor_components = self.prepare_components()

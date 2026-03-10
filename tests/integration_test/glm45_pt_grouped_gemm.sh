@@ -54,7 +54,7 @@ NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformer
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
    echo "Training failed with exit code $exit_cod, see ./${log_file} for details."
-   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./${log_file}
+   python $root_dir/PaddleFormers/tests/check_log_for_exitcode.py ./${log_file} "***** train metrics *****"
    check_result=$?
    if [ $check_result -ne 0 ]; then
        echo "Failed to find 'Training completed' in log file."
@@ -66,7 +66,9 @@ else
    echo "Test passed."
 fi
 
-export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
+# export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
+export repo_name=PaddleFleet
+export REPO_NAME=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
 # if [[ "${PP}" == "rel" ]]; then
 #   export pppatch="_PPrel"
 # fi
@@ -87,6 +89,10 @@ python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
    --gt_file ./${gt_loss_file}
 
 if [ $? -ne 0 ]; then
+  if [ "${BRANCH}" != "develop" ]; then
+    echo "please update precision in develop and rerun this workflow"
+    exit 1
+  fi
   pushd $root_dir/PaddleFormers
   source /root/proxy
   bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
@@ -97,11 +103,11 @@ if [ $? -ne 0 ]; then
   popd
   rm ${gt_loss_file} && mv ${log_loss_file} ${gt_loss_file}
   if [ ! -f precision_list.txt ]; then
-    wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}/precision_list.txt
+    wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}/${PR_ID}/precision_list.txt
     if [ $? -ne 0 ]; then
       wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}_latest/precision_list.txt
-      python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}
+      python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}/${PR_ID}
     fi
   fi
-  python $root_dir/bos/BosClient.py ${gt_loss_file} paddle-github-action/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}
+  python $root_dir/bos/BosClient.py ${gt_loss_file} paddle-github-action/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}/${PR_ID}
 fi

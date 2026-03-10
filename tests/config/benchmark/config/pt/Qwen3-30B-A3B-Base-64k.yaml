@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: messages
 eval_dataset_type: messages
-train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/wangnian/NewFleet/glm45_fleet_pt/data_60to64k/LVEval_60to64k_messages.jsonl
+train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/data_60to64k/LVEval_60to64k_messages.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/wangnian/NewFleet/glm45_fleet_pt/data_60to64k/LVEval_60to64k_messages.jsonl
+eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/data_60to64k/LVEval_60to64k_messages.jsonl
 eval_dataset_prob: "1.0"
 
 eval_iters: 10
@@ -21,8 +21,8 @@ dataloader_num_workers: 24
 prefetch_factor: 24
 
 ### model
-model_name_or_path: /root/paddlejob/gpfs/huangjiyi/Models/Qwen3-30B-A3B
-attn_impl: flashmask
+model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/huggingface/Qwen/Qwen3-30B-A3B
+_attn_implementation: flashmask
 use_qk_norm: true
 
 ### finetuning
@@ -75,7 +75,6 @@ split_param: true
 stage1_overlap: true
 
 apply_rope_fusion: true
-fuse_rms_norm: true
 moe_deep_gemm: true
 moe_grouped_gemm: true
 moe_router_fusion: true
@@ -97,9 +96,6 @@ tp_delay_scale_loss: True
 amp_master_grad: true
 bf16: true
 fp16_opt_level: O2
-
-fuse_attention_qkv: true
-fuse_attention_ffn: true
 
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"

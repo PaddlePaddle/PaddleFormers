@@ -19,7 +19,6 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from .utils.lazy_import import _LazyModule
-from .utils.tools import compare_version
 
 PADDLEFORMERS_STABLE_VERSION = "PADDLEFORMERS_STABLE_VERSION"
 from paddleformers.utils.log import logger
@@ -30,8 +29,18 @@ except ImportError:
     import importlib_metadata as metadata
 
 
+def compare_version(v1, v2):
+    for a, b in zip(v1.split("."), v2.split(".")):
+        if a.isnumeric() and b.isnumeric():
+            if a != b:
+                return 1 if int(a) > int(b) else -1
+        else:
+            return 1 if a.isnumeric() else -1
+    return 0
+
+
 def _check_dependency_versions():
-    for pkg_names, min_version in [(["paddlepaddle-gpu", "paddlepaddle"], "3.3"), (["paddlefleet"], "0.1")]:
+    for pkg_names, min_version in [(["paddlepaddle-gpu", "paddlepaddle"], "3.3"), (["paddlefleet"], "0.2")]:
         for pkg_name in pkg_names:
             try:
                 _version = metadata.version(pkg_name)
@@ -55,7 +64,7 @@ with suppress(Exception):
 
 # this version is used for develop and test.
 # release version will be added fixed version by setup.py.
-__version__ = "1.0.0.post"
+__version__ = "1.1.0.post"
 if os.getenv(PADDLEFORMERS_STABLE_VERSION):
     __version__ = __version__.replace(".post", "")
 else:
@@ -68,6 +77,7 @@ else:
 import os
 
 PADDLEFORMERS_TESTING = os.environ.get("PADDLEFORMERS_TESTING", False)
+sys.modules["torchcodec"] = None  # Explicitly disable torchcodec to prevent optional dependency issues
 if "torch" not in sys.modules and not PADDLEFORMERS_TESTING:
     sys.modules["torch"] = None
     sys.modules["torchvision"] = None

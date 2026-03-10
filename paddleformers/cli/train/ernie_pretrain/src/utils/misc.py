@@ -23,8 +23,11 @@ import paddle.distributed as dist
 logger = logging.getLogger(__name__)
 
 try:
-    from models.sequence_parallel_utils import get_async_loader
     from paddle.incubate.tensor.manipulation import async_offload
+
+    from paddleformers.cli.train.ernie_pretrain.models.sequence_parallel_utils import (
+        get_async_loader,
+    )
 except ImportError:
     get_async_loader = async_offload = None
 

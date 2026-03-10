@@ -68,6 +68,10 @@ class MergeConfig:
         },
     )
     ties_elect_type: str = field(default="sum", metadata={"help": "The type of ties mask. 'sum' or 'count'"})
+    merge_with_qdq_base_model: bool = field(
+        default=False,
+        metadata={"help": "Whether to merge model with quantize_dequantized base-model weights."},
+    )
 
     # Sparsify parameters
     rescale: bool = field(default=True, metadata={"help": "Rescale the weights after sparsifying."})

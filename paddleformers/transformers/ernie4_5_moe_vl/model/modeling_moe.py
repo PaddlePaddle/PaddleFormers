@@ -1442,9 +1442,9 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
             if self.config.num_nextn_predict_layers > 0:
                 loss = add_loss(
                     loss,
-                    self.config.multi_token_pred_lambda * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
+                    self.config.mtp_loss_scaling_factor * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
                 )
-                loss_sum = loss_sum + self.config.multi_token_pred_lambda * sum(
+                loss_sum = loss_sum + self.config.mtp_loss_scaling_factor * sum(
                     [x[1].detach() for x in mtp_loss_res]
                 ) / len(mtp_loss_res)
         else:
@@ -1452,7 +1452,7 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
             if self.config.num_nextn_predict_layers > 0:
                 loss = add_loss(
                     loss,
-                    self.config.multi_token_pred_lambda * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
+                    self.config.mtp_loss_scaling_factor * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
                 )
 
         if router_loss is not None and isinstance(router_loss, paddle.Tensor):
@@ -1542,9 +1542,7 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_PretrainedModel):
 
     def prepare_attention_mask_for_generation(self, input_ids, pad_token_id, eos_token_id):
         """Avoid using attention_mask with flash_attn on generation."""
-        if self.config.use_flash_attention:
-            return None
-        return super().prepare_attention_mask_for_generation(input_ids, pad_token_id, eos_token_id)
+        return None
 
     def prepare_inputs_for_generation(
         self,
@@ -1735,16 +1733,14 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_PretrainedModel):
                 None,
                 self.config.tie_word_embeddings,
             )
-            chosen_labels = kwargs.get("chosen_labels", None)
-            rejected_labels = kwargs.get("rejected_labels", None)
+            response_labels = kwargs.get("response_labels", None)
             response_indexs = kwargs.get("response_indexs", None)
             score_deltas = kwargs.get("score_deltas", None)
             reference_chosen_logps = kwargs.get("reference_chosen_logps", None)
             reference_rejected_logps = kwargs.get("reference_rejected_logps", None)
             if score_deltas:
                 labels = (
-                    chosen_labels,
-                    rejected_labels,
+                    response_labels,
                     response_indexs,
                     score_deltas,
                     reference_chosen_logps,
@@ -1752,8 +1748,7 @@ class Ernie4_5_MoeForCausalLM(Ernie4_5_PretrainedModel):
                 )
             else:
                 labels = (
-                    chosen_labels,
-                    rejected_labels,
+                    response_labels,
                     response_indexs,
                     reference_chosen_logps,
                     reference_rejected_logps,

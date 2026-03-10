@@ -21,6 +21,8 @@ from paddleformers.trainer import TrainingArguments
 from paddleformers.transformers.configuration_utils import llmmetaclass
 from paddleformers.utils.log import logger
 
+DEFAULT_QUANTIZE_LAYERS = [".*mlp.*", ".*self_attn.*"]
+
 
 @dataclass
 class PreTrainingArguments(TrainingArguments):
@@ -68,10 +70,6 @@ class PreTrainingArguments(TrainingArguments):
     global_logging_interval: int = field(
         default=1,
         metadata={"help": "the logging interval of global_training_logs"},
-    )
-    multi_token_pred_depth: Optional[int] = field(
-        default=0,
-        metadata={},
     )
     num_consecutive: int = field(
         default=1,
@@ -161,6 +159,9 @@ class SFTTrainingArguments(TrainingArguments):
     max_estimate_samples: int = field(
         default=1e5,
         metadata={"help": "Maximum number of samples used in estimation."},
+    )
+    estimation_output_file: str = field(
+        default=None, metadata={"help": "The output file of max_steps estimation result"}
     )
 
 
@@ -268,12 +269,15 @@ class FinetuningArguments(
         default=None,
         metadata={"help": "Model weight quantization algorithm including 'nf4'(qlora), 'weight_only_int8'."},
     )
+    merge_with_qdq_base_model: bool = field(
+        default=False,
+        metadata={"help": "Whether to merge model with quantize_dequantized base-model weights."},
+    )
     # fp8
     use_fp8: bool = field(
         default=False,
         metadata={"help": "whether to use fp8 training"},
     )
-    multi_token_pred_lambda: float = field(default=0.3, metadata={"help": "multi token pred lambda"})
     use_recompute_mtp: bool = field(default=False, metadata={"help": "Whether to use recompute_mtp"})
 
     # NOTE(gongenlei): new add autotuner_benchmark
@@ -302,19 +306,31 @@ class FinetuningArguments(
             self.bf16 = False
             self.fp16 = True
             self.weight_quantize_algo = None
-        elif self.compute_type == "fp8":
-            self.weight_quantize_algo = "fp8linear"
-            self.optim = "adamw_custom"
-            self.use_lowprecision_moment = True
-            self.tensorwise_offload_optimizer = True
-            self.optim_shard_num = 8
-            self.unified_checkpoint_config = "ignore_merge_optimizer"
+        elif self.compute_type == "wint4":
+            self.weight_quantize_algo = {"weight_only_int4": DEFAULT_QUANTIZE_LAYERS}
         elif self.compute_type == "wint8":
-            self.weight_quantize_algo = "weight_only_int8"
+            self.weight_quantize_algo = {"weight_only_int8": DEFAULT_QUANTIZE_LAYERS}
         elif self.compute_type == "wint4/8":
-            self.weight_quantize_algo = "weight_only_mix"
+            self.weight_quantize_algo = {
+                "weight_only_int4": [
+                    ".*mlp.experts.*",
+                    ".*mlp.shared_expert.*",
+                    ".*mlp.shared_experts.*",
+                ],
+                "weight_only_int8": [
+                    ".*self_attn.qkv_proj.*",
+                    ".*self_attn.q_proj.*",
+                    ".*self_attn.k_proj.*",
+                    ".*self_attn.v_proj.*",
+                    ".*self_attn.o_proj.*",
+                    ".*mlp.up_gate_proj.*",
+                    ".*mlp.up_proj.*",
+                    ".*mlp.gate_proj.*",
+                    ".*mlp.down_proj.*",
+                ],
+            }
         elif self.compute_type == "nf4":
-            self.weight_quantize_algo = "nf4"
+            self.weight_quantize_algo = {"nf4": DEFAULT_QUANTIZE_LAYERS}
         else:
             raise ValueError(f"Unknown compute_type: {self.compute_type}")
 

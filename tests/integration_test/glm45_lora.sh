@@ -24,8 +24,10 @@ export cur_dir=$(pwd)
 
 config_lora_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_lora.yaml
 
-yq '.train_dataset_path = strenv(cur_dir) + "/data/sft/train.jsonl"
-    | .eval_dataset_path = strenv(cur_dir) + "/data/sft/dev.jsonl"
+export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
+
+yq '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+    | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
     | .model_name_or_path = strenv(cur_dir) + "/checkpoints/glm_full_pp_ckpts"
     | .logging_dir = strenv(cur_dir) + "/glm_full_single_lora_log"
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_single_lora_ckps"' \
@@ -66,7 +68,9 @@ else
     echo "LORA Test passed."
 fi
 
-export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
+# export repo_name=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
+export repo_name=PaddleFleet
+export REPO_NAME=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
 # if [[ "${PP}" == "rel" ]]; then
 #   export pppatch="_PPrel"
 # fi
@@ -81,12 +85,16 @@ fi
 
 log_loss_file=${log_file%.*}_loss.${log_file##*.}
 python $root_dir/PaddleFormers/tests/integration_test/check_loss.py \
-   --compare_step 100 \
+   --compare_step 10 \
    --log_file ./${log_file} \
    --log_loss_file ./${log_loss_file} \
    --gt_file ./${gt_loss_file}
 
 if [ $? -ne 0 ]; then
+  if [ "${BRANCH}" != "develop" ]; then
+    echo "please update precision in develop and rerun this workflow"
+    exit 1
+  fi
   pushd $root_dir/PaddleFormers
   source /root/proxy
   bash $root_dir/PaddleFormers/tests/integration_test/check_precision_approval.sh
@@ -97,11 +105,11 @@ if [ $? -ne 0 ]; then
   popd
   rm ${gt_loss_file} && mv ${log_loss_file} ${gt_loss_file}
   if [ ! -f precision_list.txt ]; then
-    wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}/precision_list.txt
+    wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}/${PR_ID}/precision_list.txt
     if [ $? -ne 0 ]; then
       wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}_latest/precision_list.txt
-      python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}
+      python $root_dir/bos/BosClient.py precision_list.txt paddle-github-action/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}/${PR_ID}
     fi
   fi
-  python $root_dir/bos/BosClient.py ${gt_loss_file} paddle-github-action/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}/${PR_ID}
+  python $root_dir/bos/BosClient.py ${gt_loss_file} paddle-github-action/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}/${PR_ID}
 fi

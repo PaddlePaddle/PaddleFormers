@@ -23,8 +23,8 @@ from functools import partial
 import numpy as np
 import paddle
 from paddle.distributed import fleet
-from src.utils import logger
 
+from paddleformers.cli.train.ernie_pretrain.src.utils import logger
 from paddleformers.utils.tools import get_env_device, paddle_device
 
 try:
@@ -40,24 +40,33 @@ try:
 except ImportError:
     get_static_model_on_pdc = None
 
-from model_config import ModelConfig
-from models.ernie import ErnieMoEConfig
-from models.ernie.modeling_moe import ErnieMoEForCausalLM
-from models.ernie.modeling_pp import ErnieMoEForCausalLMPipe
 from omegaconf.dictconfig import DictConfig
 from omegaconf.listconfig import ListConfig
 from safetensors import safe_open
-from src.callbacks import (
+
+from paddleformers.cli.train.ernie_pretrain.model_config import ModelConfig
+from paddleformers.cli.train.ernie_pretrain.models.ernie import ErnieMoEConfig
+from paddleformers.cli.train.ernie_pretrain.models.ernie.modeling_moe import (
+    ErnieMoEForCausalLM,
+)
+from paddleformers.cli.train.ernie_pretrain.models.ernie.modeling_pp import (
+    ErnieMoEForCausalLMPipe,
+)
+from paddleformers.cli.train.ernie_pretrain.src.callbacks import (
     GlobalRNGCallback,
     MoECorrectionBiasAdjustCallback,
     OrthogonalCallback,
 )
-from src.tokenizers.tokenization_eb_v2 import ErnieBotTokenizer
-from src.trainers import PreTrainingArguments, PretrainingTrainer
-from src.utils import setup_logger_output_file
-from src.utils.misc import global_training_logs
-from src.utils.seed_utils import set_seed
-
+from paddleformers.cli.train.ernie_pretrain.src.tokenizers.tokenization_eb_v2 import (
+    ErnieBotTokenizer,
+)
+from paddleformers.cli.train.ernie_pretrain.src.trainers import (
+    PreTrainingArguments,
+    PretrainingTrainer,
+)
+from paddleformers.cli.train.ernie_pretrain.src.utils import setup_logger_output_file
+from paddleformers.cli.train.ernie_pretrain.src.utils.misc import global_training_logs
+from paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils import set_seed
 from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
     check_data_split,
@@ -303,7 +312,7 @@ def create_pretrained_dataset(args):
         data_impl="mmap",
         splits_string=args.split,
         train_val_test_num_samples=train_val_test_num_samples,
-        seq_length=args.max_seq_len + args.multi_token_pred_depth,
+        seq_length=args.max_seq_len + args.num_nextn_predict_layers,
         seed=args.seed,
         skip_warmup=True,
         data_cache_path=None,
@@ -567,7 +576,7 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
     if args.moe_group.lower() in {"mp", "tp", "model", "dummy"}:
         logger.info(f"disable moe flag when using moe-group={args.moe_group}")
         args.use_moe = False
-    args.multi_token_pred_depth = model_config.get("multi_token_pred_depth", 0)
+    args.num_nextn_predict_layers = model_config.get("num_nextn_predict_layers", 0)
 
     cfg = ErnieMoEConfig.from_pretrained(args.model_name_or_path)
     cfg.seqlen = args.max_seq_len
@@ -661,7 +670,7 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
             collate_fn,
             tokenizer=tokenizer,
             training_args=TrainingArguments(
-                output_dir=args.output_dir, num_nextn_predict_layers=args.multi_token_pred_depth
+                output_dir=args.output_dir, num_nextn_predict_layers=args.num_nextn_predict_layers
             ),
             model_args=ModelConfig(stage="SFT", use_attn_mask_startend_row_indices=True),
             max_seq_len=args.max_seq_len + 1,
@@ -675,7 +684,7 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
 
     if getattr(cfg, "moe_use_aux_free", 0.0) > 0.0:
         logger.info("adding aux free callback")
-        callbacks += [MoECorrectionBiasAdjustCallback(args.moe_use_aux_free_update_coef, args.sequence_parallel)]
+        callbacks += [MoECorrectionBiasAdjustCallback(args.moe_router_bias_update_rate, args.sequence_parallel)]
 
     trainer = PretrainingTrainer(
         model=model,

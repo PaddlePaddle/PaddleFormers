@@ -18,7 +18,7 @@ import unittest
 import paddle
 
 from paddleformers.transformers import AutoVideoProcessor
-from tests.testing_utils import skip_for_none_ce_case
+from tests.testing_utils import gpu_device_initializer, skip_for_none_ce_case
 
 
 class TestHFMultiSourceVideoProcessor(unittest.TestCase):
@@ -34,11 +34,8 @@ class TestHFMultiSourceVideoProcessor(unittest.TestCase):
         VIDEO_URL = "http://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
         cls.video_url = VIDEO_URL  # load by url (only for ce)
 
+    @gpu_device_initializer(log_prefix="TestHFMultiSourceVideoProcessor")
     def preprocess(self, video_processor):
-        # NOTE: Temporarily skip CPU fallback cases. Remove this check after the issue is fixed.
-        if not paddle.to_tensor([0]).place.is_gpu_place():
-            self.skipTest("No GPU currently available/allocated")
-
         inputs = video_processor(self.video, return_tensors="pd")
         EXPECTED_PIXEL_VALUES_MEAN = paddle.to_tensor(0.2922638059)
         EXPECTED_PIXEL_VALUES_MAX = paddle.to_tensor(2.1458971500)

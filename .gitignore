@@ -166,3 +166,7 @@ autogen/
 ops/csrc/fp8/deep_gemm/include/cutlass
 ops/csrc/fp8/deep_gemm/include/cute
 .ccls-cache
+
+# logs and running results
+paddleformers_dist_log
+checkpoints

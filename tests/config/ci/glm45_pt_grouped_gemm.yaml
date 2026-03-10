@@ -5,13 +5,18 @@ train_dataset_path: ./data/pre-training/train.jsonl
 train_dataset_prob: "1.0"
 eval_dataset_path: ./data/pre-training/eval.jsonl
 eval_dataset_prob: "1.0"
+packing: true
+truncate_packing: true
 max_seq_len: 8192
 mix_strategy: concat
+dataloader_shuffle: false
+dataloader_num_workers: 4
+prefetch_factor: 24
 
 
 ### model
 model_name_or_path: ./GLM-4.5-Air
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -48,10 +53,16 @@ sequence_parallel: true
 use_expert_parallel: true
 sharding: stage1
 split_param: true
-recompute_granularity: ""
+stage1_overlap: true
+recompute_granularity: full
+recompute_method: block
+recompute_num_layers: 1
 amp_master_grad: true
 bf16: true
 fp16_opt_level: O2
+
+# tp
+tp_delay_scale_loss: true
 
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
@@ -64,10 +75,9 @@ moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
 num_hidden_layers: 3
 apply_rope_fusion: true
+fp32_residual_connection: false
 moe_router_fusion: true
 router_aux_loss_coef: 0.001
-fuse_attention_qkv: true
-fuse_attention_ffn: true
 
 # grouped gemm
 moe_grouped_gemm: true

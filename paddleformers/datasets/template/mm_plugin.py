@@ -51,6 +51,8 @@ from .augment_utils import (
 IMAGE_PLACEHOLDER = os.getenv("IMAGE_PLACEHOLDER", "<image>")
 VIDEO_PLACEHOLDER = os.getenv("VIDEO_PLACEHOLDER", "<video>")
 AUDIO_PLACEHOLDER = os.getenv("AUDIO_PLACEHOLDER", "<audio>")
+os.environ["https_proxy"] = os.environ.get("HTTPS_PROXY", "")
+os.environ["http_proxy"] = os.environ.get("HTTP_PROXY", "")
 
 
 def _make_batched_images(images, imglens: list[int]):
@@ -143,13 +145,12 @@ class MMPluginMixin:
             )
 
     def _file_download(self, url: str) -> bytes:
-        os.environ["https_proxy"] = os.environ.get("HTTPS_PROXY", "")
-        os.environ["http_proxy"] = os.environ.get("HTTP_PROXY", "")
         if url.startswith("http"):
             response = requests.get(url)
             bytes_data = response.content
         elif os.path.isfile(url):
-            bytes_data = open(url, "rb").read()
+            with open(url, "rb") as f:
+                bytes_data = f.read()
         else:
             raise ValueError(f"{url} is not a valid url or file path.")
         bytes_content = io.BytesIO(bytes_data)
@@ -252,7 +253,7 @@ class MMPluginMixin:
         videos,
         audios,
         processor,
-        imglens=None,
+        **kwargs,
     ):
         mm_inputs = {}
         if len(images) != 0:
@@ -262,6 +263,7 @@ class MMPluginMixin:
                 image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
                 image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
             )["images"]
+            imglens = kwargs.get("imglens", None)
             if imglens is not None:  # if imglens are provided, make batched images
                 images = _make_batched_images(images, imglens)
 
@@ -316,20 +318,45 @@ class BasePlugin(MMPluginMixin):
         self._validate_input(processor, images, videos, audios)
         return messages
 
+    def process_tokens(self, tokens, processor):
+        r"""Pre-process input tokens for VLMs."""
+
+        labels = deepcopy(tokens)
+
+        tokenizer = getattr(processor, "tokenizer")
+
+        masked_tokens = getattr(self, "masked_tokens", None)
+        if masked_tokens:
+            masked_tokens_ids = tokenizer.convert_tokens_to_ids(masked_tokens)
+
+            if len(masked_tokens) != len(masked_tokens_ids):
+                raise ValueError(
+                    f"The number of masked tokens {masked_tokens} does not match the number of masked tokens ids {masked_tokens_ids} tokens."
+                )
+
+            # Mask tokens that should be ignored in loss calculation
+            for i, token in enumerate(labels):
+                if token in masked_tokens_ids:
+                    labels[i] = -100
+
+        return labels
+
     def get_mm_inputs(
         self,
         images,
         videos,
         audios,
-        imglens,
-        vidlens,
-        audlens,
-        batch_ids,
         processor,
+        **kwargs,
     ):
         r"""Build batched multimodal inputs for VLMs."""
+        # imglens = kwargs.get("imglens", None)
+        # vidlens = kwargs.get("vidlens", None)
+        # audlens = kwargs.get("audlens", None)
+        # batch_ids = kwargs.get("batch_ids", None)
+
         self._validate_input(processor, images, videos, audios)
-        return self._get_mm_inputs(images, videos, audios, processor)
+        return self._get_mm_inputs(images, videos, audios, processor, **kwargs)
 
 
 @dataclass
@@ -418,14 +445,15 @@ class PaddleOCRVLPlugin(BasePlugin):
         videos,
         audios,
         processor,
+        **kwargs,
     ):
         image_processor = getattr(processor, "image_processor", None)
         mm_inputs = {}
         if len(images) != 0:
             images = self._regularize_images(
                 images,
-                image_max_pixels=getattr(processor, "max_pixels", 2822400),
-                image_min_pixels=getattr(processor, "min_pixels", 147384),
+                image_max_pixels=getattr(image_processor, "max_pixels", 2822400),
+                image_min_pixels=getattr(image_processor, "min_pixels", 147384),
                 image_processor=image_processor,
             )["images"]
             mm_inputs.update(image_processor(images, return_tensors="pd"))
@@ -468,6 +496,8 @@ class PaddleOCRVLPlugin(BasePlugin):
                 num_image_tokens += 1
 
             message["content"] = content
+
+        self.masked_tokens = [self.image_token, self.image_bos_token, self.image_eos_token]
 
         return messages
 
@@ -591,7 +621,7 @@ class ErnieVLPlugin(BasePlugin):
                 frame = Image.fromarray(frame, "RGB")
                 try:
                     frame = processor.render_frame_timestamp(frame, time_stamp)
-                except:
+                except Exception:
                     rendered_frames = frames
                     break
                 rendered_frames.append(np.array(frame.convert("RGB")))
@@ -607,6 +637,7 @@ class ErnieVLPlugin(BasePlugin):
         videos,
         audios,
         processor,
+        **kwargs,
     ):
         image_processor = getattr(processor, "image_processor", None)
         mm_inputs = {}
@@ -733,7 +764,7 @@ class Qwen2VLPlugin(BasePlugin):
 
                 try:
                     fps_per_video.append(video_reader.get_avg_fps())
-                except:
+                except Exception:
                     fps_per_video.append(kwargs.get("video_fps", 2.0))
 
             if len(frames) % 2 != 0:
@@ -756,6 +787,7 @@ class Qwen2VLPlugin(BasePlugin):
         videos,
         audios,
         processor,
+        **kwargs,
     ):
         image_processor = getattr(processor, "image_processor", None)
         mm_inputs = {}
@@ -844,6 +876,7 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
         videos,
         audios,
         processor,
+        **kwargs,
     ):
         image_processor = getattr(processor, "image_processor", None)
         video_processor = getattr(processor, "video_processor", None)
@@ -970,6 +1003,7 @@ class GLM4VPlugin(Qwen2VLPlugin):
         videos,
         audios,
         processor,
+        **kwargs,
     ):
         image_processor = getattr(processor, "image_processor", None)
         video_processor = getattr(processor, "video_processor", None)
@@ -1083,14 +1117,11 @@ class GLM4VPlugin(Qwen2VLPlugin):
         images,
         videos,
         audios,
-        imglens,
-        vidlens,
-        audlens,
-        batch_ids,
         processor,
+        **kwargs,
     ):
         self._validate_input(processor, images, videos, audios)
-        mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
+        mm_inputs = self._get_mm_inputs(images, videos, audios, processor, **kwargs)
         mm_inputs.pop("timestamps", None)
         return mm_inputs
 
@@ -1141,16 +1172,105 @@ class Gemma3Plugin(BasePlugin):
         images,
         videos,
         audios,
-        imglens,
-        vidlens,
-        audlens,
-        batch_ids,
         processor,
+        **kwargs,
     ):
         self._validate_input(processor, images, videos, audios)
-        mm_inputs = self._get_mm_inputs(images, videos, audios, processor)
+        mm_inputs = self._get_mm_inputs(images, videos, audios, processor, **kwargs)
         mm_inputs.pop("num_crops", None)
         return mm_inputs
+
+
+@dataclass
+class GlmOcrPlugin(BasePlugin):
+    """
+    GLM-OCR 专用插件：
+    - messages 里用 IMAGE_PLACEHOLDER(默认 <image>) 做占位符
+    - 展开后插入：<|begin_of_image|> + N个<|image|> + <|end_of_image|>
+    - N 来自 image_grid_thw.prod() // (merge_size**2)
+    """
+
+    # 这些 token 必须在 tokenizer special tokens 里存在
+    image_bos_token: str = "<|begin_of_image|>"
+    image_eos_token: str = "<|end_of_image|>"
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        # 1) 基本校验：是否支持 image input、processor/image_processor 是否存在等
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+
+        # 2) 取 image_processor / merge_length
+        image_processor = getattr(processor, "image_processor", None)
+        if image_processor is None:
+            raise ValueError("image_processor was not found in processor.")
+
+        merge_size = getattr(image_processor, "merge_size", None)
+        if merge_size is None:
+            raise ValueError("image_processor.merge_size was not found.")
+        merge_length = int(merge_size) ** 2
+
+        # 3) 取 image_grid_thw（expand_mm_tokens 时必须有）
+        if self.expand_mm_tokens:
+            image_grid_thw = mm_inputs.get("image_grid_thw", None)
+            if image_grid_thw is None or len(image_grid_thw) == 0:
+                raise ValueError(
+                    "expand_mm_tokens=True but mm_inputs has no valid image_grid_thw. "
+                    "Please ensure image_processor returns image_grid_thw."
+                )
+        else:
+            # 不展开时，每张图就 1 个 token（不会用到 grid）
+            image_grid_thw = None
+
+        # 4) 展开：把每个 <image> 依次替换为 BOS + N*image_token + EOS
+        # 关键点：IMAGE_PLACEHOLDER 必须 != self.image_token，否则会死循环
+        if self.image_token is None:
+            raise ValueError("GlmOcrPlugin requires image_token to be set (e.g., '<|image|>').")
+
+        if IMAGE_PLACEHOLDER == self.image_token:
+            raise ValueError(
+                f"IMAGE_PLACEHOLDER ({IMAGE_PLACEHOLDER}) must be different from image_token ({self.image_token}). "
+                "Otherwise placeholder replacement will not terminate."
+            )
+
+        num_image_tokens = 0
+        messages = deepcopy(messages)
+
+        for msg in messages:
+            content = msg["content"]
+
+            while IMAGE_PLACEHOLDER in content:
+                # 越界保护（你现在遇到的 OutOfRange 就是这里本该被挡住）
+                if num_image_tokens >= len(images):
+                    raise ValueError(
+                        f"Found more {IMAGE_PLACEHOLDER} placeholders than provided images: "
+                        f"placeholders_so_far={num_image_tokens+1}, len(images)={len(images)}"
+                    )
+
+                if self.expand_mm_tokens:
+                    # image_grid_thw shape: [num_images, 3]
+                    # 每张图的 token 数 = prod(thw) // (merge_size**2)
+                    seqlen = int(image_grid_thw[num_image_tokens].prod().item()) // merge_length
+                    seqlen = max(1, seqlen)
+                else:
+                    seqlen = 1
+
+                repl = f"{self.image_bos_token}{self.image_token * seqlen}{self.image_eos_token}"
+                content = content.replace(IMAGE_PLACEHOLDER, repl, 1)
+                num_image_tokens += 1
+
+            msg["content"] = content
+        # 5) mask：这些 token 不参与 loss（和你原先 PaddleOCRVLPlugin 一致）
+        self.masked_tokens = [self.image_token, self.image_bos_token, self.image_eos_token]
+        return messages
 
 
 PLUGINS = {
@@ -1161,6 +1281,7 @@ PLUGINS = {
     "qwen3_vl": Qwen3VLPlugin,
     "glm4v": GLM4VPlugin,
     "gemma3": Gemma3Plugin,
+    "glm_ocr": GlmOcrPlugin,
 }
 
 

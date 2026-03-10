@@ -52,6 +52,7 @@ import_structure = {
     "processing_utils": ["ProcessorMixin"],
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
     "image_processing_utils": ["PaddleImageProcessingMixin", "ImageProcessingMixin", "BaseImageProcessor"],
+    "image_processing_utils_fast": ["BaseImageProcessorFast"],
     "video_processing_utils": ["BaseVideoProcessor"],
     "moe_gate": ["PretrainedMoEGate", "MoEGateMixin"],
     "token_dispatcher": ["_DispatchManager"],
@@ -155,6 +156,9 @@ import_structure = {
     "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
+    "kimi_k25.vision_processor": ["KimiK25VisionProcessor"],
+    "kimi_k25.processor": ["KimiK25Processor"],
+    "kimi_k25.tokenizer": ["TikTokenTokenizer"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
     "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
     "llama.configuration": [
@@ -192,12 +196,14 @@ import_structure = {
         "Qwen2_5_VLTextModel",
     ],
     "qwen2_5_vl.processor": ["Qwen2_5_VLProcessor"],
+    "qwen3_5.configuration": ["Qwen3_5VisionConfig"],
+    "qwen3_5.modeling": ["Qwen3_5VisionModel"],
     "qwen3_vl.configuration": ["Qwen3VLConfig", "Qwen3VLTextConfig"],
     "qwen3_vl.modeling": [
         "Qwen3VLForConditionalGeneration",
-        "Qwen3VLForConditionalGenerationDecapitated",
+        "Qwen3VLForConditionalGenerationDeprecated",
         "Qwen3VLModel",
-        "Qwen3VLModelDecapitated",
+        "Qwen3VLModelDeprecated",
         "Qwen3VLPretrainedModel",
         "Qwen3VLTextModel",
         "Qwen3VLModelFleet",
@@ -207,8 +213,8 @@ import_structure = {
     "qwen3_vl_moe.configuration": ["Qwen3VLMoeConfig", "Qwen3VLMoeTextConfig"],
     "qwen3_vl_moe.modeling": [
         "Qwen3VLMoeForConditionalGeneration",
-        "Qwen3VLMoeForConditionalGenerationDecapitated",
-        "Qwen3VLMoeModelDecapitated",
+        "Qwen3VLMoeForConditionalGenerationDeprecated",
+        "Qwen3VLMoeModelDeprecated",
         "Qwen3VLMoeModel",
         "Qwen3VLMoePretrainedModel",
         "Qwen3VLMoeTextModel",
@@ -222,6 +228,7 @@ import_structure = {
         "Qwen2MoePretrainingCriterion",
     ],
     "qwen2_vl.image_processor": ["Qwen2VLImageProcessor"],
+    "qwen2_vl.image_processor_fast": ["Qwen2VLImageProcessorFast"],
     "qwen2_vl.processor": ["Qwen2VLProcessor"],
     "qwen2_vl.video_processor": ["Qwen2VLVideoProcessor"],
     "qwen2_vl.vision_process": ["process_vision_info"],
@@ -243,7 +250,7 @@ import_structure = {
         "Qwen3MoeForCausalLM",
         "Qwen3MoeForCausalLMPipe",
         "Qwen3MoePretrainingCriterion",
-        "Qwen3MoeForCausalLMDecapitated",
+        "Qwen3MoeForCausalLMDeprecated",
     ],
     "qwen3_next.configuration": ["Qwen3NextConfig"],
     "qwen3_next.modeling": [
@@ -255,6 +262,7 @@ import_structure = {
     ],
     "llama": [],
     "qwen2": [],
+    "glm_ocr": [],
     "qwen3": [],
     "deepseek_v3": [],
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
@@ -263,20 +271,42 @@ import_structure = {
     "paddleocr_vl": [],
     "qwen2_5_vl": [],
     "qwen3_vl": [],
+    "qwen3_5": [],
     "qwen3_vl_moe": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
     "qwen3_next": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
-    "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDecapitated"],
+    "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
+    "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
+    "glm4v_moe.image_processor_fast": ["Glm4vImageProcessorFast"],
     "auto": ["AutoModelForCausalLM"],
     "legacy.tokenizer_utils_base": ["EncodingFast"],
     "legacy": [],
     "phi3.configuration": ["Phi3Config"],
     "phi3.tokenizer": ["Phi3Tokenizer"],
     "phi3.modeling": ["Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
-    "intern_lm2.configuration": ["InternLM2Config"],
+    "glm4v_moe.configuration": ["Glm4vMoeConfig", "Glm4vMoeTextConfig", "Glm4vMoeVisionConfig"],
+    "glm4v_moe.modeling": [
+        "Glm4vMoeForConditionalGeneration",
+        "Glm4vMoeModel",
+        "Glm4vMoePreTrainedModel",
+        "Glm4vMoeTextModel",
+        "Glm4vMoeVisionModel",
+    ],
+    "glm4v_moe.processor": ["Glm4vProcessor"],
+    "glm4v_moe.video_processor": ["Glm4vVideoProcessor"],
+    "glm4v_moe": [],
+    "glm_ocr.configuration": ["GlmOcrConfig", "GlmOcrTextConfig", "GlmOcrVisionConfig"],
+    "glm_ocr.modeling": [
+        "GlmOcrForConditionalGeneration",
+        "GlmOcrModel",
+        "GlmOcrPreTrainedModel",
+    ],
+    "glm_ocr.processor": ["Glm46VProcessor"],
+    "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+        "intern_lm2.configuration": ["InternLM2Config"],
     "intern_lm2.tokenizer": ["InternLM2Tokenizer"],
     "intern_lm2.modeling": ["InternLM2ForCausalLM", "InternLM2Model"],
 }
@@ -300,6 +330,7 @@ if TYPE_CHECKING:
     from .processing_utils import ProcessorMixin
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
     from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
+    from .image_processing_utils_fast import BaseImageProcessorFast
     from .video_processing_utils import BaseVideoProcessor
     from .attention_utils import create_bigbird_rand_mask_idx_list
     from .sequence_parallel_utils import AllGatherVarlenOp, sequence_parallel_sparse_mask_labels
@@ -341,11 +372,15 @@ if TYPE_CHECKING:
     from .qwen3_moe import *
     from .qwen3_next import *
     from .qwen3_vl import *
+    from .qwen3_5 import *
     from .qwen3_vl_moe import *
     from .glm4_moe import *
+    from .glm4v_moe import *
     from .gpt_oss import *
+    from .kimi_k25 import *
     from .phi3 import *
     from .gemma3_text import *
+    from .glm_ocr import *
     from .intern_lm2 import *
 else:
     sys.modules[__name__] = _LazyModule(

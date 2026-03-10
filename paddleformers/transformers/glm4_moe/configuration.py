@@ -118,6 +118,8 @@ class Glm4MoeConfig(PretrainedConfig):
             Whether to use query-key normalization in the attention
         disable_ffn_model_parallel (`bool`, *optional*, defaults to `False`):
             Whether to use tp in the moe
+        fd_fallback (`bool`, *optional*, defaults to `False`):
+            Whether fastdeploy fallback.
     """
 
     model_type = "glm4_moe"
@@ -154,12 +156,12 @@ class Glm4MoeConfig(PretrainedConfig):
         pp_seg_method="layer:Glm4MoeDecoderLayer",
         disable_ffn_model_parallel=False,
         scoring_func="sigmoid",
-        aux_loss_alpha=0.0001,
         seq_aux=True,
         topk_method="noaux_tc",
         using_flex_token=True,
         moe_subbatch_token_num_before_dispatch=0,
         sliding_window=None,
+        fd_fallback=False,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -180,6 +182,7 @@ class Glm4MoeConfig(PretrainedConfig):
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
         self.sliding_window = sliding_window
+        self.fd_fallback = fd_fallback
         # Validate the correctness of rotary position embeddings parameters
         # BC: if there is a 'type' field, move it to 'rope_type'.
         if self.rope_scaling is not None and "type" in self.rope_scaling:
@@ -200,7 +203,6 @@ class Glm4MoeConfig(PretrainedConfig):
         self.norm_topk_prob = norm_topk_prob
         self.use_qk_norm = use_qk_norm
         self.scoring_func = scoring_func
-        self.aux_loss_alpha = aux_loss_alpha
         self.seq_aux = seq_aux
         self.topk_method = topk_method
         self.using_flex_token = using_flex_token

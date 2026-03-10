@@ -159,7 +159,7 @@ class PaddleOCRVLProcessor(ProcessorMixin):
                         self.image_token,
                         "<|placeholder|>"
                         * (
-                            image_grid_thw[index].prod().item()
+                            image_grid_thw[index].prod()
                             // self.image_processor.merge_size
                             // self.image_processor.merge_size
                         ),

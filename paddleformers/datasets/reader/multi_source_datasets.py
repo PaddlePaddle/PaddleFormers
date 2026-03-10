@@ -81,16 +81,46 @@ class MultiSourceDataset(IterableDataset):
         ]
 
         if not (len(task_dataset_path) == len(task_dataset_prob) == len(sub_dataset_type)):
-            raise ValueError("The len of dataset path, prob, type are inconsistent, please check the configuration.")
+            raise ValueError(
+                f"The len of dataset path, prob, type are inconsistent, get task_dataset_path : {task_dataset_path}, task_dataset_prob : {task_dataset_prob}, sub_dataset_type : {sub_dataset_type}"
+            )
 
         if len(task_dataset_path) == 0:
             raise ValueError("The len of dataset path is zero, please check the configuration.")
 
+        task_dataset_samplenum = []
+        for i in range(len(task_dataset_path)):
+            path = task_dataset_path[i]
+            if "#" in path:
+                parts = path.split("#")
+                if len(parts) == 2 and parts[1].isdigit():
+                    task_dataset_samplenum.append(int(parts[1]))
+                    task_dataset_path[i] = parts[0]
+                else:
+                    raise ValueError(
+                        f"Invalid format for task group path: {path}. Expected '<path>#<num_samples>', got {path}"
+                    )
+            else:
+                task_dataset_samplenum.append(None)
+
         tasks = []
         for i in range(len(task_dataset_path)):
-            tasks.append({"prob": task_dataset_prob[i], "filepath": task_dataset_path[i]})
+            tasks.append(
+                {
+                    "prob": task_dataset_prob[i],
+                    "filepath": task_dataset_path[i],
+                    "sampling_number": task_dataset_samplenum[i],
+                }
+            )
         # filter zero probability task
-        tasks = [task for task in tasks if task["prob"] > 0]
+        filtered_tasks = []
+        filtered_sub_dataset_type = []
+        for i, task in enumerate(tasks):
+            if task["prob"] > 0:
+                filtered_tasks.append(task)
+                filtered_sub_dataset_type.append(sub_dataset_type[i])
+        tasks = filtered_tasks
+        sub_dataset_type = filtered_sub_dataset_type
         self._task_group = tasks
         supported_type = ["erniekit", "messages"]
         for idx, task in enumerate(self._task_group):
@@ -99,14 +129,16 @@ class MultiSourceDataset(IterableDataset):
                 task["dataset"] = HuggingFaceReader(
                     file_path=task["filepath"],
                     file_type=each_sub_dataset_type,
+                    file_samplenum=task["sampling_number"],
                     shuffle_file=dataset_config["random_shuffle"],
                     split_multi_turn=dataset_config.get("split_multi_turn", False),
                     template_backend=dataset_config.get("template_backend", "jinja"),
                 )
-            if os.path.isdir(task["filepath"]):
+            elif os.path.isdir(task["filepath"]):
                 task["dataset"] = FileListReader(
                     file_path=task["filepath"],
                     file_type=each_sub_dataset_type,
+                    file_samplenum=task["sampling_number"],
                     shuffle_file=dataset_config["random_shuffle"],
                     split_multi_turn=dataset_config.get("split_multi_turn", False),
                     template_backend=dataset_config.get("template_backend", "jinja"),
@@ -115,6 +147,7 @@ class MultiSourceDataset(IterableDataset):
                 task["dataset"] = FileReader(
                     file_path=task["filepath"],
                     file_type=each_sub_dataset_type,
+                    file_samplenum=task["sampling_number"],
                     shuffle_file=dataset_config["random_shuffle"],
                     split_multi_turn=dataset_config.get("split_multi_turn", False),
                     template_backend=dataset_config.get("template_backend", "jinja"),
@@ -142,7 +175,7 @@ class MultiSourceDataset(IterableDataset):
         while True:
             task = rng.choices(self._task_group, weights=probs)[0]
             try:
-                yield from task["iterator"]
+                yield next(task["iterator"])
             except StopIteration:
                 task["iterator"] = iter(task["dataset"])
-                yield from task["iterator"]
+                yield next(task["iterator"])

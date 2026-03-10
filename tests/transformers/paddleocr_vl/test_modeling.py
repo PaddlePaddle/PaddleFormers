@@ -15,8 +15,6 @@
 from __future__ import annotations
 
 import copy
-import gc
-import shutil
 import tempfile
 import unittest
 from io import BytesIO
@@ -30,6 +28,7 @@ from paddleformers.transformers import (
     PaddleOCRVLConfig,
     PaddleOCRVLForConditionalGeneration,
 )
+from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import ModelTesterMixin, floats_tensor
@@ -185,6 +184,7 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
     }
     max_new_tokens = 3
 
+    @gpu_device_initializer(log_prefix="PaddleOCRVLModelTest")
     def setUp(self):
         self.model_tester = PaddleOCRVLModelTester(self)
         self.config_tester = ConfigTester(self, config_class=PaddleOCRVLConfig)
@@ -411,11 +411,10 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
             else:
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
-    @unittest.skip("TODO: Temporarily skipped")
+    @unittest.skip("PaddleOCR-VL currently does not support flexible checkpoints save and load")
     def test_save_load_flex_checkpoint(self):
         for model_class in self.all_model_classes:
-            tmpdirname = tempfile.mkdtemp()
-            try:
+            with tempfile.TemporaryDirectory() as tmpdirname:
                 tiny_vision_config = {
                     "hidden_size": 144,
                     "num_attention_heads": 4,
@@ -442,10 +441,8 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 model = model_class(config)
                 model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
 
-                model = None
-                gc.collect()
-
                 model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
+
                 model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
 
                 model_state_1 = model1.state_dict()
@@ -456,17 +453,18 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                     md52 = model_state_2[k]._md5sum()
                     assert md51 == md52
 
-            finally:
-                shutil.rmtree(tmpdirname, ignore_errors=True)
+    @unittest.skip("PaddleOCR-VL currently does not support checkpoints save and load")
+    def test_save_load(self):
+        pass
 
 
 class PaddleOCRVLIntegrationTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="PaddleOCRVLIntegrationTest")
     def setUp(self):
         self.model = PaddleOCRVLForConditionalGeneration.from_pretrained(
             "PaddleFormers/tiny-random-paddleocr-vl-bf16",
             dtype="float32",
-            convert_from_hf=True,
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
 
         self.processor = AutoProcessor.from_pretrained("PaddleFormers/tiny-random-paddleocr-vl-bf16")

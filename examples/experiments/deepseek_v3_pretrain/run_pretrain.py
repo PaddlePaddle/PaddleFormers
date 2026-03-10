@@ -239,10 +239,6 @@ class ModelArguments:
             "help": "Pre-training from existing paddleformers model weights. Default False and model will train from scratch. If set True, the model_name_or_path argument must exist in the paddleformers models."
         },
     )
-    num_hidden_layers: Optional[int] = field(
-        default=None,
-        metadata={"help": "num_hidden_layers."},
-    )
 
 
 def create_pretrained_dataset(
@@ -482,9 +478,6 @@ def main():
         config.vocab_size = max(config.vocab_size, ((tokenizer.vocab_size - 1) // 128 + 1) * 128)
         logger.info(f"Reset vocab size to {config.vocab_size} for batter amp peformance.")
 
-    config.num_hidden_layers = (
-        model_args.num_hidden_layers if model_args.num_hidden_layers is not None else config.num_hidden_layers
-    )
     # Config for model using dropout, such as GPT.
     if hasattr(config, "use_dualpipev"):
         # NOTE(zhangyuqin): In Paddle, the segmentation and scheduling of pipeline parallel
@@ -573,9 +566,7 @@ def main():
 
         # config.using_flex_token = True
         # config.num_nextn_predict_layers = 1
-        # config.using_fake_gate = True
-        # config.fuse_rms_norm = True
-        # config.fuse_attention_ffn = True
+        # config.moe_router_force_load_balancing = True
         # config.apply_rope_fusion = True
         # config.token_drop_steps = 0
         model = model_class.from_config(config, dtype=dtype)
@@ -633,8 +624,8 @@ def main():
         callbacks += [MoeExpertsGradScaleCallback(training_args)]
 
     if getattr(config, "topk_method", None) == "noaux_tc":
-        aux_loss_free_gamma = getattr(config, "aux_loss_free_gamma", 0.001)
-        callbacks += [MoECorrectionBiasAdjustCallback(aux_loss_free_gamma)]
+        moe_router_bias_update_rate = getattr(config, "moe_router_bias_update_rate", 0.001)
+        callbacks += [MoECorrectionBiasAdjustCallback(moe_router_bias_update_rate)]
 
     def resume_from_custom_func(model):
         if training_args.resume_from_huggingface_ckpt:

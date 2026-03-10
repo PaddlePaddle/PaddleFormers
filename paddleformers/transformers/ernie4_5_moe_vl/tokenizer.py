@@ -51,6 +51,7 @@ class Ernie4_5_VLTokenizer(PreTrainedTokenizer):
         sep_token="<sep>",
         unk_token="<unk>",
         additional_special_tokens=None,
+        special_tokens_pattern="cls_sep",
         **kwargs,
     ):
         """
@@ -89,6 +90,7 @@ class Ernie4_5_VLTokenizer(PreTrainedTokenizer):
             sep_token=sep_token,
             unk_token=unk_token,
             additional_special_tokens=additional_special_tokens,
+            special_tokens_pattern=special_tokens_pattern,
             **kwargs,
         )
 
@@ -115,12 +117,12 @@ class Ernie4_5_VLTokenizer(PreTrainedTokenizer):
     @property
     def im_start_id(self):
         """Return the ID of the image start token"""
-        return self.encode("<|IMAGE_START|>")[0]
+        return self.encode("<|IMAGE_START|>")[1]
 
     @property
     def im_end_id(self):
         """Return the ID of the image end token"""
-        return self.encode("<|IMAGE_END|>")[0]
+        return self.encode("<|IMAGE_END|>")[1]
 
     @property
     def vocab_size(self):

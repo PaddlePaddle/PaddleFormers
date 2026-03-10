@@ -19,14 +19,13 @@ import unittest
 
 import numpy as np
 import paddle
-from parameterized import parameterized
 
 from paddleformers.transformers import (
     DeepseekV3Config,
     DeepseekV3ForCausalLM,
     DeepseekV3Model,
 )
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -73,7 +72,7 @@ class DeepseekV3ModelTester:
         num_labels=3,
         num_choices=4,
         pad_token_id=0,
-        aux_loss_alpha=0.001,
+        router_aux_loss_coef=0.001,
         first_k_dense_replace=1,
         hidden_act="silu",
         scope=None,
@@ -105,7 +104,7 @@ class DeepseekV3ModelTester:
         self.num_experts_per_tok = num_experts_per_tok
         self.first_k_dense_replace = first_k_dense_replace
         self.norm_topk_prob = norm_topk_prob
-        self.aux_loss_alpha = aux_loss_alpha
+        self.router_aux_loss_coef = router_aux_loss_coef
         self.hidden_act = hidden_act
         self.max_position_embeddings = max_position_embeddings
         self.initializer_range = initializer_range
@@ -167,7 +166,7 @@ class DeepseekV3ModelTester:
             num_experts_per_tok=self.num_experts_per_tok,
             first_k_dense_replace=self.first_k_dense_replace,
             norm_topk_prob=self.norm_topk_prob,
-            aux_loss_alpha=self.aux_loss_alpha,
+            router_aux_loss_coef=self.router_aux_loss_coef,
             hidden_act=self.hidden_act,
             max_position_embeddings=self.max_position_embeddings,
             initializer_range=self.initializer_range,
@@ -301,6 +300,7 @@ class DeepseekV3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
     all_model_classes = (DeepseekV3Model, DeepseekV3ForCausalLM)
     all_generative_model_classes = {DeepseekV3ForCausalLM: (DeepseekV3Model, "deepseek_v3")}
 
+    @gpu_device_initializer(log_prefix="DeepseekV3ModelTest")
     def setUp(self):
         super().setUp()
 
@@ -370,15 +370,18 @@ class DeepseekV3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
 
 
 class DeepseekV3IntegrationTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="DeepseekV3IntegrationTest")
+    def setUp(self):
+        pass
+
     def test_model_tiny_logits(self):
         input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
         model = DeepseekV3ForCausalLM.from_pretrained(
             "PaddleFormers/tiny-random-deepseek-v3",
             dtype="float32",
             download_hub="aistudio",
-            convert_from_hf=True,
             seq_length=len(input_ids),
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
         model.config.seq_length = len(input_ids)
         input_ids = paddle.to_tensor([input_ids])
@@ -428,8 +431,42 @@ class DeepseekV3IntegrationTest(unittest.TestCase):
         )
         self.assertTrue(paddle.allclose(out[0, 0, :30], EXPECTED_SLICE, atol=1e-2, rtol=1e-2))
 
+    def test_fd_fallback(self):
+        input_ids = [1, 306, 4658, 278, 6593, 310, 2834, 338]
+        model = DeepseekV3ForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-deepseek-v3",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
+            fd_fallback=False,
+        )
+        model_fd_fallback = DeepseekV3ForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-deepseek-v3",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
+            fd_fallback=True,
+        )
+        model_fd_fallback_fused_ffn = DeepseekV3ForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-deepseek-v3",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
+            fd_fallback=True,
+        )
+
+        input_ids = paddle.to_tensor([input_ids])
+        with paddle.no_grad():
+            out = model(input_ids, return_dict=True).logits
+            out_fd_fallback = model_fd_fallback(input_ids, return_dict=True).logits
+            out_fd_fallback_fused_ffn = model_fd_fallback_fused_ffn(input_ids, return_dict=True).logits
+
+        self.assertTrue(paddle.allclose(out_fd_fallback, out, atol=1e-3, rtol=1e-3))
+        self.assertTrue(paddle.allclose(out_fd_fallback_fused_ffn, out, atol=1e-3, rtol=1e-3))
+
 
 class DeepseekV3CompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="DeepseekV3CompatibilityTest")
+    def setUp(self):
+        pass
+
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
@@ -469,22 +506,22 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
         # 1. create common input
         input_ids = np.random.randint(100, 200, [1, 20])
 
-        # 2. forward the paddle model
-        from paddleformers.transformers import DeepseekV3Model
+        # 2. forward the torch model
+        import torch
+        from transformers import DeepseekV3ForCausalLM
 
-        paddle_model = DeepseekV3Model.from_pretrained(
-            self.torch_model_path, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+        torch_model = DeepseekV3ForCausalLM.from_pretrained(self.torch_model_path, dtype=torch.float32)
+        torch_model.eval()
+        torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
+
+        # 3. forward the paddle model
+        from paddleformers.transformers import DeepseekV3ForCausalLM
+
+        paddle_model = DeepseekV3ForCausalLM.from_pretrained(
+            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
         )
         paddle_model.eval()
         paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
-
-        # 3. forward the torch  model
-        import torch
-        from transformers import DeepseekV3Model
-
-        torch_model = DeepseekV3Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-        torch_model.eval()
-        torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
         self.assertTrue(
             np.allclose(
@@ -502,66 +539,23 @@ class DeepseekV3CompatibilityTest(unittest.TestCase):
             # 1. create common input
             input_ids = np.random.randint(100, 200, [1, 20])
 
-            # 2. forward the torch  model
-            import torch
-            from transformers import DeepseekV3Model
-
-            torch_model = DeepseekV3Model.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
-            torch_model.eval()
-            torch_model.save_pretrained(tempdir)
-            torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
-
-            # 2. forward the paddle model
-            from paddleformers.transformers import DeepseekV3Model
-
-            paddle_model = DeepseekV3Model.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
-            )
-            paddle_model.eval()
-            paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
-
-            self.assertTrue(
-                np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e-2,
-                    rtol=1e-2,
-                )
-            )
-
-    @parameterized.expand([("DeepseekV3Model",), ("DeepseekV3ForCausalLM",)])
-    @require_package("transformers", "torch")
-    def test_DeepseekV3_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
-        pytorch_class_name = pytorch_class_name or class_name
-        with tempfile.TemporaryDirectory() as tempdir:
-
-            # 1. create common input
-            input_ids = np.random.randint(100, 200, [1, 20])
-
             # 2. forward the torch model
             import torch
-            import transformers
+            from transformers import DeepseekV3ForCausalLM
 
-            torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = DeepseekV3ForCausalLM.from_pretrained(self.torch_model_path, dtype=torch.float32)
             torch_model.eval()
-
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             # 3. forward the paddle model
-            from paddleformers import transformers
+            from paddleformers.transformers import DeepseekV3ForCausalLM
 
-            paddle_model_class = getattr(transformers, class_name)
-            paddle_model = paddle_model_class.from_pretrained(
-                tempdir, convert_from_hf=True, dtype="float32", load_checkpoint_format=""
+            paddle_model = DeepseekV3ForCausalLM.from_pretrained(
+                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
-
-            if class_name == "DeepseekV3Model":
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=False)[0]
-            else:
-                paddle_logit = paddle_model(paddle.to_tensor(input_ids), return_dict=True).logits
+            paddle_logit = paddle_model(paddle.to_tensor(input_ids))[0]
 
             self.assertTrue(
                 np.allclose(

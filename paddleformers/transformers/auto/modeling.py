@@ -71,6 +71,8 @@ MAPPING_NAMES = OrderedDict(
         ("GptOss", "gpt_oss"),
         ("Phi3", "phi3"),
         ("Gemma3", "gemma3_text"),
+        ("Glm4vMoe", "glm4v_moe"),
+        ("GlmOcr", "glm_ocr"),
         ("InternLM2", "intern_lm2"),
     ]
 )
@@ -194,9 +196,9 @@ class _BaseAutoModelClass:
         init_class = cls._name_mapping[model_name + "_Import_Class"]
         class_name = cls._name_mapping[init_class]
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
-        if is_lora:
+        if is_lora and class_name in ["qwen3_vl_moe"]:
             try:
-                model_class = getattr(import_class, init_class + "Decapitated")
+                model_class = getattr(import_class, init_class + "Deprecated")
                 return model_class
             except AttributeError:
                 model_class = getattr(import_class, init_class)
@@ -223,7 +225,7 @@ class _BaseAutoModelClass:
                 model_class = getattr(import_class, init_class)
                 return model_class
             except AttributeError:
-                model_class = getattr(import_class, init_class + "Decapitated")
+                model_class = getattr(import_class, init_class + "Deprecated")
                 return model_class
             except AttributeError as err:
                 try:

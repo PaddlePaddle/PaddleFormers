@@ -16,7 +16,6 @@ import logging
 
 import numpy as np
 import paddle
-from models.comm_utils import all_gather, reduce_scatter, scatter
 from paddle import distributed as dist
 from paddle.autograd import PyLayer
 from paddle.distributed import fleet
@@ -30,6 +29,12 @@ from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
 from paddle.incubate.tensor.manipulation import create_async_load
 from paddle.nn import functional as F
 from paddle.nn.layer.layers import Layer
+
+from paddleformers.cli.train.ernie_pretrain.models.comm_utils import (
+    all_gather,
+    reduce_scatter,
+    scatter,
+)
 
 try:
     from paddle.nn.functional import all_gather_gemm, flux, gemm_reduce_scatter

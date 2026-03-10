@@ -434,11 +434,6 @@ class TrainingArguments:
             Whether to load a checkpoint in the HuggingFace format.
             Defaults to False.
 
-        flex_ckpt_comm_method (str, optional):
-            Communication method used for checkpoint resharding.
-            Choices are "send_recv", "broadcast", "multi_group_broadcast", and "grouped_send_recv".
-            Defaults to "broadcast".
-
         replicate_saved_into_local (bool, optional):
             Whether to save checkpoint replicas into local files in a distributed save/load system.
             If set to True, replicas will be stored locally on each node/machine.
@@ -510,6 +505,9 @@ class TrainingArguments:
     lr_end: float = field(default=1e-7, metadata={"help": "The end LR in the polynomial scheduler."})
     power: float = field(default=1.0, metadata={"help": "The power factor in the polynomial scheduler."})
     min_lr: float = field(default=0.0, metadata={"help": "The minimum learning rate in cosine scheduler."})
+    moe_correction_bias_lr: float = field(
+        default=0.0, metadata={"help": "Learning rate for MoE (Mixture of Experts) correction bias adjustment."}
+    )
 
     log_on_each_node: bool = field(
         default=True,
@@ -1092,10 +1090,6 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Enable MoE (Mixture of Experts) expert parallel training"},
     )
-    aux_loss_alpha: Optional[float] = field(
-        default=0.0001,
-        metadata={"help": "MoE (Mixture of Experts) Auxiliary loss weight coefficient"},
-    )
     release_grads: Optional[bool] = field(
         default=False, metadata={"help": "Whether to release gradients during training. Default is `False`."}
     )
@@ -1278,16 +1272,6 @@ class TrainingArguments:
         default=False,
         metadata={"help": "Whether to load a checkpoint in the HuggingFace format."},
     )
-    flex_ckpt_comm_method: Optional[str] = field(
-        default="broadcast",
-        metadata={
-            "help": (
-                "Communication method used by FlexCheckpoint for checkpoint resharding. "
-                'Choices are "send_recv", "broadcast", "multi_group_broadcast", and "grouped_send_recv". '
-                'Default is "broadcast".'
-            )
-        },
-    )
     deterministic_mode: bool = field(
         default=False,
         metadata={"help": "Whether to use deterministic mode."},
@@ -1326,12 +1310,6 @@ class TrainingArguments:
         default=False,
         metadata={
             "help": "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines)."
-        },
-    )
-    mtp_loss_scaling_factor: float = field(
-        default=1.0,
-        metadata={
-            "help": "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues)."
         },
     )
     dp_allreduce_avg_in_gradinent_scale: bool = field(
@@ -1562,8 +1540,9 @@ class TrainingArguments:
             "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
         },
     )
-    fa_version: int = field(
-        default=2, metadata={"help": "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."}
+    fa_version: Optional[int] = field(
+        default=None,
+        metadata={"help": "FlashAttention or FlashMask version (2, 3, or 4). If None, version is auto-selected."},
     )
 
     using_sonic_moe: bool = field(
@@ -1591,20 +1570,43 @@ class TrainingArguments:
             os.environ["FLAGS_cudnn_deterministic"] = "1"
             os.environ["FLAGS_embedding_deterministic"] = "1"
 
-        if self.fa_version == 2 or self.fa_version == 3:
+        if self.fa_version is not None:
             if paddle.base.core.is_compiled_with_cuda():
+                assert self.fa_version in (
+                    2,
+                    3,
+                    4,
+                ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2, 3, and 4."
+            else:
+                assert (
+                    self.fa_version == 2
+                ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2 on non-CUDA devices."
+        else:
+            if paddle.base.core.is_compiled_with_cuda():
+                is_sm100 = (
+                    paddle_device.get_device_capability()[0] == 10 and paddle_device.get_device_capability()[1] == 0
+                )
                 is_sm90 = (
                     paddle_device.get_device_capability()[0] == 9 and paddle_device.get_device_capability()[1] == 0
                 )
-                if is_sm90:
-                    paddle.set_flags({"FLAGS_flash_attn_version": 3})
+                if is_sm100:
+                    self.fa_version = 4
+                elif is_sm90:
                     self.fa_version = 3
-                    warnings.warn("sm90 automatic set fa_version to fa3")
                 else:
-                    paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
-                    logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
+                    # Note(umiswing): always fallback to FA2
+                    self.fa_version = 2
+            else:
+                self.fa_version = 2
+        if paddle.base.core.is_compiled_with_cuda():
+            paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
         else:
-            raise ValueError(f"--fa_version should be 2 or 3, but got {self.fa_version}")
+            try:
+                paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
+            except Exception:
+                logger.warning("Flag FLAGS_flash_attn_version cannot set its value through this function.")
+
+        logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
 
         env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", -1))
         if env_local_rank != -1 and env_local_rank != self.local_rank and paddle.distributed.get_world_size() > 1:
@@ -1637,6 +1639,19 @@ class TrainingArguments:
 
         if self.disable_tqdm is None:
             self.disable_tqdm = False  # logger.getEffectiveLevel() > logging.WARN
+
+        # XPU Device Data Loading Strategy:
+        # - XPU does not support concurrent access from multiple threads on the same device.
+        # - When num_workers=0, DataLoader uses a background thread that may conflict with
+        #   the main training thread accessing XPU.
+        # - Setting num_workers>=1 spawns separate subprocess(es) for data loading on CPU,
+        #   which avoids XPU device contention between data loading and model training.
+        if self.dataloader_num_workers == 0 and self.device == "xpu":
+            self.dataloader_num_workers = 1
+            logger.info(
+                "XPU device detected: automatically setting dataloader_num_workers=1 "
+                "to use subprocess for data loading and avoid device contention."
+            )
 
         self.evaluation_strategy = IntervalStrategy(self.evaluation_strategy)
         self.logging_strategy = IntervalStrategy(self.logging_strategy)
@@ -1847,18 +1862,13 @@ class TrainingArguments:
                         raise ValueError("overlap has accuracy issue")  # TODO: fix `overalap` + `delay_scale` issue
 
                     if self.do_eval:
-                        if (
-                            self.per_device_train_batch_size * self.gradient_accumulation_steps
-                            != self.per_device_eval_batch_size
-                        ):
+                        if self.per_device_train_batch_size != self.per_device_eval_batch_size:
                             logger.warning(
                                 "In pipeline model, the evaluation also shares same setting with training. "
-                                "We will enforce that per_device_eval_batch_size=per_device_train_batch_size * gradient_accumulation_steps."
+                                "We will enforce that per_device_eval_batch_size=per_device_train_batch_size."
                             )
 
-                            self.per_device_eval_batch_size = (
-                                self.per_device_train_batch_size * self.gradient_accumulation_steps
-                            )
+                            self.per_device_eval_batch_size = self.per_device_train_batch_size
 
                 if self.tensor_model_parallel_size > 1:
                     strategy.tensor_parallel_configs = {"tensor_init_seed": self.seed}
@@ -2266,17 +2276,12 @@ class TrainingArguments:
                 logger.info(f"PP configs:{strategy.pipeline}, use master_grad: {self.amp_master_grad}")
 
                 if self.do_eval:
-                    if (
-                        self.per_device_train_batch_size * self.gradient_accumulation_steps
-                        != self.per_device_eval_batch_size
-                    ):
+                    if self.per_device_train_batch_size != self.per_device_eval_batch_size:
                         logger.warning(
                             "In pipeline model, the evaluation also shares same setting with training. "
-                            "We will enforce that per_device_eval_batch_size=per_device_train_batch_size * gradient_accumulation_steps."
+                            "We will enforce that per_device_eval_batch_size=per_device_train_batch_size."
                         )
-                        self.per_device_eval_batch_size = (
-                            self.per_device_train_batch_size * self.gradient_accumulation_steps
-                        )
+                        self.per_device_eval_batch_size = self.per_device_train_batch_size
 
             elif self.gradient_accumulation_steps > 1:
                 gradient_merge = strategy.gradient_merge

@@ -1,0 +1,51 @@
+### data
+train_dataset_type: messages
+train_dataset_path: tests/fixtures/dummy/sft/thinksafe_converted.jsonl
+train_dataset_prob: "1.0"
+max_seq_len: 8192
+packing: true
+mix_strategy: concat
+template_backend: custom
+template: ernie
+
+### model
+model_name_or_path: baidu/ERNIE-4.5-21B-A3B-Thinking
+_attn_implementation: flashmask
+
+### finetuning
+# base
+stage: SFT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: false
+per_device_train_batch_size: 1
+num_train_epochs: 1
+max_steps: 50
+save_steps: 100
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 4
+logging_dir: ./vdl_log
+output_dir: ./checkpoints/ernie-thinking-sft-full
+disable_tqdm: true
+
+# train
+warmup_steps: 20
+learning_rate: 1.0e-5
+
+# performance
+tensor_model_parallel_size: 4
+pipeline_model_parallel_size: 2
+sequence_parallel: true
+sharding: stage1
+offload_optim: false
+tensorwise_offload_optimizer: false
+bf16: true
+fp16_opt_level: O2
+unified_checkpoint: true
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
+
+device: xpu

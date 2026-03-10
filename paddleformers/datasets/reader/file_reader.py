@@ -32,9 +32,18 @@ DATASET_DOWNLOAD_ROOT = os.path.join(DATASET_WORKROOT, "download")
 class BaseReader(IterableDataset):
     """Basic data reader implement."""
 
-    def __init__(self, file_path, file_type, shuffle_file=True, split_multi_turn=False, template_backend="jinja"):
+    def __init__(
+        self,
+        file_path,
+        file_type,
+        file_samplenum=None,
+        shuffle_file=True,
+        split_multi_turn=False,
+        template_backend="jinja",
+    ):
         self._file_path = file_path
         self._file_type = file_type  # erniekit, alpaca, ...
+        self._file_samplenum = file_samplenum
         self._shuffle_file = shuffle_file
         self._split_multi_turn = split_multi_turn
         self._template_backend = template_backend
@@ -52,10 +61,19 @@ class BaseReader(IterableDataset):
 
 
 class FileReader(BaseReader):
-    def __init__(self, file_path, file_type, shuffle_file=True, split_multi_turn=False, template_backend="jinja"):
+    def __init__(
+        self,
+        file_path,
+        file_type,
+        file_samplenum=None,
+        shuffle_file=True,
+        split_multi_turn=False,
+        template_backend="jinja",
+    ):
         super().__init__(
             file_path=file_path,
             file_type=file_type,
+            file_samplenum=file_samplenum,
             shuffle_file=shuffle_file,
             split_multi_turn=split_multi_turn,
             template_backend=template_backend,
@@ -69,6 +87,30 @@ class FileReader(BaseReader):
             raise ValueError(f"Unsupported file extension: {ext}. Supported extension are: {self.loader_map.keys()}")
         res = self.loader_map[ext](self._file_path)
 
+        # sample
+        if self._file_samplenum is not None:
+            res_list = list(res)
+            total_samples = len(res_list)
+            target_samples = self._file_samplenum
+
+            if target_samples <= total_samples:
+                sampled_data = res_list[:target_samples]
+            else:
+                repeat_times = target_samples // total_samples
+                remainder = target_samples % total_samples
+
+                sampled_data = []
+                for _ in range(repeat_times):
+                    sampled_data.extend(res_list)
+                if remainder > 0:
+                    sampled_data.extend(res_list[:remainder])
+
+            res = sampled_data
+            logger.info(f"Sampled {len(res)} samples from {total_samples} total samples.")
+        else:
+            res = list(res)
+            logger.info(f"Loaded {len(res)} samples from {self._file_path}.")
+
         # data preprocess
         if self._file_type not in self.convertor_map:
             raise ValueError(
@@ -77,7 +119,7 @@ class FileReader(BaseReader):
         for item in res:
             try:
                 convert_data = self.convertor_map[self._file_type](item)
-                checked_data = self.data_check(convert_data)
+                checked_data = self._data_check(convert_data)
             except Exception as e:
                 logger.warning(f"preprocess data error: {e}, data: {str(item)[:30]}")
                 continue
@@ -88,11 +130,12 @@ class FileReader(BaseReader):
             if self._split_multi_turn:
                 assistant_index = 0
                 for index, turn in enumerate(checked_data["messages"]):
-                    if "assistant" in turn["role"] and checked_data["label"][assistant_index]:
-                        new_data = copy.deepcopy(checked_data)
-                        new_data["messages"] = checked_data["messages"][: index + 1]
-                        new_data["label"] = [1]
-                        yield new_data
+                    if "assistant" in turn["role"]:
+                        if checked_data["label"][assistant_index]:
+                            new_data = copy.deepcopy(checked_data)
+                            new_data["messages"] = checked_data["messages"][: index + 1]
+                            new_data["label"] = [1]
+                            yield new_data
                         assistant_index += 1
             else:
                 yield checked_data
@@ -101,7 +144,7 @@ class FileReader(BaseReader):
         _, ext = os.path.splitext(self._file_path)
         return ext.lower()
 
-    def data_check(self, data):
+    def _data_check(self, data):
         if not data:
             return None
 
@@ -180,12 +223,21 @@ class FileReader(BaseReader):
 
 
 class FileListReader(BaseReader):
-    def __init__(self, file_path, file_type, shuffle_file=True, split_multi_turn=False, template_backend="jinja"):
+    def __init__(
+        self,
+        file_path,
+        file_type,
+        file_samplenum=None,
+        shuffle_file=True,
+        split_multi_turn=False,
+        template_backend="jinja",
+    ):
         if not os.path.isdir(file_path):
             raise ValueError(f"Directory not found: {file_path}")
         super().__init__(
             file_path=file_path,
             file_type=file_type,
+            file_samplenum=file_samplenum,
             shuffle_file=shuffle_file,
             split_multi_turn=split_multi_turn,
             template_backend=template_backend,
@@ -195,7 +247,12 @@ class FileListReader(BaseReader):
         for file_path in self._get_files():
             # all files under the path must be of the same data type
             reader = FileReader(
-                file_path, self._file_type, self._shuffle_file, self._split_multi_turn, self._template_backend
+                file_path,
+                self._file_type,
+                self._file_samplenum,
+                self._shuffle_file,
+                self._split_multi_turn,
+                self._template_backend,
             )
             yield from reader
 
@@ -217,7 +274,13 @@ def get_hf_dataset_config(file_path):
 
 class HuggingFaceReader(BaseReader):
     def __init__(
-        self, file_path, file_type="alpaca", shuffle_file=True, split_multi_turn=False, template_backend="jinja"
+        self,
+        file_path,
+        file_type="alpaca",
+        file_samplenum=None,
+        shuffle_file=True,
+        split_multi_turn=False,
+        template_backend="jinja",
     ):
         # download
         config_map = get_hf_dataset_config(file_path)
@@ -233,13 +296,19 @@ class HuggingFaceReader(BaseReader):
                 self.file_reader = FileListReader(
                     download_file_path,
                     download_file_type,
+                    file_samplenum,
                     shuffle_file,
                     split_multi_turn,
                     template_backend,
                 )
             else:
                 self.file_reader = FileReader(
-                    download_file_path, download_file_type, shuffle_file, split_multi_turn, template_backend
+                    download_file_path,
+                    download_file_type,
+                    file_samplenum,
+                    shuffle_file,
+                    split_multi_turn,
+                    template_backend,
                 )
         else:
             raise ValueError(f"Unsupported huggingface dataset {file_path}")

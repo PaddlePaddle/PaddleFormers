@@ -27,33 +27,6 @@ import paddle
 import paddle.distributed as dist
 import paddle.distributed.communication.group
 import paddle.nn.functional as F
-from models.comm_utils import profile
-from models.ernie import ErnieMoEConfig
-from models.ernie.modeling import ErnieAttention, ErnieLMHead, ErnieMLP
-from models.ernie.modeling import (
-    ErniePretrainingCriterion as ErniePretrainingCriterionBase,
-)
-from models.ernie.modeling import (
-    FusedDropoutImpl,
-    RMSNorm,
-    RotaryEmbedding,
-    _expand_mask,
-    _make_causal_mask,
-    finfo,
-)
-from models.fp8_linear import Fp8FusedMlpFunc, MemEfficientFp8FusedMlpFunc
-from models.moe.moe_layer import MOELayer, MoEStatics
-from models.moe.top2_gate import Top2Gate, TopKGateFused
-from models.sequence_parallel_utils import (
-    ColumnSequenceParallelLinear,
-    GatherOp,
-    RowSequenceParallelLinear,
-    ScatterOp,
-    get_async_loader,
-    hack_offload_wait,
-    mark_as_sequence_parallel_parameter,
-)
-from models.utils import get_global_training_logs
 from paddle import nn
 from paddle.autograd import PyLayer
 from paddle.distributed import fleet
@@ -69,6 +42,46 @@ from paddle.distributed.fleet.utils import recompute
 from paddle.incubate.nn.functional import fused_rms_norm_ext
 from paddle.incubate.tensor.manipulation import async_offload
 
+from paddleformers.cli.train.ernie_pretrain.models.comm_utils import profile
+from paddleformers.cli.train.ernie_pretrain.models.ernie import ErnieMoEConfig
+from paddleformers.cli.train.ernie_pretrain.models.ernie.modeling import (
+    ErnieAttention,
+    ErnieLMHead,
+    ErnieMLP,
+)
+from paddleformers.cli.train.ernie_pretrain.models.ernie.modeling import (
+    ErniePretrainingCriterion as ErniePretrainingCriterionBase,
+)
+from paddleformers.cli.train.ernie_pretrain.models.ernie.modeling import (
+    FusedDropoutImpl,
+    RMSNorm,
+    RotaryEmbedding,
+    _expand_mask,
+    _make_causal_mask,
+    finfo,
+)
+from paddleformers.cli.train.ernie_pretrain.models.fp8_linear import (
+    Fp8FusedMlpFunc,
+    MemEfficientFp8FusedMlpFunc,
+)
+from paddleformers.cli.train.ernie_pretrain.models.moe.moe_layer import (
+    MOELayer,
+    MoEStatics,
+)
+from paddleformers.cli.train.ernie_pretrain.models.moe.top2_gate import (
+    Top2Gate,
+    TopKGateFused,
+)
+from paddleformers.cli.train.ernie_pretrain.models.sequence_parallel_utils import (
+    ColumnSequenceParallelLinear,
+    GatherOp,
+    RowSequenceParallelLinear,
+    ScatterOp,
+    get_async_loader,
+    hack_offload_wait,
+    mark_as_sequence_parallel_parameter,
+)
+from paddleformers.cli.train.ernie_pretrain.models.utils import get_global_training_logs
 from paddleformers.transformers.conversion_utils import (
     StateDictNameMapping,
     init_name_mappings,
@@ -83,7 +96,7 @@ from paddleformers.transformers.model_utils import PretrainedModel, register_bas
 from paddleformers.utils.tools import get_env_device
 
 try:
-    from paddle.incubate.nn.functional import swiglu as fused_swiglu
+    from paddle.nn.functional import swiglu as fused_swiglu
 except (ImportError, ModuleNotFoundError):
     fused_swiglu = None
 
@@ -1311,8 +1324,10 @@ class ErniePretrainedModel(PretrainedModel):
 
     @classmethod
     def _get_tensor_parallel_mappings(cls, config, is_split=True):
-        from models.ernie.modeling import gqa_qkv_merge_func, gqa_qkv_split_func
-
+        from paddleformers.cli.train.ernie_pretrain.models.ernie.modeling import (
+            gqa_qkv_merge_func,
+            gqa_qkv_split_func,
+        )
         from paddleformers.transformers.conversion_utils import split_or_merge_func
 
         fn = split_or_merge_func(
@@ -1543,16 +1558,18 @@ class ErnieModel(ErniePretrainedModel):
 
         self.gradient_checkpointing = False
 
-        if self.config.multi_token_pred_depth > 0:
+        if self.config.num_nextn_predict_layers > 0:
             self.mtp_block = paddle.nn.LayerList(
-                [ErnieDecoderLayer(config, layer_idx) for layer_idx in range(self.config.multi_token_pred_depth)]
+                [ErnieDecoderLayer(config, layer_idx) for layer_idx in range(self.config.num_nextn_predict_layers)]
             )
             Norm = RMSNorm
 
             self.mtp_hidden_norm = paddle.nn.LayerList(
-                [Norm(config) for _ in range(self.config.multi_token_pred_depth)]
+                [Norm(config) for _ in range(self.config.num_nextn_predict_layers)]
             )
-            self.mtp_emb_norm = paddle.nn.LayerList([Norm(config) for _ in range(self.config.multi_token_pred_depth)])
+            self.mtp_emb_norm = paddle.nn.LayerList(
+                [Norm(config) for _ in range(self.config.num_nextn_predict_layers)]
+            )
 
             LinearFN = paddle.incubate.nn.FusedLinear if config.fuse_linear else paddle.nn.Linear
             self.mtp_linear_proj = paddle.nn.LayerList(
@@ -1562,7 +1579,7 @@ class ErnieModel(ErniePretrainedModel):
                         self.config.hidden_size,
                         bias_attr=config.use_bias,
                     )
-                    for _ in range(self.config.multi_token_pred_depth)
+                    for _ in range(self.config.num_nextn_predict_layers)
                 ]
             )
             if config.sequence_parallel:
@@ -1688,7 +1705,7 @@ class ErnieModel(ErniePretrainedModel):
         if past_key_values is None:
             past_key_values = tuple([None] * len(self.layers))
 
-        seq_length -= self.config.multi_token_pred_depth
+        seq_length -= self.config.num_nextn_predict_layers
         seq_length_with_past = seq_length
         cache_length = 0
         if past_key_values[0] is not None:
@@ -1698,9 +1715,9 @@ class ErnieModel(ErniePretrainedModel):
             inputs_embeds = self.embed_tokens(input_ids)
         inputs_embeds = inputs_embeds.astype(self.embed_tokens.weight.dtype)
 
-        if self.config.multi_token_pred_depth > 0:
-            inputs_embeds_extra = inputs_embeds[:, -self.config.multi_token_pred_depth :, :]
-            inputs_embeds = inputs_embeds[:, : -self.config.multi_token_pred_depth, :]
+        if self.config.num_nextn_predict_layers > 0:
+            inputs_embeds_extra = inputs_embeds[:, -self.config.num_nextn_predict_layers :, :]
+            inputs_embeds = inputs_embeds[:, : -self.config.num_nextn_predict_layers, :]
             inputs_embeds_ori = inputs_embeds
 
         if self.config.sequence_parallel:
@@ -1728,7 +1745,7 @@ class ErnieModel(ErniePretrainedModel):
         attn_mask_startend_row_indices_ori = attn_mask_startend_row_indices
         if attn_mask_startend_row_indices is not None:
             attn_mask_startend_row_indices = attn_mask_startend_row_indices[
-                :, :, : -self.config.multi_token_pred_depth
+                :, :, : -self.config.num_nextn_predict_layers
             ]
 
         all_hidden_states = () if output_hidden_states else None
@@ -1785,10 +1802,10 @@ class ErnieModel(ErniePretrainedModel):
                     layer_outputs, gate_logits = layer_outputs[:-1], layer_outputs[-1]
                     all_gate_logits = all_gate_logits + (gate_logits,)
 
-        if self.config.multi_token_pred_depth > 0:
+        if self.config.num_nextn_predict_layers > 0:
             mtp_outputs.append(hidden_states)
 
-            for depth in range(self.config.multi_token_pred_depth):
+            for depth in range(self.config.num_nextn_predict_layers):
                 if self.config.sequence_parallel:
                     hidden_states = GatherOp.apply(hidden_states)
                     hidden_states = hidden_states.reshape([-1, seq_length, hidden_states.shape[-1]])
@@ -1902,9 +1919,9 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
             )
 
     def forward(self, prediction_scores, masked_lm_labels, router_loss=None, mtp_logits=None):
-        if self.config.multi_token_pred_depth > 0:
+        if self.config.num_nextn_predict_layers > 0:
             masked_lm_labels_ori = masked_lm_labels
-            masked_lm_labels = masked_lm_labels[:, : -self.config.multi_token_pred_depth]
+            masked_lm_labels = masked_lm_labels[:, : -self.config.num_nextn_predict_layers]
             seq_length = masked_lm_labels.shape[1]
         res = super().forward(
             prediction_scores,
@@ -1912,10 +1929,10 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
         )
         global_training_logs = get_global_training_logs()
 
-        if self.config.multi_token_pred_depth > 0:
+        if self.config.num_nextn_predict_layers > 0:
             global_training_logs.update(mtp_depth_0_loss=res[0].clone().detach())
             mtp_loss_res = []
-            for depth in range(self.config.multi_token_pred_depth):
+            for depth in range(self.config.num_nextn_predict_layers):
                 prediction_scores_cur_depth = mtp_logits[depth]
                 masked_lm_labels_cur_depth = masked_lm_labels_ori[:, (depth + 1) : (depth + 1 + seq_length)]
                 res_cur_depth = super().forward(
@@ -1930,20 +1947,20 @@ class ErniePretrainingCriterion(ErniePretrainingCriterionBase):
 
         if self.return_tuple:
             loss, loss_sum = res
-            if self.config.multi_token_pred_depth > 0:
+            if self.config.num_nextn_predict_layers > 0:
                 loss = add_loss(
                     loss,
-                    self.config.multi_token_pred_lambda * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
+                    self.config.mtp_loss_scaling_factor * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
                 )
-                loss_sum = loss_sum + self.config.multi_token_pred_lambda * sum(
+                loss_sum = loss_sum + self.config.mtp_loss_scaling_factor * sum(
                     [x[1].detach() for x in mtp_loss_res]
                 ) / len(mtp_loss_res)
         else:
             loss, loss_sum = res, None
-            if self.config.multi_token_pred_depth > 0:
+            if self.config.num_nextn_predict_layers > 0:
                 loss = add_loss(
                     loss,
-                    self.config.multi_token_pred_lambda * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
+                    self.config.mtp_loss_scaling_factor * sum([x[0] for x in mtp_loss_res]) / len(mtp_loss_res),
                 )
 
         global_training_logs.update(lm_loss=loss.clone().detach())

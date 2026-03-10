@@ -46,20 +46,39 @@ from transformers.utils import (
 from ...utils.download import DownloadSource, resolve_file_path
 from ...utils.log import logger
 from ..image_processing_utils import PaddleImageProcessingMixin
+from ..image_processing_utils_fast import BaseImageProcessorFast
 from .factory import _LazyAutoMapping
+
+IMAGE_PROCESSOR_MAPPING_NAMES.update(
+    {
+        "ernie4_5_moe_vl": ("Ernie4_5_VLImageProcessor"),
+        "glm4v_moe": ("Glm4vImageProcessor", "Glm4vImageProcessorFast"),
+        "kimi_k25": ("KimiK25VisionProcessor"),
+        "paddleocr_vl": ("PaddleOCRVLImageProcessor"),
+        "qwen2_5_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
+        "qwen2_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
+        "qwen3_vl": ("Qwen3VLImageProcessor", "Qwen3VLImageProcessorFast"),
+        "glm_ocr": ("Glm46VImageProcessor"),
+    }
+)
+
+FORCE_FAST_IMAGE_PROCESSOR = ["Qwen2VLImageProcessor"]
 
 IMAGE_PROCESSOR_MAPPING = _LazyAutoMapping(CONFIG_MAPPING_NAMES, IMAGE_PROCESSOR_MAPPING_NAMES)
 
 
 def get_image_processor_class_from_name(class_name: str):
+    if class_name == "BaseImageProcessorFast":
+        return BaseImageProcessorFast
+
     for module_name, extractors in IMAGE_PROCESSOR_MAPPING_NAMES.items():
         if class_name in extractors:
             module_name = model_type_to_module_name(module_name)
 
-            module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
             try:
+                module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
                 return getattr(module, class_name)
-            except AttributeError:
+            except (ModuleNotFoundError, AttributeError):
                 continue
 
     for extractor in IMAGE_PROCESSOR_MAPPING._extra_content.values():
@@ -241,7 +260,7 @@ class AutoImageProcessor(hf.AutoImageProcessor):
             kwargs["download_hub"] = download_hub
 
         config = kwargs.pop("config", None)
-        use_fast = kwargs.pop("use_fast", True)
+        use_fast = kwargs.pop("use_fast", None)
         trust_remote_code = kwargs.pop("trust_remote_code", None)
         kwargs["_from_auto"] = True
 
@@ -311,39 +330,53 @@ class AutoImageProcessor(hf.AutoImageProcessor):
 
         image_processor_class = None
         if image_processor_type is not None:
-            if use_fast is None or use_fast:
-                if use_fast:
-                    if image_processor_type.endswith("Fast"):
-                        logger.warning(
-                            f"The model's image processor only supports the slow version (`use_fast=False`). "
-                            f"Detected `use_fast=True` but will fall back to the slow version: "
-                            f"'{image_processor_type}' will be loaded as '{image_processor_type[:-4]}'."
-                        )
-                    else:
-                        logger.warning(
-                            f"The requested image processor `{image_processor_type}` does not have a fast version. "
-                            f"Detected `use_fast=True` but the slow version will be loaded instead (`use_fast=False`)."
-                        )
+            # if use_fast is not set and the processor was saved with a fast processor, we use it, otherwise we use the slow processor.
+            if use_fast is None:
+                use_fast = image_processor_type.endswith("Fast")
+                if not use_fast and image_processor_type in FORCE_FAST_IMAGE_PROCESSOR:
+                    use_fast = True
+                    logger.warning_once(
+                        f"The image processor of type `{image_processor_type}` is now loaded as a fast processor by default, even if the model checkpoint was saved with a slow processor. "
+                        "This is a breaking change and may produce slightly different outputs. To continue using the slow processor, instantiate this class with `use_fast=False`. "
+                    )
+                if not use_fast:
+                    logger.warning_once(
+                        "The model's image processor only supports the slow version. "
+                        "Falling back to the slow version (`use_fast=False`) even though `use_fast=True` is the default. "
+                    )
+            if use_fast and not image_processor_type.endswith("Fast"):
+                image_processor_type += "Fast"
+            if use_fast:
+                for image_processors in IMAGE_PROCESSOR_MAPPING_NAMES.values():
+                    if image_processor_type in image_processors:
+                        image_processor_class = get_image_processor_class_from_name(image_processor_type)
+                        break
+                else:
+                    image_processor_type = image_processor_type[:-4]
+                    use_fast = False
+                    logger.warning_once(
+                        f"`use_fast` is set to `True` but the requested image processor `{image_processor_type}` does not have a fast version. "
+                        "Falling back to the slow version (`use_fast=False`)."
+                    )
+                    image_processor_class = get_image_processor_class_from_name(image_processor_type)
 
-                use_fast = False
-            if not use_fast:
+                    # Not found in PaddleFormers, try local Transformers registry
+                    if image_processor_class is None:
+                        image_processor_class = get_image_processor_class_from_name_hf(image_processor_type)
+            else:
                 image_processor_type_slow = image_processor_type.removesuffix("Fast")
-                image_processor_class = get_image_processor_class_from_name_hf(image_processor_type_slow)
+                image_processor_class = get_image_processor_class_from_name(image_processor_type_slow)
 
-                # Not found in Transformers, try local PaddleFormers registry
+                # Not found in PaddleFormers, try local Transformers registry
                 if image_processor_class is None:
-                    image_processor_class = get_image_processor_class_from_name(image_processor_type_slow)
+                    image_processor_class = get_image_processor_class_from_name_hf(image_processor_type_slow)
 
-                if image_processor_class is None:
-                    if image_processor_type.endswith("Fast"):
-                        raise ValueError(
-                            f"The slow version of `{image_processor_type}` (i.e., "
-                            f"`{image_processor_type_slow}`) could not be found."
-                        )
-                    else:
-                        raise ValueError(
-                            f"The image processor class `{image_processor_type_slow}` could not be found."
-                        )
+                if image_processor_class is None and image_processor_type.endswith("Fast"):
+                    raise ValueError(
+                        f"The slow version of `{image_processor_type}` (i.e., "
+                        f"`{image_processor_type_slow}`) could not be found. "
+                        "Please set `use_fast=True` when instantiating the processor."
+                    )
 
         has_remote_code = image_processor_auto_map is not None
         has_local_code = image_processor_class is not None or type(config) in IMAGE_PROCESSOR_MAPPING
@@ -359,9 +392,13 @@ class AutoImageProcessor(hf.AutoImageProcessor):
                 upstream_repo = class_ref.split("--")[0]
             else:
                 upstream_repo = None
-            trust_remote_code = resolve_trust_remote_code(
-                trust_remote_code, pretrained_model_name_or_path, has_local_code, has_remote_code, upstream_repo
-            )
+
+            image_processor_class = get_image_processor_class_from_name(class_ref.rsplit(".", 1)[-1])
+
+            if image_processor_class is None:
+                trust_remote_code = resolve_trust_remote_code(
+                    trust_remote_code, pretrained_model_name_or_path, has_local_code, has_remote_code, upstream_repo
+                )
 
         if has_remote_code and trust_remote_code:
             if not use_fast and image_processor_auto_map[1] is not None:

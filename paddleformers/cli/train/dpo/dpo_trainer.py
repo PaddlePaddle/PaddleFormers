@@ -18,6 +18,7 @@ import paddle.nn.functional as F
 from paddle.distributed import fleet
 
 from paddleformers.nn.criterion import CriterionLayer
+from paddleformers.peft import LoRAModel
 from paddleformers.peft.lora.lora_model import AVAILABLE_LAYERS
 from paddleformers.trainer import Trainer
 from paddleformers.transformers.model_utils import unwrap_model
@@ -62,7 +63,6 @@ class DPOTrainer(Trainer):
         disable_dropout: bool = True,
         padding_value: int = 0,
         model_with_dpo_criterion: bool = False,
-        ignore_eos_token: bool = False,
         **kwargs
     ):
         super().__init__(model, data_collator=data_collator, **kwargs)
@@ -72,7 +72,7 @@ class DPOTrainer(Trainer):
             self.dpo_config = dpo_config
         if not model_with_dpo_criterion:
             if dpo_criterion is None:
-                self.dpo_criterion = CriterionLayer(self.model.config, ignore_eos_token=ignore_eos_token)
+                self.dpo_criterion = CriterionLayer(self.model.config)
             elif isinstance(dpo_criterion, CriterionLayer):
                 self.dpo_criterion = dpo_criterion
             else:
@@ -135,8 +135,7 @@ class DPOTrainer(Trainer):
             dpo_inputs["attn_mask_startend_row_indices"] = batch["attn_mask_startend_row_indices"]
 
         if self.model_with_dpo_criterion:
-            dpo_inputs["chosen_labels"] = batch["chosen_labels"]
-            dpo_inputs["rejected_labels"] = batch["rejected_labels"]
+            dpo_inputs["response_labels"] = batch["response_labels"]
             dpo_inputs["response_indexs"] = batch["response_indexs"]
             if "score_deltas" in batch:
                 dpo_inputs["score_deltas"] = batch["score_deltas"]
@@ -158,7 +157,7 @@ class DPOTrainer(Trainer):
             dpo_inputs["reference_rejected_logps"] = reference_rejected_logps
             policy_chosen_logps, policy_rejected_logps, sft_loss, dpo_loss, loss = model(**dpo_inputs)
         else:
-            labels = (batch["chosen_labels"], batch["rejected_labels"], batch["response_indexs"], None, None)
+            labels = (batch["response_labels"], batch["response_indexs"], None, None)
             if self.dpo_config.reference_free:
                 reference_chosen_logps = paddle.zeros([1])
                 reference_rejected_logps = paddle.zeros([1])
@@ -227,8 +226,14 @@ class DPOTrainer(Trainer):
 
     def _wrap_model(self, model, training=True):
         """Wrap model."""
-        if is_paddlefleet_available() and isinstance(model, PaddleFleetPipelineLayer):
-            model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
+        if is_paddlefleet_available() and (
+            isinstance(model, PaddleFleetPipelineLayer)
+            or (isinstance(model, LoRAModel) and isinstance(model.model, PaddleFleetPipelineLayer))
+        ):
+            if isinstance(model, LoRAModel):
+                model.model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
+            else:
+                model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
             model = super()._wrap_model(model, training)
             return model
 
@@ -244,17 +249,17 @@ class DPOTrainer(Trainer):
         self.model_wrapped = self._wrap_ref_model(self.model_wrapped)
         return super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
 
-    def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None):
+    def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None, step=-1):
 
         """prediction_step"""
         if is_paddlefleet_available() and isinstance(model, PaddleFleetParallelBase):
             inputs = self._prepare_inputs(inputs)
-            return self.fleet_prediction_pipeline_step(self.ref_model_wrapped, self.model_wrapped, inputs)
+            return self.fleet_prediction_pipeline_step(self.ref_model_wrapped, self.model_wrapped, inputs, step)
 
         if self.args.pipeline_model_parallel_size > 1:
             # hack for pipeline mode
             inputs = self._prepare_inputs(inputs)
-            return self.prediction_pipeline_step(self.ref_model_wrapped, model, inputs)
+            return self.prediction_pipeline_step(self.ref_model_wrapped, model, inputs, step)
         if ignore_keys is None:
             if hasattr(model, "config"):
                 ignore_keys = getattr(model.config, "keys_to_ignore_at_inference", [])
@@ -298,49 +303,46 @@ class DPOTrainer(Trainer):
         ref_model,
         model,
         batch,
+        step: int = -1,
     ):
         """
         prediction_step function for pipeline parallel mode.
         """
-        if len(batch["input_ids"]) != self.args.gradient_accumulation_steps:
-            return (paddle.zeros([]), None, None)
-
         if hasattr(model, "_p2p_helper"):
             model._p2p_helper.clear_meta_cache()
 
         concatenated_inputs = {}
         # consider no drop last
         per_device_train_batch_size = self.args.per_device_train_batch_size
-        gradient_accumulation_steps = self.args.gradient_accumulation_steps
         # preprocess inputs: tuple(List[Tensor])
         for key in batch.keys():
             if key not in "response_indexs":
-                concatenated_inputs[key] = [
-                    batch[key][i * per_device_train_batch_size : (i + 1) * per_device_train_batch_size]
-                    for i in range(gradient_accumulation_steps)
-                ]
+                concatenated_inputs[key] = batch[key][:per_device_train_batch_size]
             else:
-                concatenated_inputs["response_indexs"] = [[] for _ in range(gradient_accumulation_steps)]
-                for i in range(gradient_accumulation_steps):
-                    for response_index in batch[key]:
-                        if response_index[0] in list(
-                            range(i * per_device_train_batch_size, (i + 1) * per_device_train_batch_size)
-                        ):
-                            response_index[0] -= i * per_device_train_batch_size
-                            concatenated_inputs["response_indexs"][i].append(response_index)
-                    concatenated_inputs["response_indexs"][i] = paddle.stack(concatenated_inputs["response_indexs"][i])
-                    use_filtered_label_loss = (
-                        model._layers.config.use_filtered_label_loss
-                        if hasattr(model, "_layers")
-                        else model.config.use_filtered_label_loss
-                    )
-                    if use_filtered_label_loss:
-                        last_batch_response_length = concatenated_inputs["response_indexs"][i][0, 1]
-                        concatenated_inputs["response_indexs"][i][:, 1:] -= last_batch_response_length
+                concatenated_inputs["response_indexs"] = []
+                for response_index in batch[key]:
+                    if response_index[0] in list(range(0, per_device_train_batch_size)):
+                        concatenated_inputs["response_indexs"].append(response_index)
+                concatenated_inputs["response_indexs"] = paddle.stack(concatenated_inputs["response_indexs"])
+                use_filtered_label_loss = (
+                    model._layers.config.use_filtered_label_loss
+                    if hasattr(model, "_layers")
+                    else model.config.use_filtered_label_loss
+                )
+                if use_filtered_label_loss:
+                    last_batch_response_length = concatenated_inputs["response_indexs"][0, 1]
+                    concatenated_inputs["response_indexs"][:, 1:] -= last_batch_response_length
 
         concatenated_inputs["reference_chosen_logps"] = None
         concatenated_inputs["reference_rejected_logps"] = None
 
+        if step == 0 or not hasattr(self, "_pp_eval_data_buffer"):
+            self._pp_eval_data_buffer = []
+        self._pp_eval_data_buffer.append(concatenated_inputs)
+        if len(self._pp_eval_data_buffer) != self.args.gradient_accumulation_steps:
+            return (None, None, None)
+        concatenated_inputs = self._pp_eval_data_buffer
+        self._pp_eval_data_buffer = []
         self._pp_data_buffer = []
         inputs, labels = model._prepare_pipeline_inputs_func(concatenated_inputs)
         if not self.dpo_config.reference_free:
@@ -351,7 +353,8 @@ class DPOTrainer(Trainer):
                     with self.autocast_smart_context_manager():
                         model.eval_batch(data=[inputs, labels], compute_loss=True)
                 self.enable_lora(model)
-                model._p2p_helper.clear_meta_cache()
+                if hasattr(model, "_p2p_helper"):
+                    model._p2p_helper.clear_meta_cache()
                 model.train()
             else:
                 ref_model = self.ref_model_wrapped
@@ -367,8 +370,9 @@ class DPOTrainer(Trainer):
         else:
             reference_chosen_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
             reference_rejected_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
-        if ref_model.is_pipeline_last_stage(ignore_virtual=ref_model._layers._num_virtual_pipeline_stages > 1):
-            if is_paddlefleet_available() and isinstance(ref_model, PaddleFleetParallelBase):
+
+        if model.is_pipeline_last_stage(ignore_virtual=model._layers._num_virtual_pipeline_stages > 1):
+            if is_paddlefleet_available() and isinstance(model, PaddleFleetParallelBase):
                 labels = fleet_merge_dpo_labels(labels, (reference_chosen_logps, reference_rejected_logps))
             else:
                 labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)
@@ -405,6 +409,7 @@ class DPOTrainer(Trainer):
         ref_model,
         model,
         batch,
+        step: int = -1,
     ):
         """
         prediction_step function for pipeline parallel mode.
@@ -413,31 +418,30 @@ class DPOTrainer(Trainer):
         concatenated_inputs = {}
         # consider no drop last
         per_device_train_batch_size = self.args.per_device_train_batch_size
-        gradient_accumulation_steps = self.args.gradient_accumulation_steps
         # preprocess inputs: tuple(List[Tensor])
         for key in batch.keys():
             if key not in "response_indexs":
-                concatenated_inputs[key] = [
-                    batch[key][i * per_device_train_batch_size : (i + 1) * per_device_train_batch_size]
-                    for i in range(gradient_accumulation_steps)
-                ]
+                concatenated_inputs[key] = batch[key][:per_device_train_batch_size]
             else:
-                concatenated_inputs["response_indexs"] = [[] for _ in range(gradient_accumulation_steps)]
-                for i in range(gradient_accumulation_steps):
-                    for response_index in batch[key]:
-                        if response_index[0] in list(
-                            range(i * per_device_train_batch_size, (i + 1) * per_device_train_batch_size)
-                        ):
-                            response_index[0] -= i * per_device_train_batch_size
-                            concatenated_inputs["response_indexs"][i].append(response_index)
-                    concatenated_inputs["response_indexs"][i] = paddle.stack(concatenated_inputs["response_indexs"][i])
-                    if model._layers.config.use_filtered_label_loss:
-                        last_batch_response_length = concatenated_inputs["response_indexs"][i][0, 1]
-                        concatenated_inputs["response_indexs"][i][:, 1:] -= last_batch_response_length
+                concatenated_inputs["response_indexs"] = []
+                for response_index in batch[key]:
+                    if response_index[0] in list(range(0, per_device_train_batch_size)):
+                        concatenated_inputs["response_indexs"].append(response_index)
+                concatenated_inputs["response_indexs"] = paddle.stack(concatenated_inputs["response_indexs"])
+                if model._layers.config.use_filtered_label_loss:
+                    last_batch_response_length = concatenated_inputs["response_indexs"][0, 1]
+                    concatenated_inputs["response_indexs"][:, 1:] -= last_batch_response_length
 
         concatenated_inputs["reference_chosen_logps"] = None
         concatenated_inputs["reference_rejected_logps"] = None
 
+        if step == 0 or not hasattr(self, "_pp_eval_data_buffer"):
+            self._pp_eval_data_buffer = []
+        self._pp_eval_data_buffer.append(concatenated_inputs)
+        if len(self._pp_eval_data_buffer) != self.args.gradient_accumulation_steps:
+            return (None, None, None)
+        concatenated_inputs = self._pp_eval_data_buffer
+        self._pp_eval_data_buffer = []
         self._pp_data_buffer = []
         inputs, labels = model._prepare_pipeline_inputs_func(concatenated_inputs)
         if not self.dpo_config.reference_free:
@@ -567,7 +571,8 @@ class DPOTrainer(Trainer):
                     with self.autocast_smart_context_manager():
                         model.eval_batch(data=[inputs, labels], compute_loss=True)
                 self.enable_lora(model)
-                model._p2p_helper.clear_meta_cache()
+                if hasattr(model, "_p2p_helper"):
+                    model._p2p_helper.clear_meta_cache()
                 model.train()
             else:
                 ref_model = self.ref_model_wrapped
@@ -692,8 +697,7 @@ def prepare_pipeline_dpo_inputs_func(inputs):
         ]
 
     last_stage_keys = [
-        "chosen_labels",
-        "rejected_labels",
+        "response_labels",
         "response_indexs",
         "score_deltas",
         "reference_chosen_logps",
@@ -715,10 +719,8 @@ def prepare_pipeline_dpo_inputs_func(inputs):
     keys = list(inputs[0].keys())
     inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
     return [
-        inputs_batch,
-        first_stage_keys,
-        inputs_batch,
-        last_stage_keys,
+        get_expected_keys(inputs_batch, first_stage_keys),
+        get_expected_keys(inputs_batch, last_stage_keys),
     ]
 
 
@@ -733,17 +735,23 @@ def _prepare_pipeline_dpo_inputs_func_fleet(inputs):
     """
 
     last_stage_keys = [
-        "chosen_labels",
-        "rejected_labels",
+        "response_labels",
         "response_indexs",
         "score_deltas",
         "reference_chosen_logps",
         "reference_rejected_logps",
     ]
 
-    first_stage_inputs_batch = inputs
-    acc_steps = len(inputs["input_ids"])
-    first_stage_inputs_batch = {k: [None] * acc_steps if v is None else v for k, v in first_stage_inputs_batch.items()}
+    if type(inputs) is dict or type(inputs) is OrderedDict:
+        first_stage_inputs_batch = inputs
+        acc_steps = len(inputs["input_ids"])
+        first_stage_inputs_batch = {
+            k: [None] * acc_steps if v is None else v for k, v in first_stage_inputs_batch.items()
+        }
+    else:
+        keys = list(inputs[0].keys())
+        first_stage_inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
+
     last_stage_inputs = [
         first_stage_inputs_batch.pop(key) for key in last_stage_keys if key in first_stage_inputs_batch
     ]

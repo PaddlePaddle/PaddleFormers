@@ -62,7 +62,6 @@ class GLMMoEModelProvider(GPTModelProvider):
     moe_shared_expert_overlap: bool = True
     moe_token_dispatcher_type: str = "deepep"
     moe_router_load_balancing_type: str = "seq_aux_loss"
-    router_aux_loss_coef: float = 1e-3
     moe_router_pre_softmax: bool = False
     moe_grouped_gemm: bool = False
     scoring_func: str = "sigmoid"
@@ -82,7 +81,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     num_nextn_predict_layers: Optional[int] = 1
     mtp_loss_scaling_factor: Optional[
         float
-    ] = 0.3  # https://arxiv.org/pdf/2508.06471 0.3 for the first 15T tokens, 0.1 for the remaining tokens.
+    ] = 0.1  # https://arxiv.org/pdf/2508.06471 0.3 for the first 15T tokens, 0.1 for the remaining tokens.
 
 
 @dataclass
@@ -92,7 +91,7 @@ class GLM45ModelProvider355B(GLMMoEModelProvider):
     """
 
     num_hidden_layers: int = 92
-    moe_num_experts: int = 160
+    n_routed_experts: int = 160
     hidden_size: int = 5120
     intermediate_size: int = 12288
     moe_layer_freq: Union[int, List[int]] = field(
@@ -160,7 +159,6 @@ class GLM45AirModelSingleCardDebugProvider(GLMMoEModelProvider):
     use_bias: bool = False
     num_hidden_layers: int = 2
     num_attention_heads: int = 8
-    router_aux_loss_coef: float = 1e-4
     num_key_value_heads: int = 8
     seq_length: int = 8192
     num_experts_per_tok: int = 4

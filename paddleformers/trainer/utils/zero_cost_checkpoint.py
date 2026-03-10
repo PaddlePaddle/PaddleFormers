@@ -59,7 +59,7 @@ from paddle.optimizer.fusion_utils import FusionStorageHelper
 
 from paddleformers.trainer.trainer_callback import TrainerCallback
 from paddleformers.trainer.utils.sharding_io import GroupGetter
-from paddleformers.utils.tools import paddle_device
+from paddleformers.utils.tools import get_env_device, paddle_device
 
 from ...transformers.model_utils import (
     _add_variant,
@@ -389,7 +389,10 @@ class ParamFusionStorageHelper:
             self.model_weights_metas[k] = v
 
     def init_buffer(self, meta):
-        cuda_buffer = paddle.to_tensor(paddle.base.core.LoDTensor._new_shared_cuda(meta))
+        if paddle.is_compiled_with_xpu():
+            cuda_buffer = paddle.to_tensor(paddle.base.core.LoDTensor._new_shared_xpu(meta))
+        else:
+            cuda_buffer = paddle.to_tensor(paddle.base.core.LoDTensor._new_shared_cuda(meta))
         cpu_buffer = cuda_buffer.pin_memory()
         return (cuda_buffer, cpu_buffer)
 
@@ -441,7 +444,10 @@ class ParamFusionStorageHelper:
         last_task = self.tasks.pop(-1)
         while len(self.tasks) > 0:
             task = self.tasks.pop(0)
-            task.cuda_wait()
+            if paddle.is_compiled_with_xpu():
+                task.xpu_wait()
+            else:
+                task.cuda_wait()
         last_task.cpu_wait()
         self.current_offloaded_numel = 0
 
@@ -621,7 +627,10 @@ class ZeroCostCheckpointManager:
         self.processes = []
         self.current_worker = None
         self.global_step = 0  # set `on-step-end`
-        self.device_id = int(os.getenv("FLAGS_selected_gpus"))
+        if get_env_device() == "xpu":
+            self.device_id = int(os.getenv("FLAGS_selected_xpus"))
+        else:
+            self.device_id = int(os.getenv("FLAGS_selected_gpus"))
         self.pipeline_hooks_steps = max(int(pipeline_hooks_capacity * capacity_usage), 1)
         logger.info(
             f"[ZCC manager] pipeline hooks capacity: {pipeline_hooks_capacity}; "
@@ -936,7 +945,7 @@ class ZeroCostCheckpointWorker:
         need_report_error = False
         if self.flash_device_save_dir:
             try:
-                self.process_dump_task_impl(self.flash_device_save_dir)
+                self.process_dump_task_impl(self.flash_device_save_dir, saved_signal_type="formal")
                 logger.info(f"[ZCC Worker{self.worker_id}] Dumping to flash device done: {self.flash_device_save_dir}")
             except Exception as e:
                 logger.error(f"{FC_DUMP_ERROR} [ZCC Worker{self.worker_id}] Failed to dump to flash device: {e}")
@@ -1042,7 +1051,11 @@ class ZeroCostCheckpointWorker:
             rng_state_name_path = os.path.join(output_dir, f"rng_state_{dist.get_rank()}.pth")
             paddle.save(self.rng_state, rng_state_name_path)
 
-    def process_dump_task_impl(self, output_dir):
+    def process_dump_task_impl(self, output_dir, saved_signal_type="tmp"):
+        assert saved_signal_type in [
+            "tmp",
+            "formal",
+        ], f"saved_signal_type must be one of ['tmp', 'formal'], but got {saved_signal_type}"
         os.makedirs(output_dir, exist_ok=True)
         # Step1: save static objects
         if self.device_id == 0:
@@ -1055,20 +1068,28 @@ class ZeroCostCheckpointWorker:
 
         self._dump_args_and_state(output_dir)
 
-        if self.save_hf_steps > 0 and self.ema_coef is not None:
-            saved_signal_prefix = "_save_done_tmp"
+        if self.save_hf_steps > 0 and self.ema_coef is not None and saved_signal_type == "tmp":
+            saved_signal_prefix = "save_signal_TMP"
         else:
             saved_signal_prefix = "saved_signal"
 
         # Step3: dump save signals
         saved_signal_path = os.path.join(output_dir, f"{saved_signal_prefix}_{self.global_rank}")
+        potential_signal_path = os.path.join(output_dir, f"saved_signal_{self.global_rank}")
+        if os.path.exists(potential_signal_path):
+            logger.info("[ZCC worker] dump save signal done.")
+            return
+
         with open(saved_signal_path, mode="w+") as f:
             f.write("1")
         logger.info("[ZCC worker] dump save signal done.")
 
     def run(self):
-        core.set_cuda_current_device_id(self.device_id)
-        paddle.set_device(f"gpu:{self.device_id}")
+        if get_env_device() == "xpu":
+            paddle.set_device(f"xpu:{self.device_id}")
+        else:
+            core.set_cuda_current_device_id(self.device_id)
+            paddle.set_device(f"gpu:{self.device_id}")
         logger.info(f"[ZCC Worker{self.worker_id}] Worker{self.worker_id} started.")
         ema_ckpt_path = None
         save_info_tuple = None  # save dir...
@@ -1270,7 +1291,10 @@ class EMABufferFcBased(EMABuffer):
         self.model = model
         self.optimizer = optimizer
         self.dist_info_collector_and_validator = DistInfoCollectorValidator(args, hcg)
-        self.device_id = int(os.getenv("FLAGS_selected_gpus"))
+        if get_env_device() == "xpu":
+            self.device_id = int(os.getenv("FLAGS_selected_xpus"))
+        else:
+            self.device_id = int(os.getenv("FLAGS_selected_gpus"))
 
         super().__init__(resume_from_checkpoint, args, offload)
 

@@ -25,6 +25,7 @@ from paddleformers.transformers import (
     Ernie4_5_VLMoeForConditionalGenerationModel,
 )
 from paddleformers.transformers.configuration_utils import PretrainedConfig
+from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -373,6 +374,7 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
         )
         return model
 
+    @gpu_device_initializer(log_prefix="Ernie4_5_VLModelTest")
     def setUp(self):
         super().setUp()
         self.model_tester = Ernie4_5_VLModelTester(self)
@@ -588,7 +590,7 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 first = model(**self._prepare_for_class(inputs_dict, model_class))[0]
 
             with tempfile.TemporaryDirectory() as tmpdirname:
-                model.save_pretrained(tmpdirname, save_to_hf=False, save_checkpoint_format="")
+                model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
                 config = self.config_tester.config_class.from_pretrained(tmpdirname)
                 config["moe_group"] = "dummy"
                 config["moe_multimodal_dispatch_use_allgather"] = "v2-alltoall-unpad-text"
@@ -596,8 +598,7 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                     tmpdirname,
                     config=config,
                     dtype="bfloat16",
-                    convert_from_hf=False,
-                    load_checkpoint_format="",
+                    load_checkpoint_format="flex_checkpoint",
                 )
                 paddle.amp.decorate(
                     models=model,
@@ -625,6 +626,10 @@ class Ernie4_5_VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
 
 
 class Ernie4_5_MoE_VLIntegrationTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Ernie4_5_MoE_VLIntegrationTest")
+    def setUp(self):
+        pass
+
     def test_model_tiny_logits(self):
 
         config = Ernie4_5_VLConfig.from_pretrained("PaddleFormers/tiny_random_ernie4_5_vl", download_hub="aistudio")
@@ -636,7 +641,7 @@ class Ernie4_5_MoE_VLIntegrationTest(unittest.TestCase):
             dtype="bfloat16",
             convert_from_hf=True,
             download_hub="aistudio",
-            load_checkpoint_format="",
+            load_checkpoint_format="flex_checkpoint",
         )
         paddle.amp.decorate(
             models=model,

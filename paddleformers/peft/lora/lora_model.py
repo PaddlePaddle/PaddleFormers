@@ -166,6 +166,38 @@ from .lora_quantization_layers import (
     RowParallelQuantizationLoRALinear,
 )
 
+if is_paddlefleet_available():
+    from ...quantization.quantization_linear import (
+        FleetColumnParallelQuantizationLinear,
+        FleetQuantizationLinear,
+        FleetRowParallelQuantizationLinear,
+    )
+    from .lora_quantization_layers import (
+        FleetColumnParallelQuantizationLoRALinear,
+        FleetQuantizationLoRALinear,
+        FleetRowParallelQuantizationLoRALinear,
+    )
+else:
+
+    class FleetColumnParallelQuantizationLinear:
+        pass
+
+    class FleetQuantizationLinear:
+        pass
+
+    class FleetRowParallelQuantizationLinear:
+        pass
+
+    class FleetColumnParallelQuantizationLoRALinear:
+        pass
+
+    class FleetQuantizationLoRALinear:
+        pass
+
+    class FleetRowParallelQuantizationLoRALinear:
+        pass
+
+
 AVAILABLE_LAYERS = [
     ColumnParallelLoRALinear,
     ColumnSequenceParallelLoRALinear,
@@ -210,11 +242,6 @@ class LoRAModel(nn.Layer):
         if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
             if isinstance(self.model, PaddleFleetPipelineLayer):
                 self.use_paddlefleet = True
-
-        if (self.lora_config.tensor_model_parallel_size > 1 or self.is_pipelinemodel) and (
-            self.lora_config.lora_use_mixer or self.lora_config.use_mora
-        ):
-            raise NotImplementedError("lora_use_mixer or mora is not supported in tensor parallel mode.")
 
         if self.lora_config.tensor_model_parallel_size != self.model.config.tensor_model_parallel_size:
             self.lora_config.tensor_model_parallel_size = self.model.config.tensor_model_parallel_size
@@ -632,6 +659,8 @@ class LoRAModel(nn.Layer):
                         if n_replace > 0:
                             aoa_config["aoa_statements"].append(f"{key} -> {key_new}")
                             break
+            if hasattr(self.model, "_gen_lora_inv_aoa_config"):
+                aoa_config["aoa_statements"] += self.model._gen_lora_inv_aoa_config(self.model.config)
 
             HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(
                 save_directory, max_shard_size, save_peft=True
@@ -685,14 +714,9 @@ class LoRAModel(nn.Layer):
                 lora_dropout=lora_config.lora_dropout,
                 rslora=lora_config.rslora,
                 lora_plus_scale=lora_config.lora_plus_scale,
-                pissa=lora_config.pissa,
                 bias_attr=False if module.bias is None else None,
-                use_quick_lora=lora_config.use_quick_lora,
-                lora_use_mixer=lora_config.lora_use_mixer,
-                use_mora=lora_config.use_mora,
                 mp_moe=getattr(module.weight, "mp_moe", False),
                 is_distributed=getattr(module.weight, "is_distributed", False),
-                lorapro=lora_config.lorapro,
             )
         elif isinstance(module, nn.Conv2D):
             lora_module = LoRAConv2D(
@@ -723,11 +747,9 @@ class LoRAModel(nn.Layer):
                 lora_dropout=lora_config.lora_dropout,
                 rslora=lora_config.rslora,
                 lora_plus_scale=lora_config.lora_plus_scale,
-                pissa=lora_config.pissa,
                 lora_A_weight_attr=paddle.ParamAttr(
                     initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu")
                 ),
-                use_quick_lora=lora_config.use_quick_lora,
             )
             # Lora column parallel will spilt lora B matrix
             self.add_lora_split_mapping(module_name + ".lora_B", is_column=True)
@@ -749,8 +771,6 @@ class LoRAModel(nn.Layer):
                 lora_dropout=lora_config.lora_dropout,
                 rslora=lora_config.rslora,
                 lora_plus_scale=lora_config.lora_plus_scale,
-                pissa=lora_config.pissa,
-                use_quick_lora=lora_config.use_quick_lora,
             )
             # Lora column parallel will spilt lora A matrix
             self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
@@ -776,7 +796,6 @@ class LoRAModel(nn.Layer):
                 lora_A_weight_attr=paddle.ParamAttr(
                     initializer=nn.initializer.KaimingUniform(negative_slope=math.sqrt(5), nonlinearity="leaky_relu")
                 ),
-                use_quick_lora=lora_config.use_quick_lora,
             )
             # Lora column parallel will spilt lora B matrix
             self.add_lora_split_mapping(module_name + ".lora_B", is_column=True)
@@ -798,7 +817,6 @@ class LoRAModel(nn.Layer):
                 lora_dropout=lora_config.lora_dropout,
                 rslora=lora_config.rslora,
                 lora_plus_scale=lora_config.lora_plus_scale,
-                use_quick_lora=lora_config.use_quick_lora,
             )
             # Lora column parallel will spilt lora A matrix
             self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
@@ -821,14 +839,9 @@ class LoRAModel(nn.Layer):
                     lora_dropout=lora_config.lora_dropout,
                     rslora=lora_config.rslora,
                     lora_plus_scale=lora_config.lora_plus_scale,
-                    pissa=lora_config.pissa,
                     bias_attr=False if module.bias is None else None,
-                    use_quick_lora=lora_config.use_quick_lora,
-                    lora_use_mixer=lora_config.lora_use_mixer,
-                    use_mora=lora_config.use_mora,
                     mp_moe=getattr(module.weight, "mp_moe", False),
                     is_distributed=getattr(module.weight, "is_distributed", False),
-                    lorapro=lora_config.lorapro,
                 )
             elif isinstance(module, FleetRowParallelLinear):
                 # recover the original output_features
@@ -844,7 +857,6 @@ class LoRAModel(nn.Layer):
                         lora_dropout=lora_config.lora_dropout,
                         rslora=lora_config.rslora,
                         lora_plus_scale=lora_config.lora_plus_scale,
-                        use_quick_lora=lora_config.use_quick_lora,
                     )
                 else:
                     lora_module = FleetRowParallelLoRALinear(
@@ -858,8 +870,6 @@ class LoRAModel(nn.Layer):
                         lora_dropout=lora_config.lora_dropout,
                         rslora=lora_config.rslora,
                         lora_plus_scale=lora_config.lora_plus_scale,
-                        pissa=lora_config.pissa,
-                        use_quick_lora=lora_config.use_quick_lora,
                     )
                 # Lora column parallel will spilt lora A matrix
                 self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
@@ -889,7 +899,6 @@ class LoRAModel(nn.Layer):
                                 negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
                             )
                         ),
-                        use_quick_lora=lora_config.use_quick_lora,
                     )
                 else:
                     lora_module = FleetColumnParallelLoRALinear(
@@ -903,13 +912,11 @@ class LoRAModel(nn.Layer):
                         lora_dropout=lora_config.lora_dropout,
                         rslora=lora_config.rslora,
                         lora_plus_scale=lora_config.lora_plus_scale,
-                        pissa=lora_config.pissa,
                         lora_A_weight_attr=paddle.ParamAttr(
                             initializer=nn.initializer.KaimingUniform(
                                 negative_slope=math.sqrt(5), nonlinearity="leaky_relu"
                             )
                         ),
-                        use_quick_lora=lora_config.use_quick_lora,
                     )
                 # Lora column parallel will spilt lora B matrix
                 self.add_lora_split_mapping(module_name + ".lora_B", is_column=True)
@@ -919,6 +926,16 @@ class LoRAModel(nn.Layer):
                     self.add_lora_split_mapping(module_name + ".weight_quanter._scale", is_column=True)
                     self.add_lora_split_mapping(module_name + ".activation_quanter._scale", is_column=False)
                     self.add_lora_split_mapping(module_name + ".activation_quanter.quanter._scale", is_column=False)
+        elif is_paddlefleet_available() and isinstance(module, FleetQuantizationLinear):
+            lora_module = FleetQuantizationLoRALinear(module, module.skip_bias_add, lora_config)
+        elif is_paddlefleet_available() and isinstance(module, FleetColumnParallelQuantizationLinear):
+            lora_module = FleetColumnParallelQuantizationLoRALinear(module, module.skip_bias_add, lora_config)
+            # Lora column parallel will spilt lora B matrix
+            self.add_lora_split_mapping(module_name + ".lora_B", is_column=True)
+        elif is_paddlefleet_available() and isinstance(module, FleetRowParallelQuantizationLinear):
+            lora_module = FleetRowParallelQuantizationLoRALinear(module, module.skip_bias_add, lora_config)
+            # Lora row parallel will spilt lora A matrix
+            self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
         elif isinstance(module, QuantizationLinear):
             lora_module = QuantizationLoRALinear(module, lora_config)
         elif isinstance(module, ColumnParallelQuantizationLinear):
@@ -1001,6 +1018,15 @@ class LoRAModel(nn.Layer):
                 or (
                     RowParallelQuantizationLoRALinear is not None
                     and isinstance(layer, RowParallelQuantizationLoRALinear)
+                )
+                or (FleetQuantizationLoRALinear is not None and isinstance(layer, FleetQuantizationLoRALinear))
+                or (
+                    FleetColumnParallelQuantizationLoRALinear is not None
+                    and isinstance(layer, FleetColumnParallelQuantizationLoRALinear)
+                )
+                or (
+                    FleetRowParallelQuantizationLoRALinear is not None
+                    and isinstance(layer, FleetRowParallelQuantizationLoRALinear)
                 )
             ):
                 for name, weight in layer.state_dict().items():

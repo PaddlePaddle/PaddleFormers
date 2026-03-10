@@ -27,8 +27,10 @@ from safetensors.numpy import save_file
 from tqdm.auto import tqdm
 
 from ..peft import LoRAConfig
-from ..transformers import PretrainedConfig
+from ..quantization.quantization_utils import convert_to_quantize_dequantize_state_dict
+from ..transformers import AutoConfig, PretrainedConfig
 from ..transformers.auto.modeling import get_name_mapping
+from ..transformers.configuration_utils import QuantizationConfig
 from ..transformers.conversion_utils import ConversionMixin
 from ..utils import device_guard
 from ..utils.env import (
@@ -621,6 +623,18 @@ class MergeModel:
             self.merge_config.base_model_path, file_type_list[1], key_list=key_list, file=file
         )
         logger.info("Load model weight successfully.")
+        if self.merge_config.merge_with_qdq_base_model:
+            lora_base_config = PretrainedConfig.get_config_dict(self.merge_config.lora_model_path)[0]
+            quantization_config = lora_base_config.get("quantization_config", None)
+            if quantization_config:
+                quantization_config = QuantizationConfig.from_dict(quantization_config)
+                quantization_linear_list = quantization_config.quantization_linear_list
+                base_state_dict = convert_to_quantize_dequantize_state_dict(
+                    base_state_dict, quantization_linear_list, quantization_config
+                )
+                logger.info("Quantize_dequantize base-model weight successfully.")
+            else:
+                logger.info("Don't find quantization_config in config.json, skip quantize-dequantize base model.")
         lora_state_dict = self.split_fuse_lora_state_dict(base_state_dict, lora_state_dict)
         if not lora_config.rslora:
             scaling = lora_config.lora_alpha / lora_config.r
@@ -638,7 +652,7 @@ class MergeModel:
                 lora_A_tensor = None
                 if lora_state_dict is not None and lora_A_key in lora_state_dict.keys():
                     lora_A_tensor, lora_B_tensor = lora_state_dict.pop(lora_A_key), lora_state_dict.pop(lora_B_key)
-                    is_bf16 = str(tensor.dtype) in ["uint16", "bfloat16"]
+                    is_bf16 = str(tensor.dtype) in ["uint16", "bfloat16", "paddle.uint16", "paddle.bfloat16"]
                     if self.is_xpu:
                         if str(tensor.dtype) == "bfloat16":
                             tensor = tensor.view("uint16")
@@ -681,15 +695,34 @@ class MergeModel:
 
         # get transpose_weight_keys
         if self.merge_config.convert_from_hf:
-            config_dict = PretrainedConfig.get_config_dict(self.merge_config.base_model_path)[0]
+            base_model_config = AutoConfig.from_pretrained(self.merge_config.base_model_path)
             name_mapping = get_name_mapping()
             model_class_name = None
             for key, value in name_mapping.items():
-                if value == config_dict["model_type"]:
+                if value == base_model_config.model_type:
                     model_class_name = key
                     break
-            import_class = importlib.import_module(f"paddleformers.transformers.{config_dict['model_type']}.modeling")
-            self.transpose_weight_keys = getattr(import_class, model_class_name).transpose_weight_keys
+            import_class = importlib.import_module(
+                f"paddleformers.transformers.{base_model_config.model_type}.modeling"
+            )
+            # parser aoa statements
+            aoa_config = getattr(import_class, model_class_name)._gen_aoa_config(base_model_config)
+            transpose_weight_keys_set = set()
+            for aoa_state in aoa_config["aoa_statements"]:
+                left_parts = aoa_state.split("->")[0].strip().split(",")
+                for full_key_name in left_parts:
+                    full_key_name = full_key_name.strip()
+                    if full_key_name.endswith(".weight^T"):
+                        part_key_name = full_key_name.split(".")[-2]
+                        if part_key_name.isdigit() or part_key_name in {"$LAYER_ID", "$EXPERT_ID"}:
+                            prev_part_key_name = full_key_name.split(".")[-3]
+                            if part_key_name.isdigit():
+                                transpose_weight_keys_set.add(f"{prev_part_key_name}\.{part_key_name}")
+                            else:
+                                transpose_weight_keys_set.add(f"{prev_part_key_name}\.\d+")
+                        else:
+                            transpose_weight_keys_set.add(part_key_name)
+            self.transpose_weight_keys = list(transpose_weight_keys_set)
 
         # Initialize new index
         index = {}

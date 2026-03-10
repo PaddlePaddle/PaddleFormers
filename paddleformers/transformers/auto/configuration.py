@@ -54,6 +54,8 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("gpt_oss", "GptOssConfig"),
         ("phi3", "Phi3Config"),
         ("gemma3_text", "Gemma3TextConfig"),
+        ("glm4v_moe", "Glm4vMoeConfig"),
+        ("glm_ocr", "GlmOcrConfig"),
         ("intern_lm2", "InternLM2Config"),
     ]
 )
@@ -80,6 +82,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_vl_text", "Qwen3VL"),
         ("qwen3_vl_moe", "Qwen3VLMoe"),
         ("qwen3_vl_moe_text", "Qwen3VLMoeText"),
+        ("glm_ocr", "GlmOcrForConditionalGeneration"),
     ]
 )
 

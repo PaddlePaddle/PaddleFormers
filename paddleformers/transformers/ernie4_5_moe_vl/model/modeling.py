@@ -748,10 +748,7 @@ class Ernie4_5_Attention(nn.Layer):
         Selects between flash/core attention.
         """
         config = self.config
-        if config.use_flash_attention:
-            self.attn_func = self._flash_attention_wrapper
-        else:
-            self.attn_func = self.core_attn
+        self.attn_func = self._flash_attention_wrapper
 
         if config.cachekv_quant:
             from paddleslim.common.wrapper_function import FuncWrapper
@@ -1690,6 +1687,7 @@ class Ernie4_5_LMHead(nn.Layer):
             )
 
         if self.config.tensor_model_parallel_size > 1:
+            axis = 0 if self.config.tie_word_embeddings else 1
             state_dict = self.state_dict(structured_name_prefix="")
-            return build_sharded_state_dict(state_dict, {"weight": 0, "bias": 0}, structured_name_prefix)
+            return build_sharded_state_dict(state_dict, {"weight": axis, "bias": 0}, structured_name_prefix)
         return super().sharded_state_dict(structured_name_prefix)
