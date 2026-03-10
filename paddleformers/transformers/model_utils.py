@@ -3238,7 +3238,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 else:
                     config_to_save = copy.deepcopy(model_to_save.config)
                     # Attach architecture to the config
-                    config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+                    if not config_to_save.architectures:
+                        config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
 
             # Save the config
             if is_main_process:
@@ -3284,7 +3285,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     variant = weight_name_suffix() if variant is None else variant
 
         # Attach architecture to the config
-        config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+        if not config_to_save.architectures:
+            config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+        if not save_to_hf:
+            config_to_save.source = "paddle"
         # Save the config
         if is_main_process:
             config_to_save.save_pretrained(save_directory)
