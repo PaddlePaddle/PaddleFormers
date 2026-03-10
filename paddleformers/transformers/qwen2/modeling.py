@@ -20,6 +20,9 @@
 """Paddle Qwen2 model."""
 from __future__ import annotations
 
+import json
+import os
+from dataclasses import asdict, dataclass
 from typing import Dict, Optional, Tuple, Union
 
 import paddle
@@ -28,6 +31,8 @@ from paddle import Tensor, nn
 from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
+from paddleformers.transformers.gpt_provider import GPTModelProvider
+
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
@@ -35,7 +40,7 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Qwen2MLP
 from ...nn.norm import Norm as GeneralNorm
-from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..contrastive_loss import SimpleContrastiveLoss
@@ -53,6 +58,62 @@ from ..model_outputs import (
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import Qwen2Config
+
+
+@dataclass
+class Qwen2ModelProvider(GPTModelProvider):
+    """Base provider for Qwen2 Models."""
+
+    model_type = "qwen2"
+
+    attention_bias: bool = True
+
+    bias_activation_fusion: bool = True
+    bias_dropout_fusion: bool = True
+
+    transform_rules = {
+        "dtype": "params_dtype",
+    }
+
+    persist_layer_norm: bool = True
+    share_embeddings_and_output_weights: bool = False
+
+    def save_pretrained(self, save_directory: Union[str, os.PathLike], **kwargs):
+        """
+        Save a configuration object to the directory `save_directory`, so that it can be re-loaded using the
+        [`~PretrainedConfig.from_pretrained`] class method.
+
+        Args:
+            save_directory (`str` or `os.PathLike`):
+                Directory where the configuration JSON file will be saved (will be created if it does not exist).
+            kwargs:
+                Additional key word arguments passed along to the [`~utils.PushToHubMixin.push_to_hub`] method.
+        """
+        if os.path.isfile(save_directory):
+            raise AssertionError(f"Provided path ({save_directory}) should be a directory, not a file")
+
+        os.makedirs(save_directory, exist_ok=True)
+
+        output_config_file = os.path.join(save_directory, self.CONFIG_NAME)
+        config_dict = asdict(self)
+
+        # Filter out non-serializable values
+        def make_serializable(obj):
+            if isinstance(obj, dict):
+                return {k: make_serializable(v) for k, v in obj.items() if make_serializable(v) is not None}
+            elif isinstance(obj, (list, tuple)):
+                return [make_serializable(item) for item in obj if make_serializable(item) is not None]
+            elif isinstance(obj, (str, int, float, bool, type(None))):
+                return obj
+            else:
+                # Skip non-serializable types like partial, function, etc.
+                return None
+
+        serializable_config = make_serializable(config_dict)
+
+        with open(output_config_file, "w", encoding="utf-8") as writer:
+            writer.write(json.dumps(serializable_config, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+        logger.info(f"Configuration saved in {output_config_file}")
 
 
 def rotate_half(x):
@@ -267,16 +328,26 @@ class Qwen2PretrainedModel(PretrainedModel):
     @classmethod
     def _gen_aoa_config(cls, config: Qwen2Config):
         model_prefix = "" if cls == cls.base_model_class else "model."
+        is_fleet = getattr(cls, "is_fleet", False)
+
         aoa_config = {
             "aoa_statements": [
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
                 f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
-                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
                 f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"model.norm.weight -> {model_prefix}norm.weight",
             ]
         }
+
+        if is_fleet:
+            aoa_config["aoa_statements"] += [
+                f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
+            ]
 
         # attention qkv
         aoa_config["aoa_statements"] += [
@@ -293,21 +364,37 @@ class Qwen2PretrainedModel(PretrainedModel):
 
         # lm_head
         if config.tie_word_embeddings:
-            aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
+            if is_fleet:
+                aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}lm_head.weight"]
+            else:
+                aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
+        else:
+            if is_fleet:
+                aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}lm_head.weight"]
 
         return aoa_config
 
     @classmethod
     def _gen_inv_aoa_config(cls, config: Qwen2Config):
         model_prefix = "" if cls == cls.base_model_class else "model."
+        is_fleet = getattr(cls, "is_fleet", False)
+
         aoa_statements = [
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
-            f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
             f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
             f"{model_prefix}norm.weight -> model.norm.weight",
         ]
+
+        if is_fleet:
+            aoa_statements += [
+                f"{model_prefix}embedding.embed_tokens.weight -> model.embed_tokens.weight",
+            ]
+        else:
+            aoa_statements += [
+                f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+            ]
 
         aoa_statements += [
             f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
@@ -331,7 +418,13 @@ class Qwen2PretrainedModel(PretrainedModel):
             ]
 
         if config.tie_word_embeddings:
-            aoa_statements += ["lm_head.weight -> _"]
+            if is_fleet:
+                aoa_statements += [f"{model_prefix}lm_head.weight -> _"]
+            else:
+                aoa_statements += ["lm_head.weight -> _"]
+        else:
+            if is_fleet:
+                aoa_statements += [f"{model_prefix}lm_head.weight -> lm_head.weight"]
 
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config
@@ -569,6 +662,30 @@ class Qwen2Model(Qwen2PretrainedModel):
 
 
 class Qwen2ForCausalLM(Qwen2PretrainedModel):
+    is_fleet = True
+
+    def __new__(cls, config):
+        # Hybrid parallel config convert.
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+
+        model_provider_class = Qwen2ModelProvider
+        model_provider = model_provider_class.from_config(config)
+        loss_fn = None
+        if getattr(config, "dpo_config", None):
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
+        gpt_model = model_provider.provide(loss_fn=loss_fn)
+        gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
+        return gpt_model
+
+
+class Qwen2ForCausalLMDeprecated(Qwen2PretrainedModel):
     enable_to_static_method = True
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -898,7 +1015,33 @@ class Qwen2SentenceEmbedding(Qwen2PretrainedModel):
         return last_hidden_states
 
 
-class Qwen2ForCausalLMPipe(GeneralModelForCausalLMPipe):
+class Qwen2ForCausalLMPipe(Qwen2PretrainedModel, GeneralModelForCausalLMPipe):
+    is_fleet = True
+
+    def __new__(cls, config):
+        # Hybrid parallel config convert.
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+
+        model_provider_class = Qwen2ModelProvider
+        model_provider = model_provider_class.from_config(config)
+        loss_fn = None
+        if getattr(config, "dpo_config", None):
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
+        gpt_model = model_provider.provide(loss_fn=loss_fn)
+        gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        if not hasattr(config, "architectures"):
+            config.architectures = [cls.__name__.replace("Pipe", "")]
+        gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
+        return gpt_model
+
+
+class Qwen2ForCausalLMPipeDeprecated(GeneralModelForCausalLMPipe):
     config_class = Qwen2Config
     _decoder_layer_cls = Qwen2DecoderLayer
     _get_tensor_parallel_mappings = Qwen2Model._get_tensor_parallel_mappings
@@ -919,4 +1062,6 @@ __all__ = [
     "Qwen2ForSequenceClassification",
     "Qwen2ForTokenClassification",
     "Qwen2SentenceEmbedding",
+    "Qwen2ForCausalLMDeprecated",
+    "Qwen2ForCausalLMPipeDeprecated",
 ]
