@@ -3287,6 +3287,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         # Attach architecture to the config
         if not config_to_save.architectures:
             config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+        if not save_to_hf:
+            config_to_save.source = "paddle"
         # Save the config
         if is_main_process:
             config_to_save.save_pretrained(save_directory)
