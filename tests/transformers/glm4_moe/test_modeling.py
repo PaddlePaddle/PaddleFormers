@@ -25,6 +25,7 @@ from paddleformers.transformers import (
     Glm4MoeForCausalLMDeprecated as Glm4MoeForCausalLM,
 )
 from paddleformers.transformers import Glm4MoeModel
+from paddleformers.utils.log import logger
 from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -376,7 +377,7 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_model_name_list(self):
         pass
 
-    @unittest.skip("glm_moe currently does not support checkpoints save and load")
+    # @unittest.skip("glm_moe currently does not support checkpoints save and load")
     def test_save_load(self):
         for model_class in self.all_model_classes:
             # test from_pretrained
@@ -387,6 +388,8 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                 num_nextn_predict_layers=0,
             )
             model_state_1 = model1.state_dict()
+            logger.error(f"model1_config for glm4moe_testing: {model1.config}")
+            logger.error(f"model1_config head_dim for glm4moe_testing: {model1.config.head_dim}")
 
             # test save_pretrained
             with tempfile.TemporaryDirectory() as tmpdirname:
@@ -398,6 +401,8 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                     num_nextn_predict_layers=0,
                 )
                 model_state_2 = model2.state_dict()
+                logger.error(f"model2_config for glm4moe_testing: {model2.config}")
+                logger.error(f"model2_config head_dim for glm4moe_testing: {model2.config.head_dim}")
 
                 for k, v in model_state_2.items():
                     md52 = v._md5sum()
@@ -594,3 +599,7 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
+
+
+if __name__ == "__main__":
+    unittest.main()
