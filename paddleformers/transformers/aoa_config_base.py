@@ -147,7 +147,6 @@ class MoEAOAConfigGenerator:
     def _build_aoa_config(cls, params: MoEAOAConfigParams) -> Dict[str, List[str]]:
         """Build the complete AOA config from parameters."""
         aoa_statements = []
-        print("params", params)
 
         # 1. Basic weights (norm, embed_tokens, lm_head)
         aoa_statements.extend(cls._get_basic_weight_statements(params))
@@ -167,7 +166,6 @@ class MoEAOAConfigGenerator:
         # 6. Extra statements from subclasses
         aoa_statements.extend(params.extra_statements)
 
-        print("aoa_statements", aoa_statements)
         return {"aoa_statements": aoa_statements}
 
     # ==================== Basic Weights ====================
