@@ -306,7 +306,7 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
-        "intern_lm2.configuration": ["InternLM2Config"],
+    "intern_lm2.configuration": ["InternLM2Config"],
     "intern_lm2.tokenizer": ["InternLM2Tokenizer"],
     "intern_lm2.modeling": ["InternLM2ForCausalLM", "InternLM2Model"],
 }

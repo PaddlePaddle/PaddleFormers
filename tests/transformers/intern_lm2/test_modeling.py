@@ -20,9 +20,16 @@ import unittest
 
 import numpy as np
 import paddle
-
 from paddleformers.transformers import InternLM2ForCausalLM, InternLM2Config, InternLM2Tokenizer
 from tests.testing_utils import require_package, slow
+
+# pytorch 固定input 之后，输出的 outputs的前3维， 分别和 pytorch 自身、paddle 版本同时做对齐测试
+# 方便后续迭代中，感知到是那边框架出现了不匹配
+PT_PD_SAME_TENSOR = [[
+            [-0.01625147, -0.10887568, -0.27600563],
+            [-0.01467928, 0.58325601, -0.08758156],
+            [-0.05791061, 0.50822973, -0.39710030]
+            ]]
 
 
 class TestInternLM2Config(unittest.TestCase):
@@ -131,6 +138,7 @@ class InternLM2ModelTest(unittest.TestCase):
         self.assertIsNotNone(tiny_torch_model, "AutoModelForCausalLM load should not none")
 
     @slow
+    @require_package("transformers", "torch")
     def test_inference_with_torch_model(self):
         raw_model_repo_id = "learncat/internlm2_tiny_raw"
 
@@ -147,15 +155,8 @@ class InternLM2ModelTest(unittest.TestCase):
             output = tiny_torch_model(torch_input_ids, attention_mask=torch_attention_mask)[0]
 
 
-        expected_slice = torch.tensor(
-        [[
-            [-0.01625147, -0.10887568, -0.27600563],
-            [-0.01467928, 0.58325601, -0.08758156],
-            [-0.05791061, 0.50822973, -0.39710030]
-            ]],
-            dtype=output.dtype,
-        )
-        rs = torch.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4)
+        expected_slice = torch.tensor(PT_PD_SAME_TENSOR,dtype=output.dtype,)
+        rs = torch.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-6)
         self.assertTrue(rs)
 
     @slow
@@ -207,17 +208,8 @@ class InternLM2ModelTest(unittest.TestCase):
         expected_shape = [1, 11, 92544]
         self.assertEqual(output.shape, expected_shape)
 
-        expected_slice = paddle.to_tensor(
-            [
-                [
-                    [-0.01625147, -0.10887568, -0.27600563],
-                    [-0.01467928, 0.58325601, -0.08758156],
-                    [-0.05791061, 0.50822973, -0.39710030]
-                ]
-            ],
-            dtype=output.dtype,
-        )
-        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
+        expected_slice = paddle.to_tensor(PT_PD_SAME_TENSOR,dtype=output.dtype,)
+        self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-6))
 
 
 class InternLM2CompatibilityTest(unittest.TestCase):
@@ -250,7 +242,7 @@ class InternLM2CompatibilityTest(unittest.TestCase):
             np.allclose(
                 paddle_logit.detach().cpu().reshape([-1])[:9].numpy(),
                 torch_logit.detach().cpu().reshape([-1])[:9].numpy(),
-                rtol=1e-2,
+                rtol=1e-5,
             )
         )
 
@@ -272,7 +264,7 @@ class InternLM2CompatibilityTest(unittest.TestCase):
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].numpy(),
-                    rtol=1e-2,
+                    rtol=1e-5,
                 )
             )
 
