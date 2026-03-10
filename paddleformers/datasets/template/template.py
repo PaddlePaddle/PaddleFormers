@@ -868,3 +868,11 @@ register_template(
     suffix=["<|im_end|>"],
     chat_sep="<|im_end|>",
 )
+register_template(
+    name="glm_ocr",
+    format_user=StringFormatter(slots=["<|user|>\n{{content}}\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
+    chat_sep="<|assistant|>\n",
+    mm_plugin=get_mm_plugin(name="glm_ocr", image_token="<|image|>"),
+)

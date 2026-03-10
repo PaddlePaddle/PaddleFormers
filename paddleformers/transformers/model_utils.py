@@ -4045,8 +4045,12 @@ class HFFormatFullParamSaver:
         self.rank = paddle.distributed.get_rank()
 
         if self.h_group and self.v_group:
-            self.num_saver_ranks = self.h_group.nranks * self.v_group.nranks
-            self.rank = self.h_group.rank + self.v_group.rank * self.h_group.nranks
+            if self.v_group.nranks == 1:
+                self.num_saver_ranks = self.h_group.nranks
+                self.rank = self.h_group.rank
+            else:
+                self.num_saver_ranks = self.h_group.nranks * self.v_group.nranks
+                self.rank = self.h_group.rank + self.v_group.rank * self.h_group.nranks
 
         if self.saved_in_one_node:
             local_world_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))

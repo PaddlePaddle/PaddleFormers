@@ -1181,6 +1181,98 @@ class Gemma3Plugin(BasePlugin):
         return mm_inputs
 
 
+@dataclass
+class GlmOcrPlugin(BasePlugin):
+    """
+    GLM-OCR 专用插件：
+    - messages 里用 IMAGE_PLACEHOLDER(默认 <image>) 做占位符
+    - 展开后插入：<|begin_of_image|> + N个<|image|> + <|end_of_image|>
+    - N 来自 image_grid_thw.prod() // (merge_size**2)
+    """
+
+    # 这些 token 必须在 tokenizer special tokens 里存在
+    image_bos_token: str = "<|begin_of_image|>"
+    image_eos_token: str = "<|end_of_image|>"
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        # 1) 基本校验：是否支持 image input、processor/image_processor 是否存在等
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+
+        # 2) 取 image_processor / merge_length
+        image_processor = getattr(processor, "image_processor", None)
+        if image_processor is None:
+            raise ValueError("image_processor was not found in processor.")
+
+        merge_size = getattr(image_processor, "merge_size", None)
+        if merge_size is None:
+            raise ValueError("image_processor.merge_size was not found.")
+        merge_length = int(merge_size) ** 2
+
+        # 3) 取 image_grid_thw（expand_mm_tokens 时必须有）
+        if self.expand_mm_tokens:
+            image_grid_thw = mm_inputs.get("image_grid_thw", None)
+            if image_grid_thw is None or len(image_grid_thw) == 0:
+                raise ValueError(
+                    "expand_mm_tokens=True but mm_inputs has no valid image_grid_thw. "
+                    "Please ensure image_processor returns image_grid_thw."
+                )
+        else:
+            # 不展开时，每张图就 1 个 token（不会用到 grid）
+            image_grid_thw = None
+
+        # 4) 展开：把每个 <image> 依次替换为 BOS + N*image_token + EOS
+        # 关键点：IMAGE_PLACEHOLDER 必须 != self.image_token，否则会死循环
+        if self.image_token is None:
+            raise ValueError("GlmOcrPlugin requires image_token to be set (e.g., '<|image|>').")
+
+        if IMAGE_PLACEHOLDER == self.image_token:
+            raise ValueError(
+                f"IMAGE_PLACEHOLDER ({IMAGE_PLACEHOLDER}) must be different from image_token ({self.image_token}). "
+                "Otherwise placeholder replacement will not terminate."
+            )
+
+        num_image_tokens = 0
+        messages = deepcopy(messages)
+
+        for msg in messages:
+            content = msg["content"]
+
+            while IMAGE_PLACEHOLDER in content:
+                # 越界保护（你现在遇到的 OutOfRange 就是这里本该被挡住）
+                if num_image_tokens >= len(images):
+                    raise ValueError(
+                        f"Found more {IMAGE_PLACEHOLDER} placeholders than provided images: "
+                        f"placeholders_so_far={num_image_tokens+1}, len(images)={len(images)}"
+                    )
+
+                if self.expand_mm_tokens:
+                    # image_grid_thw shape: [num_images, 3]
+                    # 每张图的 token 数 = prod(thw) // (merge_size**2)
+                    seqlen = int(image_grid_thw[num_image_tokens].prod().item()) // merge_length
+                    seqlen = max(1, seqlen)
+                else:
+                    seqlen = 1
+
+                repl = f"{self.image_bos_token}{self.image_token * seqlen}{self.image_eos_token}"
+                content = content.replace(IMAGE_PLACEHOLDER, repl, 1)
+                num_image_tokens += 1
+
+            msg["content"] = content
+        # 5) mask：这些 token 不参与 loss（和你原先 PaddleOCRVLPlugin 一致）
+        self.masked_tokens = [self.image_token, self.image_bos_token, self.image_eos_token]
+        return messages
+
+
 PLUGINS = {
     "base": BasePlugin,
     "ernie_vl": ErnieVLPlugin,
@@ -1189,6 +1281,7 @@ PLUGINS = {
     "qwen3_vl": Qwen3VLPlugin,
     "glm4v": GLM4VPlugin,
     "gemma3": Gemma3Plugin,
+    "glm_ocr": GlmOcrPlugin,
 }
 
 
