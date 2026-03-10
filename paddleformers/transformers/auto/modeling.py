@@ -197,10 +197,10 @@ class _BaseAutoModelClass:
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
         if is_lora and class_name in ["qwen3_vl_moe"]:
             try:
-                model_class = getattr(import_class, init_class + "Deprecated")
+                model_class = getattr(import_class, init_class)
                 return model_class
             except AttributeError:
-                model_class = getattr(import_class, init_class)
+                model_class = getattr(import_class, init_class + "Deprecated")
                 return model_class
             except AttributeError as err:
                 try:
@@ -221,10 +221,10 @@ class _BaseAutoModelClass:
                     )
         else:
             try:
-                model_class = getattr(import_class, init_class)
+                model_class = getattr(import_class, init_class + "Deprecated")
                 return model_class
             except AttributeError:
-                model_class = getattr(import_class, init_class + "Deprecated")
+                model_class = getattr(import_class, init_class)
                 return model_class
             except AttributeError as err:
                 try:
