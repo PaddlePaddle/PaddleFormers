@@ -394,6 +394,15 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
             # test save_pretrained
             with tempfile.TemporaryDirectory() as tmpdirname:
                 model1.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+                # Debug: print saved config.json
+                import os
+
+                config_path = os.path.join(tmpdirname, "config.json")
+                logger.error(f"=== Saved config.json content: {config_path} ===")
+                with open(config_path, "r") as f:
+                    config_json = f.read()
+                    logger.error(f"Saved config.json:\n{config_json}")
+
                 model2 = model_class.from_pretrained(
                     tmpdirname,
                     convert_from_hf=True,
