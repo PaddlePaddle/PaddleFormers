@@ -1312,12 +1312,15 @@ class PretrainedConfig:
             `Dict[str, Any]`: Dictionary of all the attributes that make up this configuration instance,
         """
         config_dict = self.to_dict(saving_file=saving_file)
+        logger.error(f"config_dict: {config_dict}")
 
         # get the default config dict
         default_config_dict = PretrainedConfig().to_dict(saving_file=saving_file)
+        logger.error(f"default_config_dict: {default_config_dict}")
 
         # get class specific config dict
         class_config_dict = self.__class__().to_dict(saving_file=saving_file) if not self.is_composition else {}
+        logger.error(f"class_config_dict: {class_config_dict}")
 
         serializable_config_dict = {}
 
