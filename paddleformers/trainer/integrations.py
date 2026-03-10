@@ -207,9 +207,12 @@ class TensorBoardCallback(TrainerCallback):
             self.tb_writer.add_text("args", args.to_json_string())
             if "model" in kwargs:
                 model = kwargs["model"]
-                if "gpt_provider" not in str(type(model)) and hasattr(model, "config") and model.config is not None:
-                    model_config_json = model.config.to_json_string()
-                    self.tb_writer.add_text("model_config", model_config_json)
+                if hasattr(model, "config") and model.config is not None:
+                    try:
+                        model_config_json = model.config.to_json_string()
+                        self.tb_writer.add_text("model_config", model_config_json)
+                    except:
+                        logger.warning("PaddleFleet model config cannot be serialized to JSON string.")
 
     def on_log(self, args, state, control, logs=None, **kwargs):
         if not state.is_world_process_zero:
