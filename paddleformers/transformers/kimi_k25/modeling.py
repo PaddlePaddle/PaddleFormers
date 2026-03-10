@@ -17,14 +17,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import contextlib
+from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from typing import Optional, Union
 
 import paddle
+from paddle.nn import functional as F
 from paddlefleet import parallel_state
-from paddlefleet.models.kimi_k25 import KimiK25VisionProvider
+from paddlefleet.models.kimi_k25.kimi_k25_builders import kimi_k25_vision_builder
+from paddlefleet.models.kimi_k25.kimi_k25_model import (
+    KimiK25VisionModel,
+    KimiK25VisionTransformerLayer,
+)
 from paddlefleet.models.multimodal.llava_model import LLaVAModel as MCoreLLaVAModel
+from paddlefleet.spec_utils import LayerSpec
 from paddlefleet.transformer.enums import ModelType
 from paddlefleet.transformer.transformer_config import TransformerConfig
 
@@ -36,6 +44,73 @@ from ..masking_utils import create_causal_masks_and_row_indices
 from ..model_utils import PretrainedModel
 from .configuration import KimiK25Config
 from .modeling_base import KimiK25CausalLMOutputWithPast, KimiK25PretrainedModel
+
+
+class KimiK25VisionProvider(TransformerConfig):
+    patch_size: int = 16
+    use_bias: bool = True
+    add_qkv_bias: bool = True
+    num_position_embeddings: int = 2304
+    embed_dim: int = (1152,)
+    hidden_size: int = 1152
+    out_hidden_size: int = 4096
+    in_channels: int = 3
+    spatial_merge_size: int = 2
+    spatial_patch_size: int = 16
+    temporal_patch_size: int = 2
+    hidden_dropout_prob: float = 0.0
+    attention_dropout: float = 0.0
+    # intermediate_size: int = 4304
+    initializer_range: float = 0.02
+    gated_linear_unit: bool = False
+    hidden_act: Callable = F.gelu
+    layernorm_zero_centered_gamma: bool = False
+    apply_query_key_layer_scaling: bool = False
+    persist_layer_norm: bool = True
+    bias_activation_fusion: bool = False
+    bias_dropout_fusion: bool = False
+    attention_softmax_in_fp32: bool = True
+    normalization: str = "LayerNorm"
+    apply_rope_fusion: bool = True
+    rms_norm_eps: float = 1e-6
+    transformer_layer_spec: LayerSpec = KimiK25VisionTransformerLayer
+    model_version: str = "kimi_k25"
+    img_h: int = 336
+    img_w: int = 336
+    add_class_token: bool = False
+    class_token_len: int = 1
+    high_precision_rope: bool = True
+    rotary_percent: float = 1.0
+    transform_rules = {
+        "dtype": "params_dtype",
+        "vt_hidden_size": "hidden_size",
+        "vt_intermediate_size": "intermediate_size",
+        "vt_num_attention_heads": "num_attention_heads",
+        "vt_num_hidden_layers": "num_hidden_layers",
+    }
+
+    def provide(self) -> "KimiK25VisionModel":
+        pp_size = self.pipeline_model_parallel_size
+
+        is_pipeline_asymmetric = getattr(self, "account_for_embedding_in_pipeline_split", False) or getattr(
+            self, "account_for_loss_in_pipeline_split", False
+        )
+        is_pipeline_asymmetric |= (
+            getattr(self, "num_empty_layers_add_in_head", None) or getattr(self, "num_empty_layers_add_in_tail", None)
+        ) is not None
+
+        # Initialize model as meta data instead of allocating data on a device
+        model_init_device_context = contextlib.nullcontext
+        if self.init_model_with_meta_device:
+            model_init_device_context = partial(paddle.device, device="meta")
+
+        with model_init_device_context():
+            res_model = kimi_k25_vision_builder(
+                self,
+                seg_method="layer:TransformerLayer|EmptyLayer",
+                num_stages=pp_size,
+            )
+        return res_model
 
 
 @dataclass
