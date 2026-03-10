@@ -1323,6 +1323,8 @@ class PretrainedConfig:
 
         # only serialize values that differ from the default config
         for key, value in config_dict.items():
+            if key == "head_dim":
+                logger.error("have head_dim")
             white_list = ["tie_word_embeddings"]
             if key in white_list:
                 serializable_config_dict[key] = value
@@ -1354,7 +1356,7 @@ class PretrainedConfig:
                 serializable_config_dict[key] = value
 
         self._remove_keys_not_serialized(serializable_config_dict, saving_file)
-
+        logger.error(f"to_diff_dict:{serializable_config_dict}")
         return serializable_config_dict
 
     def register_unsavable_keys(self, keys):
