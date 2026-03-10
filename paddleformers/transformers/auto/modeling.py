@@ -277,11 +277,7 @@ class _BaseAutoModelClass:
                         class_name = cls._name_mapping[init_class]
                         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
                         try:
-                            model_class = getattr(import_class, init_class + "Deprecated")
-                            return model_class
-                        except AttributeError:
                             model_class = getattr(import_class, init_class)
-                            return model_class
                         except AttributeError as err:
                             try:
                                 import_class2 = importlib.import_module(f"paddleformers.transformers.{class_name}")

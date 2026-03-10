@@ -20,7 +20,9 @@
 """Paddle Qwen2 model."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+import os
+from dataclasses import asdict, dataclass
 from typing import Dict, Optional, Tuple, Union
 
 import paddle
@@ -62,6 +64,8 @@ from .configuration import Qwen2Config
 class Qwen2ModelProvider(GPTModelProvider):
     """Base provider for Qwen2 Models."""
 
+    model_type = "qwen2"
+
     attention_bias: bool = True
 
     bias_activation_fusion: bool = True
@@ -73,6 +77,43 @@ class Qwen2ModelProvider(GPTModelProvider):
 
     persist_layer_norm: bool = True
     share_embeddings_and_output_weights: bool = False
+
+    def save_pretrained(self, save_directory: Union[str, os.PathLike], **kwargs):
+        """
+        Save a configuration object to the directory `save_directory`, so that it can be re-loaded using the
+        [`~PretrainedConfig.from_pretrained`] class method.
+
+        Args:
+            save_directory (`str` or `os.PathLike`):
+                Directory where the configuration JSON file will be saved (will be created if it does not exist).
+            kwargs:
+                Additional key word arguments passed along to the [`~utils.PushToHubMixin.push_to_hub`] method.
+        """
+        if os.path.isfile(save_directory):
+            raise AssertionError(f"Provided path ({save_directory}) should be a directory, not a file")
+
+        os.makedirs(save_directory, exist_ok=True)
+
+        output_config_file = os.path.join(save_directory, self.CONFIG_NAME)
+        config_dict = asdict(self)
+
+        # Filter out non-serializable values
+        def make_serializable(obj):
+            if isinstance(obj, dict):
+                return {k: make_serializable(v) for k, v in obj.items() if make_serializable(v) is not None}
+            elif isinstance(obj, (list, tuple)):
+                return [make_serializable(item) for item in obj if make_serializable(item) is not None]
+            elif isinstance(obj, (str, int, float, bool, type(None))):
+                return obj
+            else:
+                # Skip non-serializable types like partial, function, etc.
+                return None
+
+        serializable_config = make_serializable(config_dict)
+
+        with open(output_config_file, "w", encoding="utf-8") as writer:
+            writer.write(json.dumps(serializable_config, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+        logger.info(f"Configuration saved in {output_config_file}")
 
 
 def rotate_half(x):
