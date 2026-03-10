@@ -51,3 +51,4 @@ fp16_opt_level: O2
 unified_checkpoint: false
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
+report_to: tensorboard
