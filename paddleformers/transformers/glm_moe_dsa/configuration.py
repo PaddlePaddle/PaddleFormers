@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ from ..modeling_rope_utils import rope_config_validation, standardize_rope_param
 
 class GlmMoeDsaConfig(PretrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`Glm4MoeModel`]. It is used to instantiate a
-    Glm4Moe model according to the specified arguments, defining the model architecture.
+    This is the configuration class to store the configuration of a [`GlmMoeDSAModel`]. It is used to instantiate a
+    GlmMoeDsa model according to the specified arguments, defining the model architecture.
 
     Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
     documentation from [`PretrainedConfig`] for more information.
