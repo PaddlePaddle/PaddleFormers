@@ -302,7 +302,7 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     all_model_classes = (Glm4MoeModel, Glm4MoeForCausalLM)
     all_generative_model_classes = {Glm4MoeForCausalLM: (Glm4MoeModel, "Glm4Moe")}
 
-    @gpu_device_initializer(log_prefix="Glm4MoeModelTest")
+    @gpu_device_initializer(log_prefix="Glm4MoeModelTest", gpu_id=0)
     def setUp(self):
         super().setUp()
 
@@ -376,7 +376,6 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_model_name_list(self):
         pass
 
-    @gpu_device_initializer(log_prefix="Glm4MoeModelTest::test_save_load", gpu_id=0)
     def test_save_load(self):
         for model_class in self.all_model_classes:
             # test from_pretrained
@@ -391,7 +390,6 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
             # test save_pretrained
             with tempfile.TemporaryDirectory() as tmpdirname:
                 model1.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-                model1.config.save_pretrained(tmpdirname)
                 model2 = model_class.from_pretrained(
                     tmpdirname,
                     convert_from_hf=True,
