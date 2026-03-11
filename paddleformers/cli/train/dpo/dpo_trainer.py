@@ -651,9 +651,7 @@ class DPOTrainer(Trainer):
                     else:
                         tensor = paddle.cat(getattr(infohub, key), axis=0).detach()
                     # Convert shape to list of Python ints for NumPy 2.x compatibility
-                    tensor_shape = paddle.to_tensor(
-                        [int(dim) for dim in tensor.shape], dtype="int64"
-                    )
+                    tensor_shape = paddle.to_tensor([int(dim) for dim in tensor.shape], dtype="int64")
                     paddle.distributed.broadcast(
                         tensor_shape, src=self.model_wrapped.global_rank, group=self.model_wrapped.pp_group
                     )
