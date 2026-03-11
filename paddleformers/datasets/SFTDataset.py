@@ -23,6 +23,7 @@ import numpy as np
 from paddle.io import IterableDataset
 
 from paddleformers.datasets.data_utils import (
+    calculate_matched_group,
     get_worker_sliced_iterator,
     postprocess_fc_sequence,
     print_debug_info,
@@ -83,6 +84,8 @@ class SFTDataSet(IterableDataset):
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
+        self.binpacking = dataset_config.get("binpacking", False)
+        self.packing_interval = dataset_config.get("packing_interval", 500)
         if self.is_pretraining and self.packing and self.truncate_packing:
             logger.info("[dataflow] pretrain dataflow using truncate packing.")
 
@@ -126,6 +129,7 @@ class SFTDataSet(IterableDataset):
         self.last_printed_percent = 0
         self._estimate_start_time = None
         self.enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
+        self.mem_debug = os.getenv("FLAGS_enable_mem_debug", "false").lower() in ("true", "1", "t")
 
         self.sep_token_len = 0
         if self.use_template and self.template_backend != "jinja":
@@ -208,9 +212,25 @@ class SFTDataSet(IterableDataset):
         Yields:
             Processed results in order (skips None results).
         """
+
+        def _rss_mb():
+            try:
+                with open("/proc/self/status") as _f:
+                    for _line in _f:
+                        if _line.startswith("VmRSS:"):
+                            return int(_line.split()[1]) / 1024
+            except Exception:
+                pass
+            return -1
+
+        _log_interval = 200
+        _yield_cnt = 0
+
         if self.dataset_num_proc > 1:
             # Multiprocessing mode
             self._start_workers(processor_func)
+            if self.mem_debug:
+                print(f"[MemDebug] workers started, RSS={_rss_mb():.0f} MB, " f"num_proc={self.dataset_num_proc}")
             try:
                 pending = 0
                 send_idx = 0
@@ -229,19 +249,25 @@ class SFTDataSet(IterableDataset):
                     send_idx += 1
                     pending += 1
 
+                if self.mem_debug:
+                    print(
+                        f"[MemDebug] pre-fill done, RSS={_rss_mb():.0f} MB, "
+                        f"pending={pending}, in_q~{self._in_queue.qsize()}, "
+                        f"out_q~{self._out_queue.qsize()}"
+                    )
+
                 # Process data in streaming fashion, maintaining order
                 while pending > 0:
                     idx, result = self._out_queue.get()
                     pending -= 1
 
-                    # Try to add one more item
-                    if send_idx < total_samples and send_idx - recv_idx < prefetch_size:
+                    while send_idx < total_samples and pending < prefetch_size:
                         example = next(dataset_iterator)
                         self._in_queue.put((send_idx, example, actual_example_num))
                         send_idx += 1
                         pending += 1
-                        if send_idx >= total_samples:
-                            self.iter_all_examples = True
+                    if send_idx >= total_samples:
+                        self.iter_all_examples = True
 
                     # Store result in buffer
                     result_buffer[idx] = result
@@ -251,6 +277,13 @@ class SFTDataSet(IterableDataset):
                         res = result_buffer.pop(recv_idx)
                         recv_idx += 1
                         if res is not None:
+                            _yield_cnt += 1
+                            if self.mem_debug and _yield_cnt % _log_interval == 0:
+                                print(
+                                    f"[MemDebug] yielded={_yield_cnt}, RSS={_rss_mb():.0f} MB | "
+                                    f"pending={pending}, result_buf={len(result_buffer)}, "
+                                    f"in_q~{self._in_queue.qsize()}, out_q~{self._out_queue.qsize()}"
+                                )
                             yield res
                         else:
                             if self.estimate:
@@ -258,6 +291,8 @@ class SFTDataSet(IterableDataset):
                                 self.unused_samples += actual_example_num
             finally:
                 self._stop_workers()
+                if self.mem_debug:
+                    print(f"[MemDebug] iteration finished, RSS={_rss_mb():.0f} MB, " f"workers kept alive for reuse")
         else:
             # Single process mode
             for _ in range(len(self.mix_datasets)):
@@ -268,6 +303,9 @@ class SFTDataSet(IterableDataset):
                     print(f"Warning: Error processing example, skipping. Error: {str(e)}")
                     result = None
                 if result is not None:
+                    _yield_cnt += 1
+                    if self.mem_debug and _yield_cnt % _log_interval == 0:
+                        print(f"[MemDebug][single] yielded={_yield_cnt}, RSS={_rss_mb():.0f} MB")
                     yield result
                 else:
                     if self.estimate:
@@ -422,7 +460,37 @@ class SFTDataSet(IterableDataset):
                 if len(batch_sequence) > 0:
                     yield batch_sequence
             else:
-                if not self.greedy_intokens:
+                if self.binpacking:
+                    data_iter = self._get_processed_data_iterator(
+                        dataset_iterator, actual_example_num, self._process_sequence
+                    )
+                    accumulated_data = []
+
+                    while True:
+                        batch_data, num_samples = self._binpacking_process_batch(data_iter, self.packing_interval)
+                        finished = num_samples != self.packing_interval
+
+                        accumulated_data += batch_data
+
+                        sequences, accumulated_data = calculate_matched_group(
+                            accumulated_data, self.max_seq_len, is_finished=finished
+                        )
+
+                        for row in sequences:
+                            yield [r[0] for r in row]
+
+                        if self.estimate:
+                            self.used_estimate_samples += num_samples
+                            self.print_max_steps_estimate_progress()
+                            # Stop estimation if the number of samples used in estimation is larger than max_estimate_samples
+                            if self.used_estimate_samples >= self.max_estimate_samples:
+                                # Set flag to False and yield empty list to signal the end of estimation
+                                self.estimate = False
+                                yield []
+
+                        if finished:
+                            break
+                elif not self.greedy_intokens:
                     # base packing mode
                     data_iter = self._get_processed_data_iterator(
                         dataset_iterator, actual_example_num, self._process_sequence
@@ -804,3 +872,19 @@ class SFTDataSet(IterableDataset):
                 length = i - start
                 if length >= suffix_len and input_ids[start : start + suffix_len] == suffix_tokens_id:
                     labels[start : start + suffix_len] = suffix_tokens_id
+
+    def _binpacking_process_batch(self, iterator, batch_size):
+        batch = []
+        count = 0
+        for _ in range(batch_size):
+            try:
+                encoded = next(iterator)
+                if self.estimate:
+                    self.used_samples += 1
+                if encoded:
+                    batch.append((encoded, len(encoded.token_ids)))
+                count += 1
+            except StopIteration:
+                raise ValueError()
+                break
+        return batch, count

@@ -19,6 +19,8 @@ import time
 from itertools import islice
 from typing import List, Tuple
 
+# https://arxiv.org/pdf/2404.10830
+import binpacking
 import numpy as np
 import paddle
 
@@ -209,6 +211,8 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
             training_args.max_estimate_samples, train_dataset.max_estimate_samples
         )
 
+    logger.info(f"training_args.max_estimate_samples: {training_args.max_estimate_samples}")
+    logger.info(f"train_dataset.max_estimate_samples: {train_dataset.max_estimate_samples }")
     if train_dataset.max_estimate_samples > 0:
         train_batches = 0
         train_tokens = 0
@@ -235,6 +239,7 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
             * max(training_args.sharding_parallel_size, 1)
         )
         max_steps = train_batches / global_batch_size
+        logger.info(f"train batches: {train_batches}, global batch size: {global_batch_size}, max steps: {max_steps}")
 
         if max_samples != train_dataset.max_estimate_samples:
             max_steps *= max_samples / train_dataset.max_estimate_samples
@@ -337,3 +342,15 @@ def get_worker_sliced_iterator(dataset):
         )
 
     return dataset_iterator
+
+
+def calculate_matched_group(sequences, packing_length: int, is_finished: bool = True):
+    if len(sequences) == 0:
+        return [], []
+
+    sequences = binpacking.to_constant_volume(sequences, packing_length, weight_pos=1)
+    if sequences and not is_finished:
+        sequences, ret_sequences = sequences[:-1], sequences[-1]
+    else:
+        ret_sequences = []
+    return sequences, ret_sequences

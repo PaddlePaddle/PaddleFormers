@@ -1956,6 +1956,15 @@ class Trainer:
             _data_load_start_time = time.time()
 
             for step, inputs in enumerate(epoch_iterator):
+
+                from paddleformers.datasets.data_utils import print_debug_info
+
+                if hasattr(self, "tokenizer"):
+                    filtered_labels = [x for x in inputs["labels"].tolist()[0] if x != -100]  # remove -100
+                    print_debug_info(self.tokenizer, filtered_labels, "labels")
+                else:
+                    logger.info("[dataset debug] Tokenizer not available")
+
                 # Record data loading time for this iteration
                 _data_load_end_time = time.time()
                 _data_load_time_for_global_step += _data_load_end_time - _data_load_start_time

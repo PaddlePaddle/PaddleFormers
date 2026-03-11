@@ -407,6 +407,8 @@ def run_sft(
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
         "dataset_num_proc": finetuning_args.dataset_num_proc,
+        "binpacking": data_args.binpacking,
+        "packing_interval": data_args.packing_interval,
     }
 
     dataset_config.update(
