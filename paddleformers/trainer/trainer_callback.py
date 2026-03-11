@@ -491,7 +491,7 @@ class DefaultFlowCallback(TrainerCallback):
         if (
             args.save_strategy == IntervalStrategy.STEPS
             and args.save_steps > 0
-            and (state.global_step % args.save_steps == 0 or state.global_step == state.max_steps)
+            and state.global_step % args.save_steps == 0
         ):
             control.should_save = True
 
