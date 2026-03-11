@@ -231,7 +231,7 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
     all_model_classes = (Qwen3NextModel, Qwen3NextForCausalLM)
     all_generative_model_classes = {Qwen3NextForCausalLM: (Qwen3NextModel, "qwen3_next")}
 
-    @gpu_device_initializer(log_prefix="Qwen3NextModelTest")
+    @gpu_device_initializer(log_prefix="Qwen3NextModelTest", gpu_id=0)
     def setUp(self):
         super().setUp()
 
@@ -280,7 +280,6 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_for_causal_lm(*config_and_inputs)
 
-    @gpu_device_initializer(log_prefix="Qwen3NextModelTest", gpu_id=0)
     def test_save_load(self):
         for model_class in self.all_model_classes:
             # test from_pretrained
