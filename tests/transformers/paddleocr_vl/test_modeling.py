@@ -184,7 +184,7 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
     }
     max_new_tokens = 3
 
-    @gpu_device_initializer(log_prefix="PaddleOCRVLModelTest")
+    @gpu_device_initializer(log_prefix="PaddleOCRVLModelTest", gpu_id=0)
     def setUp(self):
         self.model_tester = PaddleOCRVLModelTester(self)
         self.config_tester = ConfigTester(self, config_class=PaddleOCRVLConfig)
@@ -440,11 +440,9 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 model = model_class(config)
                 model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
 
-                model1 = model_class.from_pretrained(
-                    tmpdirname, head_dim=64, convert_from_hf=True, load_checkpoint_format=""
-                )
+                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
 
-                model2 = model_class.from_pretrained(tmpdirname, head_dim=64, load_checkpoint_format="flex_checkpoint")
+                model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
 
                 model_state_1 = model1.state_dict()
                 model_state_2 = model2.state_dict()
