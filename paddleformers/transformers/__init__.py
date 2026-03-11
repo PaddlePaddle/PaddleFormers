@@ -275,6 +275,8 @@ import_structure = {
     "qwen3_next": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
+    "glm_moe_dsa.configuration": ["GlmMoeDsaConfig"],
+    "glm_moe_dsa": ["GlmMoeDsaForCausalLMPipe", "GlmMoeDsaForCausalLM"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
     "glm4v_moe.image_processor_fast": ["Glm4vImageProcessorFast"],
     "auto": ["AutoModelForCausalLM"],
@@ -360,6 +362,7 @@ if TYPE_CHECKING:
     from .qwen3_vl_moe import *
     from .glm4_moe import *
     from .glm4v_moe import *
+    from .glm_moe_dsa import *
     from .gpt_oss import *
     from .kimi_k25 import *
     from .phi3 import *
