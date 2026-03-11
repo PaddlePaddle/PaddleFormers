@@ -537,11 +537,10 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                 )
                 model = model_class(config)
                 model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-                model.config.save_pretrained(tmpdirname)
 
-                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
+                model1 = model_class.from_pretrained(tmpdirname, head_dim=16, convert_from_hf=True)
 
-                model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
+                model2 = model_class.from_pretrained(tmpdirname, head_dim=16, load_checkpoint_format="flex_checkpoint")
 
                 model_state_1 = model1.state_dict()
                 model_state_2 = model2.state_dict()

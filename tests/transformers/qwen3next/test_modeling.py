@@ -294,11 +294,11 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
             # test save_pretrained
             with tempfile.TemporaryDirectory() as tmpdirname:
                 model1.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
-                model1.config.save_pretrained(tmpdirname)
                 model2 = model_class.from_pretrained(
                     tmpdirname,
                     convert_from_hf=True,
                     load_checkpoint_format="flex_checkpoint",
+                    head_dim=16,
                     num_nextn_predict_layers=0,
                 )
                 model_state_2 = model2.state_dict()
