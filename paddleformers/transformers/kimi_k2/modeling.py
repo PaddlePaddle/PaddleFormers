@@ -111,10 +111,10 @@ class KimiK2ForCausalLM(KimiK2PretrainedModel):
                 config.original_max_position_embeddings = config.rope_scaling["original_max_position_embeddings"]
         # Check if mtp_block_spec parameter is supported
         config.multi_latent_attention = True
+        config.use_qk_norm = True
         model_provider_class = KimiK2Provider
 
         model_provider = model_provider_class.from_config(config)
-        print("model_provider=", model_provider)
         KimiK25_model = model_provider.provide()
         KimiK25_model._gen_aoa_config = cls._gen_aoa_config
 
@@ -152,6 +152,7 @@ class KimiK2ForCausalLMPipe(KimiK2PretrainedModel, GeneralModelForCausalLMPipe):
                 config.original_max_position_embeddings = config.rope_scaling["original_max_position_embeddings"]
         # Check if mtp_block_spec parameter is supported
         config.multi_latent_attention = True
+        config.use_qk_norm = True
 
         model_provider_class = KimiK2Provider
         model_provider = model_provider_class.from_config(config)
