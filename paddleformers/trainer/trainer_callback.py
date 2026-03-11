@@ -491,7 +491,7 @@ class DefaultFlowCallback(TrainerCallback):
         if (
             args.save_strategy == IntervalStrategy.STEPS
             and args.save_steps > 0
-            and state.global_step % args.save_steps == 0
+            and (state.global_step % args.save_steps == 0 or state.global_step == state.max_steps)
         ):
             control.should_save = True
 
@@ -506,7 +506,6 @@ class DefaultFlowCallback(TrainerCallback):
         # End training
         if state.global_step >= state.max_steps:
             control.should_training_stop = True
-            control.should_save = True
 
         # Save hf
         if (
