@@ -17,7 +17,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from itertools import chain
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import numpy as np
 from paddle.io import IterableDataset
@@ -135,55 +135,24 @@ class SFTDataSet(IterableDataset):
         if self.use_template and self.template_backend != "jinja":
             self.sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
 
+        if self.is_pretraining and self.packing and self.truncate_packing:
+            self._current_processor_func = self._process_pretraining_tokens
+        else:
+            self._current_processor_func = self._process_sequence
+
         # multiprocessing initialization
-        self._in_queue: Optional[mp.Queue] = None
-        self._out_queue: Optional[mp.Queue] = None
-        self.workers: List[mp.Process] = []
-        self._workers_started = False
-        self._current_processor_func = None
-
-        self.iter_all_examples = False
-
-    def __len__(self):
-        return len(self.mix_datasets)
-
-    def _start_workers(self, processor_func):
-        """Start worker processes for parallel data processing.
-
-        Args:
-            processor_func: The processing function to use in workers.
-        """
-        if self._workers_started:
-            return
-        self._current_processor_func = processor_func
-        prefetch_size = self.dataset_num_proc * 2
-        self._in_queue = mp.Queue(maxsize=prefetch_size)
-        self._out_queue = mp.Queue(maxsize=prefetch_size)
+        self.prefetch_size = self.dataset_num_proc * 2
+        self._in_queue = mp.Queue(maxsize=self.prefetch_size)
+        self._out_queue = mp.Queue(maxsize=self.prefetch_size)
+        self.workers = []
         for _ in range(self.dataset_num_proc):
             worker = mp.Process(target=self._worker_loop, daemon=True)
             worker.start()
             self.workers.append(worker)
-        self._workers_started = True
+        self.iter_all_examples = False
 
-    def _stop_workers(self):
-        """Stop all worker processes."""
-        if not self._workers_started:
-            return
-        for worker in self.workers:
-            if worker.is_alive():
-                worker.terminate()
-                worker.join(timeout=1)
-        self.workers = []
-        if self._in_queue:
-            self._in_queue.cancel_join_thread()
-            self._in_queue.close()
-        if self._out_queue:
-            self._out_queue.cancel_join_thread()
-            self._out_queue.close()
-        self._in_queue = None
-        self._out_queue = None
-        self._workers_started = False
-        self._current_processor_func = None
+    def __len__(self):
+        return len(self.mix_datasets)
 
     def _worker_loop(self):
         """Worker process main loop."""
@@ -228,19 +197,17 @@ class SFTDataSet(IterableDataset):
 
         if self.dataset_num_proc > 1:
             # Multiprocessing mode
-            self._start_workers(processor_func)
             if self.mem_debug:
                 print(f"[MemDebug] workers started, RSS={_rss_mb():.0f} MB, " f"num_proc={self.dataset_num_proc}")
             try:
                 pending = 0
                 send_idx = 0
                 recv_idx = 0
-                prefetch_size = self.dataset_num_proc * 2
                 result_buffer = {}  # Buffer for out-of-order results
                 total_samples = len(self.mix_datasets)
 
                 # Pre-fill the queue
-                for _ in range(prefetch_size):
+                for _ in range(self.prefetch_size):
                     if send_idx >= total_samples:
                         self.iter_all_examples = True
                         break
@@ -261,7 +228,7 @@ class SFTDataSet(IterableDataset):
                     idx, result = self._out_queue.get()
                     pending -= 1
 
-                    while send_idx < total_samples and pending < prefetch_size:
+                    while send_idx < total_samples and pending < self.prefetch_size:
                         example = next(dataset_iterator)
                         self._in_queue.put((send_idx, example, actual_example_num))
                         send_idx += 1
@@ -290,7 +257,6 @@ class SFTDataSet(IterableDataset):
                                 self.used_estimate_samples += actual_example_num
                                 self.unused_samples += actual_example_num
             finally:
-                self._stop_workers()
                 if self.mem_debug:
                     print(f"[MemDebug] iteration finished, RSS={_rss_mb():.0f} MB, " f"workers kept alive for reuse")
         else:
