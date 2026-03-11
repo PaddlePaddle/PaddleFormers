@@ -517,7 +517,6 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
             else:
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
-    @unittest.skip("Qwen3-VL currently does not support checkpoints save and load")
     def test_save_load_flex_checkpoint(self):
         for model_class in self.all_model_classes:
             with tempfile.TemporaryDirectory() as tmpdirname:
@@ -533,14 +532,15 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                     intermediate_size=256,
                     hidden_size=128,
                     tie_word_embedding=False,
+                    head_dim=16,
                     vision_config=tiny_vision_config,
                 )
                 model = model_class(config)
                 model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
 
-                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
+                model1 = model_class.from_pretrained(tmpdirname, head_dim=16, convert_from_hf=True)
 
-                model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
+                model2 = model_class.from_pretrained(tmpdirname, head_dim=16, load_checkpoint_format="flex_checkpoint")
 
                 model_state_1 = model1.state_dict()
                 model_state_2 = model2.state_dict()
