@@ -231,7 +231,7 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
     all_model_classes = (Qwen3NextModel, Qwen3NextForCausalLM)
     all_generative_model_classes = {Qwen3NextForCausalLM: (Qwen3NextModel, "qwen3_next")}
 
-    @gpu_device_initializer(log_prefix="Qwen3NextModelTest", gpu_id=0)
+    @gpu_device_initializer(log_prefix="Qwen3NextModelTest")
     def setUp(self):
         super().setUp()
 
@@ -298,6 +298,7 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
                     tmpdirname,
                     convert_from_hf=True,
                     load_checkpoint_format="flex_checkpoint",
+                    head_dim=16,
                     num_nextn_predict_layers=0,
                 )
                 model_state_2 = model2.state_dict()

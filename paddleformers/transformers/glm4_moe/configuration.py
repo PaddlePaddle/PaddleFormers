@@ -134,6 +134,7 @@ class Glm4MoeConfig(PretrainedConfig):
         num_attention_heads=96,
         partial_rotary_factor=0.5,
         num_key_value_heads=8,
+        head_dim=128,
         hidden_act="silu",
         max_position_embeddings=131072,
         initializer_range=0.02,
@@ -173,6 +174,7 @@ class Glm4MoeConfig(PretrainedConfig):
         self.partial_rotary_factor = partial_rotary_factor
 
         self.num_key_value_heads = num_key_value_heads
+        self.head_dim = head_dim
         self.hidden_act = hidden_act
         self.initializer_range = initializer_range
         self.rms_norm_eps = rms_norm_eps
