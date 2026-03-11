@@ -522,7 +522,9 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
 
         # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
-        config = Glm4MoeConfig(hidden_size=16, num_hidden_layers=8, num_attention_heads=8, num_nextn_predict_layers=0)
+        config = Glm4MoeConfig(
+            hidden_size=16, num_hidden_layers=8, num_attention_heads=8, head_dim=4, num_nextn_predict_layers=0
+        )
         model = Glm4MoeForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
 
