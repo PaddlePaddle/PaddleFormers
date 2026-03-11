@@ -1,0 +1,65 @@
+### data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: ../dataset/train.json
+train_dataset_prob: "1.0"
+max_seq_len: 8192
+packing: true
+mix_strategy: concat
+template_backend: custom
+template: qwen
+
+### model
+model_name_or_path: /root/paddlejob/workspace/env_run/futianle/Qwen2-7B
+attn_impl: flashmask
+
+### finetuning
+# base
+stage: SFT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: false
+per_device_train_batch_size: 4
+num_train_epochs: 1
+max_steps: 10
+save_steps: 100
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 16
+logging_dir: ./vdl_log_qwen2fleet
+output_dir: ./checkpoints/qwen2-sft-full-tp-pp-fleet
+disable_tqdm: true
+
+# train
+warmup_steps: 20
+learning_rate: 1.0e-5
+
+# performance
+tensor_model_parallel_size: 4
+pipeline_model_parallel_size: 2
+sequence_parallel: true
+sharding: stage1
+stage1_overlap: true
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
+bf16: true
+fp16_opt_level: O2
+amp_master_grad: true
+unified_checkpoint: false
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint
+
+# pipeline_parallel_config
+pp_delay_scale_loss: true
+overlap_p2p_comm: true
+best_unbalanced_scheduler: true
+
+# data
+variable_seq_lengths: true
+
+fuse_attention_qkv: true
+fuse_attention_ffn: true
+
+benchmark: true
