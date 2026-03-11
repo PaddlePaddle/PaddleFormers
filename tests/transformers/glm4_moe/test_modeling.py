@@ -601,3 +601,7 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
                     rtol=1e-2,
                 )
             )
+
+
+if __name__ == "__main__":
+    unittest.main()
