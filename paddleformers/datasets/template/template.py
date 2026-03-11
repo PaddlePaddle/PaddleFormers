@@ -868,3 +868,13 @@ register_template(
     suffix=["<|im_end|>"],
     chat_sep="<|im_end|>",
 )
+
+# copied from deepseekv3 template
+register_template(
+    name="deepseek_v32",
+    format_system=StringFormatter(slots=["{{content}}\n\n"]),
+    format_user=StringFormatter(slots=["<｜User｜>{{content}}\n\n<｜Assistant｜>"]),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    chat_sep="<｜end▁of▁sentence｜>",
+)

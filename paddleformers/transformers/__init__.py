@@ -94,6 +94,11 @@ import_structure = {
     "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
     "deepseek_v3.configuration": ["DeepseekV3Config"],
+    "deepseek_v32.configuration": ["DeepseekV32Config"],
+    "deepseek_v32.modeling": [
+        "DeepseekV32ForCausalLM",
+        "DeepseekV32ForCausalLMPipe",
+    ],
     "deepseek_v3.modeling": [
         "masked_fill",
         "DeepseekV3Attention",
