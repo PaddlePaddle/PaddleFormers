@@ -220,6 +220,7 @@ class InternLM2ModelTest(unittest.TestCase):
         )
         self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-6))
 
+
 @slow
 class InternLM2CompatibilityTest(unittest.TestCase):
     tiny_torch_model_path = "learncat/internlm2_tiny_raw"
