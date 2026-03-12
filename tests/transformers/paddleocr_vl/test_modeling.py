@@ -411,7 +411,6 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
             else:
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
-    @gpu_device_initializer(log_prefix="PaddleOCRVLModelTest", gpu_id=0)
     def test_save_load_flex_checkpoint(self):
         for model_class in self.all_model_classes:
             with tempfile.TemporaryDirectory() as tmpdirname:
