@@ -185,6 +185,8 @@ import_structure = {
         "Qwen2ForSequenceClassification",
         "Qwen2ForTokenClassification",
         "Qwen2SentenceEmbedding",
+        "Qwen2ForCausalLMDeprecated",
+        "Qwen2ForCausalLMPipeDeprecated",
     ],
     "qwen2.tokenizer": ["Qwen2Tokenizer"],
     "qwen2.tokenizer_fast": ["Qwen2TokenizerFast"],
@@ -242,6 +244,8 @@ import_structure = {
         "Qwen3ForSequenceClassification",
         "Qwen3ForTokenClassification",
         "Qwen3SentenceEmbedding",
+        "Qwen3ForCausalLMDeprecated",
+        "Qwen3ForCausalLMPipeDeprecated",
     ],
     "qwen3_moe.configuration": ["Qwen3MoeConfig"],
     "qwen3_moe.modeling": [
