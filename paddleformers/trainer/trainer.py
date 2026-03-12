@@ -1956,7 +1956,6 @@ class Trainer:
             _data_load_start_time = time.time()
 
             for step, inputs in enumerate(epoch_iterator):
-
                 # Record data loading time for this iteration
                 _data_load_end_time = time.time()
                 _data_load_time_for_global_step += _data_load_end_time - _data_load_start_time
