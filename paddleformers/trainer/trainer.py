@@ -1865,7 +1865,9 @@ class Trainer:
                 assert (
                     paddle.sum(paddle.stack(global_step_list) - global_step_list[0]) == 0
                 ), f"Error, get different global step, please check! step list: {[x.item() for x in global_step_list]}"
-            _num_update_steps_per_epoch_for_skip = (self.state.max_steps if len_dataloader is None else num_update_steps_per_epoch)
+            _num_update_steps_per_epoch_for_skip = (
+                self.state.max_steps if len_dataloader is None else num_update_steps_per_epoch
+            )
             epochs_trained = self.state.global_step // _num_update_steps_per_epoch_for_skip
             if not args.ignore_data_skip:
                 steps_trained_in_current_epoch = self.state.global_step % _num_update_steps_per_epoch_for_skip
