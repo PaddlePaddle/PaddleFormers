@@ -652,7 +652,8 @@ class DPOTrainer(Trainer):
                         tensor = paddle.zeros([1])
                     else:
                         tensor = paddle.cat(getattr(infohub, key), axis=0).detach()
-                    tensor_shape = paddle.to_tensor(tensor.shape, dtype="int64")
+                    # Convert shape to list of Python ints for NumPy 2.x compatibility
+                    tensor_shape = paddle.to_tensor([int(dim) for dim in tensor.shape], dtype="int64")
                     paddle.distributed.broadcast(
                         tensor_shape, src=self.model_wrapped.global_rank, group=self.model_wrapped.pp_group
                     )
@@ -671,7 +672,11 @@ class DPOTrainer(Trainer):
                         src=self.model_wrapped._hcg.get_rank_from_stage(self.model_wrapped.num_stages - 1),
                         group=self.model_wrapped.pp_group,
                     )
-                    tensor = paddle.zeros(tensor_shape, "float32")
+                    # Convert to Python int and validate for NumPy 2.x compatibility
+                    actual_shape = int(tensor_shape[0])
+                    if actual_shape < 0:
+                        actual_shape = 1  # Fallback to valid shape
+                    tensor = paddle.zeros([actual_shape], "float32")
                 else:
                     raise ValueError(f"Invalid key: {key}")
                 paddle.distributed.broadcast(
