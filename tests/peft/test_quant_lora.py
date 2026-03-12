@@ -98,11 +98,13 @@ class TestQuantedLoRAModel(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         lora_config = LoRAConfig(
-            target_modules=[".*qkv_proj.*"],
+            target_modules=[".*q_proj$", ".*v_proj$"],
             r=4,
             lora_alpha=8,
         )
-        cls.model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
+        cls.model = AutoModelForCausalLM.from_pretrained(
+            "PaddleFormers/tiny-random-llama3", convert_from_hf=True, dtype=paddle.float32
+        )
         cls.lora_model = LoRAModel(cls.model, lora_config)
         cls.lora_model.mark_only_lora_as_trainable()
         # lora_B parameter is initialized to 0, therefore AB = 0 and W + AB = W
@@ -128,8 +130,8 @@ class TestQuantedLoRAModel(unittest.TestCase):
         self.lora_model.train()
         quant_lora_model = qat.quantize(self.lora_model, inplace=False)
         quantizer_cnt = self._count_layers(quant_lora_model, FakeQuanterWithAbsMaxObserverLayer)
-        # 2 LoRA layers (qkv_proj) per transformer layer
-        self.assertEqual(quantizer_cnt, self.model.config.num_hidden_layers)
+        # 2 LoRA layers (q_proj, v_proj) per transformer layer
+        self.assertEqual(quantizer_cnt, self.model.config.num_hidden_layers * 2)
 
     def test_forward_no_quant(self):
         q_config = QuantConfig(activation=None, weight=None)

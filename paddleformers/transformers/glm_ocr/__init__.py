@@ -1,5 +1,4 @@
-# Copyright (c) 2024 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2024 The Qwen Team and The HuggingFace Inc. team. All rights reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,31 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Package"""
 import sys
 from typing import TYPE_CHECKING
 
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "dpo_criterion": ["DPOCriterion"],
-    "model_utils": ["PipelinePretrainedModel"],
-    "configuration": ["Qwen3Config"],
-    "modeling": [
-        "Qwen3Model",
-        "Qwen3PretrainedModel",
-        "Qwen3ForCausalLM",
-        "Qwen3ForCausalLMPipe",
-        "Qwen3ForSequenceClassification",
-        "Qwen3ForTokenClassification",
-        "Qwen3SentenceEmbedding",
-        "Qwen3ForCausalLMDeprecated",
-        "Qwen3ForCausalLMPipeDeprecated",
-    ],
+    "image_processor": ["Glm46VImageProcessor"],
+    "processor": ["Glm46VProcessor"],
+    "configuration": ["GlmOcrConfig", "GlmOcrTextConfig", "GlmOcrVisionConfig"],  # 补上这两个
+    "modeling": ["GlmOcrForConditionalGeneration"],
 }
 
 if TYPE_CHECKING:
     from .configuration import *
+    from .image_processor import *
     from .modeling import *
+    from .processor import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
