@@ -156,7 +156,6 @@ class SFTDataSet(IterableDataset):
 
     def _worker_loop(self):
         """Worker process main loop."""
-        self.mix_datasets = None
         while True:
             try:
                 i, example, actual_example_num = self._in_queue.get()
