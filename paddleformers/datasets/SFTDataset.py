@@ -143,14 +143,17 @@ class SFTDataSet(IterableDataset):
             self._current_processor_func = self._process_sequence
 
         # multiprocessing initialization
-        self.prefetch_size = self.dataset_num_proc * 2
-        self._in_queue = mp.Queue(maxsize=self.prefetch_size)
-        self._out_queue = mp.Queue(maxsize=self.prefetch_size)
-        self.workers = []
-        for _ in range(self.dataset_num_proc):
-            worker = mp.Process(target=self._worker_loop, daemon=True)
-            worker.start()
-            self.workers.append(worker)
+        if self.dataset_num_proc > 1:
+            self.prefetch_size = self.dataset_num_proc * 2
+            self._in_queue = mp.Queue(maxsize=self.prefetch_size)
+            self._out_queue = mp.Queue(maxsize=self.prefetch_size)
+            self.workers = []
+            for _ in range(self.dataset_num_proc):
+                worker = mp.Process(target=self._worker_loop, daemon=True)
+                worker.start()
+                self.workers.append(worker)
+
+        # The flag indicating whether all examples have been iterated
         self.iter_all_examples = False
 
     def __len__(self):
