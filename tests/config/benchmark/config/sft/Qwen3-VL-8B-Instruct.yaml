@@ -1,7 +1,7 @@
 ### data
 train_dataset_type: messages
 eval_dataset_type: messages
-train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/coco_grounding/train.jsonl
+train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/coco_grounding/train_absolute_path.jsonl
 train_dataset_prob: "1.0"
 eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/coco_grounding/val.jsonl
 eval_dataset_prob: "1.0"
