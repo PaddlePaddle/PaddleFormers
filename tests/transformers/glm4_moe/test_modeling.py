@@ -376,7 +376,6 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_model_name_list(self):
         pass
 
-    @unittest.skip("glm_moe currently does not support checkpoints save and load")
     def test_save_load(self):
         for model_class in self.all_model_classes:
             # test from_pretrained
@@ -395,6 +394,7 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                     tmpdirname,
                     convert_from_hf=True,
                     load_checkpoint_format="flex_checkpoint",
+                    head_dim=128,
                     num_nextn_predict_layers=0,
                 )
                 model_state_2 = model2.state_dict()
@@ -423,6 +423,7 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
             "PaddleFormers/tiny-random-glm4moe",
             download_hub="aistudio",
             load_checkpoint_format="flex_checkpoint",
+            head_dim=8,
             num_nextn_predict_layers=0,
         )
         model.eval()
@@ -448,6 +449,7 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
             "PaddleFormers/tiny-random-glm4moe",
             download_hub="aistudio",
             load_checkpoint_format="flex_checkpoint",
+            head_dim=8,
             num_nextn_predict_layers=0,
         )
         model.eval()
@@ -477,6 +479,7 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
             download_hub="aistudio",
             load_checkpoint_format="flex_checkpoint",
             fd_fallback=False,
+            head_dim=8,
             num_nextn_predict_layers=0,
         )
         model_fd_fallback = Glm4MoeModel.from_pretrained(
@@ -485,6 +488,7 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
             download_hub="aistudio",
             load_checkpoint_format="flex_checkpoint",
             fd_fallback=True,
+            head_dim=8,
             num_nextn_predict_layers=0,
         )
         model_fd_fallback_fused_ffn = Glm4MoeModel.from_pretrained(
@@ -493,6 +497,7 @@ class Glm4MoeModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase)
             download_hub="aistudio",
             load_checkpoint_format="flex_checkpoint",
             fd_fallback=True,
+            head_dim=8,
             num_nextn_predict_layers=0,
         )
         input_ids = paddle.to_tensor([input_ids])
@@ -517,7 +522,9 @@ class Glm4MoeCompatibilityTest(unittest.TestCase):
 
         # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
-        config = Glm4MoeConfig(hidden_size=16, num_hidden_layers=8, num_attention_heads=8, num_nextn_predict_layers=0)
+        config = Glm4MoeConfig(
+            hidden_size=16, num_hidden_layers=8, num_attention_heads=8, head_dim=4, num_nextn_predict_layers=0
+        )
         model = Glm4MoeForCausalLM(config)
         model.save_pretrained(cls.torch_model_path)
 

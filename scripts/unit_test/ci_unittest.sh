@@ -64,7 +64,7 @@ install_requirements() {
     python setup.py bdist_wheel > /dev/null
     uv cache clean paddlefleet
     export UV_SKIP_WHEEL_FILENAME_CHECK=1
-    uv pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" --system --prerelease=allow -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match
+    uv pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" --system --prerelease=allow -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match --trusted-host www.paddlepaddle.org.cn
     echo "paddlefleet commit:"
     python -c "import paddlefleet; print(paddlefleet.version.commit)"
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
@@ -143,7 +143,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
-    timeout 10m \
+    timeout 15m \
     python -m pytest -v -s -n 4 \
         --dist no \
         --maxfail=10 \
