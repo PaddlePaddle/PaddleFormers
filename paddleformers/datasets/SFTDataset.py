@@ -855,6 +855,5 @@ class SFTDataSet(IterableDataset):
                     batch.append((encoded, len(encoded.token_ids)))
                 count += 1
             except StopIteration:
-                raise ValueError()
                 break
         return batch, count
