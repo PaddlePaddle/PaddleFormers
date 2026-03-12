@@ -131,7 +131,11 @@ class VisualDLCallback(TrainerCallback):
                 #    self.vdl_writer.add_text("model_config", model_config_json)
 
             if hasattr(self.vdl_writer, "add_hparams"):
-                self.vdl_writer.add_hparams(args.to_sanitized_dict(), metrics_list=[])
+                # Convert bool to int for protobuf 7.x compatibility
+                # protobuf 7.x is stricter about type validation and won't auto-convert bool to int
+                sanitized_dict = args.to_sanitized_dict()
+                sanitized_dict = {k: int(v) if isinstance(v, bool) else v for k, v in sanitized_dict.items()}
+                self.vdl_writer.add_hparams(sanitized_dict, metrics_list=[])
 
     def on_log(self, args, state, control, logs=None, **kwargs):
         if not state.is_world_process_zero:

@@ -683,9 +683,11 @@ class Qwen3VLVisionModel(VisionLayer):
         patch_pos_embeds_permute = []
         merge_size = self.spatial_merge_size
         for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
-            pos_embed = pos_embed.repeat([t, 1])
+            # Convert to Python int to avoid NumPy 2.x compatibility issues
+            h_merged = int(h) // int(merge_size)
+            w_merged = int(w) // int(merge_size)
             pos_embed = (
-                pos_embed.view([t, h // merge_size, merge_size, w // merge_size, merge_size, -1])
+                pos_embed.view([t, h_merged, merge_size, w_merged, merge_size, -1])
                 .permute(0, 1, 3, 2, 4, 5)
                 .flatten(0, 4)
             )
