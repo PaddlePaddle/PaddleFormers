@@ -232,13 +232,11 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
 
         train_tokens *= training_args.num_train_epochs
         train_batches *= training_args.num_train_epochs
-        global_batch_size = (
-            training_args.per_device_train_batch_size
-            * training_args.gradient_accumulation_steps
-            * max(training_args.data_parallel_size, 1)
-            * max(training_args.sharding_parallel_size, 1)
-        )
+        global_batch_size = training_args.global_batch_size
         max_steps = train_batches / global_batch_size
+        logger.info(
+            f"[Estimate Max Steps] train_batches: {train_batches}, global_batch_size: {global_batch_size}, max_steps: {max_steps}"
+        )
 
         if max_samples != train_dataset.max_estimate_samples:
             max_steps *= max_samples / train_dataset.max_estimate_samples
