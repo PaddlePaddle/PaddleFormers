@@ -1,7 +1,7 @@
 ### data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
-train_dataset_path: ../dataset/train.json
+train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/qwen/train.json
 train_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: true
@@ -10,7 +10,7 @@ template_backend: custom
 template: qwen3
 
 ### model
-model_name_or_path: /root/paddlejob/workspace/env_run/futianle/Qwen3-8B
+model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/huggingface/Qwen3-8B
 attn_impl: flashmask
 
 ### finetuning
