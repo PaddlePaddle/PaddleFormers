@@ -28,7 +28,7 @@ logger = getLogger(__name__)
 VOCAB_FILES_NAMES = {"vocab_file": "tiktoken.model"}
 
 
-class TikTokenTokenizer(PreTrainedTokenizer):
+class KimiK2TikTokenTokenizer(PreTrainedTokenizer):
     """
     Tokenizing and encoding/decoding text using the Tiktoken tokenizer. See megatron/tokenizer/tiktoken_tokenizer.py.
     This tokenizer inherits from [`PreTrainedTokenizer`] which contains most of the main methods. Users should refer to

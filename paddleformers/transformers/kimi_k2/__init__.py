@@ -24,7 +24,7 @@ import_structure = {
         "KimiK2ForCausalLMPipe",
     ],
     "tokenization": [
-        "TikTokenTokenizer",
+        "KimiK2TikTokenTokenizer",
     ],
 }
 

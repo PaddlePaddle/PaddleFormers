@@ -163,7 +163,7 @@ import_structure = {
     "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
     "kimi_k2.configuration": ["KimiK2Config"],
     "kimi_k2.modeling": ["KimiK2ForCausalLM", "KimiK2ForCausalLMPipe"],
-    "kimi_k2.tokenizer": ["TikTokenTokenizer"],
+    "kimi_k2.tokenizer": ["KimiK2TikTokenTokenizer"],
     "llama.configuration": [
         "LlamaConfig",
     ],

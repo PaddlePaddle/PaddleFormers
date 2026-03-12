@@ -55,7 +55,7 @@ class KimiK2ModelTester:
         n_group=2,
         topk_group=1,
         num_experts_per_tok=2,
-        moe_layer_freq=1,
+        moe_layer_freq=None,
         first_k_dense_replace=1,
         norm_topk_prob=True,
         scoring_func="sigmoid",
