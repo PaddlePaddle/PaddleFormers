@@ -420,7 +420,7 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             for layer_id in range(config.text_config.num_hidden_layers)
         ]
         aoa_config["aoa_statements"] += [
-            f"{llm_prefix}layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.self_attn.{x}_proj.weight"
+            f" model.language_model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.self_attn.{x}_proj.weight"
             for layer_id in range(config.text_config.num_hidden_layers)
             for x in ("q", "k", "v")
         ]
@@ -429,6 +429,11 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
         aoa_config["aoa_statements"] += [
             f"{llm_prefix}layers.{layer_id}.mlp.up_gate_proj.weight -> model.language_model.layers.{layer_id}.mlp.gate_proj.weight, model.language_model.layers.{layer_id}.mlp.up_proj.weight, fused_ffn"
             for layer_id in range(config.text_config.num_hidden_layers)
+        ]
+        aoa_config["aoa_statements"] += [
+            f"model.language_model.layers.{layer_id}.mlp.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.mlp.{x}_proj.weight"
+            for layer_id in range(config.text_config.num_hidden_layers)
+            for x in ("gate", "up")
         ]
 
         # visual model
