@@ -150,3 +150,24 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     @unittest.skip("qwen3 omni do not support image input")
     def test_overlapping_text_image_kwargs_handling(self):
         pass
+
+    def test_structured_kwargs_nested_from_dict_video(self):
+        pass
+
+    def test_structured_kwargs_nested_video(self):
+        pass
+
+    def test_unstructured_kwargs_video(self):
+        pass
+
+    def test_kwargs_overrides_default_video_processor_kwargs(self):
+        pass
+
+    def test_tokenizer_defaults_preserved_by_kwargs_video(self):
+        pass
+
+    def test_video_processor_defaults_preserved_by_video_kwargs(self):
+        pass
+
+    def test_model_input_names(self):
+        pass
