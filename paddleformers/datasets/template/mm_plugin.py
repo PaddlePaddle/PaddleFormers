@@ -359,6 +359,39 @@ class BasePlugin(MMPluginMixin):
         self._validate_input(processor, images, videos, audios)
         return self._get_mm_inputs(images, videos, audios, processor, **kwargs)
 
+    def pre_tokenize(
+        self,
+        messages,
+        images,
+        videos,
+        mm_inputs,
+        processor,
+        **kwargs,
+    ):
+        r"""
+        Pre-tokenize messages and return both tokens and pre_labels.
+        This is a default implementation that uses the existing process_messages flow.
+        Subclasses can override this for custom behavior (e.g., Qwen3VLPlugin).
+
+        Returns:
+            tokens: List[int] - the tokenized message
+            pre_labels: List[int] - labels to be merged with process_tokens output
+        """
+        # Default: process messages first (for VLMs, this replaces placeholders with vision tokens)
+        processed_messages = self.process_messages(messages, images, videos, [], mm_inputs, processor)
+
+        # Tokenize the processed content
+        tokenizer = getattr(processor, "tokenizer")
+        content = processed_messages[0]["content"]
+        tokens = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(content))
+        tokens = tokens + [tokenizer.eos_token_id]
+
+        # By default, pre_labels are all -1 (no special labels to apply)
+        # This allows SFTDataset to use process_tokens for label masking
+        pre_labels = [-1] * len(tokens)
+
+        return tokens, pre_labels
+
 
 @dataclass
 class PaddleOCRVLPlugin(BasePlugin):
@@ -1090,6 +1123,98 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
                 mm_inputs["second_per_grid_ts"] = [temporal_patch_size / fps for fps in videos["fps_per_video"]]
 
         return mm_inputs
+
+    def _replace_mm_tokens(self, token_ids, labels, mm_token_id, mm_grid_thw, vision_structure_builder):
+        """generic func for img/videos"""
+        replace_idx_list = [i for i, token in enumerate(token_ids) if token == mm_token_id]
+        delta_len = 0
+        for i, idx in enumerate(replace_idx_list):
+            # if i >= len(mm_grid_thw):
+            #     mm_name="image" or "video"
+            #     raise ValueError(f"Found more {mm_name} tags than actual {mm_name}s provided.")
+            mm_structure_ids = vision_structure_builder(i)
+            token_ids = token_ids[: idx + delta_len] + mm_structure_ids + token_ids[idx + delta_len + 1 :]
+            labels = labels[: idx + delta_len] + [-100] * len(mm_structure_ids) + labels[idx + delta_len + 1 :]
+            delta_len += len(mm_structure_ids) - 1
+
+        return token_ids, labels
+
+    def pre_tokenize(self, messages, images, videos, mm_inputs, processor):
+        tokenizer = getattr(processor, "tokenizer")
+        content = messages[0]["content"]
+        # replace all PLACEHOLDER with self.image_token_id
+        content = content.replace(IMAGE_PLACEHOLDER, self.image_token)
+        content = content.replace(VIDEO_PLACEHOLDER, self.video_token)
+        token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(content))
+        # Add an EOS token at the end of each sample
+        token_ids = token_ids + [tokenizer.eos_token_id]
+        video_token_id = tokenizer.convert_tokens_to_ids(self.video_token)
+        image_token_id = tokenizer.convert_tokens_to_ids(self.image_token)
+
+        image_processor = getattr(processor, "image_processor")
+        video_processor = getattr(processor, "video_processor")
+
+        image_merge_length = getattr(image_processor, "merge_size") ** 2
+        video_merge_length = getattr(video_processor, "merge_size") ** 2
+        if self.expand_mm_tokens:
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            video_grid_thw = mm_inputs.get("video_grid_thw", [])
+            num_frames = video_grid_thw[0][0] if len(video_grid_thw) > 0 else 0
+            video_metadata = mm_inputs.get("video_metadata", {})
+
+        else:
+            image_grid_thw = [None] * len(images)
+            video_grid_thw = [None] * len(videos)
+            num_frames = 0
+            # timestamps = [0]
+
+        def build_image_structure(i):
+            image_seqlen = image_grid_thw[i].prod().item() // image_merge_length if self.expand_mm_tokens else 1
+            image_structure = f"{self.vision_bos_token}{self.image_token * image_seqlen}{self.vision_eos_token}"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(image_structure))
+
+        def build_video_structure(i):
+            metadata = video_metadata[i]
+            timestamps = processor._calculate_timestamps(
+                metadata.frames_indices,
+                metadata.fps,
+                video_processor.merge_size,
+            )
+            video_structure = ""
+            for frame_index in range(num_frames):
+                video_seqlen = (
+                    video_grid_thw[i][1:].prod().item() // video_merge_length if self.expand_mm_tokens else 1
+                )
+                timestamp_sec = timestamps[frame_index]
+                frame_structure = (
+                    f"<{timestamp_sec:.1f} seconds>"
+                    f"{self.vision_bos_token}{self.video_token * video_seqlen}{self.vision_eos_token}"
+                )
+                video_structure += frame_structure
+
+            if not self.expand_mm_tokens:
+                video_structure = f"{self.vision_bos_token}{self.video_token}{self.vision_eos_token}"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(video_structure))
+
+        labels = [-1] * len(token_ids)
+
+        token_ids, labels = self._replace_mm_tokens(
+            token_ids,
+            labels,
+            image_token_id,
+            image_grid_thw,
+            build_image_structure,
+        )
+
+        token_ids, labels = self._replace_mm_tokens(
+            token_ids,
+            labels,
+            video_token_id,
+            video_grid_thw,
+            build_video_structure,
+        )
+
+        return token_ids, labels
 
     @override
     def process_messages(

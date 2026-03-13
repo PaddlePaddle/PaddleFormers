@@ -589,14 +589,6 @@ class BaseSFTDataset:
             while True:
                 yield from self.__iter_func()
 
-    def _encode_pretraining_messages(self, messages, actual_example_num):
-        # tokens
-        content = messages[0]["content"]
-        tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(content))
-        # Add an EOS token at the end of each sample
-        tokens = tokens + [self.tokenizer.eos_token_id]
-        return tokens
-
     def _postprocess_pretraining_sequence(self, example, actual_example_num):
 
         messages = example.get("messages", [])
@@ -632,17 +624,19 @@ class BaseSFTDataset:
                 messages=messages,
             )
 
-            messages = self.template.mm_plugin.process_messages(
-                messages, images, videos, audios, mm_inputs, self.processor
+            tokens, pre_labels = self.template.mm_plugin.pre_tokenize(
+                messages, images, videos, mm_inputs, self.processor
             )
 
-            tokens = self._encode_pretraining_messages(messages, actual_example_num)
             if len(tokens) > self.max_seq_len + 1:
                 # Truncate the sequence to the maximum length
                 tokens = tokens[: self.max_seq_len + 1]
+                pre_labels = pre_labels[: self.max_seq_len + 1]
 
             labels = self.template.mm_plugin.process_tokens(tokens, self.processor)
-
+            # use -100 value in pre_labels to cover values in labels
+            assert len(pre_labels) == len(labels)
+            labels = [-100 if pre_labels[i] == -100 else label for i, label in enumerate(labels)]
             # label shift
             labels = labels[1:] + [-100]
 
