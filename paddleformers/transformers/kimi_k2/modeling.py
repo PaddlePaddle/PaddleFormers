@@ -69,15 +69,15 @@ class KimiK2PretrainedModel(PretrainedModel):
         # layer 0
         aoa_config["aoa_statements"] += [
             "model.layers.0.mlp.down_proj.weight^T -> model.layers.0.mlp.down_proj.weight",
-            "model.layers.0.mlp.up_proj.weight^T ,model.layers.0.mlp.gate_proj.weight^T ->  model.layers.0.mlp.up_gate_proj.weight, axis=1",
+            "model.layers.0.mlp.gate_proj.weight^T ,model.layers.0.mlp.up_proj.weight^T ->  model.layers.0.mlp.up_gate_proj.weight, axis=1",
         ]
         # layer 1 -> num_hidden_layers
         for layer_id in range(1, config.num_hidden_layers):
             aoa_config["aoa_statements"] += [
                 f"model.layers.{layer_id}.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.{layer_id}.mlp.experts.$EXPERT_ID.down_proj.weight",
-                f"model.layers.{layer_id}.mlp.experts.$EXPERT_ID.up_proj.weight^T, model.layers.{layer_id}.mlp.experts.$EXPERT_ID.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.$EXPERT_ID.up_gate_proj.weight , axis=1",
+                f"model.layers.{layer_id}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.{layer_id}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.$EXPERT_ID.up_gate_proj.weight , axis=1",
                 f"model.layers.{layer_id}.mlp.shared_experts.down_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.down_proj.weight",
-                f"model.layers.{layer_id}.mlp.shared_experts.up_proj.weight^T, model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.up_gate_proj.weight , axis=1",
+                f"model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight^T, model.layers.{layer_id}.mlp.shared_experts.up_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.up_gate_proj.weight , axis=1",
             ]
 
         return aoa_config
