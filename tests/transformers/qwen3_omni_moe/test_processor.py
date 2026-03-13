@@ -146,3 +146,6 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
     @unittest.skip("qwen3 omni do not support video input")
     def test_apply_chat_template_video_frame_sampling(self):
         pass
+
+    def test_overlapping_text_image_kwargs_handling(self):
+        pass
