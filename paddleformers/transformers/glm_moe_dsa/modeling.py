@@ -52,7 +52,7 @@ class GlmMoeDsaForCausalLM(GlmMoeDsaPreTrainedModel):
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
         config.fuse_rms_norm = True
-
+        config.multi_latent_attention = True
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)
         loss_fn = None
@@ -76,6 +76,7 @@ class GlmMoeDsaForCausalLMPipe(GlmMoeDsaPreTrainedModel, GeneralModelForCausalLM
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
         config.fuse_rms_norm = True
+        config.multi_latent_attention = True
 
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)

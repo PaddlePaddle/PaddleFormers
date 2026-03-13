@@ -132,6 +132,7 @@ class GlmMoeDsaModelTester:
             attention_dropout=self.attention_dropout,
             dtype=self.dtype,
             hidden_act=self.activation_function,
+            multi_latent_attention=True,
         )
 
     def prepare_config_and_inputs_for_common(self):
