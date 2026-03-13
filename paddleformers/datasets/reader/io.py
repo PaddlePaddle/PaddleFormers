@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import csv
+import os
 import time
 
 import orjson
@@ -20,22 +21,14 @@ import pyarrow.parquet as pq
 
 
 def load_json(file_path):
+    """load json file"""
     print(f"json file path: {file_path}")
-    try:
-        with open(file_path, "rb") as f:
-            return orjson.loads(f.read())
-    except FileNotFoundError:
+    if not os.path.exists(file_path):
         raise FileNotFoundError(f"file {file_path} not exists")
-    except orjson.JSONDecodeError:
-        pass  # fallback to JSONL
 
-    return _load_json_lazy(file_path)
-
-
-def _load_json_lazy(file_path):
-    """Lazy load JSONL file as generator to reduce memory usage."""
     t_start = time.perf_counter()
     count = 0
+
     try:
         with open(file_path, "rb") as file:
             for i, line in enumerate(file, 1):
@@ -48,9 +41,7 @@ def _load_json_lazy(file_path):
                     raise ValueError(f"JSONL parse error at line {i}: {e}")
     finally:
         elapsed = time.perf_counter() - t_start
-        print(
-            f"[load json] done. total: {count} lines, elapsed: {elapsed:.2f}s, speed: {count/elapsed if elapsed > 0 else float('inf'):.0f} lines/s"
-        )
+        print(f"[load json] done. total: {count} lines, elapsed: {elapsed:.2f}s")
 
 
 def load_txt(file_path):

@@ -28,13 +28,6 @@ class TestDatasetIO(unittest.TestCase):
         res = list(res)
         self.assertEqual(len(res), 3)
 
-    def test_json_io(self):
-        dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
-        dataset_path = os.path.join(dataset_dir, "io", "train.json")
-        res = load_json(dataset_path)
-        # load_json returns list for JSON files
-        self.assertEqual(len(res), 3)
-
     def test_parquet_io(self):
         dataset_dir = get_tests_dir(os.path.join("fixtures", "dummy"))
         dataset_path = os.path.join(dataset_dir, "io", "train.parquet")
