@@ -170,7 +170,6 @@ class KimiK25Provider(TransformerConfig):
             "bias_dropout_fusion",
             "masked_softmax_fusion",
             "attention_softmax_in_fp32",
-            "apply_rope_fusion",
             "overlap_p2p_comm",
             "batch_p2p_comm",
         ]
@@ -210,6 +209,7 @@ class KimiK25Provider(TransformerConfig):
         # set text config params
         res.text_config.multi_latent_attention = True
         res.text_config.use_qk_norm = True
+        # res.text_config.apply_rope_fusion = True
 
         res.vision_config.normalization = "LayerNorm"
         res.vision_config.gated_linear_unit = False
@@ -710,15 +710,15 @@ class KimiK25PretrainedModelFleet(PretrainedModel):
         # layer 0
         aoa_config["aoa_statements"] += [
             "language_model.model.layers.0.mlp.down_proj.weight^T -> language_model.model.layers.0.mlp.down_proj.weight",
-            "language_model.model.layers.0.mlp.up_proj.weight^T ,language_model.model.layers.0.mlp.gate_proj.weight^T ->  language_model.model.layers.0.mlp.up_gate_proj.weight, axis=1",
+            "language_model.model.layers.0.mlp.gate_proj.weight^T ,language_model.model.layers.0.mlp.up_proj.weight^T ->  language_model.model.layers.0.mlp.up_gate_proj.weight, axis=1",
         ]
         # layer 1 -> num_hidden_layers
         for layer_id in range(1, config.text_config.num_hidden_layers):
             aoa_config["aoa_statements"] += [
                 f"language_model.model.layers.{layer_id}.mlp.experts.$EXPERT_ID.down_proj.weight^T -> language_model.model.layers.{layer_id}.mlp.experts.$EXPERT_ID.down_proj.weight",
-                f"language_model.model.layers.{layer_id}.mlp.experts.$EXPERT_ID.up_proj.weight^T, language_model.model.layers.{layer_id}.mlp.experts.$EXPERT_ID.gate_proj.weight^T -> language_model.model.layers.{layer_id}.mlp.experts.$EXPERT_ID.up_gate_proj.weight , axis=1",
+                f"language_model.model.layers.{layer_id}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, language_model.model.layers.{layer_id}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> language_model.model.layers.{layer_id}.mlp.experts.$EXPERT_ID.up_gate_proj.weight , axis=1",
                 f"language_model.model.layers.{layer_id}.mlp.shared_experts.down_proj.weight^T -> language_model.model.layers.{layer_id}.mlp.shared_experts.down_proj.weight",
-                f"language_model.model.layers.{layer_id}.mlp.shared_experts.up_proj.weight^T, language_model.model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight^T -> language_model.model.layers.{layer_id}.mlp.shared_experts.up_gate_proj.weight , axis=1",
+                f"language_model.model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight^T, language_model.model.layers.{layer_id}.mlp.shared_experts.up_proj.weight^T -> language_model.model.layers.{layer_id}.mlp.shared_experts.up_gate_proj.weight , axis=1",
             ]
 
         return aoa_config
