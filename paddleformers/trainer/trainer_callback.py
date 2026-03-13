@@ -683,7 +683,104 @@ def enable_in_dict_config(config, key):
 
 skip_count = 0
 
+# def _sharding_sync_master_weights_fused(comm_buffer, master_weights):
+#     """
+#     对每个 指定comm_buffer, 构造与 param_storage 等大的 FP32 master_weight buffer,
+#     将本 rank 的 shard 写入对应位置，做一次 all_gather。
+#     """
+#     if not master_weights:
+#         return {}
 
+#     result = {}
+
+#     group = comm_buffer._comm_group
+#     total_size = comm_buffer.param_storage._numel()
+#     shard_size = total_size // group.nranks
+
+#     # 构造完整的 FP32 flat buffer（全部置零）
+#     full_mw_buffer = paddle.zeros([total_size], dtype='float32')
+
+#     # 将本 rank 的所有 master_weight shard 写入对应位置
+#     rank_begin = shard_size * group.rank
+#     rank_end = rank_begin + shard_size
+
+#     for param in comm_buffer.params:
+#         if param.name not in master_weights:
+#             continue
+#         grad_view = comm_buffer._sharding_param_grad_view[param.name]
+#         pb, pe = grad_view._param_begin, grad_view._param_end
+#         if pb >= pe:
+#             continue  # 本 rank 不负责该 param
+#         local_mw = master_weights[param.name].cuda()  # shape: [pe - pb]
+#         # full_mw_buffer[pb:pe] 对应本 rank shard 内该 param 的位置
+#         full_mw_buffer_slice = full_mw_buffer._slice(pb, pe)
+#         paddle.assign(local_mw, full_mw_buffer_slice)
+
+#     # 一次 all_gather 搞定整个 comm_buffer 的 master_weight
+#     if group.nranks > 1:
+#         input_slice = full_mw_buffer._slice(rank_begin, rank_end)
+#         group.process_group.all_gather(input_slice, full_mw_buffer).wait()
+
+#     # 从 full_mw_buffer 中提取每个 param 的完整 master_weight
+#     for param in comm_buffer.params:
+#         grad_view = comm_buffer._sharding_param_grad_view[param.name]
+#         idx = grad_view._index
+#         padded = grad_view._padded_size
+#         real_numel = int(np.prod(param.shape))
+#         full_mw = full_mw_buffer._slice(idx, idx + real_numel).reshape(param.shape)
+#         result[param.name] = full_mw
+#     return result
+
+@paddle.no_grad()
+def _sharding_sync_master_weights_fused(comm_buffer_list, master_weights):
+    """
+    对每个 comm_buffer，构造与 param_storage 等大的 FP32 master_weight buffer，
+    将本 rank 的 shard 写入对应位置，做一次 all_gather。
+    """
+    if not master_weights:
+        return {}
+
+    result = {}
+
+    for comm_buffer in comm_buffer_list:
+        group = comm_buffer._comm_group
+        total_size = comm_buffer.param_storage._numel()
+        shard_size = total_size // group.nranks
+
+        # 构造完整的 FP32 flat buffer（全部置零）
+        full_mw_buffer = paddle.zeros([total_size], dtype='float32')
+
+        # 将本 rank 的所有 master_weight shard 写入对应位置
+        rank_begin = shard_size * group.rank
+        rank_end = rank_begin + shard_size
+
+        for param in comm_buffer.params:
+            if param.name not in master_weights:
+                continue
+            grad_view = comm_buffer._sharding_param_grad_view[param.name]
+            pb, pe = grad_view._param_begin, grad_view._param_end
+            if pb >= pe:
+                continue  # 本 rank 不负责该 param
+            local_mw = master_weights[param.name]  # shape: [pe - pb]
+            # full_mw_buffer[pb:pe] 对应本 rank shard 内该 param 的位置
+            full_mw_buffer_slice = full_mw_buffer._slice(pb, pe)
+            paddle.assign(local_mw, full_mw_buffer_slice)
+
+        # 一次 all_gather 搞定整个 comm_buffer 的 master_weight
+        if group.nranks > 1:
+            input_slice = full_mw_buffer._slice(rank_begin, rank_end)
+            group.process_group.all_gather(input_slice, full_mw_buffer).wait()
+
+        # 从 full_mw_buffer 中提取每个 param 的完整 master_weight
+        for param in comm_buffer.params:
+            grad_view = comm_buffer._sharding_param_grad_view[param.name]
+            idx = grad_view._index
+            padded = grad_view._padded_size
+            real_numel = int(np.prod(param.shape))
+            full_mw = full_mw_buffer._slice(idx, idx + real_numel).reshape(param.shape)
+            result[param.name] = full_mw
+
+    return result
 class FP8QuantWeightCallback(TrainerCallback):
     """
     Callback for FP8 weight quantization during training
@@ -696,7 +793,10 @@ class FP8QuantWeightCallback(TrainerCallback):
         model = kwargs["model"]
         optimizer = kwargs["optimizer"]
         global skip_count
-
+        if skip_count == 0:
+            print("skip the fisrt quant")
+            skip_count += 1
+            return
         if (not g_shard_bypass_dygraph_optimizer or skip_count == 0) and hasattr(model, "fp8_quant_weight"):
             self.moe_weights_name = []
             self.use_fp8 = True
@@ -704,7 +804,18 @@ class FP8QuantWeightCallback(TrainerCallback):
                 self.use_fp8 = model.use_fp8()
             if not self.use_fp8:
                 return
-            model.fp8_quant_weight(True, quant_transpose=True)
+            # get master_weight
+            master_weights = optimizer._master_weights
+            comm_buffer_list = optimizer._color_to_comm_buffer_list["moe_expert"]
+            # print("comm_buffer: ", comm_buffer_list)
+            # print("master_weights: ", master_weights.keys())
+            full_master_weights = _sharding_sync_master_weights_fused(comm_buffer_list, master_weights)
+            # print("full_master_weights: ", full_master_weights.keys())
+            # for name in full_master_weights:
+            #     print("name: ", name)
+            #     print("shape: ", full_master_weights[name].shape)
+            # offline quantization
+            model.fp8_quant_weight(True, quant_transpose=True, full_master_weights=full_master_weights)
             optimizer.clear_param_storage("moe_expert")
             optimizer.clear_param_storage("rms_linear")
             optimizer.clear_param_storage("memory_attn")
@@ -732,10 +843,10 @@ class FP8QuantWeightCallback(TrainerCallback):
         optimizer = kwargs["optimizer"]
         global skip_count
 
-        if (not g_shard_bypass_dygraph_optimizer) and hasattr(model, "fp8_quant_weight"):
-            for name in self.moe_weights_name:
-                if name in optimizer._master_weights:
-                    reload(optimizer._master_weights[name])
+        # if (not g_shard_bypass_dygraph_optimizer) and hasattr(model, "fp8_quant_weight"):
+        #     for name in self.moe_weights_name:
+        #         if name in optimizer._master_weights:
+        #             reload(optimizer._master_weights[name])
 
 
 class MoECorrectionBiasAdjustCallback(TrainerCallback):
