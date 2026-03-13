@@ -296,7 +296,7 @@ class KimiK2ModelTest(ModelTesterMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
         set_random_seed(seed_=42)
-        paddle.set_default_dtype("bfloat16")
+        # paddle.set_default_dtype("bfloat16")
         self.model_tester = KimiK2ModelTester(self)
         self.config_tester = ConfigTester(self, config_class=KimiK2Config, vocab_size=256, hidden_size=24)
 
