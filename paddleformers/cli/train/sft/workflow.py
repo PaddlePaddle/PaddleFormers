@@ -630,14 +630,9 @@ def run_sft(
                     **dataset_config,
                 )
             else:
-                global_batch_size = (
-                    training_args.per_device_train_batch_size
-                    * training_args.gradient_accumulation_steps
-                    * training_args.dataset_world_size
-                )
-                training_args.max_steps = math.ceil(len(train_dataset) / global_batch_size)
+                training_args.max_steps = math.ceil(len(train_dataset) / training_args.global_batch_size)
                 logger.info(
-                    f"len(train_dataset): {len(train_dataset)}, global_batch_size: {global_batch_size}, training_args.max_steps: {training_args.max_steps}"
+                    f"len(train_dataset): {len(train_dataset)}, global_batch_size: {training_args.global_batch_size}, training_args.max_steps: {training_args.max_steps}"
                 )
 
         if paddle.distributed.get_world_size() > 1:
