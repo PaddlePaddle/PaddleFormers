@@ -15,6 +15,7 @@ dataloader_num_workers: 4
 model_name_or_path: baidu/ERNIE-4.5-VL-28B-A3B-Thinking
 attn_impl: flashmask
 num_hidden_layers: 4
+router_aux_loss_coef: 0.01
 
 ### finetuning
 # base

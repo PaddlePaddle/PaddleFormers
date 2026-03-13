@@ -73,6 +73,10 @@ def run_dpo(
     set_random_seed(seed_=training_args.seed)
     set_seed(training_args.seed)
 
+    training_args.model_name_or_path = model_args.model_name_or_path
+    training_args.download_hub = model_args.download_hub
+    training_args.copy_custom_file_list = model_args.copy_custom_file_list
+
     avaible_attn_impl = AttentionInterface._global_mapping.keys()
     if model_args._attn_implementation not in avaible_attn_impl:
         raise ValueError(
@@ -247,6 +251,16 @@ def run_dpo(
     add_new_special_tokens(tokenizer, data_args.new_special_tokens_path)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
+
+    if "VL" in model_args.stage and training_args.dataloader_num_workers > 0:
+        data_args.processor_use_fast = False
+        logger.warning_once(
+            f"Detected dataloader_num_workers={training_args.dataloader_num_workers} (>0). "
+            "Since the CPU version of the 'interpolate' operator is currently unsupported, "
+            "some models may use a fast image processor which can cause errors in dataloader workers. "
+            "Temporarily fallback to the slow image processor (`use_fast=False`) by default to avoid potential issues. "
+            "You can also explicitly set `processor_use_fast=False` or `dataloader_num_workers=0` to avoid this warning."
+        )
 
     processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
 

@@ -185,6 +185,9 @@ def run_sft(
 
     training_args = finetuning_args
     training_args.max_seq_len = data_args.max_seq_len
+    training_args.model_name_or_path = model_args.model_name_or_path
+    training_args.download_hub = model_args.download_hub
+    training_args.copy_custom_file_list = model_args.copy_custom_file_list
     if is_paddlefleet_available() and model_args.lora and training_args.moe_token_dispatcher_type == "deepep":
         logger.warning("For PaddleFleet, moe_use_fusion_node should False when using LoRA.")
         training_args.moe_use_fusion_node = False
@@ -371,6 +374,16 @@ def run_sft(
     if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, Llama3Tokenizer):
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
+    if "VL" in model_args.stage and training_args.dataloader_num_workers > 0:
+        data_args.processor_use_fast = False
+        logger.warning_once(
+            f"Detected dataloader_num_workers={training_args.dataloader_num_workers} (>0). "
+            "Since the CPU version of the 'interpolate' operator is currently unsupported, "
+            "some models may use a fast image processor which can cause errors in dataloader workers. "
+            "Temporarily fallback to the slow image processor (`use_fast=False`) by default to avoid potential issues. "
+            "You can also explicitly set `processor_use_fast=False` or `dataloader_num_workers=0` to avoid this warning."
+        )
+
     processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
 
     dataset_config = {
@@ -392,6 +405,7 @@ def run_sft(
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
+        "dataset_num_proc": finetuning_args.dataset_num_proc,
     }
 
     dataset_config.update(
@@ -648,7 +662,7 @@ def run_sft(
 
     callbacks = []
     if getattr(model_config, "topk_method", None) == "noaux_tc":
-        callbacks += [MoECorrectionBiasAdjustCallback(lr=0)]
+        callbacks += [MoECorrectionBiasAdjustCallback(lr=training_args.moe_correction_bias_lr)]
 
     if training_args.use_expert_parallel:
         callbacks += [MoeExpertsGradScaleCallback(training_args)]

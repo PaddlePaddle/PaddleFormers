@@ -7,6 +7,7 @@ on:
       - release/*
 
 env:
+  BRANCH: ${{ github.ref_name }}
   COMMIT_ID: ${{ github.sha }}
   TASK: PaddleFormers-CE-${{ github.sha }}-build
   CE_name: build-ce
@@ -47,8 +48,8 @@ jobs:
             -v $work_dir:/workspace \
             -v /home/.cache/pip:/home/.cache/pip \
             -v /home/paddle-1/models/:/home/models/ \
-            -e BRANCH \
-            -e COMMIT_ID \
+            -e "BRANCH=$BRANCH" \
+            -e "COMMIT_ID=$COMMIT_ID" \
             -e work_dir \
             -e ce_scripts \
             -e no_proxy \
@@ -72,7 +73,10 @@ jobs:
           git config --global user.email "paddle_ce@example.com"
           git pull
           git submodule update --init --recursive --force
-          git checkout -b $COMMIT_ID $COMMIT_ID
+          git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
+          echo "Checking out ${BRANCH}..."
+          git fetch upstream ${BRANCH}:${BRANCH}
+          git checkout ${BRANCH}
           git log --pretty=oneline -10
           '
 

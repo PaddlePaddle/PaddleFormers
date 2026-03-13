@@ -505,6 +505,9 @@ class TrainingArguments:
     lr_end: float = field(default=1e-7, metadata={"help": "The end LR in the polynomial scheduler."})
     power: float = field(default=1.0, metadata={"help": "The power factor in the polynomial scheduler."})
     min_lr: float = field(default=0.0, metadata={"help": "The minimum learning rate in cosine scheduler."})
+    moe_correction_bias_lr: float = field(
+        default=0.0, metadata={"help": "Learning rate for MoE (Mixture of Experts) correction bias adjustment."}
+    )
 
     log_on_each_node: bool = field(
         default=True,
@@ -1307,12 +1310,6 @@ class TrainingArguments:
         default=False,
         metadata={
             "help": "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines)."
-        },
-    )
-    mtp_loss_scaling_factor: float = field(
-        default=1.0,
-        metadata={
-            "help": "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues)."
         },
     )
     dp_allreduce_avg_in_gradinent_scale: bool = field(

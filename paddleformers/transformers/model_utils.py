@@ -2880,6 +2880,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         file_list = resolved_sharded_files if is_sharded else [resolved_archive_file]
         ckpt_path = get_common_folder(file_list)
+
         # 3. init the model
         init_args = config["init_args"] or ()
         with ContextManagers(init_contexts):
@@ -3237,7 +3238,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 else:
                     config_to_save = copy.deepcopy(model_to_save.config)
                     # Attach architecture to the config
-                    config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+                    if not config_to_save.architectures:
+                        config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
 
             # Save the config
             if is_main_process:
@@ -3283,7 +3285,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     variant = weight_name_suffix() if variant is None else variant
 
         # Attach architecture to the config
-        config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+        if not config_to_save.architectures:
+            config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+        if not save_to_hf:
+            config_to_save.source = "paddle"
         # Save the config
         if is_main_process:
             config_to_save.save_pretrained(save_directory)
@@ -4044,8 +4049,12 @@ class HFFormatFullParamSaver:
         self.rank = paddle.distributed.get_rank()
 
         if self.h_group and self.v_group:
-            self.num_saver_ranks = self.h_group.nranks * self.v_group.nranks
-            self.rank = self.h_group.rank + self.v_group.rank * self.h_group.nranks
+            if self.v_group.nranks == 1:
+                self.num_saver_ranks = self.h_group.nranks
+                self.rank = self.h_group.rank
+            else:
+                self.num_saver_ranks = self.h_group.nranks * self.v_group.nranks
+                self.rank = self.h_group.rank + self.v_group.rank * self.h_group.nranks
 
         if self.saved_in_one_node:
             local_world_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))

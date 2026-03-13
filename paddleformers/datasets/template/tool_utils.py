@@ -287,7 +287,7 @@ class ERNIEVLToolUtils(ToolUtils):
             json.dumps({"name": name, "arguments": json.loads(arguments)}, ensure_ascii=False)
             for name, arguments in functions
         ]
-        return "\n".join([f"<tool_call{text}\n</tool_call>" for text in function_texts])
+        return "\n".join([f"<tool_call>\n{text}\n</tool_call>" for text in function_texts])
 
 
 TOOLS = {

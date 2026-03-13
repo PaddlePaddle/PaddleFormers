@@ -18,6 +18,7 @@ model_name_or_path: PaddlePaddle/PaddleOCR-VL
 _attn_implementation: flashmask
 lora: true
 lora_rank: 8
+copy_custom_file_list: "configuration_paddleocr_vl.py image_processing_paddleocr_vl.py modeling_paddleocr_vl.py processing_paddleocr_vl.py"
 
 ### finetuning
 # base
