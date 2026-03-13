@@ -68,6 +68,7 @@ class SFTDataSet(IterableDataset):
         if not self.dataset_num_proc:
             self.dataset_num_proc = 1
         logger.info(f"self.dataset_num_proc: {self.dataset_num_proc}")
+        self.dataloader_num_workers = dataset_config.get("dataloader_num_workers", 0)
         if self.dataset_num_proc > 1 and self.dataloader_num_workers > 0:
             raise ValueError("dataset_num_proc and dataloader_num_workers can not be set simultaneously now.")
         self.processor = dataset_config.get("processor", None)

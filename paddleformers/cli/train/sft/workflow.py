@@ -409,6 +409,7 @@ def run_sft(
         "dataset_num_proc": finetuning_args.dataset_num_proc,
         "binpacking": data_args.binpacking,
         "packing_interval": data_args.packing_interval,
+        "dataloader_num_workers": training_args.dataloader_num_workers,
     }
 
     dataset_config.update(
