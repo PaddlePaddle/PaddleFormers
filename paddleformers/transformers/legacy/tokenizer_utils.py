@@ -547,7 +547,7 @@ class ChatTemplate:
         return jinja_env.from_string(chat_template)
 
     def render_conversation(
-        self, conversation_data: list[str] | dict[str, str], index: int = 0, context_data: Dict[str, Any] = {}
+        self, conversation_data: list[str] | dict[str, str], index: int = 0, context_data: Dict[str, Any] = None
     ) -> list[str]:
         """
         Args:
@@ -557,6 +557,8 @@ class ChatTemplate:
         Returns:
             list[str]: the rendered conversation data
         """
+        if context_data is None:
+            context_data = {}
         if self.conversation is None:
             raise ValueError(
                 "The template for multi-turns is invalid, please check `conversation` filed in your chat-template."
@@ -577,7 +579,9 @@ class ChatTemplate:
             one_turn_conversation.append(result)
         return one_turn_conversation
 
-    def render_query(self, query: str, index: int = 0, context_data: Dict[str, Union[int, str]] = {}):
+    def render_query(self, query: str, index: int = 0, context_data: Dict[str, Union[int, str]] = None):
+        if context_data is None:
+            context_data = {}
         if self.query is None:
             return query
 
