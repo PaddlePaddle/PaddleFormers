@@ -15,7 +15,6 @@
 import multiprocessing as mp
 import os
 from dataclasses import dataclass, field
-from itertools import chain
 from typing import Dict, List, Optional
 
 import numpy as np
