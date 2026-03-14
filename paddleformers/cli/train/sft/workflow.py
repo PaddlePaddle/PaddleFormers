@@ -17,6 +17,7 @@
 import gc
 import math
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
 from functools import partial
 
@@ -392,6 +393,9 @@ def run_sft(
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
         "dataset_num_proc": finetuning_args.dataset_num_proc,
+        "binpacking": data_args.binpacking,
+        "packing_interval": data_args.packing_interval,
+        "dataloader_num_workers": training_args.dataloader_num_workers,
     }
 
     dataset_config.update(
@@ -413,6 +417,8 @@ def run_sft(
     )
     # make offline dataset
     if data_args.make_offline_data:
+        import time
+
         if tokenizer.vocab_size < 2**16 - 1:
             save_dtype = np.uint16
         else:
@@ -432,6 +438,17 @@ def run_sft(
         logger.info(f"training_args.sharding_parallel_size: {training_args.sharding_parallel_size}")
         logger.info(f"global_batch_size: {global_batch_size}")
 
+        def fetch_and_serialize(generator, dtype):
+            sample = next(generator)
+            result = []
+            for sequence in sample:
+                serialized = []
+                for key in train_builder._data_file_dict.keys():
+                    tensor = np.array(getattr(sequence, key), dtype=dtype)
+                    serialized.append((key, tensor.tobytes(order="C"), tensor.size))
+                result.append(serialized)
+            return result
+
         if (
             training_args.do_train
             and data_args.train_dataset_path
@@ -448,40 +465,30 @@ def run_sft(
                 sub_dataset_type=data_args.train_dataset_type,
                 **dataset_config,
             )
-            if training_args.max_steps == -1:
-                training_args.estimation_output_file = (
-                    "estimate_training.json"
-                    if training_args.estimation_output_file is None
-                    else training_args.estimation_output_file
-                )
-                training_args.max_steps = estimate_training(train_dataset, data_args, training_args, model_args)
-                del train_dataset
-                gc.collect()
-                train_dataset = create_dataset_sft(
-                    task_group=data_args.train_dataset_path,
-                    task_group_prob=data_args.train_dataset_prob,
-                    sub_dataset_type=data_args.train_dataset_type,
-                    **dataset_config,
-                )
-
-            train_samples = training_args.max_steps * global_batch_size
-            logger.info(f"train_samples : {train_samples}")
-
             output_file_dict = {}
             train_dir = os.path.join(data_args.dataset_output_dir, "train")
+            index_file = os.path.join(data_args.dataset_output_dir, "train", "index.idx")
             for field in fields(dataclass):
                 output_path = os.path.join(train_dir, f"{field.name}.bin")
                 output_file_dict[field.name] = output_path
-            train_builder = SFTMMapIndexedDatasetBuilder(output_file_dict, save_dtype)
-
+            train_builder = SFTMMapIndexedDatasetBuilder(output_file_dict, save_dtype, index_file=index_file)
             train_sample_generator = DataGenerator(train_dataset)
-            used_samples = 0
-            while used_samples < train_samples:
-                train_sample = next(train_sample_generator)
-                for sequence in train_sample:
-                    train_builder.add_item(sequence)
-                train_builder.end_document()
-                used_samples += 1
+            count = 0
+            start_time = time.time()
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                future = executor.submit(fetch_and_serialize, train_sample_generator, save_dtype)
+                while not train_dataset.iter_all_examples:
+                    serialized_sequences = future.result()
+                    future = executor.submit(fetch_and_serialize, train_sample_generator, save_dtype)
+                    for serialized in serialized_sequences:
+                        train_builder.add_item_bytes(serialized)
+                    train_builder.end_document()
+                    count += 1
+                    if count % 1000 == 0:
+                        logger.info(
+                            f"Processed {count} samples in {time.time()-start_time:.2f} seconds, average speed: {count/(time.time()-start_time):.2f} samples/second"
+                        )
             train_builder.finalize(train_output_idx_files)
             logger.info(f"{runtime_timer.log()}")
 
@@ -504,24 +511,17 @@ def run_sft(
             )
             output_file_dict = {}
             eval_dir = os.path.join(data_args.dataset_output_dir, "eval")
+            index_file = os.path.join(data_args.dataset_output_dir, "eval", "index.idx")
             for field in fields(dataclass):
                 output_path = os.path.join(eval_dir, f"{field.name}.bin")
                 output_file_dict[field.name] = output_path
-            eval_builder = SFTMMapIndexedDatasetBuilder(output_file_dict, save_dtype)
-
+            eval_builder = SFTMMapIndexedDatasetBuilder(output_file_dict, save_dtype, index_file=index_file)
             for sequences in eval_dataset:
                 for sequence in sequences:
                     eval_builder.add_item(sequence)
                 eval_builder.end_document()
             eval_builder.finalize(eval_output_idx_files)
             logger.info(f"{runtime_timer.log()}")
-        if paddle.distributed.get_world_size() > 1:
-            paddle.distributed.barrier()
-            max_steps = paddle.to_tensor([training_args.max_steps])
-            paddle.distributed.broadcast(max_steps, src=0)
-            training_args.max_steps = int(max_steps.item())
-        if training_args.max_steps <= 0:
-            raise ValueError(f"Invalid max_steps: {training_args.max_steps}. Please check your dataset")
         logger.info("Make SFT Offline DataSet Done.")
         return
 
@@ -605,7 +605,7 @@ def run_sft(
                 "Random mixing requires a fixed number of training steps to properly sample data."
             )
         if training_args.should_load_dataset and paddle.distributed.get_rank() == 0:
-            if data_args.dataset_type != "pretrain":
+            if data_args.dataset_type != "pretrain" and data_args.dataset_type != "offline":
                 training_args.max_steps = estimate_training(train_dataset, data_args, training_args, model_args)
                 del train_dataset
                 gc.collect()
@@ -616,12 +616,10 @@ def run_sft(
                     **dataset_config,
                 )
             else:
-                global_batch_size = (
-                    training_args.per_device_train_batch_size
-                    * training_args.gradient_accumulation_steps
-                    * training_args.dataset_world_size
+                training_args.max_steps = math.ceil(len(train_dataset) / training_args.global_batch_size)
+                logger.info(
+                    f"len(train_dataset): {len(train_dataset)}, global_batch_size: {training_args.global_batch_size}, training_args.max_steps: {training_args.max_steps}"
                 )
-                training_args.max_steps = math.ceil(len(train_dataset) / global_batch_size)
 
         if paddle.distributed.get_world_size() > 1:
             paddle.distributed.barrier()
