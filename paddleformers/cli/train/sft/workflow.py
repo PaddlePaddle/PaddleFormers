@@ -17,8 +17,6 @@
 import gc
 import math
 import os
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import fields
 from functools import partial
 
 import numpy as np
@@ -29,12 +27,10 @@ from paddleformers.data.causal_dataset import (
     build_train_valid_test_datasets,
     check_data_split,
 )
-from paddleformers.data.indexed_dataset import SFTMMapIndexedDatasetBuilder
 from paddleformers.datasets.collate import collate_fn, mm_collate_fn
 from paddleformers.datasets.data_utils import estimate_training
 from paddleformers.datasets.loader import create_dataset as create_dataset_sft
 from paddleformers.datasets.loader import create_indexed_dataset
-from paddleformers.datasets.SFTDataset import TextSequence
 from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
@@ -44,7 +40,6 @@ from paddleformers.trainer import (
     MoECorrectionBiasAdjustCallback,
     MoeExpertsGradScaleCallback,
     MoEGateSpGradSyncCallBack,
-    RuntimeTimer,
     get_last_checkpoint,
     set_random_seed,
     set_seed,
@@ -67,7 +62,6 @@ from paddleformers.transformers.configuration_utils import (
 from paddleformers.utils.import_utils import is_paddlefleet_available
 from paddleformers.utils.log import logger
 
-from .make_data_utils import DataGenerator
 from .sft_trainer import SFTTrainer
 
 # Fine-tune Environment Variables to support sharding stage1 overlap optimization.
@@ -360,8 +354,6 @@ def run_sft(
         else:
             raise NotImplementedError("Only support neftune for model with get_input_embeddings")
 
-    runtime_timer = RuntimeTimer("Creating SFT MapDataset")
-
     # Load tokenizer & processor & dataset
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
     add_new_special_tokens(tokenizer, data_args.new_special_tokens_path)
@@ -429,115 +421,6 @@ def run_sft(
             "template_instance": template_instance,
         }
     )
-    # make offline dataset
-    if data_args.make_offline_data:
-        import time
-
-        if tokenizer.vocab_size < 2**16 - 1:
-            save_dtype = np.uint16
-        else:
-            save_dtype = np.int32
-        dataclass = TextSequence
-
-        global_batch_size = (
-            training_args.per_device_train_batch_size
-            * training_args.gradient_accumulation_steps
-            * max(training_args.data_parallel_size, 1)
-            * max(training_args.sharding_parallel_size, 1)
-        )
-
-        logger.info(f"training_args.per_device_train_batch_size: {training_args.per_device_train_batch_size}")
-        logger.info(f"training_args.gradient_accumulation_steps: {training_args.gradient_accumulation_steps}")
-        logger.info(f"training_args.data_parallel_size: {training_args.data_parallel_size}")
-        logger.info(f"training_args.sharding_parallel_size: {training_args.sharding_parallel_size}")
-        logger.info(f"global_batch_size: {global_batch_size}")
-
-        def fetch_and_serialize(generator, dtype):
-            sample = next(generator)
-            result = []
-            for sequence in sample:
-                serialized = []
-                for key in train_builder._data_file_dict.keys():
-                    tensor = np.array(getattr(sequence, key), dtype=dtype)
-                    serialized.append((key, tensor.tobytes(order="C"), tensor.size))
-                result.append(serialized)
-            return result
-
-        if (
-            training_args.do_train
-            and data_args.train_dataset_path
-            and training_args.should_load_dataset
-            and paddle.distributed.get_rank() == 0
-        ):
-            runtime_timer.start("Create SFT Train MapDataset")
-            os.makedirs(os.path.join(data_args.dataset_output_dir, "train"), exist_ok=True)
-
-            train_output_idx_files = os.path.join(data_args.dataset_output_dir, "train", "index.idx")
-            train_dataset = create_dataset_sft(
-                task_group=data_args.train_dataset_path,
-                task_group_prob=data_args.train_dataset_prob,
-                sub_dataset_type=data_args.train_dataset_type,
-                **dataset_config,
-            )
-            output_file_dict = {}
-            train_dir = os.path.join(data_args.dataset_output_dir, "train")
-            index_file = os.path.join(data_args.dataset_output_dir, "train", "index.idx")
-            for field in fields(dataclass):
-                output_path = os.path.join(train_dir, f"{field.name}.bin")
-                output_file_dict[field.name] = output_path
-            train_builder = SFTMMapIndexedDatasetBuilder(output_file_dict, save_dtype, index_file=index_file)
-            train_sample_generator = DataGenerator(train_dataset)
-            count = 0
-            start_time = time.time()
-
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                future = executor.submit(fetch_and_serialize, train_sample_generator, save_dtype)
-                while not train_dataset.iter_all_examples:
-                    serialized_sequences = future.result()
-                    future = executor.submit(fetch_and_serialize, train_sample_generator, save_dtype)
-                    for serialized in serialized_sequences:
-                        train_builder.add_item_bytes(serialized)
-                    train_builder.end_document()
-                    count += 1
-                    if count % 1000 == 0:
-                        logger.info(
-                            f"Processed {count} samples in {time.time()-start_time:.2f} seconds, average speed: {count/(time.time()-start_time):.2f} samples/second"
-                        )
-            train_builder.finalize(train_output_idx_files)
-            logger.info(f"{runtime_timer.log()}")
-
-        if (
-            training_args.do_eval
-            and data_args.eval_dataset_path
-            and training_args.should_load_dataset
-            and paddle.distributed.get_rank() == 0
-        ):
-            runtime_timer.start("Create SFT Eval MapDataset")
-            os.makedirs(os.path.join(data_args.dataset_output_dir, "eval"), exist_ok=True)
-
-            eval_output_idx_files = os.path.join(data_args.dataset_output_dir, "eval", "index.idx")
-            eval_dataset = create_dataset_sft(
-                task_group=data_args.eval_dataset_path,
-                task_group_prob=data_args.eval_dataset_prob,
-                sub_dataset_type=data_args.eval_dataset_type,
-                is_valid=True,
-                **dataset_config,
-            )
-            output_file_dict = {}
-            eval_dir = os.path.join(data_args.dataset_output_dir, "eval")
-            index_file = os.path.join(data_args.dataset_output_dir, "eval", "index.idx")
-            for field in fields(dataclass):
-                output_path = os.path.join(eval_dir, f"{field.name}.bin")
-                output_file_dict[field.name] = output_path
-            eval_builder = SFTMMapIndexedDatasetBuilder(output_file_dict, save_dtype, index_file=index_file)
-            for sequences in eval_dataset:
-                for sequence in sequences:
-                    eval_builder.add_item(sequence)
-                eval_builder.end_document()
-            eval_builder.finalize(eval_output_idx_files)
-            logger.info(f"{runtime_timer.log()}")
-        logger.info("Make SFT Offline DataSet Done.")
-        return
 
     if data_args.dataset_type == "pretrain":
         training_args.test_iters = training_args.eval_iters * 10

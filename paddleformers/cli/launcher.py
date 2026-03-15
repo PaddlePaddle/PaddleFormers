@@ -15,6 +15,7 @@
 import sys
 
 from paddleformers.cli.export.export import run_export
+from paddleformers.cli.make_data.workflow import run_make_data
 from paddleformers.cli.train.tuner import run_tuner
 
 
@@ -32,6 +33,8 @@ def launch():
         run_tuner()
     elif command == "export":
         run_export()
+    elif command == "make_data":
+        run_make_data()
     else:
         raise ValueError(f"Unknown command : {command}")
 

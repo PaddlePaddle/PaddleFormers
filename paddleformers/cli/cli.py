@@ -43,8 +43,9 @@ USAGE = (
     "-" * 60
     + "\n"
     + "| Usage:                                                              |\n"
-    + "|   paddleformers-cli train -h: model finetuning                      |\n"
-    + "|   paddleformers-cli export -h: model export                         |\n"
+    + "|   paddleformers-cli make_data: make offline data                    |\n"
+    + "|   paddleformers-cli train: model finetuning                         |\n"
+    + "|   paddleformers-cli export: model export                            |\n"
     + "|   paddleformers-cli version: show version info                      |\n"
     + "|   paddleformers-cli help: show helping info                         |\n"
     + "-" * 60
@@ -58,9 +59,11 @@ def main():
     """cli main process"""
     from . import launcher
     from .export.export import run_export
+    from .make_data.workflow import run_make_data
     from .train.tuner import run_tuner
 
     COMMAND_MAP = {
+        "make_data": run_make_data,
         "train": run_tuner,
         "export": run_export,
         "version": partial(print, WELCOME),
@@ -68,7 +71,7 @@ def main():
     }
 
     command = sys.argv[1] if len(sys.argv) > 1 else "help"
-    distributed_funcs = ["train", "export"]
+    distributed_funcs = ["train", "export", "make_data"]
     paddleformers_dist_log = os.getenv("PADDLEFORMERS_DIST_LOG", "paddleformers_dist_log")
     nnodes = os.getenv("NNODES", "1")
     rank = os.getenv("RANK", "0")
