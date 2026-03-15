@@ -284,6 +284,14 @@ paddleformers-cli train examples/config/sft/full.yaml \
     dataloader_shuffle=false
 ```
 
+可以使用`examples/tools/merge.py`脚本合并多个离线数据集, 使用方法：
+```bash
+python examples/tools/merge.py --input_dirs /path/B,/path/A --split train --output merge
+```
+`input_dirs` 参数是用逗号分隔的多个目录，例如：/path/B,/path/A，代表合并的顺序
+`split` 参数代表输入的目录的 split，例如：train，代表合并训练集，eval 代表合并验证集
+`output` 参数代表输出合并产出的目录，例如：merge，代表输出目录名为 merge
+
 ## 2.3. 直接偏好优化（DPO）数据格式
 
 <details>
