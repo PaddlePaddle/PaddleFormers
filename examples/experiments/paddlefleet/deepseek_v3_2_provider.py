@@ -76,8 +76,10 @@ class DeepSeekV3_2BaseProvider(GPTModelProvider):
     init_method_std: float = 0.006  # ~1/sqrt(7168)
 
     # ---- MLA: Multi-Latent Attention ----
-    # Enables the MLA RoPE path in rope_utils.py (interleaved layout)
-    multi_latent_attention: bool = True
+    # MLA de-interleave in rope_utils is NOT needed when rotary_interleaved=True,
+    # because _rotate_half(interleaved=True) already pairs adjacent dims correctly
+    # (matching DeepSeek-V3.2 reference apply_rotary_emb(interleaved=True)).
+    multi_latent_attention: bool = False
     num_attention_heads: int = 128
     # head_dim matches v_head_dim=128 so o_proj sizing in Attention base is correct
     head_dim: int = 128

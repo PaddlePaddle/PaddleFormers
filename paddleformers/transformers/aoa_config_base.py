@@ -154,9 +154,6 @@ class MoEAOAConfigGenerator:
         # 1. Basic weights (norm, embed_tokens, lm_head)
         aoa_statements.extend(cls._get_basic_weight_statements(params))
 
-        # 2. Dense layers (if any)
-        aoa_statements.extend(cls._get_dense_layer_statements(params))
-
         # 3. MTP layers (if any)
         aoa_statements.extend(cls._get_mtp_layer_statements(params))
 
@@ -168,6 +165,9 @@ class MoEAOAConfigGenerator:
 
         # 6. Extra statements from subclasses
         aoa_statements.extend(params.extra_statements)
+
+        # 2. Dense layers (if any)
+        aoa_statements.extend(cls._get_dense_layer_statements(params))
 
         return {"aoa_statements": aoa_statements}
 
@@ -222,8 +222,8 @@ class MoEAOAConfigGenerator:
         # Layer norms and attention output
         statements.extend(
             [
-                f"{prefix}.input_layernorm.weight -> {prefix_offset}.input_layernorm.weight",
-                f"{prefix}.post_attention_layernorm.weight -> {prefix_offset}.post_attention_layernorm.weight",
+                f"{prefix}.input_layernorm.weight -> {prefix_offset}.input_layernorm.weight, src_dtype='float32', dst_dtype='bfloat16'",
+                f"{prefix}.post_attention_layernorm.weight -> {prefix_offset}.post_attention_layernorm.weight,src_dtype='float32', dst_dtype='bfloat16'",
                 f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
             ]
         )
@@ -307,8 +307,8 @@ class MoEAOAConfigGenerator:
         # Layer norms and attention output
         statements.extend(
             [
-                f"{prefix}.input_layernorm.weight -> {prefix_offset}.input_layernorm.weight",
-                f"{prefix}.post_attention_layernorm.weight -> {prefix_offset}.post_attention_layernorm.weight",
+                f"{prefix}.input_layernorm.weight -> {prefix_offset}.input_layernorm.weight,src_dtype='float32', dst_dtype='bfloat16'",
+                f"{prefix}.post_attention_layernorm.weight -> {prefix_offset}.post_attention_layernorm.weight,src_dtype='float32', dst_dtype='bfloat16'",
                 f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
             ]
         )
@@ -367,12 +367,12 @@ class MoEAOAConfigGenerator:
         if params.use_qk_norm:
             statements.extend(
                 [
-                    f"{prefix}.self_attn.q_a_layernorm.weight -> {prefix_offset}.self_attn.q_a_layernorm.weight",
-                    f"{prefix}.self_attn.kv_a_layernorm.weight -> {prefix_offset}.self_attn.kv_a_layernorm.weight",
+                    f"{prefix}.self_attn.q_a_layernorm.weight -> {prefix_offset}.self_attn.q_a_layernorm.weight, src_dtype='float32',dst_dtype='bfloat16'",
+                    f"{prefix}.self_attn.kv_a_layernorm.weight -> {prefix_offset}.self_attn.kv_a_layernorm.weight, src_dtype='float32',dst_dtype='bfloat16'",
                 ]
             )
 
-        if params.index_n_heads > 0:
+        if params.index_n_heads and params.index_n_heads > 0:
             indexer_weights = [
                 "wq_b",
                 "wk",
@@ -384,6 +384,11 @@ class MoEAOAConfigGenerator:
                     for weight_name in indexer_weights
                 ]
             )
+            statements += [
+                f"{prefix}.self_attn.indexer.k_norm.bias ->  {prefix_offset}.self_attn.indexer.k_norm.bias,src_dtype='float32', dst_dtype='bfloat16'",
+                f"{prefix}.self_attn.indexer.k_norm.weight ->  {prefix_offset}.self_attn.indexer.k_norm.weight,src_dtype='float32', dst_dtype='bfloat16'",
+                "model.norm.weight -> model.norm.weight, src_dtype='float32',dst_dtype='bfloat16'",
+            ]
 
         return statements
 
@@ -398,7 +403,9 @@ class MoEAOAConfigGenerator:
         statements.append(
             f"{prefix}.mlp.gate.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias"
         )
-        statements.append(f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='float32'")
+        statements.append(
+            f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight,src_dtype='bfloat16',dst_dtype='float32'"
+        )
 
         # Shared experts (if model has them)
         if params.has_shared_experts:
