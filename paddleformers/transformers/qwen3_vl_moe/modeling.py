@@ -20,10 +20,12 @@
 """Paddle Qwen3_VL_Moe model."""
 from __future__ import annotations
 
+import hashlib
 import types
 from dataclasses import dataclass
 from typing import Any, Optional, Tuple, Union
 
+import numpy as np
 import paddle
 import paddle.nn.functional as F
 from paddle import Tensor, nn
@@ -55,8 +57,6 @@ from .configuration import (
 )
 
 
-import numpy as np
-import hashlib
 def compare_and_save(data, name: str, to_save: bool = False, print_tensor: bool = False):
     if isinstance(data, paddle.Tensor):
         data_float = data.astype("float32")
@@ -70,9 +70,8 @@ def compare_and_save(data, name: str, to_save: bool = False, print_tensor: bool 
         file = "/root/paddlejob/workspace/env_run/wuhuiyue/helper/qwen3_omni_test/pd_" + name + ".npy"
         np.save(file, data_np)
     if print_tensor:
-        print(
-            name, type(data), data.shape, data
-        )
+        print(name, type(data), data.shape, data)
+
 
 class Qwen3VLMoeTextExperts(nn.Layer):
     def __init__(self, config):
@@ -355,6 +354,12 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
             "aoa_statements": [
                 f"model.language_model.embed_tokens.weight -> {llm_prefix}embedding.embed_tokens.weight",
                 f"model.language_model.norm.weight ->  {llm_prefix}norm.weight",
+                f"model.language_model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
+                f"model.language_model.layers.$LAYER_ID.input_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.input_layernorm.weight",
+                f"model.language_model.layers.$LAYER_ID.post_attention_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"model.language_model.layers.$LAYER_ID.self_attn.q_norm.weight -> {llm_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"model.language_model.layers.$LAYER_ID.self_attn.k_norm.weight -> {llm_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
+                f"model.language_model.layers.$LAYER_ID.mlp.gate.weight -> {llm_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
             ]
         }
         # language attention qkv
@@ -468,6 +473,12 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
             "aoa_statements": [
                 f"{llm_prefix}embedding.embed_tokens.weight -> model.language_model.embed_tokens.weight",
                 f"{llm_prefix}norm.weight -> model.language_model.norm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.language_model.layers.$LAYER_ID.input_layernorm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.language_model.layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.language_model.layers.$LAYER_ID.self_attn.o_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.language_model.layers.$LAYER_ID.mlp.gate.weight",
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.language_model.layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.language_model.layers.$LAYER_ID.self_attn.k_norm.weight",
             ]
         }
         aoa_config["aoa_statements"] += [

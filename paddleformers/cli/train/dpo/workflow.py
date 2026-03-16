@@ -326,6 +326,8 @@ def run_dpo(
         "template_backend": data_args.template_backend,
         "use_filtered_label_loss": model_config.use_filtered_label_loss,
         "dtype": compute_type,
+        "binpacking": data_args.binpacking,
+        "packing_interval": data_args.packing_interval,
     }
 
     dataset_config.update(

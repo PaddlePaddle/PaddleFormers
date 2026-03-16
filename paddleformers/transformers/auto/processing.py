@@ -57,6 +57,7 @@ PROCESSOR_MAPPING_NAMES = OrderedDict(
         ("qwen3_omni_moe", "Qwen3OmniMoeProcessor"),
         # ("qwen3_vl", "Qwen3OmniMoeProcessor"),
         ("glm4v_moe", "Glm4vProcessor"),
+        ("glm_ocr", "Glm46VProcessor"),
     ]
 )
 

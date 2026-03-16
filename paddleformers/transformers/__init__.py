@@ -187,6 +187,8 @@ import_structure = {
         "Qwen2ForSequenceClassification",
         "Qwen2ForTokenClassification",
         "Qwen2SentenceEmbedding",
+        "Qwen2ForCausalLMDeprecated",
+        "Qwen2ForCausalLMPipeDeprecated",
     ],
     "qwen2.tokenizer": ["Qwen2Tokenizer"],
     "qwen2.tokenizer_fast": ["Qwen2TokenizerFast"],
@@ -237,6 +239,8 @@ import_structure = {
         "Qwen2MoeForCausalLM",
         "Qwen2MoeForCausalLMPipe",
         "Qwen2MoePretrainingCriterion",
+        "Qwen2MoeForCausalLMDeprecated",
+        "Qwen2MoeForCausalLMPipeDeprecated",
     ],
     "qwen2_vl.image_processor": ["Qwen2VLImageProcessor"],
     "qwen2_vl.image_processor_fast": ["Qwen2VLImageProcessorFast"],
@@ -254,6 +258,8 @@ import_structure = {
         "Qwen3ForSequenceClassification",
         "Qwen3ForTokenClassification",
         "Qwen3SentenceEmbedding",
+        "Qwen3ForCausalLMDeprecated",
+        "Qwen3ForCausalLMPipeDeprecated",
     ],
     "qwen3_moe.configuration": ["Qwen3MoeConfig"],
     "qwen3_moe.modeling": [
@@ -274,6 +280,7 @@ import_structure = {
     ],
     "llama": [],
     "qwen2": [],
+    "glm_ocr": [],
     "qwen3": [],
     "deepseek_v3": [],
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
@@ -309,6 +316,14 @@ import_structure = {
     "glm4v_moe.processor": ["Glm4vProcessor"],
     "glm4v_moe.video_processor": ["Glm4vVideoProcessor"],
     "glm4v_moe": [],
+    "glm_ocr.configuration": ["GlmOcrConfig", "GlmOcrTextConfig", "GlmOcrVisionConfig"],
+    "glm_ocr.modeling": [
+        "GlmOcrForConditionalGeneration",
+        "GlmOcrModel",
+        "GlmOcrPreTrainedModel",
+    ],
+    "glm_ocr.processor": ["Glm46VProcessor"],
+    "glm_ocr.image_processor": ["Glm46VImageProcessor"],
 }
 
 if TYPE_CHECKING:
@@ -381,6 +396,7 @@ if TYPE_CHECKING:
     from .kimi_k25 import *
     from .phi3 import *
     from .gemma3_text import *
+    from .glm_ocr import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

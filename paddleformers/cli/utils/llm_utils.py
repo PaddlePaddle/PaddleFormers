@@ -401,6 +401,21 @@ def get_lora_target_modules(model):
             # alinger
             "model.visual.merger.mlp\.[02].*",
         ]
+    elif model.config.model_type == "glm_ocr":
+        target_modules = [
+            "model.language_model.*q_proj.*",
+            "model.language_model.*k_proj.*",
+            "model.language_model.*v_proj.*",
+            "model.language_model.*o_proj.*",
+            "model.language_model.*gate_up_proj.*",
+            "model.language_model.*down_proj.*",
+            # vision
+            "model.visual.blocks.*attn.qkv.*",
+            "model.visual.blocks.*attn.proj.*",
+            "model.visual.blocks.*mlp.gate_proj.*",
+            "model.visual.blocks.*mlp.up_proj.*",
+            "model.visual.blocks.*mlp.down_proj.*",
+        ]
     else:
         raise ValueError(f"Unknown base_model_prefix: {model.config.model_type}.")
     return target_modules
