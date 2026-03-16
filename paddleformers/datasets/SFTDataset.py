@@ -88,7 +88,7 @@ class SFTDataSet(IterableDataset):
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
         self.binpacking = dataset_config.get("binpacking", False)
-        self.packing_interval = dataset_config.get("packing_interval", 500)
+        self.packing_interval = dataset_config.get("packing_interval", 1000)
         if self.is_pretraining and self.packing and self.truncate_packing:
             logger.info("[dataflow] pretrain dataflow using truncate packing.")
 
@@ -506,7 +506,7 @@ class SFTDataSet(IterableDataset):
                         yield batch_sequence
                 else:
                     # Pseudo multiple rounds + group greedy intokens.
-                    buffer_size = 500
+                    buffer_size = self.packing_interval
                     sequences_buffer = []
                     data_iter = self._get_processed_data_iterator(
                         dataset_iterator, actual_example_num, self._process_sequence
