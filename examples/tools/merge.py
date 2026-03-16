@@ -118,117 +118,57 @@ def merge_sft_datasets(input_dirs, output_dir):
 
 
 def main(args):
+    # Parse input_dirs from comma-separated string
+    input_dirs = [d.strip() for d in args.input_dirs.split(",")]
 
-    if os.path.isdir(args.input):
-        subdirs = []
-        for name in sorted(os.listdir(args.input)):
-            path = os.path.join(args.input, name)
-            if os.path.isdir(path) and os.path.exists(os.path.join(path, "index.idx")):
-                subdirs.append(path)
+    # Build actual paths with split subdirectory
+    actual_dirs = []
+    for input_dir in input_dirs:
+        actual_path = os.path.join(input_dir, args.split)
+        if not os.path.isdir(actual_path):
+            raise ValueError(f"Directory not found: {actual_path}")
+        actual_dirs.append(actual_path)
 
-        if subdirs:
-            print_datetime(f"Detected SFT format with {len(subdirs)} subdirectories")
-            merge_sft_datasets(subdirs, args.output)
-            return
+    print_datetime(f"Merging {len(actual_dirs)} directories in order:")
+    for i, d in enumerate(actual_dirs):
+        print(f"  [{i}] {d}")
 
-        if os.path.exists(os.path.join(args.input, "index.idx")):
-            print(
-                "Error: Single SFT directory detected. Use the parent directory containing multiple SFT subdirectories."
-            )
-            return
-
-    prefixes = set()
-    for basename in os.listdir(args.input):
-        prefix, ext = os.path.splitext(basename)
-
-        if prefix in prefixes:
-            continue
-
-        if not os.path.isfile(os.path.join(args.input, basename)):
-            continue
-
-        ext_pair = ".bin" if ext == ".idx" else ".idx"
-        assert os.path.isfile(
-            os.path.join(args.input, prefix) + ext_pair
-        ), f"ERROR: {ext_pair} file not provided for {os.path.join(args.input, prefix)}"
-
-        prefixes.add(prefix)
-
-    builder = None
-
-    for prefix in sorted(prefixes):
-        print_datetime(f"start processing file {prefix}")
-        if builder is None:
-            dataset = indexed_dataset.make_dataset(os.path.join(args.input, prefix), args.data_impl)
-
-            if isinstance(dataset, indexed_dataset.MMapIndexedDataset):
-                builder = indexed_dataset.MMapIndexedDatasetBuilder(
-                    args.output_prefix + ".bin", dtype=dataset._index.dtype
-                )
-            else:
-                builder = indexed_dataset.IndexedDatasetBuilder(args.output_prefix + ".bin", dtype=dataset.dtype)
-
-            del dataset
-        print_datetime(f"start merge file {prefix}")
-        builder.merge_file_(os.path.join(args.input, prefix))
-        print_datetime(f"end merge file {prefix}")
-
-    print_datetime("start finalize")
-    builder.finalize(args.output_prefix + ".idx")
-    print_datetime("end finalize")
+    merge_sft_datasets(actual_dirs, args.output)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Merge indexed datasets. Supports two formats:\n"
-        "1. Traditional: prefix.idx + prefix.bin pairs in one directory\n"
-        "2. SFT format: Multiple subdirectories, each containing index.idx and .bin files"
+        description="Merge SFT indexed datasets. Each input directory should contain train/eval subdirectories "
+        "with index.idx and .bin files."
     )
 
     group = parser.add_argument_group(title="input data")
     group.add_argument(
-        "--input",
+        "--input_dirs",
         type=str,
         required=True,
-        help="Path to directory. For traditional format: directory containing .idx/.bin pairs. "
-        "For SFT format: parent directory containing multiple SFT subdirectories",
+        help="Comma-separated list of input directories to merge in order, e.g., 'A,B'. "
+        "Each directory should contain train/eval subdirectories.",
     )
-    group.add_argument("--data_impl", type=str, default="mmap", help="data_impl for traditional format (mmap or lazy)")
+    group.add_argument(
+        "--split",
+        type=str,
+        required=True,
+        choices=["train", "eval"],
+        help="Which split to merge: 'train' or 'eval'. Will look for <input_dir>/train or <input_dir>/eval.",
+    )
 
     group = parser.add_argument_group(title="output data")
-    group.add_argument("--output", type=str, default=None, help="Output directory path for SFT format")
     group.add_argument(
-        "--output-prefix",
+        "--output",
         type=str,
-        default=None,
-        help="Output file prefix for traditional format (without .idx/.bin suffix)",
+        default="merge",
+        help="Output directory path. Default: 'merge'. The split name will be appended, e.g., 'merge/train'.",
     )
 
     args = parser.parse_args()
 
-    assert os.path.isdir(args.input), f"ERROR: {args.input} is not a directory or does not exist"
-
-    subdirs = []
-    for name in sorted(os.listdir(args.input)):
-        path = os.path.join(args.input, name)
-        if os.path.isdir(path) and os.path.exists(os.path.join(path, "index.idx")):
-            subdirs.append(path)
-
-    if subdirs:
-        is_sft_format = True
-    elif os.path.exists(os.path.join(args.input, "index.idx")):
-        print("Error: Single SFT directory detected. Expected a parent directory with multiple SFT subdirectories.")
-        print("  Or use --output-prefix for traditional format merging.")
-        exit(1)
-
-    if is_sft_format:
-        if args.output is None:
-            parser.error("--output is required for SFT format merging")
-    else:
-        if args.output_prefix is None:
-            parser.error("--output-prefix is required for traditional format merging")
-        assert os.path.isdir(
-            os.path.dirname(args.output_prefix)
-        ), f"ERROR: {os.path.dirname(args.output_prefix)} is not a directory or does not exist"
+    # Append split name to output directory
+    args.output = os.path.join(args.output, args.split)
 
     main(args)
