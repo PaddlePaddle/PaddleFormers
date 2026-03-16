@@ -116,7 +116,7 @@ jobs:
           # 针对不同分支和tag使用不同的PaddlePaddle安装包
           python -m pip uninstall paddlepaddle-xpu paddleformers -y
           python -m pip uninstall librosa -y
-          python -m pip install --pre paddlepaddle-xpu -i https://www.paddlepaddle.org.cn/packages/nightly/xpu-p800/          
+          python -m pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Xpu-P800-SelfBuiltPypiUse/latest/paddlepaddle_xpu-0.0.0-cp310-cp310-linux_x86_64.whl          
           echo "安装PaddleFormers..."
           python -m pip install -e .
           echo "============================安装测试依赖============================"
