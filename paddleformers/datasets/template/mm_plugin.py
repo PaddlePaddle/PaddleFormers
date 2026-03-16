@@ -1469,6 +1469,7 @@ PLUGINS = {
     "glm4v": GLM4VPlugin,
     "gemma3": Gemma3Plugin,
     "qwen2_omni": Qwen2OmniPlugin,
+    "glm_ocr": GlmOcrPlugin,
 }
 
 
