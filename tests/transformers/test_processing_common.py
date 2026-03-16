@@ -28,7 +28,7 @@ from PIL import Image
 from paddleformers.transformers.processing_utils import (
     MODALITY_TO_AUTOPROCESSOR_MAPPING,
 )
-
+from tests.testing_utils import slow
 from .test_utils import check_json_file_has_correct_format
 
 MODALITY_INPUT_DATA = {

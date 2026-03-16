@@ -28,7 +28,7 @@ from paddleformers.transformers.image_utils import (
     get_image_size,
 )
 from paddleformers.transformers.qwen2_vl.video_processor import smart_resize
-from tests.testing_utils import gpu_device_initializer
+from tests.testing_utils import gpu_device_initializer, slow
 
 from ..test_video_processing_common import (
     VideoProcessingTestMixin,
