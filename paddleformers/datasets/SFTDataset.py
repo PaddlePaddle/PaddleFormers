@@ -712,7 +712,7 @@ class SFTDataSet(IterableDataset):
             if len(tokens_target) == 0:
                 logger.warning(f"[SKIP] The length of encoded assistant tokens is 0: {example}")
                 return None
-            remaining_len = self.max_seq_len + 1 - cur_len
+            remaining_len = self.max_seq_len - cur_len
             if len(tokens_src) + len(tokens_target) > remaining_len:
                 if images or videos or audios:
                     # If there is multimodal data, do not truncate it; just discard it directly.
