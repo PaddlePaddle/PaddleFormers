@@ -2133,7 +2133,9 @@ class Trainer:
                         and (step + 1) == steps_in_epoch
                         or disable_accumulation
                     ):
-                        if self._enable_delay_scale_loss() and not is_paddlefleet_available():
+                        if self._enable_delay_scale_loss() and not (
+                            is_paddlefleet_available() and isinstance(self.model, PaddleFleetParallelBase)
+                        ):
                             if self.args.enable_auto_parallel and self.args.gradient_accumulation_steps > 1:
                                 tr_loss /= self.args.gradient_accumulation_steps
                             if not self.args.enable_auto_parallel and self.args.pipeline_model_parallel_size <= 1:
@@ -3545,7 +3547,9 @@ class Trainer:
         if in_auto_parallel_align_mode():
             return True
 
-        if self.args.pipeline_model_parallel_size > 1 or is_paddlefleet_available():
+        if self.args.pipeline_model_parallel_size > 1 or (
+            is_paddlefleet_available() and isinstance(self.model, PaddleFleetParallelBase)
+        ):
             return self.args.pp_delay_scale_loss
         elif self.args.tensor_model_parallel_size > 1:
             return self.args.tp_delay_scale_loss
