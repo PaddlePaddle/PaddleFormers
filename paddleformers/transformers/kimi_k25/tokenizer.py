@@ -105,6 +105,7 @@ class TikTokenTokenizer(PreTrainedTokenizer):
             special_tokens_mapping = {}
 
         self.vocab_file = vocab_file
+        self.vocab = vocab_file
         mergeable_ranks = load_tiktoken_bpe(vocab_file)
         num_base_tokens = len(mergeable_ranks)
         self.special_tokens = {
