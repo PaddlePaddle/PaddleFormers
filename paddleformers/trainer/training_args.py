@@ -2043,7 +2043,7 @@ class TrainingArguments:
                         "by current version of Paddle. Please try latest develop Paddle."
                     )
 
-                if self.pipeline_model_parallel_size > 1:
+                if self.pipeline_model_parallel_size > 1 or is_paddlefleet_available():
                     hybrid_configs["pp_configs"] = dygraph_pp_configs
                     logger.info(f"using pipeline configs:{dygraph_pp_configs}")
 
