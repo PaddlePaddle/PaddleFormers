@@ -47,7 +47,12 @@ from paddle import framework
 from paddle.base import core
 from paddle.distributed import ShardedWeight
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
-from paddle.distributed.fleet.meta_parallel import MetaParallelBase, PipelineLayer
+from paddle.distributed.fleet.meta_parallel import (
+    MetaParallelBase,
+    NoPipelineParallel,
+    PipelineLayer,
+    PipelineParallel,
+)
 
 try:
     from paddle.distributed.fleet.meta_parallel import PipelineDatasetPreprocessor
@@ -3551,7 +3556,9 @@ class Trainer:
         Return:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
-        if is_paddlefleet_available() and isinstance(model, MetaParallelBase):
+        if is_paddlefleet_available() and (
+            isinstance(model, PipelineParallel) or isinstance(model, NoPipelineParallel)
+        ):
             return self.training_pipeline_step(model, inputs)
 
         if self.args.pipeline_model_parallel_size > 1:
