@@ -164,10 +164,10 @@ class DataArguments:
         metadata={"help": "Make offline data for SFT training."},
     )
     binpacking: bool = field(
-        default=False,
+        default=True,
         metadata={"help": "Whether to use bin packing."},
     )
     packing_interval: int = field(
-        default=500,
+        default=1000,
         metadata={"help": "Interval of packing."},
     )

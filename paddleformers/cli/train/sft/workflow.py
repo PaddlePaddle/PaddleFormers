@@ -304,47 +304,52 @@ def run_sft(
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 
-    if model_args.stage == "VL-SFT":
-        model_class = AutoModelForConditionalGeneration
-        if training_args.pipeline_model_parallel_size > 1:
-            if data_args.eval_with_do_generation and training_args.do_eval:
-                raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
-            model_class = AutoModelForConditionalGenerationPipe
+    if data_args.make_offline_data:
+        logger.info("Making offline data..., model is not loaded!")
+        logger.info(f"Training data: {data_args.train_dataset_path}")
     else:
-        model_class = AutoModelForCausalLM
-        if training_args.pipeline_model_parallel_size > 1:
-            if data_args.eval_with_do_generation and training_args.do_eval:
-                raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
-            model_class = AutoModelForCausalLMPipe
-
-    if model_args.continue_training and not training_args.autotuner_benchmark:
-        model = model_class.from_pretrained(
-            model_args.model_name_or_path,
-            config=model_config,
-            convert_from_hf=training_args.convert_from_hf,
-            load_via_cpu=training_args.load_via_cpu,
-            load_checkpoint_format=training_args.load_checkpoint_format,
-        )
-    else:
-        model = model_class.from_config(model_config, dtype=dtype)
-
-    if training_args.do_train and model_args.neftune:
-        # Inspired by https://github.com/neelsjain/NEFTune
-        if hasattr(model, "get_input_embeddings"):
-
-            def neft_post_hook(module, input, output):
-                if module.training:
-                    mag_norm = model_args.neftune_noise_alpha / paddle.sqrt(
-                        paddle.to_tensor(output.shape[0] * output.shape[1], dtype="float32")
-                    )
-                    output = output + paddle.uniform(
-                        shape=output.shape, dtype=output.dtype, min=-mag_norm, max=mag_norm
-                    )
-                return output
-
-            neft_post_hook_handle = model.get_input_embeddings().register_forward_post_hook(neft_post_hook)
+        logger.info(f"Loading model weights from {model_args.model_name_or_path}")
+        if "VL" in model_args.stage:
+            model_class = AutoModelForConditionalGeneration
+            if training_args.pipeline_model_parallel_size > 1:
+                if data_args.eval_with_do_generation and training_args.do_eval:
+                    raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
+                model_class = AutoModelForConditionalGenerationPipe
         else:
-            raise NotImplementedError("Only support neftune for model with get_input_embeddings")
+            model_class = AutoModelForCausalLM
+            if training_args.pipeline_model_parallel_size > 1:
+                if data_args.eval_with_do_generation and training_args.do_eval:
+                    raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
+                model_class = AutoModelForCausalLMPipe
+
+        if model_args.continue_training and not training_args.autotuner_benchmark:
+            model = model_class.from_pretrained(
+                model_args.model_name_or_path,
+                config=model_config,
+                convert_from_hf=training_args.convert_from_hf,
+                load_via_cpu=training_args.load_via_cpu,
+                load_checkpoint_format=training_args.load_checkpoint_format,
+            )
+        else:
+            model = model_class.from_config(model_config, dtype=dtype)
+
+        if training_args.do_train and model_args.neftune:
+            # Inspired by https://github.com/neelsjain/NEFTune
+            if hasattr(model, "get_input_embeddings"):
+
+                def neft_post_hook(module, input, output):
+                    if module.training:
+                        mag_norm = model_args.neftune_noise_alpha / paddle.sqrt(
+                            paddle.to_tensor(output.shape[0] * output.shape[1], dtype="float32")
+                        )
+                        output = output + paddle.uniform(
+                            shape=output.shape, dtype=output.dtype, min=-mag_norm, max=mag_norm
+                        )
+                    return output
+
+                neft_post_hook_handle = model.get_input_embeddings().register_forward_post_hook(neft_post_hook)
+            else:
+                raise NotImplementedError("Only support neftune for model with get_input_embeddings")
 
     runtime_timer = RuntimeTimer("Creating SFT MapDataset")
 
@@ -396,15 +401,10 @@ def run_sft(
         "binpacking": data_args.binpacking,
         "packing_interval": data_args.packing_interval,
         "dataloader_num_workers": training_args.dataloader_num_workers,
+        "template": data_args.template,
+        "tool_format": None,
+        "default_system": None,
     }
-
-    dataset_config.update(
-        {
-            "template": data_args.template,
-            "tool_format": None,
-            "default_system": None,
-        }
-    )
 
     if dataset_config["template_backend"] == "custom":
         template_instance = get_template_and_fix_tokenizer(dataset_config)

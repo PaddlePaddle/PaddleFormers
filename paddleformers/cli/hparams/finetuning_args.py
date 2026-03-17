@@ -161,7 +161,7 @@ class SFTTrainingArguments(TrainingArguments):
         metadata={"help": "Maximum number of samples used in estimation."},
     )
     estimation_output_file: str = field(
-        default=None, metadata={"help": "The output file of max_steps estimation result"}
+        default="estimation_output.json", metadata={"help": "The output file of max_steps estimation result"}
     )
 
 

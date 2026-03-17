@@ -88,7 +88,7 @@ class SFTDataSet(IterableDataset):
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
         self.binpacking = dataset_config.get("binpacking", False)
-        self.packing_interval = dataset_config.get("packing_interval", 500)
+        self.packing_interval = dataset_config.get("packing_interval", 1000)
         if self.is_pretraining and self.packing and self.truncate_packing:
             logger.info("[dataflow] pretrain dataflow using truncate packing.")
 
@@ -138,6 +138,24 @@ class SFTDataSet(IterableDataset):
         if self.use_template and self.template_backend != "jinja":
             self.sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
 
+        # The flag indicating whether all examples have been iterated
+        self.iter_all_examples = False
+
+        # The number of reserved tokens for each dialog
+        self.num_reserved_tokens_for_each_dialog = 0
+        if self.use_template:
+            # add dynamic eos
+            suffix_ids = (
+                self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
+                if self.template_backend == "custom"
+                else [self.tokenizer.eos_token_id]
+            )
+            self.num_reserved_tokens_for_each_dialog += len(suffix_ids)
+
+            # bos token
+            self.num_reserved_tokens_for_each_dialog += 1
+        logger.info(f"self.num_reserved_tokens_for_each_dialog: {self.num_reserved_tokens_for_each_dialog}")
+
         if self.is_pretraining and self.packing and self.truncate_packing:
             self._current_processor_func = self._process_pretraining_tokens
         else:
@@ -153,9 +171,6 @@ class SFTDataSet(IterableDataset):
                 worker = mp.Process(target=self._worker_loop, daemon=True)
                 worker.start()
                 self.workers.append(worker)
-
-        # The flag indicating whether all examples have been iterated
-        self.iter_all_examples = False
 
     def __len__(self):
         return len(self.mix_datasets)
@@ -499,7 +514,7 @@ class SFTDataSet(IterableDataset):
                         yield batch_sequence
                 else:
                     # Pseudo multiple rounds + group greedy intokens.
-                    buffer_size = 500
+                    buffer_size = self.packing_interval
                     sequences_buffer = []
                     data_iter = self._get_processed_data_iterator(
                         dataset_iterator, actual_example_num, self._process_sequence
@@ -687,10 +702,7 @@ class SFTDataSet(IterableDataset):
                 example, encode_one_turn=self.encode_one_turn
             )
 
-        num_reserved_tokens_for_each_dialog = 1
-        num_reserved_tokens_for_each_turn = 8
-        cur_len = num_reserved_tokens_for_each_dialog
-
+        cur_len = self.num_reserved_tokens_for_each_dialog
         tokens_chunks = []
         labels_chunks = []
         accumulated_tokens_len = 0
@@ -700,7 +712,7 @@ class SFTDataSet(IterableDataset):
             if len(tokens_target) == 0:
                 logger.warning(f"[SKIP] The length of encoded assistant tokens is 0: {example}")
                 return None
-            remaining_len = self.max_seq_len + 1 - cur_len - num_reserved_tokens_for_each_turn
+            remaining_len = self.max_seq_len - cur_len
             if len(tokens_src) + len(tokens_target) > remaining_len:
                 if images or videos or audios:
                     # If there is multimodal data, do not truncate it; just discard it directly.
@@ -745,7 +757,7 @@ class SFTDataSet(IterableDataset):
         del tokens_chunks, labels_chunks
 
         # Not even one turn can be added, so need to do warning and skip this example
-        if len(tokens) <= num_reserved_tokens_for_each_dialog + num_reserved_tokens_for_each_turn:
+        if len(tokens) <= self.num_reserved_tokens_for_each_dialog:
             try:
                 # For print log
                 sub_src = example["messages"][0]["content"].strip()[:50]
