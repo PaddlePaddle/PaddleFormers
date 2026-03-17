@@ -341,7 +341,9 @@ def _read_video_paddlecodec(
         raise
 
     logger.info("Loading video with paddlecodec backend.")
-    PADDLECODEC_NUM_THREADS = int(os.environ.get("PADDLECODEC_NUM_THREADS", 0))
+    PADDLECODEC_NUM_THREADS = int(
+        os.environ.get("PADDLECODEC_NUM_THREADS", 0)
+    )  # attention, ms-swift is 8 threads there so may cause diff
     logger.info(
         f"set PADDLECODEC_NUM_THREADS: {PADDLECODEC_NUM_THREADS if PADDLECODEC_NUM_THREADS != 0 else '0 (Auto)'}"
     )
@@ -358,7 +360,9 @@ def _read_video_paddlecodec(
     nframes = smart_nframes(ele, total_frames=total_frames, video_fps=video_fps)
     idx = paddle.linspace(start_frame, end_frame, nframes).round().long().tolist()
     sample_fps = nframes / max(total_frames, 1e-6) * video_fps
-    video = decoder.get_frames_at(indices=idx).data.contiguous().to("cuda")
+    video = (
+        decoder.get_frames_at(indices=idx).data.contiguous().to("cuda")
+    )  # 5.2% diff happens, cuda may have more diff
     logger.info(f"paddlecodec:  {video_path=}, {total_frames=}, {video_fps=}, time={time.time() - st:.3f}s")
     paddle.compat.disable_torch_proxy()
 
@@ -441,7 +445,7 @@ def fetch_video(
             min_pixels=min_pixels,
             max_pixels=max_pixels,
         )
-    video = paddle_resize(#interpolate diff
+    video = paddle_resize(  # interpolate diff
         video,
         [resized_height, resized_width],
         interpolation="bicubic",
