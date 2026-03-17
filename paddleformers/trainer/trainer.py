@@ -2580,8 +2580,6 @@ class Trainer:
                         }
                     )
 
-            self.log(logs, **kwargs)
-
         metrics = None
         if self.control.should_evaluate:
             if isinstance(self.optimizer, GroupShardedOptimizerStage2) and self.optimizer._broadcast_overlap:
@@ -2608,6 +2606,8 @@ class Trainer:
             logger.info(f"{self.runtime_timer.log()}")
             self.control = self.callback_handler.on_save(self.args, self.state, self.control)
             self.log_trained_tokens()
+        elif self.control.should_log:
+            self.log(logs, **kwargs)
 
         if self.control.should_save_hf:
             if self.args.save_checkpoint_format == "flex_checkpoint":
