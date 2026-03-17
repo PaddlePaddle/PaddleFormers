@@ -589,6 +589,14 @@ class BaseSFTDataset:
             while True:
                 yield from self.__iter_func()
 
+    def _encode_pretraining_messages(self, messages, actual_example_num):
+        # tokens
+        content = messages[0]["content"]
+        tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(content))
+        # Add an EOS token at the end of each sample
+        tokens = tokens + [self.tokenizer.eos_token_id]
+        return tokens
+
     def _postprocess_pretraining_sequence(self, example, actual_example_num):
 
         messages = example.get("messages", [])
