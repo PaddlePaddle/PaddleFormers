@@ -1,6 +1,4 @@
-# coding=utf-8
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2026 The Moonshot AI Inc. team and HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,29 +13,28 @@
 # limitations under the License.
 
 import os
-from collections import OrderedDict
+from logging import getLogger
 from pathlib import Path
 from shutil import copyfile
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union, cast
+from typing import Dict, Iterator, List, Optional, Tuple, Union, cast
 
 import tiktoken
 from tiktoken.load import load_tiktoken_bpe
+from tokenizers import AddedToken
 from transformers.convert_slow_tokenizer import bytes_to_unicode
+from transformers.tokenization_utils import PreTrainedTokenizer
 
-from ...utils.log import logger
-from ..tokenizer_utils import AddedToken, PreTrainedTokenizer
-from .tool_declaration_ts import encode_tools_to_typescript_style
-
-VOCAB_FILES_NAMES = {"vocab": "tiktoken.model"}
+logger = getLogger(__name__)
+VOCAB_FILES_NAMES = {"vocab_file": "tiktoken.model"}
 
 
-class TikTokenTokenizer(PreTrainedTokenizer):
+class KimiK2TikTokenTokenizer(PreTrainedTokenizer):
     """
     Tokenizing and encoding/decoding text using the Tiktoken tokenizer. See megatron/tokenizer/tiktoken_tokenizer.py.
     This tokenizer inherits from [`PreTrainedTokenizer`] which contains most of the main methods. Users should refer to
     this superclass for more information regarding those methods.
     Args:
-        vocab (`str`):
+        vocab_file (`str`):
             The path to the Tiktoken model file.
         bos_token (`str` or `tokenizers.AddedToken`, *optional*, defaults to `"<|begin_of_text|>",`):
             The beginning of sequence token that was used during pretraining. Can be used a sequence classifier token.
@@ -76,7 +73,7 @@ class TikTokenTokenizer(PreTrainedTokenizer):
 
     def __init__(
         self,
-        vocab,
+        vocab_file,
         bos_token: Union[str, AddedToken] = "[BOS]",
         eos_token: Union[str, AddedToken] = "[EOS]",
         unk_token: Union[str, AddedToken, None] = None,
@@ -85,7 +82,7 @@ class TikTokenTokenizer(PreTrainedTokenizer):
         added_tokens_decoder: Optional[dict] = None,
         **kwargs,
     ):
-        assert os.path.isfile(vocab), vocab
+        assert os.path.isfile(vocab_file), vocab_file
 
         if additional_special_tokens is None:
             additional_special_tokens = [
@@ -99,26 +96,23 @@ class TikTokenTokenizer(PreTrainedTokenizer):
                 "<|im_middle|>",
             ]
 
-        if added_tokens_decoder:
-            special_tokens_mapping = {i: added_tokens_decoder[i].content for i in added_tokens_decoder}
-        else:
-            special_tokens_mapping = {}
+        special_tokens_mapping = {i: added_tokens_decoder[i].content for i in added_tokens_decoder}
 
-        self.vocab = vocab
-        mergeable_ranks = load_tiktoken_bpe(vocab)
+        self.vocab_file = vocab_file
+        mergeable_ranks = load_tiktoken_bpe(vocab_file)
         num_base_tokens = len(mergeable_ranks)
         self.special_tokens = {
             special_tokens_mapping.get(i, f"<|reserved_token_{i}|>"): i
-            for i in range(num_base_tokens, num_base_tokens + self.num_reserved_special_tokens)
+            for i in range(num_base_tokens, num_base_tokens + self.num_reserved_special_tokens + 2)
         }
 
         self.model = tiktoken.Encoding(
-            name=Path(vocab).name,
+            name=Path(vocab_file).name,
             pat_str=self.pat_str,
             mergeable_ranks=mergeable_ranks,
             special_tokens=self.special_tokens,
         )
-        logger.info(f"Reloaded tiktoken model from {vocab}")
+        logger.info(f"Reloaded tiktoken model from {vocab_file}")
 
         self.n_words: int = self.model.n_vocab
         # BOS / EOS token IDs
@@ -145,21 +139,17 @@ class TikTokenTokenizer(PreTrainedTokenizer):
             if i in self.decoder:
                 self.encoder[self.decoder[i]] = i
 
-        self._token_config_cache = OrderedDict()
-        self._cache_max_size = 128
-
         super().__init__(
             bos_token=bos_token,
             eos_token=eos_token,
             unk_token=unk_token,
             pad_token=pad_token,
             additional_special_tokens=additional_special_tokens,
-            added_tokens_decoder=added_tokens_decoder,
             **kwargs,
         )
         self.all_special_ids_set = set(self.all_special_ids)
 
-    def encode(self, text: str, allow_special_tokens: bool = True, **kwargs) -> List[int]:
+    def encode(self, text: str, **kwargs) -> List[int]:
         """
         Encodes a string into a list of token IDs.
         Args:
@@ -201,22 +191,13 @@ class TikTokenTokenizer(PreTrainedTokenizer):
 
         t: List[int] = []
         for substr in all_substrs:
-            if allow_special_tokens:
-                t.extend(
-                    # we should consider special token as a common token
-                    self.model.encode(
-                        substr,
-                        allowed_special="all",
-                    )
+            t.extend(
+                # we should consider special token as a common token
+                self.model.encode(
+                    substr,
+                    disallowed_special=(),
                 )
-            else:
-                t.extend(
-                    # we should consider special token as a common token
-                    self.model.encode(
-                        substr,
-                        disallowed_special=(),
-                    )
-                )
+            )
 
         return t
 
@@ -300,52 +281,10 @@ class TikTokenTokenizer(PreTrainedTokenizer):
         if not os.path.isdir(save_directory):
             raise ValueError(f"vocabulary path ({save_directory}) should be a directory")
         out_vocab_file = os.path.join(
-            save_directory, (filename_prefix + "-" if filename_prefix else "") + VOCAB_FILES_NAMES["vocab"]
+            save_directory, (filename_prefix + "-" if filename_prefix else "") + VOCAB_FILES_NAMES["vocab_file"]
         )
 
-        if os.path.abspath(self.vocab) != os.path.abspath(out_vocab_file) and os.path.isfile(self.vocab):
-            copyfile(self.vocab, out_vocab_file)
+        if os.path.abspath(self.vocab_file) != os.path.abspath(out_vocab_file) and os.path.isfile(self.vocab_file):
+            copyfile(self.vocab_file, out_vocab_file)
 
         return (out_vocab_file,)
-
-    def apply_chat_template(
-        self,
-        conversation,
-        tools: Optional[list[dict]] = None,
-        tokenize: bool = False,
-        add_generation_prompt: bool = True,
-        thinking: bool = True,
-        **kwargs
-    ):
-
-        tools = deep_sort_dict(tools)
-
-        # Convert tools to TypeScript style string if tools are provided
-        tools_ts_str = None
-        if tools:
-            try:
-                tools_ts_str = encode_tools_to_typescript_style(tools)
-
-            except Exception as e:
-                print(f"Failed to convert tools to TypeScript style: {e}")
-                tools_ts_str = None
-
-        # Store the TypeScript string in kwargs so it can be accessed by the template
-        if tools_ts_str is not None:
-            kwargs["tools_ts_str"] = tools_ts_str
-        return super().apply_chat_template(
-            conversation,
-            tools=tools,
-            tokenize=tokenize,
-            add_generation_prompt=add_generation_prompt,
-            thinking=thinking,
-            **kwargs,
-        )
-
-
-def deep_sort_dict(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        return {k: deep_sort_dict(v) for k, v in sorted(obj.items())}
-    if isinstance(obj, list):
-        return [deep_sort_dict(item) for item in obj]
-    return obj

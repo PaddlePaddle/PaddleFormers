@@ -161,6 +161,9 @@ import_structure = {
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
     "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
+    "kimi_k2.configuration": ["KimiK2Config"],
+    "kimi_k2.modeling": ["KimiK2ForCausalLM", "KimiK2ForCausalLMPipe"],
+    "kimi_k2.tokenizer": ["KimiK2TikTokenTokenizer"],
     "llama.configuration": [
         "LlamaConfig",
     ],
@@ -366,6 +369,8 @@ if TYPE_CHECKING:
     from .ernie4_5 import *
     from .ernie4_5_moe import *
     from .ernie4_5_moe_vl import *
+    from .kimi_k25 import *
+    from .kimi_k2 import *
     from .paddleocr_vl import *
     from .llama import *
     from .optimization import *
@@ -383,7 +388,6 @@ if TYPE_CHECKING:
     from .glm4v_moe import *
     from .glm_moe_dsa import *
     from .gpt_oss import *
-    from .kimi_k25 import *
     from .phi3 import *
     from .gemma3_text import *
     from .glm_ocr import *
