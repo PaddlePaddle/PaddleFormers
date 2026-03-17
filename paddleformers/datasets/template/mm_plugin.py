@@ -359,6 +359,20 @@ class BasePlugin(MMPluginMixin):
         self._validate_input(processor, images, videos, audios)
         return self._get_mm_inputs(images, videos, audios, processor, **kwargs)
 
+    def _replace_mm_tokens(self, token_ids, labels, mm_token_id, mm_grid_thw, vision_structure_builder):
+        """Generic helper: replaces each mm placeholder token with its expanded structure,
+        and marks the expanded region as -100 in labels."""
+        replace_idx_list = [i for i, token in enumerate(token_ids) if token == mm_token_id]
+        delta_len = 0
+        for i, idx in enumerate(replace_idx_list):
+            if i >= len(mm_grid_thw):
+                raise ValueError("Found more mm tags than actual mm objects provided.")
+            mm_structure_ids = vision_structure_builder(i)
+            token_ids = token_ids[: idx + delta_len] + mm_structure_ids + token_ids[idx + delta_len + 1 :]
+            labels = labels[: idx + delta_len] + [-100] * len(mm_structure_ids) + labels[idx + delta_len + 1 :]
+            delta_len += len(mm_structure_ids) - 1
+        return token_ids, labels
+
     def pre_tokenize(
         self,
         messages,
@@ -752,6 +766,49 @@ class ErnieVLPlugin(BasePlugin):
 
         return messages
 
+    @override
+    def pre_tokenize(self, messages, images, videos, mm_inputs, processor):
+        tokenizer = getattr(processor, "tokenizer")
+        content = messages[0]["content"]
+        content = content.replace(IMAGE_PLACEHOLDER, self.image_token)
+        content = content.replace(VIDEO_PLACEHOLDER, self.video_token)
+        token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(content))
+        token_ids = token_ids + [tokenizer.eos_token_id]
+
+        image_token_id = tokenizer.convert_tokens_to_ids(self.image_token)
+        video_token_id = tokenizer.convert_tokens_to_ids(self.video_token)
+        image_processor = getattr(processor, "image_processor")
+        merge_length = getattr(image_processor, "merge_size") ** 2
+        temporal_conv_size = getattr(image_processor, "temporal_conv_size")
+
+        if self.expand_mm_tokens:
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            video_grid_thw = mm_inputs.get("video_grid_thw", [])
+        else:
+            image_grid_thw = [None] * len(images)
+            video_grid_thw = [None] * len(videos)
+
+        def build_image_structure(i):
+            seqlen = image_grid_thw[i].prod().item() // merge_length if self.expand_mm_tokens else 1
+            s = f"Picture {i + 1}:{self.image_bos_token}{self.image_token * seqlen}{self.image_eos_token}"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
+
+        def build_video_structure(i):
+            seqlen = (
+                video_grid_thw[i].prod().item() // merge_length // temporal_conv_size if self.expand_mm_tokens else 1
+            )
+            s = f"Video {i + 1}:{self.vision_bos_token}{self.video_token * seqlen}{self.vision_eos_token}"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
+
+        labels = [-1] * len(token_ids)
+        token_ids, labels = self._replace_mm_tokens(
+            token_ids, labels, image_token_id, image_grid_thw, build_image_structure
+        )
+        token_ids, labels = self._replace_mm_tokens(
+            token_ids, labels, video_token_id, video_grid_thw, build_video_structure
+        )
+        return token_ids, labels
+
 
 @dataclass
 class Qwen2VLPlugin(BasePlugin):
@@ -898,6 +955,7 @@ class Qwen2VLPlugin(BasePlugin):
 
             message["content"] = content
 
+        self.masked_tokens = [self.vision_bos_token, self.image_token, self.video_token, self.vision_eos_token]
         return messages
 
 
@@ -1123,20 +1181,6 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
                 mm_inputs["second_per_grid_ts"] = [temporal_patch_size / fps for fps in videos["fps_per_video"]]
 
         return mm_inputs
-
-    def _replace_mm_tokens(self, token_ids, labels, mm_token_id, mm_grid_thw, mm_name, vision_structure_builder):
-        """generic func for img/videos"""
-        replace_idx_list = [i for i, token in enumerate(token_ids) if token == mm_token_id]
-        delta_len = 0
-        for i, idx in enumerate(replace_idx_list):
-            if i >= len(mm_grid_thw):
-                raise ValueError(f"Found more {mm_name} tags than actual {mm_name}s provided.")
-            mm_structure_ids = vision_structure_builder(i)
-            token_ids = token_ids[: idx + delta_len] + mm_structure_ids + token_ids[idx + delta_len + 1 :]
-            labels = labels[: idx + delta_len] + [-100] * len(mm_structure_ids) + labels[idx + delta_len + 1 :]
-            delta_len += len(mm_structure_ids) - 1
-
-        return token_ids, labels
 
     @override
     def pre_tokenize(self, messages, images, videos, mm_inputs, processor):
@@ -1428,8 +1472,67 @@ class GLM4VPlugin(Qwen2VLPlugin):
     ):
         self._validate_input(processor, images, videos, audios)
         mm_inputs = self._get_mm_inputs(images, videos, audios, processor, **kwargs)
-        mm_inputs.pop("timestamps", None)
         return mm_inputs
+
+    @override
+    def pre_tokenize(self, messages, images, videos, mm_inputs, processor):
+        tokenizer = getattr(processor, "tokenizer")
+        content = messages[0]["content"]
+        content = content.replace(IMAGE_PLACEHOLDER, self.image_token)
+        content = content.replace(VIDEO_PLACEHOLDER, self.video_token)
+        token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(content))
+        token_ids = token_ids + [tokenizer.eos_token_id]
+
+        image_token_id = tokenizer.convert_tokens_to_ids(self.image_token)
+        video_token_id = tokenizer.convert_tokens_to_ids(self.video_token)
+        merge_length = getattr(getattr(processor, "image_processor"), "merge_size") ** 2
+
+        if self.expand_mm_tokens:
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            video_grid_thw = mm_inputs.get("video_grid_thw", [])
+            num_frames = video_grid_thw[0][0] if len(video_grid_thw) > 0 else 0
+            timestamps = mm_inputs.get("timestamps", [])
+            if hasattr(timestamps, "tolist"):
+                timestamps = timestamps.tolist()
+            if not timestamps:
+                timestamps_list = []
+            elif isinstance(timestamps[0], list):
+                timestamps_list = timestamps[0]
+            else:
+                timestamps_list = timestamps
+            selected_timestamps = timestamps_list[:num_frames]
+            while len(selected_timestamps) < num_frames:
+                selected_timestamps.append(selected_timestamps[-1] if selected_timestamps else 0)
+        else:
+            image_grid_thw = [None] * len(images)
+            video_grid_thw = [None] * len(videos)
+            num_frames = 0
+            selected_timestamps = [0]
+
+        def build_image_structure(i):
+            seqlen = image_grid_thw[i].prod().item() // merge_length if self.expand_mm_tokens else 1
+            s = f"<|begin_of_image|>{self.image_token * seqlen}<|end_of_image|>"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
+
+        def build_video_structure(i):
+            video_structure = ""
+            for frame_index in range(num_frames):
+                seqlen = video_grid_thw[i][1:].prod().item() // merge_length if self.expand_mm_tokens else 1
+                ts = selected_timestamps[frame_index]
+                video_structure += f"<|begin_of_image|>{self.image_token * seqlen}<|end_of_image|>{ts}"
+            if not self.expand_mm_tokens:
+                video_structure = self.video_token
+            s = f"<|begin_of_video|>{video_structure}<|end_of_video|>"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
+
+        labels = [-1] * len(token_ids)
+        token_ids, labels = self._replace_mm_tokens(
+            token_ids, labels, image_token_id, image_grid_thw, build_image_structure
+        )
+        token_ids, labels = self._replace_mm_tokens(
+            token_ids, labels, video_token_id, video_grid_thw, build_video_structure
+        )
+        return token_ids, labels
 
 
 @dataclass
