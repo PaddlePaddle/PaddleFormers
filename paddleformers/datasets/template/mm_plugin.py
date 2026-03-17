@@ -1124,14 +1124,13 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
 
         return mm_inputs
 
-    def _replace_mm_tokens(self, token_ids, labels, mm_token_id, mm_grid_thw, vision_structure_builder):
+    def _replace_mm_tokens(self, token_ids, labels, mm_token_id, mm_grid_thw, mm_name, vision_structure_builder):
         """generic func for img/videos"""
         replace_idx_list = [i for i, token in enumerate(token_ids) if token == mm_token_id]
         delta_len = 0
         for i, idx in enumerate(replace_idx_list):
-            # if i >= len(mm_grid_thw):
-            #     mm_name="image" or "video"
-            #     raise ValueError(f"Found more {mm_name} tags than actual {mm_name}s provided.")
+            if i >= len(mm_grid_thw):
+                raise ValueError(f"Found more {mm_name} tags than actual {mm_name}s provided.")
             mm_structure_ids = vision_structure_builder(i)
             token_ids = token_ids[: idx + delta_len] + mm_structure_ids + token_ids[idx + delta_len + 1 :]
             labels = labels[: idx + delta_len] + [-100] * len(mm_structure_ids) + labels[idx + delta_len + 1 :]
@@ -1139,6 +1138,7 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
 
         return token_ids, labels
 
+    @override
     def pre_tokenize(self, messages, images, videos, mm_inputs, processor):
         tokenizer = getattr(processor, "tokenizer")
         content = messages[0]["content"]
