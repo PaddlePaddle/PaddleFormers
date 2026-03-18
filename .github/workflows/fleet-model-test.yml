@@ -173,7 +173,14 @@ jobs:
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
-          pip install -e ".[paddlefleet]" --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          wget https://paddle-github-action.cdn.bcebos.com/PaddleFleet/PR/563/a5f07a865b7c36ec4e6b4cad60fc21bc21930641/develop/paddldfleet.tar.gz
+          tar -xf paddldfleet.tar.gz
+          git config --global --add safe.directory paddle
+          cd paddle
+          pip install dist/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          cd -
+          pip install paddlepaddle-gpu==3.4.0.dev20260315 -i https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-deps
+          pip install -e "." --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlefleet -y
           # pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
@@ -326,7 +333,14 @@ jobs:
           git config pull.rebase false
           git pull --no-edit origin pull/${PR_ID}/head
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
-          pip install -e ".[paddlefleet]" --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          wget https://paddle-github-action.cdn.bcebos.com/PaddleFleet/PR/563/a5f07a865b7c36ec4e6b4cad60fc21bc21930641/develop/paddldfleet.tar.gz
+          tar -xf paddldfleet.tar.gz
+          git config --global --add safe.directory paddle
+          cd paddle
+          pip install dist/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          cd -
+          pip install paddlepaddle-gpu==3.4.0.dev20260315 -i https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-deps
+          pip install -e "." --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlefleet -y
           # pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
@@ -609,7 +623,14 @@ jobs:
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/glm45_provider.py
           sed -i "s/from gpt_provider import GPTModelProvider/from paddleformers.transformers.gpt_provider import GPTModelProvider/g" examples/experiments/paddlefleet/qwen_provider.py
-          pip install -e ".[paddlefleet]" --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          wget https://paddle-github-action.cdn.bcebos.com/PaddleFleet/PR/563/a5f07a865b7c36ec4e6b4cad60fc21bc21930641/develop/paddldfleet.tar.gz
+          tar -xf paddldfleet.tar.gz
+          git config --global --add safe.directory paddle
+          cd paddle
+          pip install dist/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          cd -
+          pip install paddlepaddle-gpu==3.4.0.dev20260315 -i https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --force-reinstall --no-deps
+          pip install -e "." --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
           # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlefleet -y
           # pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
