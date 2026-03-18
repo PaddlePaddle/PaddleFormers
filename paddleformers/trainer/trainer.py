@@ -48,6 +48,7 @@ from paddle.base import core
 from paddle.distributed import ShardedWeight
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
 from paddle.distributed.fleet.meta_parallel import PipelineLayer
+from paddle.distributed.fsdp.fully_shard import fully_shard
 
 try:
     from paddle.distributed.fleet.meta_parallel import PipelineDatasetPreprocessor
@@ -1412,10 +1413,11 @@ class Trainer:
         # Do nothing when not in auto parallel mode.
         if not self.args.enable_auto_parallel:
             return
-        self.optimizer = parallelize.parallelize_optimizer(
-            self.optimizer,
-            config=self.auto_dist_config,
-        )
+        model = fully_shard(model, mesh=self.global_mesh)
+        # self.optimizer = parallelize.parallelize_optimizer(
+        #     self.optimizer,
+        #     config=self.auto_dist_config,
+        # )
         if hasattr(self.optimizer, "_enable_tensor_fusion") and self.args.tensor_fusion:
             self.optimizer._enable_tensor_fusion()
         if hasattr(self.optimizer, "_enable_sharding_overlap") and self.args.overlap:
@@ -1446,6 +1448,9 @@ class Trainer:
                 A list of keys in the output of your model (if it is a dictionary) that should be ignored when
                 gathering predictions for evaluation during the training.
         """
+        if self.args.enable_auto_parallel:
+            dist.enable_auto_dp()
+
         args = self.args
         self.is_in_train = True
 
@@ -2682,10 +2687,15 @@ class Trainer:
 
         additional_configs = {}
         if is_iterable_dataset:  # For iterable dataset
+            total_batch_size = self.args.per_device_train_batch_size
+            if self.args.enable_auto_parallel:
+                total_batch_size = (
+                    total_batch_size * self.args.dataset_world_size * self.args.gradient_accumulation_steps
+                )
             if self.args.dataset_world_size > 1 and train_dataset is not None:
                 train_dataset = IterableDatasetShard(
                     train_dataset,
-                    batch_size=self.args.per_device_train_batch_size,
+                    batch_size=total_batch_size,
                     drop_last=self.args.dataloader_drop_last,
                     num_processes=self.args.dataset_world_size,
                     process_index=self.args.dataset_rank,
@@ -2696,7 +2706,7 @@ class Trainer:
                 additional_configs = {"is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
             train_dataloader = _DataLoader(
                 train_dataset,
-                batch_size=self.args.per_device_train_batch_size,
+                batch_size=total_batch_size,
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
@@ -3720,7 +3730,8 @@ class Trainer:
             signal_dir = self.args.output_signal_dir
 
         if ShardingOption.FULL_SHARD in self.args.sharding:
-            self.model_wrapped.get_all_parameters(convert2cpu=True, with_freeze_param=True)
+            if not self.args.enable_auto_parallel:
+                self.model_wrapped.get_all_parameters(convert2cpu=True, with_freeze_param=True)
 
         if self.args.should_save_model_state:
             self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel, last_fc_to_hf=last_fc_to_hf)
