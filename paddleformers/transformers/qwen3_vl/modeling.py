@@ -111,10 +111,10 @@ class Qwen3VLVisionPatchEmbed(nn.Layer):
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
         target_dtype = self.proj.weight.dtype
-        hidden_states = hidden_states.view(
-            -1, self.in_channels, self.temporal_patch_size, self.patch_size, self.patch_size
+        hidden_states = hidden_states.reshape(
+            [-1, self.in_channels, self.temporal_patch_size, self.patch_size, self.patch_size]
         )
-        hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).view(-1, self.embed_dim)
+        hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).reshape([-1, self.embed_dim])
         return hidden_states
 
 
@@ -528,7 +528,7 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
     def rot_pos_emb(self, grid_thw):
         pos_ids = []
         for t, h, w in grid_thw:
-            hpos_ids = paddle.arange(h).unsqueeze(1).expand([-1, w])
+            hpos_ids = paddle.arange(h).unsqueeze(1).expand([h, w])
             hpos_ids = hpos_ids.reshape(
                 [
                     h // self.spatial_merge_size,
@@ -540,7 +540,7 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
             hpos_ids = hpos_ids.transpose(perm=[0, 2, 1, 3])
             hpos_ids = hpos_ids.flatten()
 
-            wpos_ids = paddle.arange(w).unsqueeze(0).expand([h, -1])
+            wpos_ids = paddle.arange(w).unsqueeze(0).expand([h, w])
             wpos_ids = wpos_ids.reshape(
                 [
                     h // self.spatial_merge_size,
@@ -554,7 +554,7 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
             pos_ids.append(paddle.stack(x=[hpos_ids, wpos_ids], axis=-1).tile(repeat_times=[t, 1]))
         pos_ids = paddle.cat(x=pos_ids, axis=0)
         max_grid_size = grid_thw[:, 1:].max()
-        rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
+        rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size.item())
         rotary_pos_emb = rotary_pos_emb_full[pos_ids].flatten(start_axis=1)
         return rotary_pos_emb
 
@@ -590,8 +590,8 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
         weight_list = [[] for _ in range(4)]
 
         for t, h, w in zip(grid_ts, grid_hs, grid_ws):
-            h_idxs = paddle.linspace(0, self.num_grid_per_side - 1, h)
-            w_idxs = paddle.linspace(0, self.num_grid_per_side - 1, w)
+            h_idxs = paddle.linspace(0, self.num_grid_per_side - 1, int(h))
+            w_idxs = paddle.linspace(0, self.num_grid_per_side - 1, int(w))
 
             h_idxs_floor = h_idxs.int()
             w_idxs_floor = w_idxs.int()
@@ -665,9 +665,7 @@ class Qwen3VLVisionModel(Qwen3VLPretrainedModel):
         emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), axis=-1)
         position_embeddings = (emb.cos(), emb.sin())
 
-        cu_seqlens = paddle.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
-            axis=0, dtype="int32"
-        )
+        cu_seqlens = (grid_thw[:, 1] * grid_thw[:, 2]).cumsum(axis=0, dtype="int32")
         cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
 
         lengths = cu_seqlens[1:] - cu_seqlens[:-1]
@@ -1228,9 +1226,8 @@ class Qwen3VLTextModel(Qwen3VLPretrainedModel):
                 end_col = start_col + slice_width
                 visual_embeds = visual_embeds[:, start_col:end_col]
 
-        hidden_states = hidden_states.clone()
-        local_this = hidden_states[visual_pos_masks, :] + visual_embeds
-        hidden_states[visual_pos_masks, :] = local_this
+        update_indices = paddle.nonzero(visual_pos_masks)
+        hidden_states = paddle.scatter_nd_add(hidden_states, update_indices, visual_embeds)
 
         # [Supplement 3] Restore original shape [B*S, D] -> [B, S, D] if necessary
         if len(original_shape) > 2:
