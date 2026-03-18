@@ -34,7 +34,14 @@ from paddle.distributed.fleet.meta_parallel.zero_bubble_utils import WeightGradS
 try:
     from paddlefleet.ops import deep_gemm
 except:
-    pass
+    try:
+        from paddle.incubate.fp8 import deep_gemm
+    except:
+        pass
+    else:
+        deep_gemm.set_num_sms = lambda num: setattr(deep_gemm.jit_kernels.utils, "_num_sms", num)
+        deep_gemm.fp8_gemm_nt = deep_gemm.gemm_fp8_fp8_bf16_nt
+        deep_gemm.m_grouped_fp8_gemm_nt_contiguous = deep_gemm.m_grouped_gemm_fp8_fp8_bf16_nt_contiguous
 
 
 __all__ = [
