@@ -2602,11 +2602,11 @@ class Trainer:
             self._save_checkpoint(model, metrics=metrics)
             if self.control.should_log:
                 logs.update({"global_save_step": self.state.global_step})
-                self.log(logs, **kwargs)
             logger.info(f"{self.runtime_timer.log()}")
             self.control = self.callback_handler.on_save(self.args, self.state, self.control)
             self.log_trained_tokens()
-        elif self.control.should_log:
+
+        if self.control.should_log:
             self.log(logs, **kwargs)
 
         if self.control.should_save_hf:
