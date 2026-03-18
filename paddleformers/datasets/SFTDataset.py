@@ -589,6 +589,14 @@ class BaseSFTDataset:
             while True:
                 yield from self.__iter_func()
 
+    def _encode_pretraining_messages(self, messages, actual_example_num):
+        # tokens
+        content = messages[0]["content"]
+        tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(content))
+        # Add an EOS token at the end of each sample
+        tokens = tokens + [self.tokenizer.eos_token_id]
+        return tokens
+
     def _postprocess_pretraining_sequence(self, example, actual_example_num):
 
         messages = example.get("messages", [])
@@ -597,17 +605,20 @@ class BaseSFTDataset:
         audios = example.get("audios", [])
 
         if len(images) == 0 and len(videos) == 0 and len(audios) == 0:
-            content = messages[0]["content"]
-            tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(content))
-            tokens = tokens + [self.tokenizer.eos_token_id]
+            tokens = self._encode_pretraining_messages(messages, actual_example_num)
             if len(tokens) > self.max_seq_len + 1:
+                # Truncate the sequence to the maximum length
                 tokens = tokens[: self.max_seq_len + 1]
-            return Sequence(
-                token_ids=tokens[:-1],
-                position_ids=list(range(len(tokens) - 1)),
-                labels=tokens[1:],
+            res_tokens = tokens[:-1]
+            res_labels = tokens[1:]
+            pos_ids = list(range(len(res_tokens)))
+            sequence = Sequence(
+                token_ids=res_tokens,
+                position_ids=pos_ids,
+                labels=res_labels,
                 num_examples=actual_example_num,
             )
+            return sequence
         else:
             mm_inputs = self.template.mm_plugin.get_mm_inputs(
                 images,
@@ -633,7 +644,7 @@ class BaseSFTDataset:
             labels = self.template.mm_plugin.process_tokens(tokens, self.processor)
             # use -100 value in pre_labels to cover values in labels
             assert len(pre_labels) == len(labels)
-            labels = [-100 if p == -100 else l for p, l in zip(pre_labels, labels)]
+            labels = [-100 if pre_labels[i] == -100 else label for i, label in enumerate(labels)]
             # label shift
             labels = labels[1:] + [-100]
 
