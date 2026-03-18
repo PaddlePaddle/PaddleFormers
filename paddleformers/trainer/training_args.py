@@ -2683,7 +2683,7 @@ class TrainingArguments:
                 self.expert_tensor_model_parallel_size = -1
 
         # NOTE(Waynezee): when moe_grouped_gemm is true and sharding_parallel_size = 1,  checkpoint will fail to save
-        if hasattr(self, "moe_grouped_gemm") and self.moe_grouped_gemm:
+        if hasattr(self, "moe_grouped_gemm") and self.moe_grouped_gemm and self.world_size > 1:
             assert (
                 self.sharding_parallel_size > 1
             ), "Checkpoint will fail to save when moe_grouped_gemm is true and sharding_parallel_size = 1, please set moe_grouped_gemm to false"
