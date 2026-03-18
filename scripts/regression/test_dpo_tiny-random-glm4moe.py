@@ -134,6 +134,7 @@ class DPOTrainTest(unittest.TestCase):
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
             "template": TEMPLATE,
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -184,6 +185,7 @@ class DPOTrainTest(unittest.TestCase):
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
             "template": TEMPLATE,
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -241,6 +243,7 @@ class DPOTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "template": TEMPLATE,
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -292,6 +295,7 @@ class DPOTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "template": TEMPLATE,
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)

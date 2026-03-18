@@ -10,7 +10,7 @@ truncate_packing: true
 max_seq_len: 8192
 mix_strategy: concat
 dataloader_shuffle: false
-dataloader_num_workers: 24
+dataloader_num_workers: 4
 prefetch_factor: 24
 
 
