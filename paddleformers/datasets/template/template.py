@@ -828,6 +828,15 @@ register_template(
     chat_sep="<｜end▁of▁sentence｜>",
 )
 
+register_template(
+    name="kimi_k2",
+    format_system=StringFormatter(slots=["{{content}}\n\n"]),
+    format_user=StringFormatter(slots=["<｜User｜>{{content}}\n\n<｜Assistant｜>"]),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    chat_sep="<｜end▁of▁sentence｜>",
+)
+
 
 def _get_gpt_oss_prefix():
     today = datetime.now().strftime("%Y-%m-%d")
@@ -903,4 +912,12 @@ register_template(
     format_system=StringFormatter(slots=["<|im_start|>system<|im_sep|>{{content}}<|im_end|>"]),
     suffix=["<|im_end|>"],
     chat_sep="<|im_end|>",
+)
+register_template(
+    name="glm_ocr",
+    format_user=StringFormatter(slots=["<|user|>\n{{content}}\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
+    chat_sep="<|assistant|>\n",
+    mm_plugin=get_mm_plugin(name="glm_ocr", image_token="<|image|>"),
 )

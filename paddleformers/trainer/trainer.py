@@ -930,7 +930,7 @@ class Trainer:
 
     def _create_zcc_manager_instance(self, unwrapped_model, zcc_worker_class):
         """Create ZCC manager instance with appropriate configuration."""
-        if isinstance(self.model, PipelineLayer):
+        if isinstance(self.model, PipelineLayer) and self.args.pipeline_model_parallel_size > 1:
             pipeline_hooks_capacity = (
                 unwrapped_model.forward_pipeline_parallel_hook_capacity
                 + unwrapped_model.backward_pipeline_parallel_hook_capacity
@@ -1024,7 +1024,7 @@ class Trainer:
         self.zcc_manager = self._create_zcc_manager_instance(unwrapped_model, zcc_worker_class)
 
         # Register pipeline hooks if using pipeline parallelism
-        if isinstance(self.model, PipelineLayer):
+        if isinstance(self.model, PipelineLayer) and self.args.pipeline_model_parallel_size > 1:
             self._register_pipeline_hooks(unwrapped_model)
 
         # Add callback and handle checkpoint resumption
@@ -2602,6 +2602,9 @@ class Trainer:
                 paddle.device.synchronize()
 
             self._save_checkpoint(model, metrics=metrics)
+            if self.control.should_log:
+                logs.update({"global_save_step": self.state.global_step})
+                self.log(logs, **kwargs)
             logger.info(f"{self.runtime_timer.log()}")
             self.control = self.callback_handler.on_save(self.args, self.state, self.control)
             self.log_trained_tokens()
@@ -3611,6 +3614,9 @@ class Trainer:
 
         if self.args.pipeline_model_parallel_size > 1:
             return self.training_pipeline_step(model, inputs)
+
+        if hasattr(model, "_prepare_unified_non_pp_data"):
+            model._prepare_unified_non_pp_data(inputs)
 
         model.train()
         inputs = self._prepare_inputs(inputs)
@@ -5011,8 +5017,9 @@ class Trainer:
 
         if len(tensor.shape) < 2:
             return tensor
-        # Gather all sizes
-        size = paddle.to_tensor(tensor.shape)[None]
+        # Gather all sizes - convert shape to list of Python ints for NumPy 2.x compatibility
+        tensor_shape_list = [int(dim) for dim in tensor.shape]
+        size = paddle.to_tensor(tensor_shape_list)[None]
         sizes = self._nested_gather(size).cpu()
 
         max_size = max(s[1] for s in sizes)
