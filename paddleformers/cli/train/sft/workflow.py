@@ -495,6 +495,8 @@ def run_sft(
                 while not train_dataset.iter_all_examples:
                     serialized_sequences = future.result()
                     future = executor.submit(fetch_and_serialize, train_sample_generator, save_dtype)
+                    if train_dataset.iter_all_examples:
+                        break
                     for serialized in serialized_sequences:
                         train_builder.add_item_bytes(serialized)
                     train_builder.end_document()
