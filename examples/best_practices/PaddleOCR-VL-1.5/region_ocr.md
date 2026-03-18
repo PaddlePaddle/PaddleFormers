@@ -666,7 +666,7 @@ load_checkpoint_format: "flex_checkpoint"
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 paddleformers-cli train examples/best_practices/PaddleOCR-VL-1.5/paddleocr-vl_full_16k_region_config.yaml \
-                        model_name_or_path=./PaddlePaddle/PaddleOCR-VL-1.5 \
+                        model_name_or_path=PaddlePaddle/PaddleOCR-VL-1.5 \
                         train_dataset_path=./region_visual/region_visual_train.jsonl \
                         eval_dataset_path=./region_visual/region_visual_val.jsonl \
                         pre_alloc_memory=29
@@ -696,7 +696,7 @@ visualdl --logdir ./PaddleOCR-VL-1.5-SFT-RegionOCR/visualdl_logs/ --port 8084
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 paddleformers-cli train examples/best_practices/PaddleOCR-VL-1.5/paddleocr-vl_lora_16k_region_config.yaml \
-                        model_name_or_path=./PaddlePaddle/PaddleOCR-VL-1.5 \
+                        model_name_or_path=PaddlePaddle/PaddleOCR-VL-1.5 \
                         train_dataset_path=./region_visual/region_visual_train.jsonl \
                         eval_dataset_path=./region_visual/region_visual_val.jsonl \
                         pre_alloc_memory=26
@@ -729,7 +729,7 @@ LoRA 训练结束后，模型会保存在 `output_dir=./PaddleOCR-VL-1.5-SFT-Reg
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 paddleformers-cli export ./examples/config/run_export.yaml \
-    model_name_or_path=./PaddlePaddle/PaddleOCR-VL-1.5 \
+    model_name_or_path=PaddlePaddle/PaddleOCR-VL-1.5 \
     output_dir=./PaddleOCR-VL-1.5-SFT-RegionOCR-lora
 ```
 合并后的完整模型权重保存在 `output_dir=./PaddleOCR-VL-1.5-SFT-RegionOCR-lora/export` 路径下。
