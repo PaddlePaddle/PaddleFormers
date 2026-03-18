@@ -17,9 +17,56 @@ Audio processing functions to extract features from audio waveforms. This code i
 and remove unnecessary dependencies.
 """
 import warnings
-from typing import Optional, Union
+from typing import Optional, Sequence, Union
 
 import numpy as np
+
+AudioInput = Union[np.ndarray, "paddle.Tensor", Sequence[np.ndarray], Sequence["paddle.Tensor"]]
+
+def load_audio(audio: str | np.ndarray, sampling_rate=16000, timeout=None) -> np.ndarray:
+    """
+    Loads `audio` to an np.ndarray object.
+
+    Args:
+        audio (`str` or `np.ndarray`):
+            The audio to be loaded to the numpy array format.
+        sampling_rate (`int`, *optional*, defaults to 16000):
+            The sampling rate to be used when loading the audio. It should be same as the
+            sampling rate the model you will be using further was trained with.
+        timeout (`float`, *optional*):
+            The timeout value in seconds for the URL request.
+
+    Returns:
+        `np.ndarray`: A numpy array representing the audio.
+    """
+    
+    
+    if isinstance(audio, str):
+        try:
+            paddle.compat.enable_torch_proxy(scope={"torchcodec"})
+            from torchcodec.decoders import AudioDecoder
+            decoder = AudioDecoder(audio, sample_rate=sampling_rate, num_channels=1)
+            audio = decoder.get_all_samples().data[0].numpy()  # NOTE: feature extractors don't accept torch tensors
+        except (ImportError, RuntimeError) as e:
+            logger.error(
+                f"Failed to load 'torchcodec' backend via Paddle proxy.\n"
+                f"  - Common Causes:\n"
+                f"    1. Conflict with official 'torch' or 'torchcodec' packages.\n"
+                f"    2. Missing FFmpeg libraries or System library mismatch (CXXABI).\n"
+                f"  - Recommended Fix Steps:\n"
+                f"    1. Install dependencies: `conda install ffmpeg -c conda-forge` or `apt-get update && apt-get install ffmpeg` \n"
+                f"    2. Uninstall conflicts: `pip uninstall torchcodec paddlecodec -y`\n"
+                f"    3. Reinstall packages: `pip install paddlecodec --force-reinstall`\n"
+                f"  - If you encounter 'CXXABI' or 'libstdc++' errors, your system libraries might be outdated.\n"
+                f"    Try prioritizing Conda libraries by running: `LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH python your_script.py`\n"
+                f"  - Original Error: {e}"
+            )
+            raise
+    elif not isinstance(audio, np.ndarray):
+        raise TypeError(
+            "Incorrect format used for `audio`. Should be an url linking to an audio, a local path, or numpy array."
+        )
+    return audio
 
 
 def hertz_to_mel(freq: Union[float, np.ndarray], mel_scale: str = "htk") -> Union[float, np.ndarray]:

@@ -53,6 +53,7 @@ import_structure = {
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
     "image_processing_utils": ["PaddleImageProcessingMixin", "ImageProcessingMixin", "BaseImageProcessor"],
     "image_processing_utils_fast": ["BaseImageProcessorFast"],
+    "audio_processing_utils": ["SequenceFeatureExtractor"],
     "video_processing_utils": ["BaseVideoProcessor"],
     "moe_gate": ["PretrainedMoEGate", "MoEGateMixin"],
     "token_dispatcher": ["_DispatchManager"],
@@ -65,6 +66,7 @@ import_structure = {
     ],
     "auto.configuration": ["AutoConfig"],
     "auto.image_processing": ["AutoImageProcessor", "IMAGE_PROCESSOR_MAPPING"],
+    "auto.feature_extraction": "AutoFeatureExtractor",
     "auto.modeling": [
         "AutoTokenizer",
         "AutoBackbone",
@@ -238,6 +240,7 @@ import_structure = {
     "qwen2_vl.image_processor_fast": ["Qwen2VLImageProcessorFast"],
     "qwen2_vl.processor": ["Qwen2VLProcessor"],
     "qwen2_vl.video_processor": ["Qwen2VLVideoProcessor"],
+    "whisper.processor": ["WhisperFeatureExtractor"],
     "qwen2_vl.vision_process": ["process_vision_info"],
     "qwen3.configuration": ["Qwen3Config"],
     "qwen3.modeling": [
@@ -337,6 +340,7 @@ if TYPE_CHECKING:
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
     from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
     from .image_processing_utils_fast import BaseImageProcessorFast
+    from .audio_processing_utils import SequenceFeatureExtractor
     from .video_processing_utils import BaseVideoProcessor
     from .attention_utils import create_bigbird_rand_mask_idx_list
     from .sequence_parallel_utils import AllGatherVarlenOp, sequence_parallel_sparse_mask_labels

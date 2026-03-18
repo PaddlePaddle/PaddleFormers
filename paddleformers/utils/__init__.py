@@ -125,6 +125,7 @@ def device_guard(device="cpu", dev_id=0):
 if TYPE_CHECKING:
     import paddle
 
+    from .auto_docstring import *
     from .batch_sampler import *
     from .env import CONFIG_NAME, GENERATION_CONFIG_NAME, LEGACY_CONFIG_NAME
     from .import_utils import *

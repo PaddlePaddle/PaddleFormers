@@ -74,6 +74,7 @@ class _LazyAutoProcessorMapping(dict):
     _MAPPING_NAMES = {
         "image_processor": ("paddleformers.transformers.auto.image_processing", "AutoImageProcessor"),
         "video_processor": ("paddleformers.transformers.auto.video_processing", "AutoVideoProcessor"),
+        "feature_extractor": ("paddleformers.transformers.auto.feature_extraction", "AutoFeatureExtractor"),
         "tokenizer": ("paddleformers.transformers.auto.tokenizer", "AutoTokenizer"),
     }
 
@@ -97,6 +98,7 @@ MODALITY_TO_BASE_CLASS_MAPPING = {
     "tokenizer": "PreTrainedTokenizerBase",
     "image_processor": "PaddleImageProcessingMixin",
     "video_processor": "BaseVideoProcessor",
+    "feature_extractor": "SequenceFeatureExtractor",
 }
 
 
@@ -265,10 +267,12 @@ class PaddleProcessorMixin:
         # If the exact attribute name is not in the mapping, use its canonical modality
         if argument_name not in MODALITY_TO_BASE_CLASS_MAPPING:
             argument_name = _get_modality_for_attribute(argument_name)
+
         class_name = MODALITY_TO_BASE_CLASS_MAPPING.get(argument_name)
         if isinstance(class_name, tuple):
             proper_class = tuple(self.get_possibly_dynamic_module(n) for n in class_name if n is not None)
         else:
+
             proper_class = self.get_possibly_dynamic_module(class_name)
 
         if not isinstance(argument, proper_class):
@@ -654,7 +658,7 @@ class PaddleProcessorMixin:
 
         # We have to pop up some unused (but specific) kwargs and then validate that it doesn't contain unused kwargs
         # If we don't pop, some specific kwargs will raise a warning or error
-        for unused_kwarg in cls.attributes + ["auto_map", "processor_class"]:
+        for unused_kwarg in cls.get_attributes() + ["auto_map", "processor_class"]:
             processor_dict.pop(unused_kwarg, None)
 
         # override processor_dict with given kwargs
