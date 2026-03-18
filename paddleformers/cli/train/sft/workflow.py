@@ -345,7 +345,7 @@ def run_sft(
     # else:
     #     model = model_class.from_config(model_config, dtype=dtype)
 
-    model = Qwen3OmniMoeThinkerForConditionalGeneration.from_config(model_config)
+    # model = Qwen3OmniMoeThinkerForConditionalGeneration.from_config(model_config)
 
     if training_args.do_train and model_args.neftune:
         # Inspired by https://github.com/neelsjain/NEFTune
@@ -573,7 +573,9 @@ def run_sft(
                 is_valid=True,
                 **dataset_config,
             )
-
+    ########## for debug
+    for item in train_dataset:
+        print(item)
     # Freeze model based on training args (Supports for MLLM Full training)
     if not model_args.lora and getattr(training_args, "freeze_config", ""):
         freeze_model_parameters(model, training_args.freeze_config)

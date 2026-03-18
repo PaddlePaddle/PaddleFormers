@@ -349,6 +349,8 @@ def _read_video_paddlecodec(
     )
     video_path = ele["video"]
     st = time.time()
+    # with open(video_path, 'rb') as f:
+    #     res = BytesIO(f.read())
     decoder = VideoDecoder(video_path, num_ffmpeg_threads=PADDLECODEC_NUM_THREADS)
     video_fps = decoder.metadata.average_fps
     total_frames = decoder.metadata.num_frames
