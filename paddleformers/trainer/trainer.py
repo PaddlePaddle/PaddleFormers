@@ -2482,6 +2482,7 @@ class Trainer:
             return loss
 
     def _maybe_log_save_evaluate(self, tr_loss, model, epoch, ignore_keys_for_eval, **kwargs):
+        flag_log = self.control.should_log
         if self.control.should_log:
 
             logs: Dict[str, float] = {}
@@ -2579,6 +2580,7 @@ class Trainer:
                             "gpu_max_memory_reserved": paddle_device.max_memory_reserved() >> 20,
                         }
                     )
+            self.log(logs, **kwargs)
 
         metrics = None
         if self.control.should_evaluate:
@@ -2600,14 +2602,12 @@ class Trainer:
                 paddle.device.synchronize()
 
             self._save_checkpoint(model, metrics=metrics)
-            if self.control.should_log:
+            if flag_log:
                 logs.update({"global_save_step": self.state.global_step})
+                self.log(logs, **kwargs)
             logger.info(f"{self.runtime_timer.log()}")
             self.control = self.callback_handler.on_save(self.args, self.state, self.control)
             self.log_trained_tokens()
-
-        if self.control.should_log:
-            self.log(logs, **kwargs)
 
         if self.control.should_save_hf:
             if self.args.save_checkpoint_format == "flex_checkpoint":
