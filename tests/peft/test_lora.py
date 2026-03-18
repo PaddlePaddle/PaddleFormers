@@ -27,6 +27,8 @@ from paddleformers.transformers import AutoModelForCausalLM, Glm4MoeModel
 
 from ..testing_utils import gpu_device_initializer
 
+from ..testing_utils import gpu_device_initializer
+
 
 class TestLoraLayer(unittest.TestCase):
     @gpu_device_initializer(log_prefix="TestLoraLayer")
