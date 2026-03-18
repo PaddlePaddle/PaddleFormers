@@ -644,7 +644,7 @@ class BaseSFTDataset:
             labels = self.template.mm_plugin.process_tokens(tokens, self.processor)
             # use -100 value in pre_labels to cover values in labels
             assert len(pre_labels) == len(labels)
-            labels = [-100 if pre_labels[i] == -100 else label for i, label in enumerate(labels)]
+            labels = [-100 if p == -100 else l for p, l in zip(pre_labels, labels)]
             # label shift
             labels = labels[1:] + [-100]
 
