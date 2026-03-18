@@ -163,6 +163,9 @@ import_structure = {
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
     "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
+    "kimi_k2.configuration": ["KimiK2Config"],
+    "kimi_k2.modeling": ["KimiK2ForCausalLM", "KimiK2ForCausalLMPipe"],
+    "kimi_k2.tokenizer": ["KimiK2TikTokenTokenizer"],
     "llama.configuration": [
         "LlamaConfig",
     ],
@@ -187,6 +190,8 @@ import_structure = {
         "Qwen2ForSequenceClassification",
         "Qwen2ForTokenClassification",
         "Qwen2SentenceEmbedding",
+        "Qwen2ForCausalLMDeprecated",
+        "Qwen2ForCausalLMPipeDeprecated",
     ],
     "qwen2.tokenizer": ["Qwen2Tokenizer"],
     "qwen2.tokenizer_fast": ["Qwen2TokenizerFast"],
@@ -239,6 +244,8 @@ import_structure = {
         "Qwen2MoeForCausalLM",
         "Qwen2MoeForCausalLMPipe",
         "Qwen2MoePretrainingCriterion",
+        "Qwen2MoeForCausalLMDeprecated",
+        "Qwen2MoeForCausalLMPipeDeprecated",
     ],
     "qwen2_vl.image_processor": ["Qwen2VLImageProcessor"],
     "qwen2_vl.image_processor_fast": ["Qwen2VLImageProcessorFast"],
@@ -255,6 +262,8 @@ import_structure = {
         "Qwen3ForSequenceClassification",
         "Qwen3ForTokenClassification",
         "Qwen3SentenceEmbedding",
+        "Qwen3ForCausalLMDeprecated",
+        "Qwen3ForCausalLMPipeDeprecated",
     ],
     "qwen3_moe.configuration": ["Qwen3MoeConfig"],
     "qwen3_moe.modeling": [
@@ -373,6 +382,8 @@ if TYPE_CHECKING:
     from .ernie4_5 import *
     from .ernie4_5_moe import *
     from .ernie4_5_moe_vl import *
+    from .kimi_k25 import *
+    from .kimi_k2 import *
     from .paddleocr_vl import *
     from .llama import *
     from .optimization import *
@@ -390,7 +401,6 @@ if TYPE_CHECKING:
     from .glm4_moe import *
     from .glm4v_moe import *
     from .gpt_oss import *
-    from .kimi_k25 import *
     from .phi3 import *
     from .gemma3_text import *
     from .glm_ocr import *

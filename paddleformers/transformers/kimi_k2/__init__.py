@@ -1,4 +1,4 @@
-# Copyright (c) 2024 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,30 +11,27 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import sys
 from typing import TYPE_CHECKING
 
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "configuration": ["Qwen2MoeConfig"],
+    "configuration": ["KimiK2Config"],
     "modeling": [
-        "Qwen2MoeGate",
-        "Qwen2MoeDecoderLayer",
-        "Qwen2MoeModel",
-        "Qwen2MoePretrainedModel",
-        "Qwen2MoeForCausalLM",
-        "Qwen2MoeForCausalLMPipe",
-        "Qwen2MoeForCausalLMDeprecated",
-        "Qwen2MoeForCausalLMPipeDeprecated",
+        "KimiK2PretrainedModel",
+        "KimiK2ForCausalLM",
+        "KimiK2ForCausalLMPipe",
+    ],
+    "tokenization": [
+        "KimiK2TikTokenTokenizer",
     ],
 }
 
 if TYPE_CHECKING:
-    from ..qwen2.tokenizer import *
     from .configuration import *
     from .modeling import *
+    from .tokenizer import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

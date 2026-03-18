@@ -24,3 +24,5 @@ GPUtil
 importlib_metadata
 audioread
 librosa
+binpacking
+orjson

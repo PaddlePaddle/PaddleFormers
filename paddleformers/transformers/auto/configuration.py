@@ -39,6 +39,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
         ("paddleocr_vl", "PaddleOCRVLConfig"),
         ("llama", "LlamaConfig"),
+        ("kimi_k2", "KimiK2Config"),
         ("qwen2", "Qwen2Config"),
         ("qwen2_5_vl", "Qwen2_5_VLConfig"),
         ("qwen2_5_vl_text", "Qwen2_5_VLTextConfig"),

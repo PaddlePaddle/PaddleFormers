@@ -285,7 +285,7 @@ class IndexedDatasetBuilder(object):
     }
 
     def __init__(self, out_file, dtype=np.int32):
-        self.out_file = open(out_file, "wb")
+        self.out_file = open(out_file, "ab")
         self.dtype = dtype
         self.data_offsets = [0]
         self.dim_offsets = [0]
@@ -799,14 +799,21 @@ def make_builder(out_file, impl, save_dtype, loss_mask_file=None):
 
 
 class SFTMMapIndexedDatasetBuilder(object):
-    def __init__(self, output_file_dict, dtype):
+    def __init__(self, output_file_dict, dtype, index_file=None):
         self._data_file_dict = {}
         for key, filename in output_file_dict.items():
-            self._data_file_dict[key] = open(filename, "wb")
+            self._data_file_dict[key] = open(filename, "ab", buffering=4 * 1024 * 1024)
         self.output_file_dict = output_file_dict
         self._dtype = dtype
-        self._sizes = []
-        self._doc_idx = [0]
+        self._write_buf = {key: [] for key in output_file_dict}
+
+        if index_file is not None and os.path.exists(index_file):
+            existing = SFTMMapIndexedDataset.Index(index_file, skip_warmup=True)
+            self._sizes = existing._sizes.tolist()
+            self._doc_idx = existing._doc_idx.tolist()
+        else:
+            self._sizes = []
+            self._doc_idx = [0]
 
     def add_item(self, sequence):
         add_sequence_len = False
@@ -817,7 +824,19 @@ class SFTMMapIndexedDatasetBuilder(object):
                 add_sequence_len = True
             self._data_file_dict[key].write(tensor.tobytes(order="C"))
 
+    def add_item_bytes(self, serialized):
+        add_sequence_len = False
+        for key, data, size in serialized:
+            if size > 1 and not add_sequence_len:
+                self._sizes.append(size)
+                add_sequence_len = True
+            self._write_buf[key].append(data)
+
     def end_document(self):
+        for key, buf in self._write_buf.items():
+            if buf:
+                self._data_file_dict[key].write(b"".join(buf))
+                buf.clear()
         self._doc_idx.append(len(self._sizes))
 
     def finalize(self, index_file):
@@ -829,10 +848,10 @@ class SFTMMapIndexedDatasetBuilder(object):
 
 class MMapIndexedDatasetBuilder(object):
     def __init__(self, out_file, dtype, loss_mask_file=None):
-        self._data_file = open(out_file, "wb")
+        self._data_file = open(out_file, "ab")
         self._loss_mask_file = None
         if loss_mask_file is not None:
-            self._loss_mask_file = open(loss_mask_file, "wb")
+            self._loss_mask_file = open(loss_mask_file, "ab")
         self._dtype = dtype
         self._sizes = []
         self._doc_idx = [0]

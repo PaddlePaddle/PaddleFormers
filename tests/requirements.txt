@@ -1,3 +1,7 @@
+--index-url https://pypi.tuna.tsinghua.edu.cn/simple
+--extra-index-url https://mirrors.aliyun.com/pypi/simple
+--trusted-host pypi.tuna.tsinghua.edu.cn
+--trusted-host mirrors.aliyun.com
 parameterized
 torch>=2.1
 huggingface_hub>=1.3.0

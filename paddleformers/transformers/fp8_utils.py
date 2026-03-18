@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from functools import partial
 
 import numpy
@@ -32,13 +31,8 @@ except ImportError:
 
 from paddle.distributed.fleet.meta_parallel.zero_bubble_utils import WeightGradStore
 
-USE_DS_GEMM = os.getenv("USE_DS_GEMM", "False").lower() == "true"
-
 try:
-    if USE_DS_GEMM:
-        import deep_gemm
-    else:
-        from paddle.incubate.fp8 import deep_gemm
+    from paddlefleet.ops import deep_gemm
 except:
     pass
 
@@ -178,13 +172,6 @@ class FP8LinearFunctionBase:
     def kitchen_gemm(
         x_fp8, x_scale, w_fp8, w_scale, is_a_1d_scaled, is_b_1d_scaled, out=None, rtn_dtype=paddle.bfloat16
     ):
-        if USE_DS_GEMM:
-            if out is None:
-                out = paddle.zeros([x_fp8.shape[0], w_fp8.shape[0]], rtn_dtype)
-            if numpy.prod(x_fp8.shape) != 0 and numpy.prod(w_fp8.shape) != 0:
-                deep_gemm.wgrad_gemm_fp8_fp8_fp32_nt((x_fp8, x_scale), (w_fp8, w_scale), out, num_sms=get_sm_num())
-            return out
-
         if out is not None:
             accumulate = True
             out_dtype = out.dtype
@@ -266,9 +253,8 @@ class FP8LinearFunctionBase:
         if out is None:
             out = paddle.empty([input_fp8.shape[0], weight_fp8.shape[0]], dtype=weight.dtype)
 
-        deep_gemm.gemm_fp8_fp8_bf16_nt(
-            (input_fp8, input_scale.T), (weight_fp8, weight_scale), out, num_sms=get_sm_num()
-        )
+        deep_gemm.set_num_sms(get_sm_num())
+        deep_gemm.fp8_gemm_nt((input_fp8, input_scale.T), (weight_fp8, weight_scale), out)
 
         # Return outputs
         if return_mode == "output_only":
@@ -358,7 +344,7 @@ class FP8LinearFunctionBase:
             # Recompute o1 using deep_gemm(x_fp8, w1_t_fp8)
             w1_fp8, w1_scale = weight_quant(w1, True)
             o1 = paddle.empty([x_fp8.shape[0], w1_fp8.shape[0]], dtype=do3.dtype)
-            deep_gemm.gemm_fp8_fp8_bf16_nt((x_fp8, x_scale.T), (w1_fp8, w1_scale), o1, num_sms=get_sm_num())
+            deep_gemm.fp8_gemm_nt((x_fp8, x_scale.T), (w1_fp8, w1_scale), o1)
 
         # [recompute] o2 = swiglu(o1)
         o2 = swiglu(o1)
@@ -852,11 +838,10 @@ def split_group_gemm(x_fp8, x_scale, w_fp8, w_scale, tokens_per_expert, gemm_out
 
         x_scale_tma_align = x_scale[start_idx:end_idx].T.contiguous().T
 
-        deep_gemm.gemm_fp8_fp8_bf16_nt(
+        deep_gemm.fp8_gemm_nt(
             (x_fp8[start_idx:end_idx], x_scale_tma_align),
             (w_fp8[i], w_scale[i]),
             gemm_out[start_idx:end_idx],
-            num_sms=get_sm_num(),
         )
 
         start_idx = end_idx
@@ -940,12 +925,11 @@ class FP8GroupGemmMlpFunctionNode:
             if self.is_split_group_gemm:
                 split_group_gemm(x_fp8, x_scale, w1_t_quant, w1_t_scale, tokens_per_expert, o1)
             else:
-                deep_gemm.m_grouped_gemm_fp8_fp8_bf16_nt_contiguous(
+                deep_gemm.m_grouped_fp8_gemm_nt_contiguous(
                     (x_fp8, x_scale),
                     (w1_t_quant, w1_t_scale),
                     o1,
                     m_indices=self.m_indices if m_indices is None else m_indices,
-                    num_sms=get_sm_num(),
                 )
 
         if m_indices is None:
@@ -994,12 +978,11 @@ class FP8GroupGemmMlpFunctionNode:
             if self.is_split_group_gemm:
                 split_group_gemm(o2_fp8, o2_scale, w2_quant, w2_scale, tokens_per_expert, o3)
             else:
-                deep_gemm.m_grouped_gemm_fp8_fp8_bf16_nt_contiguous(
+                deep_gemm.m_grouped_fp8_gemm_nt_contiguous(
                     (o2_fp8, o2_scale),
                     (w2_quant, w2_scale),
                     o3,
                     m_indices=m_indices if self.fwd_subbatch else self.m_indices,
-                    num_sms=get_sm_num(),
                 )
 
         return o3
@@ -1035,12 +1018,11 @@ class FP8GroupGemmMlpFunctionNode:
                     unzipped_grad_fp8, unzipped_grad_scale, bw_w2_quant, bw_w2_scale, tokens_per_expert, do2_s
                 )
             else:
-                deep_gemm.m_grouped_gemm_fp8_fp8_bf16_nt_contiguous(
+                deep_gemm.m_grouped_fp8_gemm_nt_contiguous(
                     (unzipped_grad_fp8, unzipped_grad_scale),
                     (bw_w2_quant, bw_w2_scale),
                     do2_s,
                     m_indices=m_indices if self.bwd_subbatch else self.m_indices,
-                    num_sms=get_sm_num(),
                 )
 
         with paddle.amp.auto_cast(False):
@@ -1081,12 +1063,11 @@ class FP8GroupGemmMlpFunctionNode:
             if self.is_split_group_gemm:
                 split_group_gemm(do1_fp8, do1_scale, bw_w1_quant, bw_w1_scale, tokens_per_expert, dx)
             else:
-                deep_gemm.m_grouped_gemm_fp8_fp8_bf16_nt_contiguous(
+                deep_gemm.m_grouped_fp8_gemm_nt_contiguous(
                     (do1_fp8, do1_scale),
                     (bw_w1_quant, bw_w1_scale),
                     dx,
                     m_indices=m_indices if self.bwd_subbatch else self.m_indices,
-                    num_sms=get_sm_num(),
                 )
 
         return dx
