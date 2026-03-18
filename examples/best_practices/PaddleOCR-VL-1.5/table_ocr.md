@@ -47,7 +47,7 @@ tar -xvf complex_table_dataset.tar -C ./complex_table
 其中包含训练集 `complex_table_train.jsonl`、验证集 `complex_table_val.jsonl` 和测试集 `complex_table_test.jsonl`，对应含有 12 万、1 万和 2 万的数据。示例如下：
 
 <div align="center">
-  <img width="500" alt="table_train_example" src="./assets/table_train_example.png" />
+  <img width="500" alt="table_train_example" src="https://github.com/forBlank/PaddleFormers/blob/paddleocr_vl_v15_doc/examples/best_practices/PaddleOCR-VL-1.5/assets/table_train_example.png" />
 </div>
 
 ```json
@@ -484,7 +484,7 @@ visualdl --logdir ./PaddleOCR-VL-1.5-SFT-Table/visualdl_logs/ --port 8084
 损失曲线如下：
 
 <div align="center">
-  <img width="500" alt="table_train_loss" src="./assets/table_train_loss.png" />
+  <img width="500" alt="table_train_loss" src="https://github.com/forBlank/PaddleFormers/blob/paddleocr_vl_v15_doc/examples/best_practices/PaddleOCR-VL-1.5/assets/table_train_loss.png" />
 </div>
 
 
@@ -539,7 +539,7 @@ paddleformers-cli export ./examples/config/run_export.yaml \
 Table 测试图像：
 
 <div align="center">
-  <img width="500" alt="table_test_example" src="./assets/table_test_example.png" />
+  <img width="500" alt="table_test_example" src="https://github.com/forBlank/PaddleFormers/blob/paddleocr_vl_v15_doc/examples/best_practices/PaddleOCR-VL-1.5/assets/table_test_example.png" />
 </div>
 
 使用以下命令行进行单样本推理：
@@ -667,7 +667,7 @@ print("Save to table_test_html.html")
 得到的 HTML 格式表格如下：
 
 <div align="center">
-  <img width="500" alt="table_test_html" src="./assets/table_test_html.png" />
+  <img width="500" alt="table_test_html" src="https://github.com/forBlank/PaddleFormers/blob/paddleocr_vl_v15_doc/examples/best_practices/PaddleOCR-VL-1.5/assets/table_test_html.png" />
 </div>
 
 <details>

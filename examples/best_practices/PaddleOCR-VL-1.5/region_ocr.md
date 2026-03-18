@@ -47,7 +47,7 @@ tar -xvf region_visual_dataset.tar -C ./region_visual
 其中包含训练集 `region_visual_train.jsonl`、验证集 `region_visual_val.jsonl` 和测试集 `region_visual_test.jsonl`，对应含有 7 万、1 万和 2 万的数据。示例如下：
 
 <div align="center">
-  <img width="500" alt="region_train_example" src="./assets/region_train_example.jpg" />
+  <img width="500" alt="region_train_example" src="https://github.com/forBlank/PaddleFormers/blob/paddleocr_vl_v15_doc/examples/best_practices/PaddleOCR-VL-1.5/assets/region_train_example.jpg" />
 </div>
 
 ```json
@@ -686,7 +686,7 @@ visualdl --logdir ./PaddleOCR-VL-1.5-SFT-RegionOCR/visualdl_logs/ --port 8084
 损失曲线如下：
 
 <div align="center">
-  <img width="500" alt="regionocr_train_loss" src="./assets/regionocr_train_loss.png" />
+  <img width="500" alt="regionocr_train_loss" src="https://github.com/forBlank/PaddleFormers/blob/paddleocr_vl_v15_doc/examples/best_practices/PaddleOCR-VL-1.5/assets/regionocr_train_loss.png" />
 </div>
 
 
@@ -739,7 +739,7 @@ paddleformers-cli export ./examples/config/run_export.yaml \
 RegionOCR 测试图像：
 
 <div align="center">
-  <img width="500" alt="region_test_example" src="./assets/region_test_example.jpg" />
+  <img width="500" alt="region_test_example" src="https://github.com/forBlank/PaddleFormers/blob/paddleocr_vl_v15_doc/examples/best_practices/PaddleOCR-VL-1.5/assets/region_test_example.jpg" />
 </div>
 
 使用以下命令行进行单样本推理：
