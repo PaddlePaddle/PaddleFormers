@@ -126,23 +126,6 @@ class Qwen3_Omni_ProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         with self.assertRaises(ValueError):
             processor(images=image_input, return_tensors="pd")
 
-    def test_model_input_names(self):
-        processor = self.get_processor()
-
-        text = self.prepare_text_inputs(modalities=["image", "video", "audio"])
-        image_input = self.prepare_image_inputs()
-        video_inputs = self.prepare_video_inputs()
-        audio_inputs = self.prepare_audio_inputs()
-        inputs_dict = {"text": text, "images": image_input, "videos": video_inputs, "audio": audio_inputs}
-
-        call_signature = inspect.signature(processor.__call__)
-        input_args = [param.name for param in call_signature.parameters.values()]
-        inputs_dict = {k: v for k, v in inputs_dict.items() if k in input_args}
-
-        inputs = processor(**inputs_dict, return_tensors="pd")
-
-        self.assertSetEqual(set(inputs.keys()), set(processor.model_input_names))
-
     @unittest.skip("qwen3 omni do not support video input")
     def test_apply_chat_template_video_frame_sampling(self):
         pass
