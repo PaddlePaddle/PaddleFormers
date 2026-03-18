@@ -74,6 +74,7 @@ class _LazyAutoProcessorMapping(dict):
     _MAPPING_NAMES = {
         "image_processor": ("paddleformers.transformers.auto.image_processing", "AutoImageProcessor"),
         "video_processor": ("paddleformers.transformers.auto.video_processing", "AutoVideoProcessor"),
+        "feature_extractor": ("paddleformers.transformers.auto.feature_extraction", "AutoFeatureExtractor"),
         "tokenizer": ("paddleformers.transformers.auto.tokenizer", "AutoTokenizer"),
     }
 
@@ -97,6 +98,7 @@ MODALITY_TO_BASE_CLASS_MAPPING = {
     "tokenizer": "PreTrainedTokenizerBase",
     "image_processor": "PaddleImageProcessingMixin",
     "video_processor": "BaseVideoProcessor",
+    "feature_extractor": "SequenceFeatureExtractor",
 }
 
 
@@ -675,10 +677,8 @@ class PaddleProcessorMixin:
             if (arg in valid_kwargs and i < len(args))
         }
         args = [args_to_update.get(i, arg) for i, arg in enumerate(args)]
-
         # instantiate processor with used (and valid) kwargs only
         processor = cls(*args, **valid_kwargs)
-
         # logger.info(f"Processor {processor}")
         if return_unused_kwargs:
             return processor, unused_kwargs
@@ -762,7 +762,6 @@ class PaddleProcessorMixin:
         for sub_processor_type in sub_processors:
             modality = _get_modality_for_attribute(sub_processor_type)
             is_primary = sub_processor_type == modality
-
             if (
                 "tokenizer" in sub_processor_type
             ):  # This is only necessary for the checkpoing in test_procesing_mistral3.py which has no config.json and

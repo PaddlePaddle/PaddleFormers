@@ -52,6 +52,7 @@ PROCESSOR_MAPPING_NAMES = OrderedDict(
         ("qwen2_5_vl", "Qwen2_5_VLProcessor"),
         ("qwen3_vl", "Qwen3VLProcessor"),
         ("qwen2_vl", "Qwen2VLProcessor"),
+        ("qwen3_omni_moe", "Qwen3OmniMoeProcessor"),
         ("paddleocr_vl", "PaddleOCRVLProcessor"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLProcessor"),
         ("glm4v_moe", "Glm4vProcessor"),
@@ -66,7 +67,6 @@ def processor_class_from_name(class_name: str):
     for module_name, extractors in PROCESSOR_MAPPING_NAMES.items():
         if class_name in extractors:
             module_name = model_type_to_module_name(module_name)
-
             try:
                 module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
                 return getattr(module, class_name)
@@ -182,12 +182,11 @@ class AutoProcessor:
                 config = AutoConfig.from_pretrained(
                     pretrained_model_name_or_path, trust_remote_code=trust_remote_code, **kwargs
                 )
-
             # And check if the config contains the processor class.
             processor_class = getattr(config, "processor_class", None)
+
             if hasattr(config, "auto_map") and "AutoProcessor" in config.auto_map:
                 processor_auto_map = config.auto_map["AutoProcessor"]
-
         if processor_class is not None:
             processor_class = processor_class_from_name(processor_class)
 

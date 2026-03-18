@@ -771,7 +771,7 @@ def group_images_by_shape(
     """
     # If disable grouping is not explicitly provided, we favor disabling it if the images are on CPU, and enabling it otherwise.
     if disable_grouping is None:
-        device = images[0][0].device if is_nested else images[0].device
+        device = images[0][0].place if is_nested else images[0].place
         disable_grouping = device == "cpu"
 
     if disable_grouping:
