@@ -82,12 +82,10 @@ moe_router_force_load_balancing: false
 router_aux_loss_coef: 0.0
 
 # pp
-pp_delay_scale_loss: true
 overlap_p2p_comm: true
 variable_seq_lengths: true
 best_unbalanced_scheduler: true
 
-tp_delay_scale_loss: True
 
 optim: adamw
 bf16: true

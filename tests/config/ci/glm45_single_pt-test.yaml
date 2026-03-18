@@ -54,7 +54,6 @@ stage1_overlap: true
 
 
 # tp
-tp_delay_scale_loss: true
 
 
 amp_master_grad: true

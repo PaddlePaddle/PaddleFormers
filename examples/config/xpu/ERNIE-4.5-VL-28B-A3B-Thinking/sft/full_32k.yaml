@@ -60,7 +60,6 @@ use_flash_attention: true
 sequence_parallel: true
 pp_seg_method: layer:Ernie4_5_DecoderLayer|ErnieDecoderLayer|EmptyLayer
 offload_queue: true
-pp_delay_scale_loss: true
 overlap_p2p_comm: true
 best_unbalanced_scheduler: true
 sharding_comm_buffer_size_MB: 2048

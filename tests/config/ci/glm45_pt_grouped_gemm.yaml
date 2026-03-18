@@ -62,7 +62,6 @@ bf16: true
 fp16_opt_level: O2
 
 # tp
-tp_delay_scale_loss: true
 
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
