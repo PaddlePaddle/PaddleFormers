@@ -2151,11 +2151,10 @@ class Trainer:
                         and (step + 1) == steps_in_epoch
                         or disable_accumulation
                     ):
-                        if self._enable_delay_scale_loss():
-                            if self.args.enable_auto_parallel and self.args.gradient_accumulation_steps > 1:
-                                tr_loss /= self.args.gradient_accumulation_steps
-                            if not self.args.enable_auto_parallel and self.args.pipeline_model_parallel_size <= 1:
-                                tr_loss /= self.args.gradient_accumulation_steps
+                        if self.args.enable_auto_parallel and self.args.gradient_accumulation_steps > 1:
+                            tr_loss /= self.args.gradient_accumulation_steps
+                        if not self.args.enable_auto_parallel and self.args.pipeline_model_parallel_size <= 1:
+                            tr_loss /= self.args.gradient_accumulation_steps
 
                         # assert if loss is invalid
                         self._check_loss_valid(tr_loss)
@@ -2211,11 +2210,7 @@ class Trainer:
                             self.timers and self.timers("all-reduce").stop()
                             self.timers and self.timers("optimizer-step").start()
 
-                        if (
-                            not args.enable_auto_parallel
-                            and self.args.gradient_accumulation_steps > 1
-                            and self._enable_delay_scale_loss()
-                        ):
+                        if not args.enable_auto_parallel and self.args.gradient_accumulation_steps > 1:
                             paddle.device.synchronize()
                             for p in model._layers.parameters():
                                 with paddle.no_grad():
@@ -3556,17 +3551,6 @@ class Trainer:
 
         return (loss, outputs) if return_outputs else loss
 
-    def _enable_delay_scale_loss(self):
-        if in_auto_parallel_align_mode():
-            return True
-
-        if self.args.pipeline_model_parallel_size > 1:
-            return self.args.pp_delay_scale_loss
-        elif self.args.tensor_model_parallel_size > 1:
-            return self.args.tp_delay_scale_loss
-        else:
-            return False
-
     def training_step(
         self, model: nn.Layer, inputs: Dict[str, Union[paddle.Tensor, Any]], step_control=0
     ) -> paddle.Tensor:
@@ -3604,9 +3588,6 @@ class Trainer:
         inputs = self._prepare_inputs(inputs)
         with self.autocast_smart_context_manager():
             loss = self.compute_loss(model, inputs)
-
-        if self.args.gradient_accumulation_steps > 1 and not self._enable_delay_scale_loss():
-            loss = loss / self.args.gradient_accumulation_steps
 
         if self.do_grad_scaling:
             self.scaler.scale(loss).backward()
