@@ -16,8 +16,12 @@ from enum import Enum
 from io import BytesIO
 from typing import Dict, List, Optional, Union
 
-import audioread
-import librosa
+try:
+    import audioread
+    import librosa
+except ImportError:
+    print("need to install audioread and librosa. Please try: pip install audioread && pip install librosa")
+
 import numpy as np
 import paddle
 from transformers.utils import PaddingStrategy

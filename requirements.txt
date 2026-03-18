@@ -22,7 +22,5 @@ modelscope
 transformers>=5.0.0
 GPUtil
 importlib_metadata
-audioread
-librosa
 binpacking
 orjson
