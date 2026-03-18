@@ -325,7 +325,7 @@ custom_register_path: ./paddleocr_vl_v15_template.py
 ### model
 model_name_or_path: PaddlePaddle/PaddleOCR-VL-1.5
 _attn_implementation: flashmask
-copy_custom_file_list: "configuration_paddleocr_vl.py image_processing_paddleocr_vl.py modeling_paddleocr_vl.py processing_paddleocr_vl.py"
+copy_custom_file_list: "configuration_paddleocr_vl.py image_processing_paddleocr_vl.py modeling_paddleocr_vl.py processing_paddleocr_vl.py inference.yml"
 
 ### finetuning
 # base
@@ -404,7 +404,7 @@ model_name_or_path: PaddlePaddle/PaddleOCR-VL-1.5
 _attn_implementation: flashmask
 lora: true
 lora_rank: 8
-copy_custom_file_list: "configuration_paddleocr_vl.py image_processing_paddleocr_vl.py modeling_paddleocr_vl.py processing_paddleocr_vl.py"
+copy_custom_file_list: "configuration_paddleocr_vl.py image_processing_paddleocr_vl.py modeling_paddleocr_vl.py processing_paddleocr_vl.py inference.yml"
 
 ### finetuning
 # base

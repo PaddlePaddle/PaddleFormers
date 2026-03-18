@@ -271,7 +271,7 @@ load_checkpoint_format: "flex_checkpoint"
 ```shell
 CUDA_VISIBLE_DEVICES=0 \
 paddleformers-cli train examples/best_practices/PaddleOCR-VL/paddleocr-vl_full_16k_config.yaml \
-                        model_name_or_path=./PaddlePaddle/PaddleOCR-VL \
+                        model_name_or_path=PaddlePaddle/PaddleOCR-VL \
                         train_dataset_path=./ocr_vl_sft-train_Bengali.jsonl \
                         eval_dataset_path=./ocr_vl_sft-test_Bengali.jsonl \
                         pre_alloc_memory=24
@@ -312,7 +312,7 @@ visualdl --logdir ./PaddleOCR-VL-SFT-Bengali/visualdl_logs/ --port 8084
 ```shell
 CUDA_VISIBLE_DEVICES=0 \
 paddleformers-cli train examples/best_practices/PaddleOCR-VL/paddleocr-vl_lora_16k_config.yaml \
-                        model_name_or_path=./PaddlePaddle/PaddleOCR-VL \
+                        model_name_or_path=PaddlePaddle/PaddleOCR-VL \
                         train_dataset_path=./ocr_vl_sft-train_Bengali.jsonl \
                         eval_dataset_path=./ocr_vl_sft-test_Bengali.jsonl\
                         pre_alloc_memory=16
@@ -347,7 +347,7 @@ LoRA 训练结束后，模型会保存在 `output_dir=./PaddleOCR-VL-SFT-Bengali
 ```shell
 CUDA_VISIBLE_DEVICES=0 \
 paddleformers-cli export ./examples/config/run_export.yaml \
-    model_name_or_path=./PaddlePaddle/PaddleOCR-VL \
+    model_name_or_path=PaddlePaddle/PaddleOCR-VL \
     output_dir=./PaddleOCR-VL-SFT-Bengali-lora
 ```
 
@@ -704,7 +704,7 @@ XPU 环境配置请参考 [XPU 安装说明文档](../../../docs/zh/XPU_installa
 export FLAGS_use_stride_kernel=True
 
 XPU_VISIBLE_DEVICES=0 paddleformers-cli train examples/best_practices/PaddleOCR-VL/paddleocr-vl_full_16k_config.yaml \
-                        model_name_or_path=./PaddlePaddle/PaddleOCR-VL \
+                        model_name_or_path=PaddlePaddle/PaddleOCR-VL \
                         train_dataset_path=./ocr_vl_sft-train_Bengali.jsonl \
                         eval_dataset_path=./ocr_vl_sft-test_Bengali.jsonl \
                         pre_alloc_memory=24 \
@@ -726,7 +726,7 @@ ILUVATAR-GPU 环境配置请参考 [ILUVATAR-GPU 安装说明文档](../../../do
 
 ```shell
 CUDA_VISIBLE_DEVICES=0 paddleformers-cli train examples/best_practices/PaddleOCR-VL/paddleocr-vl_full_16k_config.yaml \
-                        model_name_or_path=./PaddlePaddle/PaddleOCR-VL \
+                        model_name_or_path=PaddlePaddle/PaddleOCR-VL \
                         train_dataset_path=./ocr_vl_sft-train_Bengali.jsonl \
                         eval_dataset_path=./ocr_vl_sft-test_Bengali.jsonl \
                         per_device_train_batch_size=2 \
@@ -752,7 +752,7 @@ CUDA_VISIBLE_DEVICES=0 paddleformers-cli train examples/best_practices/PaddleOCR
 
 ```shell
 CUDA_VISIBLE_DEVICES=0 paddleformers-cli train examples/best_practices/PaddleOCR-VL/paddleocr-vl_full_16k_config.yaml \
-                        model_name_or_path=./PaddlePaddle/PaddleOCR-VL \
+                        model_name_or_path=PaddlePaddle/PaddleOCR-VL \
                         train_dataset_path=./ocr_vl_sft-train_Bengali.jsonl \
                         eval_dataset_path=./ocr_vl_sft-test_Bengali.jsonl \
                         per_device_train_batch_size=4 \
