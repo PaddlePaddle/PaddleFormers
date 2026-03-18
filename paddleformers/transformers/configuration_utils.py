@@ -410,6 +410,7 @@ class LlmMetaConfig:
             False,
             "Whether to use SonicMoE as the computation backend for the moelayer.",
         ),
+        ("auto_subbatch_modules", Optional[Any], None, "List of module names to apply auto subbatch."),
     ]
 
     mtp_attributes = [
