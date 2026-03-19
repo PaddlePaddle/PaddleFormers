@@ -1117,6 +1117,13 @@ class Trainer:
                 )
                 self._load_scheduler(resume_from_checkpoint)
 
+            del opt_states
+            del master_weights
+            del optimizer_sharded_state_dict
+            if self.args.offload_optim:
+                logger.info("Offloading optimizer state for FC...")
+                self._offload_optimizer()
+
         enable_bf16_opt = (
             not isinstance(self.model, LoRAModel)
             and self.args.bf16
