@@ -505,8 +505,13 @@ class TrainingArguments:
     lr_end: float = field(default=1e-7, metadata={"help": "The end LR in the polynomial scheduler."})
     power: float = field(default=1.0, metadata={"help": "The power factor in the polynomial scheduler."})
     min_lr: float = field(default=0.0, metadata={"help": "The minimum learning rate in cosine scheduler."})
-    moe_correction_bias_lr: float = field(
-        default=0.0, metadata={"help": "Learning rate for MoE (Mixture of Experts) correction bias adjustment."}
+    moe_router_bias_update_rate: float = field(
+        default=0.0,
+        metadata={
+            "help": """The expert bias is updated based on the number of assigned tokens to each expert
+        in a global batch, where the bias is increased for the experts with less assigned tokens
+        and decreased for the experts with more assigned tokens."""
+        },
     )
 
     log_on_each_node: bool = field(
