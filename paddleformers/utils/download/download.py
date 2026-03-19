@@ -126,7 +126,7 @@ def resolve_file_path(
         subfolder('str'): Some repos will exist subfolder.
         repo_type('str'): The default is model.
         cache_dir('str' or Path): Where to save or load the file after downloading.
-        download_hub (DownloadSource): The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `aistudio`.
+        download_hub (DownloadSource): The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `huggingface`.
         force_return (Optional[bool]): If True, the function will return None instead of raising an error
             when none of the specified `filenames` can be found or downloaded. Defaults to False (raises error).
 
