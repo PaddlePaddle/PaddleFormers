@@ -21,7 +21,7 @@ moe_group: ep
 use_moe: true
 
 # train
-output_dir: ./output/eb45_21b_pt
+output_dir: ./output/
 num_consecutive: 32
 enable_global_training_logs: False
 global_logging_interval: 1
@@ -39,7 +39,7 @@ adam_beta2: 0.95
 adam_epsilon: 1e-8
 learning_rate: 3.14e-4
 min_lr: 3.14e-6
-gradient_accumulation_steps: 16
+gradient_accumulation_steps: 8
 per_device_train_batch_size: 2
 lr_scheduler: wsd:603000
 decay_function: 1-sqrt
@@ -54,7 +54,6 @@ seed: 42
 use_train_part_sharding: 1
 pre_alloc_memory: 60
 offload_optim: true
-pipeline_model_parallel_size: 4
 use_expert_parallel: True
 expert_model_parallel_size: 8
 sharding: "stage1"
@@ -71,11 +70,6 @@ skip_load_data_seq_cache: 1
 # sharding_parallel_config
 split_param: true
 sharding_comm_buffer_size_MB: 2048
-
-# pipeline_parallel_config
-pp_delay_scale_loss: true
-overlap_p2p_comm: true
-best_unbalanced_scheduler: true
 
 # tensor_parallel_config
 skip_profile_timer: False
@@ -94,7 +88,7 @@ ernie_model_config:
     use_recompute: false
     num_nextn_predict_layers: 1
     use_fp8_mlp: true
-    num_hidden_layers: 27
+    num_hidden_layers: 28
     num_empty_layers_add_in_tail: 0
     use_fp8_fuse_node: true
     use_ep_comm_overlap: false
@@ -109,6 +103,7 @@ ernie_model_config:
         spaq: true
         transpose_split_quant: true
     use_combine_before_a2a: true
+
 
 # benchmark
 benchmark: true
