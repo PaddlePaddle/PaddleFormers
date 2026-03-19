@@ -366,10 +366,6 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
                 for layer_id in range(config.text_config.num_hidden_layers)
             ]
 
-        aoa_config["aoa_statements"] += [
-            f"model.language_model.layers.{layer_id}.mlp.gate.weight -> {llm_prefix}layers.{layer_id}.mlp.gate.weight, dtype='float32'"
-            for layer_id in range(config.text_config.num_hidden_layers)
-        ]
         # language moe experts
         for layer_id in range(config.num_hidden_layers):
             if config.moe_grouped_gemm:
@@ -469,20 +465,14 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
                 f"{llm_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.language_model.layers.$LAYER_ID.input_layernorm.weight",
                 f"{llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.language_model.layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"{llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.language_model.layers.$LAYER_ID.self_attn.o_proj.weight",
-                f"{llm_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.language_model.layers.$LAYER_ID.mlp.gate.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.gate.weight -> model.language_model.layers.$LAYER_ID.mlp.gate.weight",
                 f"{llm_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.language_model.layers.$LAYER_ID.self_attn.q_norm.weight",
                 f"{llm_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.language_model.layers.$LAYER_ID.self_attn.k_norm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.grouped_gemm_experts.weight1 -> model.language_model.layers.$LAYER_ID.mlp.experts.gate_up_proj",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.grouped_gemm_experts.weight2 -> model.language_model.layers.$LAYER_ID.mlp.experts.down_proj",
             ]
         }
-        aoa_config["aoa_statements"] += [
-            state
-            for layer_id in range(config.text_config.num_hidden_layers)
-            for state in (
-                f"{llm_prefix}layers.{layer_id}.self_attn.o_proj.weight^T -> model.language_model.layers.{layer_id}.self_attn.o_proj.weight",
-                f"{llm_prefix}layers.{layer_id}.mlp.grouped_gemm_experts.weight1 -> model.language_model.layers.{layer_id}.mlp.experts.gate_up_proj",
-                f"{llm_prefix}layers.{layer_id}.mlp.grouped_gemm_experts.weight2 -> model.language_model.layers.{layer_id}.mlp.experts.down_proj",
-            )
-        ]
+
         # visual model
         aoa_config["aoa_statements"] += [
             stmt
