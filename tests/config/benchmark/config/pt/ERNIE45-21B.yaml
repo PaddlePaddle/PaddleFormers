@@ -40,7 +40,7 @@ adam_epsilon: 1e-8
 learning_rate: 3.14e-4
 min_lr: 3.14e-6
 gradient_accumulation_steps: 8
-per_device_train_batch_size: 2
+per_device_train_batch_size: 1
 lr_scheduler: wsd:603000
 decay_function: 1-sqrt
 max_grad_norm: 1.0
@@ -52,12 +52,12 @@ fp16_opt_level: "O2"
 scale_loss: 4096
 seed: 42
 use_train_part_sharding: 1
-pre_alloc_memory: 60
+pre_alloc_memory: 40
 offload_optim: true
 use_expert_parallel: True
 expert_model_parallel_size: 8
 sharding: "stage1"
-sharding_parallel_size: 8
+sharding_parallel_size: 4
 amp_master_grad: 1
 report_to: none
 global_batch_size: 128
@@ -85,7 +85,7 @@ ernie_model_config:
     use_async_a2a: false
     use_rms_qkv_recompute: true
     moe_logging: true
-    use_recompute: false
+    use_recompute: true
     num_nextn_predict_layers: 1
     use_fp8_mlp: true
     num_hidden_layers: 28
