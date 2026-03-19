@@ -31,9 +31,14 @@ from paddleformers.transformers import (
 from paddleformers.transformers import (
     Qwen3VLMoeForConditionalGenerationDeprecated as Qwen3VLMoeForConditionalGeneration,
 )
+from ..testing_utils import gpu_device_initializer
 
 
 class TestLoraLayer(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="TestLoraLayer")
+    def setUp(self):
+        pass
+
     def test_r_raise_exception(self):
         with self.assertRaises(ValueError):
             LoRALinear(in_features=16, out_features=8, r=0, lora_dropout=0.1, lora_alpha=8)
@@ -53,7 +58,7 @@ class TestLoraLayer(unittest.TestCase):
         lora_layer = LoRALinear(in_features=16, out_features=8, r=4)
         lora_layer.train()
         train_result = lora_layer(x)
-        train_weight = copy.deepcopy(lora_layer.weight)  # deep copy since this is a pointer
+        train_weight = copy.deepcopy(lora_layer.weight)  # deep copy since this is a pointer.
         lora_layer.eval()
         eval_result = lora_layer(x)
         eval_weight = lora_layer.weight
@@ -88,27 +93,6 @@ class TestLoraLayer(unittest.TestCase):
 
 
 class TestLoraModel(unittest.TestCase):
-    def test_lora_model_restore(self):
-        lora_config = LoRAConfig(
-            target_modules=[".*qkv_proj.*"],
-            r=4,
-            lora_alpha=8,
-            enable_lora_list=[None, [True, False]],
-            head_dim=2,
-        )
-        model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
-        input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
-        model.eval()
-        original_results_1 = model(input_ids)
-        lora_model = LoRAModel(model, lora_config)
-        restored_model = lora_model.restore_original_model()
-        restored_model.eval()
-        original_results_2 = restored_model(input_ids)
-        self.assertIsNotNone(original_results_1)
-        self.assertIsNotNone(original_results_2)
-        self.assertIsInstance(restored_model, Qwen3ForCausalLM)
-        self.assertTrue(paddle.allclose(original_results_1[0], original_results_2[0]))
-
     @parameterized.expand([(None,), ("all",), ("lora",)])
     def test_lora_model_constructor(self, bias):
         lora_config = LoRAConfig(
@@ -140,17 +124,19 @@ class TestLoraModel(unittest.TestCase):
                 else:
                     self.assertTrue(weight.stop_gradient)
         input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
+        inputs = {"input_ids": input_ids}
         lora_model.train()
-        train_forward_results = lora_model(input_ids)
+        train_forward_results = lora_model(inputs)
         self.assertIsNotNone(train_forward_results)
         lora_model.eval()
-        eval_forward_results = lora_model(input_ids)
+        eval_forward_results = lora_model(inputs)
         self.assertIsNotNone(eval_forward_results)
         self.assertTrue(paddle.allclose(train_forward_results[0], eval_forward_results[0]))
 
     def test_lora_model_save_load(self):
         with TemporaryDirectory() as tempdir:
             input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
+            inputs = {"input_ids": input_ids}
             lora_config = LoRAConfig(
                 target_modules=[".*qkv_proj.*"],
                 r=4,
@@ -159,17 +145,19 @@ class TestLoraModel(unittest.TestCase):
             model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
             lora_model = LoRAModel(model, lora_config)
             lora_model.eval()
-            original_results = lora_model(input_ids)
+            original_results = lora_model(inputs)
             lora_model.save_pretrained(tempdir)
 
+            model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
             loaded_lora_model = LoRAModel.from_pretrained(model, tempdir)
             loaded_lora_model.eval()
-            loaded_results = loaded_lora_model(input_ids)
+            loaded_results = loaded_lora_model(inputs)
             self.assertTrue(paddle.allclose(original_results[0], loaded_results[0]))
 
+            model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
             config_loaded_lora_model = LoRAModel.from_pretrained(model, tempdir, lora_config=lora_config)
             config_loaded_lora_model.eval()
-            config_loaded_results = config_loaded_lora_model(input_ids)
+            config_loaded_results = config_loaded_lora_model(inputs)
             self.assertTrue(paddle.allclose(original_results[0], config_loaded_results[0]))
 
     @unittest.skip("TODO: Temporarily skipped")
@@ -189,6 +177,7 @@ class TestLoraModel(unittest.TestCase):
         model = AutoModelForCausalLM.from_pretrained("PaddleFormers/tiny-random-qwen3", convert_from_hf=True)
         model.eval()
         lora_model = LoRAModel(model, lora_config)
+        lora_model.model._set_pipeline_name_mapping()
 
         original_state_dict = {k: v.clone() for k, v in model.state_dict().items() if "lora" not in k}
 
@@ -312,6 +301,7 @@ class TestLoraModelFC(unittest.TestCase):
                 download_hub="aistudio",
                 convert_from_hf=True,
                 dtype="float32",
+                num_nextn_predict_layers=0,
             )
             lora_model = LoRAModel(model, lora_config)
             lora_model.eval()

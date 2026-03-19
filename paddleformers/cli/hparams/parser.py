@@ -216,7 +216,7 @@ def get_train_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _
     """
     model_args, data_args, preprocess_args, generating_args, finetuning_args = _parse_train_args(args)
 
-    if model_args.stage == "VL-SFT":
+    if "VL" in model_args.stage:
         os.environ["NCCL_DEBUG"] = "INFO"
         os.environ["PYTHONUNBUFFERED"] = "1"
         os.environ["FLAGS_use_auto_growth_pinned_allocator"] = "True"
@@ -241,9 +241,19 @@ def get_train_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _
         os.environ["FLAGS_call_stack_level"] = "2"
         os.environ["FLAGS_eager_communication_connection"] = "0"
 
+        if data_args.packing and data_args.truncate_packing:
+            logger.warning(
+                "VLMs training does not support Truncate Packing, we will enforce that truncate_packing=False."
+            )
+            data_args.truncate_packing = False
+
     if data_args.split_multi_turn and data_args.template_backend != "jinja":
         raise ValueError("data_args.template_backend must be jinja when split_multi_turn is True")
 
+    if model_args._attn_implementation.lower() == "flashmask" and not model_args.use_attn_mask_startend_row_indices:
+        raise ValueError(
+            "_attn_implementation is set to flashmask, but use_attn_mask_startend_row_indices is False. Please set use_attn_mask_startend_row_indices=True."
+        )
     return model_args, data_args, preprocess_args, generating_args, finetuning_args
 
 

@@ -14,8 +14,8 @@
 
 import os
 from copy import deepcopy
-from dataclasses import dataclass
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 import numpy as np
 from paddle.io import IterableDataset
@@ -44,6 +44,11 @@ class Sequence:
     response_labels: List[int]
     response_index: List[int]
     score_delta: float
+    has_mm: List[bool]
+    images: List[str] = field(default_factory=list)
+    videos: List[str] = field(default_factory=list)
+    audios: List[str] = field(default_factory=list)
+    mm_inputs: Dict = field(default_factory=dict)
 
 
 class DPODataSet(IterableDataset):
@@ -205,6 +210,7 @@ class DPODataSet(IterableDataset):
                 - rejected: Complete conversation sequence with rejected response
                 - session_start_index: Starting position of the response in multi-turn conversation
                 - score_delta: Score difference (fixed to 1.0)
+                - has_mm: List indicating multimedia presence in "messages"+"chosen_response" and "messages"+"rejected_response"
         """
         chosen_m, rejected_m = deepcopy(example["messages"]), deepcopy(example["messages"])
         if self.template_backend == "jinja":
@@ -220,10 +226,22 @@ class DPODataSet(IterableDataset):
         chosen_m.extend(example["chosen_response"])
         rejected_m.extend(example["rejected_response"])
 
+        # Check if multimedia tags are included in "messages"+"chosen_response", and "messages"+"rejected_response"
+        def check_multimedia_tags(messages):
+            for message in messages:
+                if isinstance(message, dict) and "content" in message:
+                    content = message["content"]
+                    if "<image>" in content or "<audio>" in content or "<video>" in content:
+                        return True
+            return False
+
+        has_mm = [check_multimedia_tags(chosen_m), check_multimedia_tags(rejected_m)]
+
         example["chosen"] = {"messages": chosen_m}
         example["rejected"] = {"messages": rejected_m}
         example["session_start_index"] = session_start_index
         example["score_delta"] = 1.0
+        example["has_mm"] = has_mm
 
         return example
 
@@ -235,6 +253,7 @@ class DPODataSet(IterableDataset):
         images = example.get("images", [])
         videos = example.get("videos", [])
         audios = example.get("audios", [])
+        mm_inputs = None
 
         # 1.Encode chosen and rejected sequences
         if self.template_backend == "jinja":
@@ -361,6 +380,7 @@ class DPODataSet(IterableDataset):
             response_token_ids_list,
             response_len_list,
             cur_len,
+            mm_inputs,
         )
 
     def _postprocess_sequence(self, example):
@@ -371,6 +391,7 @@ class DPODataSet(IterableDataset):
             response_token_ids_list,
             response_len_list,
             cur_len,
+            mm_inputs,
         ) = self.__postprocess_before_concat(example)
 
         # The sequnece is too long, just return None
@@ -391,7 +412,7 @@ class DPODataSet(IterableDataset):
             logger.warning(f"[SKIP] code bug: {example}")
             return None
 
-        # 1.2. position_ids
+        # 1.2. position_ids - only pure text, mm_position_ids will be reconstructed in collate.py
         # [p1, p2, p3, p4, c1, c2, c3, p4, r1, r2, r3]  ->  [0, 1, 2, 3, 4, 5, 6, 3, 4, 5, 6]
         prompt_len = len(prompt_token_ids)
         chosen_len = response_len_list[0]
@@ -474,4 +495,9 @@ class DPODataSet(IterableDataset):
             response_labels=response_labels,
             response_index=response_index,
             score_delta=example["score_delta"],
+            has_mm=example["has_mm"],
+            images=example.get("images", []),
+            videos=example.get("videos", []),
+            audios=example.get("audios", []),
+            mm_inputs=mm_inputs,
         )

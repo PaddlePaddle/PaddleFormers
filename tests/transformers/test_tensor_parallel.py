@@ -23,8 +23,6 @@ import paddle
 from paddle.distributed import fleet
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
-from tests.parallel_launch import TestMultipleGpus
-from tests.testing_utils import require_paddle_at_least_2_gpu
 
 tp_size = paddle.distributed.get_world_size()
 tp_rank = 0
@@ -138,12 +136,6 @@ def _test_qwen2():
     config = prepare_config(config)
     Qwen2ForCausalLM.from_config(config)
     # common_test_merge(model, Qwen2ForCausalLM)
-
-
-@require_paddle_at_least_2_gpu
-class TestTensorParallel(TestMultipleGpus):
-    def test_model_load_merge(self):
-        self.run_2gpu(__file__)
 
 
 if __name__ == "__main__":

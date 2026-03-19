@@ -340,7 +340,7 @@ class LlmMetaConfig:
         (
             "router_aux_loss_coef",
             Optional[float],
-            None,
+            0.0,
             "Coefficient for MoE router auxiliary loss (encourages balanced expert usage). Defaults to 0.0 (disable auxiliary loss).",
         ),
         (
@@ -359,8 +359,8 @@ class LlmMetaConfig:
         (
             "moe_router_bias_update_rate",
             float,
-            0.01,
-            "Update rate for MoE router biases (only effective if `moe_router_enable_expert_bias=True`). Controls the magnitude of bias adjustments to prevent unstable updates. Defaults to 0.01.",
+            0.001,
+            "Update rate for MoE router biases (only effective if `moe_router_enable_expert_bias=True`). Controls the magnitude of bias adjustments to prevent unstable updates. Defaults to 0.001.",
         ),
         (
             "moe_shared_expert_overlap",
@@ -410,12 +410,6 @@ class LlmMetaConfig:
             False,
             "Whether to use SonicMoE as the computation backend for the moelayer.",
         ),
-        (
-            "moe_use_pfcc_deepep",
-            bool,
-            False,
-            "Whether to use PFCC DeepEP for MoE for the moelayer.",
-        ),
     ]
 
     mtp_attributes = [
@@ -423,8 +417,8 @@ class LlmMetaConfig:
         (
             "mtp_loss_scaling_factor",
             float,
-            1.0,
-            "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues).",
+            0.1,
+            "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 0.1.",
         ),
     ]
 
@@ -942,6 +936,9 @@ class PretrainedConfig:
             )
         self._save_to_hf = kwargs.pop("save_to_hf", True)
         self._unsavable_keys.add("_save_to_hf")
+
+        # Initialize model weight for fleet model
+        self.perform_initialization = kwargs.pop("perform_initialization", True)
 
         # Additional attributes without default values
         for key, value in kwargs.items():

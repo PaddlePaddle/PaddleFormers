@@ -2840,10 +2840,15 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         config.dtype = dtype
 
+        if config.moe_grouped_gemm and config.is_lora:
+            logger.info("Lora doesn't support moe_grouped_gemm, moe_grouped_gemm is set to False.")
+            config.moe_grouped_gemm = False
+
         init_contexts = []
         if low_cpu_mem_usage or config.quantization_config.is_weight_quantize():
             # Instantiate model.
             init_contexts.append(no_init_weights(_enable=True))
+            config.perform_initialization = False
             if is_paddle_support_lazy_init():
                 init_contexts.append(paddle.LazyGuard())
 
@@ -2875,6 +2880,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         file_list = resolved_sharded_files if is_sharded else [resolved_archive_file]
         ckpt_path = get_common_folder(file_list)
+
         # 3. init the model
         init_args = config["init_args"] or ()
         with ContextManagers(init_contexts):
@@ -2892,11 +2898,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         ):  # flex_checkpoint need initialized weights
             for name, param in model.named_parameters():
                 with paddle.device_guard("cpu"):
-                    value = paddle.normal(
-                        mean=0.0,
-                        std=0.02,
-                        shape=param.shape,
-                    ).astype(param.dtype)
+                    value = paddle.zeros(shape=param.shape, dtype=param.dtype)
                 param.set_value(value)
 
         if load_checkpoint_format == "flex_checkpoint":
@@ -2909,7 +2911,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             sharded_state_dict = model.sharded_state_dict()
             metadata_path = os.path.join(ckpt_path, FLEX_CKPT_AUTO_GENERATED_METADATA)
 
-            # delete the existing metadata file if it exists
+            # delete the metadata file if it exists
             try:
                 os.remove(metadata_path)
             except FileNotFoundError:
@@ -2955,7 +2957,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                             if "quant_weight" in key:
                                 quantization_linear_list.append(key[:-13])
 
-                model.config["quantization_config"].quantization_linear_list = quantization_linear_list
+                if isinstance(model.config, dict):
+                    model.config["quantization_config"].quantization_linear_list = quantization_linear_list
+                else:  # model.config is instance of GPTProvider
+                    model.config.quantization_config.quantization_linear_list = quantization_linear_list
 
                 new_state_dict = convert_to_quantize_state_dict(
                     new_state_dict,
@@ -2967,6 +2972,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 model_state_dict = model.state_dict()
                 set_state_dict = {}
                 for param_name, param in new_state_dict.items():
+                    if config.tie_word_embeddings and "lm_head.weight" in param_name:
+                        continue
                     with paddle.no_grad():
                         set_state_dict[param_name] = param.cuda()
                         model_state_dict[param_name].get_tensor()._share_data_with(
@@ -3231,7 +3238,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 else:
                     config_to_save = copy.deepcopy(model_to_save.config)
                     # Attach architecture to the config
-                    config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+                    if not config_to_save.architectures:
+                        config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
 
             # Save the config
             if is_main_process:
@@ -3277,7 +3285,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     variant = weight_name_suffix() if variant is None else variant
 
         # Attach architecture to the config
-        config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+        if not config_to_save.architectures:
+            config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+        if not save_to_hf:
+            config_to_save.source = "paddle"
         # Save the config
         if is_main_process:
             config_to_save.save_pretrained(save_directory)
@@ -3901,6 +3912,7 @@ def save_full_param(
         param_size_bytes = param.numel() * param.element_size()
         total_size += param_size_bytes.item()
         if i % num_saver_ranks == rank:
+            logger.info(f"[Rank {rank}/{moe_sharding_world_size}] Assigned to store parameter {param_key}")
             if current_shard_size_bytes > 0 and (current_shard_size_bytes + param_size_bytes > max_shard_size_bytes):
                 _save_current_shard()
             # Move tensor to CPU since we only need to save it, not compute with it
@@ -4037,8 +4049,12 @@ class HFFormatFullParamSaver:
         self.rank = paddle.distributed.get_rank()
 
         if self.h_group and self.v_group:
-            self.num_saver_ranks = self.h_group.nranks * self.v_group.nranks
-            self.rank = self.h_group.rank + self.v_group.rank * self.h_group.nranks
+            if self.v_group.nranks == 1:
+                self.num_saver_ranks = self.h_group.nranks
+                self.rank = self.h_group.rank
+            else:
+                self.num_saver_ranks = self.h_group.nranks * self.v_group.nranks
+                self.rank = self.h_group.rank + self.v_group.rank * self.h_group.nranks
 
         if self.saved_in_one_node:
             local_world_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))

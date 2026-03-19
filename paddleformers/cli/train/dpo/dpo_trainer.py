@@ -254,7 +254,7 @@ class DPOTrainer(Trainer):
         """prediction_step"""
         if is_paddlefleet_available() and isinstance(model, PaddleFleetParallelBase):
             inputs = self._prepare_inputs(inputs)
-            return self.fleet_prediction_pipeline_step(self.ref_model_wrapped, self.model_wrapped, inputs)
+            return self.fleet_prediction_pipeline_step(self.ref_model_wrapped, self.model_wrapped, inputs, step)
 
         if self.args.pipeline_model_parallel_size > 1:
             # hack for pipeline mode
@@ -303,49 +303,46 @@ class DPOTrainer(Trainer):
         ref_model,
         model,
         batch,
+        step: int = -1,
     ):
         """
         prediction_step function for pipeline parallel mode.
         """
-        if len(batch["input_ids"]) != self.args.gradient_accumulation_steps:
-            return (paddle.zeros([]), None, None)
-
         if hasattr(model, "_p2p_helper"):
             model._p2p_helper.clear_meta_cache()
 
         concatenated_inputs = {}
         # consider no drop last
         per_device_train_batch_size = self.args.per_device_train_batch_size
-        gradient_accumulation_steps = self.args.gradient_accumulation_steps
         # preprocess inputs: tuple(List[Tensor])
         for key in batch.keys():
             if key not in "response_indexs":
-                concatenated_inputs[key] = [
-                    batch[key][i * per_device_train_batch_size : (i + 1) * per_device_train_batch_size]
-                    for i in range(gradient_accumulation_steps)
-                ]
+                concatenated_inputs[key] = batch[key][:per_device_train_batch_size]
             else:
-                concatenated_inputs["response_indexs"] = [[] for _ in range(gradient_accumulation_steps)]
-                for i in range(gradient_accumulation_steps):
-                    for response_index in batch[key]:
-                        if response_index[0] in list(
-                            range(i * per_device_train_batch_size, (i + 1) * per_device_train_batch_size)
-                        ):
-                            response_index[0] -= i * per_device_train_batch_size
-                            concatenated_inputs["response_indexs"][i].append(response_index)
-                    concatenated_inputs["response_indexs"][i] = paddle.stack(concatenated_inputs["response_indexs"][i])
-                    use_filtered_label_loss = (
-                        model._layers.config.use_filtered_label_loss
-                        if hasattr(model, "_layers")
-                        else model.config.use_filtered_label_loss
-                    )
-                    if use_filtered_label_loss:
-                        last_batch_response_length = concatenated_inputs["response_indexs"][i][0, 1]
-                        concatenated_inputs["response_indexs"][i][:, 1:] -= last_batch_response_length
+                concatenated_inputs["response_indexs"] = []
+                for response_index in batch[key]:
+                    if response_index[0] in list(range(0, per_device_train_batch_size)):
+                        concatenated_inputs["response_indexs"].append(response_index)
+                concatenated_inputs["response_indexs"] = paddle.stack(concatenated_inputs["response_indexs"])
+                use_filtered_label_loss = (
+                    model._layers.config.use_filtered_label_loss
+                    if hasattr(model, "_layers")
+                    else model.config.use_filtered_label_loss
+                )
+                if use_filtered_label_loss:
+                    last_batch_response_length = concatenated_inputs["response_indexs"][0, 1]
+                    concatenated_inputs["response_indexs"][:, 1:] -= last_batch_response_length
 
         concatenated_inputs["reference_chosen_logps"] = None
         concatenated_inputs["reference_rejected_logps"] = None
 
+        if step == 0 or not hasattr(self, "_pp_eval_data_buffer"):
+            self._pp_eval_data_buffer = []
+        self._pp_eval_data_buffer.append(concatenated_inputs)
+        if len(self._pp_eval_data_buffer) != self.args.gradient_accumulation_steps:
+            return (None, None, None)
+        concatenated_inputs = self._pp_eval_data_buffer
+        self._pp_eval_data_buffer = []
         self._pp_data_buffer = []
         inputs, labels = model._prepare_pipeline_inputs_func(concatenated_inputs)
         if not self.dpo_config.reference_free:
@@ -653,7 +650,8 @@ class DPOTrainer(Trainer):
                         tensor = paddle.zeros([1])
                     else:
                         tensor = paddle.cat(getattr(infohub, key), axis=0).detach()
-                    tensor_shape = paddle.to_tensor(tensor.shape, dtype="int64")
+                    # Convert shape to list of Python ints for NumPy 2.x compatibility
+                    tensor_shape = paddle.to_tensor([int(dim) for dim in tensor.shape], dtype="int64")
                     paddle.distributed.broadcast(
                         tensor_shape, src=self.model_wrapped.global_rank, group=self.model_wrapped.pp_group
                     )
@@ -672,7 +670,11 @@ class DPOTrainer(Trainer):
                         src=self.model_wrapped._hcg.get_rank_from_stage(self.model_wrapped.num_stages - 1),
                         group=self.model_wrapped.pp_group,
                     )
-                    tensor = paddle.zeros(tensor_shape, "float32")
+                    # Convert to Python int and validate for NumPy 2.x compatibility
+                    actual_shape = int(tensor_shape[0])
+                    if actual_shape < 0:
+                        actual_shape = 1  # Fallback to valid shape
+                    tensor = paddle.zeros([actual_shape], "float32")
                 else:
                     raise ValueError(f"Invalid key: {key}")
                 paddle.distributed.broadcast(
@@ -745,9 +747,16 @@ def _prepare_pipeline_dpo_inputs_func_fleet(inputs):
         "reference_rejected_logps",
     ]
 
-    first_stage_inputs_batch = inputs
-    acc_steps = len(inputs["input_ids"])
-    first_stage_inputs_batch = {k: [None] * acc_steps if v is None else v for k, v in first_stage_inputs_batch.items()}
+    if type(inputs) is dict or type(inputs) is OrderedDict:
+        first_stage_inputs_batch = inputs
+        acc_steps = len(inputs["input_ids"])
+        first_stage_inputs_batch = {
+            k: [None] * acc_steps if v is None else v for k, v in first_stage_inputs_batch.items()
+        }
+    else:
+        keys = list(inputs[0].keys())
+        first_stage_inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
+
     last_stage_inputs = [
         first_stage_inputs_batch.pop(key) for key in last_stage_keys if key in first_stage_inputs_batch
     ]

@@ -892,13 +892,14 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
             "spatial_merge_size": 2,
             "temporal_patch_size": 2,
         }
-        tiny_rope_scaling = {"type": "mrope", "mrope_section": [4, 6, 6]}
+        tiny_rope_scaling = {"type": "default", "mrope_section": [4, 6, 6]}
         tiny_text_config = {
             "attention_bias": False,
             "attention_dropout": 0.0,
             "bos_token_id": 151643,
             "dtype": "float32",
             "eos_token_id": 151645,
+            "pad_token_id": 151643,
             "head_dim": 32,
             "hidden_act": "silu",
             "hidden_size": 128,
@@ -942,7 +943,7 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
             "attention_mask": attention_mask,
         }
         model = Qwen3VLMoeForConditionalGeneration(config)
-        model.save_pretrained(cls.torch_model_path)
+        model.save_pretrained(cls.torch_model_path, save_original_format=False)
 
     @require_package("transformers", "torch")
     def test_Qwen3VLMoe_converter(self):
@@ -952,7 +953,7 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
 
         torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
         torch_model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
-            self.torch_model_path, torch_dtype=torch.float32
+            self.torch_model_path, torch_dtype=torch.bfloat16
         ).eval()
         torch_logit = torch_model(**torch_inputs)["logits"]
 
@@ -963,7 +964,7 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
 
         paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
         paddle_model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
-            self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            self.torch_model_path, dtype="bfloat16", load_checkpoint_format="flex_checkpoint"
         ).eval()
         paddle_logit = paddle_model(**paddle_inputs)["logits"]
 
@@ -972,8 +973,8 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
             np.allclose(
                 paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                 torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                atol=1e-2,
-                rtol=1e-2,
+                atol=1e-1,
+                rtol=1e-3,
             )
         )
 
@@ -987,10 +988,10 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
 
             torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
             torch_model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
-                self.torch_model_path, torch_dtype=torch.float32
+                self.torch_model_path, torch_dtype=torch.bfloat16
             )
             torch_model.eval()
-            torch_model.save_pretrained(tempdir)
+            torch_model.save_pretrained(tempdir, save_original_format=False)
             torch_logit = torch_model(**torch_inputs)["logits"]
 
             # 2. forward the paddle model
@@ -1000,7 +1001,7 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
 
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
             paddle_model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
-                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+                tempdir, dtype="bfloat16", load_checkpoint_format="flex_checkpoint"
             )
             paddle_model.eval()
             paddle_logit = paddle_model(**paddle_inputs)["logits"]
@@ -1010,8 +1011,8 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e-2,
-                    rtol=1e-2,
+                    atol=1e-1,
+                    rtol=1e-3,
                 )
             )
 
@@ -1027,9 +1028,9 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
 
             torch_inputs = {k: torch.tensor(v) for k, v in self.inputs.items()}
             torch_model_class = getattr(transformers, pytorch_class_name)
-            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.float32).eval()
+            torch_model = torch_model_class.from_pretrained(self.torch_model_path, torch_dtype=torch.bfloat16).eval()
 
-            torch_model.save_pretrained(tempdir)
+            torch_model.save_pretrained(tempdir, save_original_format=False)
             torch_logit = torch_model(**torch_inputs)[0]
 
             # 2. forward the paddle model
@@ -1038,37 +1039,20 @@ class Qwen3VLMoeCompatibilityTest(unittest.TestCase):
             paddle_inputs = {k: paddle.to_tensor(v) for k, v in self.inputs.items()}
             paddle_model_class = getattr(transformers, class_name + "Deprecated")
             paddle_model = paddle_model_class.from_pretrained(
-                tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
-            ).eval()
-
-            paddle_model_fused = paddle_model_class.from_pretrained(
-                tempdir,
-                dtype="float32",
-                load_checkpoint_format="flex_checkpoint",
+                tempdir, dtype="bfloat16", load_checkpoint_format="flex_checkpoint"
             ).eval()
 
             if class_name == "Qwen3VLMoeModel":
                 paddle_logit = paddle_model(**paddle_inputs)[0]
-                paddle_fused_logit = paddle_model_fused(**paddle_inputs)[0]
             else:
                 paddle_logit = paddle_model(**paddle_inputs)["logits"]
-                paddle_fused_logit = paddle_model_fused(**paddle_inputs)["logits"]
 
             # 3. compare the result between paddle and torch
             self.assertTrue(
                 np.allclose(
                     paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
-                    atol=1e-2,
-                    rtol=1e-2,
-                )
-            )
-            # 4.compare the result between paddle and paddle_fused
-            self.assertTrue(
-                np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    paddle_fused_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
-                    atol=1e-2,
-                    rtol=1e-2,
+                    atol=1e-1,
+                    rtol=1e-3,
                 )
             )

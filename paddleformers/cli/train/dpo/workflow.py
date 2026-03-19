@@ -20,7 +20,7 @@ from functools import partial
 import paddle
 
 from paddleformers.cli.utils.process import add_new_special_tokens
-from paddleformers.datasets.collate import dpo_collate_fn as collate_fn
+from paddleformers.datasets.collate import dpo_collate_fn, mm_dpo_collate_fn
 from paddleformers.datasets.loader import create_dataset
 from paddleformers.datasets.template.template import get_template_and_fix_tokenizer
 from paddleformers.nn.attention import AttentionInterface
@@ -38,6 +38,8 @@ from paddleformers.transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     AutoModelForCausalLMPipe,
+    AutoModelForConditionalGeneration,
+    AutoModelForConditionalGenerationPipe,
     AutoProcessor,
     AutoTokenizer,
 )
@@ -70,6 +72,10 @@ def run_dpo(
     paddle.set_device(training_args.device)
     set_random_seed(seed_=training_args.seed)
     set_seed(training_args.seed)
+
+    training_args.model_name_or_path = model_args.model_name_or_path
+    training_args.download_hub = model_args.download_hub
+    training_args.copy_custom_file_list = model_args.copy_custom_file_list
 
     avaible_attn_impl = AttentionInterface._global_mapping.keys()
     if model_args._attn_implementation not in avaible_attn_impl:
@@ -156,8 +162,21 @@ def run_dpo(
     model_config.max_sequence_length = data_args.max_seq_len
     model_config.seq_length = data_args.max_seq_len
     model_config.is_lora = model_args.lora
+    if "qwen3_vl" in model_config.model_type and not model_args.lora:
+        if training_args.sequence_parallel:
+            logger.warning("Qwen3VL model do not support `sequence_parallel` yet, temporarily set to False")
+        training_args.sequence_parallel = False
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
+
+    # Sync arguments to MLLM sub_config
+    if getattr(model_config, "text_config", None) is not None:
+        model_config.text_config.max_sequence_length = data_args.max_seq_len
+    if getattr(model_config, "vision_config", None) is not None:
+        model_config.vision_config._attn_implementation = model_args._attn_implementation
+        model_config.vision_config.recompute_granularity = model_config.recompute_granularity
+        model_config.vision_config.recompute_method = model_config.recompute_method
+        model_config.vision_config.recompute_num_layers = model_config.recompute_num_layers
 
     if not training_args.reference_free and not model_args.lora:
         ref_model_config = AutoConfig.from_pretrained(
@@ -171,10 +190,27 @@ def run_dpo(
 
         LlmMetaConfig.set_llm_config(ref_model_config, training_args)
 
-    if training_args.pipeline_model_parallel_size > 1:
-        model_class = AutoModelForCausalLMPipe
+        # Sync arguments to MLLM sub_config for reference model
+        if getattr(ref_model_config, "text_config", None) is not None:
+            ref_model_config.text_config.max_sequence_length = data_args.max_seq_len
+        if getattr(ref_model_config, "vision_config", None) is not None:
+            ref_model_config.vision_config._attn_implementation = model_args._attn_implementation
+            ref_model_config.vision_config.recompute_granularity = model_config.recompute_granularity
+            ref_model_config.vision_config.recompute_method = model_config.recompute_method
+            ref_model_config.vision_config.recompute_num_layers = model_config.recompute_num_layers
+
+    if model_args.stage == "VL-DPO":
+        model_class = AutoModelForConditionalGeneration
+        if training_args.pipeline_model_parallel_size > 1:
+            if data_args.eval_with_do_generation and training_args.do_eval:
+                raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
+            model_class = AutoModelForConditionalGenerationPipe
     else:
         model_class = AutoModelForCausalLM
+        if training_args.pipeline_model_parallel_size > 1:
+            if data_args.eval_with_do_generation and training_args.do_eval:
+                raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
+            model_class = AutoModelForCausalLMPipe
     if not training_args.reference_free and not model_args.lora:
         ref_model_config.dpo_config = dpo_config
     model_config.dpo_config = dpo_config
@@ -202,9 +238,7 @@ def run_dpo(
             ref_model = None
 
     if is_paddlefleet_available() and isinstance(model, GPTModel):
-        training_args.per_device_eval_batch_size = (
-            training_args.per_device_train_batch_size * training_args.gradient_accumulation_steps
-        )
+        training_args.per_device_eval_batch_size = training_args.per_device_train_batch_size
         logger.warning(f"eval_batch_size set to {training_args.per_device_eval_batch_size} in Pipeline Parallel!")
 
     if training_args.pipeline_model_parallel_size > 1:
@@ -218,7 +252,17 @@ def run_dpo(
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
+    if "VL" in model_args.stage and training_args.dataloader_num_workers > 0:
+        data_args.processor_use_fast = False
+        logger.warning_once(
+            f"Detected dataloader_num_workers={training_args.dataloader_num_workers} (>0). "
+            "Since the CPU version of the 'interpolate' operator is currently unsupported, "
+            "some models may use a fast image processor which can cause errors in dataloader workers. "
+            "Temporarily fallback to the slow image processor (`use_fast=False`) by default to avoid potential issues. "
+            "You can also explicitly set `processor_use_fast=False` or `dataloader_num_workers=0` to avoid this warning."
+        )
+
+    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
 
     logger.info("Loading model & tokenizer successfully !")
 
@@ -260,6 +304,9 @@ def run_dpo(
         model.print_trainable_parameters()
 
     logger.info("Start to create dataset")
+
+    type_map = {"bf16": "bfloat16", "fp16": "float16"}
+    compute_type = type_map.get(training_args.compute_type, "float32")
     dataset_config = {
         "tokenizer": tokenizer,
         "processor": processor,
@@ -279,6 +326,9 @@ def run_dpo(
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
         "use_filtered_label_loss": model_config.use_filtered_label_loss,
+        "dtype": compute_type,
+        "binpacking": data_args.binpacking,
+        "packing_interval": data_args.packing_interval,
     }
 
     dataset_config.update(
@@ -362,11 +412,32 @@ def run_dpo(
     logger.info(f"callbacks: {callbacks}")
     # padding to the maximum seq length in batch data when max_seq_len is None
     max_seq_len = (
-        data_args.max_seq_len + model_config.num_nextn_predict_layers
+        data_args.max_seq_len
         if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
         else None
     )
     logger.info(f"Setting max_seq_len to {max_seq_len} using PaddleFormers Model.")
+
+    # Choose collate function based on stage
+    if model_args.stage == "VL-DPO":
+        data_collator = partial(
+            mm_dpo_collate_fn,
+            tokenizer=tokenizer,
+            training_args=training_args,
+            max_seq_len=max_seq_len,
+            padding_free=data_args.padding_free,
+            use_filtered_label_loss=model_config.use_filtered_label_loss,
+            model=model,
+        )
+    else:
+        data_collator = partial(
+            dpo_collate_fn,
+            tokenizer=tokenizer,
+            training_args=training_args,
+            max_seq_len=max_seq_len,
+            padding_free=data_args.padding_free,
+            use_filtered_label_loss=model_config.use_filtered_label_loss,
+        )
     trainer = DPOTrainer(
         model=model,
         ref_model=ref_model,
@@ -375,16 +446,7 @@ def run_dpo(
         train_dataset=(train_dataset if training_args.do_train and training_args.should_load_dataset else None),
         eval_dataset=(eval_dataset if training_args.do_eval and training_args.should_load_dataset else None),
         tokenizer=tokenizer,
-        data_collator=partial(
-            collate_fn,
-            tokenizer=tokenizer,
-            training_args=training_args,
-            max_seq_len=max_seq_len,
-            padding_free=data_args.padding_free,
-            use_filtered_label_loss=model_config.use_filtered_label_loss,
-            use_fused_head_and_loss_fn=model_config.use_fused_head_and_loss_fn,
-            packing=data_args.packing,
-        ),
+        data_collator=data_collator,
         model_with_dpo_criterion=model_args.model_with_dpo_criterion,
         callbacks=callbacks,
     )

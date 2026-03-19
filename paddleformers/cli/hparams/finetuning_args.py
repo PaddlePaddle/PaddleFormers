@@ -71,10 +71,6 @@ class PreTrainingArguments(TrainingArguments):
         default=1,
         metadata={"help": "the logging interval of global_training_logs"},
     )
-    multi_token_pred_depth: Optional[int] = field(
-        default=0,
-        metadata={},
-    )
     num_consecutive: int = field(
         default=1,
         metadata={"help": "H5 file consecutive num."},
@@ -165,7 +161,7 @@ class SFTTrainingArguments(TrainingArguments):
         metadata={"help": "Maximum number of samples used in estimation."},
     )
     estimation_output_file: str = field(
-        default=None, metadata={"help": "The output file of max_steps estimation result"}
+        default="estimation_output.json", metadata={"help": "The output file of max_steps estimation result"}
     )
 
 
@@ -282,7 +278,6 @@ class FinetuningArguments(
         default=False,
         metadata={"help": "whether to use fp8 training"},
     )
-    multi_token_pred_lambda: float = field(default=0.3, metadata={"help": "multi token pred lambda"})
     use_recompute_mtp: bool = field(default=False, metadata={"help": "Whether to use recompute_mtp"})
 
     # NOTE(gongenlei): new add autotuner_benchmark
@@ -315,23 +310,25 @@ class FinetuningArguments(
             self.weight_quantize_algo = {"weight_only_int4": DEFAULT_QUANTIZE_LAYERS}
         elif self.compute_type == "wint8":
             self.weight_quantize_algo = {"weight_only_int8": DEFAULT_QUANTIZE_LAYERS}
-        # TODO: @bosspi to support wint4/8
-        # elif self.compute_type == "wint4/8":
-        #     # self.weight_quantize_algo = "weight_only_mix"
-        #     self.weight_quantize_algo = {
-        #         "weight_only_int4": [".*mlp.experts.*"],
-        #         "weight_only_int8": [
-        #             ".*self_attn.qkv_proj.*",
-        #             ".*self_attn.q_proj.*",
-        #             ".*self_attn.k_proj.*",
-        #             ".*self_attn.v_proj.*",
-        #             ".*self_attn.o_proj.*",
-        #             ".*mlp.up_gate_proj.*",
-        #             ".*mlp.up_proj.*",
-        #             ".*mlp.gate_proj.*",
-        #             ".*mlp.down_proj.*",
-        #         ],
-        #     }
+        elif self.compute_type == "wint4/8":
+            self.weight_quantize_algo = {
+                "weight_only_int4": [
+                    ".*mlp.experts.*",
+                    ".*mlp.shared_expert.*",
+                    ".*mlp.shared_experts.*",
+                ],
+                "weight_only_int8": [
+                    ".*self_attn.qkv_proj.*",
+                    ".*self_attn.q_proj.*",
+                    ".*self_attn.k_proj.*",
+                    ".*self_attn.v_proj.*",
+                    ".*self_attn.o_proj.*",
+                    ".*mlp.up_gate_proj.*",
+                    ".*mlp.up_proj.*",
+                    ".*mlp.gate_proj.*",
+                    ".*mlp.down_proj.*",
+                ],
+            }
         elif self.compute_type == "nf4":
             self.weight_quantize_algo = {"nf4": DEFAULT_QUANTIZE_LAYERS}
         else:

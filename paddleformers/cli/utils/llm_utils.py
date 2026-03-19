@@ -28,7 +28,10 @@ from paddle.distributed import fleet
 from sklearn.metrics import accuracy_score
 
 if TYPE_CHECKING:
-    from transformers.tokenization_utils import PreTrainedTokenizer
+    try:
+        from transformers.tokenization_python import PreTrainedTokenizer
+    except ImportError:
+        from transformers.tokenization_utils import PreTrainedTokenizer
 
 from paddleformers.generation import GenerationConfig
 from paddleformers.transformers import (  # ChatGLMv2Tokenizer,
@@ -374,6 +377,45 @@ def get_lora_target_modules(model):
             ".*o_proj.*",
             ".*gate_up_proj.*",
             ".*down_proj.*",
+        ]
+    elif model.config.model_type == "glm4v_moe":
+        target_modules = [
+            # language_model
+            "model.language_model.*q_proj.*",
+            "model.language_model.*k_proj.*",
+            "model.language_model.*v_proj.*",
+            "model.language_model.*o_proj.*",
+            "model.language_model.*gate_proj.*",
+            "model.language_model.*up_proj.*",
+            "model.language_model.*down_proj.*",
+            "model.language_model.*qkv_proj.*",
+            "model.language_model.*up_gate_proj.*",
+            "model.language_model.*mlp.gate_proj.*",
+            "model.language_model.*mlp.up_proj.*",
+            "model.language_model.*mlp.down_proj.*",
+            # vision
+            "model.visual.*attn.qkv.*",
+            "model.visual.*attn.proj.*",
+            "model.visual.*gate_proj.*",
+            "model.visual.*up_proj.*",
+            "model.visual.*down_proj.*",
+            # alinger
+            "model.visual.merger.mlp\.[02].*",
+        ]
+    elif model.config.model_type == "glm_ocr":
+        target_modules = [
+            "model.language_model.*q_proj.*",
+            "model.language_model.*k_proj.*",
+            "model.language_model.*v_proj.*",
+            "model.language_model.*o_proj.*",
+            "model.language_model.*gate_up_proj.*",
+            "model.language_model.*down_proj.*",
+            # vision
+            "model.visual.blocks.*attn.qkv.*",
+            "model.visual.blocks.*attn.proj.*",
+            "model.visual.blocks.*mlp.gate_proj.*",
+            "model.visual.blocks.*mlp.up_proj.*",
+            "model.visual.blocks.*mlp.down_proj.*",
         ]
     else:
         raise ValueError(f"Unknown base_model_prefix: {model.config.model_type}.")

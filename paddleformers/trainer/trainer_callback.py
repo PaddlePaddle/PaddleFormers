@@ -506,6 +506,8 @@ class DefaultFlowCallback(TrainerCallback):
         # End training
         if state.global_step >= state.max_steps:
             control.should_training_stop = True
+            if args.save_last_step:
+                control.should_save = True
 
         # Save hf
         if (
@@ -697,7 +699,11 @@ class FP8QuantWeightCallback(TrainerCallback):
         optimizer = kwargs["optimizer"]
         global skip_count
 
-        if (not g_shard_bypass_dygraph_optimizer or skip_count == 0) and hasattr(model, "fp8_quant_weight"):
+        if (
+            (not g_shard_bypass_dygraph_optimizer or skip_count == 0)
+            and hasattr(model, "fp8_quant_weight")
+            and not args.sharding_parallel_size <= 1
+        ):
             self.moe_weights_name = []
             self.use_fp8 = True
             if GPTModel is not None and isinstance(model, GPTModel):
@@ -718,7 +724,9 @@ class FP8QuantWeightCallback(TrainerCallback):
                     self.moe_weights_name.append(param.name)
 
             for name in self.moe_weights_name:
-                offload(optimizer._master_weights[name])
+                # NOTE(Waynezee): when moe_sharding_degree > 1, experts parameter's master_weight may exist in ranks of another moe_sharding_rank.
+                if name in optimizer._master_weights:
+                    offload(optimizer._master_weights[name])
 
         skip_count += 1
 
@@ -730,9 +738,14 @@ class FP8QuantWeightCallback(TrainerCallback):
         optimizer = kwargs["optimizer"]
         global skip_count
 
-        if (not g_shard_bypass_dygraph_optimizer) and hasattr(model, "fp8_quant_weight"):
+        if (
+            (not g_shard_bypass_dygraph_optimizer)
+            and hasattr(model, "fp8_quant_weight")
+            and not args.sharding_parallel_size <= 1
+        ):
             for name in self.moe_weights_name:
-                reload(optimizer._master_weights[name])
+                if name in optimizer._master_weights:
+                    reload(optimizer._master_weights[name])
 
 
 class MoECorrectionBiasAdjustCallback(TrainerCallback):

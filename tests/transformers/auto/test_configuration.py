@@ -59,6 +59,7 @@ class AutoConfigTest(unittest.TestCase):
             auto_config = AutoConfig.from_pretrained(tempdir)
             self.assertEqual(auto_config.hidden_size, number)
 
+    @slow
     def test_from_hf_hub(self):
         config = AutoConfig.from_pretrained("dfargveazd/tiny-random-llama-paddle-safe", download_hub="huggingface")
         self.assertEqual(config.hidden_size, 16)
@@ -89,7 +90,7 @@ class AutoConfigTest(unittest.TestCase):
     def test_new_config_registration(self):
         try:
             AutoConfig.register("custom", CustomConfig)
-            # Wrong model type will raise an error
+            # Wrong model type will raise an error.
             with self.assertRaises(ValueError):
                 AutoConfig.register("model", CustomConfig)
             # Trying to register something existing in the PaddleFormers library will raise an error
