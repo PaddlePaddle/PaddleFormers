@@ -6,8 +6,8 @@ dataset_type: pretrain
 input_dir: "1.0 /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/eb45_industrycorpus2_94k/eb45_industrycorpus2_94k"
 split: "998,1,1"
 data_load_process_num: 40
-max_seq_len: 8192
-base_seq_length: 8192
+max_seq_len: 4096
+base_seq_length: 4096
 dataloader_num_workers: 8
 prefetch_factor: 32
 ignore_data_skip: 0
@@ -85,7 +85,7 @@ ernie_model_config:
     use_async_a2a: false
     use_rms_qkv_recompute: true
     moe_logging: true
-    use_recompute: true
+    use_recompute: false
     num_nextn_predict_layers: 1
     use_fp8_mlp: true
     num_hidden_layers: 28
