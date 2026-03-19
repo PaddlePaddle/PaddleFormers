@@ -3,7 +3,7 @@ stage: ernie_pretrain
 
 # data
 dataset_type: pretrain
-input_dir: "1.0 /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/eb45_industrycorpus2_94k"
+input_dir: "1.0 /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/eb45_industrycorpus2_94k/eb45_industrycorpus2_94k"
 split: "998,1,1"
 data_load_process_num: 40
 max_seq_len: 8192
