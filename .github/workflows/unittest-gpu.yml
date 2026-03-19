@@ -69,7 +69,6 @@ jobs:
     needs: check_skip
     if: needs.check_skip.outputs.skip == 'false'
     name: unittest-gpu-ci
-    timeout-minutes: 60
     runs-on: ${{ inputs.runner || 'ernie-8gpu' || 'distrbute' }}
     outputs:  
       pytest_execute_flag: ${{ steps.set_pytest_flag.outputs.pytest_execute_flag }}
