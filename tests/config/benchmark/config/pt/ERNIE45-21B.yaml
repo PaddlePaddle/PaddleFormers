@@ -94,7 +94,7 @@ ernie_model_config:
     use_recompute: false
     num_nextn_predict_layers: 1
     use_fp8_mlp: true
-    num_hidden_layers: 28
+    num_hidden_layers: 27
     num_empty_layers_add_in_tail: 0
     use_fp8_fuse_node: true
     use_ep_comm_overlap: false
