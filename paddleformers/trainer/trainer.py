@@ -2635,6 +2635,10 @@ class Trainer:
                     self.copy_custom_files(ckpt_path)
                 self.control = self.callback_handler.on_save_hf(self.args, self.state, self.control)
 
+                # Maybe delete some older hf checkpoints.
+                if self.is_local_process_zero():
+                    self._rotate_hf_checkpoints(use_mtime=True, output_dir=run_dir)
+
     def log_trained_tokens(self):
         if self.args.count_trained_tokens:
             token_list = []
@@ -4131,6 +4135,32 @@ class Trainer:
         checkpoints_to_be_deleted = checkpoints_sorted[:number_of_checkpoints_to_delete]
         for checkpoint in checkpoints_to_be_deleted:
             logger.info(f"Deleting older checkpoint [{checkpoint}] due to args.save_total_limit")
+            # ignore_errors for shared disks between train nodes.
+            shutil.rmtree(checkpoint, ignore_errors=True)
+
+    def _rotate_hf_checkpoints(self, use_mtime=False, output_dir=None) -> None:
+        if self.args.save_hf_total_limit is None or self.args.save_hf_total_limit <= 0:
+            return
+
+        # Check if we should delete older hf checkpoint(s)
+        checkpoints_sorted = self._sorted_checkpoints(
+            use_mtime=use_mtime, output_dir=output_dir, checkpoint_prefix=PREFIX_HF_CHECKPOINT_DIR
+        )
+        if len(checkpoints_sorted) <= self.args.save_hf_total_limit:
+            return
+
+        save_hf_total_limit = self.args.save_hf_total_limit
+        if (
+            self.state.best_model_checkpoint is not None
+            and self.args.save_total_limit == 1
+            and checkpoints_sorted[-1] != self.state.best_model_checkpoint
+        ):
+            save_hf_total_limit = 2
+
+        number_of_checkpoints_to_delete = max(0, len(checkpoints_sorted) - save_hf_total_limit)
+        checkpoints_to_be_deleted = checkpoints_sorted[:number_of_checkpoints_to_delete]
+        for checkpoint in checkpoints_to_be_deleted:
+            logger.info(f"Deleting older hf checkpoint [{checkpoint}] due to args.save_hf_total_limit")
             # ignore_errors for shared disks between train nodes.
             shutil.rmtree(checkpoint, ignore_errors=True)
 

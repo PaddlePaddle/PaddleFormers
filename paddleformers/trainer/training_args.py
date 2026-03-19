@@ -407,7 +407,9 @@ class TrainingArguments:
             Defaults to True.
         save_hf_steps (`int`, *optional*, defaults to -1):
             Number of updates steps before two huggingface checkpoint saves if `save_strategy="steps"`.
-        hybrid_parallel_expert_grad_scale (float, optional, defaults to None)(
+        save_hf_total_limit(`int`, *optional*):
+            If a value is passed, will limit the total amount of huggingface checkpoints. Deletes the older huggingface checkpoints in `output_dir`.
+        hybrid_parallel_expert_grad_scale (float, optional, defaults to None):
             Scaling factor for expert gradients when Expert Parallel is enabled.
 
             When Expert Parallel is enabled, the number of tokens processed by each MoE expert
@@ -1254,6 +1256,15 @@ class TrainingArguments:
     )
 
     save_hf_steps: int = field(default=-1, metadata={"help": "Save huggingface checkpoint every X updates steps."})
+    save_hf_total_limit: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Limit the total amount of huggingface checkpoints. "
+                "Deletes the older huggingface checkpoints in the output_dir. Default is unlimited checkpoints"
+            )
+        },
+    )
 
     save_last_step: Optional[bool] = field(
         default=False,

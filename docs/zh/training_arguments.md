@@ -491,6 +491,9 @@
   --save_hf_steps
                         每多少步保存一次 HuggingFace Safetensors 格式的检查点（独立于 `save_steps`）。
                         默认为 500。(`int`, 可选)
+  --save_hf_total_limit
+                        最多保留的 HuggingFace Safetensors 格式检查点数量，旧的检查点将被删除。
+                        (独立于`save_total_limit`)(`int`, 可选)
 
   --save_rng_states
                         是否保存随机数种子状态，用于恢复训练的可复现性。
