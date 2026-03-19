@@ -52,7 +52,7 @@ paddleformers_build (){
     commit=$(python -c "import paddleformers; print(paddleformers.version.commit)")
     commit=${commit:-unknown}
     cp $formers_dir/dist/p****.whl ${upload_path}/
-    cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-0.0.0-py3-none-any.whl
+    cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-0.0.0.post-py3-none-any.whl
     
     whl_file=$(ls $formers_dir/dist/paddleformers-*.whl)
     base_name=$(basename $whl_file)
