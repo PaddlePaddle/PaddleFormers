@@ -1106,22 +1106,58 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
         assert loss_mask is None, "loss_mask is not supported yet"
         image_embeds, video_embeds, deepstack_image_embeds, deepstack_video_embeds = (None for _ in range(4))
         if self.add_encoder and pixel_values is not None:
-            pixel_values = pixel_values.to(self.vision_model.parameters()[0].dtype)
-            if self.config.freeze_vision_model:
-                with paddle.no_grad():
+            # Handle list[paddle.Tensor] input (from RL training pipeline)
+            if isinstance(pixel_values, list):
+                # Filter out None and concatenate tensors
+                tensor_list = [elem for elem in pixel_values if elem is not None]
+                if tensor_list:
+                    pixel_values = paddle.concat(tensor_list, axis=0)
+                else:
+                    pixel_values = None
+            if pixel_values is not None:
+                pixel_values = pixel_values.to(self.vision_model.parameters()[0].dtype)
+                # Handle list[paddle.Tensor] for image_grid_thw
+                if image_grid_thw is not None:
+                    if isinstance(image_grid_thw, list):
+                        tensor_list = [elem for elem in image_grid_thw if elem is not None]
+                        if tensor_list:
+                            image_grid_thw = paddle.concat(tensor_list, axis=0)
+                        else:
+                            image_grid_thw = None
+                if self.config.freeze_vision_model:
+                    with paddle.no_grad():
+                        image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
+                else:
                     image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
-            else:
-                image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
-            image_embeds = paddle.cat(image_embeds, dim=0)
+                image_embeds = paddle.cat(image_embeds, dim=0)
 
         if self.add_encoder and pixel_values_videos is not None:
-            pixel_values_videos = pixel_values_videos.to(self.vision_model.parameters()[0].dtype)
-            if self.config.freeze_vision_model:
-                with paddle.no_grad():
+            # Handle list[paddle.Tensor] input (from RL training pipeline)
+            if isinstance(pixel_values_videos, list):
+                # Filter out None and concatenate tensors
+                tensor_list = [elem for elem in pixel_values_videos if elem is not None]
+                if tensor_list:
+                    pixel_values_videos = paddle.concat(tensor_list, axis=0)
+                else:
+                    pixel_values_videos = None
+            if pixel_values_videos is not None:
+                pixel_values_videos = pixel_values_videos.to(self.vision_model.parameters()[0].dtype)
+                # Handle list[paddle.Tensor] for video_grid_thw
+                if video_grid_thw is not None:
+                    if isinstance(video_grid_thw, list):
+                        tensor_list = [elem for elem in video_grid_thw if elem is not None]
+                        if tensor_list:
+                            video_grid_thw = paddle.concat(tensor_list, axis=0)
+                        else:
+                            video_grid_thw = None
+                if self.config.freeze_vision_model:
+                    with paddle.no_grad():
+                        video_embeds, deepstack_video_embeds = self.get_video_features(
+                            pixel_values_videos, video_grid_thw
+                        )
+                else:
                     video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
-            else:
-                video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
-            video_embeds = paddle.cat(video_embeds, axis=0)
+                video_embeds = paddle.cat(video_embeds, axis=0)
 
         if position_ids is None:
             if self.rope_deltas is None or cache_position is None or cache_position[0] == 0:
@@ -1143,7 +1179,10 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
                 delta = delta.repeat_interleave(batch_size // delta.shape[0], axis=1)
                 position_ids = position_ids + delta
         else:
-            if position_ids.shape == input_ids.shape:
+            # Handle position_ids with mrope format [batch_size, seq_len, 3] -> [3, batch_size, seq_len]
+            if position_ids.ndim == 3 and position_ids.shape[-1] == 3:
+                position_ids = position_ids.transpose([2, 0, 1])
+            elif position_ids.shape == input_ids.shape:
                 position_ids = position_ids.expand(3, position_ids.shape[0], -1)
 
         input_dict = {
