@@ -59,6 +59,7 @@ MAPPING_NAMES = OrderedDict(
         ("Ernie4_5_VLMoe", "ernie4_5_moe_vl"),
         ("PaddleOCRVL", "paddleocr_vl"),
         ("Llama", "llama"),
+        ("KimiK2", "kimi_k2"),
         ("Qwen2", "qwen2"),
         ("Qwen2_5_VL", "qwen2_5_vl"),
         ("Qwen2Moe", "qwen2_moe"),
@@ -71,6 +72,8 @@ MAPPING_NAMES = OrderedDict(
         ("GptOss", "gpt_oss"),
         ("Phi3", "phi3"),
         ("Gemma3", "gemma3_text"),
+        ("Glm4vMoe", "glm4v_moe"),
+        ("GlmOcr", "glm_ocr"),
     ]
 )
 

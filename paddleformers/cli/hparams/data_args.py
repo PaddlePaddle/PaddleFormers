@@ -159,9 +159,17 @@ class DataArguments:
         default=False,
         metadata={"help": "Make offline data for SFT training."},
     )
+    processor_use_fast: bool = field(
+        default=None,
+        metadata={"help": "Whether to use fast processor."},
+    )
     binpacking: bool = field(
-        default=False,
-        metadata={"help": "Whether to use binpacking strategy for packing."},
+        default=True,
+        metadata={"help": "Whether to use bin packing."},
+    )
+    packing_interval: int = field(
+        default=1000,
+        metadata={"help": "Interval of packing."},
     )
     truncation_strategy: str = field(
         default="right",

@@ -24,6 +24,25 @@ cd $nlp_dir
 mkdir -p $log_path
 AGILE_COMPILE_BRANCH=$3
 
+kill_process() {
+    echo -e "\033[32m===== print python / pytest / xdist processes =====\033[0m"
+
+    ps -o pid,ppid,tty,stat,etime,cmd -C python | \
+      grep -E 'pytest|exec\(eval|paddleformers|launcher\.py' || true
+
+    echo -e "\033[32m===== kill python / pytest / xdist processes =====\033[0m"
+
+    TTY=$(tty | sed 's#/dev/##')
+
+    # kill pytest + xdist on current tty
+    ps -o pid=,tty=,cmd= -C python | \
+      awk -v tty="$TTY" '$2==tty && $3 ~ /pytest|exec\(eval/ {print $1}' | \
+      xargs -r kill -9 || true
+
+    # kill paddleformers launcher (distributed training)
+    pkill -9 -f paddleformers/cli/launcher.py || true
+}
+
 install_requirements() {
     start_ts=$(date +%s)
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
@@ -33,13 +52,11 @@ install_requirements() {
     python -m pip install -U --no-cache-dir transformers
     # echo "paddlepaddle-gpu @ https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/cbf3469113cd76b7d5f4cba7b8d7d5f55d9e9911/paddlepaddle_gpu-3.3.0-cp310-cp310-linux_x86_64.whl" >> requirements.txt
     python setup.py bdist_wheel > /dev/null
-    uv cache clean paddlefleet
-    export UV_SKIP_WHEEL_FILENAME_CHECK=1
-    uv pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" --system --prerelease=allow -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match
+    pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
     echo "paddlefleet commit:"
     python -c "import paddlefleet; print(paddlefleet.version.commit)"
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
-    uv pip install -r tests/requirements.txt --system -i https://pypi.tuna.tsinghua.edu.cn/simple --index-strategy unsafe-best-match
+    pip install -r tests/requirements.txt
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
     python -m pip list >> ${log_path}/commit_info.txt
@@ -103,6 +120,7 @@ fi
 get_diff_TO_case
 set_env
 if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
+    kill_process
     install_requirements
     cd ${nlp_dir}
     echo ' Testing all model unittest cases '

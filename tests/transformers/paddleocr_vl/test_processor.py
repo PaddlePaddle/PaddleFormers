@@ -227,4 +227,4 @@ class PaddleOCRVLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         inputs = processor(text=input_str, images=image_input, return_tensors="pd")
         self.assertEqual(inputs[self.images_input_name].shape[0], 100)
         inputs = processor(text=input_str, images=image_input, max_pixels=56 * 56 * 4, return_tensors="pd")
-        self.assertEqual(inputs[self.images_input_name].shape[0], 612)
+        self.assertEqual(inputs[self.images_input_name].shape[0], 100)

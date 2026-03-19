@@ -51,12 +51,14 @@ from .factory import _LazyAutoMapping
 
 IMAGE_PROCESSOR_MAPPING_NAMES.update(
     {
-        "glm4v": (),
+        "ernie4_5_moe_vl": ("Ernie4_5_VLImageProcessor"),
         "glm4v_moe": ("Glm4vImageProcessor", "Glm4vImageProcessorFast"),
-        "paddleocr_vl": (),
+        "kimi_k25": ("KimiK25VisionProcessor"),
+        "paddleocr_vl": ("PaddleOCRVLImageProcessor"),
         "qwen2_5_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen2_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen3_vl": ("Qwen3VLImageProcessor", "Qwen3VLImageProcessorFast"),
+        "glm_ocr": ("Glm46VImageProcessor"),
     }
 )
 
@@ -356,18 +358,18 @@ class AutoImageProcessor(hf.AutoImageProcessor):
                         f"`use_fast` is set to `True` but the requested image processor `{image_processor_type}` does not have a fast version. "
                         "Falling back to the slow version (`use_fast=False`)."
                     )
-                    image_processor_class = get_image_processor_class_from_name_hf(image_processor_type)
+                    image_processor_class = get_image_processor_class_from_name(image_processor_type)
 
-                    # Not found in Transformers, try local PaddleFormers registry
+                    # Not found in PaddleFormers, try local Transformers registry
                     if image_processor_class is None:
-                        image_processor_class = get_image_processor_class_from_name(image_processor_type)
+                        image_processor_class = get_image_processor_class_from_name_hf(image_processor_type)
             else:
                 image_processor_type_slow = image_processor_type.removesuffix("Fast")
-                image_processor_class = get_image_processor_class_from_name_hf(image_processor_type_slow)
+                image_processor_class = get_image_processor_class_from_name(image_processor_type_slow)
 
-                # Not found in Transformers, try local PaddleFormers registry
+                # Not found in PaddleFormers, try local Transformers registry
                 if image_processor_class is None:
-                    image_processor_class = get_image_processor_class_from_name(image_processor_type_slow)
+                    image_processor_class = get_image_processor_class_from_name_hf(image_processor_type_slow)
 
                 if image_processor_class is None and image_processor_type.endswith("Fast"):
                     raise ValueError(
@@ -390,9 +392,13 @@ class AutoImageProcessor(hf.AutoImageProcessor):
                 upstream_repo = class_ref.split("--")[0]
             else:
                 upstream_repo = None
-            trust_remote_code = resolve_trust_remote_code(
-                trust_remote_code, pretrained_model_name_or_path, has_local_code, has_remote_code, upstream_repo
-            )
+
+            image_processor_class = get_image_processor_class_from_name(class_ref.rsplit(".", 1)[-1])
+
+            if image_processor_class is None:
+                trust_remote_code = resolve_trust_remote_code(
+                    trust_remote_code, pretrained_model_name_or_path, has_local_code, has_remote_code, upstream_repo
+                )
 
         if has_remote_code and trust_remote_code:
             if not use_fast and image_processor_auto_map[1] is not None:

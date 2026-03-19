@@ -19,8 +19,14 @@ import paddle
 from paddleformers.nn.norm import LayerNorm, Norm, RMSNorm
 from paddleformers.transformers import LlamaConfig
 
+from ..testing_utils import gpu_device_initializer
+
 
 class TestNormLayers(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="TestNormLayers")
+    def setUp(self):
+        pass
+
     def test_layer_norm_initialization(self):
         config = LlamaConfig()
         # Test LayerNorm initialization

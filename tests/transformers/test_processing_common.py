@@ -25,7 +25,9 @@ import numpy as np
 import paddle
 from PIL import Image
 
-from paddleformers.transformers.auto.processing import processor_class_from_name
+from paddleformers.transformers.processing_utils import (
+    MODALITY_TO_AUTOPROCESSOR_MAPPING,
+)
 
 from .test_utils import check_json_file_has_correct_format
 
@@ -67,16 +69,12 @@ class ProcessorTesterMixin:
         return {}
 
     def get_component(self, attribute, **kwargs):
-        assert attribute in self.processor_class.attributes
-        component_class_name = getattr(self.processor_class, f"{attribute}_class")
-        if isinstance(component_class_name, tuple):
-            if attribute == "image_processor":
-                component_class_name = component_class_name[0]
-            else:
-                component_class_name = component_class_name[-1]
-
-        component_class = processor_class_from_name(component_class_name)
-        component = component_class.from_pretrained(self.tmpdir, **kwargs)  # noqa
+        if attribute not in MODALITY_TO_AUTOPROCESSOR_MAPPING and "tokenizer" in attribute:
+            auto_processor_class = MODALITY_TO_AUTOPROCESSOR_MAPPING["tokenizer"]
+            component = auto_processor_class.from_pretrained(self.tmpdir, subfolder=attribute, **kwargs)  # noqa
+        else:
+            auto_processor_class = MODALITY_TO_AUTOPROCESSOR_MAPPING[attribute]
+            component = auto_processor_class.from_pretrained(self.tmpdir, **kwargs)  # noqa
         if "tokenizer" in attribute and not component.pad_token:
             component.pad_token = "[TEST_PAD]"
             if component.pad_token_id is None:
@@ -86,7 +84,7 @@ class ProcessorTesterMixin:
 
     def prepare_components(self):
         components = {}
-        for attribute in self.processor_class.attributes:
+        for attribute in self.processor_class.get_attributes():
             component = self.get_component(attribute)
             components[attribute] = component
 
@@ -182,16 +180,13 @@ class ProcessorTesterMixin:
             self.assertEqual(processor_second.to_dict(), processor_first.to_dict())
 
             # Try to load each attribute separately from saved directory
-            for attribute in processor_first.attributes:
-                attribute_class_name = getattr(processor_first, f"{attribute}_class")
-                if isinstance(attribute_class_name, tuple):
-                    if attribute == "image_processor":
-                        attribute_class_name = attribute_class_name[0]
-                    else:
-                        attribute_class_name = attribute_class_name[-1]
-
-                attribute_class = processor_class_from_name(attribute_class_name)
-                attribute_reloaded = attribute_class.from_pretrained(tmpdir)
+            for attribute in processor_first.get_attributes():
+                if attribute not in MODALITY_TO_AUTOPROCESSOR_MAPPING and "tokenizer" in attribute:
+                    auto_processor_class = MODALITY_TO_AUTOPROCESSOR_MAPPING["tokenizer"]
+                    attribute_reloaded = auto_processor_class.from_pretrained(tmpdir, subfolder=attribute)
+                else:
+                    auto_processor_class = MODALITY_TO_AUTOPROCESSOR_MAPPING[attribute]
+                    attribute_reloaded = auto_processor_class.from_pretrained(tmpdir)
                 attribute_first = getattr(processor_first, attribute)
 
                 # tokenizer repr contains model-path from where we loaded

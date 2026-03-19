@@ -367,9 +367,7 @@ Processing Parquet: 100%|██████████████████�
 
 ```python
 from paddleformers.transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, process_vision_info
-model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-    "Qwen/Qwen2.5-VL-7B-Instruct", convert_from_hf=True,
-).eval()
+model = Qwen2_5_VLForConditionalGeneration.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct").eval()
 
 # change the implementation of attention(default is "eager")
 model.language_model.config._attn_implementation = "flashmask"
@@ -382,7 +380,7 @@ messages = [
         "content": [
             {
                 "type": "image",
-                "image": "./data/coco_grounding/images/000000299887.jpg",
+                "image": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
             },
             {"type": "text", "text": "Task: Object Detection"},
         ],
@@ -401,11 +399,13 @@ inputs = processor(
     return_tensors="pd",
 )
 
-generated_ids = model.generate(**inputs, max_new_tokens=256)
-output_text = processor.batch_decode(
-    generated_ids[0], skip_special_tokens=True, clean_up_tokenization_spaces=False
+outputs = model.generate(**inputs, max_new_tokens=256)
+output_ids = outputs[0].tolist()[0]
+
+output_text = processor.decode(
+    output_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
 )
-print(f"Model Output: \n{output_text[0]}")
+print(f"Model Output: \n{output_text}")
 ```
 
 模型回复如下：

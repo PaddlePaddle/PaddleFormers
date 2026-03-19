@@ -71,6 +71,7 @@ class Qwen3MoEModelProvider(GPTModelProvider):
         "expert_parallel_degree": "expert_model_parallel_size",
         "dtype": "params_dtype",
         "num_experts": "n_routed_experts",
+        "num_local_experts": "n_routed_experts",
     }
 
     rotary_base: float = 1000000.0
@@ -724,6 +725,7 @@ class Qwen3MoeRotaryEmbedding(nn.Layer):
     def compute_default_rope_parameters(
         config: Optional[Qwen3MoeConfig] = None,
         seq_len: Optional[int] = None,
+        device: str = "cpu",
     ) -> tuple["paddle.Tensor", float]:
         """
         Computes the inverse frequencies according to the original RoPE implementation
@@ -732,6 +734,8 @@ class Qwen3MoeRotaryEmbedding(nn.Layer):
                 The model configuration.
             seq_len (`int`, *optional*):
                 The current sequence length. Unused for this type of RoPE.
+            device (`str`, *optional*):
+                The current device.
         Returns:
             Tuple of (`paddle.Tensor`, `float`), containing the inverse frequencies for the RoPE embeddings and the
             post-processing scaling factor applied to the computed cos/sin (unused in this type of RoPE).
@@ -742,7 +746,9 @@ class Qwen3MoeRotaryEmbedding(nn.Layer):
         attention_factor = 1.0  # Unused in this type of RoPE
 
         # Compute the inverse frequencies
-        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        inv_freq = 1.0 / (
+            base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32).to(device) / dim)
+        )
         return inv_freq, attention_factor
 
     @dynamic_rope_update
@@ -781,8 +787,11 @@ class Qwen3MoePretrainedModel(PretrainedModel):
     def _gen_aoa_config(cls, config: Qwen3MoeConfig):
         if hasattr(config, "n_routed_experts"):
             num_experts = config.n_routed_experts
+        elif hasattr(config, "num_local_experts"):
+            num_experts = config.num_local_experts
         else:
             num_experts = config.num_experts
+
         model_prefix = "" if cls == cls.base_model_class else "model."
         using_sonic_moe = config.using_sonic_moe
         aoa_config = {
@@ -886,8 +895,11 @@ class Qwen3MoePretrainedModel(PretrainedModel):
     def _gen_inv_aoa_config(cls, config: Qwen3MoeConfig):
         if hasattr(config, "n_routed_experts"):
             num_experts = config.n_routed_experts
+        elif hasattr(config, "num_local_experts"):
+            num_experts = config.num_local_experts
         else:
             num_experts = config.num_experts
+
         model_prefix = "" if cls == cls.base_model_class else "model."
         using_sonic_moe = config.using_sonic_moe
         aoa_statements = [
@@ -1430,8 +1442,8 @@ class Qwen3MoeForCausalLMPipeDeprecated(GeneralModelForCausalLMPipe):
     _rotary_emb_cls = Qwen3MoeRotaryEmbedding
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Qwen3MoeModel.transpose_weight_keys
-    _gen_aoa_config = Qwen3MoeForCausalLM._gen_aoa_config
-    _gen_inv_aoa_config = Qwen3MoeForCausalLM._gen_inv_aoa_config
+    _gen_aoa_config = Qwen3MoeForCausalLMDeprecated._gen_aoa_config
+    _gen_inv_aoa_config = Qwen3MoeForCausalLMDeprecated._gen_inv_aoa_config
 
 
 __all__ = [

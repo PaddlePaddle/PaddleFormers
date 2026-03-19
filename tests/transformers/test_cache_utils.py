@@ -16,7 +16,7 @@ import unittest
 
 import paddle
 
-from paddleformers.transformers import AutoModelForCausalLM, AutoTokenizer
+from paddleformers.transformers import AutoTokenizer
 from paddleformers.transformers.cache_utils import (
     DynamicCache,
     DynamicLayer,
@@ -394,7 +394,12 @@ class ModelIntegrationTest(unittest.TestCase):
         Verifies that DynamicCache is used by default and populated correctly.
         """
         tokenizer = AutoTokenizer.from_pretrained(self.model_id)
-        model = AutoModelForCausalLM.from_pretrained(
+
+        from paddleformers.transformers import (
+            Qwen3ForCausalLMDeprecated as Qwen3ForCausalLM,
+        )
+
+        model = Qwen3ForCausalLM.from_pretrained(
             self.model_id, convert_from_hf=True, return_dict=True, load_checkpoint_format=""
         )
         model.to(self.device)
@@ -468,7 +473,12 @@ class CacheOffloadingTest(unittest.TestCase):
         """
         model_id = "PaddleFormers/tiny-random-qwen3"
         tokenizer = AutoTokenizer.from_pretrained(model_id)
-        model = AutoModelForCausalLM.from_pretrained(
+
+        from paddleformers.transformers import (
+            Qwen3ForCausalLMDeprecated as Qwen3ForCausalLM,
+        )
+
+        model = Qwen3ForCausalLM.from_pretrained(
             model_id, convert_from_hf=True, return_dict=True, load_checkpoint_format=""
         )
         model.to(self.device)

@@ -156,8 +156,14 @@ import_structure = {
     "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
+    "kimi_k25.vision_processor": ["KimiK25VisionProcessor"],
+    "kimi_k25.processor": ["KimiK25Processor"],
+    "kimi_k25.tokenizer": ["TikTokenTokenizer"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
     "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
+    "kimi_k2.configuration": ["KimiK2Config"],
+    "kimi_k2.modeling": ["KimiK2ForCausalLM", "KimiK2ForCausalLMPipe"],
+    "kimi_k2.tokenizer": ["KimiK2TikTokenTokenizer"],
     "llama.configuration": [
         "LlamaConfig",
     ],
@@ -182,6 +188,8 @@ import_structure = {
         "Qwen2ForSequenceClassification",
         "Qwen2ForTokenClassification",
         "Qwen2SentenceEmbedding",
+        "Qwen2ForCausalLMDeprecated",
+        "Qwen2ForCausalLMPipeDeprecated",
     ],
     "qwen2.tokenizer": ["Qwen2Tokenizer"],
     "qwen2.tokenizer_fast": ["Qwen2TokenizerFast"],
@@ -193,6 +201,8 @@ import_structure = {
         "Qwen2_5_VLTextModel",
     ],
     "qwen2_5_vl.processor": ["Qwen2_5_VLProcessor"],
+    "qwen3_5.configuration": ["Qwen3_5VisionConfig"],
+    "qwen3_5.modeling": ["Qwen3_5VisionModel"],
     "qwen3_vl.configuration": ["Qwen3VLConfig", "Qwen3VLTextConfig"],
     "qwen3_vl.modeling": [
         "Qwen3VLForConditionalGeneration",
@@ -221,6 +231,8 @@ import_structure = {
         "Qwen2MoeForCausalLM",
         "Qwen2MoeForCausalLMPipe",
         "Qwen2MoePretrainingCriterion",
+        "Qwen2MoeForCausalLMDeprecated",
+        "Qwen2MoeForCausalLMPipeDeprecated",
     ],
     "qwen2_vl.image_processor": ["Qwen2VLImageProcessor"],
     "qwen2_vl.image_processor_fast": ["Qwen2VLImageProcessorFast"],
@@ -237,6 +249,8 @@ import_structure = {
         "Qwen3ForSequenceClassification",
         "Qwen3ForTokenClassification",
         "Qwen3SentenceEmbedding",
+        "Qwen3ForCausalLMDeprecated",
+        "Qwen3ForCausalLMPipeDeprecated",
     ],
     "qwen3_moe.configuration": ["Qwen3MoeConfig"],
     "qwen3_moe.modeling": [
@@ -257,6 +271,7 @@ import_structure = {
     ],
     "llama": [],
     "qwen2": [],
+    "glm_ocr": [],
     "qwen3": [],
     "deepseek_v3": [],
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
@@ -265,6 +280,7 @@ import_structure = {
     "paddleocr_vl": [],
     "qwen2_5_vl": [],
     "qwen3_vl": [],
+    "qwen3_5": [],
     "qwen3_vl_moe": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
@@ -280,6 +296,25 @@ import_structure = {
     "phi3.configuration": ["Phi3Config"],
     "phi3.tokenizer": ["Phi3Tokenizer"],
     "phi3.modeling": ["Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
+    "glm4v_moe.configuration": ["Glm4vMoeConfig", "Glm4vMoeTextConfig", "Glm4vMoeVisionConfig"],
+    "glm4v_moe.modeling": [
+        "Glm4vMoeForConditionalGeneration",
+        "Glm4vMoeModel",
+        "Glm4vMoePreTrainedModel",
+        "Glm4vMoeTextModel",
+        "Glm4vMoeVisionModel",
+    ],
+    "glm4v_moe.processor": ["Glm4vProcessor"],
+    "glm4v_moe.video_processor": ["Glm4vVideoProcessor"],
+    "glm4v_moe": [],
+    "glm_ocr.configuration": ["GlmOcrConfig", "GlmOcrTextConfig", "GlmOcrVisionConfig"],
+    "glm_ocr.modeling": [
+        "GlmOcrForConditionalGeneration",
+        "GlmOcrModel",
+        "GlmOcrPreTrainedModel",
+    ],
+    "glm_ocr.processor": ["Glm46VProcessor"],
+    "glm_ocr.image_processor": ["Glm46VImageProcessor"],
 }
 
 if TYPE_CHECKING:
@@ -332,6 +367,8 @@ if TYPE_CHECKING:
     from .ernie4_5 import *
     from .ernie4_5_moe import *
     from .ernie4_5_moe_vl import *
+    from .kimi_k25 import *
+    from .kimi_k2 import *
     from .paddleocr_vl import *
     from .llama import *
     from .optimization import *
@@ -343,12 +380,14 @@ if TYPE_CHECKING:
     from .qwen3_moe import *
     from .qwen3_next import *
     from .qwen3_vl import *
+    from .qwen3_5 import *
     from .qwen3_vl_moe import *
     from .glm4_moe import *
     from .glm4v_moe import *
     from .gpt_oss import *
     from .phi3 import *
     from .gemma3_text import *
+    from .glm_ocr import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

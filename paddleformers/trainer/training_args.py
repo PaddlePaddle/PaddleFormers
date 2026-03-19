@@ -434,11 +434,6 @@ class TrainingArguments:
             Whether to load a checkpoint in the HuggingFace format.
             Defaults to False.
 
-        flex_ckpt_comm_method (str, optional):
-            Communication method used for checkpoint resharding.
-            Choices are "send_recv", "broadcast", "multi_group_broadcast", and "grouped_send_recv".
-            Defaults to "broadcast".
-
         replicate_saved_into_local (bool, optional):
             Whether to save checkpoint replicas into local files in a distributed save/load system.
             If set to True, replicas will be stored locally on each node/machine.
@@ -510,6 +505,9 @@ class TrainingArguments:
     lr_end: float = field(default=1e-7, metadata={"help": "The end LR in the polynomial scheduler."})
     power: float = field(default=1.0, metadata={"help": "The power factor in the polynomial scheduler."})
     min_lr: float = field(default=0.0, metadata={"help": "The minimum learning rate in cosine scheduler."})
+    moe_correction_bias_lr: float = field(
+        default=0.0, metadata={"help": "Learning rate for MoE (Mixture of Experts) correction bias adjustment."}
+    )
 
     log_on_each_node: bool = field(
         default=True,
@@ -1252,6 +1250,11 @@ class TrainingArguments:
 
     save_hf_steps: int = field(default=-1, metadata={"help": "Save huggingface checkpoint every X updates steps."})
 
+    save_last_step: Optional[bool] = field(
+        default=False,
+        metadata={"help": "If True, saves the last step of the training process."},
+    )
+
     hybrid_parallel_expert_grad_scale: Optional[float] = field(
         default=None,
         metadata={"help": ("Scaling factor for expert gradients.")},
@@ -1273,16 +1276,6 @@ class TrainingArguments:
     load_from_hf: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to load a checkpoint in the HuggingFace format."},
-    )
-    flex_ckpt_comm_method: Optional[str] = field(
-        default="broadcast",
-        metadata={
-            "help": (
-                "Communication method used by FlexCheckpoint for checkpoint resharding. "
-                'Choices are "send_recv", "broadcast", "multi_group_broadcast", and "grouped_send_recv". '
-                'Default is "broadcast".'
-            )
-        },
     )
     deterministic_mode: bool = field(
         default=False,
@@ -1322,12 +1315,6 @@ class TrainingArguments:
         default=False,
         metadata={
             "help": "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines)."
-        },
-    )
-    mtp_loss_scaling_factor: float = field(
-        default=1.0,
-        metadata={
-            "help": "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues)."
         },
     )
     dp_allreduce_avg_in_gradinent_scale: bool = field(
@@ -1558,21 +1545,15 @@ class TrainingArguments:
             "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
         },
     )
-    fa_version: int = field(
-        default=2, metadata={"help": "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."}
+    fa_version: Optional[int] = field(
+        default=None,
+        metadata={"help": "FlashAttention or FlashMask version (2, 3, or 4). If None, version is auto-selected."},
     )
 
     using_sonic_moe: bool = field(
         default=False,
         metadata={
             "help": "When enabled, the computation part of the moelayer will use the implementation provided by SonicMoE."
-        },
-    )
-
-    moe_use_pfcc_deepep: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether to use PFCC DeepEP for MoE, by default uses paddle DeepEP. Only works when moe_token_dispatcher_type == 'deepep'."
         },
     )
 
@@ -1594,20 +1575,43 @@ class TrainingArguments:
             os.environ["FLAGS_cudnn_deterministic"] = "1"
             os.environ["FLAGS_embedding_deterministic"] = "1"
 
-        if self.fa_version == 2 or self.fa_version == 3:
+        if self.fa_version is not None:
             if paddle.base.core.is_compiled_with_cuda():
+                assert self.fa_version in (
+                    2,
+                    3,
+                    4,
+                ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2, 3, and 4."
+            else:
+                assert (
+                    self.fa_version == 2
+                ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2 on non-CUDA devices."
+        else:
+            if paddle.base.core.is_compiled_with_cuda():
+                is_sm100 = (
+                    paddle_device.get_device_capability()[0] == 10 and paddle_device.get_device_capability()[1] == 0
+                )
                 is_sm90 = (
                     paddle_device.get_device_capability()[0] == 9 and paddle_device.get_device_capability()[1] == 0
                 )
-                if is_sm90:
-                    paddle.set_flags({"FLAGS_flash_attn_version": 3})
+                if is_sm100:
+                    self.fa_version = 4
+                elif is_sm90:
                     self.fa_version = 3
-                    warnings.warn("sm90 automatic set fa_version to fa3")
                 else:
-                    paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
-                    logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
+                    # Note(umiswing): always fallback to FA2
+                    self.fa_version = 2
+            else:
+                self.fa_version = 2
+        if paddle.base.core.is_compiled_with_cuda():
+            paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
         else:
-            raise ValueError(f"--fa_version should be 2 or 3, but got {self.fa_version}")
+            try:
+                paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
+            except Exception:
+                logger.warning("Flag FLAGS_flash_attn_version cannot set its value through this function.")
+
+        logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
 
         env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", -1))
         if env_local_rank != -1 and env_local_rank != self.local_rank and paddle.distributed.get_world_size() > 1:

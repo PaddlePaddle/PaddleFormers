@@ -30,6 +30,7 @@ class MLLMModelMapping:
     qwen3_vl_moe = "qwen3_vl_moe"
     paddleocr_vl = "paddleocr_vl"
     ernie4_5_moe_vl = "ernie4_5_moe_vl"
+    glm4v_moe = "glm4v_moe"
 
 
 @dataclass
@@ -168,6 +169,8 @@ def freeze_model_parameters(model, freeze_config):
             if module_name in active_freeze_config:
                 param.stop_gradient = True
                 frozen_keys[module_name].append(name)
+            else:
+                param.stop_gradient = False
         else:
             param.stop_gradient = False
 
@@ -195,17 +198,27 @@ register_multimodel_keys(
 register_multimodel_keys(
     MultiModelKeys(
         model_dtype=MLLMModelMapping.qwen3_vl,
-        aligner=["model.visual.merger", "model.visual.deepstack_merger_list"],
+        aligner=[
+            "model.visual.merger",
+            "model.visual.deepstack_merger_list",
+            "model.vision_model.decoder.merger",
+            "model.vision_model.decoder.deepstack_merger_list",
+        ],
         llm=["model.language_model", "lm_head"],
-        vision="model.visual",
+        vision=["model.visual", "model.vision_model"],
     )
 )
 register_multimodel_keys(
     MultiModelKeys(
         model_dtype=MLLMModelMapping.qwen3_vl_moe,
-        aligner=["model.visual.merger", "model.visual.deepstack_merger_list"],
+        aligner=[
+            "model.visual.merger",
+            "model.visual.deepstack_merger_list",
+            "model.vision_model.decoder.merger",
+            "model.vision_model.decoder.deepstack_merger_list",
+        ],
         llm=["model.language_model", "lm_head"],
-        vision="model.visual",
+        vision=["model.visual", "model.vision_model"],
     )
 )
 
@@ -224,5 +237,14 @@ register_multimodel_keys(
         aligner="resampler_model",
         llm=["model", "lm_head", "mlp", "self_attn"],
         vision="vision_model",
+    )
+)
+
+register_multimodel_keys(
+    MultiModelKeys(
+        model_dtype=MLLMModelMapping.glm4v_moe,
+        aligner="model.visual.merger",
+        llm=["model.language_model", "lm_head"],
+        vision="model.visual",
     )
 )

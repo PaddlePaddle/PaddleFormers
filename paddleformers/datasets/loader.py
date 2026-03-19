@@ -30,7 +30,7 @@ def create_dataset(**dataset_config: Dict[str, Any]):
         SequenceDataset: Configured sequence dataset
     """
     dataset_type = dataset_config.get("dataset_type", "iterator").lower()
-    if dataset_config["stage"].lower() == "dpo":
+    if dataset_config["stage"].lower() in ["dpo", "vl-dpo"]:
         if dataset_type == "map":
             train_dataset = MapDPODataset(**dataset_config)
         else:

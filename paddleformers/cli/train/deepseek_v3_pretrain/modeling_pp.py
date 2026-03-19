@@ -79,6 +79,22 @@ import queue
 global_inputs_embeds_mtp_queue = queue.Queue()
 
 
+def check_accept_none_grad():
+    x = paddle.empty([0])
+    x.stop_gradient = False
+    node = ScheduleNode(lambda x: (x.clone(), x.detach()))
+    node.forward(x)
+    try:
+        node.backward((x, None))
+    except:
+        return False
+    return True
+
+
+# Since Paddle 3.4.0, ScheduleNode no more accepts None in grad.
+ACCEPT_NONE_GRAD = check_accept_none_grad()
+
+
 def parse_args(args):
     if isinstance(args, (tuple, list)):
         if len(args) == 4:
@@ -338,7 +354,7 @@ class DecoderLayerNode(ScheduleNode):
 
         self.mlp_layer = mlp_layer
         self.moe_group = mlp_layer.moe_group
-        self.moe_num_experts = mlp_layer.moe_num_experts
+        self.n_routed_experts = mlp_layer.n_routed_experts
 
         self.states = None
         self.hidden_states_meta = None
@@ -364,7 +380,7 @@ class DecoderLayerNode(ScheduleNode):
                 intermediate_hidden_states,
                 token_indices,
                 token_probs,
-                self.moe_num_experts,
+                self.n_routed_experts,
                 self.moe_group,
                 previous_event=previous_event,
                 async_finish=True,
@@ -979,6 +995,10 @@ class FusionFp8DecoderLayerNode(ScheduleNode):
         )
 
         output_grad = (residual_grad, probs_grad, routing_map_grad, l_aux_grad)
+
+        if not ACCEPT_NONE_GRAD:
+            assert routing_map_grad is None, "routing_map should not have grad"
+            output_grad = (residual_grad, probs_grad, l_aux_grad)
 
         output_grad = (
             (hidden_states_grad, *output_grad, hidden_states_grad_)

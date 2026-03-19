@@ -44,14 +44,14 @@ def _training_function(config: dict[str, Any]) -> None:
 
     if "VL" in model_args.stage or model_args.stage == "dsv3_pretrain":
         pass
-    elif data_args.dataset_type != "pretrain":
+    elif data_args.dataset_type != "pretrain" and data_args.dataset_type != "offline":
         check_path(data_args.train_dataset_path)
         check_path(data_args.eval_dataset_path)
 
-    if model_args.stage == "SFT" or model_args.stage == "PT" or model_args.stage == "VL-SFT":
+    if model_args.stage in ["SFT", "PT", "VL-SFT", "VL-PT"]:
         with paddle.amp.auto_cast(enable=False):
             run_sft(model_args, data_args, generating_args, finetuning_args)
-    elif model_args.stage == "DPO":
+    elif model_args.stage == "DPO" or model_args.stage == "VL-DPO":
         with paddle.amp.auto_cast(enable=False):
             run_dpo(model_args, data_args, generating_args, finetuning_args)
     elif model_args.stage == "dsv3_pretrain":
