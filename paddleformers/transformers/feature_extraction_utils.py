@@ -22,6 +22,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 import paddle
+from transformers.utils import PROCESSOR_NAME, PushToHubMixin
 
 from ..utils.download import resolve_file_path
 from ..utils.log import logger
@@ -198,7 +199,7 @@ class BatchFeature(UserDict):
         return self
 
 
-class FeatureExtractionMixin(object):
+class FeatureExtractionMixin(PushToHubMixin):
     """
     This is a feature extraction mixin used to provide saving/loading functionality for sequential and image feature
     extractors.
@@ -324,7 +325,7 @@ class FeatureExtractionMixin(object):
         pretrained_model_name_or_path = str(pretrained_model_name_or_path)
         resolved_feature_extractor_file = resolve_file_path(
             pretrained_model_name_or_path,
-            [FEATURE_EXTRACTOR_NAME],
+            [FEATURE_EXTRACTOR_NAME, PROCESSOR_NAME],
             subfolder,
             cache_dir=cache_dir,
             download_hub=download_hub,
@@ -333,10 +334,17 @@ class FeatureExtractionMixin(object):
             resolved_feature_extractor_file is not None
         ), f"please make sure {FEATURE_EXTRACTOR_NAME} under {pretrained_model_name_or_path}"
         try:
+            feature_extractor_dict = None
+
             # Load feature_extractor dict
             with open(resolved_feature_extractor_file, "r", encoding="utf-8") as reader:
                 text = reader.read()
-            feature_extractor_dict = json.loads(text)
+            processor_dict = json.loads(text)
+            if "feature_extractor" in processor_dict or "audio_processor" in processor_dict:
+                feature_extractor_dict = processor_dict.get("feature_extractor", processor_dict.get("audio_processor"))
+
+            if resolved_feature_extractor_file is not None and feature_extractor_dict is None:
+                feature_extractor_dict = processor_dict
 
         except json.JSONDecodeError:
             raise EnvironmentError(

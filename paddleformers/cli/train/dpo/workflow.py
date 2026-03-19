@@ -304,6 +304,9 @@ def run_dpo(
         model.print_trainable_parameters()
 
     logger.info("Start to create dataset")
+
+    type_map = {"bf16": "bfloat16", "fp16": "float16"}
+    compute_type = type_map.get(training_args.compute_type, "float32")
     dataset_config = {
         "tokenizer": tokenizer,
         "processor": processor,
@@ -324,6 +327,7 @@ def run_dpo(
         "template_backend": data_args.template_backend,
         "dataset_type": data_args.dataset_type,
         "use_filtered_label_loss": model_config.use_filtered_label_loss,
+        "dtype": compute_type,
         "binpacking": data_args.binpacking,
         "packing_interval": data_args.packing_interval,
         "truncation_strategy": data_args.truncation_strategy,

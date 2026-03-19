@@ -392,6 +392,8 @@ def run_sft(
 
     processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
 
+    type_map = {"bf16": "bfloat16", "fp16": "float16"}
+    compute_type = type_map.get(training_args.compute_type, "float32")
     dataset_config = {
         "tokenizer": tokenizer,
         "processor": processor,
@@ -413,6 +415,7 @@ def run_sft(
         "split_multi_turn": data_args.split_multi_turn,
         "dataset_type": data_args.dataset_type,
         "truncation_strategy": data_args.truncation_strategy,
+        "dtype": compute_type,
         "dataset_num_proc": finetuning_args.dataset_num_proc,
         "binpacking": data_args.binpacking,
         "packing_interval": data_args.packing_interval,
@@ -635,8 +638,10 @@ def run_sft(
                 )
             else:
                 training_args.max_steps = math.ceil(len(train_dataset) / training_args.global_batch_size)
+                training_args.max_steps *= training_args.num_train_epochs
                 logger.info(
-                    f"len(train_dataset): {len(train_dataset)}, global_batch_size: {training_args.global_batch_size}, training_args.max_steps: {training_args.max_steps}"
+                    f"len(train_dataset): {len(train_dataset)}, global_batch_size: {training_args.global_batch_size}, \
+                    training_args.num_train_epochs: {training_args.num_train_epochs}, training_args.max_steps: {training_args.max_steps}"
                 )
 
         if paddle.distributed.get_world_size() > 1:
@@ -664,7 +669,7 @@ def run_sft(
 
     callbacks = []
     if getattr(model_config, "topk_method", None) == "noaux_tc":
-        callbacks += [MoECorrectionBiasAdjustCallback(lr=training_args.moe_correction_bias_lr)]
+        callbacks += [MoECorrectionBiasAdjustCallback(lr=training_args.moe_router_bias_update_rate)]
 
     if training_args.use_expert_parallel:
         callbacks += [MoeExpertsGradScaleCallback(training_args)]

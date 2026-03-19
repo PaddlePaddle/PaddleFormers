@@ -609,37 +609,44 @@ class Qwen3VLVisionModel(VisionLayer):
         )
 
     def rot_pos_emb(self, grid_thw):
-        pos_ids = []
-        for t, h, w in grid_thw:
-            hpos_ids = paddle.arange(h).unsqueeze(1).expand([h, w])
-            hpos_ids = hpos_ids.reshape(
-                [
-                    h // self.spatial_merge_size,
-                    self.spatial_merge_size,
-                    w // self.spatial_merge_size,
-                    self.spatial_merge_size,
-                ]
-            )
-            hpos_ids = hpos_ids.transpose(perm=[0, 2, 1, 3])
-            hpos_ids = hpos_ids.flatten()
+        m = self.spatial_merge_size
+        grid_thw_list = grid_thw.tolist()
 
-            wpos_ids = paddle.arange(w).unsqueeze(0).expand([h, w])
-            wpos_ids = wpos_ids.reshape(
-                [
-                    h // self.spatial_merge_size,
-                    self.spatial_merge_size,
-                    w // self.spatial_merge_size,
-                    self.spatial_merge_size,
-                ]
-            )
-            wpos_ids = wpos_ids.transpose([0, 2, 1, 3])
-            wpos_ids = wpos_ids.flatten()
-            pos_ids.append(paddle.stack(x=[hpos_ids, wpos_ids], axis=-1).tile(repeat_times=[t, 1]))
-        pos_ids = paddle.cat(x=pos_ids, axis=0)
-        max_grid_size = grid_thw[:, 1:].max()
-        rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
-        rotary_pos_emb = rotary_pos_emb_full[pos_ids].flatten(start_axis=1)
-        return rotary_pos_emb
+        max_hw = max(max(h, w) for _, h, w in grid_thw_list)
+        freq_table = self.rotary_pos_emb(max_hw)  # [max_hw, dim//2]
+
+        total_tokens = sum(int(t * h * w) for t, h, w in grid_thw_list)
+        pos_ids = paddle.empty([total_tokens, 2], dtype="int64")
+
+        offset = 0
+        for num_frames, height, width in grid_thw_list:
+            num_frames, height, width = int(num_frames), int(height), int(width)
+            merged_h, merged_w = height // m, width // m
+
+            block_rows = paddle.arange(merged_h)
+            block_cols = paddle.arange(merged_w)
+            intra_row = paddle.arange(m)
+            intra_col = paddle.arange(m)
+
+            # Compute full-resolution positions via broadcasting
+            row_idx = block_rows[:, None, None, None] * m + intra_row[None, None, :, None]
+            col_idx = block_cols[None, :, None, None] * m + intra_col[None, None, None, :]
+
+            row_idx = row_idx.expand([merged_h, merged_w, m, m]).reshape([-1])
+            col_idx = col_idx.expand([merged_h, merged_w, m, m]).reshape([-1])
+
+            coords = paddle.stack([row_idx, col_idx], axis=-1)  # [h*w, 2]
+
+            if num_frames > 1:
+                coords = coords.tile([num_frames, 1])
+
+            num_tokens = coords.shape[0]
+            pos_ids[offset : offset + num_tokens] = coords
+            offset += num_tokens
+
+        embeddings = freq_table[pos_ids]  # [total_tokens, 2, dim//2]
+        embeddings = embeddings.flatten(start_axis=1)  # [total_tokens, dim]
+        return embeddings
 
     def fast_pos_embed_interpolate(self, grid_thw):
         grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
@@ -740,7 +747,7 @@ class Qwen3VLVisionModel(VisionLayer):
 
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
-        rotary_pos_emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
+        rotary_pos_emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), axis=-1)
         rotary_pos_cos = rotary_pos_emb.cos()
         rotary_pos_sin = rotary_pos_emb.sin()
         rotary_pos_emb = rotary_pos_emb[:, None, None, :]
@@ -837,6 +844,10 @@ class Qwen3VLProvider(TransformerConfig):
         ]:
             for attr in config_attrs:
                 setattr(config, attr, getattr(self, attr))
+
+        # VIT uses 2D spatial RoPE which is incompatible with fused_rope kernel,
+        # force disable regardless of global setting.
+        self.vision_config.apply_rope_fusion = False
 
         self.text_config.tp_comm_overlap = self.tp_comm_overlap
         self.vision_config.tp_comm_overlap = False

@@ -699,7 +699,11 @@ class FP8QuantWeightCallback(TrainerCallback):
         optimizer = kwargs["optimizer"]
         global skip_count
 
-        if (not g_shard_bypass_dygraph_optimizer or skip_count == 0) and hasattr(model, "fp8_quant_weight"):
+        if (
+            (not g_shard_bypass_dygraph_optimizer or skip_count == 0)
+            and hasattr(model, "fp8_quant_weight")
+            and not args.sharding_parallel_size <= 1
+        ):
             self.moe_weights_name = []
             self.use_fp8 = True
             if GPTModel is not None and isinstance(model, GPTModel):
@@ -734,7 +738,11 @@ class FP8QuantWeightCallback(TrainerCallback):
         optimizer = kwargs["optimizer"]
         global skip_count
 
-        if (not g_shard_bypass_dygraph_optimizer) and hasattr(model, "fp8_quant_weight"):
+        if (
+            (not g_shard_bypass_dygraph_optimizer)
+            and hasattr(model, "fp8_quant_weight")
+            and not args.sharding_parallel_size <= 1
+        ):
             for name in self.moe_weights_name:
                 if name in optimizer._master_weights:
                     reload(optimizer._master_weights[name])
