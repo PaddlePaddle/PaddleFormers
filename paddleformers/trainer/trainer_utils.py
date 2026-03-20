@@ -1206,6 +1206,13 @@ class IterableDatasetShard(IterableDataset):
             return False
         try:
             import paddle.distributed as dist
+            import paddle.io
+
+            # Do not use broadcast in DataLoader worker subprocess
+            # Worker processes don't have CUDA/distributed initialized
+            worker_info = paddle.io.get_worker_info()
+            if worker_info is not None:
+                return False
 
             return dist.is_initialized()
         except Exception:
