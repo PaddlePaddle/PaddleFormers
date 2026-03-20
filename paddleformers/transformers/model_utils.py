@@ -2959,7 +2959,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     "the model must implement the _gen_aoa_config function to provide checkpoint conversion rules."
                 )
             aoa_config = cls._gen_aoa_config(config)
-            print("aoa_config ", aoa_config)
             sharded_state_dict = model.sharded_state_dict()
             metadata_path = os.path.join(ckpt_path, FLEX_CKPT_AUTO_GENERATED_METADATA)
 

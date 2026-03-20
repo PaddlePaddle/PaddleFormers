@@ -126,8 +126,6 @@ def get_name_mapping(task="Model"):
 
         if key in MAPPING_SPACIAL_KEY and task == "Model":
             import_class = MAPPING_SPACIAL_KEY[key] + task
-            if key == "KimiK25":
-                import_class = "KimiK25ForConditionalGeneration"
         else:
             import_class = key + task
         new_key = key + "Model_Import_Class"
@@ -254,7 +252,6 @@ class _BaseAutoModelClass:
 
     @classmethod
     def from_config(cls, config, **kwargs):
-        cls._name_mapping = get_name_mapping()
         model_class = cls._get_model_class_from_config(None, None, config, is_lora=config.get("is_lora", False))
         return model_class._from_config(config, **kwargs)
 
@@ -265,7 +262,6 @@ class _BaseAutoModelClass:
                 cls._name_mapping = get_name_mapping(task)
             else:
                 print("We only support task choice for AutoModel.")
-        cls._name_mapping = get_name_mapping()
         cache_dir = kwargs.get("cache_dir", None)
         download_hub = kwargs.get("download_hub", None)
         subfolder = kwargs.get("subfolder", "")

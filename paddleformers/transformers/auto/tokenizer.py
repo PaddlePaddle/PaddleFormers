@@ -367,7 +367,6 @@ class AutoTokenizer(hf.AutoTokenizer):
 
             # Bind PaddleTokenizerMixin
             tokenizer_class = _bind_paddle_mixin_if_available(tokenizer_class)
-            print("tokenizer_class: ", tokenizer_class)
             return tokenizer_class.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
 
         if getattr(config, "tokenizer_class", None):

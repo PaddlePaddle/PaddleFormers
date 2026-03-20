@@ -1,23 +1,23 @@
 ### data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
-train_dataset_path: ./tests/fixtures/dummy/sft-vl/train.jsonl
+train_dataset_path: ./tests/fixtures/dummy/sft/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./tests/fixtures/dummy/sft-vl/train.jsonl
+eval_dataset_path: ./tests/fixtures/dummy/sft/train.jsonl
 max_seq_len: 8192
 packing: false
 mix_strategy: concat
 template_backend: custom
-template: kimi_k25
+template: qwen3
 
 ### model
-model_name_or_path: ../paddle_moonshotai/Kimi-K2.5
+model_name_or_path: Qwen/Qwen3-0.6B-Base
 _attn_implementation: flashmask
 use_attn_mask_startend_row_indices: false
 
 ### finetuning
 # base
-stage: VL-SFT
+stage: SFT
 fine_tuning: full
 seed: 23
 do_train: true
@@ -53,4 +53,3 @@ fp16_opt_level: O2
 unified_checkpoint: false
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
-continue_training: false
