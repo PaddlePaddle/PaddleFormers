@@ -206,6 +206,28 @@ class KimiK25Provider(TransformerConfig):
         res = super().from_config(config)
         res.vision_config = KimiK25VisionProvider.from_config(config.vision_config)
         res.text_config = KimiK25TextProvider.from_config(config.text_config)
+
+        # Flatten rope_parameters
+        if hasattr(res.text_config, "rope_parameters") and res.text_config.rope_parameters:
+            if "rope_type" in res.text_config.rope_parameters:
+                if not res.text_config.rope_parameters["rope_type"] == "default":
+                    res.text_config.rope_type = res.text_config.rope_parameters["rope_type"]
+            if "rope_theta" in res.text_config.rope_parameters:
+                res.text_config.rope_theta = res.text_config.rope_parameters["rope_theta"]
+            if "beta_fast" in res.text_config.rope_parameters:
+                res.text_config.beta_fast = res.text_config.rope_parameters["beta_fast"]
+            if "beta_slow" in res.text_config.rope_parameters:
+                res.text_config.beta_slow = res.text_config.rope_parameters["beta_slow"]
+            if "factor" in res.text_config.rope_parameters:
+                res.text_config.rotary_scaling_factor = res.text_config.rope_parameters["factor"]
+            if "mscale" in res.text_config.rope_parameters:
+                res.text_config.mscale = res.text_config.rope_parameters["mscale"]
+            if "mscale_all_dim" in res.text_config.rope_parameters:
+                res.text_config.mscale_all_dim = res.text_config.rope_parameters["mscale_all_dim"]
+            if "original_max_position_embeddings" in res.text_config.rope_parameters:
+                res.text_config.original_max_position_embeddings = res.text_config.rope_parameters[
+                    "original_max_position_embeddings"
+                ]
         # set text config params
         res.text_config.multi_latent_attention = True
         res.text_config.use_qk_norm = True
