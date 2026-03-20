@@ -123,9 +123,7 @@ def get_name_mapping(task="Model"):
     'Generator', 'Discriminator', 'ForConditionalGeneration'
     """
     NAME_MAPPING = OrderedDict()
-
     for key, value in MAPPING_NAMES.items():
-
         if key in MAPPING_SPACIAL_KEY and task == "Model":
             import_class = MAPPING_SPACIAL_KEY[key] + task
         else:

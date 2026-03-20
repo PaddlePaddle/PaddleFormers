@@ -41,9 +41,9 @@ from ...utils.masking_utils import _expand_2d_mask, _make_causal_mask
 from ..cache_utils import Cache
 from ..gpt_provider import GPTModelProvider
 from ..masking_utils import create_causal_masks_and_row_indices
+from ..model_outputs import CausalLMOutputWithPast
 from ..model_utils import PretrainedModel
 from .configuration import KimiK25Config
-from .modeling_base import KimiK25CausalLMOutputWithPast, KimiK25PretrainedModel
 
 
 class KimiK25VisionProvider(TransformerConfig):
@@ -128,7 +128,7 @@ class KimiK25TextProvider(GPTModelProvider):
         # self.mrope_section = self.rope_scaling.get("mrope_section", [24, 20, 20])
 
 
-class KimiK25VisionModelFleet(KimiK25PretrainedModel):
+class KimiK25VisionModelFleet(PretrainedModel):
     def __new__(cls, config):
         config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
         config.context_parallel_size = max(config.context_parallel_size, 1)
@@ -630,7 +630,7 @@ class KimiK25ModelDist(MCoreLLaVAModel):
         return output
 
 
-class KimiK25PretrainedModelFleet(PretrainedModel):
+class KimiK25PretrainedModel(PretrainedModel):
     config_class = KimiK25Config
 
     transpose_weight_keys = [
@@ -724,7 +724,7 @@ class KimiK25PretrainedModelFleet(PretrainedModel):
         return aoa_config
 
 
-class KimiK25Model(KimiK25PretrainedModelFleet):
+class KimiK25Model(KimiK25PretrainedModel):
     config_class = KimiK25Config
 
     def __new__(cls, config, have_criterion=True):
@@ -745,7 +745,7 @@ class KimiK25Model(KimiK25PretrainedModelFleet):
         return KimiK25_model
 
 
-class KimiK25ForConditionalGeneration(KimiK25PretrainedModelFleet):
+class KimiK25ForConditionalGeneration(KimiK25PretrainedModel):
     _checkpoint_conversion_mapping = {
         "^visual": "model.visual",
         r"^model(?!\.(language_model|visual))": "model.language_model",
@@ -826,7 +826,7 @@ class KimiK25ForConditionalGeneration(KimiK25PretrainedModelFleet):
         logits_to_keep: Union[int, paddle.Tensor] = 0,
         return_dict: Optional[bool] = True,
         **kwargs,
-    ) -> Union[tuple, KimiK25CausalLMOutputWithPast]:
+    ) -> Union[tuple, CausalLMOutputWithPast]:
         """ """
 
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -857,11 +857,10 @@ class KimiK25ForConditionalGeneration(KimiK25PretrainedModelFleet):
         if labels is not None:
             loss, _ = self.criterion(logits, labels)
 
-        return KimiK25CausalLMOutputWithPast(
+        return CausalLMOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=None,
             hidden_states=None,
             attentions=None,
-            rope_deltas=None,
         )
