@@ -231,7 +231,7 @@ class TestMergeModel(unittest.TestCase):
                 "weight_quantize_algo": {"weight_only_int8": [".*mlp.*", ".*self_attn.*"]},
             }
             quantization_config = QuantizationConfig.from_dict(quantization_config)
-            base_model.config["quantization_config"] = quantization_config
+            base_model.config.quantization_config = quantization_config
             base_model.save_pretrained(base_model_path)
 
             # create lora model

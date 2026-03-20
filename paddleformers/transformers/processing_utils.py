@@ -74,6 +74,7 @@ class _LazyAutoProcessorMapping(dict):
     _MAPPING_NAMES = {
         "image_processor": ("paddleformers.transformers.auto.image_processing", "AutoImageProcessor"),
         "video_processor": ("paddleformers.transformers.auto.video_processing", "AutoVideoProcessor"),
+        "feature_extractor": ("paddleformers.transformers.auto.feature_extraction", "AutoFeatureExtractor"),
         "tokenizer": ("paddleformers.transformers.auto.tokenizer", "AutoTokenizer"),
     }
 
@@ -97,6 +98,7 @@ MODALITY_TO_BASE_CLASS_MAPPING = {
     "tokenizer": "PreTrainedTokenizerBase",
     "image_processor": "PaddleImageProcessingMixin",
     "video_processor": "BaseVideoProcessor",
+    "feature_extractor": "SequenceFeatureExtractor",
 }
 
 
