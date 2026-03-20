@@ -136,7 +136,7 @@ class Qwen3VLProcessor(ProcessorMixin):
             for i in range(len(text)):
                 while self.image_token in text[i]:
                     num_image_tokens = image_grid_thw[index].prod() // merge_length
-                    text[i] = text[i].replace(self.image_token, "<|placeholder|>" * num_image_tokens.item(), 1)
+                    text[i] = text[i].replace(self.image_token, "<|placeholder|>" * num_image_tokens, 1)
                     index += 1
                 text[i] = text[i].replace("<|placeholder|>", self.image_token)
 
@@ -157,7 +157,7 @@ class Qwen3VLProcessor(ProcessorMixin):
 
                     video_placeholder = ""
 
-                    num_video_frames = video_grid_thw[index][0].item()
+                    num_video_frames = video_grid_thw[index][0]
 
                     frame_seqlen = video_grid_thw[index][1:].prod() // merge_length
 
@@ -166,7 +166,7 @@ class Qwen3VLProcessor(ProcessorMixin):
 
                         video_placeholder += f"<{curr_time:.1f} seconds>"
                         video_placeholder += (
-                            self.vision_start_token + "<|placeholder|>" * frame_seqlen.item() + self.vision_end_token
+                            self.vision_start_token + "<|placeholder|>" * frame_seqlen + self.vision_end_token
                         )
 
                     full_video_token = f"{self.vision_start_token}{self.video_token}{self.vision_end_token}"

@@ -505,6 +505,14 @@ class TrainingArguments:
     lr_end: float = field(default=1e-7, metadata={"help": "The end LR in the polynomial scheduler."})
     power: float = field(default=1.0, metadata={"help": "The power factor in the polynomial scheduler."})
     min_lr: float = field(default=0.0, metadata={"help": "The minimum learning rate in cosine scheduler."})
+    moe_router_bias_update_rate: float = field(
+        default=0.0,
+        metadata={
+            "help": """The expert bias is updated based on the number of assigned tokens to each expert
+        in a global batch, where the bias is increased for the experts with less assigned tokens
+        and decreased for the experts with more assigned tokens."""
+        },
+    )
 
     log_on_each_node: bool = field(
         default=True,
@@ -1247,6 +1255,11 @@ class TrainingArguments:
 
     save_hf_steps: int = field(default=-1, metadata={"help": "Save huggingface checkpoint every X updates steps."})
 
+    save_last_step: Optional[bool] = field(
+        default=False,
+        metadata={"help": "If True, saves the last step of the training process."},
+    )
+
     hybrid_parallel_expert_grad_scale: Optional[float] = field(
         default=None,
         metadata={"help": ("Scaling factor for expert gradients.")},
@@ -1307,12 +1320,6 @@ class TrainingArguments:
         default=False,
         metadata={
             "help": "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines)."
-        },
-    )
-    mtp_loss_scaling_factor: float = field(
-        default=1.0,
-        metadata={
-            "help": "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues)."
         },
     )
     dp_allreduce_avg_in_gradinent_scale: bool = field(
@@ -1552,13 +1559,6 @@ class TrainingArguments:
         default=False,
         metadata={
             "help": "When enabled, the computation part of the moelayer will use the implementation provided by SonicMoE."
-        },
-    )
-
-    moe_use_pfcc_deepep: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether to use PFCC DeepEP for MoE, by default uses paddle DeepEP. Only works when moe_token_dispatcher_type == 'deepep'."
         },
     )
 
@@ -2686,6 +2686,12 @@ class TrainingArguments:
                 self.context_parallel_size = -1
                 self.expert_model_parallel_size = -1
                 self.expert_tensor_model_parallel_size = -1
+
+        # NOTE(Waynezee): when moe_grouped_gemm is true and sharding_parallel_size = 1,  checkpoint will fail to save
+        if hasattr(self, "moe_grouped_gemm") and self.moe_grouped_gemm and self.world_size > 1:
+            assert (
+                self.sharding_parallel_size > 1
+            ), "Checkpoint will fail to save when moe_grouped_gemm is true and sharding_parallel_size = 1, please set moe_grouped_gemm to false"
 
         if self.hybrid_parallel_topo_order is None:
             self.hybrid_parallel_topo_order = "sharding_first"
