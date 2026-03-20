@@ -436,6 +436,8 @@ class Trainer:
         self.model_wrapped = model
         self.model = model
         self.criterion = criterion
+        if self.criterion is None and getattr(self.model, "_loss_fn", None) is not None:
+            self.criterion = self.model._loss_fn[0]
 
         # Set use_cache for the model
         if getattr(self.model, "config", None) is not None:
@@ -2422,7 +2424,7 @@ class Trainer:
         shuffle = True if self.args.enable_auto_parallel else self.args.dataloader_shuffle
         total_batch_size = self.args.per_device_train_batch_size
         if self.args.enable_auto_parallel:
-            total_batch_size = total_batch_size * self.args.dataset_world_size * self.args.gradient_accumulation_steps
+            total_batch_size = total_batch_size * self.args.dataset_world_size
 
         if self.args.enable_auto_parallel or self.args.world_size <= 1:
             return paddle.io.BatchSampler(
@@ -3540,6 +3542,7 @@ class Trainer:
         How the loss is computed by Trainer. By default, all models return the loss in the first element.
         Subclass and override for custom behavior.
         """
+
         if self.criterion is not None:
             if "labels" in inputs:
                 labels = inputs.pop("labels")
@@ -3555,7 +3558,14 @@ class Trainer:
         else:
             labels = None
 
-        outputs = model(**inputs)
+        if (
+            is_paddle_cuda_available()
+            and PaddleFleetPipelineLayer is not None
+            and isinstance(model, PaddleFleetPipelineLayer)
+        ):
+            outputs = model(inputs)
+        else:
+            outputs = model(**inputs)
 
         if self.criterion is not None:
             if self.args.enable_auto_parallel:
