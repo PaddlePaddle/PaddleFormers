@@ -2151,11 +2151,6 @@ class Trainer:
                         and (step + 1) == steps_in_epoch
                         or disable_accumulation
                     ):
-                        if self.args.enable_auto_parallel and self.args.gradient_accumulation_steps > 1:
-                            tr_loss /= self.args.gradient_accumulation_steps
-                        if not self.args.enable_auto_parallel and self.args.pipeline_model_parallel_size <= 1:
-                            tr_loss /= self.args.gradient_accumulation_steps
-
                         # assert if loss is invalid
                         self._check_loss_valid(tr_loss)
 
@@ -3593,6 +3588,8 @@ class Trainer:
             self.scaler.scale(loss).backward()
         else:
             loss.backward()
+        if self.args.gradient_accumulation_steps > 1
+            loss = loss / self.args.gradient_accumulation_steps
 
         if not self.args.enable_auto_parallel:
             return loss.detach()
