@@ -315,6 +315,9 @@ def run_sft(
         model_config.freeze_language_model = "freeze_llm" in freeze_config
         model_config.freeze_vision_projection = "freeze_aligner" in freeze_config
 
+    # Sync enable_auto_parallel to model_config for Fleet to access
+    model_config.enable_auto_parallel = training_args.enable_auto_parallel
+
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
 

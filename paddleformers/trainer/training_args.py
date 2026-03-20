@@ -424,7 +424,7 @@ class TrainingArguments:
         )
         enable_auto_parallel (`bool`, *optional*, defaults to `False`):
             whether to run distributed training in auto parallel mode.
-        use_intermediate_api (`bool`, *optional*, defaults to `True`):
+        use_intermediate_api (`bool`, *optional*, defaults to `False`):
             whether to use auto_parallel intermediate API if `enable_auto_parallel=True`.
 
         use_cache (`bool`, *optional*, defaults to `False`):
@@ -1265,7 +1265,7 @@ class TrainingArguments:
         metadata={"help": ("Scaling factor for expert gradients.")},
     )
     use_intermediate_api: bool = field(
-        default=True,
+        default=False,
         metadata={"help": "whether to use auto_parallel intermediate API."},
     )
     offload_fp8_expert_master_weight: bool = field(
@@ -2180,7 +2180,6 @@ class TrainingArguments:
         elif self.enable_auto_parallel:
 
             assert paddle.distributed.get_world_size() > 1, "Auto parallel mode needs world size > 1."
-            assert self.use_intermediate_api, "Auto parallel is only supported with intermediate API now."
             assert (
                 not self.to_static
             ), "Auto parallel only support dyanmic parallel now. Static parallel will be supported later."

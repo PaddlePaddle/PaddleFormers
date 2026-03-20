@@ -411,7 +411,7 @@ class Trainer:
 
                 # Process basic API.
                 else:
-                    raise ValueError("Auto parallel only support basic API now.")
+                    self.auto_dist_config = None
 
                 self.global_mesh = fleet.auto.get_mesh()
                 self.comm_group_in_pp = fleet.get_hybrid_communicate_group().get_pipe_parallel_group()
@@ -1413,6 +1413,10 @@ class Trainer:
         # Do nothing when not in auto parallel mode.
         if not self.args.enable_auto_parallel:
             return
+        self.optimizer = parallelize.parallelize_optimizer(
+            self.optimizer,
+            config=self.auto_dist_config,
+        )
         if hasattr(self.optimizer, "_enable_tensor_fusion") and self.args.tensor_fusion:
             self.optimizer._enable_tensor_fusion()
         if hasattr(self.optimizer, "_enable_sharding_overlap") and self.args.overlap:
@@ -2232,7 +2236,8 @@ class Trainer:
                         )
                         self.optimizer_step(args, model=model, parameters_list=parameters_list)
 
-                        self.timers and self.timers("optimizer-step").stop()
+                        if not args.enable_auto_parallel:
+                            self.timers and self.timers("optimizer-step").stop()
 
                         self.callback_handler.on_optimizer_end(
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
@@ -3240,9 +3245,10 @@ class Trainer:
             # use callback for sp grad sync in case of unexpected behaviour (except sharding stage 2&3)
             if ShardingOption.SHARD_GRAD_OP in self.args.sharding or ShardingOption.FULL_SHARD in self.args.sharding:
                 # stage 2 or stage 3
-                register_sequence_parallel_allreduce_hooks(
-                    model, self.args.gradient_accumulation_steps, self.args.fuse_sequence_parallel_allreduce
-                )
+                if not self.args.enable_auto_parallel:
+                    register_sequence_parallel_allreduce_hooks(
+                        model, self.args.gradient_accumulation_steps, self.args.fuse_sequence_parallel_allreduce
+                    )
             else:
                 # stage 1 or dp
                 self.add_callback(SPGradSyncCallback(model))
