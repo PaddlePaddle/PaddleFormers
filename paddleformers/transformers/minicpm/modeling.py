@@ -2,7 +2,6 @@ import logging
 from ..cache_utils import Cache, DynamicCache, DynamicLayer
 from paddle.distributed.fleet.utils import recompute
 import paddle
-import paddle.nn.functional as F
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from paddle import nn
 import paddleformers
@@ -10,41 +9,29 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.mlp import MLP as MiniCPMMLP
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...nn.lm_head import LMHead as GeneralLMHead
-from ...utils.import_utils import is_torch_available
-from ..paddle_utils import ALL_LAYERNORM_LAYERS, pad_input, unpad_input
-from ...trainer.utils.doc import add_start_docstrings, add_end_docstrings, add_start_docstrings_to_model_forward
+from ...trainer.utils.doc import add_start_docstrings, add_start_docstrings_to_model_forward
 from ..masking_utils import create_causal_mask_and_row_indices
-from ..activations import ACT2FN
 from ...nn.norm import Norm as GeneralNorm
 from ..model_outputs import SequenceClassifierOutputWithPast, BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..doc import replace_return_docstrings
 from ..model_utils import PretrainedModel, register_base_model
 from paddle.distributed.fleet.utils.sequence_parallel_utils import (
-    ScatterOp,
     mark_as_sequence_parallel_parameter,
 )
-import paddle.distributed as dist
-from ..tensor_parallel_utils import model_parallel_dropout
-# from ..modeling_attn_mask_utils import _prepare_4d_causal_attention_mask, _prepare_4d_causal_attention_mask_for_sdpa
-from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
-# from ...utils.import_utils import is_paddle_available
 """ PyTorch MiniCPM model."""
 import math
 import re
 import warnings
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 from .configuration import MiniCPMConfig
 
 try:
     pass
-    from infllm_v2 import (infllmv2_attn_stage1, infllmv2_attn_varlen_func,
-                           infllmv2_attn_with_kvcache, max_pooling_1d,
-                           max_pooling_1d_varlen)
+    from infllm_v2 import (infllmv2_attn_stage1, max_pooling_1d_varlen)
 except:
     pass
 from functools import lru_cache, partial
 
-############################## 相关utils函数，如下 ##############################
 
 def _Tensor_max(self, *args, **kwargs):
     if "other" in kwargs:
@@ -73,9 +60,6 @@ def _Tensor_split(self, split_size, dim=0):
 
 setattr(paddle.Tensor, "split", _Tensor_split)
 
-from typing import Optional
-
-import paddleformers
 
 
 def _convert_head_mask_to_5d(head_mask, num_hidden_layers):
@@ -116,8 +100,6 @@ def _post_init(self):
     elif hasattr(self, "_init_weights"):
         self._init_weights()
 setattr(paddleformers.transformers.model_utils.PretrainedModel, "post_init", _post_init)
-############################## 相关utils函数，如上 ##############################
-
 
 
 def compressed_attention(
@@ -487,9 +469,6 @@ class MiniCPMRMSNorm(nn.Layer):
 
     def forward(self, hidden_states):
         return rms_layernorm(hidden_states, self.weight, self.variance_epsilon)
-
-
-ALL_LAYERNORM_LAYERS.append(MiniCPMRMSNorm)
 
 
 class MiniCPMRotaryEmbedding(nn.Layer):
@@ -868,7 +847,6 @@ class MiniCPMAttention(nn.Layer):
             [bsz, q_len, -1, self.head_dim]
         ).transpose(1, 2)
 
-        kv_seq_len = int(position_ids.max()) + 1
         cos, sin = self.rotary_emb(value_states.to(paddle.float32), position_ids)
         query_states, key_states = apply_rotary_pos_emb(
             query_states, key_states, cos, sin,  position_ids
@@ -1068,7 +1046,6 @@ class MiniCPMDecoderLayer(nn.Layer):
             )
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
-        rank = dist.get_rank()
         hidden_states, self_attn_weights, present_key_value = self.self_attn(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
@@ -1590,7 +1567,6 @@ class MiniCPMModel(MiniCPMPreTrainedModel):
             position_ids = paddle.arange(past_key_values_length, seq_length + past_key_values_length, dtype=paddle.int64).unsqueeze(0).tile((batch_size, 1))
 
         position_embeddings = self.rotary_emb(hidden_states.to(paddle.float32), position_ids)  # cos and sin
-        rank = dist.get_rank()
 
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
@@ -1743,7 +1719,6 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
         return_dict = (
             return_dict if return_dict is not None else self.config.use_return_dict
         )
-        rank = dist.get_rank()
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,

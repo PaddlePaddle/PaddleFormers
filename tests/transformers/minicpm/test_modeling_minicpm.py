@@ -444,14 +444,14 @@ class MiniCPMCompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
-        from transformers import MiniCPMConfig, MiniCPMForCausalLM
+        from transformers import MiniCPMConfig, AutoModelForCausalLM
 
         # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
         config = MiniCPMConfig(
             hidden_size=4096, num_hidden_layers=32, num_attention_heads=32, num_key_value_heads=2
         )
-        model = MiniCPMForCausalLM(config)
+        model = AutoModelForCausalLM.from_config(config)
         model.save_pretrained(cls.torch_model_path)
 
     @require_package("transformers", "torch")
@@ -468,9 +468,9 @@ class MiniCPMCompatibilityTest(unittest.TestCase):
 
         # 3. forward the torch  model
         import torch
-        from transformers import MiniCPMModel
+        from transformers import AutoModel
 
-        torch_model = MiniCPMModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+        torch_model = AutoModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
         torch_model.eval()
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
@@ -491,9 +491,9 @@ class MiniCPMCompatibilityTest(unittest.TestCase):
 
             # 2. forward the torch  model
             import torch
-            from transformers import MiniCPMModel
+            from transformers import AutoModel
 
-            torch_model = MiniCPMModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
+            torch_model = AutoModel.from_pretrained(self.torch_model_path, torch_dtype=torch.float32)
             torch_model.eval()
             torch_model.save_pretrained(tempdir)
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]

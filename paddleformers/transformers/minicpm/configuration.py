@@ -1,7 +1,5 @@
 import logging
 
-import paddle
-import paddleformers
 from ..configuration_utils import PretrainedConfig
 from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
