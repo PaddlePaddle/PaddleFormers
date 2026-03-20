@@ -182,6 +182,7 @@ from .trainer_callback import (
     TrainerState,
 )
 from .trainer_utils import (  # set_hyrbid_parallel_seed,
+    DataLoaderDispatcher,
     EvalLoopOutput,
     EvalPrediction,
     IntervalStrategy,
@@ -1901,6 +1902,14 @@ class Trainer:
                     logger.info(f"Set DistributedBatchSampler consumed_samples to {consumed_samples}")
 
         epoch_iterator = train_dataloader
+
+        if self._is_iterable_dataset(self.train_dataset) and args.dataset_world_size > 1:
+            epoch_iterator = DataLoaderDispatcher(train_dataloader)
+            logger.info(
+                f"Using DataLoaderDispatcher: rank {args.dataset_rank} "
+                f"({'data producer + scatter' if args.dataset_rank == 0 else 'data receiver'})"
+            )
+
         steps_in_epoch = (
             len(epoch_iterator) if len_dataloader is not None else args.max_steps * args.gradient_accumulation_steps
         )
@@ -2686,28 +2695,37 @@ class Trainer:
             total_batch_size = self.args.per_device_train_batch_size
             if self.args.enable_auto_parallel:
                 total_batch_size = total_batch_size * self.args.dataset_world_size
-            if self.args.dataset_world_size > 1 and train_dataset is not None:
-                train_dataset = IterableDatasetShard(
+            if self.args.dataset_world_size > 1:
+                if self.args.dataset_rank == 0:
+                    if self.args.distributed_dataloader:
+                        logger.info("Training using DistDataLoader with DataLoaderDispatcher.")
+                        additional_configs = {"is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
+                    train_dataloader = _DataLoader(
+                        train_dataset,
+                        batch_size=total_batch_size,
+                        collate_fn=self.data_collator,
+                        num_workers=self.args.dataloader_num_workers,
+                        persistent_workers=self.args.dataloader_num_workers > 0,
+                        prefetch_factor=self.args.prefetch_factor,
+                        reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
+                        **additional_configs,
+                    )
+                else:
+                    train_dataloader = None
+            else:
+                if self.args.distributed_dataloader:
+                    logger.info("Training using DistDataLoader.")
+                    additional_configs = {"is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
+                train_dataloader = _DataLoader(
                     train_dataset,
                     batch_size=total_batch_size,
-                    drop_last=self.args.dataloader_drop_last,
-                    num_processes=self.args.dataset_world_size,
-                    process_index=self.args.dataset_rank,
+                    collate_fn=self.data_collator,
+                    num_workers=self.args.dataloader_num_workers,
+                    persistent_workers=self.args.dataloader_num_workers > 0,
+                    prefetch_factor=self.args.prefetch_factor,
+                    reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
+                    **additional_configs,
                 )
-
-            if self.args.distributed_dataloader:
-                logger.info("Training using DistDataLoader.")
-                additional_configs = {"is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
-            train_dataloader = _DataLoader(
-                train_dataset,
-                batch_size=total_batch_size,
-                collate_fn=self.data_collator,
-                num_workers=self.args.dataloader_num_workers,
-                persistent_workers=self.args.dataloader_num_workers > 0,
-                prefetch_factor=self.args.prefetch_factor,
-                reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
-                **additional_configs,
-            )
         else:
             train_sampler = self._get_train_sampler()
             if self.args.distributed_dataloader:

@@ -1139,6 +1139,85 @@ class TrainerMemoryTracker:
             self.update_metrics(stage, metrics)
 
 
+class DataLoaderDispatcher:
+    """
+    Dispatcher for IterableDataset in distributed training.
+
+    - Rank 0 reads `world_size` batches from the base dataloader
+    - Uses scatter to distribute one batch to each rank
+    - This avoids redundant data processing on all cards
+
+    Args:
+        base_dataloader: The base DataLoader (only rank 0 needs real data)
+    """
+
+    def __init__(self, base_dataloader):
+        self.base_dataloader = base_dataloader
+
+    @property
+    def rank(self):
+        import paddle.distributed as dist
+
+        return dist.get_rank() if dist.is_initialized() else 0
+
+    @property
+    def world_size(self):
+        import paddle.distributed as dist
+
+        return dist.get_world_size() if dist.is_initialized() else 1
+
+    def _scatter_object_list(self, scatter_list):
+        """Scatter objects from rank 0 to all ranks."""
+        import paddle.distributed as dist
+
+        if not dist.is_initialized() or self.world_size <= 1:
+            return scatter_list[0] if scatter_list else None
+
+        # Each rank receives one object
+        output = [None]
+        dist.scatter_object_list(output, scatter_list, src=0)
+        return output[0]
+
+    def __iter__(self):
+        if self.rank == 0:
+            # Rank 0: read data and scatter to all ranks
+            base_iter = iter(self.base_dataloader)
+            while True:
+                try:
+                    data = [next(base_iter) for _ in range(self.world_size)]
+                except StopIteration:
+                    # End of data: send None to all ranks
+                    data = [None] * self.world_size
+                data = self._scatter_object_list(data)
+                if data is None:
+                    break
+                yield data
+        else:
+            # Other ranks: receive scattered data (no dataloader needed)
+            while True:
+                data = self._scatter_object_list(None)
+                if data is None:
+                    break
+                yield data
+
+    def __len__(self):
+        if hasattr(self.base_dataloader, "__len__"):
+            # Each rank gets 1/world_size of the data
+            return len(self.base_dataloader) // self.world_size
+        raise TypeError("DataLoaderDispatcher has no len() when base_dataloader has no len()")
+
+    def set_epoch(self, epoch: int):
+        """Set epoch for the base dataloader's sampler."""
+        if hasattr(self.base_dataloader, "set_epoch"):
+            self.base_dataloader.set_epoch(epoch)
+        elif hasattr(self.base_dataloader, "batch_sampler") and hasattr(
+            self.base_dataloader.batch_sampler, "set_epoch"
+        ):
+            self.base_dataloader.batch_sampler.set_epoch(epoch)
+        elif hasattr(self.base_dataloader, "sampler") and hasattr(self.base_dataloader.sampler, "set_epoch"):
+            self.base_dataloader.sampler.set_epoch(epoch)
+
+
 class IterableDatasetShard(IterableDataset):
     """
     Wraps a Paddle `IterableDataset` to generate samples for one of the processes only. Instances of this class will
@@ -1149,9 +1228,6 @@ class IterableDatasetShard(IterableDataset):
     2:
     - the shard on process 0 will yield `[0, 1, 4, 5, 8, 9]` so will see batches `[0, 1]`, `[4, 5]`, `[8, 9]`
     - the shard on process 1 will yield `[2, 3, 6, 7, 10, 11]` so will see batches `[2, 3]`, `[6, 7]`, `[10, 11]`
-
-    Optimization: When `broadcast_data=True` (default), only rank 0 reads data and broadcasts to other processes,
-    avoiding redundant data processing on all cards.
 
     Args:
         dataset (`paddle.io.IterableDataset`):
@@ -1168,9 +1244,6 @@ class IterableDatasetShard(IterableDataset):
         seed (`int`, *optional*, defaults to 0):
             A random seed that will be used for the random number generation in
             [`~trainer_utils.IterableDatasetShard.set_epoch`].
-        broadcast_data (`bool`, *optional*, defaults to `True`):
-            Whether to use broadcast mode where only rank 0 reads data and broadcasts to other processes.
-            Set to `False` to use the original behavior where all processes read the full dataset.
     """
 
     def __init__(
@@ -1181,7 +1254,6 @@ class IterableDatasetShard(IterableDataset):
         num_processes: int = 1,
         process_index: int = 0,
         seed: int = 0,
-        broadcast_data: bool = True,
     ):
         self.dataset = dataset
         self.batch_size = batch_size
@@ -1191,114 +1263,22 @@ class IterableDatasetShard(IterableDataset):
         self.seed = seed
         self.epoch = 0
         self.num_examples = 0
-        self.broadcast_data = broadcast_data
 
     def set_epoch(self, epoch):
         self.epoch = epoch
         if hasattr(self.dataset, "set_epoch"):
             self.dataset.set_epoch(epoch)
 
-    def _should_use_broadcast(self):
-        """Check if broadcast mode should be used."""
-        if not self.broadcast_data:
-            return False
-        if self.num_processes <= 1:
-            return False
-        try:
-            import paddle.distributed as dist
-            import paddle.io
-
-            # Do not use broadcast in DataLoader worker subprocess
-            # Worker processes don't have CUDA/distributed initialized
-            worker_info = paddle.io.get_worker_info()
-            if worker_info is not None:
-                return False
-
-            return dist.is_initialized()
-        except Exception:
-            return False
-
     def __iter__(self):
         self.num_examples = 0
-        # TODO: support generator seed in sampling.
-        #
-        # if (
-        #     not hasattr(self.dataset, "set_epoch")
-        #     and hasattr(self.dataset, "generator")
-        #     and isinstance(self.dataset.generator, paddle.fluid.Generator)
-        # ):
-        #     self.dataset.generator.manual_seed(self.seed + self.epoch)
         real_batch_size = self.batch_size * self.num_processes
         process_slice = range(self.process_index * self.batch_size, (self.process_index + 1) * self.batch_size)
 
-        if self._should_use_broadcast():
-            yield from self._iter_with_broadcast(real_batch_size, process_slice)
-        else:
-            yield from self._iter_original(real_batch_size, process_slice)
-
-    def _iter_with_broadcast(self, real_batch_size, process_slice):
-        """Optimized version: rank 0 reads data and broadcasts to other processes."""
-        import paddle.distributed as dist
-
-        first_batch = None
-
-        if self.process_index == 0:
-            # Rank 0: read data and broadcast
-            current_batch = []
-            for element in self.dataset:
-                self.num_examples += 1
-                current_batch.append(element)
-
-                if len(current_batch) == real_batch_size:
-                    # Broadcast current batch
-                    object_list = [current_batch]
-                    dist.broadcast_object_list(object_list, src=0)
-
-                    for i in process_slice:
-                        yield current_batch[i]
-
-                    if first_batch is None:
-                        first_batch = current_batch.copy()
-                    current_batch = []
-
-            # Handle the last incomplete batch
-            if not self.drop_last and len(current_batch) > 0:
-                if first_batch is None:
-                    first_batch = current_batch.copy()
-                while len(current_batch) < real_batch_size:
-                    current_batch += first_batch
-
-                object_list = [current_batch]
-                dist.broadcast_object_list(object_list, src=0)
-
-                for i in process_slice:
-                    yield current_batch[i]
-
-            # Broadcast end signal
-            dist.broadcast_object_list([None], src=0)
-        else:
-            # Other ranks: receive broadcast data
-            while True:
-                object_list = [None]
-                dist.broadcast_object_list(object_list, src=0)
-                current_batch = object_list[0]
-
-                if current_batch is None:
-                    # Received end signal
-                    break
-
-                for i in process_slice:
-                    yield current_batch[i]
-
-    def _iter_original(self, real_batch_size, process_slice):
-        """Original version: each process iterates over the full dataset (fallback)."""
         first_batch = None
         current_batch = []
-
         for element in self.dataset:
             self.num_examples += 1
             current_batch.append(element)
-
             if len(current_batch) == real_batch_size:
                 for i in process_slice:
                     yield current_batch[i]
