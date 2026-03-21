@@ -1,8 +1,21 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import logging
 
 from ..configuration_utils import PretrainedConfig
 from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
-
 
 """ MiniCPM model configuration"""
 logger = logging.getLogger(name=__name__)
@@ -200,7 +213,7 @@ class MiniCPMConfig(PretrainedConfig):
         try:
             pass
             # self._attn_implementation = "flash_attention_2"
-            self._attn_implementation = 'eager'
+            self._attn_implementation = "eager"
         except:
             pass
         standardize_rope_params(self, rope_theta=rope_theta)
@@ -222,13 +235,8 @@ class MiniCPMConfig(PretrainedConfig):
             raise ValueError(
                 f"`rope_scaling`'s type field must be one of ['linear', 'dynamic'], got {rope_scaling_type}"
             )
-        if (
-            rope_scaling_factor is None
-            or not isinstance(rope_scaling_factor, float)
-            or rope_scaling_factor <= 1.0
-        ):
-            raise ValueError(
-                f"`rope_scaling`'s factor field must be a float > 1, got {rope_scaling_factor}"
-            )
-    
+        if rope_scaling_factor is None or not isinstance(rope_scaling_factor, float) or rope_scaling_factor <= 1.0:
+            raise ValueError(f"`rope_scaling`'s factor field must be a float > 1, got {rope_scaling_factor}")
+
+
 __all__ = ["MiniCPMConfig"]

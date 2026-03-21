@@ -19,7 +19,7 @@ from ...utils.lazy_import import _LazyModule
 
 import_structure = {
     "configuration": ["MiniCPMConfig"],
-    "modeling": ["MiniCPMDecoderLayer", "MiniCPMModel", "MiniCPMForCausalLM",  "MiniCPMForCausalLMPipe"],
+    "modeling": ["MiniCPMDecoderLayer", "MiniCPMModel", "MiniCPMForCausalLM", "MiniCPMForCausalLMPipe"],
 }
 
 if TYPE_CHECKING:

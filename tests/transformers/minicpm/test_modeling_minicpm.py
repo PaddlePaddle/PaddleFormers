@@ -21,11 +21,7 @@ import numpy as np
 import paddle
 from parameterized import parameterized
 
-from paddleformers.transformers import (
-    MiniCPMConfig,
-    MiniCPMForCausalLM,
-    MiniCPMModel,
-)
+from paddleformers.transformers import MiniCPMConfig, MiniCPMForCausalLM, MiniCPMModel
 from tests.testing_utils import require_package
 
 # from tests.testing_utils import slow
@@ -444,12 +440,12 @@ class MiniCPMCompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
-        from transformers import MiniCPMConfig, AutoModelForCausalLM
+        from transformers import AutoConfig, AutoModelForCausalLM
 
         # when python application is done, `TemporaryDirectory` will be free
         cls.torch_model_path = tempfile.TemporaryDirectory().name
-        config = MiniCPMConfig(
-            hidden_size=4096, num_hidden_layers=32, num_attention_heads=32, num_key_value_heads=2
+        config = AutoConfig.for_model(
+            "minicpm", hidden_size=4096, num_hidden_layers=32, num_attention_heads=32, num_key_value_heads=2
         )
         model = AutoModelForCausalLM.from_config(config)
         model.save_pretrained(cls.torch_model_path)
