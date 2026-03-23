@@ -3588,7 +3588,7 @@ class Trainer:
             self.scaler.scale(loss).backward()
         else:
             loss.backward()
-        if self.args.gradient_accumulation_steps > 1
+        if self.args.gradient_accumulation_steps > 1:
             loss = loss / self.args.gradient_accumulation_steps
 
         if not self.args.enable_auto_parallel:
