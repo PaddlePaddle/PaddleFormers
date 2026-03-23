@@ -1212,6 +1212,7 @@ class TrainingArguments:
         metadata={"help": "pre allocate memory size GB"},
     )
     num_nextn_predict_layers: int = field(default=0, metadata={"help": "Number of nextn predict layers."})
+    train_mtp_only: bool = field(default=False, metadata={"help": "Whether to train MTP only."})
     mtp_distillation_loss: bool = field(default=False, metadata={"help": "Whether to use distillation MTP loss."})
     mtp_num_layers: int = field(
         default=0, metadata={"help": "Whether to use Autoregressive MTP Training, activate if > 1."}
