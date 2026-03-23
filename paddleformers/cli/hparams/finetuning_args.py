@@ -297,11 +297,6 @@ class FinetuningArguments(
         },
     )
 
-    enable_token_weighted_acc_loss: bool = field(
-        default=False,
-        metadata={"help": "Whether to use token-weighted accumulation loss."},
-    )
-
     def __post_init__(self):
         self.bf16 = True
         if self.compute_type == "bf16":
