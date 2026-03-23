@@ -296,11 +296,6 @@ def run_sft(
     if "DeepseekV3" in str(model_config.architectures):
         training_args.prediction_loss_only = True
 
-    if "qwen3_vl" in model_config.model_type and not model_args.lora:
-        if training_args.sequence_parallel:
-            logger.warning("Qwen3VL model do not support `sequence_parallel` yet, temporarily set to False")
-        training_args.sequence_parallel = False
-
     LlmMetaConfig.set_llm_config(model_config, training_args)
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
