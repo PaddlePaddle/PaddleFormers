@@ -239,10 +239,6 @@
                         张量并行的配置，异步通信。
                         默认为 `False`。(`bool`, 可选)
 
-  --tp_delay_scale_loss
-                        张量并行的配置，延迟 Loss 缩放。
-                        默认为 `False`。(`bool`, 可选)
-
   --pipeline_model_parallel_size
                         流水线并行（Pipeline Parallelism）的并行度。(`int`, 可选)
 
@@ -261,10 +257,6 @@
   --use_dualpipev
                         流水线并行的配置，启用 DualPipe 调度。
                         默认为 `False`。(`bool`, 可选)
-
-  --pp_delay_scale_loss
-                        流水线并行的配置，重要精度选项。
-                        默认为 `True`。(`bool`, 可选)
 
   --batch_p2p_comm
                         流水线并行的配置，启用批处理 P2P 通信。

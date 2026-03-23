@@ -71,7 +71,6 @@ amp_master_grad: 1
 global_batch_size: 128
 
 # pipeline_parallel_config
-pp_delay_scale_loss: true
 overlap_p2p_comm: true
 best_unbalanced_scheduler: true
 

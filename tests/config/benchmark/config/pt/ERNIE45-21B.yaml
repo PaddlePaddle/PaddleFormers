@@ -73,7 +73,6 @@ split_param: true
 sharding_comm_buffer_size_MB: 2048
 
 # pipeline_parallel_config
-pp_delay_scale_loss: true
 overlap_p2p_comm: true
 best_unbalanced_scheduler: true
 
