@@ -416,6 +416,14 @@ def get_lora_target_modules(model):
             "model.visual.blocks.*mlp.up_proj.*",
             "model.visual.blocks.*mlp.down_proj.*",
         ]
+    elif model.config.model_type == "internlm2_5":
+        target_modules = [
+            ".*wqkv.*",
+            ".*wo.*",
+            ".*w1.*",
+            ".*w2.*",
+            ".*w3.*",
+        ]
     else:
         raise ValueError(f"Unknown base_model_prefix: {model.config.model_type}.")
     return target_modules

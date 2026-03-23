@@ -329,6 +329,17 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "intern_lm2_5.configuration": ["InternLM25Config"],
+    "intern_lm2_5.modeling": [
+        "InternLM25DecoderLayer",
+        "InternLM25Model",
+        "InternLM25ForCausalLM",
+        "InternLM25PretrainedModel",
+        "InternLM25ForSequenceClassification",
+        "InternLM25ForQuestionAnswering",
+        "InternLM25ForTokenClassification",
+    ],
+    "intern_lm2_5.tokenizer": ["InternLM25Tokenizer"],
 }
 
 if TYPE_CHECKING:
@@ -404,6 +415,7 @@ if TYPE_CHECKING:
     from .phi3 import *
     from .gemma3_text import *
     from .glm_ocr import *
+    from .intern_lm2_5 import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
