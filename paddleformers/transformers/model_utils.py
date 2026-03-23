@@ -3201,6 +3201,16 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         model_to_save = unwrap_model(self)
 
         if save_checkpoint_format == "flex_checkpoint":
+            # autoregressive mtp training
+            autoregressive_mtp_training = model_to_save.config.mtp_num_layers > 0
+            if autoregressive_mtp_training:
+                tmp = model_to_save.config.mtp_num_layers
+                model_to_save.config.mtp_num_layers = model_to_save.config.num_nextn_predict_layers
+                model_to_save.config.num_nextn_predict_layers = tmp
+
+                logger.info(
+                    f"MTP args changing for autoregressive mtp training checkpoint saving, mtp_num_layers: {model_to_save.config.mtp_num_layers}, num_nextn_predict_layers: {model_to_save.config.num_nextn_predict_layers}!!"
+                )
             if not hasattr(self, "_gen_inv_aoa_config"):
                 if hasattr(self, "_gen_aoa_config"):
                     aoa_config = self._gen_aoa_config(model_to_save.config)
@@ -3246,6 +3256,15 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     config_to_save.save_pretrained(save_directory)
                 if self.can_generate():
                     model_to_save.generation_config.save_pretrained(save_directory)
+
+            if autoregressive_mtp_training:
+                tmp = model_to_save.config.mtp_num_layers
+                model_to_save.config.mtp_num_layers = model_to_save.config.num_nextn_predict_layers
+                model_to_save.config.num_nextn_predict_layers = tmp
+
+                logger.info(
+                    f"MTP args changing for autoregressive mtp training checkpoint saving RECOVER, mtp_num_layers: {model_to_save.config.mtp_num_layers}, num_nextn_predict_layers: {model_to_save.config.num_nextn_predict_layers}!!"
+                )
             return
 
         # save the string version of dtype to the config, e.g. convert paddle.float32 => "float32"
