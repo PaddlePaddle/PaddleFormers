@@ -910,7 +910,6 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             ]
 
         num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
-        num_nextn_predict_layers = 1
 
         for layer_idx in reversed(range(num_hidden_layers, num_hidden_layers + num_nextn_predict_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
@@ -1064,7 +1063,6 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             ]
 
         num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
-        num_nextn_predict_layers = 1
 
         for layer_idx in reversed(range(num_hidden_layers, num_hidden_layers + num_nextn_predict_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
