@@ -1593,9 +1593,7 @@ class TrainingArguments:
                 ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2 on non-CUDA devices."
         else:
             if paddle.base.core.is_compiled_with_cuda():
-                is_sm100 = (
-                    paddle_device.get_device_capability()[0] == 10 and paddle_device.get_device_capability()[1] == 0
-                )
+                is_sm100 = paddle_device.get_device_capability()[0] == 10
                 is_sm90 = (
                     paddle_device.get_device_capability()[0] == 9 and paddle_device.get_device_capability()[1] == 0
                 )
