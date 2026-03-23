@@ -13,7 +13,7 @@ dataloader_num_workers: 4
 
 ### model
 model_name_or_path: baidu/ERNIE-4.5-VL-28B-A3B-Thinking
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -41,7 +41,7 @@ learning_rate: 1.0e-5
 tensor_model_parallel_size: 4
 pipeline_model_parallel_size: 2
 sharding: stage1
-use_sparse_head_and_loss_fn: true
+# use_sparse_head_and_loss_fn: true
 bf16: true
 fp16_opt_level: O2
 save_checkpoint_format: "flex_checkpoint"
@@ -49,14 +49,14 @@ load_checkpoint_format: "flex_checkpoint"
 freeze_config: freeze_vision
 
 # recompute
-recompute: true
+# recompute: true
 recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
 recompute_modules: ["loss_fn"]
 recompute_use_reentrant: true
 
-use_flash_attention: true
+# use_flash_attention: true
 sequence_parallel: true
 pp_seg_method: layer:Ernie4_5_DecoderLayer|ErnieDecoderLayer|EmptyLayer
 offload_queue: true
