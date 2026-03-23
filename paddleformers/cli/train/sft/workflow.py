@@ -17,8 +17,8 @@
 import gc
 import math
 import os
-from concurrent.futures import ThreadPoolExecutor
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
 from functools import partial
 
@@ -88,6 +88,8 @@ from paddleformers.cli.utils import (
 
 
 def freeze_param_except_mtp(model, config):
+    logger.info("freeze_param_except_mtp.")
+
     def extract_layer_idx(text):
         match = re.search(r"model.layers.(-?\d+\.?\d*)", text)
         if match:
@@ -303,9 +305,7 @@ def run_sft(
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
     # autoregressive mtp training
-    activate_autoregressive_mtp_training = False
     if model_config.mtp_num_layers > 1:
-        activate_autoregressive_mtp_training = True
         tmp = model_config.mtp_num_layers
         model_config.mtp_num_layers = model_config.num_nextn_predict_layers
         model_config.num_nextn_predict_layers = tmp
@@ -737,11 +737,11 @@ def run_sft(
         data_args=data_args,
         callbacks=callbacks,
     )
-    freeze_param_except_mtp(model, model_config)
 
-    if activate_autoregressive_mtp_training:
+    if training_args.train_mtp_only:
         # activate autoregressive mtp training
         freeze_param_except_mtp(model, model_config)
+
     trainable_parameters = [
         p for p in model.parameters() if not p.stop_gradient or ("quantization_linear" in p.name and "w_1" in p.name)
     ]
