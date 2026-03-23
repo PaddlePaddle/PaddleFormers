@@ -3978,7 +3978,8 @@ def replace_name_and_gen_index(path, total_size, save_peft=False):
         index_infos = {}
         index_infos["metadata"] = {}
         index_infos["metadata"]["total_size"] = total_size
-        index_infos["weight_map"] = dict(sorted(index_mapping.items()))
+        # Sort by filename (file index) instead of weight name, zero-padded ensures correct order
+        index_infos["weight_map"] = dict(sorted(index_mapping.items(), key=lambda x: x[1]))
         with open(os.path.join(path, index_file_name), "w") as f:
             json.dump(index_infos, f, indent=4)
 
