@@ -53,7 +53,7 @@ scale_loss: 4096
 seed: 42
 use_train_part_sharding: 1
 pre_alloc_memory: 60
-offload_optim: true
+tensorwise_offload_optimizer: true
 use_expert_parallel: True
 expert_model_parallel_size: 8
 sharding: "stage1"

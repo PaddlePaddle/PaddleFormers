@@ -166,7 +166,7 @@ from ..utils.env import (
 from ..utils.import_utils import is_datasets_available, is_paddle_cuda_available
 from ..utils.log import MetricsDumper, logger
 from ..utils.pdc_sdk import FLASH_DEVICE
-from ..utils.tools import get_env_device, paddle_device
+from ..utils.tools import paddle_device
 from .argparser import strtobool
 from .integrations import get_reporting_integration_callbacks
 from .plugins.timer import RuntimeTimer, get_timers, set_timers
@@ -862,8 +862,6 @@ class Trainer:
                     if k not in old_state_dict or id(v) != id(old_state_dict[k]):
                         new_state_dict[k] = v
                 self.model.set_state_dict(new_state_dict)
-                if self.args.offload_optim:
-                    self._offload_optimizer()
             else:
                 if resume_from_checkpoint is not None and (
                     self.args.dataset_rank == 0 or self.args.use_expert_parallel
@@ -1208,10 +1206,6 @@ class Trainer:
                     worker_groups=worker_groups,
                 )
                 self._load_scheduler(resume_from_checkpoint)
-
-            if self.args.tensorwise_offload_optimizer:
-                logger.info("Offloading optimizer state for FC...")
-                self._offload_optimizer()
 
         enable_bf16_opt = (
             not isinstance(self.model, LoRAModel)
@@ -1754,9 +1748,6 @@ class Trainer:
             parameters_list = []
 
         optimizer_was_run = True
-        if not args.enable_auto_parallel and self.args.offload_optim:
-            self._reload_optimizer()
-
         if self.do_grad_scaling:
             scale_before = paddle.assign(self.scaler._scale)
             self.scaler.step(self.optimizer)
@@ -1777,9 +1768,6 @@ class Trainer:
             self.optimizer._step(parameters_list)
         else:
             self.optimizer.step()
-
-        if not args.enable_auto_parallel and self.args.offload_optim:
-            self._offload_optimizer()
 
         if optimizer_was_run:
             self.lr_scheduler.step()
@@ -2962,41 +2950,6 @@ class Trainer:
 
         return self.optimizer
 
-    def _apply_to_optimizer(self, action):
-        attributes = [
-            ("_accumulators", "_moment1_acc_str"),
-            ("_accumulators", "_moment2_acc_str"),
-            ("_master_weights",),
-            ("_accumulators_holder",),
-        ]
-        for attr in attributes:
-            if all(hasattr(self.optimizer, a) for a in attr):
-                target_attr = getattr(self.optimizer, attr[0])
-                if len(attr) == 2:
-                    target_attr = target_attr[getattr(self.optimizer, attr[1])]
-
-                for key, value in target_attr.items():
-                    if get_env_device() == "gpu":
-                        target_attr[key] = getattr(value, action)()
-                    elif get_env_device() == "xpu" and action in ["cpu", "pin_memory"]:
-                        target_attr[key] = getattr(value, action)()
-                    else:
-                        target_attr[key] = getattr(value, "to")(action)
-
-    def _offload_optimizer(self):
-        if get_env_device() == "gpu":
-            self._apply_to_optimizer("pin_memory")
-        elif get_env_device() == "xpu":
-            self._apply_to_optimizer("pin_memory")
-        else:
-            self._apply_to_optimizer("cpu")
-
-    def _reload_optimizer(self):
-        if get_env_device() == "gpu":
-            self._apply_to_optimizer("cuda")
-        else:
-            self._apply_to_optimizer(get_env_device())
-
     def _load_rng_state(self, checkpoint):
         # Load RNG states from `checkpoint`
         if checkpoint is None:
@@ -3946,9 +3899,6 @@ class Trainer:
                 optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
                 saved_signal_path = os.path.join(output_dir, f"saved_signal_{dist.get_rank()}")
 
-                if self.args.unified_checkpoint and self.args.offload_optim:
-                    self._reload_optimizer()
-
                 if self.args.use_hybrid_parallel:
                     if self.dp_group.rank <= 0 or self.args.use_expert_parallel:
                         os.makedirs(output_dir, exist_ok=True)
@@ -4050,10 +4000,6 @@ class Trainer:
                                     global_rank, os.path.join(signal_dir, f".master_weight.done.{global_rank}")
                                 )
 
-                if self.args.save_checkpoint_format == "unified_checkpoint" and (
-                    self.args.offload_optim or self.args.tensorwise_offload_optimizer
-                ):
-                    self._offload_optimizer()
             self.runtime_timer.stop()
 
             # Maybe delete some older checkpoints.
@@ -4471,10 +4417,6 @@ class Trainer:
         empty_device_cache()
 
         self._load_scheduler(checkpoint)
-
-        if self.args.offload_optim:
-            logger.info("Offloading optimizer state...")
-            self._offload_optimizer()
 
         self.runtime_timer.stop()
 
