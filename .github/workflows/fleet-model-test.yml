@@ -2,9 +2,8 @@ name: Fleet Model Test
 
 on:
   pull_request:
-    branches:
-      - develop
-      - release/**
+    types: [opened, synchronize]
+    branches: [develop, release/**]
 
 permissions: read-all
 
