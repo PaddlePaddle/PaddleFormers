@@ -17,7 +17,6 @@
 from paddleformers.transformers.configuration_utils import PretrainedConfig
 
 
-
 class InternLM25Config(PretrainedConfig):
     model_type = "internlm2_5"
     _auto_class = "AutoConfig"
@@ -56,6 +55,7 @@ class InternLM25Config(PretrainedConfig):
         self.num_attention_heads = num_attention_heads
         self.bias = bias
         import paddle
+
         if isinstance(dtype, str):
             dtype_map = {
                 "float32": paddle.float32,

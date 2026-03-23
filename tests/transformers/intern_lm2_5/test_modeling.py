@@ -26,11 +26,12 @@ from paddleformers.transformers import (
     InternLM25ForCausalLM,
     InternLM25Tokenizer,
 )
-from tests.testing_utils import slow, require_package
+from tests.testing_utils import require_package, slow
 
-aistudio_pt_lm25_model_location  = "learncat/internlm2_5-1_8b-chat-raw"
+aistudio_pt_lm25_model_location = "learncat/internlm2_5-1_8b-chat-raw"
 aistudio_paddle_lm25_model_location = "learncat/internlm2_5-1_8b-chat-paddle"
-hg_lm25_model_location= "internlm/internlm2_5-1_8b-chat"
+hg_lm25_model_location = "internlm/internlm2_5-1_8b-chat"
+
 
 # config层的常规测试
 class TestInternLM25Config(unittest.TestCase):
@@ -54,6 +55,7 @@ class TestInternLM25Config(unittest.TestCase):
             loaded_config = InternLM25Config.from_pretrained(temp_dir)
             self.assertEqual(config.vocab_size, loaded_config.vocab_size)
             self.assertEqual(config.hidden_size, loaded_config.hidden_size)
+
 
 # model层的常规测试
 class InternLM25ModelTest(unittest.TestCase):
@@ -186,7 +188,6 @@ class InternLM25ConvertedWeightTest(unittest.TestCase):
     def tearDown(self):
         paddle.set_default_dtype(self._original_dtype)
 
-
     # 使用paddle格式的权重，推理一次
     @slow
     def test_paddle_model_load_and_infer(self):
@@ -205,9 +206,7 @@ class InternLM25ConvertedWeightTest(unittest.TestCase):
 
         prompt = "猫和狗的区别是什么，列出主要的3点"
         meta_instruction = "You are a helpful assistant. Please answer in plain text without markdown."
-        chat_inputs = model.build_inputs(
-            tokenizer, prompt, history=[], meta_instruction=meta_instruction
-        )
+        chat_inputs = model.build_inputs(tokenizer, prompt, history=[], meta_instruction=meta_instruction)
 
         with paddle.no_grad():
             out = model.generate(
@@ -277,14 +276,15 @@ class InternLM25CompatibilityTest(unittest.TestCase):
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
         import sys
+
         if "transformers" in sys.modules:
             del sys.modules["transformers"]
 
         import torch
-        import shutil
+
         cls.torch_model_path = tempfile.TemporaryDirectory().name
 
-        from transformers import AutoModelForCausalLM, AutoConfig
+        from transformers import AutoConfig, AutoModelForCausalLM
 
         # 从远程获取 InternLM2.5 的配置类并创建小配置用于快速测试
         # 远程加载 configuration_internlm2.py 中的 InternLM2Config 类
@@ -308,6 +308,7 @@ class InternLM25CompatibilityTest(unittest.TestCase):
     @require_package("transformers", "torch")
     def test_intern_converter(self):
         import torch
+
         input_ids = np.random.randint(100, 200, [1, 20])
 
         self.torch_model.eval()
@@ -331,18 +332,13 @@ class InternLM25CompatibilityTest(unittest.TestCase):
         print(f"Torch token ids:  {torch_token_ids}")
         self.assertTrue(
             np.array_equal(paddle_token_ids, torch_token_ids),
-            f"Token ids mismatch: paddle={paddle_token_ids}, torch={torch_token_ids}"
+            f"Token ids mismatch: paddle={paddle_token_ids}, torch={torch_token_ids}",
         )
 
         # 对齐推理的 1e-2 的容差
         self.assertTrue(
-            np.allclose(paddle_out, torch_out, atol=1e-2, rtol=1e-2),
-            f"Max diff {max_diff} exceeds tolerance"
+            np.allclose(paddle_out, torch_out, atol=1e-2, rtol=1e-2), f"Max diff {max_diff} exceeds tolerance"
         )
-
-
-
-
 
 
 if __name__ == "__main__":

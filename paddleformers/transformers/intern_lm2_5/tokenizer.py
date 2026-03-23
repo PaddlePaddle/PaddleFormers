@@ -26,9 +26,7 @@ except ImportError:
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
 from paddleformers.utils.log import logger
 
-
 VOCAB_FILES_NAMES = {"vocab_file": "tokenizer.model"}
-
 
 
 class InternLM25Tokenizer(PretrainedTokenizer):
@@ -182,17 +180,17 @@ class InternLM25Tokenizer(PretrainedTokenizer):
     # 不要觉得没人调用，就删掉，因为 原版的transformers没有集成lm25的实现；
     # 如果强行 使用 warp_tokenizer 会很多棘手问题处理，这里 直接借鉴了hg上原版的lm25的逻辑
     def encode(
-            self,
-            text: None = None,
-            text_pair:  None = None,
-            add_special_tokens: bool = True,
-            padding: bool | str  = False,
-            truncation: bool | str | None = None,
-            max_length: int | None = None,
-            stride: int = 0,
-            padding_side: str | None = None,
-            return_tensors: str  | None = None,
-            **kwargs,
+        self,
+        text: None = None,
+        text_pair: None = None,
+        add_special_tokens: bool = True,
+        padding: bool | str = False,
+        truncation: bool | str | None = None,
+        max_length: int | None = None,
+        stride: int = 0,
+        padding_side: str | None = None,
+        return_tensors: str | None = None,
+        **kwargs,
     ) -> List[int]:
         padding_strategy, truncation_strategy, max_length, kwargs_updated = self._get_padding_truncation_strategies(
             padding=padding,

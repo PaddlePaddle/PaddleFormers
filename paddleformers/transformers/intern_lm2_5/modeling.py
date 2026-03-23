@@ -1,3 +1,17 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # Copyright (c) The InternLM team and The HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,8 +47,9 @@ from paddleformers.transformers.model_outputs import (
     SequenceClassifierOutputWithPast,
     TokenClassifierOutput,
 )
-from .configuration import InternLM25Config
+
 from ..cache_utils import Cache, DynamicCache
+from .configuration import InternLM25Config
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +60,10 @@ except Exception:
 
 try:
     from paddle.nn.functional.flash_attention import flash_attention as flash_attn_func
-    from paddle.nn.functional.flash_attention import flash_attn_unpadded as flash_attn_varlen_func
+    from paddle.nn.functional.flash_attention import (
+        flash_attn_unpadded as flash_attn_varlen_func,
+    )
+
     has_flash_attn = True
 except:
     flash_attn_func, flash_attn_varlen_func = None, None
@@ -54,6 +72,7 @@ except:
 try:
     from ..intern.bert_padding_delte import index_first_axis, pad_input, unpad_input
 except ImportError:
+
     def index_first_axis(tensor, index):
         return tensor[index]
 
@@ -63,6 +82,7 @@ except ImportError:
     def unpad_input(hidden_states, attention_mask):
         return hidden_states, attention_mask
 
+
 _CONFIG_FOR_DOC = "InternLM25Config"
 
 
@@ -70,7 +90,7 @@ def _get_unpad_data(attention_mask):
     seqlens_in_batch = attention_mask.sum(axis=-1, dtype=paddle.int32)
     indices = paddle.nonzero(attention_mask.flatten(), as_tuple=False).flatten()
     max_seqlen_in_batch = seqlens_in_batch.max().item()
-    cu_seqlens = F.pad(paddle.cumsum(seqlens_in_batch, axis=0, dtype=paddle.int32), (1, 0))  
+    cu_seqlens = F.pad(paddle.cumsum(seqlens_in_batch, axis=0, dtype=paddle.int32), (1, 0))
     return (
         indices,
         cu_seqlens,
@@ -103,6 +123,7 @@ class InternLM25RMSNorm(nn.Layer):
 # 这里会有一些 bf16 到 float32的类型提升，是正常的，原版也是这样。最好不要优化这里了，如果不提升精度，会导致 准确率显著下降
 # 可以参考 https://github.com/huggingface/transformers/pull/29285
 
+
 class InternLM25RotaryEmbedding(nn.Layer):
     def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None, scaling_factor=1.0):
         super().__init__()
@@ -110,16 +131,17 @@ class InternLM25RotaryEmbedding(nn.Layer):
         self.dim = dim
         self.max_position_embeddings = max_position_embeddings
         self.base = base
-        inv_freq = 1.0 / (self.base ** (paddle.arange(0, self.dim, 2, dtype=paddle.int64).astype("float32") / self.dim))
+        inv_freq = 1.0 / (
+            self.base ** (paddle.arange(0, self.dim, 2, dtype=paddle.int64).astype("float32") / self.dim)
+        )
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.max_seq_len_cached = max_position_embeddings
-
 
     @paddle.no_grad()
     def forward(self, x, position_ids):
         # x: [bs, num_attention_heads, seq_len, head_size]
-        inv_freq_expanded = self.inv_freq[None, :, None].astype("float32").expand(
-            [position_ids.shape[0], self.inv_freq.shape[0], 1]
+        inv_freq_expanded = (
+            self.inv_freq[None, :, None].astype("float32").expand([position_ids.shape[0], self.inv_freq.shape[0], 1])
         )
         position_ids_expanded = position_ids[:, None, :].astype("float32")
         freqs = (inv_freq_expanded @ position_ids_expanded).transpose([0, 2, 1])
@@ -143,7 +165,9 @@ class InternLM25DynamicNTKScalingRotaryEmbedding(InternLM25RotaryEmbedding):
             base = self.base * (
                 (self.scaling_factor * seq_len / self.max_position_embeddings) - (self.scaling_factor - 1)
             ) ** (self.dim / (self.dim - 2))
-            inv_freq = 1.0 / (base ** (paddle.arange(0, self.dim, 2, dtype=paddle.int64).astype("float32").to(x.place) / self.dim))
+            inv_freq = 1.0 / (
+                base ** (paddle.arange(0, self.dim, 2, dtype=paddle.int64).astype("float32").to(x.place) / self.dim)
+            )
             self.register_buffer("inv_freq", inv_freq, persistable=False)
 
         cos, sin = super().forward(x, position_ids)
@@ -259,7 +283,7 @@ class InternLM25Attention(nn.Layer):
         position_ids: Optional[paddle.Tensor] = None,
         past_key_value: Optional[Cache] = None,
         output_attentions: bool = False,
-        use_cache: bool = False,  
+        use_cache: bool = False,
         cache_position: Optional[paddle.Tensor] = None,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         bsz, q_len, _ = hidden_states.shape
@@ -267,9 +291,7 @@ class InternLM25Attention(nn.Layer):
         if self.config.pretraining_tp > 1:
             key_value_slicing = (self.num_key_value_heads * self.head_dim) // self.config.pretraining_tp
             qkv_slices = self.wqkv.weight.split(key_value_slicing, axis=0)
-            qkv_states = paddle.concat(
-                [F.linear(hidden_states, qkv_slice) for qkv_slice in qkv_slices], axis=-1  
-            )
+            qkv_states = paddle.concat([F.linear(hidden_states, qkv_slice) for qkv_slice in qkv_slices], axis=-1)
         else:
             qkv_states = self.wqkv(hidden_states)
 
@@ -315,12 +337,7 @@ class InternLM25Attention(nn.Layer):
         if self.config.pretraining_tp > 1:
             attn_output = attn_output.split(self.hidden_size // self.config.pretraining_tp, axis=2)
             o_proj_slices = self.wo.weight.split(self.hidden_size // self.config.pretraining_tp, axis=1)
-            attn_output = sum(
-                [
-                    F.linear(attn_output[i], o_proj_slices[i])  
-                    for i in range(self.config.pretraining_tp)
-                ]
-            )
+            attn_output = sum([F.linear(attn_output[i], o_proj_slices[i]) for i in range(self.config.pretraining_tp)])
         else:
             attn_output = self.wo(attn_output)
 
@@ -407,7 +424,7 @@ class InternLM25FlashAttention2(InternLM25Attention):
         if not output_attentions:
             attn_weights = None
 
-        return attn_output, attn_weights, past_key_value  
+        return attn_output, attn_weights, past_key_value
 
     def _flash_attention_forward(
         self, query_states, key_states, value_states, attention_mask, query_length, dropout=0.0, softmax_scale=None
@@ -426,7 +443,7 @@ class InternLM25FlashAttention2(InternLM25Attention):
             cu_seqlens_q, cu_seqlens_k = cu_seq_lens
             max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
 
-            attn_output_unpad = flash_attn_varlen_func(  
+            attn_output_unpad = flash_attn_varlen_func(
                 query_states,
                 key_states,
                 value_states,
@@ -439,9 +456,9 @@ class InternLM25FlashAttention2(InternLM25Attention):
                 causal=causal,
             )
 
-            attn_output = pad_input(attn_output_unpad, indices_q, batch_size, query_length)  
+            attn_output = pad_input(attn_output_unpad, indices_q, batch_size, query_length)
         else:
-            attn_output = flash_attn_func(  
+            attn_output = flash_attn_func(
                 query_states, key_states, value_states, dropout, softmax_scale=softmax_scale, causal=causal
             )
 
@@ -451,14 +468,14 @@ class InternLM25FlashAttention2(InternLM25Attention):
         indices_k, cu_seqlens_k, max_seqlen_in_batch_k = _get_unpad_data(attention_mask)
         batch_size, kv_seq_len, num_key_value_heads, head_dim = key_layer.shape
 
-        key_layer = index_first_axis(  
+        key_layer = index_first_axis(
             key_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim), indices_k
         )
-        value_layer = index_first_axis(  
+        value_layer = index_first_axis(
             value_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim), indices_k
         )
         if query_length == kv_seq_len:
-            query_layer = index_first_axis(  
+            query_layer = index_first_axis(
                 query_layer.reshape(batch_size * kv_seq_len, self.num_heads, head_dim), indices_k
             )
             cu_seqlens_q = cu_seqlens_k
@@ -466,16 +483,12 @@ class InternLM25FlashAttention2(InternLM25Attention):
             indices_q = indices_k
         elif query_length == 1:
             max_seqlen_in_batch_q = 1
-            cu_seqlens_q = paddle.arange(
-                batch_size + 1, dtype=paddle.int32
-            )
+            cu_seqlens_q = paddle.arange(batch_size + 1, dtype=paddle.int32)
             indices_q = cu_seqlens_q[:-1]
             query_layer = query_layer.squeeze(1)
         else:
             attention_mask = attention_mask[:, -query_length:]
-            query_layer, indices_q, cu_seqlens_q, max_seqlen_in_batch_q = unpad_input(  
-                query_layer, attention_mask
-            )
+            query_layer, indices_q, cu_seqlens_q, max_seqlen_in_batch_q = unpad_input(query_layer, attention_mask)
 
         return (
             query_layer,
@@ -553,7 +566,7 @@ class InternLM25SdpaAttention(InternLM25Attention):
 
         is_causal = bool(causal_mask is None and q_len > 1)
 
-        attn_output = paddle.nn.functional.scaled_dot_product_attention(  
+        attn_output = paddle.nn.functional.scaled_dot_product_attention(
             query_states,
             key_states,
             value_states,
@@ -629,6 +642,7 @@ class InternLM25DecoderLayer(nn.Layer):
 
         return outputs
 
+
 class InternLM25PretrainedModel(PretrainedModel):
     config_class = InternLM25Config
     base_model_prefix = "model"
@@ -658,6 +672,7 @@ class InternLM25PretrainedModel(PretrainedModel):
         """Generate AOA (Auto-Transpose-Adapter) config for loading HuggingFace checkpoints."""
         # 禁用AOA以解决tok_embeddings.weight未分配的问题
         return {"aoa_statements": []}
+
 
 @register_base_model
 class InternLM25Model(InternLM25PretrainedModel):
@@ -701,6 +716,7 @@ class InternLM25Model(InternLM25PretrainedModel):
         def create_custom_forward(module):
             def custom_forward(*inputs):
                 return module(*inputs)
+
             return custom_forward
 
         layer_outputs = recompute(
@@ -744,9 +760,7 @@ class InternLM25Model(InternLM25PretrainedModel):
             )
 
         if self.enable_recompute and self.training and use_cache:
-            logger.warning(
-                "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`."
-            )
+            logger.warning("`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.")
             use_cache = False
 
         if inputs_embeds is None:
@@ -762,9 +776,7 @@ class InternLM25Model(InternLM25PretrainedModel):
 
         if cache_position is None:
             past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
-            cache_position = paddle.arange(
-                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1]
-            )
+            cache_position = paddle.arange(past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1])
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0)
 
@@ -881,7 +893,9 @@ class InternLM25Model(InternLM25PretrainedModel):
             if attention_mask is not None:
                 causal_mask = causal_mask.clone()
                 mask_length = attention_mask.shape[-1]
-                padding_mask = causal_mask[:, :, :, :mask_length] + attention_mask[:, None, None, :].astype(causal_mask.dtype)
+                padding_mask = causal_mask[:, :, :, :mask_length] + attention_mask[:, None, None, :].astype(
+                    causal_mask.dtype
+                )
                 padding_mask = padding_mask == 0
                 causal_mask[:, :, :, :mask_length] = causal_mask[:, :, :, :mask_length].masked_fill(
                     padding_mask, min_dtype
@@ -964,10 +978,7 @@ class InternLM25ForCausalLM(InternLM25PretrainedModel):
         hidden_states = outputs[0]
         if self.config.pretraining_tp > 1:
             output_slices = self.output.weight.split(self.vocab_size // self.config.pretraining_tp, axis=0)
-            logits = [
-                F.linear(hidden_states, output_slices[i])  
-                for i in range(self.config.pretraining_tp)
-            ]
+            logits = [F.linear(hidden_states, output_slices[i]) for i in range(self.config.pretraining_tp)]
             logits = paddle.concat(logits, axis=-1)
         else:
             logits = self.output(hidden_states)
@@ -984,6 +995,7 @@ class InternLM25ForCausalLM(InternLM25PretrainedModel):
             loss = loss_fct(shift_logits, shift_labels)
             # DEBUG: log raw loss details for diagnosis
             import os
+
             if os.environ.get("INTERNLM25_DEBUG_LOSS"):
                 n_valid = (shift_labels != -100).sum().item()
                 n_total = shift_labels.shape[0]
@@ -992,7 +1004,7 @@ class InternLM25ForCausalLM(InternLM25PretrainedModel):
                     f"logits_shape={shift_logits.shape} labels_shape={shift_labels.shape} "
                     f"logits_min={shift_logits.min().item():.4f} logits_max={shift_logits.max().item():.4f} "
                     f"logits_mean={shift_logits.mean().item():.4f}",
-                    flush=True
+                    flush=True,
                 )
 
         if not return_dict:
@@ -1022,7 +1034,10 @@ class InternLM25ForCausalLM(InternLM25PretrainedModel):
             if isinstance(past_key_values, Cache):
                 past_length = cache_position[0] if cache_position is not None else past_key_values.get_seq_length()
                 max_cache_length = (
-                    paddle.to_tensor(past_key_values.get_max_cache_shape(), place=input_ids.place if hasattr(input_ids, 'place') else None)
+                    paddle.to_tensor(
+                        past_key_values.get_max_cache_shape(),
+                        place=input_ids.place if hasattr(input_ids, "place") else None,
+                    )
                     if past_key_values.get_max_cache_shape() is not None
                     else None
                 )
@@ -1041,7 +1056,7 @@ class InternLM25ForCausalLM(InternLM25PretrainedModel):
                 and attention_mask is not None
                 and cache_length + input_ids.shape[1] > max_cache_length
             ):
-                attention_mask = attention_mask[:, -max_cache_length:]  
+                attention_mask = attention_mask[:, -max_cache_length:]
 
         position_ids = kwargs.get("position_ids", None)
         if attention_mask is not None and position_ids is None:
@@ -1149,9 +1164,7 @@ class InternLM25ForCausalLM(InternLM25PretrainedModel):
         if history is None:
             history = []
         if BaseStreamer is None:
-            raise ModuleNotFoundError(
-                "The version of `paddle` is too low."
-            )
+            raise ModuleNotFoundError("The version of `paddle` is too low.")
 
         response_queue = queue.Queue(maxsize=20)
 
@@ -1221,6 +1234,7 @@ class InternLM25ForSequenceClassification(InternLM25PretrainedModel):
         self.num_labels = config.num_labels
         self.model = InternLM25Model(config)
         self.score = nn.Linear(config.hidden_size, self.num_labels, bias_attr=False)
+
     def get_input_embeddings(self):
         return self.model.tok_embeddings
 
