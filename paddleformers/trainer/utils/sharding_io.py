@@ -28,6 +28,13 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding
     DygraphShardingOptimizerV2,
 )
 
+try:
+    from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer_v3 import (
+        DygraphShardingOptimizerV3,
+    )
+except ImportError:
+    DygraphShardingOptimizerV3 = None
+
 from ...transformers.model_utils import (
     _add_variant,
     get_parameter_dtype,
@@ -90,7 +97,12 @@ def filter_sharded_params(state_dict, optimizer, sharding_group, include_freeze_
                 if sharding_rank == 0:
                     filtered_state_dict[k] = v
     else:
-        optimizer = unwrap_optimizer(optimizer, DygraphShardingOptimizerV2)
+        opt = None
+        if DygraphShardingOptimizerV3 is not None:
+            opt = unwrap_optimizer(optimizer, DygraphShardingOptimizerV3)
+        if opt is None:
+            opt = unwrap_optimizer(optimizer, DygraphShardingOptimizerV2)
+        optimizer = opt
         parameters = optimizer._parameter_list
         filtered_parameters = [p.name for (i, p) in enumerate(parameters) if i % sharding_world_size == sharding_rank]
         filtered_parameters = set(filtered_parameters)
@@ -475,7 +487,10 @@ class ShardingIO:
             if "enable_overlap" in sharding_meta:
                 pp_overlap = sharding_meta["enable_overlap"]
 
-            cur_pp_overlap = unwrap_optimizer(self.optimizer, DygraphShardingOptimizerV2).pp_overlap
+            _opt = unwrap_optimizer(self.optimizer, DygraphShardingOptimizerV3) if DygraphShardingOptimizerV3 else None
+            if _opt is None:
+                _opt = unwrap_optimizer(self.optimizer, DygraphShardingOptimizerV2)
+            cur_pp_overlap = _opt.pp_overlap
             return pp_overlap != cur_pp_overlap
 
         return False
@@ -884,7 +899,10 @@ class ShardingIO:
             optimizer = unwrap_optimizer(self.optimizer, DygraphShardingOptimizer)
             param2rank = {k: v for (k, v) in optimizer._param2rank.items()}
         else:
-            pp_overlap = unwrap_optimizer(self.optimizer, DygraphShardingOptimizerV2).pp_overlap
+            _opt = unwrap_optimizer(self.optimizer, DygraphShardingOptimizerV3) if DygraphShardingOptimizerV3 else None
+            if _opt is None:
+                _opt = unwrap_optimizer(self.optimizer, DygraphShardingOptimizerV2)
+            pp_overlap = _opt.pp_overlap
 
         model = self.model
         structure_name_mapping = {}

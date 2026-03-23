@@ -21,6 +21,13 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding
     DygraphShardingOptimizer,
     DygraphShardingOptimizerV2,
 )
+
+try:
+    from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer_v3 import (
+        DygraphShardingOptimizerV3,
+    )
+except ImportError:
+    DygraphShardingOptimizerV3 = None
 from paddle.distributed.fleet.utils.log_util import logger
 
 from paddleformers.utils.tools import get_env_device
@@ -29,6 +36,7 @@ from ....transformers.model_utils import unwrap_optimizer
 
 SHARDING_STRATEGY_V1 = "ShardingV1"
 SHARDING_STRATEGY_V2 = "ShardingV2"
+SHARDING_STRATEGY_V3 = "ShardingV3"
 
 
 def is_sharding_opt(optimizer):
@@ -45,10 +53,18 @@ def is_sharding_opt(optimizer):
         if check(DygraphShardingOptimizerV2):
             return True
 
+    if DygraphShardingOptimizerV3 is not None:
+        if check(DygraphShardingOptimizerV3):
+            return True
+
     return False
 
 
 def get_sharding_strategy(optimizer):
+    if DygraphShardingOptimizerV3 is not None:
+        tmp = unwrap_optimizer(optimizer, DygraphShardingOptimizerV3)
+        if tmp is not None:
+            return SHARDING_STRATEGY_V3
     if DygraphShardingOptimizerV2 is not None:
         tmp = unwrap_optimizer(optimizer, DygraphShardingOptimizerV2)
         if tmp is not None:

@@ -88,6 +88,13 @@ _obtain_optimizer_parameters_list = obtain_optimizer_parameters_list
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
     DygraphShardingOptimizerV2,
 )
+
+try:
+    from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer_v3 import (
+        DygraphShardingOptimizerV3,
+    )
+except ImportError:
+    DygraphShardingOptimizerV3 = None
 from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     fused_allreduce_gradients,
 )
@@ -212,7 +219,7 @@ from .unified_checkpoint import UnifiedCheckpointHandler
 from .utils import reshard as reshard_util
 from .utils.async_save import AsyncSaver
 from .utils.ckpt_converter import CheckpointConverter
-from .utils.reshard import SHARDING_STRATEGY_V1, split_opt_state
+from .utils.reshard import SHARDING_STRATEGY_V1, SHARDING_STRATEGY_V3, split_opt_state
 from .utils.sharding_io import GroupGetter, to_device
 
 try:
@@ -1216,7 +1223,10 @@ class Trainer:
         enable_bf16_opt = (
             not isinstance(self.model, LoRAModel)
             and self.args.bf16
-            and isinstance(self.optimizer._inner_opt, DygraphShardingOptimizerV2)
+            and isinstance(
+                self.optimizer._inner_opt,
+                (DygraphShardingOptimizerV2,) + ((DygraphShardingOptimizerV3,) if DygraphShardingOptimizerV3 else ()),
+            )
         )
         logger.debug(f"sharded_model_from_ema: {self.args.sharded_model_from_ema}")
         logger.debug(f"enable_bf16_opt: {enable_bf16_opt}")
@@ -1278,11 +1288,12 @@ class Trainer:
                 del node_model_state_tmp
                 sharding_strategy = reshard_util.get_sharding_strategy(self.optimizer)
                 logger.debug(f"sharding_strategy: {sharding_strategy}")
-                restore_func = (
-                    reshard_util.sharding_v1.restore
-                    if sharding_strategy == SHARDING_STRATEGY_V1
-                    else reshard_util.sharding_v2.restore
-                )
+                if sharding_strategy == SHARDING_STRATEGY_V1:
+                    restore_func = reshard_util.sharding_v1.restore
+                elif sharding_strategy == SHARDING_STRATEGY_V3:
+                    restore_func = reshard_util.sharding_v3.restore
+                else:
+                    restore_func = reshard_util.sharding_v2.restore
                 node_model_state = restore_func(node_model_state, self.model, self.optimizer)
                 node_model_state.unpack_keys()
                 master_weights = node_model_state.master_weights
@@ -1998,7 +2009,8 @@ class Trainer:
                         steps_trained_progress_bar.update(1)
                     if steps_trained_in_current_epoch == 0:
                         self._load_rng_state(resume_from_checkpoint)
-                    self.timers and self.timers("read-data").start()
+                    if self.args.ignore_data_skip:
+                        self.timers and self.timers("read-data").start()
                     # Reset data loading timer for skipped steps
                     _data_load_start_time = time.time()
                     continue
@@ -2948,6 +2960,15 @@ class Trainer:
             if hasattr(optimizer_cls, "_create_master_weight") and self.args.fp16_opt_level == "O2":
                 optimizer_kwargs["multi_precision"] = True
 
+            if self.args.optim.value == "muon":
+                # Attach per-head metadata to fused QKV weights so the Muon
+                # optimizer can orthogonalise each head independently.
+                for name, param in self.model.named_parameters():
+                    if "qkv_proj.weight" in name and len(param.shape) == 2:
+                        param.needs_qkv_split = True
+                        param.head_num = self.model.config.num_attention_heads
+                        param.kv_head_num = self.model.config.num_key_value_heads
+
             self.optimizer = optimizer_cls(
                 learning_rate=self.lr_scheduler if lr_scheduler is None else lr_scheduler,
                 apply_decay_param_fun=apply_decay_param_fun,
@@ -2965,6 +2986,7 @@ class Trainer:
     def _apply_to_optimizer(self, action):
         attributes = [
             ("_accumulators", "_moment1_acc_str"),
+            ("_accumulators", "_moment_acc_str"),  # Muon uses _moment_acc_str instead of _moment1_acc_str
             ("_accumulators", "_moment2_acc_str"),
             ("_master_weights",),
             ("_accumulators_holder",),
@@ -3088,6 +3110,18 @@ class Trainer:
 
             optimizer_cls = AdamWCustom
             optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.MUON:
+            from paddle.optimizer import Muon
+
+            logger.info("Creating Muon optimizer")
+            muon_kwargs = {
+                **adam_kwargs,
+                "momentum": 0.95,
+                "muon_version": 3,
+                "is_split_qkv": True,
+            }
+            optimizer_cls = Muon
+            optimizer_kwargs.update(muon_kwargs)
         else:
             raise ValueError(f"Trainer cannot instantiate unsupported optimizer: {args.optim}")
 
@@ -4050,9 +4084,7 @@ class Trainer:
                                     global_rank, os.path.join(signal_dir, f".master_weight.done.{global_rank}")
                                 )
 
-                if self.args.save_checkpoint_format == "unified_checkpoint" and (
-                    self.args.offload_optim or self.args.tensorwise_offload_optimizer
-                ):
+                if self.args.offload_optim or self.args.tensorwise_offload_optimizer:
                     self._offload_optimizer()
             self.runtime_timer.stop()
 

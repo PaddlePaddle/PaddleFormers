@@ -45,6 +45,13 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding
     DygraphShardingOptimizer,
     DygraphShardingOptimizerV2,
 )
+
+try:
+    from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer_v3 import (
+        DygraphShardingOptimizerV3,
+    )
+except ImportError:
+    DygraphShardingOptimizerV3 = None
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_stage2 import (
     GroupShardedOptimizerStage2,
@@ -498,6 +505,7 @@ class OptimizerNames(ExplicitEnum):
     ADAFACTOR = "adafactor"
     ADAMW_MINI = "adamw_mini"
     ADAMW_CUSTOM = "adamw_custom"
+    MUON = "muon"
 
 
 class ShardingOption(ExplicitEnum):
@@ -1502,6 +1510,12 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
         return
 
     elif DygraphShardingOptimizerV2 is not None and isinstance(inner_opt, DygraphShardingOptimizerV2):
+        # Unwrap to the innermost optimizer (e.g. Muon inside a sharding wrapper).
+        core_opt = optimizer._inner_opt
+        while hasattr(core_opt, "_inner_opt"):
+            core_opt = core_opt._inner_opt
+        is_muon_opt = type(core_opt).__name__ == "Muon"
+
         parameter_list = []
         for buffer in optimizer._comm_buffer_list:
             for param_name, grad_view in buffer._sharding_param_grad_view.items():
@@ -1515,7 +1529,73 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
                     slice_param = paddle.slice(param_buffer, axes=[0], starts=[param_begin], ends=[param_end])
                     assert slice_param.numel().item() > 0
                     slice_param.name = param_name
+                    # Preserve original shape so Muon's should_use_muon() can identify 2-D weights.
+                    if is_muon_opt and hasattr(grad_view, "_param") and grad_view._param is not None:
+                        slice_param.original_shape = grad_view._param.shape
                     parameter_list.append(slice_param)
+
+        optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), parameter_list)
+        return
+
+    elif DygraphShardingOptimizerV3 is not None and isinstance(inner_opt, DygraphShardingOptimizerV3):
+        # Unwrap to the innermost optimizer (e.g. Muon inside a V3 sharding wrapper).
+        core_opt = inner_opt._inner_opt
+        while hasattr(core_opt, "_inner_opt"):
+            core_opt = core_opt._inner_opt
+        is_muon_opt = type(core_opt).__name__ == "Muon"
+
+        parameter_list = []
+
+        # --- 1D params: build shard-sized slice params from FusedCommBuffer ---
+        # (same logic as V2 branch above, using _comm_buffer_list)
+        # IMPORTANT: set slice_param.name = "slice@" + param_name so that the
+        # accumulator key matches what V3's sharded_state_dict expects via
+        # _split_state_name (it strips the "_moment1_0" suffix to get static_name,
+        # which must match param_slice_info keys = original param names after
+        # removing the "slice@" prefix added back in sharded_state_dict).
+        for buffer in optimizer._comm_buffer_list:
+            for param_name, grad_view in buffer._sharding_param_grad_view.items():
+                if param_name not in static_to_struct_mapping:
+                    continue
+                struct_name = static_to_struct_mapping[param_name]
+                if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+                    continue
+                param_buffer = grad_view._param_buffer
+                param_begin = grad_view._param_begin
+                param_end = grad_view._param_end
+                if param_begin >= 0 and param_end > 0 and param_end > param_begin:
+                    slice_param = paddle.slice(param_buffer, axes=[0], starts=[param_begin], ends=[param_end])
+                    assert slice_param.numel().item() > 0
+                    # Use the original param name (no "slice@" prefix), consistent
+                    # with V3's _create_slice_param and V2's init_optimizer branch.
+                    slice_param.name = param_name
+                    parameter_list.append(slice_param)
+
+        # --- 2D non-MoE params: local rank's full tensors (Muon) ---
+        local_2d = optimizer._rank2params_2d.get(optimizer._sharding_rank, [])
+        for param in local_2d:
+            param_name = param.name
+            if param_name not in static_to_struct_mapping:
+                continue
+            struct_name = static_to_struct_mapping[param_name]
+            if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+                continue
+            parameter_list.append(param)
+
+        # --- 2D MoE expert params: local rank's full tensors (Muon) ---
+        if optimizer._moe_sharding_world_size > 1:
+            moe_rank = optimizer._moe_sharding_rank
+        else:
+            moe_rank = 0
+        local_2d_moe = optimizer._rank2params_2d_moe.get(moe_rank, [])
+        for param in local_2d_moe:
+            param_name = param.name
+            if param_name not in static_to_struct_mapping:
+                continue
+            struct_name = static_to_struct_mapping[param_name]
+            if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+                continue
+            parameter_list.append(param)
 
         optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), parameter_list)
         return
