@@ -163,3 +163,15 @@ class DataArguments:
         default=None,
         metadata={"help": "Whether to use fast processor."},
     )
+    binpacking: bool = field(
+        default=True,
+        metadata={"help": "Whether to use bin packing."},
+    )
+    packing_interval: int = field(
+        default=1000,
+        metadata={"help": "Interval of packing."},
+    )
+    truncation_strategy: str = field(
+        default="right",
+        metadata={"help": "Truncation strategy for packing."},
+    )

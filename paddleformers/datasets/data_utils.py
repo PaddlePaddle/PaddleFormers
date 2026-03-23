@@ -15,9 +15,12 @@
 """Useful data utility."""
 
 import json
+import time
 from itertools import islice
 from typing import List, Tuple
 
+# https://arxiv.org/pdf/2404.10830
+import binpacking
 import numpy as np
 import paddle
 
@@ -197,6 +200,7 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
     """
     train_dataset.estimate = True
     logger.info("Start to estimate max training steps...")
+    estimate_start_time = time.time()
 
     max_samples = train_dataset.max_estimate_samples
 
@@ -207,15 +211,24 @@ def estimate_training(train_dataset, data_args, training_args, model_args):
             training_args.max_estimate_samples, train_dataset.max_estimate_samples
         )
 
+    logger.info(f"training_args.max_estimate_samples: {training_args.max_estimate_samples}")
+    logger.info(f"train_dataset.max_estimate_samples: {train_dataset.max_estimate_samples }")
     if train_dataset.max_estimate_samples > 0:
         train_batches = 0
         train_tokens = 0
-        for sequences in train_dataset:
-            if not train_dataset.estimate:
-                break
-            train_batches += 1
-            for sequence in sequences:
-                train_tokens += len(sequence.token_ids)
+        _iter = iter(train_dataset)
+        try:
+            for sequences in _iter:
+                if not train_dataset.estimate:
+                    break
+                train_batches += 1
+                for sequence in sequences:
+                    train_tokens += len(sequence.token_ids)
+        finally:
+            _iter.close()
+
+        estimate_elapsed = time.time() - estimate_start_time
+        print(f"[Estimate Max Steps Progress]: 100% (total elapsed: {estimate_elapsed:.1f}s)")
 
         train_tokens *= training_args.num_train_epochs
         train_batches *= training_args.num_train_epochs
@@ -326,3 +339,15 @@ def get_worker_sliced_iterator(dataset):
         )
 
     return dataset_iterator
+
+
+def calculate_matched_group(sequences, packing_length: int, is_finished: bool = True):
+    if len(sequences) == 0:
+        return [], []
+
+    sequences = binpacking.to_constant_volume(sequences, packing_length, weight_pos=1)
+    if sequences and not is_finished:
+        sequences, ret_sequences = sequences[:-1], sequences[-1]
+    else:
+        ret_sequences = []
+    return sequences, ret_sequences

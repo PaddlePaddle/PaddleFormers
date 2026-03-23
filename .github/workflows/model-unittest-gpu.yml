@@ -130,7 +130,6 @@ jobs:
             tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
             echo "work_dir = ${work_dir}"
             source ${work_dir}/../../../proxy
-            pip install uv
             cd PaddleFormers
             git config --global user.name "PaddleCI"
             git config --global user.email "paddle_ci@example.com"
@@ -156,7 +155,6 @@ jobs:
           ldconfig
           mkdir -p /root/.cache/pip
           pip cache dir
-          uv cache dir
           set -e
           rm -rf /root/.cache/aistudio/
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD

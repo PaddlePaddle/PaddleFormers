@@ -105,11 +105,11 @@ class FileReader(BaseReader):
                 if remainder > 0:
                     sampled_data.extend(res_list[:remainder])
 
+            del res_list
             res = sampled_data
             logger.info(f"Sampled {len(res)} samples from {total_samples} total samples.")
         else:
-            res = list(res)
-            logger.info(f"Loaded {len(res)} samples from {self._file_path}.")
+            logger.info(f"Loading {self._file_path} as stream.")
 
         # data preprocess
         if self._file_type not in self.convertor_map:
