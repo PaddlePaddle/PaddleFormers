@@ -1904,7 +1904,11 @@ class Trainer:
         epoch_iterator = train_dataloader
 
         if self._is_iterable_dataset(self.train_dataset) and args.dataset_world_size > 1:
-            epoch_iterator = DataLoaderDispatcher(train_dataloader)
+            epoch_iterator = DataLoaderDispatcher(
+                train_dataloader,
+                dataset_rank=args.dataset_rank,
+                dataset_world_size=args.dataset_world_size,
+            )
             logger.info(
                 f"Using DataLoaderDispatcher: rank {args.dataset_rank} "
                 f"({'data producer + scatter' if args.dataset_rank == 0 else 'data receiver'})"
@@ -1966,6 +1970,22 @@ class Trainer:
             _data_load_start_time = time.time()
 
             for step, inputs in enumerate(epoch_iterator):
+
+                print(
+                    "lrl debug dataset_rank: ",
+                    self.args.dataset_rank,
+                    ", dataset_world_size: ",
+                    self.args.dataset_world_size,
+                )
+
+                from paddleformers.datasets.data_utils import print_debug_info
+
+                if hasattr(self, "tokenizer"):
+                    filtered_labels = [x for x in inputs["labels"].tolist()[0] if x != -100]  # remove -100
+                    print_debug_info(self.tokenizer, filtered_labels, "labels")
+                else:
+                    logger.info("[dataset debug] Tokenizer not available")
+
                 # Record data loading time for this iteration
                 _data_load_end_time = time.time()
                 _data_load_time_for_global_step += _data_load_end_time - _data_load_start_time

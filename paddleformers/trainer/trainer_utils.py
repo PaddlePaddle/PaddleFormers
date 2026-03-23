@@ -1151,20 +1151,18 @@ class DataLoaderDispatcher:
         base_dataloader: The base DataLoader (only rank 0 needs real data)
     """
 
-    def __init__(self, base_dataloader):
+    def __init__(self, base_dataloader, dataset_rank: int = 0, dataset_world_size: int = 1):
         self.base_dataloader = base_dataloader
+        self._dataset_rank = dataset_rank
+        self._dataset_world_size = dataset_world_size
 
     @property
     def rank(self):
-        import paddle.distributed as dist
-
-        return dist.get_rank() if dist.is_initialized() else 0
+        return self._dataset_rank
 
     @property
     def world_size(self):
-        import paddle.distributed as dist
-
-        return dist.get_world_size() if dist.is_initialized() else 1
+        return self._dataset_world_size
 
     def _scatter_object_list(self, scatter_list):
         """Scatter objects from rank 0 to all ranks."""
