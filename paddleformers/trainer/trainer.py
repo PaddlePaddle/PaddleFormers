@@ -207,6 +207,7 @@ from .unified_checkpoint import UnifiedCheckpointHandler
 from .utils import reshard as reshard_util
 from .utils.async_save import AsyncSaver
 from .utils.ckpt_converter import CheckpointConverter
+from .utils.offload_optimizer import offload
 from .utils.reshard import SHARDING_STRATEGY_V1, split_opt_state
 from .utils.sharding_io import GroupGetter, to_device
 
@@ -1201,6 +1202,11 @@ class Trainer:
                     worker_groups=worker_groups,
                 )
                 self._load_scheduler(resume_from_checkpoint)
+
+            if self.args.tensorwise_offload_optimizer:
+                for k, v in optimizer_sharded_state_dict.items():
+                    offload(v.local_tensor)
+                del opt_states, master_weights, optimizer_sharded_state_dict
 
         enable_bf16_opt = (
             not isinstance(self.model, LoRAModel)
