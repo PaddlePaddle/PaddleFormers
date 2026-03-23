@@ -304,20 +304,6 @@ def run_sft(
     LlmMetaConfig.set_llm_config(model_config, training_args)
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
-    # autoregressive mtp training
-    if model_config.mtp_num_layers > 1:
-        tmp = model_config.mtp_num_layers
-        model_config.mtp_num_layers = model_config.num_nextn_predict_layers
-        model_config.num_nextn_predict_layers = tmp
-
-        tmp = training_args.mtp_num_layers
-        training_args.mtp_num_layers = training_args.num_nextn_predict_layers
-        training_args.num_nextn_predict_layers = tmp
-
-        logger.info(
-            f"MTP args changing for autoregressive mtp training, mtp_num_layers: {model_config.mtp_num_layers}, num_nextn_predict_layers: {model_config.num_nextn_predict_layers}!!"
-        )
-
     # Config for model using dropout, such as GPT.
     if hasattr(model_config, "hidden_dropout_prob"):
         model_config.hidden_dropout_prob = finetuning_args.hidden_dropout_prob
@@ -406,6 +392,20 @@ def run_sft(
                 neft_post_hook_handle = model.get_input_embeddings().register_forward_post_hook(neft_post_hook)
             else:
                 raise NotImplementedError("Only support neftune for model with get_input_embeddings")
+
+    # autoregressive mtp training
+    if model_config.mtp_num_layers > 1:
+        tmp = model_config.mtp_num_layers
+        model_config.mtp_num_layers = model_config.num_nextn_predict_layers
+        model_config.num_nextn_predict_layers = tmp
+
+        tmp = training_args.mtp_num_layers
+        training_args.mtp_num_layers = training_args.num_nextn_predict_layers
+        training_args.num_nextn_predict_layers = tmp
+
+        logger.info(
+            f"MTP args changing for autoregressive mtp training, mtp_num_layers: {model_config.mtp_num_layers}, num_nextn_predict_layers: {model_config.num_nextn_predict_layers}!!"
+        )
 
     runtime_timer = RuntimeTimer("Creating SFT MapDataset")
 
@@ -723,7 +723,6 @@ def run_sft(
         callbacks += [FP8QuantWeightCallback()]
 
     print("callbacks:", callbacks, flush=True)
-    # print("ddd: ", model); exit()
 
     trainer = SFTTrainer(
         model=model,
