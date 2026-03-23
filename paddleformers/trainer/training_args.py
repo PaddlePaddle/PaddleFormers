@@ -1102,10 +1102,6 @@ class TrainingArguments:
         default=None,
         metadata={"help": "The intervals to skip, pass start global step and end global step at each interval"},
     )
-    offload_optim: Optional[bool] = field(
-        default=False,
-        metadata={"help": "Offload optimizer after optimizer.step()"},
-    )
     tensorwise_offload_optimizer: Optional[bool] = field(
         default=False,
         metadata={

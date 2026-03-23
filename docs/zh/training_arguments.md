@@ -133,10 +133,6 @@
                         梯度裁剪（Gradient Clipping）的最大范数。
                         默认为 1.0。用于防止梯度爆炸，对大模型训练稳定性至关重要。(`float`, 可选)
 
-  --offload_optim
-                        是否在 `optimizer.step()` 后将优化器状态卸载到 CPU，以节省 GPU 显存。
-                        注意这与 Sharding Offload 不同，适用于非 Sharding 场景。(`bool`, 可选, 默认为 `False`)
-
   --adam_beta1
                         AdamW 优化器的 beta1 超参数。默认为 0.9。(`float`, 可选)
 
