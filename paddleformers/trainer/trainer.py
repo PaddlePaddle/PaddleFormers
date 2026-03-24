@@ -2701,8 +2701,10 @@ class Trainer:
             total_batch_size = self.args.per_device_train_batch_size
             if self.args.enable_auto_parallel:
                 total_batch_size = total_batch_size * self.args.dataset_world_size
-            if self.args.dataset_world_size > 1:
-                if self.args.dataset_rank == 0:
+            # In distributed mode (world_size > 1), only global rank 0 creates dataloader
+            # Other ranks receive data via DataLoaderDispatcher broadcast
+            if self.args.world_size > 1:
+                if self.args.local_rank == 0:
                     if self.args.distributed_dataloader:
                         logger.info("Training using DistDataLoader with DataLoaderDispatcher.")
                         additional_configs = {"is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
