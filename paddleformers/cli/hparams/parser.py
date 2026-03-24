@@ -137,7 +137,12 @@ def _parse_args(
         _load_custom_template(args.pop("custom_register_path"))
 
     if isinstance(args, dict):
-        return parser.parse_dict(args)
+        (*parsed_args, unknown_args) = parser.parse_dict(args)
+        if unknown_args:
+            print(f"Got unknown args, potentially deprecated arguments: {unknown_args}")
+            raise ValueError(f"Some specified arguments are not used by the PdArgumentParser: {unknown_args}")
+
+        return tuple(parsed_args)
 
     (*parsed_args, unknown_args) = parser.parse_args_into_dataclasses(args=args, return_remaining_strings=True)
 
