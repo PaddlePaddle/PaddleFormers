@@ -854,8 +854,8 @@ def log_metrics(self, split, metrics):
         metrics (`Dict[str, float]`):
             The metrics returned from train/evaluate/predictmetrics: metrics dict
     """
-    if not self.is_world_process_zero():
-        return
+    # if not self.is_world_process_zero():
+    #     return
 
     logger.info(f"***** {split} metrics *****")
     metrics_formatted = self.metrics_format(metrics)

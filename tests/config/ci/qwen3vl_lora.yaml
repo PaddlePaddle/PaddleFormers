@@ -14,7 +14,7 @@ template: qwen3_vl
 
 ### model
 model_name_or_path: ./model_8B
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -57,4 +57,3 @@ unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
 freeze_config: freeze_vision freeze_aligner
-processor_use_fast: false

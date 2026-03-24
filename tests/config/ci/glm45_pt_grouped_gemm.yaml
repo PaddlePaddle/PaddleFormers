@@ -81,4 +81,4 @@ router_aux_loss_coef: 0.001
 
 # grouped gemm
 moe_grouped_gemm: true
-use_deep_gemm: false
+# use_deep_gemm: false

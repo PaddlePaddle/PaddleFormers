@@ -578,6 +578,8 @@ def mm_collate_fn(
         input_keys.append("image_grid_thw")
         input_keys.append("pixel_values_videos")
         input_keys.append("video_grid_thw")
+        input_keys.append("input_features")
+        input_keys.append("feature_attention_mask")
 
     if training_args.num_nextn_predict_layers > 0:
         input_keys.append("nbatch_pack_offset")
@@ -603,6 +605,8 @@ def mm_collate_fn(
         image_grid_thw = []
         pixel_values_videos = []
         video_grid_thw = []
+        input_features = []
+        feature_attention_mask = []
         for seq in batch_sequence:
             original_token_ids.append(seq.token_ids)
             mm_inputs = seq.mm_inputs
@@ -614,9 +618,17 @@ def mm_collate_fn(
                 pixel_values_videos.append(mm_inputs["pixel_values_videos"])
             if "video_grid_thw" in mm_inputs:
                 video_grid_thw.extend(mm_inputs["video_grid_thw"])
+            if "input_features" in mm_inputs:
+                input_features.append(mm_inputs["input_features"])
+            if "feature_attention_mask" in mm_inputs:
+                feature_attention_mask.append(mm_inputs["feature_attention_mask"])
             if get_rope_func is not None:
                 filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
-                position_ids, _ = get_rope_func(input_ids=paddle.to_tensor([seq.token_ids]), **filtered_args)
+                total_input_ids = paddle.to_tensor([seq.token_ids])
+                filtered_args["attention_mask"] = paddle.ones_like(total_input_ids)
+                if "video_second_per_grid" in mm_inputs:
+                    filtered_args["second_per_grids"] = mm_inputs["video_second_per_grid"]
+                position_ids, _ = get_rope_func(input_ids=total_input_ids, **filtered_args)
                 original_position_ids.append(position_ids)
 
         if original_position_ids:
@@ -642,6 +654,10 @@ def mm_collate_fn(
             pixel_values = paddle.concat(pixel_values, axis=0)
         if len(pixel_values_videos) > 0:
             pixel_values_videos = paddle.concat(pixel_values_videos, axis=0)
+        if len(input_features) > 0:
+            input_features = paddle.concat(input_features, axis=0)
+        if len(feature_attention_mask) > 0:
+            feature_attention_mask = paddle.concat(feature_attention_mask, axis=0)
         if get_token_type_func is not None:  # ernie45vl
             bs_idx_in_rope = 0
             padded_position_ids = padded_position_ids.transpose([1, 2, 0])
@@ -664,6 +680,8 @@ def mm_collate_fn(
                     image_grid_thw,
                     pixel_values_videos,
                     video_grid_thw,
+                    input_features,
+                    feature_attention_mask,
                 ]
             )
 

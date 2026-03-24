@@ -52,7 +52,7 @@ save_sharded_model: false
 load_sharded_model: false
 use_expert_parallel: true
 unified_checkpoint_config: "ignore_merge_optimizer"
-offload_optim: true
+tensorwise_offload_optimizer: true
 reorder_pipeline_priority: true
 num_nextn_predict_layers: 1
 moe_router_force_load_balancing: false
