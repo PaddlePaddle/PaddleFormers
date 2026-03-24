@@ -266,6 +266,137 @@ DIST_CKPT_PATH = "dist_ckpt"
 DIST_MODEL_PATH = "dist_model"
 
 
+def _gen_aoa_config(aoa_type = "opt_state"):
+    model_prefix =  "model."
+    is_fleet = True
+    class Config:
+        pass
+    config = Config()
+    config.using_sonic_moe = False
+    config.n_routed_experts = 128
+    config.tie_word_embeddings = False
+    config.num_hidden_layers = 46
+    config.num_empty_layers_add_in_head = 4
+    config.first_k_dense_replace = 1
+    config.num_nextn_predict_layers = 0
+    config.use_qk_norm = False
+    config.attention_bias = True
+    config.moe_grouped_gemm = True
+    config.fp8 = False
+
+    using_sonic_moe = config.using_sonic_moe
+    if hasattr(config, "n_routed_experts"):
+        num_experts = config.n_routed_experts
+    else:
+        num_experts = config.num_experts
+    aoa_config = {
+        "aoa_statements": [
+            f"model.norm.weight -> {model_prefix}norm.weight",
+        ]
+    }
+    if is_fleet:
+        if config.tie_word_embeddings:
+            aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}lm_head.weight"]
+        else:
+            aoa_config["aoa_statements"] += [f"model.lm_head.weight -> {model_prefix}lm_head.weight"]
+    else:
+        aoa_config["aoa_statements"] += [
+            f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
+        ]
+
+    num_hidden_layers = config.num_hidden_layers
+    num_head_empty_layers = (
+        config.num_empty_layers_add_in_head
+        if hasattr(config, "num_empty_layers_add_in_head") and config.num_empty_layers_add_in_head
+        else 0
+    )
+    for layer_idx in range(config.first_k_dense_replace):
+        aoa_config["aoa_statements"] += [
+            f"model.layers.{layer_idx + num_head_empty_layers}.mlp.down_proj.weight -> {model_prefix}layers.{layer_idx}.mlp.down_proj.weight"
+        ]
+        aoa_config["aoa_statements"] += [
+            f"{model_prefix}layers.{layer_idx + num_head_empty_layers}.mlp.up_gate_proj.weight -> {model_prefix}layers.{layer_idx}.mlp.up_gate_proj.weight, fused_ffn",
+        ]
+
+    num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
+
+    for layer_idx in range(num_hidden_layers, num_hidden_layers + num_nextn_predict_layers):
+        layer_idx_offset = layer_idx + num_head_empty_layers
+        prefix = f"model.layers.{layer_idx}"
+        prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
+        aoa_config["aoa_statements"] += [
+            f"{prefix_offset}.eh_proj.weight -> {prefix}.eh_proj.weight",
+            f"{prefix_offset}.enorm.weight -> {prefix}.enorm.weight",
+            f"{prefix_offset}.hnorm.weight -> {prefix}.hnorm.weight",
+            f"{prefix_offset}.shared_head.norm.weight -> {prefix}.norm.weight",
+        ]
+
+    # layer0 - layer_num_hidden_layers
+    for layer_idx in range(0, num_hidden_layers + num_nextn_predict_layers):
+        layer_idx_offset = layer_idx + num_head_empty_layers
+        prefix = f"model.layers.{layer_idx}"
+        prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
+        if layer_idx >= num_hidden_layers:
+            # for mtp
+            prefix_offset += ".transformer_layer"
+        aoa_config["aoa_statements"] += [
+            f"{prefix_offset}.input_layernorm.weight -> {prefix}.input_layernorm.weight",
+            f"{prefix_offset}.post_attention_layernorm.weight -> {prefix}.post_attention_layernorm.weight",
+            f"{prefix_offset}.self_attn.o_proj.weight -> {prefix}.self_attn.o_proj.weight",
+        ]
+        if config.use_qk_norm:
+            aoa_config["aoa_statements"] += [
+                f"{prefix_offset}.self_attn.q_norm.weight -> {prefix}.self_attn.q_norm.weight",
+                f"{prefix_offset}.self_attn.k_norm.weight -> {prefix}.self_attn.k_norm.weight",
+            ]
+
+        # attention qkv
+        aoa_config["aoa_statements"] += [
+            f"{prefix_offset}.self_attn.qkv_proj.weight -> {prefix}.self_attn.qkv_proj.weight",
+        ]
+        if config.attention_bias:
+            aoa_config["aoa_statements"] += [
+                f"{prefix_offset}.self_attn.qkv_proj.bias -> {prefix}.self_attn.qkv_proj.bias",
+            ]
+    # layer1 - layer_num_hidden_layers
+    for layer_idx in range(config.first_k_dense_replace, num_hidden_layers + num_nextn_predict_layers):
+        layer_idx_offset = layer_idx + num_head_empty_layers
+        prefix = f"model.layers.{layer_idx}"
+        prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
+        if layer_idx >= num_hidden_layers:
+            # for mtp   
+            prefix_offset += ".transformer_layer"
+        aoa_config["aoa_statements"] += [
+            f"{prefix_offset}.mlp.shared_experts.down_proj.weight -> {prefix}.mlp.shared_experts.down_proj.weight",
+        ]
+
+        if aoa_type == "model_state":
+            aoa_config["aoa_statements"] += [
+                f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.mlp.gate.e_score_correction_bias",
+                f"{prefix_offset}.mlp.gate.weight -> {prefix}.mlp.gate.weight",
+            ]
+
+        # FFN
+        aoa_config["aoa_statements"] += [
+            f"{prefix_offset}.mlp.shared_experts.up_gate_proj.weight -> {prefix}.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
+        ]
+
+        if is_fleet and (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
+            aoa_config["aoa_statements"] += [
+                f"{prefix_offset}.mlp.grouped_gemm_experts.weight1 -> {prefix}.mlp.grouped_gemm_experts.weight1",
+                f"{prefix_offset}.mlp.grouped_gemm_experts.weight2 -> {prefix}.mlp.grouped_gemm_experts.weight2"
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"{prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> {prefix}.mlp.experts.$EXPERT_ID.up_gate_proj.weight",
+            ]
+
+            aoa_config["aoa_statements"] += [
+                f"{prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight -> {prefix}.mlp.experts.$EXPERT_ID.down_proj.weight",
+            ]
+    return aoa_config
+
+
 class Trainer:
     """
     Trainer is a simple but feature-complete training and eval loop for PaddlePaddle, optimized for PaddleFormers.
@@ -1093,6 +1224,8 @@ class Trainer:
             f.write("1")
 
     def _load_flex_checkpoint(self, resume_from_checkpoint):
+
+        self.args.aoa_config = _gen_aoa_config()
         def get_metadata_file_name(path):
             files = os.listdir(path)
             metadata_files = [f for f in files if f.endswith(".metadata")]
@@ -1218,6 +1351,8 @@ class Trainer:
             and self.args.bf16
             and isinstance(self.optimizer._inner_opt, DygraphShardingOptimizerV2)
         )
+
+        enable_bf16_opt = False
         logger.debug(f"sharded_model_from_ema: {self.args.sharded_model_from_ema}")
         logger.debug(f"enable_bf16_opt: {enable_bf16_opt}")
 
@@ -1246,6 +1381,8 @@ class Trainer:
                 aoa_config = None
             else:
                 aoa_config = self.args.aoa_config
+
+            aoa_config = _gen_aoa_config("model_state")
 
             dist.load_state_dict(
                 model_sharded_state_dict,
