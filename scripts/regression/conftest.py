@@ -45,7 +45,12 @@ def get_model_type(model_key: str) -> str:
 
 def pytest_addoption(parser):
     parser.addoption("--models", action="store", default="", help="eg: --models=llama,qwen3")
-    parser.addoption("--update-baseline", action="store", default="", help="Update baseline values eg: --update-baseline=all or glm_moe")
+    parser.addoption(
+        "--update-baseline",
+        action="store",
+        default="",
+        help="Update baseline values eg: --update-baseline=all or glm_moe",
+    )
 
 
 @pytest.fixture
@@ -68,7 +73,7 @@ def pytest_generate_tests(metafunc):
 
 def pytest_collection_modifyitems(config, items):
     """Auto-skip tests based on model_type marker and model config.
-    
+
     Tests marked with @pytest.mark.model_type("vl") will only run for VL models.
     Tests marked with @pytest.mark.model_type("text") will only run for text models.
     Tests without model_type marker default to "text".
@@ -76,19 +81,19 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         # Get model_key from test parameters
         model_key = None
-        if hasattr(item, 'callspec') and 'model_key' in item.callspec.params:
-            model_key = item.callspec.params['model_key']
-        
+        if hasattr(item, "callspec") and "model_key" in item.callspec.params:
+            model_key = item.callspec.params["model_key"]
+
         if model_key is None:
             continue
-        
+
         # Get model_type from config
         actual_model_type = get_model_type(model_key)
-        
+
         # Get required model_type from marker (default to "text")
         marker = item.get_closest_marker("model_type")
         required_model_type = marker.args[0] if marker else "text"
-        
+
         # Skip if model_type doesn't match
         if actual_model_type != required_model_type:
             item.add_marker(pytest.mark.skip())

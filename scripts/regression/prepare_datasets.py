@@ -19,10 +19,9 @@ This module handles downloading and preparing datasets required for
 various training types (VL, text, etc.).
 """
 
+import argparse
 import os
 import subprocess
-import argparse
-
 
 # =============================================================================
 # Dataset Configuration
@@ -67,43 +66,41 @@ DPO_VL_DATA_DIR = "tests/fixtures/dummy/dpo-vl"
 # Download Functions
 # =============================================================================
 
+
 def download_file(url: str, target_dir: str, filename: str = None) -> str:
     """Download a file from URL to target directory.
-    
+
     Args:
         url: URL to download from.
         target_dir: Directory to save the file.
         filename: Optional filename, if None will use URL's filename.
-        
+
     Returns:
         Path to the downloaded file.
     """
     if filename is None:
         filename = os.path.basename(url)
-    
+
     target_path = os.path.join(target_dir, filename)
-    
+
     print(f"[INFO] Downloading {url}...")
-    subprocess.run(
-        f"wget -q {url} -O {target_path}",
-        shell=True, check=True
-    )
+    subprocess.run(f"wget -q {url} -O {target_path}", shell=True, check=True)
     return target_path
 
 
 def download_vl_datasets(force: bool = False) -> None:
     """Download VL (Vision-Language) training datasets.
-    
+
     Downloads datasets required for sft-vl and dpo-vl training types.
-    
+
     Args:
         force: If True, re-download even if files exist.
     """
     os.makedirs(VL_DATA_DIR, exist_ok=True)
-    
+
     for name, config in VL_DATASETS.items():
         check_path = os.path.join(VL_DATA_DIR, config["check_path"])
-        
+
         # Check if already exists
         if not force:
             if config["is_dir"] and os.path.isdir(check_path):
@@ -112,41 +109,31 @@ def download_vl_datasets(force: bool = False) -> None:
             if not config["is_dir"] and os.path.isfile(check_path):
                 print(f"[INFO] {name} already exists, skipping...")
                 continue
-        
+
         # Download
         print(f"[INFO] Downloading {name}...")
-        
+
         if config["extract_cmd"]:
             # Download archive to target directory and extract with full path
             archive_name = config.get("archive_name", os.path.basename(config["url"]))
             archive_path = os.path.join(VL_DATA_DIR, archive_name)
+            subprocess.run(f"wget -q {config['url']} -O {archive_path}", shell=True, check=True)
             subprocess.run(
-                f"wget -q {config['url']} -O {archive_path}",
-                shell=True, check=True
-            )
-            subprocess.run(
-                config["extract_cmd"].format(archive_path=archive_path, target_dir=VL_DATA_DIR),
-                shell=True, check=True
+                config["extract_cmd"].format(archive_path=archive_path, target_dir=VL_DATA_DIR), shell=True, check=True
             )
             # Cleanup archive
             if os.path.exists(archive_path):
                 os.remove(archive_path)
         else:
             # Direct download to target directory
-            subprocess.run(
-                f"wget -q {config['url']} -P {VL_DATA_DIR}/",
-                shell=True, check=True
-            )
-        
+            subprocess.run(f"wget -q {config['url']} -P {VL_DATA_DIR}/", shell=True, check=True)
+
         print(f"[INFO] {name} downloaded successfully.")
-
-
-
 
 
 def prepare_datasets_for_train_type(train_type: str, force: bool = False) -> None:
     """Prepare datasets based on training type.
-    
+
     Args:
         train_type: Training type (e.g., 'sft', 'sft-vl', 'dpo-vl').
         force: If True, re-download even if files exist.
@@ -166,18 +153,21 @@ def download_dpo_vl_images(force: bool = False) -> None:
     if not force and os.path.isdir(f"{DPO_VL_DATA_DIR}/images"):
         print("[INFO] DPO VL images exists, skipping...")
         return
-    
+
     print(f"[INFO] Downloading {DPO_VL_IMAGES_URL}...")
-    subprocess.run(f"wget -q {DPO_VL_IMAGES_URL} -O /tmp/images.tar && "
-                  f"mkdir -p {DPO_VL_DATA_DIR} && "
-                  f"tar xf /tmp/images.tar -C {DPO_VL_DATA_DIR} && "
-                  f"rm /tmp/images.tar", 
-                  shell=True, check=True)
+    subprocess.run(
+        f"wget -q {DPO_VL_IMAGES_URL} -O /tmp/images.tar && "
+        f"mkdir -p {DPO_VL_DATA_DIR} && "
+        f"tar xf /tmp/images.tar -C {DPO_VL_DATA_DIR} && "
+        f"rm /tmp/images.tar",
+        shell=True,
+        check=True,
+    )
 
 
 def prepare_all_datasets(force: bool = False) -> None:
     """Download all datasets before running tests.
-    
+
     Args:
         force: If True, re-download even if files exist.
     """
@@ -192,35 +182,22 @@ def prepare_all_datasets(force: bool = False) -> None:
 # Main Entry Point
 # =============================================================================
 
+
 def main():
     """Main entry point for dataset preparation."""
-    parser = argparse.ArgumentParser(
-        description="Prepare datasets for model training regression tests"
-    )
+    parser = argparse.ArgumentParser(description="Prepare datasets for model training regression tests")
     parser.add_argument(
         "--train-type",
         type=str,
         default=None,
-        help="Training type (e.g., 'sft-vl', 'dpo-vl'). If not specified, downloads all."
+        help="Training type (e.g., 'sft-vl', 'dpo-vl'). If not specified, downloads all.",
     )
-    parser.add_argument(
-        "--vl",
-        action="store_true",
-        help="Download VL datasets"
-    )
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Download all datasets"
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Force re-download even if files exist"
-    )
-    
+    parser.add_argument("--vl", action="store_true", help="Download VL datasets")
+    parser.add_argument("--all", action="store_true", help="Download all datasets")
+    parser.add_argument("--force", action="store_true", help="Force re-download even if files exist")
+
     args = parser.parse_args()
-    
+
     if args.train_type:
         prepare_datasets_for_train_type(args.train_type, force=args.force)
     elif args.vl or args.all:
