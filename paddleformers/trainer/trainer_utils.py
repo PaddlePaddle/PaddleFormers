@@ -1141,14 +1141,24 @@ class TrainerMemoryTracker:
 
 class DataLoaderDispatcher:
     """
-    Dispatcher for IterableDataset in distributed training.
+    Dispatcher for IterableDataset in distributed training with TP/PP support.
 
-    - Rank 0 reads `world_size` batches from the base dataloader
-    - Uses scatter to distribute one batch to each rank
-    - This avoids redundant data processing on all cards
+    In TP/PP mode, multiple GPUs may share the same dataset_rank and need identical data.
+    - Only global rank 0 reads data from the base dataloader
+    - Broadcasts all batches to all ranks
+    - Each rank extracts its batch based on dataset_rank
+
+    Data distribution example (8 GPUs, TP=4, DP=2):
+        - GPUs 0,1,2,3 have dataset_rank=0, all receive batch b0
+        - GPUs 4,5,6,7 have dataset_rank=1, all receive batch b1
+        Original batches: [b0, b1, b2, b3, ...]
+        - dataset_rank=0 receives: [b0, b2, ...]
+        - dataset_rank=1 receives: [b1, b3, ...]
 
     Args:
-        base_dataloader: The base DataLoader (only rank 0 needs real data)
+        base_dataloader: The base DataLoader (only global rank 0 needs real data)
+        dataset_rank: The rank in data parallel dimension (may be shared by TP/PP group)
+        dataset_world_size: Total number of data parallel ranks
     """
 
     def __init__(self, base_dataloader, dataset_rank: int = 0, dataset_world_size: int = 1):
@@ -1164,36 +1174,69 @@ class DataLoaderDispatcher:
     def world_size(self):
         return self._dataset_world_size
 
-    def _scatter_object_list(self, scatter_list):
-        """Scatter objects from rank 0 to all ranks."""
+    def _broadcast_object_list(self, object_list):
+        """Broadcast objects from global rank 0 to all ranks."""
         import paddle.distributed as dist
 
-        if not dist.is_initialized() or self.world_size <= 1:
-            return scatter_list[0] if scatter_list else None
+        if not dist.is_initialized():
+            return object_list
 
-        # Each rank receives one object
-        output = [None]
-        dist.scatter_object_list(output, scatter_list, src=0)
-        return output[0]
+        dist.broadcast_object_list(object_list, src=0)
+        return object_list
 
     def __iter__(self):
-        if self.rank == 0:
-            # Rank 0: read data and scatter to all ranks
+        """
+        Iterate over batches with broadcast-based distribution.
+
+        Global rank 0 reads `dataset_world_size` batches, broadcasts to all ranks.
+        Each rank extracts batch[dataset_rank] - GPUs with same dataset_rank get same data.
+        """
+        import paddle.distributed as dist
+
+        is_main_process = not dist.is_initialized() or dist.get_rank() == 0
+
+        if is_main_process:
+            # Global rank 0: read data and broadcast to all ranks
             base_iter = iter(self.base_dataloader)
             while True:
-                try:
-                    data = [next(base_iter) for _ in range(self.world_size)]
-                except StopIteration:
-                    # End of data: send None to all ranks
-                    data = [None] * self.world_size
-                data = self._scatter_object_list(data)
+                # Collect dataset_world_size batches (one for each dataset_rank)
+                batches = []
+                for _ in range(self.world_size):
+                    try:
+                        batches.append(next(base_iter))
+                    except StopIteration:
+                        break
+
+                if len(batches) == 0:
+                    # No more data, broadcast None to signal end
+                    self._broadcast_object_list([None])
+                    break
+
+                # Pad with None if we have partial data at the end
+                while len(batches) < self.world_size:
+                    batches.append(None)
+
+                # Broadcast all batches, each rank picks its own by dataset_rank
+                self._broadcast_object_list([batches])
+
+                # Extract this rank's batch based on dataset_rank
+                data = batches[self.rank]
                 if data is None:
                     break
                 yield data
         else:
-            # Other ranks: receive scattered data (no dataloader needed)
+            # Other ranks: receive broadcasted data
             while True:
-                data = self._scatter_object_list(None)
+                received = [None]
+                self._broadcast_object_list(received)
+                batches = received[0]
+
+                if batches is None:
+                    # End of data signal
+                    break
+
+                # Extract this rank's batch based on dataset_rank
+                data = batches[self.rank]
                 if data is None:
                     break
                 yield data
