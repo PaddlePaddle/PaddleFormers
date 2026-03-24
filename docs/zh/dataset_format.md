@@ -265,7 +265,7 @@ mkdir -p data/sft && tar -xf sft_online_data_erniekit.tar.gz -C data/sft/
 
 离线数据流需要按下面脚本生成离线比特数据流：
 ```bash
-paddleformers-cli train examples/config/sft/full.yaml make_offline_data=true
+CUDA_VISIBLE_DEVICES=0 paddleformers-cli train examples/config/sft/full.yaml make_offline_data=true
 ```
 
 * 制作离线数据集时，建议使用真实训练的 yaml 配置文件，另外需要注意以下参数：
@@ -273,7 +273,7 @@ paddleformers-cli train examples/config/sft/full.yaml make_offline_data=true
 |参数名|类型|说明|
 |-|-|-|
 |`dataset_output_dir`|string|制作的离线数据集输出目录|
-|`estimation_output_file`|string|训练步数估计结果输出文件路径|
+|`dataset_num_proc`  |int   |多进程数量，建议设置为8或16|
 
 训练的时候需要指定`dataset_type`为`offline`，`input_dir`为数据集路径，例如：
 ```bash
@@ -289,8 +289,8 @@ paddleformers-cli train examples/config/sft/full.yaml \
 python examples/tools/merge.py --input_dirs /path/B,/path/A --split train --output merge
 ```
 `input_dirs` 参数是用逗号分隔的多个目录，例如：/path/B,/path/A，代表合并的顺序
-`split` 参数代表输入的目录的split，例如：train，代表合并训练集，eval代表合并验证集
-`output` 参数代表输出合并产出的目录，例如：merge，代表输出目录名为merge
+`split` 参数代表输入的目录的 split，例如：train，代表合并训练集，eval 代表合并验证集
+`output` 参数代表输出合并产出的目录，例如：merge，代表输出目录名为 merge
 
 ## 2.3. 直接偏好优化（DPO）数据格式
 
@@ -591,7 +591,7 @@ mkdir -p data/sft-vl && tar -xf sft_vl_data_erniekit.tar.gz -C data/sft-vl
 >             "content": "你是一个多模态AI助手，可以理解和描述图像内容。"
 >         },
 >         {
->             "role": "user", 
+>             "role": "user",
 >             "content": "请描述一下<image>中的场景"
 >         }
 >     ],
@@ -600,7 +600,7 @@ mkdir -p data/sft-vl && tar -xf sft_vl_data_erniekit.tar.gz -C data/sft-vl
 >         "content": "这张图片展示了一个阳光明媚的公园场景，有绿树、草坪和散步的人们。"
 >     }],
 >     "rejected_response": [{
->         "role": "assistant", 
+>         "role": "assistant",
 >         "content": "图片里有些东西，但我不太确定具体是什么。"
 >     }]
 >     "images": ["/path/to/image.jpg"],

@@ -54,6 +54,7 @@ import_structure = {
     "image_processing_utils": ["PaddleImageProcessingMixin", "ImageProcessingMixin", "BaseImageProcessor"],
     "image_processing_utils_fast": ["BaseImageProcessorFast"],
     "video_processing_utils": ["BaseVideoProcessor"],
+    "audio_processing_utils": ["SequenceFeatureExtractor"],
     "moe_gate": ["PretrainedMoEGate", "MoEGateMixin"],
     "token_dispatcher": ["_DispatchManager"],
     "moe_layer": [
@@ -93,6 +94,7 @@ import_structure = {
     "auto.processing": ["AutoProcessor"],
     "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
+    "auto.feature_extraction": ["AutoFeatureExtractor"],
     "deepseek_v3.configuration": ["DeepseekV3Config"],
     "deepseek_v3.modeling": [
         "masked_fill",
@@ -224,6 +226,17 @@ import_structure = {
         "Qwen3VLMoePretrainedModel",
         "Qwen3VLMoeTextModel",
     ],
+    "qwen3_omni_moe.configuration": ["Qwen3OmniMoeConfig", "Qwen3OmniMoeThinkerConfig", "Qwen3OmniMoeTextConfig"],
+    "qwen3_omni_moe.modeling": [
+        "Qwen3OmniMoeForConditionalGeneration",
+        "Qwen3OmniMoeThinkerForConditionalGeneration",
+        "Qwen3OmniMoePreTrainedModel",
+        "Qwen3OmniMoeThinkerTextPreTrainedModel",
+        "Qwen3OmniMoeThinkerTextModel",
+        "Qwen3OmniMoeTalkerModel",
+    ],
+    "qwen3_omni_moe.processor": ["Qwen3OmniMoeProcessor"],
+    "qwen3_omni_moe.feature_extractor": ["WhisperFeatureExtractor"],
     "qwen2_moe.configuration": ["Qwen2MoeConfig"],
     "qwen2_moe.modeling": [
         "Qwen2MoeModel",
@@ -287,6 +300,7 @@ import_structure = {
     "qwen3_moe": [],
     "qwen3_next": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
+    "whisper.processor": ["WhisperFeatureExtractor"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
     "glm4v_moe.image_processor_fast": ["Glm4vImageProcessorFast"],
@@ -335,6 +349,7 @@ if TYPE_CHECKING:
     )
     from .processing_utils import ProcessorMixin
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
+    from .audio_processing_utils import SequenceFeatureExtractor
     from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
     from .image_processing_utils_fast import BaseImageProcessorFast
     from .video_processing_utils import BaseVideoProcessor
@@ -382,6 +397,7 @@ if TYPE_CHECKING:
     from .qwen3_vl import *
     from .qwen3_5 import *
     from .qwen3_vl_moe import *
+    from .qwen3_omni_moe import *
     from .glm4_moe import *
     from .glm4v_moe import *
     from .gpt_oss import *

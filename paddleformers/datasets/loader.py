@@ -14,8 +14,8 @@
 
 from typing import Any, Dict
 
-from .DPODataset import DPODataSet
-from .SFTDataset import SFTDataSet, TextSequence
+from .DPODataset import IteratorDPODataset, MapDPODataset
+from .SFTDataset import IteratorSFTDataset, MapSFTDataset, TextSequence
 
 
 def create_dataset(**dataset_config: Dict[str, Any]):
@@ -29,10 +29,17 @@ def create_dataset(**dataset_config: Dict[str, Any]):
     Returns:
         SequenceDataset: Configured sequence dataset
     """
+    dataset_type = dataset_config.get("dataset_type", "iterator").lower()
     if dataset_config["stage"].lower() in ["dpo", "vl-dpo"]:
-        train_dataset = DPODataSet(**dataset_config)
+        if dataset_type == "map":
+            train_dataset = MapDPODataset(**dataset_config)
+        else:
+            train_dataset = IteratorDPODataset(**dataset_config)
     else:
-        train_dataset = SFTDataSet(**dataset_config)
+        if dataset_type == "map":
+            train_dataset = MapSFTDataset(**dataset_config)
+        else:
+            train_dataset = IteratorSFTDataset(**dataset_config)
 
     return train_dataset
 
