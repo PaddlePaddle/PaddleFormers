@@ -105,4 +105,3 @@ dataloader_num_workers: 0
 # num_hidden_layers: 38
 freeze_config: freeze_vision freeze_aligner
 tensorwise_offload_optimizer: true
-processor_use_fast: false
