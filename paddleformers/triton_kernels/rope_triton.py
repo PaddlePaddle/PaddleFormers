@@ -19,7 +19,8 @@
 """Triton Rotary Position Embedding for PaddlePaddle."""
 
 import paddle
-import warning
+
+from ..utils.log import logger
 
 # NOTE: Currently, global enabling is NOT supported.
 # paddle.enable_compat(scope={"triton"})
@@ -28,7 +29,7 @@ try:
     import triton
     import triton.language as tl
 except:
-    warning.warn("Triton is not installed" "Please run 'python -m pip install triton>=3.1' to install Triton.")
+    logger.warning("Triton is not installed" "Please run 'python -m pip install triton>=3.1' to install Triton.")
 
 
 IS_TRITON_IN_PADDLE_AVAILABLE = False
@@ -38,7 +39,7 @@ try:
     use_triton_in_paddle.make_triton_compatible_with_paddle()
     IS_TRITON_IN_PADDLE_AVAILABLE = True
 except:
-    warning.warn(
+    logger.warning(
         "Triton is installed, but not yet compatible with Paddle. "
         "Please run 'python -m pip install use-triton-in-paddle' to enable Triton support in Paddle."
     )
