@@ -139,7 +139,6 @@ def _parse_args(
     if isinstance(args, dict):
         (*parsed_args, unknown_args) = parser.parse_dict(args)
         if unknown_args:
-            print(f"Got unknown args, potentially deprecated arguments: {unknown_args}")
             raise ValueError(f"Some specified arguments are not used by the PdArgumentParser: {unknown_args}")
 
         return tuple(parsed_args)

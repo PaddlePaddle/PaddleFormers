@@ -593,7 +593,6 @@ class PrinterCallback(TrainerCallback):
 
     def on_log(self, args, state, control, logs=None, **kwargs):
         _ = logs.pop("total_flos", None)
-        # if state.is_local_process_zero:
         if type(logs) is dict:
             logger.info(", ".join(f"{k}: {v}" for k, v in logs.items()))
             metrics_dumper = kwargs.get("metrics_dumper", None)
