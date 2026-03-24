@@ -84,7 +84,7 @@ jobs:
           fi
       - name: Determine the runner
         run: |
-          gpu_id=$(( $(echo $PWD | awk -F'/' '{print $3}' | awk -F'-' '{print $2}') + 3 ))
+          gpu_id=$(( $(echo $PWD | awk -F'/' '{print $3}' | awk -F'-' '{print $2}') - 1 ))
           echo GPU_DEVICES="$gpu_id" >> $GITHUB_ENV
       - name: Run Container
         env:
@@ -98,14 +98,6 @@ jobs:
           echo "GPU_DEVICES=$GPU_DEVICES"
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
           echo "Workspace path: ${{ github.workspace }}"
-          DOCKER_VER=$(docker version --format '{{.Server.Version}}' | cut -d. -f1,2)
-          if (( $(echo "$DOCKER_VER < 19.03" | bc -l) )); then
-            GPU_OPTION="--runtime=nvidia"
-          else
-            GPU_OPTION="--gpus all"
-          fi
-          echo "DOCKER_VER=${DOCKER_VER}"
-          echo "GPU_OPTION=${GPU_OPTION}"
           docker run -d -t --name ${container_name} --gpus "\"device=${GPU_DEVICES}\"" --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
@@ -116,6 +108,7 @@ jobs:
             -e "AGILE_COMPILE_BRANCH=$AGILE_COMPILE_BRANCH" \
             -e "PR_ID=$PR_ID" \
             -e CUDA_VISIBLE_DEVICES=${GPU_DEVICES} \
+            -e NVIDIA_VISIBLE_DEVICES=${GPU_DEVICES} \
             -e "COMMIT_ID=$COMMIT_ID" \
             -e "work_dir=$work_dir" \
             -e "ci_scripts=$ci_scripts" \
