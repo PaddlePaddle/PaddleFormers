@@ -79,6 +79,7 @@ moe_grouped_gemm: true
 moe_ep_barrier: false
 moe_router_fusion: true
 moe_router_force_load_balancing: false
+router_aux_loss_coef: 0.0
 
 # pp
 pp_delay_scale_loss: true

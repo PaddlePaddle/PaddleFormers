@@ -92,7 +92,7 @@ trainer_args:
     seed: 666
     use_train_part_sharding: 1
     pre_alloc_memory: 70
-    offload_optim: True
+    tensorwise_offload_optimizer: True
 
     pipeline_model_parallel_size: 4
     tensor_model_parallel_size: 1

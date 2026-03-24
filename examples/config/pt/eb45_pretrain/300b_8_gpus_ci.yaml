@@ -57,7 +57,7 @@ use_fp8: False
 scale_loss: 4096
 seed: 666
 use_train_part_sharding: 1
-offload_optim: True
+tensorwise_offload_optimizer: True
 pipeline_model_parallel_size: 2
 tensor_model_parallel_size: 1
 virtual_pipeline_model_parallel_size: 1

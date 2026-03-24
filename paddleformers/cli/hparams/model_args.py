@@ -133,6 +133,17 @@ class ModelArguments:
             "help": "The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `None`."
         },
     )
+    copy_custom_file_list: str = field(
+        default="",
+        metadata={
+            "help": (
+                "Custom files to copy from the loaded checkpoint (model_name_or_path) to the output checkpoint."
+                "Support specific filenames (space-separated)"
+                "Examples:\n"
+                '  --copy_custom_file_list "modeling.py configuration.py"\n'
+            )
+        },
+    )
     neftune: bool = field(default=False, metadata={"help": "Whether to apply NEFT"})
     neftune_noise_alpha: float = field(default=5.0, metadata={"help": "NEFT noise alpha"})
 

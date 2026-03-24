@@ -732,6 +732,42 @@ register_template(
     mm_plugin=get_mm_plugin(name="qwen3_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
 )
 
+register_template(
+    name="qwen3_omni",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_function=FunctionFormatter(slots=["{{content}}"], tool_format="qwen"),
+    format_observation=StringFormatter(
+        slots=["<|im_start|>user\n<tool_response>\n{{content}}\n</tool_response><|im_end|>\n<|im_start|>assistant\n"]
+    ),
+    format_tools=ToolFormatter(tool_format="qwen"),
+    mm_plugin=get_mm_plugin(
+        name="qwen2_omni", image_token="<|image_pad|>", video_token="<|video_pad|>", audio_token="<|audio_pad|>"
+    ),
+    chat_sep="<|im_end|>\n",
+    suffix=["<|im_end|>\n"],
+    template_class=ReasoningTemplate,
+)
+
+
+register_template(
+    name="qwen3_omni_nothink",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_function=FunctionFormatter(slots=["{{content}}\n"], tool_format="qwen"),
+    format_observation=StringFormatter(
+        slots=["<|im_start|>user\n<tool_response>\n{{content}}\n</tool_response><|im_end|>\n<|im_start|>assistant\n"]
+    ),
+    format_tools=ToolFormatter(tool_format="qwen"),
+    chat_sep="<|im_end|>\n",
+    suffix=["<|im_end|>\n"],
+    mm_plugin=get_mm_plugin(
+        name="qwen2_omni", image_token="<|image_pad|>", video_token="<|video_pad|>", audio_token="<|audio_pad|>"
+    ),
+)
+
 
 # copied from glm4 template
 register_template(
@@ -785,6 +821,15 @@ register_template(
 
 register_template(
     name="deepseek3",
+    format_system=StringFormatter(slots=["{{content}}\n\n"]),
+    format_user=StringFormatter(slots=["<｜User｜>{{content}}\n\n<｜Assistant｜>"]),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    chat_sep="<｜end▁of▁sentence｜>",
+)
+
+register_template(
+    name="kimi_k2",
     format_system=StringFormatter(slots=["{{content}}\n\n"]),
     format_user=StringFormatter(slots=["<｜User｜>{{content}}\n\n<｜Assistant｜>"]),
     format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
@@ -867,4 +912,12 @@ register_template(
     format_system=StringFormatter(slots=["<|im_start|>system<|im_sep|>{{content}}<|im_end|>"]),
     suffix=["<|im_end|>"],
     chat_sep="<|im_end|>",
+)
+register_template(
+    name="glm_ocr",
+    format_user=StringFormatter(slots=["<|user|>\n{{content}}\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
+    chat_sep="<|assistant|>\n",
+    mm_plugin=get_mm_plugin(name="glm_ocr", image_token="<|image|>"),
 )

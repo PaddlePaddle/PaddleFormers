@@ -166,7 +166,6 @@ jobs:
           ldconfig
           mkdir -p /root/.cache/pip
           pip cache dir
-          uv cache dir
           set -e
           rm -rf /root/.cache/aistudio/
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD

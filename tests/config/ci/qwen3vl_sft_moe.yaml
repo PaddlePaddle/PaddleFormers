@@ -13,7 +13,7 @@ template: qwen3_vl
 
 ### model
 model_name_or_path: ./model_30B_A3B
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -31,7 +31,7 @@ evaluation_strategy: steps
 save_steps: 10
 save_strategy: steps
 logging_steps: 1
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 2
 logging_dir: ./vdl_log
 output_dir: ./checkpoints/qwen3-vl-sft-full
 disable_tqdm: true
@@ -57,14 +57,14 @@ recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
 
-fuse_attention_qkv: true
-fuse_attention_ffn: true
+# fuse_attention_qkv: true
+# fuse_attention_ffn: true
 
 moe_grouped_gemm: true
-moe_deep_gemm: true
+# moe_deep_gemm: true
 
 apply_rope_fusion: False
-fuse_rms_norm: true
+# fuse_rms_norm: true
 # moe_router_force_load_balancing: true
 
 # sharding
@@ -98,7 +98,6 @@ dataloader_shuffle: false
 benchmark: false
 report_to: none
 dataloader_num_workers: 0
-prefetch_factor: 8
 
 # profile: true
 # profile_step_start: 1
@@ -106,4 +105,3 @@ prefetch_factor: 8
 # num_hidden_layers: 38
 freeze_config: freeze_vision freeze_aligner
 tensorwise_offload_optimizer: true
-processor_use_fast: false

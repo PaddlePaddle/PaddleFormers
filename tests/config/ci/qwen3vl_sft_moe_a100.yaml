@@ -12,7 +12,7 @@ template_backend: custom
 template: qwen3_vl
 ### model
 model_name_or_path: /root/.cache/qwen3vl/tiny-random-qwen3vlmoev2
-attn_impl: flashmask
+_attn_implementation: flashmask
 ### finetuning
 # base
 stage: VL-SFT
@@ -48,12 +48,12 @@ sharding: stage1
 recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
-fuse_attention_qkv: true
-fuse_attention_ffn: true
+# fuse_attention_qkv: true
+# fuse_attention_ffn: true
 moe_grouped_gemm: false
-moe_deep_gemm: false
+# moe_deep_gemm: false
 apply_rope_fusion: False
-fuse_rms_norm: true
+# fuse_rms_norm: true
 moe_token_dispatcher_type: alltoall
 # moe_router_force_load_balancing: true
 
