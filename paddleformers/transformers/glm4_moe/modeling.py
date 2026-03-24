@@ -909,7 +909,10 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 f"model.layers.{layer_idx}.mlp.gate_proj.weight^T, model.layers.{layer_idx}.mlp.up_proj.weight^T -> {model_prefix}layers.{layer_idx + num_head_empty_layers}.mlp.up_gate_proj.weight, fused_ffn",
             ]
 
-        num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
+        if config.mtp_num_layers > 0:
+            num_nextn_predict_layers = config.mtp_num_layers
+        else:
+            num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
 
         for layer_idx in reversed(range(num_hidden_layers, num_hidden_layers + num_nextn_predict_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers

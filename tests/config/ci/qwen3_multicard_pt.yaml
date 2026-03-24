@@ -86,8 +86,8 @@ amp_master_grad: true
 
 
 fuse_swiglu: true
-fuse_linear: true
-use_paddlefleet: true
+# fuse_linear: true
+# use_paddlefleet: true
 
 # unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"

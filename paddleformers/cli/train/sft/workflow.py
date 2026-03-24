@@ -17,6 +17,7 @@
 import gc
 import math
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
 from functools import partial
@@ -84,6 +85,30 @@ from paddleformers.cli.utils import (
     get_lora_target_modules,
     get_multimodel_lora_target_modules,
 )
+
+
+def freeze_param_except_mtp(model, config):
+    logger.info("freeze_param_except_mtp.")
+
+    def extract_layer_idx(text):
+        match = re.search(r"model.layers.(-?\d+\.?\d*)", text)
+        if match:
+            num_str = match.group(1)
+            if "." in num_str:
+                return float(num_str)
+            else:
+                return int(num_str)
+        return None
+
+    # not sure can work on all model
+    jackpot = set(range(config.num_hidden_layers, config.num_hidden_layers + config.mtp_num_layers))
+    for name, param in model.state_dict().items():
+        layer_idx = extract_layer_idx(name)
+        is_mtp = layer_idx in jackpot
+        if not is_mtp:
+            param.stop_gradient = True
+        else:
+            param.stop_gradient = False
 
 
 def create_pretrained_dataset(training_args, data_args, model_args):
@@ -279,6 +304,20 @@ def run_sft(
     LlmMetaConfig.set_llm_config(model_config, training_args)
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
+    # autoregressive mtp training
+    if model_config.mtp_num_layers > 1:
+        tmp = model_config.mtp_num_layers
+        model_config.mtp_num_layers = model_config.num_nextn_predict_layers
+        model_config.num_nextn_predict_layers = tmp
+
+        tmp = training_args.mtp_num_layers
+        training_args.mtp_num_layers = training_args.num_nextn_predict_layers
+        training_args.num_nextn_predict_layers = tmp
+
+        logger.info(
+            f"MTP args changing for autoregressive mtp training, mtp_num_layers: {model_config.mtp_num_layers}, num_nextn_predict_layers: {model_config.num_nextn_predict_layers}!!"
+        )
+
     # Config for model using dropout, such as GPT.
     if hasattr(model_config, "hidden_dropout_prob"):
         model_config.hidden_dropout_prob = finetuning_args.hidden_dropout_prob
@@ -312,8 +351,11 @@ def run_sft(
     freeze_config = getattr(training_args, "freeze_config", "")
     if freeze_config:
         model_config.freeze_vision_model = "freeze_vision" in freeze_config
-        model_config.freeze_langurage_model = "freeze_llm" in freeze_config
+        model_config.freeze_language_model = "freeze_llm" in freeze_config
         model_config.freeze_vision_projection = "freeze_aligner" in freeze_config
+
+    # Sync enable_auto_parallel to model_config for Fleet to access
+    model_config.enable_auto_parallel = training_args.enable_auto_parallel
 
     logger.info(f"Final model config: {model_config}")
     logger.info("Creating model")
@@ -380,18 +422,10 @@ def run_sft(
     if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, Llama3Tokenizer):
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    if "VL" in model_args.stage and training_args.dataloader_num_workers > 0:
-        data_args.processor_use_fast = False
-        logger.warning_once(
-            f"Detected dataloader_num_workers={training_args.dataloader_num_workers} (>0). "
-            "Since the CPU version of the 'interpolate' operator is currently unsupported, "
-            "some models may use a fast image processor which can cause errors in dataloader workers. "
-            "Temporarily fallback to the slow image processor (`use_fast=False`) by default to avoid potential issues. "
-            "You can also explicitly set `processor_use_fast=False` or `dataloader_num_workers=0` to avoid this warning."
-        )
-
     processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
 
+    type_map = {"bf16": "bfloat16", "fp16": "float16"}
+    compute_type = type_map.get(training_args.compute_type, "float32")
     dataset_config = {
         "tokenizer": tokenizer,
         "processor": processor,
@@ -411,6 +445,9 @@ def run_sft(
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
+        "dataset_type": data_args.dataset_type,
+        "truncation_strategy": data_args.truncation_strategy,
+        "dtype": compute_type,
         "dataset_num_proc": finetuning_args.dataset_num_proc,
         "binpacking": data_args.binpacking,
         "packing_interval": data_args.packing_interval,
@@ -495,6 +532,8 @@ def run_sft(
                 while not train_dataset.iter_all_examples:
                     serialized_sequences = future.result()
                     future = executor.submit(fetch_and_serialize, train_sample_generator, save_dtype)
+                    if train_dataset.iter_all_examples:
+                        break
                     for serialized in serialized_sequences:
                         train_builder.add_item_bytes(serialized)
                     train_builder.end_document()
@@ -619,7 +658,7 @@ def run_sft(
                 "Random mixing requires a fixed number of training steps to properly sample data."
             )
         if training_args.should_load_dataset and paddle.distributed.get_rank() == 0:
-            if data_args.dataset_type != "pretrain" and data_args.dataset_type != "offline":
+            if data_args.dataset_type not in {"pretrain", "offline", "map"}:
                 training_args.max_steps = estimate_training(train_dataset, data_args, training_args, model_args)
                 del train_dataset
                 gc.collect()
@@ -631,8 +670,10 @@ def run_sft(
                 )
             else:
                 training_args.max_steps = math.ceil(len(train_dataset) / training_args.global_batch_size)
+                training_args.max_steps *= training_args.num_train_epochs
                 logger.info(
-                    f"len(train_dataset): {len(train_dataset)}, global_batch_size: {training_args.global_batch_size}, training_args.max_steps: {training_args.max_steps}"
+                    f"len(train_dataset): {len(train_dataset)}, global_batch_size: {training_args.global_batch_size}, \
+                    training_args.num_train_epochs: {training_args.num_train_epochs}, training_args.max_steps: {training_args.max_steps}"
                 )
 
         if paddle.distributed.get_world_size() > 1:
@@ -660,7 +701,7 @@ def run_sft(
 
     callbacks = []
     if getattr(model_config, "topk_method", None) == "noaux_tc":
-        callbacks += [MoECorrectionBiasAdjustCallback(lr=training_args.moe_correction_bias_lr)]
+        callbacks += [MoECorrectionBiasAdjustCallback(lr=training_args.moe_router_bias_update_rate)]
 
     if training_args.use_expert_parallel:
         callbacks += [MoeExpertsGradScaleCallback(training_args)]
@@ -672,6 +713,7 @@ def run_sft(
         callbacks += [FP8QuantWeightCallback()]
 
     print("callbacks:", callbacks, flush=True)
+
     trainer = SFTTrainer(
         model=model,
         args=training_args,
@@ -684,7 +726,14 @@ def run_sft(
         data_args=data_args,
         callbacks=callbacks,
     )
-    trainable_parameters = [p for p in model.parameters() if not p.stop_gradient]
+
+    if training_args.train_mtp_only:
+        # activate autoregressive mtp training
+        freeze_param_except_mtp(model, model_config)
+
+    trainable_parameters = [
+        p for p in model.parameters() if not p.stop_gradient or ("quantization_linear" in p.name and "w_1" in p.name)
+    ]
     trainer.set_optimizer_grouped_parameters(trainable_parameters)
 
     # Train
