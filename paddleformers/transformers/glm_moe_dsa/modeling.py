@@ -40,6 +40,21 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
         """
         return MoEAOAConfigGenerator.gen_aoa_config(config)
 
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: GlmMoeDsaConfig):
+        """Generate inverse AOA config using the base class.
+
+        Maps PaddleFleet weight names back to HuggingFace format,
+        used during save_pretrained to convert weights back to HF convention.
+
+        Args:
+            config: GlmMoeDsaConfig configuration object
+
+        Returns:
+            Dictionary with 'aoa_statements' key containing inverse conversion statements
+        """
+        return MoEAOAConfigGenerator.gen_inv_aoa_config(config)
+
 
 class GlmMoeDsaForCausalLM(GlmMoeDsaPreTrainedModel):
     is_fleet = True
@@ -60,6 +75,7 @@ class GlmMoeDsaForCausalLM(GlmMoeDsaPreTrainedModel):
             loss_fn = CriterionLayerPipe(config, use_infohub=True)
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model.config_to_save = config
         gpt_model.is_fleet = cls.is_fleet
         return gpt_model
@@ -77,7 +93,6 @@ class GlmMoeDsaForCausalLMPipe(GlmMoeDsaPreTrainedModel, GeneralModelForCausalLM
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
         config.fuse_rms_norm = True
         config.multi_latent_attention = True
-
         model_provider_class = GLMMoEModelProvider
         model_provider = model_provider_class.from_config(config)
         loss_fn = None
@@ -85,6 +100,7 @@ class GlmMoeDsaForCausalLMPipe(GlmMoeDsaPreTrainedModel, GeneralModelForCausalLM
             loss_fn = CriterionLayerPipe(config, use_infohub=True)
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         if not hasattr(config, "architectures"):
             config.architectures = [cls.__name__.replace("Pipe", "")]
         gpt_model.config_to_save = config

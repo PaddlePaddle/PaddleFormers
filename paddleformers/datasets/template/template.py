@@ -277,6 +277,24 @@ class ReasoningTemplate(Template):
 
 
 @dataclass
+class GLM5ReasoningTemplate(ReasoningTemplate):
+    r"""Reasoning template for GLM-5 (glm4_7 style).
+
+    GLM-5 uses only the closing tag '</think>' for empty CoT,
+    unlike GLM-4.5 which uses '<think></think>'.
+    See GLM-5 official chat_template.jinja line 55.
+    """
+
+    def add_thought(self, content: str = "") -> str:
+        r"""Add empty thought using only the closing tag."""
+        return self.thought_words[1] + content
+
+    def get_thought_word_ids(self, tokenizer: "PreTrainedTokenizer") -> list[int]:
+        r"""Get the token ids of the closing thought tag only."""
+        return tokenizer.encode(self.thought_words[1], add_special_tokens=False)
+
+
+@dataclass
 class Llama2Template(Template):
     r"""A template that fuse the system message to first user message."""
 
@@ -748,19 +766,19 @@ register_template(
     template_class=ReasoningTemplate,
 )
 
-# copied from glm4 template
+# aligned with GLM-5 official chat_template.jinja (glm4_7 style)
 register_template(
     name="glm_moe_dsa",
-    format_user=StringFormatter(slots=["<|user|>\n{{content}}<|assistant|>\n"]),
-    format_assistant=StringFormatter(slots=["\n{{content}}"]),
-    format_system=StringFormatter(slots=["[gMASK]<sop><|system|>\n{{content}}"]),
+    format_user=StringFormatter(slots=["<|user|>{{content}}<|assistant|>"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["[gMASK]<sop><|system|>{{content}}"]),
     format_function=FunctionFormatter(slots=["{{content}}"], tool_format="glm_moe_dsa"),
-    format_observation=StringFormatter(slots=["<|observation|>\n{{content}}<|assistant|>"]),
+    format_observation=StringFormatter(slots=["<|observation|>{{content}}<|assistant|>"]),
     format_tools=ToolFormatter(tool_format="glm_moe_dsa"),
     format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
     suffix=["<|user|>"],
     thought_words=("<think>", "</think>"),
-    template_class=ReasoningTemplate,
+    template_class=GLM5ReasoningTemplate,
 )
 
 
@@ -800,15 +818,6 @@ register_template(
 
 register_template(
     name="deepseek3",
-    format_system=StringFormatter(slots=["{{content}}\n\n"]),
-    format_user=StringFormatter(slots=["<｜User｜>{{content}}\n\n<｜Assistant｜>"]),
-    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
-    format_assistant=StringFormatter(slots=["{{content}}"]),
-    chat_sep="<｜end▁of▁sentence｜>",
-)
-
-register_template(
-    name="kimi_k2",
     format_system=StringFormatter(slots=["{{content}}\n\n"]),
     format_user=StringFormatter(slots=["<｜User｜>{{content}}\n\n<｜Assistant｜>"]),
     format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
@@ -891,12 +900,4 @@ register_template(
     format_system=StringFormatter(slots=["<|im_start|>system<|im_sep|>{{content}}<|im_end|>"]),
     suffix=["<|im_end|>"],
     chat_sep="<|im_end|>",
-)
-register_template(
-    name="glm_ocr",
-    format_user=StringFormatter(slots=["<|user|>\n{{content}}\n"]),
-    format_assistant=StringFormatter(slots=["{{content}}"]),
-    format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
-    chat_sep="<|assistant|>\n",
-    mm_plugin=get_mm_plugin(name="glm_ocr", image_token="<|image|>"),
 )
