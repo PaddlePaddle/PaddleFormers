@@ -59,7 +59,6 @@ install_requirements() {
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
     python -m pip install -U --no-cache-dir transformers
-    pip install uv
     cd /home/models/my_packages && dpkg -i *.deb
     cd -
     # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
