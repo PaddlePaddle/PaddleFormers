@@ -125,7 +125,7 @@ jobs:
             -e "HF_DATASETS_CACHE=$work_dir/../../../paddlenlp/huggingface/datasets" \
             -e "TRANSFORMERS_CACHE=$work_dir/../../../paddlenlp/huggingface" \
             -e PIP_CACHE_DIR \
-            -w /workspace --privileged $IMAGE_NAME
+            -w /workspace $IMAGE_NAME
       - name: Check GPU
         run: |
           docker exec $container_name nvidia-smi
