@@ -137,7 +137,7 @@ def _parse_args(
         _load_custom_template(args.pop("custom_register_path"))
 
     if isinstance(args, dict):
-        (*parsed_args, unknown_args) = parser.parse_dict(args)
+        (*parsed_args, unknown_args) = parser.parse_dict(args, return_unknown_ars=True)
         if unknown_args:
             raise ValueError(f"Some specified arguments are not used by the PdArgumentParser: {unknown_args}")
 

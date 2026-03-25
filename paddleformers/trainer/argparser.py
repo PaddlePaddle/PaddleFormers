@@ -399,7 +399,7 @@ class PdArgumentParser(ArgumentParser):
         args = python_args + sys.argv[2:]
         return self.common_parse(args, return_remaining_strings)
 
-    def parse_dict(self, args: dict) -> Tuple[DataClass, ...]:
+    def parse_dict(self, args: dict, return_unknown_ars=False) -> Tuple[DataClass, ...]:
         """
         Alternative helper method that does not use `argparse` at all, instead uses a dict and populating the dataclass
         types.
@@ -469,5 +469,8 @@ class PdArgumentParser(ArgumentParser):
             obj = dtype(**inputs)
             outputs.append(obj)
 
-        unknown_args = set(args.keys()) - all_valid_keys
-        return (*outputs, unknown_args)
+        if return_unknown_ars:
+            unknown_args = set(args.keys()) - all_valid_keys
+            return (*outputs, unknown_args)
+        else:
+            return (*outputs,)
