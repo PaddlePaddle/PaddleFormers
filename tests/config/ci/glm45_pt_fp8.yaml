@@ -10,7 +10,7 @@ mix_strategy: concat
 packing: true
 truncate_packing: true
 dataloader_shuffle: false
-dataloader_num_workers: 24
+dataloader_num_workers: 4
 prefetch_factor: 24
 
 
@@ -54,7 +54,6 @@ sequence_parallel: true
 use_expert_parallel: true
 
 # tp
-tp_delay_scale_loss: true
 
 # sharding
 sharding: stage1

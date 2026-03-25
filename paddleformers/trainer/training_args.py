@@ -46,7 +46,7 @@ from .trainer_utils import (
 )
 
 # Conditionally import paddlefleet modules
-if paddle.device.is_compiled_with_cuda() and is_paddlefleet_available():
+if is_paddlefleet_available():
     from paddlefleet.parallel_state import get_tensor_model_parallel_group
     from paddlefleet.training import initialize_fleet
 else:
@@ -407,7 +407,9 @@ class TrainingArguments:
             Defaults to True.
         save_hf_steps (`int`, *optional*, defaults to -1):
             Number of updates steps before two huggingface checkpoint saves if `save_strategy="steps"`.
-        hybrid_parallel_expert_grad_scale (float, optional, defaults to None)(
+        save_hf_total_limit(`int`, *optional*):
+            If a value is passed, will limit the total amount of huggingface checkpoints. Deletes the older huggingface checkpoints in `output_dir`.
+        hybrid_parallel_expert_grad_scale (float, optional, defaults to None):
             Scaling factor for expert gradients when Expert Parallel is enabled.
 
             When Expert Parallel is enabled, the number of tokens processed by each MoE expert
@@ -424,7 +426,7 @@ class TrainingArguments:
         )
         enable_auto_parallel (`bool`, *optional*, defaults to `False`):
             whether to run distributed training in auto parallel mode.
-        use_intermediate_api (`bool`, *optional*, defaults to `True`):
+        use_intermediate_api (`bool`, *optional*, defaults to `False`):
             whether to use auto_parallel intermediate API if `enable_auto_parallel=True`.
 
         use_cache (`bool`, *optional*, defaults to `False`):
@@ -505,6 +507,14 @@ class TrainingArguments:
     lr_end: float = field(default=1e-7, metadata={"help": "The end LR in the polynomial scheduler."})
     power: float = field(default=1.0, metadata={"help": "The power factor in the polynomial scheduler."})
     min_lr: float = field(default=0.0, metadata={"help": "The minimum learning rate in cosine scheduler."})
+    moe_router_bias_update_rate: float = field(
+        default=0.0,
+        metadata={
+            "help": """The expert bias is updated based on the number of assigned tokens to each expert
+        in a global batch, where the bias is increased for the experts with less assigned tokens
+        and decreased for the experts with more assigned tokens."""
+        },
+    )
 
     log_on_each_node: bool = field(
         default=True,
@@ -1094,10 +1104,6 @@ class TrainingArguments:
         default=None,
         metadata={"help": "The intervals to skip, pass start global step and end global step at each interval"},
     )
-    offload_optim: Optional[bool] = field(
-        default=False,
-        metadata={"help": "Offload optimizer after optimizer.step()"},
-    )
     tensorwise_offload_optimizer: Optional[bool] = field(
         default=False,
         metadata={
@@ -1204,6 +1210,11 @@ class TrainingArguments:
         metadata={"help": "pre allocate memory size GB"},
     )
     num_nextn_predict_layers: int = field(default=0, metadata={"help": "Number of nextn predict layers."})
+    train_mtp_only: bool = field(default=False, metadata={"help": "Whether to train MTP only."})
+    mtp_distillation_loss: bool = field(default=False, metadata={"help": "Whether to use distillation MTP loss."})
+    mtp_num_layers: int = field(
+        default=0, metadata={"help": "Whether to use Autoregressive MTP Training, activate if > 1."}
+    )
     profile: bool = field(default=False, metadata={"help": "Enable nsys profiling."})
     profile_step_start: int = field(default=10, metadata={"help": "Step to start nsys profiling."})
     profile_step_end: int = field(default=12, metadata={"help": "Step to end nsys profiling."})
@@ -1246,13 +1257,27 @@ class TrainingArguments:
     )
 
     save_hf_steps: int = field(default=-1, metadata={"help": "Save huggingface checkpoint every X updates steps."})
+    save_hf_total_limit: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Limit the total amount of huggingface checkpoints. "
+                "Deletes the older huggingface checkpoints in the output_dir. Default is unlimited checkpoints"
+            )
+        },
+    )
+
+    save_last_step: Optional[bool] = field(
+        default=False,
+        metadata={"help": "If True, saves the last step of the training process."},
+    )
 
     hybrid_parallel_expert_grad_scale: Optional[float] = field(
         default=None,
         metadata={"help": ("Scaling factor for expert gradients.")},
     )
     use_intermediate_api: bool = field(
-        default=True,
+        default=False,
         metadata={"help": "whether to use auto_parallel intermediate API."},
     )
     offload_fp8_expert_master_weight: bool = field(
@@ -1309,12 +1334,6 @@ class TrainingArguments:
             "help": "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines)."
         },
     )
-    mtp_loss_scaling_factor: float = field(
-        default=1.0,
-        metadata={
-            "help": "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues)."
-        },
-    )
     dp_allreduce_avg_in_gradinent_scale: bool = field(
         default=False,
         metadata={
@@ -1351,14 +1370,8 @@ class TrainingArguments:
             "help": "Support fused_linear_param_grad_add in ColumnParallelLinear (requires cuda >= 11.6). Only works when mp_async_allreduce is True. Can accelerate model parallel further."
         },
     )
-    tp_delay_scale_loss: bool = field(
-        default=False,
-        metadata={
-            "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
-        },
-    )
     pp_delay_scale_loss: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
         },
@@ -1555,13 +1568,6 @@ class TrainingArguments:
         },
     )
 
-    moe_use_pfcc_deepep: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether to use PFCC DeepEP for MoE, by default uses paddle DeepEP. Only works when moe_token_dispatcher_type == 'deepep'."
-        },
-    )
-
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
         if in_auto_parallel_align_mode():
@@ -1593,9 +1599,7 @@ class TrainingArguments:
                 ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2 on non-CUDA devices."
         else:
             if paddle.base.core.is_compiled_with_cuda():
-                is_sm100 = (
-                    paddle_device.get_device_capability()[0] == 10 and paddle_device.get_device_capability()[1] == 0
-                )
+                is_sm100 = paddle_device.get_device_capability()[0] == 10
                 is_sm90 = (
                     paddle_device.get_device_capability()[0] == 9 and paddle_device.get_device_capability()[1] == 0
                 )
@@ -1842,7 +1846,7 @@ class TrainingArguments:
                         )
 
                     dygraph_pp_configs = {
-                        "delay_scale_loss": self.pp_delay_scale_loss,
+                        "delay_scale_loss": True,  # TODO[Waynezee]: remove this config in the future
                         "dp_comm_overlap": enable_dp_comm_overlap,
                         "sharding_comm_overlap": self.enable_sharding_comm_overlap,
                         "enable_timer": self.timer,
@@ -2180,7 +2184,6 @@ class TrainingArguments:
         elif self.enable_auto_parallel:
 
             assert paddle.distributed.get_world_size() > 1, "Auto parallel mode needs world size > 1."
-            assert self.use_intermediate_api, "Auto parallel is only supported with intermediate API now."
             assert (
                 not self.to_static
             ), "Auto parallel only support dyanmic parallel now. Static parallel will be supported later."
@@ -2686,6 +2689,12 @@ class TrainingArguments:
                 self.context_parallel_size = -1
                 self.expert_model_parallel_size = -1
                 self.expert_tensor_model_parallel_size = -1
+
+        # NOTE(Waynezee): when moe_grouped_gemm is true and sharding_parallel_size = 1,  checkpoint will fail to save
+        if hasattr(self, "moe_grouped_gemm") and self.moe_grouped_gemm and self.world_size > 1:
+            assert (
+                self.sharding_parallel_size > 1
+            ), "Checkpoint will fail to save when moe_grouped_gemm is true and sharding_parallel_size = 1, please set moe_grouped_gemm to false"
 
         if self.hybrid_parallel_topo_order is None:
             self.hybrid_parallel_topo_order = "sharding_first"

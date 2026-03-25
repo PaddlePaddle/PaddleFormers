@@ -2880,6 +2880,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         file_list = resolved_sharded_files if is_sharded else [resolved_archive_file]
         ckpt_path = get_common_folder(file_list)
+
         # 3. init the model
         init_args = config["init_args"] or ()
         with ContextManagers(init_contexts):
@@ -3207,6 +3208,16 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         model_to_save = unwrap_model(self)
 
         if save_checkpoint_format == "flex_checkpoint":
+            # autoregressive mtp training
+            autoregressive_mtp_training = model_to_save.config.mtp_num_layers > 0
+            if autoregressive_mtp_training:
+                tmp = model_to_save.config.mtp_num_layers
+                model_to_save.config.mtp_num_layers = model_to_save.config.num_nextn_predict_layers
+                model_to_save.config.num_nextn_predict_layers = tmp
+
+                logger.info(
+                    f"MTP args changing for autoregressive mtp training checkpoint saving, mtp_num_layers: {model_to_save.config.mtp_num_layers}, num_nextn_predict_layers: {model_to_save.config.num_nextn_predict_layers}!!"
+                )
             if not hasattr(self, "_gen_inv_aoa_config"):
                 if hasattr(self, "_gen_aoa_config"):
                     aoa_config = self._gen_aoa_config(model_to_save.config)
@@ -3237,7 +3248,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 else:
                     config_to_save = copy.deepcopy(model_to_save.config)
                     # Attach architecture to the config
-                    config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+                    if not config_to_save.architectures:
+                        config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
 
             # Save the config
             if is_main_process:
@@ -3251,6 +3263,15 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     config_to_save.save_pretrained(save_directory)
                 if self.can_generate():
                     model_to_save.generation_config.save_pretrained(save_directory)
+
+            if autoregressive_mtp_training:
+                tmp = model_to_save.config.mtp_num_layers
+                model_to_save.config.mtp_num_layers = model_to_save.config.num_nextn_predict_layers
+                model_to_save.config.num_nextn_predict_layers = tmp
+
+                logger.info(
+                    f"MTP args changing for autoregressive mtp training checkpoint saving RECOVER, mtp_num_layers: {model_to_save.config.mtp_num_layers}, num_nextn_predict_layers: {model_to_save.config.num_nextn_predict_layers}!!"
+                )
             return
 
         # save the string version of dtype to the config, e.g. convert paddle.float32 => "float32"
@@ -3283,7 +3304,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     variant = weight_name_suffix() if variant is None else variant
 
         # Attach architecture to the config
-        config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+        if not config_to_save.architectures:
+            config_to_save.architectures = [clean_model_class_name(model_to_save.__class__.__name__)]
+        if not save_to_hf:
+            config_to_save.source = "paddle"
         # Save the config
         if is_main_process:
             config_to_save.save_pretrained(save_directory)
@@ -3980,7 +4004,8 @@ def replace_name_and_gen_index(path, total_size, save_peft=False):
         index_infos = {}
         index_infos["metadata"] = {}
         index_infos["metadata"]["total_size"] = total_size
-        index_infos["weight_map"] = dict(sorted(index_mapping.items()))
+        # Sort by filename (file index) instead of weight name, zero-padded ensures correct order
+        index_infos["weight_map"] = dict(sorted(index_mapping.items(), key=lambda x: x[1]))
         with open(os.path.join(path, index_file_name), "w") as f:
             json.dump(index_infos, f, indent=4)
 
@@ -4044,8 +4069,12 @@ class HFFormatFullParamSaver:
         self.rank = paddle.distributed.get_rank()
 
         if self.h_group and self.v_group:
-            self.num_saver_ranks = self.h_group.nranks * self.v_group.nranks
-            self.rank = self.h_group.rank + self.v_group.rank * self.h_group.nranks
+            if self.v_group.nranks == 1:
+                self.num_saver_ranks = self.h_group.nranks
+                self.rank = self.h_group.rank
+            else:
+                self.num_saver_ranks = self.h_group.nranks * self.v_group.nranks
+                self.rank = self.h_group.rank + self.v_group.rank * self.h_group.nranks
 
         if self.saved_in_one_node:
             local_world_size = int(os.environ.get("PADDLE_LOCAL_SIZE", 8))

@@ -21,11 +21,15 @@ import paddle
 from paddleformers.generation import TextIteratorStreamer, TextStreamer
 from paddleformers.transformers import AutoModelForCausalLM, AutoTokenizer
 from paddleformers.transformers.utils import CaptureStd
-from tests.testing_utils import slow
+from tests.testing_utils import gpu_device_initializer, slow
 from tests.transformers.test_modeling_common import ids_tensor
 
 
 class StreamerTester(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="StreamerTester")
+    def setUp(self):
+        pass
+
     def get_inputs(self, model):
         input_ids = ids_tensor([1, 5], vocab_size=model.config.vocab_size, dtype="int64")
         attention_mask = paddle.ones_like(input_ids, dtype="bool")
@@ -48,7 +52,7 @@ class StreamerTester(unittest.TestCase):
         greedy_text = tokenizer.decode(greedy_ids[0][0])
 
         with CaptureStd(out=True, err=False, replay=True) as cs:
-            streamer = TextStreamer(tokenizer)
+            streamer = TextStreamer(tokenizer, skip_prompt=True)
             model.generate(**input_kwargs, streamer=streamer)
         # The greedy text should be printed to stdout, except for the final "\n" in the streamer
         streamer_text = cs.out[:-1]
@@ -66,7 +70,7 @@ class StreamerTester(unittest.TestCase):
         greedy_ids = model.generate(**input_kwargs)
         greedy_text = tokenizer.decode(greedy_ids[0][0])
 
-        streamer = TextIteratorStreamer(tokenizer)
+        streamer = TextIteratorStreamer(tokenizer, skip_prompt=True)
         generation_kwargs = {**input_kwargs, "streamer": streamer}
         thread = Thread(target=model.generate, kwargs=generation_kwargs)
         thread.start()
