@@ -154,14 +154,26 @@ def resize(
         need_cast = dtype not in acceptable_dtypes
         if need_cast:
             image = image.to(dtype=paddle.float32)
+        if True:
+            import torch
 
-        image = interpolate( #diff happens
-            image,
-            size=[new_height, new_width],
-            mode=interpolation,
-            align_corners=align_corners,
-            antialias=antialias,
-        )
+            torch_image = torch.from_numpy(image.astype("float32").detach().cpu().numpy()).to(torch.float)
+            torch_image = torch.nn.functional.interpolate(
+                torch_image,
+                size=[new_height, new_width],
+                mode=interpolation,
+                align_corners=align_corners,
+                antialias=antialias,
+            )
+            image = paddle.to_tensor(torch_image.to(torch.float).detach().cpu().numpy()).to("float32").to("cuda")
+        else:
+            image = interpolate(  # diff happens
+                image,
+                size=[new_height, new_width],
+                mode=interpolation,
+                align_corners=align_corners,
+                antialias=antialias,
+            )
 
         if need_cast:
             if interpolation == "bicubic" and dtype == paddle.uint8:
