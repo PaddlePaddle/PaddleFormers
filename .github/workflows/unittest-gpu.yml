@@ -84,7 +84,7 @@ jobs:
           fi
       - name: Determine the runner
         run: |
-          gpu_id=$(( $(echo $PWD | awk -F'/' '{print $3}' | awk -F'-' '{print $2}') - 1 ))
+          gpu_id=$(( $(echo $PWD | awk -F'/' '{print $4}' | awk -F'_' '{print $2}') ))
           echo $PWD
           echo GPU_DEVICES="$gpu_id" >> $GITHUB_ENV
       - name: Run Container
