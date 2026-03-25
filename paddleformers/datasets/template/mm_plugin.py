@@ -889,7 +889,7 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
         if len(images) != 0:
             processed_images = []
             for image in images:
-                _image = fetch_image({"image": image})
+                _image = fetch_image({"image": image}, image_patch_size=image_processor.patch_size)
                 processed_images.append(_image)
             mm_inputs.update(image_processor(processed_images, return_tensors="pd"))
 
@@ -906,7 +906,7 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
                 fps = videos_kwargs.get("fps", 1.0)
                 processed_videos = []
                 for video in videos:
-                    _video = fetch_video({"video": video})
+                    _video = fetch_video({"video": video}, image_patch_size=image_processor.patch_size)
                     if isinstance(_video, paddle.Tensor):
                         _video = paddle.cast(_video, "uint8")
                     processed_videos.append(_video)
