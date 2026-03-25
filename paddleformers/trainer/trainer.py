@@ -101,8 +101,10 @@ from ..data import (
     DataCollator,
     DataCollatorWithPadding,
     DistDataLoader,
+    StreamDistDataLoader,
     default_data_collator,
     init_dataloader_comm_group,
+    init_stream_data_group,
 )
 from ..peft import LoRAModel
 from ..peft.lora import QuantizationLoRABaseLinear
@@ -588,6 +590,10 @@ class Trainer:
         self._pp_data_group = None
         if self.args.pipeline_model_parallel_size > 1 and self.args.distributed_dataloader:
             self._pp_data_group = init_dataloader_comm_group()
+
+        self._stream_data_group = None
+        if self.args.distributed_dataloader:
+            self._stream_data_group, _ = init_stream_data_group()
 
         default_label_names = (
             ["start_positions", "end_positions"]
@@ -2688,30 +2694,46 @@ class Trainer:
         additional_configs = {}
         if is_iterable_dataset:  # For iterable dataset
             total_batch_size = self.args.per_device_train_batch_size
-            if self.args.enable_auto_parallel:
-                total_batch_size = total_batch_size * self.args.dataset_world_size
-            if self.args.dataset_world_size > 1 and train_dataset is not None:
-                train_dataset = IterableDatasetShard(
+
+            if self.args.distributed_dataloader and self._stream_data_group is not None:
+                # StreamDistDataLoader: only rank 0 reads, scatter to dataset ranks
+                logger.info("Training using StreamDistDataLoader for iterable dataset.")
+                train_dataloader = StreamDistDataLoader(
+                    dataset=train_dataset,
+                    batch_size=total_batch_size,
+                    collate_fn=self.data_collator,
+                    num_workers=self.args.dataloader_num_workers,
+                    prefetch_factor=self.args.prefetch_factor,
+                    persistent_workers=self.args.dataloader_num_workers > 0,
+                    reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
+                    stream_data_group=self._stream_data_group,
+                    pp_data_group=self._pp_data_group,
+                )
+            else:
+                if self.args.enable_auto_parallel:
+                    total_batch_size = total_batch_size * self.args.dataset_world_size
+                if self.args.dataset_world_size > 1 and train_dataset is not None:
+                    train_dataset = IterableDatasetShard(
+                        train_dataset,
+                        batch_size=total_batch_size,
+                        drop_last=self.args.dataloader_drop_last,
+                        num_processes=self.args.dataset_world_size,
+                        process_index=self.args.dataset_rank,
+                    )
+
+                if self.args.distributed_dataloader:
+                    logger.info("Training using DistDataLoader.")
+                    additional_configs = {"is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
+                train_dataloader = _DataLoader(
                     train_dataset,
                     batch_size=total_batch_size,
-                    drop_last=self.args.dataloader_drop_last,
-                    num_processes=self.args.dataset_world_size,
-                    process_index=self.args.dataset_rank,
+                    collate_fn=self.data_collator,
+                    num_workers=self.args.dataloader_num_workers,
+                    persistent_workers=self.args.dataloader_num_workers > 0,
+                    prefetch_factor=self.args.prefetch_factor,
+                    reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
+                    **additional_configs,
                 )
-
-            if self.args.distributed_dataloader:
-                logger.info("Training using DistDataLoader.")
-                additional_configs = {"is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
-            train_dataloader = _DataLoader(
-                train_dataset,
-                batch_size=total_batch_size,
-                collate_fn=self.data_collator,
-                num_workers=self.args.dataloader_num_workers,
-                persistent_workers=self.args.dataloader_num_workers > 0,
-                prefetch_factor=self.args.prefetch_factor,
-                reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
-                **additional_configs,
-            )
         else:
             train_sampler = self._get_train_sampler()
             if self.args.distributed_dataloader:
@@ -2802,27 +2824,43 @@ class Trainer:
 
         additional_configs = {}
         if is_iterable_dataset:
-            if (
-                self.args.dataset_world_size > 1 or self.args.pipeline_model_parallel_size > 1
-            ) and eval_dataset is not None:
-                eval_dataset = IterableDatasetShard(
+            if self.args.distributed_dataloader and self._stream_data_group is not None:
+                logger.info("Eval using StreamDistDataLoader for iterable dataset.")
+                return StreamDistDataLoader(
+                    dataset=eval_dataset,
+                    batch_size=self.args.per_device_eval_batch_size,
+                    collate_fn=self.data_collator,
+                    num_workers=0,
+                    stream_data_group=self._stream_data_group,
+                    pp_data_group=self._pp_data_group,
+                    eval=True,
+                )
+            else:
+                if (
+                    self.args.dataset_world_size > 1 or self.args.pipeline_model_parallel_size > 1
+                ) and eval_dataset is not None:
+                    eval_dataset = IterableDatasetShard(
+                        eval_dataset,
+                        batch_size=self.args.per_device_eval_batch_size,
+                        drop_last=self.args.dataloader_drop_last,
+                        num_processes=self.args.dataset_world_size,
+                        process_index=self.args.dataset_rank,
+                    )
+
+                if self.args.distributed_dataloader:
+                    logger.info("Eval using DistDataLoader.")
+                    additional_configs = {
+                        "eval": True,
+                        "is_iterable_dataset": True,
+                        "pp_data_group": self._pp_data_group,
+                    }
+                return _DataLoader(
                     eval_dataset,
                     batch_size=self.args.per_device_eval_batch_size,
-                    drop_last=self.args.dataloader_drop_last,
-                    num_processes=self.args.dataset_world_size,
-                    process_index=self.args.dataset_rank,
+                    collate_fn=self.data_collator,
+                    num_workers=0,
+                    **additional_configs,
                 )
-
-            if self.args.distributed_dataloader:
-                logger.info("Eval using DistDataLoader.")
-                additional_configs = {"eval": True, "is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
-            return _DataLoader(
-                eval_dataset,
-                batch_size=self.args.per_device_eval_batch_size,
-                collate_fn=self.data_collator,
-                num_workers=0,
-                **additional_configs,
-            )
         else:
             eval_sampler = self._get_eval_sampler(eval_dataset)
             if self.args.distributed_dataloader:
@@ -2865,28 +2903,47 @@ class Trainer:
 
         additional_config = {}
         if is_iterable_dataset:
-            if self.args.dataset_world_size > 1 and test_dataset is not None:
-                test_dataset = IterableDatasetShard(
-                    test_dataset,
+            if self.args.distributed_dataloader and self._stream_data_group is not None:
+                logger.info("Test using StreamDistDataLoader for iterable dataset.")
+                return StreamDistDataLoader(
+                    dataset=test_dataset,
                     batch_size=self.args.per_device_eval_batch_size,
-                    drop_last=self.args.dataloader_drop_last,
-                    num_processes=self.args.dataset_world_size,
-                    process_index=self.args.dataset_rank,
+                    collate_fn=self.data_collator,
+                    num_workers=self.args.dataloader_num_workers,
+                    prefetch_factor=self.args.prefetch_factor,
+                    persistent_workers=self.args.dataloader_num_workers > 0,
+                    reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
+                    stream_data_group=self._stream_data_group,
+                    pp_data_group=self._pp_data_group,
+                    eval=True,
                 )
+            else:
+                if self.args.dataset_world_size > 1 and test_dataset is not None:
+                    test_dataset = IterableDatasetShard(
+                        test_dataset,
+                        batch_size=self.args.per_device_eval_batch_size,
+                        drop_last=self.args.dataloader_drop_last,
+                        num_processes=self.args.dataset_world_size,
+                        process_index=self.args.dataset_rank,
+                    )
 
-            if self.args.distributed_dataloader:
-                logger.info("Test using DistDataLoader.")
-                additional_config = {"eval": True, "is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
-            return _DataLoader(
-                test_dataset,
-                batch_size=self.args.per_device_eval_batch_size * self.world_size,
-                collate_fn=self.data_collator,
-                num_workers=self.args.dataloader_num_workers,
-                persistent_workers=self.args.dataloader_num_workers > 0,
-                prefetch_factor=self.args.prefetch_factor,
-                reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
-                **additional_config,
-            )
+                if self.args.distributed_dataloader:
+                    logger.info("Test using DistDataLoader.")
+                    additional_config = {
+                        "eval": True,
+                        "is_iterable_dataset": True,
+                        "pp_data_group": self._pp_data_group,
+                    }
+                return _DataLoader(
+                    test_dataset,
+                    batch_size=self.args.per_device_eval_batch_size * self.world_size,
+                    collate_fn=self.data_collator,
+                    num_workers=self.args.dataloader_num_workers,
+                    persistent_workers=self.args.dataloader_num_workers > 0,
+                    prefetch_factor=self.args.prefetch_factor,
+                    reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
+                    **additional_config,
+                )
         else:
             test_sampler = self._get_eval_sampler(test_dataset)
             if self.args.distributed_dataloader:
@@ -4621,6 +4678,8 @@ class Trainer:
             batch_size = dataloader._batch_sampler.batch_size
             # alias for inner dataloader
             dataloader.dataset = dataloader._dataset
+        elif isinstance(dataloader, StreamDistDataLoader):
+            batch_size = dataloader._batch_size
         else:
             raise ValueError("Only support for paddle.io.DataLoader")
 
