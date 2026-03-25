@@ -100,7 +100,7 @@ jobs:
           echo "GPU_DEVICES=$GPU_DEVICES"
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
           echo "Workspace path: ${{ github.workspace }}"
-          docker run -d -t --name ${container_name} --gpus "\"device=${GPU_DEVICES}\"" --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+          docker run -d -t --name ${container_name} --gpus device=${GPU_DEVICES} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
             -v /home/.cache/:/root/.cache/ \
@@ -126,7 +126,9 @@ jobs:
             -e "TRANSFORMERS_CACHE=$work_dir/../../../paddlenlp/huggingface" \
             -e PIP_CACHE_DIR \
             -w /workspace --privileged $IMAGE_NAME
-
+      - name: Check GPU
+        run: |
+          docker exec $container_name nvidia-smi
       - name: Download Code
         run: |
           docker exec -t $container_name /bin/bash -c '
