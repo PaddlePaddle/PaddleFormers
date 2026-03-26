@@ -748,8 +748,13 @@ class Qwen3VLVisionModel(VisionLayer):
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
         rotary_pos_emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), axis=-1)
-        rotary_pos_cos = rotary_pos_emb.cos()
-        rotary_pos_sin = rotary_pos_emb.sin()
+        # Cast freqs to float32 and compute cos/sin inside auto_cast(False) to match the
+        # precision of _apply_rotary_pos_emb_bshd_fp32, which computes cos/sin on the same
+        # bf16 freqs but under auto_cast(False) using a float32 kernel.
+        with paddle.amp.auto_cast(False):
+            _freqs_f32 = rotary_pos_emb.astype("float32")
+            rotary_pos_cos = paddle.cos(_freqs_f32)
+            rotary_pos_sin = paddle.sin(_freqs_f32)
         rotary_pos_emb = rotary_pos_emb[:, None, None, :]
         rotary_pos_emb = rotary_pos_emb.transpose([1, 0, 2, 3])
 

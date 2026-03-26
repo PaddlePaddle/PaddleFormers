@@ -71,6 +71,7 @@ class KimiK2PretrainedModel(PretrainedModel):
             "model.layers.0.mlp.down_proj.weight^T -> model.layers.0.mlp.down_proj.weight",
             "model.layers.0.mlp.gate_proj.weight^T ,model.layers.0.mlp.up_proj.weight^T ->  model.layers.0.mlp.up_gate_proj.weight, axis=1",
         ]
+
         # layer 1 -> num_hidden_layers
         for layer_id in range(1, config.num_hidden_layers):
             aoa_config["aoa_statements"] += [
@@ -79,6 +80,19 @@ class KimiK2PretrainedModel(PretrainedModel):
                 f"model.layers.{layer_id}.mlp.shared_experts.down_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.down_proj.weight",
                 f"model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight^T, model.layers.{layer_id}.mlp.shared_experts.up_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.up_gate_proj.weight , axis=1",
             ]
+
+            if config.moe_grouped_gemm and not config.fp8:
+                ep_weight1 = []
+                ep_weight2 = []
+                for expert_id in range(config.n_routed_experts):
+                    ep_weight1.append(f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight")
+                    ep_weight2.append(f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight")
+                group_gemm1 = ",".join(ep_weight1)
+                group_gemm2 = ",".join(ep_weight2)
+                aoa_config["aoa_statements"] += [
+                    f"{group_gemm1} -> model.layers.{layer_id}.mlp.grouped_gemm_experts.weight1, axis=0"
+                    f"{group_gemm2} -> model.layers.{layer_id}.mlp.grouped_gemm_experts.weight2, axis=0"
+                ]
 
         return aoa_config
 

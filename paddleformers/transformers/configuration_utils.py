@@ -413,7 +413,10 @@ class LlmMetaConfig:
     ]
 
     mtp_attributes = [
+        ("train_mtp_only", int, 0, "Whether to train MTP only."),
+        ("mtp_distillation_loss", bool, False, "Whether to use distillation MTP loss."),
         ("num_nextn_predict_layers", int, 0, "Number of nextn predict layers."),
+        ("mtp_num_layers", int, 0, "Whether to use Autoregressive MTP Training, activate if > 1."),
         (
             "mtp_loss_scaling_factor",
             float,

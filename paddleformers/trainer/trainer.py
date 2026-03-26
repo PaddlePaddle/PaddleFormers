@@ -166,7 +166,7 @@ from ..utils.env import (
 from ..utils.import_utils import is_datasets_available, is_paddle_cuda_available
 from ..utils.log import MetricsDumper, logger
 from ..utils.pdc_sdk import FLASH_DEVICE
-from ..utils.tools import get_env_device, paddle_device
+from ..utils.tools import paddle_device
 from .argparser import strtobool
 from .integrations import get_reporting_integration_callbacks
 from .plugins.timer import RuntimeTimer, get_timers, set_timers
@@ -212,6 +212,7 @@ from .unified_checkpoint import UnifiedCheckpointHandler
 from .utils import reshard as reshard_util
 from .utils.async_save import AsyncSaver
 from .utils.ckpt_converter import CheckpointConverter
+from .utils.offload_optimizer import offload
 from .utils.reshard import SHARDING_STRATEGY_V1, split_opt_state
 from .utils.sharding_io import GroupGetter, to_device
 
@@ -411,7 +412,7 @@ class Trainer:
 
                 # Process basic API.
                 else:
-                    raise ValueError("Auto parallel only support basic API now.")
+                    self.auto_dist_config = None
 
                 self.global_mesh = fleet.auto.get_mesh()
                 self.comm_group_in_pp = fleet.get_hybrid_communicate_group().get_pipe_parallel_group()
@@ -862,8 +863,6 @@ class Trainer:
                     if k not in old_state_dict or id(v) != id(old_state_dict[k]):
                         new_state_dict[k] = v
                 self.model.set_state_dict(new_state_dict)
-                if self.args.offload_optim:
-                    self._offload_optimizer()
             else:
                 if resume_from_checkpoint is not None and (
                     self.args.dataset_rank == 0 or self.args.use_expert_parallel
@@ -1211,7 +1210,9 @@ class Trainer:
 
             if self.args.tensorwise_offload_optimizer:
                 logger.info("Offloading optimizer state for FC...")
-                self._offload_optimizer()
+                for k, v in optimizer_sharded_state_dict.items():
+                    offload(v.local_tensor)
+                del opt_states, master_weights, optimizer_sharded_state_dict
 
         enable_bf16_opt = (
             not isinstance(self.model, LoRAModel)
@@ -1413,6 +1414,10 @@ class Trainer:
         # Do nothing when not in auto parallel mode.
         if not self.args.enable_auto_parallel:
             return
+        self.optimizer = parallelize.parallelize_optimizer(
+            self.optimizer,
+            config=self.auto_dist_config,
+        )
         if hasattr(self.optimizer, "_enable_tensor_fusion") and self.args.tensor_fusion:
             self.optimizer._enable_tensor_fusion()
         if hasattr(self.optimizer, "_enable_sharding_overlap") and self.args.overlap:
@@ -1750,9 +1755,6 @@ class Trainer:
             parameters_list = []
 
         optimizer_was_run = True
-        if not args.enable_auto_parallel and self.args.offload_optim:
-            self._reload_optimizer()
-
         if self.do_grad_scaling:
             scale_before = paddle.assign(self.scaler._scale)
             self.scaler.step(self.optimizer)
@@ -1773,9 +1775,6 @@ class Trainer:
             self.optimizer._step(parameters_list)
         else:
             self.optimizer.step()
-
-        if not args.enable_auto_parallel and self.args.offload_optim:
-            self._offload_optimizer()
 
         if optimizer_was_run:
             self.lr_scheduler.step()
@@ -2152,12 +2151,6 @@ class Trainer:
                         and (step + 1) == steps_in_epoch
                         or disable_accumulation
                     ):
-                        if self._enable_delay_scale_loss():
-                            if self.args.enable_auto_parallel and self.args.gradient_accumulation_steps > 1:
-                                tr_loss /= self.args.gradient_accumulation_steps
-                            if not self.args.enable_auto_parallel and self.args.pipeline_model_parallel_size <= 1:
-                                tr_loss /= self.args.gradient_accumulation_steps
-
                         # assert if loss is invalid
                         self._check_loss_valid(tr_loss)
 
@@ -2212,27 +2205,26 @@ class Trainer:
                             self.timers and self.timers("all-reduce").stop()
                             self.timers and self.timers("optimizer-step").start()
 
-                        if (
-                            not args.enable_auto_parallel
-                            and self.args.gradient_accumulation_steps > 1
-                            and self._enable_delay_scale_loss()
-                        ):
+                        if not args.enable_auto_parallel and self.args.gradient_accumulation_steps > 1:
                             paddle.device.synchronize()
-                            for p in model._layers.parameters():
+                            parameters = (
+                                model._layers.parameters() if hasattr(model, "_layers") else model.parameters()
+                            )
+                            for p in parameters:
                                 with paddle.no_grad():
                                     if hasattr(p, "main_grad") and p.main_grad is not None:
                                         assert p.grad is None
                                         p.main_grad.scale_(1.0 / self.args.gradient_accumulation_steps)
                                     elif p.grad is not None:
                                         p.grad.scale_(1.0 / self.args.gradient_accumulation_steps)
-
                         # Optimizer step
                         self.callback_handler.on_optimizer_begin(
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
                         )
                         self.optimizer_step(args, model=model, parameters_list=parameters_list)
 
-                        self.timers and self.timers("optimizer-step").stop()
+                        if not args.enable_auto_parallel:
+                            self.timers and self.timers("optimizer-step").stop()
 
                         self.callback_handler.on_optimizer_end(
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
@@ -2635,6 +2627,10 @@ class Trainer:
                     self.copy_custom_files(ckpt_path)
                 self.control = self.callback_handler.on_save_hf(self.args, self.state, self.control)
 
+                # Maybe delete some older hf checkpoints.
+                if self.is_local_process_zero():
+                    self._rotate_hf_checkpoints(use_mtime=True, output_dir=run_dir)
+
     def log_trained_tokens(self):
         if self.args.count_trained_tokens:
             token_list = []
@@ -2953,41 +2949,6 @@ class Trainer:
 
         return self.optimizer
 
-    def _apply_to_optimizer(self, action):
-        attributes = [
-            ("_accumulators", "_moment1_acc_str"),
-            ("_accumulators", "_moment2_acc_str"),
-            ("_master_weights",),
-            ("_accumulators_holder",),
-        ]
-        for attr in attributes:
-            if all(hasattr(self.optimizer, a) for a in attr):
-                target_attr = getattr(self.optimizer, attr[0])
-                if len(attr) == 2:
-                    target_attr = target_attr[getattr(self.optimizer, attr[1])]
-
-                for key, value in target_attr.items():
-                    if get_env_device() == "gpu":
-                        target_attr[key] = getattr(value, action)()
-                    elif get_env_device() == "xpu" and action in ["cpu", "pin_memory"]:
-                        target_attr[key] = getattr(value, action)()
-                    else:
-                        target_attr[key] = getattr(value, "to")(action)
-
-    def _offload_optimizer(self):
-        if get_env_device() == "gpu":
-            self._apply_to_optimizer("pin_memory")
-        elif get_env_device() == "xpu":
-            self._apply_to_optimizer("pin_memory")
-        else:
-            self._apply_to_optimizer("cpu")
-
-    def _reload_optimizer(self):
-        if get_env_device() == "gpu":
-            self._apply_to_optimizer("cuda")
-        else:
-            self._apply_to_optimizer(get_env_device())
-
     def _load_rng_state(self, checkpoint):
         # Load RNG states from `checkpoint`
         if checkpoint is None:
@@ -3167,6 +3128,8 @@ class Trainer:
             global_norm_func = gradclip._global_norm
             training_logs = self.global_training_logs
 
+            train_mtp_only = self.args.train_mtp_only
+
             @paddle.no_grad()
             def new_global_norm_func(
                 self,
@@ -3174,6 +3137,10 @@ class Trainer:
                 global_norm_var_not_dist,
                 *args,
             ):
+                if train_mtp_only:
+                    logger.info("GRAD NORM calculation in MTP-only training is not support for now.")
+                    return
+
                 if len(args) > 0:
                     global_norm_func(global_norm_var_dist, global_norm_var_not_dist, *args)
                     global_norm_var_dist_moe, global_norm_var_not_dist_moe = args
@@ -3240,9 +3207,10 @@ class Trainer:
             # use callback for sp grad sync in case of unexpected behaviour (except sharding stage 2&3)
             if ShardingOption.SHARD_GRAD_OP in self.args.sharding or ShardingOption.FULL_SHARD in self.args.sharding:
                 # stage 2 or stage 3
-                register_sequence_parallel_allreduce_hooks(
-                    model, self.args.gradient_accumulation_steps, self.args.fuse_sequence_parallel_allreduce
-                )
+                if not self.args.enable_auto_parallel:
+                    register_sequence_parallel_allreduce_hooks(
+                        model, self.args.gradient_accumulation_steps, self.args.fuse_sequence_parallel_allreduce
+                    )
             else:
                 # stage 1 or dp
                 self.add_callback(SPGradSyncCallback(model))
@@ -3580,17 +3548,6 @@ class Trainer:
 
         return (loss, outputs) if return_outputs else loss
 
-    def _enable_delay_scale_loss(self):
-        if in_auto_parallel_align_mode():
-            return True
-
-        if self.args.pipeline_model_parallel_size > 1:
-            return self.args.pp_delay_scale_loss
-        elif self.args.tensor_model_parallel_size > 1:
-            return self.args.tp_delay_scale_loss
-        else:
-            return False
-
     def training_step(
         self, model: nn.Layer, inputs: Dict[str, Union[paddle.Tensor, Any]], step_control=0
     ) -> paddle.Tensor:
@@ -3689,6 +3646,12 @@ class Trainer:
         else:
             model.train()
             inputs = self._prepare_inputs(inputs)
+        if self.do_grad_scaling:
+            self.scaler.scale(loss).backward()
+        else:
+            loss.backward()
+        if self.args.gradient_accumulation_steps > 1:
+            loss = loss / self.args.gradient_accumulation_steps
 
             with self.autocast_smart_context_manager():
                 loss = self.compute_loss(model, inputs)
@@ -4000,9 +3963,6 @@ class Trainer:
                 optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
                 saved_signal_path = os.path.join(output_dir, f"saved_signal_{dist.get_rank()}")
 
-                if self.args.unified_checkpoint and self.args.offload_optim:
-                    self._reload_optimizer()
-
                 if self.args.use_hybrid_parallel:
                     if self.dp_group.rank <= 0 or self.args.use_expert_parallel:
                         os.makedirs(output_dir, exist_ok=True)
@@ -4104,10 +4064,6 @@ class Trainer:
                                     global_rank, os.path.join(signal_dir, f".master_weight.done.{global_rank}")
                                 )
 
-                if self.args.save_checkpoint_format == "unified_checkpoint" and (
-                    self.args.offload_optim or self.args.tensorwise_offload_optimizer
-                ):
-                    self._offload_optimizer()
             self.runtime_timer.stop()
 
             # Maybe delete some older checkpoints.
@@ -4195,6 +4151,32 @@ class Trainer:
         checkpoints_to_be_deleted = checkpoints_sorted[:number_of_checkpoints_to_delete]
         for checkpoint in checkpoints_to_be_deleted:
             logger.info(f"Deleting older checkpoint [{checkpoint}] due to args.save_total_limit")
+            # ignore_errors for shared disks between train nodes.
+            shutil.rmtree(checkpoint, ignore_errors=True)
+
+    def _rotate_hf_checkpoints(self, use_mtime=False, output_dir=None) -> None:
+        if self.args.save_hf_total_limit is None or self.args.save_hf_total_limit <= 0:
+            return
+
+        # Check if we should delete older hf checkpoint(s)
+        checkpoints_sorted = self._sorted_checkpoints(
+            use_mtime=use_mtime, output_dir=output_dir, checkpoint_prefix=PREFIX_HF_CHECKPOINT_DIR
+        )
+        if len(checkpoints_sorted) <= self.args.save_hf_total_limit:
+            return
+
+        save_hf_total_limit = self.args.save_hf_total_limit
+        if (
+            self.state.best_model_checkpoint is not None
+            and self.args.save_total_limit == 1
+            and checkpoints_sorted[-1] != self.state.best_model_checkpoint
+        ):
+            save_hf_total_limit = 2
+
+        number_of_checkpoints_to_delete = max(0, len(checkpoints_sorted) - save_hf_total_limit)
+        checkpoints_to_be_deleted = checkpoints_sorted[:number_of_checkpoints_to_delete]
+        for checkpoint in checkpoints_to_be_deleted:
+            logger.info(f"Deleting older hf checkpoint [{checkpoint}] due to args.save_hf_total_limit")
             # ignore_errors for shared disks between train nodes.
             shutil.rmtree(checkpoint, ignore_errors=True)
 
@@ -4499,10 +4481,6 @@ class Trainer:
         empty_device_cache()
 
         self._load_scheduler(checkpoint)
-
-        if self.args.offload_optim:
-            logger.info("Offloading optimizer state...")
-            self._offload_optimizer()
 
         self.runtime_timer.stop()
 
