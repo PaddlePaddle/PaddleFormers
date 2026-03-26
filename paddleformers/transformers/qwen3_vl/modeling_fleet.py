@@ -163,20 +163,6 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
 
             assert (rotary_pos_sin is None) == (rotary_pos_cos is None)
 
-            if rotary_pos_cos is not None and rotary_pos_sin is not None:
-                rotary_pos_cos = rotary_pos_cos.clone()
-                rotary_pos_sin = rotary_pos_sin.clone()
-                if self.config.apply_rope_fusion:
-                    rotary_pos_cos = rotary_pos_cos[0, ...]
-                    rotary_pos_sin = rotary_pos_sin[0, ...]
-                    if rotary_pos_cos.ndim == 2:
-                        rotary_pos_cos = rotary_pos_cos.reshape(
-                            [1, rotary_pos_cos.shape[0], 1, rotary_pos_cos.shape[1]]
-                        )
-                        rotary_pos_sin = rotary_pos_sin.reshape(
-                            [1, rotary_pos_sin.shape[0], 1, rotary_pos_sin.shape[1]]
-                        )
-
             outputs = recompute(
                 self._forward_impl,
                 hidden_states=hidden_states,
@@ -187,8 +173,8 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
                 context=context,
                 context_mask=context_mask,
                 rotary_pos_emb=rotary_pos_emb.clone() if rotary_pos_emb is not None else None,  # Clone is necessary!
-                rotary_pos_cos=rotary_pos_cos,
-                rotary_pos_sin=rotary_pos_sin,
+                rotary_pos_cos=rotary_pos_cos.clone() if rotary_pos_cos is not None else None,
+                rotary_pos_sin=rotary_pos_sin.clone() if rotary_pos_sin is not None else None,
                 attention_bias=attention_bias,
                 packed_seq_params=packed_seq_params,
             )
@@ -230,6 +216,13 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
         packed_seq_params: PackedSeqParams = None,
         **kwargs,
     ):
+        # Fix for mRoPE + apply_rope_fusion: ensure sin/cos have correct 4D shape
+        if self.config.apply_rope_fusion and rotary_pos_cos is not None and rotary_pos_sin is not None:
+            if rotary_pos_cos.ndim == 2 or rotary_pos_cos.ndim == 3:
+                # We need to reshape to [1, seq_len, 1, head_dim] (4D) for fused_rotary_position_embedding
+                rotary_pos_cos = rotary_pos_cos.reshape([1, -1, 1, rotary_pos_cos.shape[-1]])
+                rotary_pos_sin = rotary_pos_sin.reshape([1, -1, 1, rotary_pos_sin.shape[-1]])
+
         hidden_states, context = self._forward_attention(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
