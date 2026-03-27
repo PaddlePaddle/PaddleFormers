@@ -14,6 +14,7 @@
 
 import multiprocessing as mp
 import os
+import random
 import time
 from dataclasses import dataclass, field
 from itertools import chain
@@ -91,6 +92,7 @@ class BaseSFTDataset:
         self.dtype = dataset_config.get("dtype", None)
         self.binpacking = dataset_config.get("binpacking", False)
         self.packing_interval = dataset_config.get("packing_interval", 1000)
+        self.shuffle_packed_bins = dataset_config.get("shuffle_packed_bins", True)
         if self.is_pretraining and self.packing and self.truncate_packing:
             logger.info("[dataflow] pretrain dataflow using truncate packing.")
 
@@ -474,12 +476,14 @@ class BaseSFTDataset:
                     while True:
                         batch_data, num_samples = self._binpacking_process_batch(data_iter, self.packing_interval)
                         finished = num_samples != self.packing_interval
-
                         accumulated_data += batch_data
 
                         sequences, accumulated_data = calculate_matched_group(
                             accumulated_data, self.max_seq_len, is_finished=finished
                         )
+
+                        if self.shuffle_packed_bins and len(sequences) > 1:
+                            random.shuffle(sequences)
 
                         for row in sequences:
                             yield [r[0] for r in row]
@@ -487,9 +491,7 @@ class BaseSFTDataset:
                         if self.estimate:
                             self.used_estimate_samples += num_samples
                             self.print_max_steps_estimate_progress()
-                            # Stop estimation if the number of samples used in estimation is larger than max_estimate_samples
                             if self.used_estimate_samples >= self.max_estimate_samples:
-                                # Set flag to False and yield empty list to signal the end of estimation
                                 self.estimate = False
                                 yield []
 
@@ -528,12 +530,12 @@ class BaseSFTDataset:
                     self.iter_all_examples = True
                 else:
                     logger.info("Using greedy packing mode for data iteration.")
-                    # Pseudo multiple rounds + group greedy intokens.
-                    buffer_size = self.packing_interval
-                    sequences_buffer = []
                     data_iter = self._get_processed_data_iterator(
                         dataset_iterator, actual_example_num, self._process_sequence
                     )
+                    buffer_size = self.packing_interval
+                    sequences_buffer = []
+
                     for sequence in data_iter:
                         if self.estimate:
                             self.used_samples += actual_example_num
@@ -541,8 +543,11 @@ class BaseSFTDataset:
                         sequences_buffer.append(sequence)
 
                         if len(sequences_buffer) >= buffer_size:
-                            # Running greedy strategy in sequences_buffer.
                             generate_packs = self._generate_greedy_packs_from_sequences(sequences_buffer)
+
+                            if self.shuffle_packed_bins and len(generate_packs) > 1:
+                                random.shuffle(generate_packs)
+
                             for pack in generate_packs:
                                 if len(pack) > 0:
                                     yield pack
@@ -551,24 +556,22 @@ class BaseSFTDataset:
                         if self.estimate:
                             self.used_estimate_samples += actual_example_num
                             self.print_max_steps_estimate_progress()
-                            # Stop estimation if the number of samples used in estimation is larger than max_estimate_samples
                             if self.used_estimate_samples >= self.max_estimate_samples:
-                                # Yield left packs before estimation ends
                                 if len(sequences_buffer) > 0:
                                     generate_packs = self._generate_greedy_packs_from_sequences(sequences_buffer)
                                     for pack in generate_packs:
                                         if len(pack) > 0:
                                             yield pack
-                                # Set flag to False and yield empty list to signal the end of estimation
                                 self.estimate = False
                                 yield []
 
                     if len(sequences_buffer) > 0:
                         generate_packs = self._generate_greedy_packs_from_sequences(sequences_buffer)
+                        if self.shuffle_packed_bins and len(generate_packs) > 1:
+                            random.shuffle(generate_packs)
                         for pack in generate_packs:
                             if len(pack) > 0:
                                 yield pack
-
                     self.iter_all_examples = True
 
     def __iter__(self):

@@ -171,6 +171,10 @@ class DataArguments:
         default=1000,
         metadata={"help": "Interval of packing."},
     )
+    shuffle_packed_bins: bool = field(
+        default=True,
+        metadata={"help": "Shuffle packed bins within each buffer cycle to prevent length-sorted yield order."},
+    )
     truncation_strategy: str = field(
         default="right",
         metadata={"help": "Truncation strategy for packing."},
