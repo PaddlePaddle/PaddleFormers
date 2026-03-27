@@ -346,7 +346,7 @@ LoRA 训练结束后，模型会保存在 `output_dir=./PaddleOCR-VL-SFT-Bengali
 
 ```shell
 CUDA_VISIBLE_DEVICES=0 \
-paddleformers-cli export ./examples/config/run_export.yaml \
+paddleformers-cli export examples/best_practices/PaddleOCR-VL/paddleocr-vl_lora_export.yaml \
     model_name_or_path=PaddlePaddle/PaddleOCR-VL \
     output_dir=./PaddleOCR-VL-SFT-Bengali-lora
 ```

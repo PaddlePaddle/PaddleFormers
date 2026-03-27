@@ -728,7 +728,7 @@ LoRA 训练结束后，模型会保存在 `output_dir=./PaddleOCR-VL-1.5-SFT-Reg
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
-paddleformers-cli export ./examples/config/run_export.yaml \
+paddleformers-cli export examples/best_practices/PaddleOCR-VL-1.5/paddleocr-vl-v15_lora_export_region.yaml \
     model_name_or_path=PaddlePaddle/PaddleOCR-VL-1.5 \
     output_dir=./PaddleOCR-VL-1.5-SFT-RegionOCR-lora
 ```
