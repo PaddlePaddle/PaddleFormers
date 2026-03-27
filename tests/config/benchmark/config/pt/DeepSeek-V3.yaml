@@ -24,8 +24,8 @@ save_steps: 5000
 max_steps: 10
 per_device_train_batch_size: 1
 per_device_eval_batch_size: 1
-gradient_accumulation_steps: 24
-global_batch_size: 48
+gradient_accumulation_steps: 16
+global_batch_size: 32
 learning_rate: 0.000022
 min_lr: 0.00000073333
 warmup_steps: 30
