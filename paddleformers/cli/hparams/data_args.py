@@ -171,3 +171,15 @@ class DataArguments:
         default=1000,
         metadata={"help": "Interval of packing."},
     )
+    shuffle_packed_bins: bool = field(
+        default=True,
+        metadata={"help": "Shuffle packed bins within each buffer cycle to prevent length-sorted yield order."},
+    )
+    packing_buffer_overlap: float = field(
+        default=0.1,
+        metadata={"help": "Controls cross-buffer overlap bins (0.0 to disable). Maps to 1-3 retained bins."},
+    )
+    truncation_strategy: str = field(
+        default="right",
+        metadata={"help": "Truncation strategy for packing."},
+    )

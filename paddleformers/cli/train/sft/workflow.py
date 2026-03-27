@@ -429,6 +429,8 @@ def run_sft(
         "dataset_num_proc": finetuning_args.dataset_num_proc,
         "binpacking": data_args.binpacking,
         "packing_interval": data_args.packing_interval,
+        "shuffle_packed_bins": data_args.shuffle_packed_bins,
+        "packing_buffer_overlap": data_args.packing_buffer_overlap,
         "dataloader_num_workers": training_args.dataloader_num_workers,
         "template": data_args.template,
         "tool_format": None,

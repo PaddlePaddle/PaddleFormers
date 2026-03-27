@@ -341,13 +341,16 @@ def get_worker_sliced_iterator(dataset):
     return dataset_iterator
 
 
-def calculate_matched_group(sequences, packing_length: int, is_finished: bool = True):
+def calculate_matched_group(sequences, packing_length: int, is_finished: bool = True, overlap_bins: int = 1):
     if len(sequences) == 0:
         return [], []
 
     sequences = binpacking.to_constant_volume(sequences, packing_length, weight_pos=1)
     if sequences and not is_finished:
-        sequences, ret_sequences = sequences[:-1], sequences[-1]
+        keep_count = min(overlap_bins, max(1, len(sequences) - 1))
+        ret_bins = sequences[-keep_count:]
+        sequences = sequences[:-keep_count]
+        ret_sequences = [item for bin_items in ret_bins for item in bin_items]
     else:
         ret_sequences = []
     return sequences, ret_sequences
