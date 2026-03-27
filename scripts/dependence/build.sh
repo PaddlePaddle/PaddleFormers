@@ -39,12 +39,12 @@ paddleformers_build (){
     rm -rf dist/
     rm -rf paddleformers.egg-info/
 
+    python -m pip install --upgrade pip
     python -m pip install -r requirements.txt
     python setup.py bdist_wheel
 
     echo "install_formers_post_whl"
     cd ../
-    python -m pip install --upgrade pip
     python -m pip install --ignore-installed  PaddleFormers/dist/p****.whl --no-cache-dir --force-reinstall --no-dependencies
     cd -
     echo "waiting for import paddleformers..."
