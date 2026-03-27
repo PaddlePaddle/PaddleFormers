@@ -60,6 +60,12 @@ class DeepseekV32Config(PretrainedConfig):
         index_n_heads=64,
         index_head_dim=128,
         index_topk=2048,
+        indexer_loss_coeff=0.0,
+        indexer_use_sparse_loss=False,
+        # RoPE format control for DSA Indexer
+        # False = non-interleaved (default, compatible with MLA's interleaved YaRN)
+        # True = interleaved (paired frequency format)
+        indexer_rotary_interleaved=False,
         # MoE parameters
         n_routed_experts=256,
         n_shared_experts=1,
@@ -109,6 +115,9 @@ class DeepseekV32Config(PretrainedConfig):
         self.index_n_heads = index_n_heads
         self.index_head_dim = index_head_dim
         self.index_topk = index_topk
+        self.indexer_loss_coeff = indexer_loss_coeff
+        self.indexer_use_sparse_loss = indexer_use_sparse_loss
+        self.indexer_rotary_interleaved = indexer_rotary_interleaved
 
         # MoE
         self.n_routed_experts = n_routed_experts

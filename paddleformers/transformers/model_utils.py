@@ -2919,14 +2919,14 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             except Exception as e:
                 logger.error(f"Failed to delete {metadata_path}: {e}")
 
-            # change dtype in aoa
-            if dtype is not None:
-                for key in model.state_dict().keys():
-                    # keep fp32
-                    if model.state_dict()[key].dtype == paddle.float32:
-                        aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='float32'")
-                    else:
-                        aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='{dtype}'")
+            # # change dtype in aoa
+            # if dtype is not None:
+            #     for key in model.state_dict().keys():
+            #         # keep fp32
+            #         if model.state_dict()[key].dtype == paddle.float32:
+            #             aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='float32'")
+            #         else:
+            #             aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='{dtype}'")
 
             dist.load_state_dict(
                 sharded_state_dict,
@@ -2935,6 +2935,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 safetensors=True,
                 offload=load_via_cpu,
             )
+
+            print("==========> MODEL ARCH")
+            print(model)
 
             for v in sharded_state_dict.values():
                 if hasattr(v.local_tensor, "target_tensor"):

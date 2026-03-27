@@ -331,7 +331,7 @@ class MoEAOAConfigGenerator:
 
         Override this method for different attention types (standard QKV vs MLA).
         """
-        if params.multi_latent_attention:
+        if params.multi_latent_attention or (params.index_n_heads and params.index_n_heads > 0) or True:
             return cls._get_mla_attention_statements(params, prefix, prefix_offset)
         return cls._get_standard_attention_statements(params, prefix, prefix_offset)
 

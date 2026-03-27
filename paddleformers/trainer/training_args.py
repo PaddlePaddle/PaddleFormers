@@ -1552,6 +1552,11 @@ class TrainingArguments:
         },
     )
 
+    dsa_indexer_loss_coeff: bool = field(
+        default=0.01,
+        metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
+    )
+
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
         if in_auto_parallel_align_mode():

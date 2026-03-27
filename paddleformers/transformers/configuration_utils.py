@@ -410,6 +410,12 @@ class LlmMetaConfig:
             False,
             "Whether to use SonicMoE as the computation backend for the moelayer.",
         ),
+        (
+            "dsa_indexer_loss_coeff",
+            float,
+            0.01,
+            "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term.",
+        ),
     ]
 
     mtp_attributes = [

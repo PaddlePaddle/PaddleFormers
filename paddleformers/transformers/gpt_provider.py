@@ -172,6 +172,16 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
         if self.init_model_with_meta_device:
             model_init_device_context = partial(paddle.device, device="meta")
 
+        # Flatten rope_parameters
+        if hasattr(self, "rope_parameters") and self.rope_parameters:
+            if "rope_type" in self.rope_parameters:
+                if not self.rope_parameters["rope_type"] == "default":
+                    self.rope_type = self.rope_parameters["rope_type"]
+            if "rope_theta" in self.rope_parameters:
+                self.rope_theta = self.rope_parameters["rope_theta"]
+        if hasattr(self, "rope_scaling") and self.rope_scaling is not None:
+            self.mscale_all_dim = self.rope_scaling["mscale_all_dim"]
+
         # Check if mtp_block_spec parameter is supported
         kwargs = {}
         if "mtp_block_spec" in inspect.signature(GPTModel.__init__).parameters:
