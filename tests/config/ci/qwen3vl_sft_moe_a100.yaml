@@ -42,7 +42,7 @@ router_aux_loss_coef: 0.001
 # parallel
 tensor_model_parallel_size: 4
 pipeline_model_parallel_size: 1
-sequence_parallel: true
+sequence_parallel: false
 sharding: stage1
 # performance
 recompute_granularity: full
