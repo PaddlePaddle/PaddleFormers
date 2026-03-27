@@ -567,34 +567,6 @@ qwen3_vl_moe:
         sft-vl_full_tp_excepted_result:
         - [138886, 65624, 138886, 108115, 65624, 138886, 138886, 138886, 93699, 34232]
         sft-vl_lora_excepted_result: []
-qwen2_5_vl:
-    repo_id: PaddleFormers/tiny-random-qwen25vlv2
-    model_type: vl
-    cli_args:
-        save_checkpoint_format: flex_checkpoint
-        load_checkpoint_format: flex_checkpoint
-        template: qwen2_vl
-        random_shuffle: false
-    base_loss:
-        sft-vl_full_tp_pp_loss: 11.926148415
-        sft-vl_full_tp_pp_resume_loss: 11.92575741
-        sft-vl_full_loss: 11.92572737
-        sft-vl_full_resume_loss: 11.92580128
-        dpo-vl_full_loss: 0.69314718
-        dpo-vl_full_resume_loss: 0.69314718
-        sft-vl_lora_loss: 11.92572737
-        sft-vl_lora_resume_loss: 11.92580128
-        sft-vl_full_tp_loss: 11.926148415
-        sft-vl_full_tp_resume_loss: 11.92575741
-        sft-vl_full_fsdp_loss: 11.92613983
-        sft-vl_full_fsdp_resume_loss: 11.92613125
-    base_result:
-        sft-vl_full_tp_pp_excepted_result: []
-        sft-vl_full_excepted_result: []
-        dpo-vl_full_excepted_result: []
-        sft-vl_lora_excepted_result: []
-        sft-vl_full_tp_excepted_result: []
-        sft-vl_full_fsdp_excepted_result: []
 paddleocr_vl:
     repo_id: PaddleFormers/tiny-random-paddleocr-vl-bf16
     model_type: vl

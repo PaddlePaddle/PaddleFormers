@@ -76,7 +76,7 @@ def pytest_collection_modifyitems(config, items):
 
     Tests marked with @pytest.mark.model_type("vl") will only run for VL models.
     Tests marked with @pytest.mark.model_type("text") will only run for text models.
-    Tests without model_type marker default to "text".
+    Default to "text".
     """
     for item in items:
         # Get model_key from test parameters

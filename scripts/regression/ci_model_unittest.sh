@@ -139,7 +139,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
     timeout 30m \
-    python -m pytest -s -v ${model_unittest_path} > ${log_path}/model_unittest.log 2>&1
+    python -m pytest -s -v --models=all scripts/regression/test_models.py --update-baseline=all > ${log_path}/model_unittest.log 2>&1
     exit_code=$?
     print_info $exit_code model_unittest
 
