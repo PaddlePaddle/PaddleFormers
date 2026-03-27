@@ -1370,14 +1370,8 @@ class TrainingArguments:
             "help": "Support fused_linear_param_grad_add in ColumnParallelLinear (requires cuda >= 11.6). Only works when mp_async_allreduce is True. Can accelerate model parallel further."
         },
     )
-    tp_delay_scale_loss: bool = field(
-        default=False,
-        metadata={
-            "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
-        },
-    )
     pp_delay_scale_loss: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
         },
@@ -1852,7 +1846,7 @@ class TrainingArguments:
                         )
 
                     dygraph_pp_configs = {
-                        "delay_scale_loss": self.pp_delay_scale_loss,
+                        "delay_scale_loss": True,  # TODO[Waynezee]: remove this config in the future
                         "dp_comm_overlap": enable_dp_comm_overlap,
                         "sharding_comm_overlap": self.enable_sharding_comm_overlap,
                         "enable_timer": self.timer,
