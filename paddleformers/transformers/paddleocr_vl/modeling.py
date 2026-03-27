@@ -235,6 +235,7 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
         self.position_embedding = GeneralEmbedding.create(
             config=config, num_embeddings=self.num_positions, embedding_dim=self.embed_dim
         )
+        # revert packing_position_embedding for vLLM inference compatibility
         self.packing_position_embedding = GeneralEmbedding.create(
             config=config, num_embeddings=32768, embedding_dim=self.embed_dim
         )
