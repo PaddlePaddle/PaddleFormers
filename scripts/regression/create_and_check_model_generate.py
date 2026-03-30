@@ -136,7 +136,6 @@ def create_and_check_model_generate(
     print(f"result[0] is : {result[0]}")
     assert paddle.allclose(result[0], excepted_result), f"Result {result[0]} does not match expected {excepted_result}"
 
-    # 返回转换为Python原生列表的结果
     return [tensor.numpy().tolist() for tensor in result]
 
 
