@@ -57,7 +57,6 @@ class KimiK2PretrainedModel(PretrainedModel):
         aoa_config["aoa_statements"] += [
             "model.embed_tokens.weight -> model.embedding.embed_tokens.weight",
             "lm_head.weight -> model.lm_head.weight ",
-            "model.layers.1.mlp.gate.weight -> model.layers.1.mlp.gate.weight, src_dtype='bfloat16',dst_dtype='float32'",
         ]
         # MLA
         for layer_id in range(config.num_hidden_layers):
@@ -66,17 +65,22 @@ class KimiK2PretrainedModel(PretrainedModel):
                     f"model.layers.{layer_id}.self_attn.{mla_atten}.weight^T -> model.layers.{layer_id}.self_attn.{mla_atten}.weight",
                 ]
         # MLP
-        # layer 0
+        # layer 0 config.first_k_dense_replace
         aoa_config["aoa_statements"] += [
             "model.layers.0.mlp.down_proj.weight^T -> model.layers.0.mlp.down_proj.weight",
             "model.layers.0.mlp.gate_proj.weight^T ,model.layers.0.mlp.up_proj.weight^T ->  model.layers.0.mlp.up_gate_proj.weight, axis=1",
         ]
 
         # layer 1 -> num_hidden_layers
-        for layer_id in range(1, config.num_hidden_layers):
+        for layer_id in reversed(range(config.first_k_dense_replace, config.num_hidden_layers)):
+            for expert_id in range(config.n_routed_experts):
+                aoa_config["aoa_statements"] += [
+                    f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight",
+                    f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight, axis=1",
+                ]
             aoa_config["aoa_statements"] += [
-                f"model.layers.{layer_id}.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.{layer_id}.mlp.experts.$EXPERT_ID.down_proj.weight",
-                f"model.layers.{layer_id}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.{layer_id}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.$EXPERT_ID.up_gate_proj.weight , axis=1",
+                f"model.layers.{layer_id}.mlp.gate.weight -> model.layers.{layer_id}.mlp.gate.weight, src_dtype='bfloat16',dst_dtype='float32'",
+                f"model.layers.{layer_id}.mlp.gate.e_score_correction_bias -> model.layers.{layer_id}.mlp.gate.e_score_correction_bias, src_dtype='bfloat16',dst_dtype='float32'",
                 f"model.layers.{layer_id}.mlp.shared_experts.down_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.down_proj.weight",
                 f"model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight^T, model.layers.{layer_id}.mlp.shared_experts.up_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.up_gate_proj.weight , axis=1",
             ]
@@ -95,6 +99,62 @@ class KimiK2PretrainedModel(PretrainedModel):
                 ]
 
         return aoa_config
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: KimiK2Config):
+        # language model
+        inv_aoa_config = {"aoa_statements": []}
+        inv_aoa_config["aoa_statements"] += [
+            "model.embedding.embed_tokens.weight -> model.embed_tokens.weight",
+            "model.lm_head.weight -> lm_head.weight",
+        ]
+        # MLA
+        for layer_id in range(config.num_hidden_layers):
+            for mla_atten in ["q_a_proj", "q_b_proj", "kv_a_proj_with_mqa", "kv_b_proj", "o_proj"]:
+                inv_aoa_config["aoa_statements"] += [
+                    f"model.layers.{layer_id}.self_attn.{mla_atten}.weight^T -> model.layers.{layer_id}.self_attn.{mla_atten}.weight",
+                ]
+        # MLP
+        # layer 0
+        inv_aoa_config["aoa_statements"] += [
+            "model.layers.0.mlp.down_proj.weight^T -> model.layers.0.mlp.down_proj.weight",
+            "model.layers.0.mlp.up_gate_proj.weight -> model.layers.0.mlp.gate_proj.weight, model.layers.0.mlp.up_proj.weight, axis=1",
+            "model.layers.0.mlp.gate_proj.weight^T -> model.layers.0.mlp.gate_proj.weight",
+            "model.layers.0.mlp.up_proj.weight^T -> model.layers.0.mlp.up_proj.weight",
+        ]
+
+        # layer 1 -> num_hidden_layers
+        for layer_id in range(1, config.num_hidden_layers):
+            if config.moe_grouped_gemm and not config.fp8:
+                ep_weight1 = []
+                ep_weight2 = []
+                for expert_id in range(config.n_routed_experts):
+                    ep_weight1.append(f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight")
+                    ep_weight2.append(f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight")
+                group_gemm1 = ",".join(ep_weight1)
+                group_gemm2 = ",".join(ep_weight2)
+                inv_aoa_config["aoa_statements"] += [
+                    f"model.layers.{layer_id}.mlp.grouped_gemm_experts.weight1 -> {group_gemm1}, axis=0",
+                    f"model.layers.{layer_id}.mlp.grouped_gemm_experts.weight2 -> {group_gemm2}, axis=0",
+                ]
+
+            for expert_id in range(config.n_routed_experts):
+                inv_aoa_config["aoa_statements"] += [
+                    f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight",
+                    f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_gate_proj.weight -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight, model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight, axis=1",
+                    f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight",
+                    f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight",
+                ]
+            inv_aoa_config["aoa_statements"] += [
+                f"model.layers.{layer_id}.mlp.gate.weight -> model.layers.{layer_id}.mlp.gate.weight, src_dtype='float32',dst_dtype='bfloat16'",
+                f"model.layers.{layer_id}.mlp.gate.e_score_correction_bias -> model.layers.{layer_id}.mlp.gate.e_score_correction_bias, src_dtype='float32',dst_dtype='bfloat16'",
+                f"model.layers.{layer_id}.mlp.shared_experts.down_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.down_proj.weight",
+                f"model.layers.{layer_id}.mlp.shared_experts.up_gate_proj.weight -> model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight, model.layers.{layer_id}.mlp.shared_experts.up_proj.weight, axis=1",
+                f"model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight",
+                f"model.layers.{layer_id}.mlp.shared_experts.up_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.up_proj.weight",
+            ]
+
+        return inv_aoa_config
 
 
 class KimiK2ForCausalLM(KimiK2PretrainedModel):
@@ -126,6 +186,7 @@ class KimiK2ForCausalLM(KimiK2PretrainedModel):
         # Check if mtp_block_spec parameter is supported
         config.multi_latent_attention = True
         config.use_qk_norm = True
+        config.rotary_interleaved = True
         model_provider_class = KimiK2Provider
 
         model_provider = model_provider_class.from_config(config)
@@ -167,7 +228,7 @@ class KimiK2ForCausalLMPipe(KimiK2PretrainedModel, GeneralModelForCausalLMPipe):
         # Check if mtp_block_spec parameter is supported
         config.multi_latent_attention = True
         config.use_qk_norm = True
-
+        config.rotary_interleaved = True
         model_provider_class = KimiK2Provider
         model_provider = model_provider_class.from_config(config)
 
