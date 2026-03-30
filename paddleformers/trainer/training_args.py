@@ -1261,6 +1261,16 @@ class TrainingArguments:
         metadata={"help": "If True, saves the last step of the training process."},
     )
 
+    save_hf_memory_growth_threshold: int = field(
+        default=8,
+        metadata={
+            "help": (
+                "Memory growth threshold (in GB) for HFFormatFullParamSaver when saving HF-format checkpoints. "
+                "Controls the maximum memory growth allowed during full-param checkpoint assembly. Default is 8 (GB)."
+            )
+        },
+    )
+
     hybrid_parallel_expert_grad_scale: Optional[float] = field(
         default=None,
         metadata={"help": ("Scaling factor for expert gradients.")},

@@ -2575,16 +2575,22 @@ class Trainer:
                 run_dir = self.args.output_dir
                 checkpoint_folder = f"{PREFIX_HF_CHECKPOINT_DIR}-{self.state.global_step}"
                 ckpt_path = os.path.join(run_dir, checkpoint_folder)
+                # Convert user-configured GB value to bytes for HFFormatFullParamSaver
+                memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
                 if isinstance(self.model, LoRAModel):
                     self.model.save_pretrained(
                         ckpt_path,
                         merge_tensor_parallel=True,
                         variant=self.args.weight_name_suffix,
                         save_checkpoint_format=self.args.save_checkpoint_format,
+                        memory_growth_threshold=memory_growth_threshold_bytes,
                     )
                 else:
                     self.model.save_pretrained(
-                        ckpt_path, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
+                        ckpt_path,
+                        is_main_process,
+                        save_checkpoint_format=self.args.save_checkpoint_format,
+                        memory_growth_threshold=memory_growth_threshold_bytes,
                     )
                 if self.tokenizer is not None and self.args.save_tokenizer:
                     self.tokenizer.save_pretrained(ckpt_path)
@@ -4106,16 +4112,22 @@ class Trainer:
             if self.args.save_checkpoint_format == "flex_checkpoint":
                 if last_fc_to_hf:
                     is_main_process = paddle.distributed.get_rank() == 0
+                    # Convert user-configured GB value to bytes for HFFormatFullParamSaver
+                    memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
                     if isinstance(self.model, LoRAModel):
                         self.model.save_pretrained(
                             output_dir,
                             merge_tensor_parallel=merge_tensor_parallel,
                             variant=self.args.weight_name_suffix,
                             save_checkpoint_format=self.args.save_checkpoint_format,
+                            memory_growth_threshold=memory_growth_threshold_bytes,
                         )
                     else:
                         self.model.save_pretrained(
-                            output_dir, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
+                            output_dir,
+                            is_main_process,
+                            save_checkpoint_format=self.args.save_checkpoint_format,
+                            memory_growth_threshold=memory_growth_threshold_bytes,
                         )
                 else:
                     self._save_flex_model_state(output_dir)
