@@ -1392,7 +1392,11 @@ class Trainer:
             # estimate len_dataloader from dataset length since dataloader doesn't support len()
             dataset_len = len(self.train_dataset)
             per_rank_samples = math.ceil(dataset_len / args.dataset_world_size)
-            len_dataloader = per_rank_samples // args.per_device_train_batch_size
+            len_dataloader = (
+                per_rank_samples // args.per_device_train_batch_size
+                if args.dataloader_drop_last
+                else math.ceil(per_rank_samples / args.per_device_train_batch_size)
+            )
 
             num_update_steps_per_epoch = len_dataloader // args.gradient_accumulation_steps
             num_update_steps_per_epoch = max(num_update_steps_per_epoch, 1)
