@@ -46,7 +46,7 @@ from .trainer_utils import (
 )
 
 # Conditionally import paddlefleet modules
-if paddle.device.is_compiled_with_cuda() and is_paddlefleet_available():
+if is_paddlefleet_available():
     from paddlefleet.parallel_state import get_tensor_model_parallel_group
     from paddlefleet.training import initialize_fleet
 else:
@@ -1104,10 +1104,6 @@ class TrainingArguments:
         default=None,
         metadata={"help": "The intervals to skip, pass start global step and end global step at each interval"},
     )
-    offload_optim: Optional[bool] = field(
-        default=False,
-        metadata={"help": "Offload optimizer after optimizer.step()"},
-    )
     tensorwise_offload_optimizer: Optional[bool] = field(
         default=False,
         metadata={
@@ -1214,6 +1210,11 @@ class TrainingArguments:
         metadata={"help": "pre allocate memory size GB"},
     )
     num_nextn_predict_layers: int = field(default=0, metadata={"help": "Number of nextn predict layers."})
+    train_mtp_only: bool = field(default=False, metadata={"help": "Whether to train MTP only."})
+    mtp_distillation_loss: bool = field(default=False, metadata={"help": "Whether to use distillation MTP loss."})
+    mtp_num_layers: int = field(
+        default=0, metadata={"help": "Whether to use Autoregressive MTP Training, activate if > 1."}
+    )
     profile: bool = field(default=False, metadata={"help": "Enable nsys profiling."})
     profile_step_start: int = field(default=10, metadata={"help": "Step to start nsys profiling."})
     profile_step_end: int = field(default=12, metadata={"help": "Step to end nsys profiling."})
@@ -1379,14 +1380,8 @@ class TrainingArguments:
             "help": "Support fused_linear_param_grad_add in ColumnParallelLinear (requires cuda >= 11.6). Only works when mp_async_allreduce is True. Can accelerate model parallel further."
         },
     )
-    tp_delay_scale_loss: bool = field(
-        default=False,
-        metadata={
-            "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
-        },
-    )
     pp_delay_scale_loss: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
         },
@@ -1614,9 +1609,7 @@ class TrainingArguments:
                 ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2 on non-CUDA devices."
         else:
             if paddle.base.core.is_compiled_with_cuda():
-                is_sm100 = (
-                    paddle_device.get_device_capability()[0] == 10 and paddle_device.get_device_capability()[1] == 0
-                )
+                is_sm100 = paddle_device.get_device_capability()[0] == 10
                 is_sm90 = (
                     paddle_device.get_device_capability()[0] == 9 and paddle_device.get_device_capability()[1] == 0
                 )
@@ -1863,7 +1856,7 @@ class TrainingArguments:
                         )
 
                     dygraph_pp_configs = {
-                        "delay_scale_loss": self.pp_delay_scale_loss,
+                        "delay_scale_loss": True,  # TODO[Waynezee]: remove this config in the future
                         "dp_comm_overlap": enable_dp_comm_overlap,
                         "sharding_comm_overlap": self.enable_sharding_comm_overlap,
                         "enable_timer": self.timer,
