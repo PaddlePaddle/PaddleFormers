@@ -39,6 +39,8 @@ except Exception as error:
 
 @unittest.skipUnless(Qwen3VLVisionModel is not None, f"paddlefleet import failed: {_FLEET_IMPORT_ERROR}")
 class Qwen3VLFleetPositionalEncodingTest(unittest.TestCase):
+    FAST_POS_EMBED_ATOL = 2e-5
+
     def setUp(self):
         paddle.seed(2026)
         self.model = self._build_dummy_model()
@@ -57,8 +59,6 @@ class Qwen3VLFleetPositionalEncodingTest(unittest.TestCase):
 
         for name in [
             "_build_token_image_mapping",
-            "_decode_frame_local_coords",
-            "_build_interpolation_coord_tables",
             "rot_pos_emb",
             "fast_pos_embed_interpolate",
             "get_packed_seq_params",
@@ -166,41 +166,37 @@ class Qwen3VLFleetPositionalEncodingTest(unittest.TestCase):
 
         return paddle.cat(patch_pos_embeds_permute)
 
-    def test_fast_pos_embed_interpolate_matches_legacy_reference(self):
-        grid_thw = paddle.to_tensor([[1, 6, 8], [1, 14, 14]], dtype="int64")
-        image_id, frame_local_idx, total_tokens, max_hw = self.model._build_token_image_mapping(grid_thw)
-        row_idx, col_idx = self.model._decode_frame_local_coords(grid_thw, image_id, frame_local_idx)
+    def test_fast_pos_embed_interpolate_matches_legacy_reference_with_expected_tolerance(self):
+        for grid_thw in (
+            paddle.to_tensor([[1, 6, 8], [1, 14, 14]], dtype="int64"),
+            paddle.to_tensor([[1, 8, 6], [1, 4, 8]], dtype="int64"),
+        ):
+            with self.subTest(grid_thw=grid_thw.tolist()):
+                actual = self.model.fast_pos_embed_interpolate(grid_thw)
+                expected = self._legacy_fast_pos_embed_interpolate(grid_thw)
 
-        actual = self.model.fast_pos_embed_interpolate(
-            grid_thw,
-            image_id=image_id,
-            frame_local_idx=frame_local_idx,
-            total_tokens=total_tokens,
-            max_hw=max_hw,
-            row_idx=row_idx,
-            col_idx=col_idx,
-        )
-        expected = self._legacy_fast_pos_embed_interpolate(grid_thw)
-
-        self.assertTrue(bool(paddle.equal_all(actual, expected)))
+                self.assertEqual(list(actual.shape), list(expected.shape))
+                self.assertTrue(
+                    bool(
+                        paddle.allclose(
+                            actual,
+                            expected,
+                            rtol=0.0,
+                            atol=self.FAST_POS_EMBED_ATOL,
+                        )
+                    )
+                )
 
     def test_rot_pos_emb_matches_legacy_reference(self):
-        grid_thw = paddle.to_tensor([[2, 4, 4], [1, 6, 8]], dtype="int64")
-        image_id, frame_local_idx, total_tokens, max_hw = self.model._build_token_image_mapping(grid_thw)
-        row_idx, col_idx = self.model._decode_frame_local_coords(grid_thw, image_id, frame_local_idx)
+        for grid_thw in (
+            paddle.to_tensor([[2, 4, 4], [1, 6, 8]], dtype="int64"),
+            paddle.to_tensor([[1, 8, 6], [2, 4, 8]], dtype="int64"),
+        ):
+            with self.subTest(grid_thw=grid_thw.tolist()):
+                actual = self.model.rot_pos_emb(grid_thw)
+                expected = self._legacy_rot_pos_emb(grid_thw)
 
-        actual = self.model.rot_pos_emb(
-            grid_thw,
-            image_id=image_id,
-            frame_local_idx=frame_local_idx,
-            total_tokens=total_tokens,
-            max_hw=max_hw,
-            row_idx=row_idx,
-            col_idx=col_idx,
-        )
-        expected = self._legacy_rot_pos_emb(grid_thw)
-
-        self.assertTrue(bool(paddle.equal_all(actual, expected)))
+                self.assertTrue(bool(paddle.equal_all(actual, expected)))
 
     def test_get_packed_seq_params_matches_legacy_reference(self):
         grid_thw = paddle.to_tensor([[2, 4, 4], [1, 6, 8], [3, 2, 2]], dtype="int64")

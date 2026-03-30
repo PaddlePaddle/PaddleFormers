@@ -632,10 +632,15 @@ class Qwen3VLVisionModel(VisionLayer):
 
         return image_id, frame_local_idx, total_tokens, max_hw
 
-    def _decode_frame_local_coords(self, grid_thw, image_id, frame_local_idx):
+    def rot_pos_emb(self, grid_thw, image_id=None, frame_local_idx=None, total_tokens=None, max_hw=None):
         m = self.spatial_merge_size
         widths = grid_thw[:, 2]
         merged_w = widths // m
+
+        if image_id is None:
+            image_id, frame_local_idx, total_tokens, max_hw = self._build_token_image_mapping(grid_thw)
+
+        freq_table = self.rotary_pos_emb(max_hw)
 
         token_mw = merged_w[image_id]  # [total_tokens]
 
@@ -651,41 +656,6 @@ class Qwen3VLVisionModel(VisionLayer):
 
         row_idx = block_row * m + intra_row
         col_idx = block_col * m + intra_col
-        return row_idx, col_idx
-
-    def _build_interpolation_coord_tables(self, grid_thw):
-        max_h = int(grid_thw[:, 1].max())
-        max_w = int(grid_thw[:, 2].max())
-
-        h_coord_tables = []
-        w_coord_tables = []
-
-        for height in grid_thw[:, 1].tolist():
-            h_coords = paddle.linspace(0, self.num_grid_per_side - 1, int(height))
-            h_coord_tables.append(F.pad(h_coords, (0, max_h - int(height))))
-
-        for width in grid_thw[:, 2].tolist():
-            w_coords = paddle.linspace(0, self.num_grid_per_side - 1, int(width))
-            w_coord_tables.append(F.pad(w_coords, (0, max_w - int(width))))
-
-        return paddle.stack(h_coord_tables), paddle.stack(w_coord_tables)
-
-    def rot_pos_emb(
-        self,
-        grid_thw,
-        image_id=None,
-        frame_local_idx=None,
-        total_tokens=None,
-        max_hw=None,
-        row_idx=None,
-        col_idx=None,
-    ):
-        if image_id is None:
-            image_id, frame_local_idx, total_tokens, max_hw = self._build_token_image_mapping(grid_thw)
-        if row_idx is None or col_idx is None:
-            row_idx, col_idx = self._decode_frame_local_coords(grid_thw, image_id, frame_local_idx)
-
-        freq_table = self.rotary_pos_emb(max_hw)
 
         pos_ids = paddle.stack([row_idx, col_idx], axis=-1)  # [total_tokens, 2]
 
@@ -694,24 +664,40 @@ class Qwen3VLVisionModel(VisionLayer):
         return embeddings
 
     def fast_pos_embed_interpolate(
-        self,
-        grid_thw,
-        image_id=None,
-        frame_local_idx=None,
-        total_tokens=None,
-        max_hw=None,
-        row_idx=None,
-        col_idx=None,
+        self, grid_thw, image_id=None, frame_local_idx=None, total_tokens=None, max_hw=None
     ):
+        N = self.num_grid_per_side
+        m = self.spatial_merge_size
+        heights = grid_thw[:, 1]
+        widths = grid_thw[:, 2]
+        merged_w = widths // m
+
         if image_id is None:
             image_id, frame_local_idx, total_tokens, max_hw = self._build_token_image_mapping(grid_thw)
-        if row_idx is None or col_idx is None:
-            row_idx, col_idx = self._decode_frame_local_coords(grid_thw, image_id, frame_local_idx)
 
-        N = self.num_grid_per_side
-        h_coord_tables, w_coord_tables = self._build_interpolation_coord_tables(grid_thw)
-        h_idx = h_coord_tables[image_id, row_idx]
-        w_idx = w_coord_tables[image_id, col_idx]
+        token_mw = merged_w[image_id]
+
+        # Decompose linear index to coordinates (same layout as rot_pos_emb)
+        mm = m * m
+        mw_mm = token_mw * mm
+        block_row = frame_local_idx // mw_mm
+        r1 = frame_local_idx % mw_mm
+        block_col = r1 // mm
+        r2 = r1 % mm
+        intra_row = r2 // m
+        intra_col = r2 % m
+
+        # Pixel coordinates
+        j_h = (block_row * m + intra_row).astype("float32")
+        j_w = (block_col * m + intra_col).astype("float32")
+
+        # Bilinear interpolation: h_idx = j_h * (N-1) / (h-1)
+        token_h = heights[image_id].astype("float32")
+        token_w = widths[image_id].astype("float32")
+        h_denom = (token_h - 1).clip(min=1.0)
+        w_denom = (token_w - 1).clip(min=1.0)
+        h_idx = j_h * (N - 1) / h_denom
+        w_idx = j_w * (N - 1) / w_denom
 
         h_floor = h_idx.astype("int32")
         w_floor = w_idx.astype("int32")
@@ -784,16 +770,9 @@ class Qwen3VLVisionModel(VisionLayer):
 
         # Share token-to-image mapping to avoid redundant computation
         image_id, frame_local_idx, total_tokens, max_hw = self._build_token_image_mapping(grid_thw)
-        row_idx, col_idx = self._decode_frame_local_coords(grid_thw, image_id, frame_local_idx)
 
         pos_embeds = self.fast_pos_embed_interpolate(
-            grid_thw,
-            image_id=image_id,
-            frame_local_idx=frame_local_idx,
-            total_tokens=total_tokens,
-            max_hw=max_hw,
-            row_idx=row_idx,
-            col_idx=col_idx,
+            grid_thw, image_id=image_id, frame_local_idx=frame_local_idx, total_tokens=total_tokens, max_hw=max_hw
         )
         hidden_states = hidden_states + pos_embeds
 
@@ -802,13 +781,7 @@ class Qwen3VLVisionModel(VisionLayer):
         hidden_states = hidden_states.unsqueeze(0)
 
         rotary_pos_emb = self.rot_pos_emb(
-            grid_thw,
-            image_id=image_id,
-            frame_local_idx=frame_local_idx,
-            total_tokens=total_tokens,
-            max_hw=max_hw,
-            row_idx=row_idx,
-            col_idx=col_idx,
+            grid_thw, image_id=image_id, frame_local_idx=frame_local_idx, total_tokens=total_tokens, max_hw=max_hw
         )
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
         rotary_pos_emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), axis=-1)
