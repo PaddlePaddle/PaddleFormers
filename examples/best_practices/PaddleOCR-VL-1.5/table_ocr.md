@@ -528,7 +528,7 @@ LoRA 训练结束后，模型会保存在 `output_dir=./PaddleOCR-VL-1.5-SFT-Tab
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
-paddleformers-cli export ./examples/config/run_export.yaml \
+paddleformers-cli export examples/best_practices/PaddleOCR-VL-1.5/paddleocr-vl-v15_lora_export_table.yaml \
     model_name_or_path=PaddlePaddle/PaddleOCR-VL-1.5 \
     output_dir=./PaddleOCR-VL-1.5-SFT-Table-lora
 ```
@@ -704,5 +704,24 @@ td, th {
 
 
 ## 注意事项
+
 ### 更多硬件上的使用说明
 PaddleOCR-VL-1.5 支持基于昆仑芯 P800 和天数智芯 150s 进行微调。本教程选用了规模较大的数据集，在部分硬件上运行时间可能较长，如果希望**快速跑通流程**，或仅需验证**国产硬件环境的兼容性**，建议优先参考我们的 [PaddleFormers - 基于 PaddleOCR-VL 微调实现孟加拉语识别能力](https://github.com/PaddlePaddle/PaddleFormers/tree/develop/examples/best_practices/PaddleOCR-VL)，该教程使用精简数据集，可在短时间内完成微调全链路，助力迅速掌握多硬件适配技巧。
+
+### RoPE Triton Kernel 加速
+
+使用英伟达 GPU 训练的过程中，RoPE 可以通过使用 Triton Kernel 实现来加速。
+
+可以使用以下命令安装 triton 和 use-triton-in-paddle 依赖包：
+
+```shell
+pip install triton==3.6.0
+pip install use-triton-in-paddle==0.1.0
+```
+
+请注意，Triton Kernel 对于硬件环境要求较高，如果硬件环境不支持，请使用以下命令卸载 triton 和 use-triton-in-paddle 依赖包：
+
+```shell
+pip uninstall triton -y
+pip uninstall use-triton-in-paddle -y
+```

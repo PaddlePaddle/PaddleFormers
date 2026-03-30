@@ -69,7 +69,7 @@ jobs:
     needs: check_skip
     if: needs.check_skip.outputs.skip == 'false'
     name: unittest-gpu-ci
-    runs-on: ${{ inputs.runner || 'ernie-8gpu' || 'distrbute' }}
+    runs-on: ${{ inputs.runner || 'ernie-unittest' || 'distrbute' }}
     outputs:  
       pytest_execute_flag: ${{ steps.set_pytest_flag.outputs.pytest_execute_flag }}
     steps:
@@ -82,27 +82,25 @@ jobs:
           else
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
           fi
-      
+      - name: Determine the runner
+        run: |
+          gpu_id=$(( $(echo $PWD | awk -F'/' '{print $4}' | awk -F'_' '{print $2}') ))
+          echo $PWD
+          echo GPU_DEVICES="$gpu_id" >> $GITHUB_ENV
       - name: Run Container
         env:
           work_dir: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
           PIP_CACHE_DIR: /root/.cache/pip
+          GPU_DEVICES: ${{ env.GPU_DEVICES }}
           paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda12.6-Cudnn9.5-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "GPU_DEVICES=$GPU_DEVICES"
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
           echo "Workspace path: ${{ github.workspace }}"
-          DOCKER_VER=$(docker version --format '{{.Server.Version}}' | cut -d. -f1,2)
-          if (( $(echo "$DOCKER_VER < 19.03" | bc -l) )); then
-            GPU_OPTION="--runtime=nvidia"
-          else
-            GPU_OPTION="--gpus all"
-          fi
-          echo "DOCKER_VER=${DOCKER_VER}"
-          echo "GPU_OPTION=${GPU_OPTION}"
-          docker run -d -t ${GPU_OPTION} --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+          docker run -d -t --name ${container_name} --gpus device=${GPU_DEVICES} --runtime=nvidia --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
             -v $work_dir:/workspace \
             -v /home/.cache/:/root/.cache/ \
@@ -111,6 +109,8 @@ jobs:
             -e "BRANCH=$BRANCH" \
             -e "AGILE_COMPILE_BRANCH=$AGILE_COMPILE_BRANCH" \
             -e "PR_ID=$PR_ID" \
+            -e CUDA_VISIBLE_DEVICES=${GPU_DEVICES} \
+            -e NVIDIA_VISIBLE_DEVICES=${GPU_DEVICES} \
             -e "COMMIT_ID=$COMMIT_ID" \
             -e "work_dir=$work_dir" \
             -e "ci_scripts=$ci_scripts" \
@@ -126,7 +126,9 @@ jobs:
             -e "TRANSFORMERS_CACHE=$work_dir/../../../paddlenlp/huggingface" \
             -e PIP_CACHE_DIR \
             -w /workspace --privileged $IMAGE_NAME
-
+      - name: Check GPU
+        run: |
+          docker exec $container_name nvidia-smi
       - name: Download Code
         run: |
           docker exec -t $container_name /bin/bash -c '
@@ -163,14 +165,10 @@ jobs:
           pip cache dir
           set -e
           rm -rf /root/.cache/aistudio/
-          cd /home/models/my_packages && dpkg -i *.deb
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
           source $work_dir/../../../proxy
           source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
           echo "work_dir = ${work_dir}"
-          cp -r ${work_dir}/../../../models ./models
-          echo "Check whether the local model file exists:"
-          ls -l ./models
           bash -x scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
           '
           

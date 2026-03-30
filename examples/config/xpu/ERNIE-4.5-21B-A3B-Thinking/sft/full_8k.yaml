@@ -39,7 +39,6 @@ tensor_model_parallel_size: 4
 pipeline_model_parallel_size: 2
 sequence_parallel: true
 sharding: stage1
-offload_optim: false
 tensorwise_offload_optimizer: false
 bf16: true
 fp16_opt_level: O2
