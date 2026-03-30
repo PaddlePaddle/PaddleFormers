@@ -243,19 +243,29 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
     def _deepstack_process(
         self, hidden_states: paddle.Tensor, visual_pos_masks: paddle.Tensor, visual_embeds: paddle.Tensor
     ):
-        # Store original shape and flatten hidden_states to 2D [B*S, D]
+        # SP layout is [S/tp, B, H] (seq-first); transpose to [B, S/tp, H] so that
+        # flatten(0,1) produces batch-first [B*S/tp, H], consistent with visual_pos_masks [B, S].
+        _sp_transposed = False
+        if getattr(self.config, "sequence_parallel", False) and hidden_states.ndim == 3:
+            hidden_states = hidden_states.transpose([1, 0, 2])  # [S/tp,B,H] -> [B,S/tp,H]
+            _sp_transposed = True
+        # Save original_shape AFTER the SP transpose so that reshape restores the
+        # batch-first [B, S/tp, H] form (needed for the final back-transpose).
         original_shape = hidden_states.shape
         if hidden_states.ndim > 2:
             hidden_states = hidden_states.flatten(start_axis=0, stop_axis=1)
 
         visual_embeds = visual_embeds.to(hidden_states.device, hidden_states.dtype)
 
-        # complicated logic for squential parallelism
-        if visual_pos_masks.ndim > 1:
-            visual_pos_masks = visual_pos_masks.flatten()
-
-        # This block handles Sequence Parallelism (Row Slicing)
-        if visual_pos_masks.shape[0] > hidden_states.shape[0]:
+        # Sequence Parallelism (SP) row slicing.
+        # visual_pos_masks is [B, S] (full sequence), hidden_states is [B*S/tp, H]
+        # (batch-major after transpose+flatten). We must slice along the S dimension
+        # (dim=1) to match the batch-major layout, NOT flatten-then-chunk which
+        # breaks when B > 1.
+        if visual_pos_masks.ndim > 1 and visual_pos_masks.shape[1] > hidden_states.shape[0] // max(
+            visual_pos_masks.shape[0], 1
+        ):
+            # visual_pos_masks: [B, S], hidden_states: [B*S/tp, H]
             try:
                 from paddle.distributed.fleet import get_hybrid_communicate_group
 
@@ -263,22 +273,51 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
                 mp_rank = hcg.get_model_parallel_rank()
                 mp_size = hcg.get_model_parallel_world_size()
             except (ImportError, AttributeError):
-                mp_size = visual_pos_masks.shape[0] // hidden_states.shape[0]
+                batch_size = visual_pos_masks.shape[0]
+                full_seq_len = visual_pos_masks.shape[1]
+                mp_size = (batch_size * full_seq_len) // hidden_states.shape[0]
                 mp_rank = paddle.distributed.get_rank() % mp_size
-            total_len = visual_pos_masks.shape[0]
-            chunk_size = total_len // mp_size
-            start_idx = mp_rank * chunk_size
-            end_idx = start_idx + chunk_size
-            if start_idx > 0:
-                pre_mask = visual_pos_masks[:start_idx]
-                visual_offset = paddle.sum(paddle.cast(pre_mask, "int32")).item()
-            else:
-                visual_offset = 0
-            local_mask = visual_pos_masks[start_idx:end_idx]
-            local_visual_count = paddle.sum(paddle.cast(local_mask, "int32")).item()
 
-            visual_embeds = visual_embeds[visual_offset : visual_offset + local_visual_count]
-            visual_pos_masks = local_mask
+            full_seq_len = visual_pos_masks.shape[1]
+            chunk_s = full_seq_len // mp_size
+            start_s = mp_rank * chunk_s
+
+            # Slice along S dimension: [B, S] -> [B, S/tp]
+            local_mask = visual_pos_masks[:, start_s : start_s + chunk_s]
+            batch_size = visual_pos_masks.shape[0]
+
+            # Gather per-sample visual_embeds.
+            # visual_embeds is ordered as [sample0_all_vis, sample1_all_vis, ...].
+            # Each rank only needs the visual tokens that fall within its local
+            # sequence chunk [start_s, start_s+chunk_s) for each sample.
+            per_sample_total = paddle.cast(visual_pos_masks, "int32").sum(axis=1)  # [B]
+            per_sample_pre = (
+                paddle.cast(visual_pos_masks[:, :start_s], "int32").sum(axis=1)
+                if start_s > 0
+                else paddle.zeros([batch_size], dtype="int32")
+            )  # [B]
+            per_sample_local = paddle.cast(local_mask, "int32").sum(axis=1)  # [B]
+
+            gather_indices = []
+            cumulative_total = 0
+            for i in range(batch_size):
+                total_i = int(per_sample_total[i].item())
+                pre_i = int(per_sample_pre[i].item())
+                count_i = int(per_sample_local[i].item())
+                if count_i > 0:
+                    gather_indices.append(paddle.arange(cumulative_total + pre_i, cumulative_total + pre_i + count_i))
+                cumulative_total += total_i
+
+            if gather_indices:
+                gather_indices = paddle.concat(gather_indices)
+                visual_embeds = visual_embeds[gather_indices]
+            else:
+                visual_embeds = visual_embeds[:0]  # empty
+
+            # Flatten local mask to [B*S/tp] matching hidden_states batch-major layout
+            visual_pos_masks = local_mask.flatten()
+        elif visual_pos_masks.ndim > 1:
+            visual_pos_masks = visual_pos_masks.flatten()
 
         # If TP is enabled, hidden_states has shape [..., Hidden_Dim / TP_Size],
         # but visual_embeds usually has full [Hidden_Dim]. We need to slice visual_embeds column-wise.
@@ -303,11 +342,19 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
 
         hidden_states = hidden_states.clone()
         update_indices = paddle.nonzero(visual_pos_masks)
-        hidden_states = paddle.scatter_nd_add(hidden_states, update_indices, visual_embeds)
+        # Under SP, visual tokens are unevenly distributed across ranks. After row-slicing
+        # visual_pos_masks and visual_embeds to the local sequence chunk, some ranks may
+        # have zero visual tokens (local_visual_count == 0), producing visual_embeds with
+        # shape [0, H]. Guard against passing an empty updates tensor to scatter_nd_add,
+        # whose behavior is undefined / backend-dependent in that case.
+        if visual_embeds.shape[0] > 0:
+            hidden_states = paddle.scatter_nd_add(hidden_states, update_indices, visual_embeds)
 
         # [Supplement 3] Restore original shape [B*S, D] -> [B, S, D] if necessary
         if len(original_shape) > 2:
             hidden_states = hidden_states.reshape(original_shape)
+        if _sp_transposed:
+            hidden_states = hidden_states.transpose([1, 0, 2])  # [B,S/tp,H] -> [S/tp,B,H]
 
         return hidden_states
 
@@ -811,6 +858,13 @@ class Qwen3VLProvider(TransformerConfig):
         self.text_config.sequence_parallel = self.sequence_parallel
         self.text_config.context_parallel_size = self.context_parallel_size
         self.vision_config.tensor_model_parallel_size = self.tensor_model_parallel_size
+        # ViT always runs without sequence parallel. The vision encoder processes
+        # images as packed variable-length sequences (qkv_format="thd", cu_seqlens),
+        # whose token count per sample varies with image resolution and differs from
+        # the text sequence length that SP splits across ranks. There is no meaningful
+        # "equal-length sharding" to apply, so SP must stay disabled for the ViT
+        # regardless of the global sequence_parallel setting.
+        self.vision_config.sequence_parallel = False
         # self.vision_projection_config.tensor_model_parallel_size = self.tensor_model_parallel_size
         self.text_config.pipeline_model_parallel_size = self.pipeline_model_parallel_size
 
@@ -931,10 +985,7 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
         self.sequence_parallel_lm = language_transformer_config.sequence_parallel
         self.tp_comm_overlap_lm = language_transformer_config.tp_comm_overlap
         self.context_parallel_lm = language_transformer_config.context_parallel_size
-        assert not (self.sequence_parallel_lm or self.context_parallel_lm > 1), (
-            f"qwenvl donnot support sequence parallel {self.sequence_parallel_lm} "
-            f"or context parallel {self.context_parallel_lm}"
-        )
+        assert not (self.context_parallel_lm > 1), f"qwenvl donnot support context parallel {self.context_parallel_lm}"
         self.share_embeddings_and_output_weights = False
         self.rope_deltas = None
 
