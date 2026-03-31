@@ -25,6 +25,7 @@ from paddle.distributed.fleet.meta_parallel import (
 )
 from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
     build_sharded_state_dict,
+    shard_weight,
 )
 from paddlefleet.transformer.moe.moe_expert import BMMFunction, DeepGEMMBMMFunction
 
@@ -981,6 +982,7 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
         self.config = base_layer.config
         self.activation_func = base_layer.activation_func
         self.expert_parallel = base_layer.expert_parallel
+        self.ep_group = base_layer.ep_group
         self.moe_deep_gemm = base_layer.moe_deep_gemm
         self.activation_recompute = base_layer.activation_recompute
         self.r = r
@@ -1047,6 +1049,31 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
             self.weight2.set_value(new_parameter)
             self.merged = False
 
+    def sharded_state_dict(self, structured_name_prefix: str = ""):
+        state_dict = self.state_dict(structured_name_prefix="")
+        if self.ep_group is None:
+            return build_sharded_state_dict(state_dict, None, structured_name_prefix)
+
+        sharded_dict = {}
+        lora_keys = [
+            "weight1_lora_A", "weight1_lora_B",
+            "weight2_lora_A", "weight2_lora_B",
+        ]
+        for short_key, tensor in state_dict.items():
+            full_key = f"{structured_name_prefix}{short_key}"
+            if short_key in lora_keys:
+                sharded_dict[full_key] = shard_weight(
+                    key=full_key,
+                    weight=tensor,
+                    axis=0,
+                    group=self.ep_group,
+                )
+            else:
+                # weight1/weight2 (base, stop_gradient=True) — replicate as-is
+                from paddle.distributed.flex_checkpoint.dcp.sharded_weight import make_replicated_sharded_weight
+                sharded_dict[full_key] = make_replicated_sharded_weight(full_key, tensor)
+        return sharded_dict
+
     def forward(
         self,
         permuted_local_hidden_states: paddle.Tensor,
@@ -1064,7 +1091,8 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
         w2 = apply_lora(self.weight2, self.weight2_lora_A, self.weight2_lora_B)
 
         if permuted_local_hidden_states.numel() != 0:
-            tokens_per_expert = tokens_per_expert.cpu().tolist()
+            if not isinstance(tokens_per_expert, list):
+                tokens_per_expert = tokens_per_expert.cpu().tolist()
             tokens_per_expert = [int(x) for x in tokens_per_expert]
             tokens_per_expert_tensor = paddle.to_tensor(tokens_per_expert, dtype="int32")
 
