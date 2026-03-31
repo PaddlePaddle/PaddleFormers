@@ -34,7 +34,7 @@ except:
     qlora_weight_quantize = None
 
 from ..utils.log import logger
-from .qat_utils import quantize
+# from .qat_utils import quantize
 from .quantization_linear import (
     ColumnParallelQuantizationLinear,
     QuantizationLinear,
