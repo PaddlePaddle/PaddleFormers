@@ -82,7 +82,7 @@ class KimiK2PretrainedModel(PretrainedModel):
                 f"model.layers.{layer_id}.mlp.gate.weight -> model.layers.{layer_id}.mlp.gate.weight, src_dtype='bfloat16',dst_dtype='float32'",
                 f"model.layers.{layer_id}.mlp.gate.e_score_correction_bias -> model.layers.{layer_id}.mlp.gate.e_score_correction_bias, src_dtype='bfloat16',dst_dtype='float32'",
                 f"model.layers.{layer_id}.mlp.shared_experts.down_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.down_proj.weight",
-                f"model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight^T, model.layers.{layer_id}.mlp.shared_experts.up_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.up_gate_proj.weight , axis=1",
+                f"model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight^T, model.layers.{layer_id}.mlp.shared_experts.up_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.up_gate_proj.weight , fused_ffn",
             ]
 
             if config.moe_grouped_gemm and not config.fp8:
