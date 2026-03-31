@@ -1697,6 +1697,7 @@ def recursive_diff_dict(dict_a, dict_b, config_obj=None):
 ALLOWED_LAYER_TYPES = (
     "full_attention",
     "sliding_attention",
+    "linear_attention",
 )
 
 
