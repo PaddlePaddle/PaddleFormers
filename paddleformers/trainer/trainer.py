@@ -437,6 +437,8 @@ class Trainer:
         self.model_wrapped = model
         self.model = model
         self.criterion = criterion
+        if self.criterion is None and getattr(self.model, "_loss_fn", None) is not None:
+            self.criterion = self.model._loss_fn[0]
 
         # Set use_cache for the model
         if getattr(self.model, "config", None) is not None:
@@ -1386,6 +1388,31 @@ class Trainer:
                     exp_step = max(int(exp_step - exp_step % 10), 10)
                     logger.info("Reset eval step by minimum_eval_times to %d" % exp_step)
                     args.eval_steps = exp_step
+        elif has_length(self.train_dataset) and args.enable_auto_parallel:
+            # For IterableDataset with __len__ in auto_parallel mode,
+            # estimate len_dataloader from dataset length since dataloader doesn't support len()
+            dataset_len = len(self.train_dataset)
+            per_rank_samples = math.ceil(dataset_len / args.dataset_world_size)
+            len_dataloader = (
+                per_rank_samples // args.per_device_train_batch_size
+                if args.dataloader_drop_last
+                else math.ceil(per_rank_samples / args.per_device_train_batch_size)
+            )
+
+            num_update_steps_per_epoch = len_dataloader // args.gradient_accumulation_steps
+            num_update_steps_per_epoch = max(num_update_steps_per_epoch, 1)
+            num_examples = dataset_len
+
+            if args.max_steps > 0:
+                max_steps = args.max_steps
+                num_train_epochs = args.max_steps // num_update_steps_per_epoch + int(
+                    args.max_steps % num_update_steps_per_epoch > 0
+                )
+                num_train_samples = args.max_steps * total_train_batch_size
+            else:
+                max_steps = int(num_update_steps_per_epoch * args.num_train_epochs)
+                num_train_epochs = math.ceil(args.num_train_epochs)
+                num_train_samples = int(dataset_len * args.num_train_epochs)
         elif args.max_steps > 0:  # Rely on max_steps when dataloader does not have a working size
             max_steps = args.max_steps
             # Setting a very large number of epochs so we go as many times as necessary over the iterator.
@@ -1900,15 +1927,17 @@ class Trainer:
                     logger.info(f"Set DistributedBatchSampler consumed_samples to {consumed_samples}")
 
         epoch_iterator = train_dataloader
+        # Use len_dataloader directly instead of len(epoch_iterator) to avoid
+        # calling __len__ on IterableDataset which would raise an exception
         steps_in_epoch = (
-            len(epoch_iterator) if len_dataloader is not None else args.max_steps * args.gradient_accumulation_steps
+            len_dataloader if len_dataloader is not None else args.max_steps * args.gradient_accumulation_steps
         )
         if len_dataloader is not None:
-            if self.args.gradient_accumulation_steps > len(epoch_iterator):
+            if self.args.gradient_accumulation_steps > len_dataloader:
                 logger.warning(
-                    f"changing accumulation step from `{self.args.gradient_accumulation_steps}` to `{len(epoch_iterator)}` to avoid, cross epoch accumulate"
+                    f"changing accumulation step from `{self.args.gradient_accumulation_steps}` to `{len_dataloader}` to avoid, cross epoch accumulate"
                 )
-                self.args.gradient_accumulation_steps = len(epoch_iterator)
+                self.args.gradient_accumulation_steps = len_dataloader
 
         self.callback_handler.model = self.model
         self.callback_handler.optimizer = self.optimizer
@@ -2409,15 +2438,21 @@ class Trainer:
         shuffle = True if self.args.enable_auto_parallel else self.args.dataloader_shuffle
         total_batch_size = self.args.per_device_train_batch_size
         if self.args.enable_auto_parallel:
-            total_batch_size = total_batch_size * self.args.dataset_world_size * self.args.gradient_accumulation_steps
+            total_batch_size = total_batch_size * self.args.dataset_world_size
 
         if self.args.enable_auto_parallel or self.args.world_size <= 1:
-            return paddle.io.BatchSampler(
+            batch_sampler = paddle.io.BatchSampler(
                 dataset=self.train_dataset,
                 shuffle=shuffle,
                 batch_size=total_batch_size,
                 drop_last=self.args.dataloader_drop_last,
             )
+            # Set _acc_steps for auto_parallel mode to ensure correct __len__ calculation
+            # When _acc_steps = gradient_accumulation_steps, the dataloader length will be
+            # the number of optimizer steps, not micro-batches
+            if self.args.enable_auto_parallel:
+                batch_sampler._acc_steps = self.args.gradient_accumulation_steps
+            return batch_sampler
 
         return DistributedBatchSampler(
             self.train_dataset,
@@ -2686,16 +2721,22 @@ class Trainer:
         additional_configs = {}
         if is_iterable_dataset:  # For iterable dataset
             total_batch_size = self.args.per_device_train_batch_size
-            if self.args.enable_auto_parallel:
-                total_batch_size = total_batch_size * self.args.dataset_world_size
-            if self.args.dataset_world_size > 1 and train_dataset is not None:
-                train_dataset = IterableDatasetShard(
-                    train_dataset,
-                    batch_size=total_batch_size,
-                    drop_last=self.args.dataloader_drop_last,
-                    num_processes=self.args.dataset_world_size,
-                    process_index=self.args.dataset_rank,
-                )
+
+            # For auto_parallel mode, skip IterableDatasetShard to avoid double sharding
+            # DataLoader and dist.shard_dataloader will handle the sharding
+            if not self.args.enable_auto_parallel:
+                if self.args.dataset_world_size > 1 and train_dataset is not None:
+                    train_dataset = IterableDatasetShard(
+                        train_dataset,
+                        batch_size=total_batch_size,
+                        drop_last=self.args.dataloader_drop_last,
+                        num_processes=self.args.dataset_world_size,
+                        process_index=self.args.dataset_rank,
+                    )
+            else:
+                # For auto_parallel, set batch_size to be divisible by dp_world_size
+                # so that DataLoader's internal sharding works correctly
+                total_batch_size = self.args.per_device_train_batch_size * self.args.dataset_world_size
 
             if self.args.distributed_dataloader:
                 logger.info("Training using DistDataLoader.")
@@ -2728,11 +2769,24 @@ class Trainer:
 
         if self.args.enable_auto_parallel:
             self.dense_tensor_idx = dense_tensor_idx
+
+            # For IterableDataset, pass shard_dims=None to use original dataloader directly
+            # because ShardDataloader's DistributedBatchSampler is incompatible with IterableDataset
+            # For non-IterableDataset, pass is_dataset_splitted=True if dataset_world_size > 1
+            # because DistributedBatchSampler already handled the sharding
+            if is_iterable_dataset:
+                shard_dims_arg = None
+                is_dataset_splitted_arg = False
+            else:
+                shard_dims_arg = "dp"
+                is_dataset_splitted_arg = self.args.dataset_world_size > 1
+
             train_dataloader = dist.shard_dataloader(
                 dataloader=train_dataloader,
                 meshes=self._get_meshes_for_loader(),
-                shard_dims="dp",
+                shard_dims=shard_dims_arg,
                 dense_tensor_idx=dense_tensor_idx,
+                is_dataset_splitted=is_dataset_splitted_arg,
             )
 
         return train_dataloader
@@ -3504,6 +3558,7 @@ class Trainer:
         How the loss is computed by Trainer. By default, all models return the loss in the first element.
         Subclass and override for custom behavior.
         """
+
         if self.criterion is not None:
             if "labels" in inputs:
                 labels = inputs.pop("labels")
@@ -3519,7 +3574,14 @@ class Trainer:
         else:
             labels = None
 
-        outputs = model(**inputs)
+        if (
+            is_paddle_cuda_available()
+            and PaddleFleetPipelineLayer is not None
+            and isinstance(model, PaddleFleetPipelineLayer)
+        ):
+            outputs = model(inputs)
+        else:
+            outputs = model(**inputs)
 
         if self.criterion is not None:
             if self.args.enable_auto_parallel:
