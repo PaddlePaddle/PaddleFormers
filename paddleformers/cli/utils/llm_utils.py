@@ -238,6 +238,7 @@ def get_lora_target_modules(model):
             ".*k_proj.*",
             ".*v_proj.*",
             ".*o_proj.*",
+            ".*mlp.grouped_gemm_experts",
             ".*gate_proj.*",
             ".*up_proj.*",
             ".*down_proj.*",
