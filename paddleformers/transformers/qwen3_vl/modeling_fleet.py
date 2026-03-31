@@ -68,6 +68,14 @@ from .modeling import (
 )
 
 
+def safe_repeat_interleave_values(values, repeats):
+    max_repeats = paddle.max(repeats)
+    mask = paddle.arange(max_repeats).unsqueeze(0) < repeats.unsqueeze(1)
+    expanded_values = values.unsqueeze(1).expand([values.shape[0], max_repeats])
+    result = paddle.masked_select(expanded_values, mask)
+    return result
+
+
 def get_layer_spec(is_vit, normalization) -> LayerSpec:
     """Transformer Layer Spec."""
     attn_mask_type = AttnMaskType.no_mask if is_vit else AttnMaskType.causal
@@ -155,20 +163,6 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
 
             assert (rotary_pos_sin is None) == (rotary_pos_cos is None)
 
-            if rotary_pos_cos is not None and rotary_pos_sin is not None:
-                rotary_pos_cos = rotary_pos_cos.clone()
-                rotary_pos_sin = rotary_pos_sin.clone()
-                if self.config.apply_rope_fusion:
-                    rotary_pos_cos = rotary_pos_cos[0, ...]
-                    rotary_pos_sin = rotary_pos_sin[0, ...]
-                    if rotary_pos_cos.ndim == 2:
-                        rotary_pos_cos = rotary_pos_cos.reshape(
-                            [1, rotary_pos_cos.shape[0], 1, rotary_pos_cos.shape[1]]
-                        )
-                        rotary_pos_sin = rotary_pos_sin.reshape(
-                            [1, rotary_pos_sin.shape[0], 1, rotary_pos_sin.shape[1]]
-                        )
-
             outputs = recompute(
                 self._forward_impl,
                 hidden_states=hidden_states,
@@ -179,8 +173,8 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
                 context=context,
                 context_mask=context_mask,
                 rotary_pos_emb=rotary_pos_emb.clone() if rotary_pos_emb is not None else None,  # Clone is necessary!
-                rotary_pos_cos=rotary_pos_cos,
-                rotary_pos_sin=rotary_pos_sin,
+                rotary_pos_cos=rotary_pos_cos.clone() if rotary_pos_cos is not None else None,
+                rotary_pos_sin=rotary_pos_sin.clone() if rotary_pos_sin is not None else None,
                 attention_bias=attention_bias,
                 packed_seq_params=packed_seq_params,
             )
@@ -222,6 +216,13 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
         packed_seq_params: PackedSeqParams = None,
         **kwargs,
     ):
+        # Fix for mRoPE + apply_rope_fusion: ensure sin/cos have correct 4D shape
+        if self.config.apply_rope_fusion and rotary_pos_cos is not None and rotary_pos_sin is not None:
+            if rotary_pos_cos.ndim == 2 or rotary_pos_cos.ndim == 3:
+                # We need to reshape to [1, seq_len, 1, head_dim] (4D) for fused_rotary_position_embedding
+                rotary_pos_cos = rotary_pos_cos.reshape([1, -1, 1, rotary_pos_cos.shape[-1]])
+                rotary_pos_sin = rotary_pos_sin.reshape([1, -1, 1, rotary_pos_sin.shape[-1]])
+
         hidden_states, context = self._forward_attention(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
@@ -242,19 +243,29 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
     def _deepstack_process(
         self, hidden_states: paddle.Tensor, visual_pos_masks: paddle.Tensor, visual_embeds: paddle.Tensor
     ):
-        # Store original shape and flatten hidden_states to 2D [B*S, D]
+        # SP layout is [S/tp, B, H] (seq-first); transpose to [B, S/tp, H] so that
+        # flatten(0,1) produces batch-first [B*S/tp, H], consistent with visual_pos_masks [B, S].
+        _sp_transposed = False
+        if getattr(self.config, "sequence_parallel", False) and hidden_states.ndim == 3:
+            hidden_states = hidden_states.transpose([1, 0, 2])  # [S/tp,B,H] -> [B,S/tp,H]
+            _sp_transposed = True
+        # Save original_shape AFTER the SP transpose so that reshape restores the
+        # batch-first [B, S/tp, H] form (needed for the final back-transpose).
         original_shape = hidden_states.shape
         if hidden_states.ndim > 2:
             hidden_states = hidden_states.flatten(start_axis=0, stop_axis=1)
 
         visual_embeds = visual_embeds.to(hidden_states.device, hidden_states.dtype)
 
-        # complicated logic for squential parallelism
-        if visual_pos_masks.ndim > 1:
-            visual_pos_masks = visual_pos_masks.flatten()
-
-        # This block handles Sequence Parallelism (Row Slicing)
-        if visual_pos_masks.shape[0] > hidden_states.shape[0]:
+        # Sequence Parallelism (SP) row slicing.
+        # visual_pos_masks is [B, S] (full sequence), hidden_states is [B*S/tp, H]
+        # (batch-major after transpose+flatten). We must slice along the S dimension
+        # (dim=1) to match the batch-major layout, NOT flatten-then-chunk which
+        # breaks when B > 1.
+        if visual_pos_masks.ndim > 1 and visual_pos_masks.shape[1] > hidden_states.shape[0] // max(
+            visual_pos_masks.shape[0], 1
+        ):
+            # visual_pos_masks: [B, S], hidden_states: [B*S/tp, H]
             try:
                 from paddle.distributed.fleet import get_hybrid_communicate_group
 
@@ -262,22 +273,51 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
                 mp_rank = hcg.get_model_parallel_rank()
                 mp_size = hcg.get_model_parallel_world_size()
             except (ImportError, AttributeError):
-                mp_size = visual_pos_masks.shape[0] // hidden_states.shape[0]
+                batch_size = visual_pos_masks.shape[0]
+                full_seq_len = visual_pos_masks.shape[1]
+                mp_size = (batch_size * full_seq_len) // hidden_states.shape[0]
                 mp_rank = paddle.distributed.get_rank() % mp_size
-            total_len = visual_pos_masks.shape[0]
-            chunk_size = total_len // mp_size
-            start_idx = mp_rank * chunk_size
-            end_idx = start_idx + chunk_size
-            if start_idx > 0:
-                pre_mask = visual_pos_masks[:start_idx]
-                visual_offset = paddle.sum(paddle.cast(pre_mask, "int32")).item()
-            else:
-                visual_offset = 0
-            local_mask = visual_pos_masks[start_idx:end_idx]
-            local_visual_count = paddle.sum(paddle.cast(local_mask, "int32")).item()
 
-            visual_embeds = visual_embeds[visual_offset : visual_offset + local_visual_count]
-            visual_pos_masks = local_mask
+            full_seq_len = visual_pos_masks.shape[1]
+            chunk_s = full_seq_len // mp_size
+            start_s = mp_rank * chunk_s
+
+            # Slice along S dimension: [B, S] -> [B, S/tp]
+            local_mask = visual_pos_masks[:, start_s : start_s + chunk_s]
+            batch_size = visual_pos_masks.shape[0]
+
+            # Gather per-sample visual_embeds.
+            # visual_embeds is ordered as [sample0_all_vis, sample1_all_vis, ...].
+            # Each rank only needs the visual tokens that fall within its local
+            # sequence chunk [start_s, start_s+chunk_s) for each sample.
+            per_sample_total = paddle.cast(visual_pos_masks, "int32").sum(axis=1)  # [B]
+            per_sample_pre = (
+                paddle.cast(visual_pos_masks[:, :start_s], "int32").sum(axis=1)
+                if start_s > 0
+                else paddle.zeros([batch_size], dtype="int32")
+            )  # [B]
+            per_sample_local = paddle.cast(local_mask, "int32").sum(axis=1)  # [B]
+
+            gather_indices = []
+            cumulative_total = 0
+            for i in range(batch_size):
+                total_i = int(per_sample_total[i].item())
+                pre_i = int(per_sample_pre[i].item())
+                count_i = int(per_sample_local[i].item())
+                if count_i > 0:
+                    gather_indices.append(paddle.arange(cumulative_total + pre_i, cumulative_total + pre_i + count_i))
+                cumulative_total += total_i
+
+            if gather_indices:
+                gather_indices = paddle.concat(gather_indices)
+                visual_embeds = visual_embeds[gather_indices]
+            else:
+                visual_embeds = visual_embeds[:0]  # empty
+
+            # Flatten local mask to [B*S/tp] matching hidden_states batch-major layout
+            visual_pos_masks = local_mask.flatten()
+        elif visual_pos_masks.ndim > 1:
+            visual_pos_masks = visual_pos_masks.flatten()
 
         # If TP is enabled, hidden_states has shape [..., Hidden_Dim / TP_Size],
         # but visual_embeds usually has full [Hidden_Dim]. We need to slice visual_embeds column-wise.
@@ -301,12 +341,20 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
                 visual_embeds = visual_embeds[:, start_col:end_col]
 
         hidden_states = hidden_states.clone()
-        local_this = hidden_states[visual_pos_masks, :] + visual_embeds
-        hidden_states[visual_pos_masks, :] = local_this  # 这个操作可能会导致paddle转静态图或推理时出问题，建议使用 scatter
+        update_indices = paddle.nonzero(visual_pos_masks)
+        # Under SP, visual tokens are unevenly distributed across ranks. After row-slicing
+        # visual_pos_masks and visual_embeds to the local sequence chunk, some ranks may
+        # have zero visual tokens (local_visual_count == 0), producing visual_embeds with
+        # shape [0, H]. Guard against passing an empty updates tensor to scatter_nd_add,
+        # whose behavior is undefined / backend-dependent in that case.
+        if visual_embeds.shape[0] > 0:
+            hidden_states = paddle.scatter_nd_add(hidden_states, update_indices, visual_embeds)
 
         # [Supplement 3] Restore original shape [B*S, D] -> [B, S, D] if necessary
         if len(original_shape) > 2:
             hidden_states = hidden_states.reshape(original_shape)
+        if _sp_transposed:
+            hidden_states = hidden_states.transpose([1, 0, 2])  # [B,S/tp,H] -> [S/tp,B,H]
 
         return hidden_states
 
@@ -601,37 +649,44 @@ class Qwen3VLVisionModel(VisionLayer):
         )
 
     def rot_pos_emb(self, grid_thw):
-        pos_ids = []
-        for t, h, w in grid_thw:
-            hpos_ids = paddle.arange(h).unsqueeze(1).expand([-1, w])
-            hpos_ids = hpos_ids.reshape(
-                [
-                    h // self.spatial_merge_size,
-                    self.spatial_merge_size,
-                    w // self.spatial_merge_size,
-                    self.spatial_merge_size,
-                ]
-            )
-            hpos_ids = hpos_ids.transpose(perm=[0, 2, 1, 3])
-            hpos_ids = hpos_ids.flatten()
+        m = self.spatial_merge_size
+        grid_thw_list = grid_thw.tolist()
 
-            wpos_ids = paddle.arange(w).unsqueeze(0).expand([h, -1])
-            wpos_ids = wpos_ids.reshape(
-                [
-                    h // self.spatial_merge_size,
-                    self.spatial_merge_size,
-                    w // self.spatial_merge_size,
-                    self.spatial_merge_size,
-                ]
-            )
-            wpos_ids = wpos_ids.transpose([0, 2, 1, 3])
-            wpos_ids = wpos_ids.flatten()
-            pos_ids.append(paddle.stack(x=[hpos_ids, wpos_ids], axis=-1).tile(repeat_times=[t, 1]))
-        pos_ids = paddle.cat(x=pos_ids, axis=0)
-        max_grid_size = grid_thw[:, 1:].max()
-        rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
-        rotary_pos_emb = rotary_pos_emb_full[pos_ids].flatten(start_axis=1)
-        return rotary_pos_emb
+        max_hw = max(max(h, w) for _, h, w in grid_thw_list)
+        freq_table = self.rotary_pos_emb(max_hw)  # [max_hw, dim//2]
+
+        total_tokens = sum(int(t * h * w) for t, h, w in grid_thw_list)
+        pos_ids = paddle.empty([total_tokens, 2], dtype="int64")
+
+        offset = 0
+        for num_frames, height, width in grid_thw_list:
+            num_frames, height, width = int(num_frames), int(height), int(width)
+            merged_h, merged_w = height // m, width // m
+
+            block_rows = paddle.arange(merged_h)
+            block_cols = paddle.arange(merged_w)
+            intra_row = paddle.arange(m)
+            intra_col = paddle.arange(m)
+
+            # Compute full-resolution positions via broadcasting
+            row_idx = block_rows[:, None, None, None] * m + intra_row[None, None, :, None]
+            col_idx = block_cols[None, :, None, None] * m + intra_col[None, None, None, :]
+
+            row_idx = row_idx.expand([merged_h, merged_w, m, m]).reshape([-1])
+            col_idx = col_idx.expand([merged_h, merged_w, m, m]).reshape([-1])
+
+            coords = paddle.stack([row_idx, col_idx], axis=-1)  # [h*w, 2]
+
+            if num_frames > 1:
+                coords = coords.tile([num_frames, 1])
+
+            num_tokens = coords.shape[0]
+            pos_ids[offset : offset + num_tokens] = coords
+            offset += num_tokens
+
+        embeddings = freq_table[pos_ids]  # [total_tokens, 2, dim//2]
+        embeddings = embeddings.flatten(start_axis=1)  # [total_tokens, dim]
+        return embeddings
 
     def fast_pos_embed_interpolate(self, grid_thw):
         grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
@@ -641,8 +696,8 @@ class Qwen3VLVisionModel(VisionLayer):
         weight_list = [[] for _ in range(4)]
 
         for t, h, w in zip(grid_ts, grid_hs, grid_ws):
-            h_idxs = paddle.linspace(0, self.num_grid_per_side - 1, h)
-            w_idxs = paddle.linspace(0, self.num_grid_per_side - 1, w)
+            h_idxs = paddle.linspace(0, self.num_grid_per_side - 1, int(h))
+            w_idxs = paddle.linspace(0, self.num_grid_per_side - 1, int(w))
 
             h_idxs_floor = h_idxs.int()
             w_idxs_floor = w_idxs.int()
@@ -683,9 +738,11 @@ class Qwen3VLVisionModel(VisionLayer):
         patch_pos_embeds_permute = []
         merge_size = self.spatial_merge_size
         for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
-            pos_embed = pos_embed.repeat([t, 1])
+            # Convert to Python int to avoid NumPy 2.x compatibility issues
+            h_merged = int(h) // int(merge_size)
+            w_merged = int(w) // int(merge_size)
             pos_embed = (
-                pos_embed.view([t, h // merge_size, merge_size, w // merge_size, merge_size, -1])
+                pos_embed.reshape([t, h_merged, merge_size, w_merged, merge_size, -1])
                 .permute(0, 1, 3, 2, 4, 5)
                 .flatten(0, 4)
             )
@@ -697,8 +754,8 @@ class Qwen3VLVisionModel(VisionLayer):
         self,
         grid_thw: paddle.Tensor,
     ):
-        seqlens = paddle.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).contiguous()
-        cu_seqlens = seqlens.cumsum(dim=0, dtype=paddle.int32)
+        seqlens = safe_repeat_interleave_values(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0])
+        cu_seqlens = seqlens.cumsum(axis=0, dtype=paddle.int32)
         cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0).contiguous()
         cu_seqlens = cu_seqlens.squeeze().contiguous()
 
@@ -730,11 +787,16 @@ class Qwen3VLVisionModel(VisionLayer):
 
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
-        rotary_pos_emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        rotary_pos_cos = rotary_pos_emb.cos()
-        rotary_pos_sin = rotary_pos_emb.sin()
+        rotary_pos_emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), axis=-1)
+        # Cast freqs to float32 and compute cos/sin inside auto_cast(False) to match the
+        # precision of _apply_rotary_pos_emb_bshd_fp32, which computes cos/sin on the same
+        # bf16 freqs but under auto_cast(False) using a float32 kernel.
+        with paddle.amp.auto_cast(False):
+            _freqs_f32 = rotary_pos_emb.astype("float32")
+            rotary_pos_cos = paddle.cos(_freqs_f32)
+            rotary_pos_sin = paddle.sin(_freqs_f32)
         rotary_pos_emb = rotary_pos_emb[:, None, None, :]
-        rotary_pos_emb = rotary_pos_emb.transpose([1, 0])
+        rotary_pos_emb = rotary_pos_emb.transpose([1, 0, 2, 3])
 
         packed_seq_params = self.get_packed_seq_params(grid_thw)
 
@@ -789,12 +851,20 @@ class Qwen3VLProvider(TransformerConfig):
     freeze_vision_model: bool = False
     freeze_vision_projection: bool = False
 
-    def provide(self, tokenizer=None, vp_stage: int | None = None) -> "Qwen3VLModelDist":
+    def provide(self, tokenizer=None, vp_stage: int | None = None, loss_fn=None) -> "Qwen3VLModelDist":
         self.text_config.scatter_embedding_sequence_parallel = False
         self.text_config.tensor_model_parallel_size = self.tensor_model_parallel_size
+        self.text_config.tensor_parallel_output = self.tensor_parallel_output
         self.text_config.sequence_parallel = self.sequence_parallel
         self.text_config.context_parallel_size = self.context_parallel_size
         self.vision_config.tensor_model_parallel_size = self.tensor_model_parallel_size
+        # ViT always runs without sequence parallel. The vision encoder processes
+        # images as packed variable-length sequences (qkv_format="thd", cu_seqlens),
+        # whose token count per sample varies with image resolution and differs from
+        # the text sequence length that SP splits across ranks. There is no meaningful
+        # "equal-length sharding" to apply, so SP must stay disabled for the ViT
+        # regardless of the global sequence_parallel setting.
+        self.vision_config.sequence_parallel = False
         # self.vision_projection_config.tensor_model_parallel_size = self.tensor_model_parallel_size
         self.text_config.pipeline_model_parallel_size = self.pipeline_model_parallel_size
 
@@ -827,6 +897,10 @@ class Qwen3VLProvider(TransformerConfig):
             for attr in config_attrs:
                 setattr(config, attr, getattr(self, attr))
 
+        # VIT uses 2D spatial RoPE which is incompatible with fused_rope kernel,
+        # force disable regardless of global setting.
+        self.vision_config.apply_rope_fusion = False
+
         self.text_config.tp_comm_overlap = self.tp_comm_overlap
         self.vision_config.tp_comm_overlap = False
         # self.vision_projection_config.tp_comm_overlap = False
@@ -844,6 +918,7 @@ class Qwen3VLProvider(TransformerConfig):
             or parallel_state.get_pipeline_model_parallel_rank() >= self.encoder_pipeline_model_parallel_size,
             drop_vision_class_token=self.drop_vision_class_token,
             vp_stage=vp_stage,
+            criterion=loss_fn,
         )
 
         return model
@@ -910,10 +985,7 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
         self.sequence_parallel_lm = language_transformer_config.sequence_parallel
         self.tp_comm_overlap_lm = language_transformer_config.tp_comm_overlap
         self.context_parallel_lm = language_transformer_config.context_parallel_size
-        assert not (self.sequence_parallel_lm or self.context_parallel_lm > 1), (
-            f"qwenvl donnot support sequence parallel {self.sequence_parallel_lm} "
-            f"or context parallel {self.context_parallel_lm}"
-        )
+        assert not (self.context_parallel_lm > 1), f"qwenvl donnot support context parallel {self.context_parallel_lm}"
         self.share_embeddings_and_output_weights = False
         self.rope_deltas = None
 
@@ -1085,22 +1157,58 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
         assert loss_mask is None, "loss_mask is not supported yet"
         image_embeds, video_embeds, deepstack_image_embeds, deepstack_video_embeds = (None for _ in range(4))
         if self.add_encoder and pixel_values is not None:
-            pixel_values = pixel_values.to(self.vision_model.parameters()[0].dtype)
-            if self.config.freeze_vision_model:
-                with paddle.no_grad():
+            # Handle list[paddle.Tensor] input (from RL training pipeline)
+            if isinstance(pixel_values, list):
+                # Filter out None and concatenate tensors
+                tensor_list = [elem for elem in pixel_values if elem is not None]
+                if tensor_list:
+                    pixel_values = paddle.concat(tensor_list, axis=0)
+                else:
+                    pixel_values = None
+            if pixel_values is not None:
+                pixel_values = pixel_values.to(self.vision_model.parameters()[0].dtype)
+                # Handle list[paddle.Tensor] for image_grid_thw
+                if image_grid_thw is not None:
+                    if isinstance(image_grid_thw, list):
+                        tensor_list = [elem for elem in image_grid_thw if elem is not None]
+                        if tensor_list:
+                            image_grid_thw = paddle.concat(tensor_list, axis=0)
+                        else:
+                            image_grid_thw = None
+                if self.config.freeze_vision_model:
+                    with paddle.no_grad():
+                        image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
+                else:
                     image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
-            else:
-                image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
-            image_embeds = paddle.cat(image_embeds, dim=0)
+                image_embeds = paddle.cat(image_embeds, dim=0)
 
         if self.add_encoder and pixel_values_videos is not None:
-            pixel_values_videos = pixel_values_videos.to(self.vision_model.parameters()[0].dtype)
-            if self.config.freeze_vision_model:
-                with paddle.no_grad():
+            # Handle list[paddle.Tensor] input (from RL training pipeline)
+            if isinstance(pixel_values_videos, list):
+                # Filter out None and concatenate tensors
+                tensor_list = [elem for elem in pixel_values_videos if elem is not None]
+                if tensor_list:
+                    pixel_values_videos = paddle.concat(tensor_list, axis=0)
+                else:
+                    pixel_values_videos = None
+            if pixel_values_videos is not None:
+                pixel_values_videos = pixel_values_videos.to(self.vision_model.parameters()[0].dtype)
+                # Handle list[paddle.Tensor] for video_grid_thw
+                if video_grid_thw is not None:
+                    if isinstance(video_grid_thw, list):
+                        tensor_list = [elem for elem in video_grid_thw if elem is not None]
+                        if tensor_list:
+                            video_grid_thw = paddle.concat(tensor_list, axis=0)
+                        else:
+                            video_grid_thw = None
+                if self.config.freeze_vision_model:
+                    with paddle.no_grad():
+                        video_embeds, deepstack_video_embeds = self.get_video_features(
+                            pixel_values_videos, video_grid_thw
+                        )
+                else:
                     video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
-            else:
-                video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
-            video_embeds = paddle.cat(video_embeds, axis=0)
+                video_embeds = paddle.cat(video_embeds, axis=0)
 
         if position_ids is None:
             if self.rope_deltas is None or cache_position is None or cache_position[0] == 0:
@@ -1122,7 +1230,10 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
                 delta = delta.repeat_interleave(batch_size // delta.shape[0], axis=1)
                 position_ids = position_ids + delta
         else:
-            if position_ids.shape == input_ids.shape:
+            # Handle position_ids with mrope format [batch_size, seq_len, 3] -> [3, batch_size, seq_len]
+            if position_ids.ndim == 3 and position_ids.shape[-1] == 3:
+                position_ids = position_ids.transpose([2, 0, 1])
+            elif position_ids.shape == input_ids.shape:
                 position_ids = position_ids.expand(3, position_ids.shape[0], -1)
 
         input_dict = {
@@ -1204,6 +1315,12 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             "aoa_statements": [
                 f"model.language_model.embed_tokens.weight -> {llm_prefix}embedding.embed_tokens.weight",
                 f"model.language_model.norm.weight -> {llm_prefix}norm.weight",
+                f"model.language_model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
+                f"model.language_model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
+                f"model.language_model.layers.$LAYER_ID.input_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.input_layernorm.weight",
+                f"model.language_model.layers.$LAYER_ID.post_attention_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"model.language_model.layers.$LAYER_ID.self_attn.q_norm.weight -> {llm_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"model.language_model.layers.$LAYER_ID.self_attn.k_norm.weight -> {llm_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
             ]
         }
 
@@ -1294,6 +1411,12 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             "aoa_statements": [
                 f"{llm_prefix}embedding.embed_tokens.weight -> model.language_model.embed_tokens.weight",
                 f"{llm_prefix}norm.weight -> model.language_model.norm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.language_model.layers.$LAYER_ID.mlp.down_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.language_model.layers.$LAYER_ID.self_attn.o_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.language_model.layers.$LAYER_ID.input_layernorm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.language_model.layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.language_model.layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.language_model.layers.$LAYER_ID.self_attn.k_norm.weight",
             ]
         }
 
@@ -1367,7 +1490,7 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             for layer_id in range(config.text_config.num_hidden_layers)
         ]
         aoa_config["aoa_statements"] += [
-            f"{llm_prefix}layers.{layer_id}.mlp.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.mlp.{x}_proj.weight"
+            f"model.language_model.layers.{layer_id}.mlp.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.mlp.{x}_proj.weight"
             for layer_id in range(config.text_config.num_hidden_layers)
             for x in ("gate", "up")
         ]

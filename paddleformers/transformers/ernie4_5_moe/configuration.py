@@ -60,8 +60,8 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         moe_num_experts: Optional[Union[int, list]] = 16,
         moe_capacity=[64, 64, 64],
         moe_norm_min=1e-12,
-        moe_aux_loss_lambda=1e-2,
-        moe_z_loss_lambda=1e-4,
+        router_aux_loss_coef=1e-2,
+        router_z_loss_coef=1e-4,
         moe_orthogonal_loss_lambda=1e-2,
         sinkhorn_2gate=True,
         sinkhorn_temp=3e-2,
@@ -74,7 +74,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         moe_layer_end_index=-1,
         moe_layer_interval=1,
         moe_reverse_token_drop: bool = False,
-        moe_gate_act: str = "softmax",
+        scoring_func: str = "softmax",
         moe_norm_gate_logits=True,
         moe_all_to_all_dropout: float = 0.0,
         moe_k=2,
@@ -86,7 +86,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         fuse_gate_detach_matmul: bool = False,
         moe_use_hard_gate=False,
         num_nextn_predict_layers=1,
-        multi_token_pred_lambda=0.1,
+        mtp_loss_scaling_factor=0.1,
         enable_mtp_magic_send=False,
         dpo_config=None,
         moe_multimodal_dispatch_use_allgather="",
@@ -132,8 +132,8 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
             moe_layer_interval: Interval between MoE layers
             moe_layer_start_index: Starting layer index for MoE
             moe_layer_end_index: Ending layer index for MoE (-1 means last layer)
-            moe_aux_loss_lambda: Weight for auxiliary loss
-            moe_z_loss_lambda: Weight for z-loss
+            router_aux_loss_coef: Weight for auxiliary loss
+            router_z_loss_coef: Weight for z-loss
             moe_orthogonal_loss_lambda: Weight for orthogonal loss
             sinkhorn_2gate: Whether to use sinkhorn 2-gate routing
             sinkhorn_temp: Temperature for sinkhorn routing
@@ -143,7 +143,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
             moe_intermediate_size: Intermediate size for MoE layers
             moe_num_shared_experts: Number of shared experts
             moe_reverse_token_drop: Whether to use reverse token dropping
-            moe_gate_act: Activation function for gating
+            scoring_func: Activation function for gating
             moe_norm_gate_logits: Whether to normalize gate logits
             moe_all_to_all_dropout: Dropout for all-to-all communication
             moe_k: Number of experts to route to
@@ -192,8 +192,8 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.moe_num_experts = moe_num_experts
         self.moe_capacity = moe_capacity
         self.moe_norm_min = moe_norm_min
-        self.moe_aux_loss_lambda = moe_aux_loss_lambda
-        self.moe_z_loss_lambda = moe_z_loss_lambda
+        self.router_aux_loss_coef = router_aux_loss_coef
+        self.router_z_loss_coef = router_z_loss_coef
         self.moe_orthogonal_loss_lambda = moe_orthogonal_loss_lambda
         self.global_aux_loss = global_aux_loss
         self.sinkhorn_2gate = sinkhorn_2gate
@@ -215,14 +215,14 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.num_acc_steps = num_acc_steps
         self.moe_layer_start_index = moe_layer_start_index
         self.moe_layer_end_index = self.num_hidden_layers - 1 if moe_layer_end_index == -1 else moe_layer_end_index
-        self.moe_gate_act = moe_gate_act
+        self.scoring_func = scoring_func
         self.moe_norm_gate_logits = moe_norm_gate_logits
         self.moe_use_aux_free = moe_use_aux_free
         self.fuse_gate_detach_matmul = fuse_gate_detach_matmul
         self.moe_use_hard_gate = moe_use_hard_gate
         self.moe_multimodal_dispatch_use_allgather = moe_multimodal_dispatch_use_allgather
         self.num_nextn_predict_layers = num_nextn_predict_layers
-        self.multi_token_pred_lambda = multi_token_pred_lambda
+        self.mtp_loss_scaling_factor = mtp_loss_scaling_factor
         self.enable_mtp_magic_send = enable_mtp_magic_send
         self.dpo_config = dpo_config
         self.recompute_granularity = None
@@ -253,8 +253,8 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
                 "enable_mtp_magic_send",
                 "moe_dropout_prob",
                 "moe_use_aux_free",
-                "moe_aux_loss_lambda",
-                "moe_gate_act",
+                "router_aux_loss_coef",
+                "scoring_func",
                 "moe_group_experts",
                 "moe_all_to_all_dropout",
                 "moe_group_orthogonal_loss",
@@ -263,11 +263,11 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
                 "moe_orthogonal_loss_lambda",
                 "moe_reverse_token_drop",
                 "moe_use_hard_gate",
-                "moe_z_loss_lambda",
+                "router_z_loss_coef",
                 "moe_group_origin",
                 "moe_rank",
                 "moe_world_size",
-                "multi_token_pred_lambda",
+                "mtp_loss_scaling_factor",
                 "moe_multimodal_dispatch_use_allgather",
                 "recompute_granularity",
                 "recompute_method",

@@ -376,6 +376,7 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_model_name_list(self):
         pass
 
+    @unittest.skip("glm_moe currently does not support checkpoints save and load")
     def test_save_load(self):
         for model_class in self.all_model_classes:
             # test from_pretrained

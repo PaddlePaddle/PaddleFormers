@@ -506,6 +506,8 @@ class DefaultFlowCallback(TrainerCallback):
         # End training
         if state.global_step >= state.max_steps:
             control.should_training_stop = True
+            if args.save_last_step:
+                control.should_save = True
 
         # Save hf
         if (
@@ -591,14 +593,13 @@ class PrinterCallback(TrainerCallback):
 
     def on_log(self, args, state, control, logs=None, **kwargs):
         _ = logs.pop("total_flos", None)
-        if state.is_local_process_zero:
-            if type(logs) is dict:
-                logger.info(", ".join(f"{k}: {v}" for k, v in logs.items()))
-                metrics_dumper = kwargs.get("metrics_dumper", None)
-                if metrics_dumper is not None:
-                    metrics_dumper.append(logs)
-            else:
-                logger.info(logs)
+        if type(logs) is dict:
+            logger.info(", ".join(f"{k}: {v}" for k, v in logs.items()))
+            metrics_dumper = kwargs.get("metrics_dumper", None)
+            if metrics_dumper is not None:
+                metrics_dumper.append(logs)
+        else:
+            logger.info(logs)
 
 
 class EarlyStoppingCallback(TrainerCallback):
@@ -697,7 +698,11 @@ class FP8QuantWeightCallback(TrainerCallback):
         optimizer = kwargs["optimizer"]
         global skip_count
 
-        if (not g_shard_bypass_dygraph_optimizer or skip_count == 0) and hasattr(model, "fp8_quant_weight"):
+        if (
+            (not g_shard_bypass_dygraph_optimizer or skip_count == 0)
+            and hasattr(model, "fp8_quant_weight")
+            and not args.sharding_parallel_size <= 1
+        ):
             self.moe_weights_name = []
             self.use_fp8 = True
             if GPTModel is not None and isinstance(model, GPTModel):
@@ -732,7 +737,11 @@ class FP8QuantWeightCallback(TrainerCallback):
         optimizer = kwargs["optimizer"]
         global skip_count
 
-        if (not g_shard_bypass_dygraph_optimizer) and hasattr(model, "fp8_quant_weight"):
+        if (
+            (not g_shard_bypass_dygraph_optimizer)
+            and hasattr(model, "fp8_quant_weight")
+            and not args.sharding_parallel_size <= 1
+        ):
             for name in self.moe_weights_name:
                 if name in optimizer._master_weights:
                     reload(optimizer._master_weights[name])

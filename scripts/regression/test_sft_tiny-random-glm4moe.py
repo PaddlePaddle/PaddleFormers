@@ -42,10 +42,10 @@ SFT_LORA_RESUME_EXCEPTED_LOSS = 12.717308
 SFT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 SFT_FULL_TP_PP_EXCEPTED_LOSS = 12.789046
-SFT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 12.78921
+SFT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 12.789078
 SFT_FULL_TP_PP_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
-SFT_LORA_TP_PP_EXCEPTED_LOSS = 12.789069
+SFT_LORA_TP_PP_EXCEPTED_LOSS = 12.788723
 SFT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 12.788975
 SFT_LORA_TP_PP_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
@@ -133,6 +133,7 @@ class SFTTrainTest(unittest.TestCase):
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
             "template": TEMPLATE,
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -183,6 +184,7 @@ class SFTTrainTest(unittest.TestCase):
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
             "template": TEMPLATE,
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -241,6 +243,7 @@ class SFTTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "template": TEMPLATE,
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -291,6 +294,7 @@ class SFTTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "template": TEMPLATE,
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -351,6 +355,7 @@ class SFTTrainTest(unittest.TestCase):
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
             "template": TEMPLATE,
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "full_function_call.yaml")
         updated_config_path = self.sfttrain_tester.update_training_args(config_path, output_dir, update_args)

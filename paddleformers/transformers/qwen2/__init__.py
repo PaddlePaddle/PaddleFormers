@@ -30,6 +30,8 @@ import_structure = {
         "Qwen2ForSequenceClassification",
         "Qwen2ForTokenClassification",
         "Qwen2SentenceEmbedding",
+        "Qwen2ForCausalLMDeprecated",
+        "Qwen2ForCausalLMPipeDeprecated",
     ],
 }
 

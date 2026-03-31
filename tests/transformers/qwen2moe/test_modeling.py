@@ -20,11 +20,11 @@ import unittest
 import numpy as np
 import paddle
 
+from paddleformers.transformers import Qwen2MoeConfig
 from paddleformers.transformers import (
-    Qwen2MoeConfig,
-    Qwen2MoeForCausalLM,
-    Qwen2MoeModel,
+    Qwen2MoeForCausalLMDeprecated as Qwen2MoeForCausalLM,
 )
+from paddleformers.transformers import Qwen2MoeModel
 from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -427,7 +427,9 @@ class Qwen2MoeCompatibilityTest(unittest.TestCase):
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
         # 3. forward the paddle model
-        from paddleformers.transformers import Qwen2MoeForCausalLM
+        from paddleformers.transformers import (
+            Qwen2MoeForCausalLMDeprecated as Qwen2MoeForCausalLM,
+        )
 
         paddle_model = Qwen2MoeForCausalLM.from_pretrained(
             self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
@@ -461,7 +463,10 @@ class Qwen2MoeCompatibilityTest(unittest.TestCase):
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             # 3. forward the paddle model with fc
-            from paddleformers.transformers import Qwen2MoeConfig, Qwen2MoeForCausalLM
+            from paddleformers.transformers import Qwen2MoeConfig
+            from paddleformers.transformers import (
+                Qwen2MoeForCausalLMDeprecated as Qwen2MoeForCausalLM,
+            )
 
             paddle_model = Qwen2MoeForCausalLM.from_pretrained(
                 tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"

@@ -64,39 +64,22 @@ jobs:
           python -m pip install -r requirements.txt
 
           echo "Uninstall PaddlePaddle and PaddleFormers beforehand..."
-          python -m pip uninstall paddlepaddle paddle-iluvatar-gpu paddleformers -y
+          python -m pip uninstall paddlepaddle paddle-iluvatar-gpu paddlepaddle-iluvatar paddleformers -y
 
+          echo "Install PaddlePaddle..."
           retry_count=0
           max_retries=3
-          echo "Install PaddlePaddle..."
           while [ $retry_count -lt $max_retries ]; do
-            if python -m pip install --pre paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/; then
-              echo "PaddlePaddle installation successful"
+            if python -m pip install --pre paddlepaddle-iluvatar -i https://www.paddlepaddle.org.cn/packages/nightly/ixuca/; then
+              echo "PaddlePaddle Iluvatar installation successful"
               break
             else
               retry_count=$((retry_count + 1))
               if [ $retry_count -lt $max_retries ]; then
-                echo "PaddlePaddle installation failed, retrying in 10 seconds... (Attempt $retry_count/$max_retries)"
+                echo "PaddlePaddle Iluvatar installation failed, retrying in 10 seconds... (Attempt $retry_count/$max_retries)"
                 sleep 10
               else
-                echo "PaddlePaddle installation failed after $max_retries attempts, Please try rerun this job."
-                exit 1
-              fi
-            fi
-          done
-
-          retry_count=0
-          while [ $retry_count -lt $max_retries ]; do
-            if python -m pip install --pre paddle-iluvatar-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/ixuca/; then
-              echo "paddle-iluvatar-gpu installation successful"
-              break
-            else
-              retry_count=$((retry_count + 1))
-              if [ $retry_count -lt $max_retries ]; then
-                echo "paddle-iluvatar-gpu installation failed, retrying in 10 seconds... (Attempt $retry_count/$max_retries)"
-                sleep 10
-              else
-                echo "paddle-iluvatar-gpu installation failed after $max_retries attempts, Please try rerun this job."
+                echo "PaddlePaddle Iluvatar installation failed after $max_retries attempts, Please try rerun this job."
                 exit 1
               fi
             fi
@@ -104,6 +87,7 @@ jobs:
 
           echo "Install PaddleFormers..."
           retry_count=0
+          max_retries=3
           while [ $retry_count -lt $max_retries ]; do
             if python -m pip install -e .; then
               echo "PaddleFormers installation successful"

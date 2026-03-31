@@ -304,7 +304,7 @@ def create_pretrained_dataset(args):
         data_impl="mmap",
         splits_string=args.split,
         train_val_test_num_samples=train_val_test_num_samples,
-        seq_length=args.max_seq_length + args.multi_token_pred_depth,
+        seq_length=args.max_seq_length + args.num_nextn_predict_layers,
         seed=args.seed,
         skip_warmup=True,
         data_cache_path=None,
@@ -343,13 +343,6 @@ def main():
     if getattr(config.model_args, "sequence_parallel", 0):
         logger.warning("disabling `partial_send_recv` when using sequence parallel")
         config.trainer_args.partial_send_recv = False
-
-    if getattr(config.trainer_args, "bf16", False) and not getattr(config.trainer_args, "pp_delay_scale_loss", False):
-        logger.warning(
-            "It is recommended to enable pp_delay_scale_loss for better performance "
-            "of precision when using bf16 in training"
-        )
-        config.trainer_args.pp_delay_scale_loss = True
 
     if getattr(config.trainer_args, "dp_comm_overlap", False):
         logger.warning("Pipeline dp_comm_overlap and FusedLinearWithGradAdd can not be used at the same time.")
@@ -393,7 +386,7 @@ def main():
     args.eval_iters = 10
     args.test_iters = args.eval_iters * 10
 
-    args.enable_delay_scale_loss = config.trainer_args.pp_delay_scale_loss
+    args.enable_delay_scale_loss = True
 
     model_config = dict(getattr(config.model_args, "model_config", {}))
     model_config = {k: formatv(v) for k, v in model_config.items()}
@@ -561,7 +554,7 @@ def main():
     if args.moe_group.lower() in {"mp", "tp", "model", "dummy"}:
         logger.info(f"disable moe flag when using moe-group={args.moe_group}")
         args.use_moe = False
-    args.multi_token_pred_depth = model_config.get("multi_token_pred_depth", 0)
+    args.num_nextn_predict_layers = model_config.get("num_nextn_predict_layers", 0)
 
     cfg = ErnieMoEConfig.from_pretrained(args.model_name_or_path)
     cfg.seqlen = args.max_seq_length
@@ -655,7 +648,7 @@ def main():
             collate_fn,
             tokenizer=tokenizer,
             training_args=TrainingArguments(
-                output_dir=args.output_dir, num_nextn_predict_layers=args.multi_token_pred_depth
+                output_dir=args.output_dir, num_nextn_predict_layers=args.num_nextn_predict_layers
             ),
             model_args=ModelConfig(stage="SFT", use_attn_mask_startend_row_indices=True),
             max_seq_len=args.max_seq_length + 1,
@@ -669,7 +662,7 @@ def main():
 
     if getattr(cfg, "moe_use_aux_free", 0.0) > 0.0:
         logger.info("adding aux free callback")
-        callbacks += [MoECorrectionBiasAdjustCallback(args.moe_use_aux_free_update_coef, args.sequence_parallel)]
+        callbacks += [MoECorrectionBiasAdjustCallback(args.moe_router_bias_update_rate, args.sequence_parallel)]
 
     trainer = PretrainingTrainer(
         model=model,

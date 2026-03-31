@@ -146,7 +146,7 @@ class ErnieMoEConfig(PretrainedConfig):
         moe_layer_interval=2,
         moe_layer_start_index: Union[int, list] = 0,
         moe_layer_end_index: Union[int, list] = -1,
-        moe_aux_loss_lambda=1e-2,
+        router_aux_loss_coef=1e-2,
         global_aux_loss=False,
         moe_dropout_prob=0.0,
         moe_group="world",
@@ -156,7 +156,7 @@ class ErnieMoEConfig(PretrainedConfig):
         moe_num_dense_experts: int = 0,
         moe_dense_experts_token_type_id: int = 3,
         moe_reverse_token_drop: bool = False,
-        moe_gate_act: str = "softmax",
+        scoring_func: str = "softmax",
         moe_norm_gate_logits=True,
         moe_fuse_experts: bool = False,
         moe_all_to_all_dropout: float = 0.0,
@@ -167,14 +167,13 @@ class ErnieMoEConfig(PretrainedConfig):
         num_acc_steps: Optional[int] = None,
         insert_empty_layer: Optional[list] = None,
         pp_no_recompute_layer: Optional[list] = None,
-        multi_token_pred_depth: int = 0,
-        multi_token_pred_lambda: float = 0.3,
+        num_nextn_predict_layers: int = 0,
+        mtp_loss_scaling_factor: float = 0.3,
         fuse_gate_detach_matmul: bool = False,
         enable_mtp_magic_send: bool = False,
         n_group: int = 0,
         topk_group: int = 0,
-        scaling_factor: Optional[float] = None,
-        aux_loss_type: str = "",
+        routed_scaling_factor: Optional[float] = None,
         use_linear_residual_norm_recompute: bool = False,
         use_rms_qkv_recompute: bool = False,
         use_combine_before_a2a=False,
@@ -344,7 +343,7 @@ class ErnieMoEConfig(PretrainedConfig):
         self.use_recompute_moe = use_recompute_moe
         self.moe_num_experts = moe_num_experts
         self.moe_capacity = moe_capacity
-        self.moe_aux_loss_lambda = moe_aux_loss_lambda
+        self.router_aux_loss_coef = router_aux_loss_coef
         self.global_aux_loss = global_aux_loss
         self.moe_layer_interval = moe_layer_interval
         self.moe_dropout_prob = moe_dropout_prob
@@ -363,7 +362,7 @@ class ErnieMoEConfig(PretrainedConfig):
         self.num_acc_steps = num_acc_steps
         self.moe_layer_start_index = moe_layer_start_index
         self.moe_layer_end_index = self.num_hidden_layers - 1 if moe_layer_end_index == -1 else moe_layer_end_index
-        self.moe_gate_act = moe_gate_act
+        self.scoring_func = scoring_func
         self.moe_norm_gate_logits = moe_norm_gate_logits
         self.moe_use_aux_free = moe_use_aux_free
         self.fuse_gate_detach_matmul = fuse_gate_detach_matmul
@@ -372,19 +371,16 @@ class ErnieMoEConfig(PretrainedConfig):
         else:
             insert_empty_layer = []
 
-        self.multi_token_pred_depth = multi_token_pred_depth
-        self.multi_token_pred_lambda = multi_token_pred_lambda
+        self.num_nextn_predict_layers = num_nextn_predict_layers
+        self.mtp_loss_scaling_factor = mtp_loss_scaling_factor
         self.enable_mtp_magic_send = enable_mtp_magic_send
         self.insert_empty_layer = insert_empty_layer
         self.n_group = n_group
         self.topk_group = topk_group
-        self.scaling_factor = scaling_factor
+        self.scaling_factor = routed_scaling_factor
 
         self.use_linear_residual_norm_recompute = use_linear_residual_norm_recompute
         self.use_rms_qkv_recompute = use_rms_qkv_recompute
-
-        assert aux_loss_type in ["", "default", "seq_aux_loss", "switch_aux_loss"]
-        self.aux_loss_type = aux_loss_type
 
         if pp_no_recompute_layer is not None:
             assert isinstance(insert_empty_layer, list), "pp_no_recompute_layer should be a list"
