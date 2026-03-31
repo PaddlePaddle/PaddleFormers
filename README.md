@@ -27,6 +27,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 
 ## 🆕最新更新
 * 2026.01.21 - PaddleFomers v1.0版本发布啦！我们提供了针对 LLM 和 VLM 等模型的训练能力，针对 DeepSeek-V3模型和 GLM-4.5-Air 等重点模型，我们实现了极致性能优化（训练性能明显超越 Megatron-LM ）。针对 PaddleOCR-VL，我们在昆仑芯 P800、天数天垓150等国产计算芯片上进行了适配，更好的满足国内用户需求。
+* 2026.03.31 - PaddleFormers v1.1 正式发布！在这个版本中我们支持了 GLM-4.5 系列模型的单步与多步 MTP 训练能力。针对 MTP 模块训练，我们新增了主干网络冻结开关，灵活满足模型精细化调优需求，并通过 MTP 能力有效加速推理。
 
 ## ✨特性
 * **丰富的模型支持：** PaddleFormers 实现了对于 100+ 主流的大语言模型和视觉语言模型的训练能力支持，涵盖了 DeepSeek-V3、GLM-4.5系列、Qwen2和 Qwen3系列、Qwen3-VL 等前沿模型。同时提供了对 ERNIE-4.5、ERNIE-4.5-VL、PaddleOCR-VL 等文心系列模型完备的训练能力。
