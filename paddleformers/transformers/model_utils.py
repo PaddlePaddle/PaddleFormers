@@ -2840,9 +2840,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         config.dtype = dtype
 
-        if config.moe_grouped_gemm and config.is_lora:
-            logger.info("Lora doesn't support moe_grouped_gemm, moe_grouped_gemm is set to False.")
-            config.moe_grouped_gemm = False
 
         init_contexts = []
         if low_cpu_mem_usage or config.quantization_config.is_weight_quantize():

@@ -189,9 +189,6 @@ def run_sft(
     training_args.model_name_or_path = model_args.model_name_or_path
     training_args.download_hub = model_args.download_hub
     training_args.copy_custom_file_list = model_args.copy_custom_file_list
-    if is_paddlefleet_available() and model_args.lora and training_args.moe_token_dispatcher_type == "deepep":
-        logger.warning("For PaddleFleet, moe_use_fusion_node should False when using LoRA.")
-        training_args.moe_use_fusion_node = False
 
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
