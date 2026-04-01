@@ -3183,6 +3183,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         save_to_hf = kwargs.get("save_to_hf", True)
 
         save_checkpoint_format = kwargs.get("save_checkpoint_format", "flex_checkpoint")
+        memory_growth_threshold = kwargs.get("memory_growth_threshold", 8 * (2**30))
 
         if kwargs.get("enable_auto_parallel", ""):
             # use flex_checkpoint as the default format in auto_parallel
@@ -3235,9 +3236,13 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             clean_unrelated_safetensors(save_dir)
 
             if using_sonic_moe:
-                SonicMoEHFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
+                SonicMoEHFFormatFullParamSaver(
+                    model_to_save, aoa_config, memory_growth_threshold=memory_growth_threshold
+                ).save_checkpoint(save_dir, max_shard_size)
             else:
-                HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
+                HFFormatFullParamSaver(
+                    model_to_save, aoa_config, memory_growth_threshold=memory_growth_threshold
+                ).save_checkpoint(save_dir, max_shard_size)
 
             dtype = get_parameter_dtype(model_to_save)
             if dtype is not None:

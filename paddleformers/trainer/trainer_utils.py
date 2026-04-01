@@ -1770,11 +1770,13 @@ class EMAStateAssembler:
         model,
         optimizer,
         start_step,
+        memory_growth_threshold=8 * (2**30),
     ):
         self.output_dir = Path(output_dir)
         self.save_checkpoint_format = save_checkpoint_format
         self.save_hf_steps = save_hf_steps
         self.save_steps = save_steps
+        self.memory_growth_threshold = memory_growth_threshold
         if save_hf_steps > 0 and save_hf_steps % save_steps != 0:
             raise ValueError("[EMAStateAssembler] save_hf_steps must be a multiple of save_steps.")
 
@@ -2094,6 +2096,7 @@ class EMAStateAssembler:
             v_group=self.v_group,
             num_splits=self.num_splits,
             shard_idx=self.shard_idx,
+            memory_growth_threshold=self.memory_growth_threshold,
         )
         saver.save_checkpoint(str(save_path))
 
