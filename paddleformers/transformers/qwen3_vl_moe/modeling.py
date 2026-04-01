@@ -18,6 +18,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Paddle Qwen3_VL_Moe model."""
+
 from __future__ import annotations
 
 import types
@@ -2476,7 +2477,7 @@ class Qwen3VLMoeModel(Qwen3VLMoePretrainedModelFleet):
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
-        config.moe_grouped_gemm = True 
+        config.moe_grouped_gemm = True
         criterion = None
         if have_criterion:
             criterion = CriterionLayer(config.text_config)

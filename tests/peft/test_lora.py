@@ -23,10 +23,7 @@ import paddle
 from parameterized import parameterized
 
 from paddleformers.peft.lora import LoRAConfig, LoRALinear, LoRAModel
-from paddleformers.transformers import (
-    AutoModelForCausalLM,
-    Glm4MoeModel,
-)
+from paddleformers.transformers import AutoModelForCausalLM, Glm4MoeModel
 from paddleformers.transformers import (
     Qwen3VLMoeForConditionalGenerationDeprecated as Qwen3VLMoeForConditionalGeneration,
 )
