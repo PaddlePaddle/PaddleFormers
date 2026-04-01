@@ -178,11 +178,10 @@ jobs:
           else
             echo "mode=pr" >> "$GITHUB_OUTPUT"
             echo "update_baseline_models=false" >> "$GITHUB_OUTPUT"
-            echo "models=glm_moe" >> "$GITHUB_OUTPUT"
             echo "target_branch=PR_${AGILE_COMPILE_BRANCH}" >> "$GITHUB_OUTPUT"
             echo "pr_number=${PR_ID}" >> "$GITHUB_OUTPUT"
           fi
-          echo "trigger_mode_output=mode=${{ steps.trigger_mode.outputs.mode }},update_baseline_models=${{ steps.trigger_mode.outputs.update_baseline }},models=${{ steps.trigger_mode.outputs.models }},target_branch=${{ steps.trigger_mode.outputs.target_branch }},pr_number=${{ steps.trigger_mode.outputs.pr_number }}" >> "$GITHUB_ENV"
+          echo "trigger_mode_output=mode=${{ steps.trigger_mode.outputs.mode }},update_baseline_models=${{ steps.trigger_mode.outputs.update_baseline_models }},target_branch=${{ steps.trigger_mode.outputs.target_branch }},pr_number=${{ steps.trigger_mode.outputs.pr_number }}" >> "$GITHUB_ENV"
 
       - name: Test
         run: |
@@ -213,7 +212,7 @@ jobs:
             echo "=== Running tests with baseline update ==="
             
             # Run tests with baseline update
-            bash -x scripts/regression/ci_model_unittest.sh True False ${UPDATE_BASELINE}
+            bash -x scripts/regression/ci_model_unittest.sh True False ${UPDATE_BASELINE_MODELS} ${UPDATE_BASELINE_MODELS}
             
             # Check and commit changes
             git add scripts/regression/config.yaml
