@@ -332,6 +332,7 @@ class Qwen3VLTextProvider(GPTModelProvider):
     rms_norm_eps: float = 1e-6
     rotary_base: float = 1000000.0
     position_embedding_type: str = "rope"
+    bias_activation_fusion: bool = True
     use_qk_norm: bool = True
     specific_layer: type = Qwen3VLTextTransformerLayer
     max_sequence_length: int = 262144
