@@ -58,6 +58,8 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("gemma3_text", "Gemma3TextConfig"),
         ("glm4v_moe", "Glm4vMoeConfig"),
         ("glm_ocr", "GlmOcrConfig"),
+        ("qwen3_5", "Qwen3_5Config"),
+        ("qwen3_5_moe", "Qwen3_5MoEConfig"),
     ]
 )
 
@@ -85,6 +87,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_vl_moe_text", "Qwen3VLMoeText"),
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
         ("granite", "Granite"),
+        ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
     ]
 )
 
@@ -98,7 +101,6 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
         ("qwen2_5_vl_text", "qwen2_5_vl"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
-        ("Granite", "granite"),
     ]
 )
 
