@@ -517,6 +517,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         inference_context=None,
         packed_seq_params: PackedSeqParams | None = None,
         sequence_len_offset: paddle.Tensor | None = None,
+        attn_mask_startend_row_indices: paddle.Tensor | None = None,
         *,
         inference_params=None,
     ):
@@ -577,6 +578,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                 input_dict = {
                     "hidden_states": hidden_states,
                     "attention_mask": attention_mask,
+                    "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
                     "context": context,
                     "rotary_pos_emb": rotary_pos_emb,
                     "rotary_pos_cos": rotary_pos_cos,
@@ -788,13 +790,16 @@ class Qwen3VLVisionModel(VisionLayer):
                 seqlens.cumsum(0).astype("int32"),
             ]
         )
-        max_seqlen = seqlens.max().item()  # 1 D2H (flash attention requires Python int)
+        max_seqlen = seqlens.max().item()
+        total_seqlen = cu_seqlens[-1].item()
 
         return PackedSeqParams(
             cu_seqlens_q=cu_seqlens,
             cu_seqlens_kv=cu_seqlens,
             max_seqlen_q=max_seqlen,
             max_seqlen_kv=max_seqlen,
+            total_seqlen_q=total_seqlen,
+            total_seqlen_kv=total_seqlen,
             qkv_format="thd",
         )
 
@@ -837,6 +842,22 @@ class Qwen3VLVisionModel(VisionLayer):
 
         packed_seq_params = self.get_packed_seq_params(grid_thw)
 
+        # Pre-compute attn_mask_startend_row_indices once for all ViT layers
+        cu_seqlens = packed_seq_params.cu_seqlens_kv
+        lengths = cu_seqlens[1:] - cu_seqlens[:-1]
+        indices_per_segment = paddle.stack(
+            [
+                cu_seqlens[1:],  # col 0: lower_start = end_i
+                paddle.full_like(cu_seqlens[1:], seq_len),  # col 1: lower_end   = total_seq
+                paddle.zeros_like(cu_seqlens[:-1]),  # col 2: upper_start = 0
+                cu_seqlens[:-1],  # col 3: upper_end   = start_i
+            ],
+            axis=1,
+        )  # [num_segments, 4]
+        attn_mask_startend_row_indices = (
+            paddle.repeat_interleave(indices_per_segment, lengths, axis=0).unsqueeze(0).unsqueeze(0)
+        )  # [1, 1, seq_len, 4]
+
         hidden_states = self.decoder(
             hidden_states,
             attention_mask,
@@ -844,6 +865,7 @@ class Qwen3VLVisionModel(VisionLayer):
             rotary_pos_cos=rotary_pos_cos,
             rotary_pos_sin=rotary_pos_sin,
             packed_seq_params=packed_seq_params,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )
 
         return hidden_states
