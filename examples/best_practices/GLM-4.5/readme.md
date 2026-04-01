@@ -1,25 +1,25 @@
 # 1. 背景说明
 
 ### 1.1. 单步 MTP（Single-Step MTP）
-单步 MTP 是模型在单次前向传播中，仅预测**未来1个token**的多token预测模式。
-- 本质：在传统单token预测基础上，新增独立MTP输出头，仅学习单步预测能力。
+单步 MTP 是模型在单次前向传播中，仅预测**未来1个 token**的多 token 预测模式。
+- 本质：在传统单 token 预测基础上，新增独立 MTP 输出头，仅学习单步预测能力。
 - 推理适配：仅支持**1步投机解码**，无法直接支撑多步递归预测，多步推理时需依赖模型递归调用，接受率与效率较低。
-- 训练定位：作为多步MTP的基础热启模型，快速搭建MTP训练基线。
+- 训练定位：作为多步 MTP 的基础热启模型，快速搭建 MTP 训练基线。
 
 ### 1.2. 多步 MTP（Multi-Step MTP）
-多步 MTP 是模型在单次前向传播中，**递归预测未来N个token**（如3步）的模式，通过级联MTP模块实现因果预测。
-- 核心机制：第1步MTP预测t+1，第2步基于第1步输出预测t+2，第3步基于第2步输出预测t+3，保持序列逻辑连贯。
-- 推理适配：直接支持**N步投机解码**，无需额外递归调用，提升接受率与生成速度。
+多步 MTP 是模型在单次前向传播中，**递归预测未来 N 个 token**（如3步）的模式，通过级联 MTP 模块实现因果预测。
+- 核心机制：第1步 MTP 预测 t+1，第2步基于第1步输出预测 t+2，第3步基于第2步输出预测 t+3，保持序列逻辑连贯。
+- 推理适配：直接支持**N 步投机解码**，无需额外递归调用，提升接受率与生成速度。
 - 训练收益：投机解码从1步预测变为3步预测，平均接受长度显著提升。
 
 ### 1.3. 单步 vs 多步 MTP 核心对比
 | 维度 | 单步 MTP | 多步 MTP |
 |------|----------|----------|
-| 预测步数 | 1步 | N步（如3步） |
-| 模块结构 | 单个MTP输出头 | 单个MTP输出头 |
-| 推理支持 | 仅1步投机 | N步投机解码 |
+| 预测步数 | 1步 | N 步（如3步） |
+| 模块结构 | 单个 MTP 输出头 | 单个 MTP 输出头 |
+| 推理支持 | 仅1步投机 | N 步投机解码 |
 
-PaddleFormers 提供冻结主干的MTP权重训练，可以基于无MTP（或只有一层MTP权重）的模型进行进N步MTP能力训练，让模型具有多步MTP能力。
+PaddleFormers 提供冻结主干的 MTP 权重训练，可以基于无 MTP（或只有一层 MTP 权重）的模型进行进 N 步 MTP 能力训练，让模型具有多步 MTP 能力。
 
 
 # 2. 硬件配置要求
@@ -28,7 +28,7 @@ PaddleFormers 提供冻结主干的MTP权重训练，可以基于无MTP（或只
 
 GPU: NVIDIA H100 80GB (推荐) 或 H800、H20等
 
-数量: 如果基于GLM-4.5-Air模型(103B)进行训练，需要最少32卡（4机），如果需要进行128k长文训练则需要8机（64卡）
+数量: 如果基于 GLM-4.5-Air 模型(103B)进行训练，需要最少32卡（4机），如果需要进行128k 长文训练则需要8机（64卡）
 
 网络要求：支持 NCCL 通信
 
@@ -46,8 +46,24 @@ Python: 3.10
 
 推荐使用官方镜像。
 
-# 3. 启动训练
-在这里给出了8机冻结主干3步MTP训练的参数：
+# 3. 相关参数
+
+- 是否冻结主干
+
+```yaml
+# 是否冻结主干权重（MTP-only训练必开）
+train_mtp_only: true
+```
+
+- 单步/多步训练指定
+
+```yaml
+# MTP训练步数，填1则为单步，填3则为3步
+mtp_num_layers: 3
+```
+
+# 4. 实例训练
+以下为 8 机环境下，冻结主干网络、训练 3 步 MTP 的完整参数配置，可直接参考使用：
 
 ```yaml
 ### data
@@ -161,18 +177,14 @@ mtp_num_layers: 1
 train_mtp_only: true
 ```
 
-#### （1）核心训练配置（以3步为例）
-```yaml
-# 模型实际拥有多少层MTP权重（如果热启模型没有MTP层则需要在此手动指定）
-num_nextn_predict_layers: 1
-# MTP训练步数，填1则为单步，填3则为3步
-mtp_num_layers: 3
-# 是否冻结主干权重（MTP-only训练必开）
-train_mtp_only: true
+配套启动脚本如下
+
+```shell
+NNODES={num_nodes} MASTER_ADDR={your_master_addr} MASTER_PORT={your_master_port} RANK={rank} CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 paddleformers-cli train mtp_depth_3.yaml
 ```
 
-## 四、MTP 模型推理部署（多步投机解码）
-### 1. 多步 MTP 推理配置（FastDeploy）
+
+# 5. 多步 MTP 推理部署（FastDeploy）
 ```bash
 python -m fastdeploy.entrypoints.openai.api_server \
   --model checkpoint/ \  # 多步MTP训练后模型
@@ -187,6 +199,5 @@ python -m fastdeploy.entrypoints.openai.api_server \
   --max-num-seqs 32
 ```
 - 关键参数：
-  - `num_speculative_tokens: 3`：投机生成3个token
-  - `num_model_steps: 3`：匹配训练时的3步MTP，实现训推一致
-
+  - `num_speculative_tokens: 3`：投机生成3个 token
+  - `num_model_steps: 3`：匹配训练时的3步 MTP，实现训推一致
