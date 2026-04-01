@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Paddle Qwen2Moe model."""
+
 from __future__ import annotations
 
 import copy
@@ -32,7 +33,6 @@ from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
 
 from paddleformers.transformers.gpt_provider import GPTModelProvider
 
-from ...nn.activation import ACT2FN
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding

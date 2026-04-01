@@ -1056,8 +1056,10 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
 
         sharded_dict = {}
         lora_keys = [
-            "weight1_lora_A", "weight1_lora_B",
-            "weight2_lora_A", "weight2_lora_B",
+            "weight1_lora_A",
+            "weight1_lora_B",
+            "weight2_lora_A",
+            "weight2_lora_B",
         ]
         for short_key, tensor in state_dict.items():
             full_key = f"{structured_name_prefix}{short_key}"
@@ -1070,7 +1072,10 @@ class FleetLoRAMoeExperts(MoeExpertsBase):
                 )
             else:
                 # weight1/weight2 (base, stop_gradient=True) — replicate as-is
-                from paddle.distributed.flex_checkpoint.dcp.sharded_weight import make_replicated_sharded_weight
+                from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+                    make_replicated_sharded_weight,
+                )
+
                 sharded_dict[full_key] = make_replicated_sharded_weight(full_key, tensor)
         return sharded_dict
 
