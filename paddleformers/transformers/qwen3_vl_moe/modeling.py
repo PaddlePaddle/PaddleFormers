@@ -2476,6 +2476,7 @@ class Qwen3VLMoeModel(Qwen3VLMoePretrainedModelFleet):
         config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
         config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+        config.moe_grouped_gemm = True 
         criterion = None
         if have_criterion:
             criterion = CriterionLayer(config.text_config)
