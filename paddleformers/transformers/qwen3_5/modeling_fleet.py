@@ -41,6 +41,9 @@ from ..gpt_provider import GPTModelProvider
 
 @dataclass
 class Qwen3_5VisionProvider(TransformerConfig):
+    transform_rules = {
+        "num_heads": "num_attention_heads",
+    }
     patch_size: int = 16
     use_bias: bool = True
     add_qkv_bias: bool = True
