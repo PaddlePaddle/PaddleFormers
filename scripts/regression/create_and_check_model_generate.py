@@ -64,7 +64,7 @@ MODEL_MAPPING = {
     },
     "qwen3": {
         "import_path": "paddleformers.transformers.qwen3.modeling",
-        "class_name": "Qwen3ForCausalLM",
+        "class_name": "Qwen3ForCausalLMDeprecated",
         "dtype": "bfloat16",
     },
     "qwen2": {

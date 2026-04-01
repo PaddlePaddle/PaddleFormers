@@ -35,21 +35,34 @@ qwen3moe:
         dpo_full_function_call_loss: 0.69314718
         dpo_full_function_call_resume_loss: 0.69314718
     base_result:
-        pt_full_excepted_result: []
-        sft_full_excepted_result: []
-        dpo_full_excepted_result: []
-        pt_lora_excepted_result: []
-        sft_lora_excepted_result: []
-        dpo_lora_excepted_result: []
-        pt_full_tp_pp_excepted_result: []
+        pt_full_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        sft_full_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        dpo_full_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        pt_lora_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        sft_lora_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        dpo_lora_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        pt_full_tp_pp_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
         sft_full_tp_pp_excepted_result:
         - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
-        dpo_full_tp_pp_excepted_result: []
-        pt_lora_tp_pp_excepted_result: []
-        sft_lora_tp_pp_excepted_result: []
-        dpo_lora_tp_pp_excepted_result: []
-        sft_full_function_call_excepted_result: []
-        dpo_full_function_call_excepted_result: []
+        dpo_full_tp_pp_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        pt_lora_tp_pp_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        sft_lora_tp_pp_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        dpo_lora_tp_pp_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        sft_full_function_call_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        dpo_full_function_call_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
 qwen2_moe:
     repo_id: PaddleFormers/tiny-random-qwen2moev2
     model_type: text
@@ -85,6 +98,7 @@ qwen2_moe:
         sft_full_function_call_loss: 13.16891384
         dpo_full_function_call_loss: 0.69314718
         sft_full_function_call_resume_loss: 13.16237068
+        dpo_full_function_call_resume_loss: 0.69314718
     base_result:
         pt_full_excepted_result: []
         sft_full_excepted_result: []
@@ -99,8 +113,7 @@ qwen2_moe:
         sft_lora_tp_pp_excepted_result: []
         dpo_lora_tp_pp_excepted_result: []
         sft_full_function_call_excepted_result: []
-        dpo_full_function_call_excepted_result:
-        - [16913, 16913, 16913, 16913, 16913, 16913, 16913, 16913, 16913, 16913]
+        dpo_full_function_call_excepted_result: []
 qwen3:
     repo_id: PaddleFormers/tiny-random-qwen3v2
     model_type: text
@@ -138,20 +151,34 @@ qwen3:
         dpo_full_function_call_loss: 0.69314718
         dpo_full_function_call_resume_loss: 0.69314718
     base_result:
-        pt_full_excepted_result: []
-        sft_full_excepted_result: []
-        dpo_full_excepted_result: []
-        pt_lora_excepted_result: []
-        sft_lora_excepted_result: []
-        dpo_lora_excepted_result: []
-        pt_full_tp_pp_excepted_result: []
-        sft_full_tp_pp_excepted_result: []
-        dpo_full_tp_pp_excepted_result: []
-        pt_lora_tp_pp_excepted_result: []
-        sft_lora_tp_pp_excepted_result: []
-        dpo_lora_tp_pp_excepted_result: []
-        sft_full_function_call_excepted_result: []
-        dpo_full_function_call_excepted_result: []
+        pt_full_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        sft_full_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        dpo_full_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        pt_lora_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        sft_lora_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        dpo_lora_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        pt_full_tp_pp_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        sft_full_tp_pp_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        dpo_full_tp_pp_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        pt_lora_tp_pp_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        sft_lora_tp_pp_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        dpo_lora_tp_pp_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        sft_full_function_call_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        dpo_full_function_call_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
 glm_moe:
     repo_id: PaddleFormers/tiny-random-glm4moe-bf16
     model_type: text
@@ -172,8 +199,8 @@ glm_moe:
         sft_lora_resume_loss: 12.72072887
         dpo_lora_loss: 0.69314718
         dpo_lora_resume_loss: 0.69314718
-        pt_full_tp_pp_loss: 12.83077812
-        pt_full_tp_pp_resume_loss: 12.830832005
+        pt_full_tp_pp_loss: 12.830832005
+        pt_full_tp_pp_resume_loss: 12.83077812
         sft_full_tp_pp_loss: 12.78896332
         sft_full_tp_pp_resume_loss: 12.78896332
         dpo_full_tp_pp_loss: 0.69314718
@@ -189,20 +216,34 @@ glm_moe:
         dpo_full_function_call_loss: 0.69314718
         dpo_full_function_call_resume_loss: 0.69314718
     base_result:
-        pt_full_excepted_result: []
-        sft_full_excepted_result: []
-        dpo_full_excepted_result: []
-        pt_lora_excepted_result: []
-        sft_lora_excepted_result: []
-        dpo_lora_excepted_result: []
-        pt_full_tp_pp_excepted_result: []
-        sft_full_tp_pp_excepted_result: []
-        dpo_full_tp_pp_excepted_result: []
-        pt_lora_tp_pp_excepted_result: []
-        sft_lora_tp_pp_excepted_result: []
-        dpo_lora_tp_pp_excepted_result: []
-        sft_full_function_call_excepted_result: []
-        dpo_full_function_call_excepted_result: []
+        pt_full_excepted_result:
+        - [10564, 10564, 10564, 138932, 102954, 47231, 47231, 47231, 47231, 47231]
+        sft_full_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        dpo_full_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        pt_lora_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        sft_lora_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        dpo_lora_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        pt_full_tp_pp_excepted_result:
+        - [10564, 10564, 10564, 138932, 102954, 47231, 47231, 47231, 47231, 47231]
+        sft_full_tp_pp_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        dpo_full_tp_pp_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        pt_lora_tp_pp_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        sft_lora_tp_pp_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        dpo_lora_tp_pp_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        sft_full_function_call_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        dpo_full_function_call_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
 qwen2:
     repo_id: PaddleFormers/tiny-random-qwen2v2
     model_type: text
@@ -286,27 +327,39 @@ llama:
         dpo_lora_tp_pp_resume_loss: 0.69314718
         pt_lora_tp_pp_loss: 11.871563435
         pt_lora_tp_pp_resume_loss: 11.87158108
-        sft_full_function_call_loss: 11.877788065
-        sft_full_function_call_resume_loss: 11.87637424
+        sft_full_function_call_loss: 11.87305403
+        sft_full_function_call_resume_loss: 11.87132931
         dpo_full_function_call_loss: 0.69314718
         dpo_full_function_call_resume_loss: 0.69314718
     base_result:
-        pt_full_excepted_result: []
+        pt_full_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
         sft_full_excepted_result:
         - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
         dpo_full_excepted_result:
         - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
-        pt_lora_excepted_result: []
-        sft_lora_excepted_result: []
-        dpo_lora_excepted_result: []
-        pt_full_tp_pp_excepted_result: []
-        sft_full_tp_pp_excepted_result: []
-        dpo_full_tp_pp_excepted_result: []
-        pt_lora_tp_pp_excepted_result: []
-        sft_lora_tp_pp_excepted_result: []
-        dpo_lora_tp_pp_excepted_result: []
-        sft_full_function_call_excepted_result: []
-        dpo_full_function_call_excepted_result: []
+        pt_lora_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        sft_lora_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        dpo_lora_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        pt_full_tp_pp_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        sft_full_tp_pp_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        dpo_full_tp_pp_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        pt_lora_tp_pp_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        sft_lora_tp_pp_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        dpo_lora_tp_pp_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        sft_full_function_call_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        dpo_full_function_call_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
 qwen3_next:
     repo_id: PaddleFormers/tiny-random-qwen3next
     model_type: text
@@ -344,20 +397,34 @@ qwen3_next:
         dpo_full_function_call_loss: 0.69314718
         dpo_full_function_call_resume_loss: 0.69314718
     base_result:
-        pt_full_excepted_result: []
-        sft_full_excepted_result: []
-        dpo_full_excepted_result: []
-        pt_lora_excepted_result: []
-        sft_lora_excepted_result: []
-        dpo_lora_excepted_result: []
-        pt_full_tp_pp_excepted_result: []
-        sft_full_tp_pp_excepted_result: []
-        dpo_full_tp_pp_excepted_result: []
-        pt_lora_tp_pp_excepted_result: []
-        sft_lora_tp_pp_excepted_result: []
-        dpo_lora_tp_pp_excepted_result: []
-        sft_full_function_call_excepted_result: []
-        dpo_full_function_call_excepted_result: []
+        pt_full_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        sft_full_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        dpo_full_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        pt_lora_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        sft_lora_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        dpo_lora_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        pt_full_tp_pp_excepted_result:
+        - [8928, 143003, 37313, 15487, 8973, 61062, 135931, 58958, 126928, 85831]
+        sft_full_tp_pp_excepted_result:
+        - [8928, 143003, 37313, 15487, 8973, 61062, 135931, 58958, 126928, 85831]
+        dpo_full_tp_pp_excepted_result:
+        - [8928, 143003, 37313, 15487, 8973, 61062, 135931, 58958, 126928, 85831]
+        pt_lora_tp_pp_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        sft_lora_tp_pp_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        dpo_lora_tp_pp_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        sft_full_function_call_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        dpo_full_function_call_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
 phi3:
     repo_id: PaddleFormers/tiny-random-phi4-bf16
     model_type: text
@@ -413,7 +480,8 @@ phi3:
         - [97446, 32022, 87570, 16555, 41005, 56054, 94825, 55860, 46803, 46803]
         dpo_full_tp_pp_excepted_result:
         - [97446, 32022, 87570, 16555, 41005, 56054, 94825, 55860, 46803, 46803]
-        pt_lora_tp_pp_excepted_result: []
+        pt_lora_tp_pp_excepted_result:
+        - [68784, 5802, 68784, 96218, 46803, 68784, 96218, 6051, 6051, 6051]
         sft_lora_tp_pp_excepted_result:
         - [68784, 5802, 68784, 96218, 46803, 10620, 96559, 78218, 6051, 6051]
         dpo_lora_tp_pp_excepted_result:
@@ -461,20 +529,34 @@ gemma3_text:
         dpo_full_function_call_loss: 0.69314718
         dpo_full_function_call_resume_loss: 0.69314718
     base_result:
-        pt_full_excepted_result: []
-        sft_full_excepted_result: []
-        dpo_full_excepted_result: []
-        pt_lora_excepted_result: []
-        sft_lora_excepted_result: []
-        dpo_lora_excepted_result: []
-        pt_full_tp_pp_excepted_result: []
-        sft_full_tp_pp_excepted_result: []
-        dpo_full_tp_pp_excepted_result: []
-        pt_lora_tp_pp_excepted_result: []
-        sft_lora_tp_pp_excepted_result: []
-        dpo_lora_tp_pp_excepted_result: []
-        sft_full_function_call_excepted_result: []
-        dpo_full_function_call_excepted_result: []
+        pt_full_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 201204, 4214, 190858]
+        sft_full_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        dpo_full_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        pt_lora_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        sft_lora_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        dpo_lora_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        pt_full_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 201204, 4214, 190858]
+        sft_full_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 201204, 4214, 190858]
+        dpo_full_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        pt_lora_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        sft_lora_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        dpo_lora_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        sft_full_function_call_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        dpo_full_function_call_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
 deepseek_v3:
     repo_id: PaddleFormers/tiny-random-deepseek-v3
     model_type: text
@@ -505,8 +587,8 @@ deepseek_v3:
         sft_lora_tp_pp_resume_loss: 12.70760059
         dpo_lora_tp_pp_loss: 0.69314718
         dpo_lora_tp_pp_resume_loss: 0.69314718
-        pt_lora_tp_pp_loss: 11.980649
-        pt_lora_tp_pp_resume_loss: 11.983072
+        pt_lora_tp_pp_loss: 12.715336325
+        pt_lora_tp_pp_resume_loss: 12.70860863
         sft_full_function_call_loss: 12.870601655
         sft_full_function_call_resume_loss: 12.87507248
         dpo_full_function_call_loss: 0.69314718
@@ -521,8 +603,7 @@ deepseek_v3:
         pt_full_tp_pp_excepted_result: []
         sft_full_tp_pp_excepted_result: []
         dpo_full_tp_pp_excepted_result: []
-        pt_lora_tp_pp_excepted_result:
-        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        pt_lora_tp_pp_excepted_result: []
         sft_lora_tp_pp_excepted_result: []
         dpo_lora_tp_pp_excepted_result: []
         sft_full_function_call_excepted_result: []
@@ -550,7 +631,6 @@ paddleocr_vl:
         sft-vl_lora_resume_loss: 12.49209785
     base_result:
         sft-vl_full_tp_pp_excepted_result: []
-        sft-vl_full_excepted_result:
-        - [59319, 59319, 51507, 24132, 31412, 51507, 24132, 67901, 67901, 13445]
+        sft-vl_full_excepted_result: []
         dpo-vl_full_excepted_result: []
         sft-vl_lora_excepted_result: []

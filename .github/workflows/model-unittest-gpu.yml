@@ -2,8 +2,25 @@ name: Model Unittest GPU CI
 
 on:
   pull_request:
-  schedule:
-    - cron: "0 18 * * *"
+  workflow_dispatch:
+    inputs:
+      update_baseline_models:
+        description: 'Update baseline'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'all'
+          - 'llama'
+          - 'qwen3'
+          - 'glm_moe'
+          - 'qwen3_next'
+          - 'qwen3moe'
+          - 'phi3'
+          - 'deepseek_v3'
+          - 'qwen2_moe'
+          - 'qwen2'
   workflow_call:
     inputs:
       runner:
@@ -26,6 +43,7 @@ env:
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
   CI_JOB_NAME: model-unittest-gpu-ci
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 defaults:
   run:
@@ -149,6 +167,23 @@ jobs:
             git log --pretty=oneline -10
             '
 
+      - name: Determine trigger mode
+        id: trigger_mode
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "mode=manual" >> "$GITHUB_OUTPUT"
+            echo "update_baseline_models=${{ github.event.inputs.update_baseline_models }}" >> "$GITHUB_OUTPUT"
+            echo "target_branch=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "pr_number=manual" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=pr" >> "$GITHUB_OUTPUT"
+            echo "update_baseline_models=false" >> "$GITHUB_OUTPUT"
+            echo "models=glm_moe" >> "$GITHUB_OUTPUT"
+            echo "target_branch=PR_${AGILE_COMPILE_BRANCH}" >> "$GITHUB_OUTPUT"
+            echo "pr_number=${PR_ID}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "trigger_mode_output=mode=${{ steps.trigger_mode.outputs.mode }},update_baseline_models=${{ steps.trigger_mode.outputs.update_baseline }},models=${{ steps.trigger_mode.outputs.models }},target_branch=${{ steps.trigger_mode.outputs.target_branch }},pr_number=${{ steps.trigger_mode.outputs.pr_number }}" >> "$GITHUB_ENV"
+
       - name: Test
         run: |
           docker exec -t $container_name /bin/bash -c '
@@ -159,12 +194,50 @@ jobs:
           rm -rf /root/.cache/aistudio/
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
           echo "work_dir = ${work_dir}"
-          cp -r ${work_dir}/../../../models ./models
-          echo "Check whether the local model file exists:"
-          ls -l ./models
-          bash -x scripts/regression/ci_model_unittest.sh ${paddle_whl} false ${AGILE_COMPILE_BRANCH}
-          '
           
+          # Configure git auth for baseline update
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
+          
+          # Parse trigger mode from env var
+          MODE=$(echo "$trigger_mode_output" | grep -oP "mode=\K\w+")
+          UPDATE_BASELINE_MODELS=$(echo "$trigger_mode_output" | grep -oP "update_baseline_models=\K\w+")
+          TARGET_BRANCH=$(echo "$trigger_mode_output" | grep -oP "target_branch=\K[a-zA-Z0-9_]+")
+          PR_NUMBER=$(echo "$trigger_mode_output" | grep -oP "pr_number=\K[0-9a-z]+")
+          
+          echo "=== Trigger Mode: ${MODE} ==="
+          echo "Update baseline: ${UPDATE_BASELINE_MODELS}"
+          echo "Target branch: ${TARGET_BRANCH}"
+          echo "PR number: ${PR_NUMBER}"
+          
+          if [ "$UPDATE_BASELINE_MODELS" != "false" ] && [ -n "$UPDATE_BASELINE_MODELS" ]; then
+            echo "=== Running tests with baseline update ==="
+            
+            # Run tests with baseline update
+            bash -x scripts/regression/ci_model_unittest.sh True False ${UPDATE_BASELINE}
+            
+            # Check and commit changes
+            git add scripts/regression/config.yaml
+            if git diff --cached --quiet; then
+              echo "No baseline changes to commit"
+            else
+              echo "Committing baseline changes..."
+              if [ "$MODE" = "manual" ]; then
+                git commit -m "chore: update baseline from manual trigger"
+                git push -f origin HEAD:refs/heads/${TARGET_BRANCH} || echo "Push failed"
+              else
+                git commit -m "chore: update baseline from PR #${PR_NUMBER}"
+                git push -f origin HEAD:refs/heads/${TARGET_BRANCH} || echo "Push failed"
+              fi
+            fi
+          else
+            echo "=== Running tests without baseline update ==="
+            bash -x scripts/regression/ci_model_unittest.sh True
+          fi
+          '
+        env:
+          trigger_mode_output: ${{ env.trigger_mode_output }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Upload Products
         if: always()
         env:

@@ -15,65 +15,80 @@
 # limitations under the License.
 
 set -e
-export paddle=$1
-export FLAGS_enable_CE=${2-false}
+export FLAGS_enable_CI=${1-False}
+export FLAGS_enable_CE=${2-False}
+export update_baseline_models=${3-False}
+
 export nlp_dir=/workspace/PaddleFormers
 export log_path=/workspace/PaddleFormers/model_unittest_logs
 export model_unittest_path=/workspace/PaddleFormers/scripts/regression
+export AGILE_COMPILE_BRANCH=$AGILE_COMPILE_BRANCH
 cd $nlp_dir
 mkdir -p $log_path
-AGILE_COMPILE_BRANCH=$3
 
-kill_process() {
-    echo -e "\033[32m===== print python / pytest / xdist processes =====\033[0m"
-
-    ps -o pid,ppid,tty,stat,etime,cmd -C python | \
-      grep -E 'pytest|exec\(eval|paddleformers|launcher\.py' || true
-
-    echo -e "\033[32m===== kill python / pytest / xdist processes =====\033[0m"
-
-    TTY=$(tty | sed 's#/dev/##')
-
-    # kill pytest + xdist on current tty
-    ps -o pid=,tty=,cmd= -C python | \
-      awk -v tty="$TTY" '$2==tty && $3 ~ /pytest|exec\(eval/ {print $1}' | \
-      xargs -r kill -9 || true
-
-    # kill paddleformers launcher (distributed training)
-    pkill -9 -f paddleformers/cli/launcher.py || true
-}
+export no_proxy=localhost,bj.bcebos.com,su.bcebos.com,pypi.tuna.tsinghua.edu.cn,paddle-ci.gz.bcebos.com,0.0.0.0,baidu-int.com,aliyun.com,127.0.0.1,.baidu.com,.bcebos.com && export http_proxy=http://agent.baidu.com:8891 && export https_proxy=http://agent.baidu.com:8891
 
 install_requirements() {
+    local ce_branch=${1:-""}
     start_ts=$(date +%s)
-    python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-    python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
-    python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
-    # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
-    python -m pip install -U --no-cache-dir transformers
-    # echo "paddlepaddle-gpu @ https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/cbf3469113cd76b7d5f4cba7b8d7d5f55d9e9911/paddlepaddle_gpu-3.3.0-cp310-cp310-linux_x86_64.whl" >> requirements.txt
-    python setup.py bdist_wheel > /dev/null
-    pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+    python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet paddleformers -y
+    rm -rf ./build ./dist ./paddleformers.egg-info/
+    python -m pip install -r requirements.txt -i https://pypi.org/simple 
+    if [[ $ce_branch="release" ]]; then
+        #fleet
+        wget -q https://paddle-github-action.bj.bcebos.com/PaddleFleet/release/0.2/latest/cu126/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
+        pip install  paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ -i https://pypi.org/simple 
+        pip uninstall paddlepaddle-gpu -y
+        #paddle
+        wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.6-Cudnn9.5-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse//latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
+        pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl  --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+        #formers
+        python setup.py bdist_wheel  > /dev/null
+        python -m pip install ./dist/*.whl 
+    elif [[ $ce_branch="develop" ]]; then
+        #fleet
+        python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ -i https://pypi.org/simple 
+        python -m pip uninstall paddlepaddle-gpu -y
+        #paddle
+        wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda12.6-Cudnn9.5-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
+        python -m pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ 
+        #formers
+        python setup.py bdist_wheel  > /dev/null
+        python -m pip install ./dist/*.whl 
+    else
+        # Set CI default
+        python setup.py bdist_wheel > /dev/null
+        pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+    fi
+   
     echo "paddlefleet commit:"
     python -c "import paddlefleet; print(paddlefleet.version.commit)"
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
-    pip install -r tests/requirements.txt
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
+    python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple > /dev/null
+    python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
     python -m pip list >> ${log_path}/commit_info.txt
     end_ts=$(date +%s)
     echo -e "\033[32m install requirements cost $((end_ts - start_ts))s \033[0m"
 }
 
 set_env() {
-    export NVIDIA_TF32_OVERRIDE=0 
+    export NVIDIA_TF32_OVERRIDE=0
     export FLAGS_cudnn_deterministic=1
     export HF_ENDPOINT=https://hf-mirror.com
 
-    # for CE
-    if [[ ${FLAGS_enable_CE} == "true" ]];then
-        export CE_TEST_ENV=1
-        export RUN_SLOW_TEST=1
-        export PYTHONPATH=${nlp_dir}:${nlp_dir}/llm:${PYTHONPATH}
+    # for CI/CE
+    if [[ "${FLAGS_enable_CE}" == "CE_Release" ]];then
+        echo "CE_Release: install paddle release + fleet release + formers release"
+        install_requirements "${release}"
+    elif [[ "${FLAGS_enable_CE}" == "CE_Develop" ]];then
+        echo "CE_Develop: install paddle develop + fleet develop + formers develop"
+        install_requirements "${develop}"
+    elif [[ "${FLAGS_enable_CI}" == "True" ]];then
+        echo "CI: install paddle stable + fleet stable + formers"
+        # install_requirements
+
     fi
 }
 
@@ -99,59 +114,66 @@ print_info() {
 }
 
 get_diff_TO_case(){
-export FLAGS_enable_CI=false
-if [ -z "${AGILE_COMPILE_BRANCH}" ]; then
-    # Scheduled Regression Test
-    FLAGS_enable_CI=true
-else
-    for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
-        ext="${file_name##*.}"
-        echo "file_name: ${file_name}, ext: ${file_name##*.}"
-        
-        [[ -f "$file_name" ]] || continue
-        if [[ "$ext" == "py" ]]; then
-            FLAGS_enable_CI=true
-            break
+declare -a model_array=()
+for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF}'`;do
+    ext="${file_name##*.}"
+    echo "file_name: ${file_name}, ext: ${file_name##*.}"
+
+    [[ -f "$file_name" ]] || continue
+
+    if [[ "$file_name" == "paddleformers/transformers/"* ]] || [[ "$file_name" == "tests/transformers/"* ]]; then
+        # Extract model name from path (e.g., paddleformers/transformers/qwen3/...)
+        model_name=$(echo "$file_name" | sed -n 's#.*paddleformers/transformers/\([^/]*\)/.*#\1#p')
+        if [ -z "$model_name" ]; then
+            model_name=$(echo "$file_name" | sed -n 's#.*tests/transformers/\([^/]*\)/.*#\1#p')
         fi
-    done
+        if [ -n "$model_name" ]; then
+            if [[ ! " ${model_array[*]} " =~ " ${model_name} " ]]; then
+                model_array+=("$model_name")
+            fi
+        fi
+    fi
+
+    if [[ "$ext" == "py" ]]; then
+        FLAGS_enable_CI=True
+        break
+    fi
+done
+
+if [ ${#model_array[@]} -gt 0 ]; then
+    models="${model_array[0]}"
+else
+    models="glm_moe"
 fi
+
 }
 
-get_diff_TO_case
 set_env
-if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
-    kill_process
-    install_requirements
+# 如果外部传入了 models，则跳过自动检测，使用外部传入的值
+if [[ -n "$update_baseline_models" ]] && [[ "$update_baseline_models" != "glm_moe" ]]; then
+    echo "Update baseline models: $update_baseline_models"
+    models=$update_baseline_models
+else
+    get_diff_TO_case
+fi
+
+if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} == "CE_Develop" ]]|| [[ ${FLAGS_enable_CE} == "CE_Release" ]];then
     cd ${nlp_dir}
-    echo ' Testing all model unittest cases '
     unset http_proxy && unset https_proxy
     set +e
-    echo "Check paddle Cuda Version"
-    python -c "import paddle; print(paddle.version.cuda()); print(paddle.version.cudnn()); print(paddle.is_compiled_with_cuda())"
-    echo "Check docker Cuda Version"
-    nvcc -V 
     echo "Check nvidia-smi"
     nvidia-smi
     echo "Check paddle device count"
     python -c "import paddle; print(paddle.device.device_count())"
+    echo "Regression model: ${models}, Update baseline models: ${update_baseline_models}"
     export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
     export FLAGS_tcp_store_using_libuv=0
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
-    python -m pytest -s -v --models=all scripts/regression/test_models.py --update-baseline=all > ${log_path}/model_unittest.log 2>&1
+    python -m pytest -s -v --models=${models} --update-baseline=${update_baseline_models} scripts/regression/test_models.py > ${log_path}/model_unittest.log 2>&1
     exit_code=$?
     print_info $exit_code model_unittest
 
-    if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
-        cd ${nlp_dir}
-        echo -e "\033[35m ---- Generate Allure Report  \033[0m"
-        unset http_proxy && unset https_proxy
-        cp ${nlp_dir}/scripts/unit_test/gen_allure_report.py ./
-        python gen_allure_report.py > /dev/null
-        echo -e "\033[35m ---- Report: https://xly.bce.baidu.com/ipipe/ipipe-report/report/${AGILE_JOB_BUILD_ID}/report/  \033[0m"
-    else
-        echo "AGILE_JOB_BUILD_ID is empty, skip generate allure report"
-    fi
 else
     echo -e "\033[32m Changed Not CI case, Skips \033[0m"
     exit_code=0
