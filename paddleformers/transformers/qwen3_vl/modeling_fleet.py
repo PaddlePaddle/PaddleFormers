@@ -784,6 +784,12 @@ class Qwen3VLVisionModel(VisionLayer):
         seq_image_id = (seq_idx.unsqueeze(-1) >= cu_frames[:-1].unsqueeze(0)).astype("int64").sum(-1) - 1
         seqlens = hw[seq_image_id]
 
+        cu_seqlens = paddle.concat(
+            [
+                paddle.zeros([1], dtype="int32"),
+                seqlens.cumsum(0).astype("int32"),
+            ]
+        )
         max_seqlen = seqlens.max().item()
         total_seqlen = cu_seqlens[-1].item()
 
