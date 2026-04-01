@@ -3,7 +3,7 @@ stage: ernie_pretrain
 
 # data
 dataset_type: pretrain
-input_dir: "1.0 /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/eb45_industrycorpus2_94k"
+input_dir: "1.0 /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/eb45_industrycorpus2_94k/eb45_industrycorpus2_94k"
 split: "998,1,1"
 data_load_process_num: 40
 max_seq_len: 8192
@@ -53,7 +53,7 @@ scale_loss: 4096
 seed: 42
 use_train_part_sharding: 1
 pre_alloc_memory: 60
-offload_optim: true
+tensorwise_offload_optimizer: true
 pipeline_model_parallel_size: 4
 use_expert_parallel: True
 expert_model_parallel_size: 8
@@ -73,7 +73,6 @@ split_param: true
 sharding_comm_buffer_size_MB: 2048
 
 # pipeline_parallel_config
-pp_delay_scale_loss: true
 overlap_p2p_comm: true
 best_unbalanced_scheduler: true
 
@@ -94,7 +93,7 @@ ernie_model_config:
     use_recompute: false
     num_nextn_predict_layers: 1
     use_fp8_mlp: true
-    num_hidden_layers: 28
+    num_hidden_layers: 27
     num_empty_layers_add_in_tail: 0
     use_fp8_fuse_node: true
     use_ep_comm_overlap: false

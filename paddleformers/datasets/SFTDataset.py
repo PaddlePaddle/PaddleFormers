@@ -20,7 +20,7 @@ from itertools import chain
 from typing import Dict, List
 
 import numpy as np
-from paddle.io import IterableDataset
+from paddle.io import Dataset, IterableDataset
 
 from paddleformers.datasets.data_utils import (
     calculate_matched_group,
@@ -59,7 +59,7 @@ class Sequence:
     mm_inputs: Dict = field(default_factory=dict)
 
 
-class SFTDataSet(IterableDataset):
+class BaseSFTDataset:
     def __init__(self, **dataset_config):
 
         # parameter init
@@ -81,8 +81,9 @@ class SFTDataSet(IterableDataset):
         self.split_multi_turn = dataset_config.get("split_multi_turn", False)
         self.encode_one_turn = dataset_config.get("encode_one_turn", True)
         self.is_pretraining = dataset_config.get("is_pretraining", False)
-        self.truncate_packing = dataset_config.get("truncate_packing", True)
         self.is_valid = dataset_config.get("is_valid", False)
+        self.truncate_packing = dataset_config.get("truncate_packing", True)
+        self.truncation_strategy = dataset_config.get("truncation_strategy", "right")
         if self.truncate_packing and not self.is_pretraining:
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
         self.packing = dataset_config.get("packing", False)
@@ -99,6 +100,23 @@ class SFTDataSet(IterableDataset):
             self.begin_token_id = self.tokenizer._convert_token_to_id([self.begin_token])[0]
         else:
             self.begin_token_id = self.tokenizer.convert_tokens_to_ids([self.begin_token])[0]
+
+        # placeholder token init
+        self.placeholder_tokens = []
+        if self.template and self.template.mm_plugin:
+            for tok in [
+                self.template.mm_plugin.image_token,
+                self.template.mm_plugin.video_token,
+                self.template.mm_plugin.audio_token,
+            ]:
+                if tok:
+                    self.placeholder_tokens.append(tok)
+        for i, token in enumerate(self.placeholder_tokens):
+            if isinstance(token, str):
+                if isinstance(self.tokenizer, PretrainedTokenizer):
+                    self.placeholder_tokens[i] = self.tokenizer._convert_token_to_id(token)
+                else:
+                    self.placeholder_tokens[i] = self.tokenizer.convert_tokens_to_ids(token)
 
         # data loader + multisource dataset mix
         if self.is_valid:
@@ -336,7 +354,7 @@ class SFTDataSet(IterableDataset):
 
         return generate_packs
 
-    def __iter_func(self):
+    def _generate_sequences(self):
 
         # prepare epoch data
         batch_sequence, cur_len = [], 0
@@ -878,3 +896,83 @@ class SFTDataSet(IterableDataset):
             except StopIteration:
                 break
         return batch, count
+
+
+class IteratorSFTDataset(BaseSFTDataset, IterableDataset):
+    def __init__(self, **dataset_config):
+        super().__init__(**dataset_config)
+
+    def __iter__(self):
+        if self.is_valid:
+            yield from self._generate_sequences()
+        else:
+            while True:
+                yield from self._generate_sequences()
+
+
+class MapSFTDataset(BaseSFTDataset, Dataset):
+    def __init__(self, **dataset_config):
+        super().__init__(**dataset_config)
+
+        if self.packing:
+            raise ValueError(
+                "[MapSFTDataset] packing=True is not supported for non-streaming (Map) dataset. "
+                "Please use IteratorSFTDataset instead or set packing=False."
+            )
+
+        self.raw_data = list(self.mix_datasets)
+        logger.info(f"[MapSFTDataset] Total samples: {len(self.raw_data)}")
+
+        self.n_try_fetch = min(10, len(self.raw_data))
+        self.random_state = np.random.RandomState(None)
+        self.traceback_limit = 10
+        self._traceback_counter = 0
+        self._idx = 0
+        self._idx_list = self.random_state.permutation(len(self.raw_data)).tolist()
+
+    def __len__(self):
+        return len(self.raw_data)
+
+    def __getitem__(self, idx):
+        actual_example_num = 1
+
+        for i in range(self.n_try_fetch):
+            if i == 0:
+                current_idx = idx
+            else:
+                current_idx = self._idx_list[self._idx]
+                self._idx = (self._idx + 1) % len(self.raw_data)
+
+            example = self.raw_data[current_idx]
+            try:
+                if self.is_pretraining:
+                    sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
+                else:
+                    sequence = self._postprocess_sequence(example, actual_example_num)
+
+                if sequence is not None:
+                    return [sequence]
+
+                # sequence is None, try next
+                if self.traceback_limit is not None and self._traceback_counter < self.traceback_limit:
+                    logger.warning(
+                        f"[MapSFTDataset] Example at index {current_idx} returned None, "
+                        "another piece of data will be randomly selected."
+                    )
+                    self._traceback_counter += 1
+
+            except Exception:
+                if self.traceback_limit is not None and self._traceback_counter < self.traceback_limit:
+                    import traceback
+
+                    logger.info(traceback.format_exc())
+                    logger.warning(
+                        "[MapSFTDataset] There are errors in data processing, "
+                        "another piece of data will be randomly selected."
+                    )
+                    self._traceback_counter += 1
+
+        raise ValueError(
+            f"[MapSFTDataset] Failed to retrieve valid data after {self.n_try_fetch} attempts. "
+            "You can avoid this issue by checking your data quality."
+        )
