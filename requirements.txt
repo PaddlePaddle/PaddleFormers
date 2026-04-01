@@ -22,7 +22,6 @@ modelscope
 transformers>=5.0.0, <5.4.0
 GPUtil
 importlib_metadata
-pydantic
 librosa
 binpacking
 orjson
