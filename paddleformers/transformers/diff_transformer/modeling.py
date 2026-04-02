@@ -1,8 +1,24 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
-from .configuration import DiffTransformerConfig
+
 from paddleformers.transformers.model_utils import PretrainedModel
+from .configuration import DiffTransformerConfig
+
 
 class RMSNorm(nn.Layer):
     def __init__(self, dim, eps=1e-6):
@@ -11,11 +27,12 @@ class RMSNorm(nn.Layer):
         self.weight = paddle.create_parameter(
             shape=[dim],
             dtype="float32",
-            default_initializer=nn.initializer.Constant(1.0)
+            default_initializer=nn.initializer.Constant(1.0),
         )
 
     def forward(self, x):
         return x * paddle.rsqrt(paddle.mean(x**2, axis=-1, keepdim=True) + self.eps) * self.weight
+
 
 class DiffAttn(nn.Layer):
     def __init__(self, config, layer_idx):
@@ -63,6 +80,7 @@ class DiffAttn(nn.Layer):
 
         return self.o_proj(attn), None, None
 
+
 class DiffTransformerBlock(nn.Layer):
     def __init__(self, config, layer_idx):
         super().__init__()
@@ -80,15 +98,19 @@ class DiffTransformerBlock(nn.Layer):
         x = x + self.mlp(self.norm2(x))
         return x
 
+
 class DiffTransformerPreTrainedModel(PretrainedModel):
     config_class = DiffTransformerConfig
     base_model_prefix = "model"
+
 
 class DiffTransformerModel(DiffTransformerPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
-        self.layers = nn.LayerList([DiffTransformerBlock(config, i) for i in range(config.num_hidden_layers)])
+        self.layers = nn.LayerList([
+            DiffTransformerBlock(config, i) for i in range(config.num_hidden_layers)
+        ])
         self.norm = RMSNorm(config.hidden_size)
 
     def forward(self, input_ids, attention_mask=None, **kwargs):
@@ -97,13 +119,14 @@ class DiffTransformerModel(DiffTransformerPreTrainedModel):
             x = layer(x, attention_mask=attention_mask)
         return self.norm(x)
 
+
 class DiffTransformerForCausalLM(DiffTransformerPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.model = DiffTransformerModel(config)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias_attr=False)
 
-    def forward(self, input_ids, labels=None, attention_mask=None,** kwargs):
+    def forward(self, input_ids, labels=None, attention_mask=None, **kwargs):
         hidden_states = self.model(input_ids, attention_mask=attention_mask)
         logits = self.lm_head(hidden_states)
 
@@ -113,4 +136,6 @@ class DiffTransformerForCausalLM(DiffTransformerPreTrainedModel):
             shift_labels = labels[:, 1:].reshape([-1])
             loss = F.cross_entropy(shift_logits, shift_labels)
 
-        return (loss, logits) if loss is not None else logits
+        if loss is not None:
+            return loss, logits
+        return logits
