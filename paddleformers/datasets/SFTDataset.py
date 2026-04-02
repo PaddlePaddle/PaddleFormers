@@ -820,9 +820,6 @@ class SFTDataSet(IterableDataset):
                 tokens.extend(suffix_ids)
                 labels.extend(suffix_ids)
 
-        # label shift
-        labels = labels[1:] + [-100]
-
         # data truncate
         if self.truncation_strategy != "oral":
             tokens, labels = self._encode_truncated(tokens, labels)
@@ -833,6 +830,9 @@ class SFTDataSet(IterableDataset):
         else:
             if len(tokens) > self.max_seq_len:
                 raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+
+        # label shift
+        labels = labels[1:] + [-100]
 
         pos_ids = list(range(len(tokens)))
 
