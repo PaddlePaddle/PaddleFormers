@@ -98,6 +98,7 @@ class Qwen3_5TextModelProvider(GPTModelProvider):
         "dtype": "params_dtype",
         "num_experts": "n_routed_experts",
         "num_local_experts": "n_routed_experts",
+        "attn_output_gate": "gated_attention",
     }
 
     gated_linear_unit: bool = True
@@ -129,7 +130,8 @@ class Qwen3_5TextModelProvider(GPTModelProvider):
     bias_dropout_fusion: bool = True
     use_qk_norm: bool = True
     moe_router_force_load_balancing: bool = False
-    n_shared_experts: int = 0
+    n_shared_experts: int = 1
+    moe_shared_expert_gate: bool = True
     multimodal_embedding: bool = False
 
 
