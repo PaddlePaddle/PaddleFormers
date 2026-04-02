@@ -141,33 +141,33 @@ jobs:
             
       - name: Download Code
         run: |
-          docker exec -t $container_name /bin/bash << 'DOCKER_EOF'
-            rm -rf * .[^.]*
-            echo "Downloading PaddleFormers.tar"
-            wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
-            echo "Extracting PaddleFormers.tar"
-            rm -rf PaddleFormers
-            tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
-            echo "work_dir = ${work_dir}"
-            source ${work_dir}/../../../proxy
-            cd PaddleFormers
-            git config --global user.name "PaddleCI"
-            git config --global user.email "paddle_ci@example.com"
-            git pull
-            git submodule update --init --recursive --force
-            if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
-              git fetch origin pull/${PR_ID}/head
-              git checkout -b PR_${PR_ID} FETCH_HEAD
-              git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
-              echo "Checking out ${BRANCH}..."
-              git fetch upstream ${BRANCH}:${BRANCH}
-              git merge ${BRANCH} --no-edit
-              git diff --numstat ${BRANCH} -- | awk "{print \$NF}"
-            else
-              echo "Not in a pull_request event. Skipping PR-specific operations."
-            fi
-            git log --pretty=oneline -10
-            DOCKER_EOF
+          docker exec -t $container_name /bin/bash <<-'DOCKER_EOF'
+          rm -rf * .[^.]*
+          echo "Downloading PaddleFormers.tar"
+          wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+          echo "Extracting PaddleFormers.tar"
+          rm -rf PaddleFormers
+          tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+          echo "work_dir = ${work_dir}"
+          source ${work_dir}/../../../proxy
+          cd PaddleFormers
+          git config --global user.name "PaddleCI"
+          git config --global user.email "paddle_ci@example.com"
+          git pull
+          git submodule update --init --recursive --force
+          if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
+            git fetch origin pull/${PR_ID}/head
+            git checkout -b PR_${PR_ID} FETCH_HEAD
+            git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
+            echo "Checking out ${BRANCH}..."
+            git fetch upstream ${BRANCH}:${BRANCH}
+            git merge ${BRANCH} --no-edit
+            git diff --numstat ${BRANCH} -- | awk "{print \$NF}"
+          else
+            echo "Not in a pull_request event. Skipping PR-specific operations."
+          fi
+          git log --pretty=oneline -10
+          DOCKER_EOF
 
       - name: Determine trigger mode
         id: trigger_mode
@@ -211,7 +211,7 @@ jobs:
 
       - name: Test
         run: |
-          docker exec -t $container_name /bin/bash << 'DOCKER_EOF'
+          docker exec -t $container_name /bin/bash <<-'DOCKER_EOF'
           ldconfig
           mkdir -p /root/.cache/pip
           pip cache dir
@@ -273,7 +273,7 @@ jobs:
           home_path: ${{ github.workspace }}/../../..
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
         run: |
-          docker exec -t $container_name /bin/bash -c '
+          docker exec -t $container_name /bin/bash <<-'DOCKER_EOF'
           if [ ! -f "${{ env.bos_file }}" ]; then
             wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
             mkdir ${{ env.home_path }}/bos
@@ -291,7 +291,7 @@ jobs:
             python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/$file"
           done
-          '
+          DOCKER_EOF
 
       - name: Terminate And Delete the Container
         if: always()
