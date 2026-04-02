@@ -1,0 +1,116 @@
+import paddle
+import paddle.nn as nn
+import paddle.nn.functional as F
+from .configuration import DiffTransformerConfig
+from paddleformers.transformers.model_utils import PretrainedModel
+
+class RMSNorm(nn.Layer):
+    def __init__(self, dim, eps=1e-6):
+        super().__init__()
+        self.eps = eps
+        self.weight = paddle.create_parameter(
+            shape=[dim],
+            dtype="float32",
+            default_initializer=nn.initializer.Constant(1.0)
+        )
+
+    def forward(self, x):
+        return x * paddle.rsqrt(paddle.mean(x**2, axis=-1, keepdim=True) + self.eps) * self.weight
+
+class DiffAttn(nn.Layer):
+    def __init__(self, config, layer_idx):
+        super().__init__()
+        self.hidden_size = config.hidden_size
+        self.num_heads = config.num_attention_heads
+        self.head_dim = self.hidden_size // self.num_heads
+        self.scaling = self.head_dim**-0.5
+
+        self.q_proj = nn.Linear(self.hidden_size, 2 * self.hidden_size, bias_attr=False)
+        self.k_proj = nn.Linear(self.hidden_size, 2 * self.hidden_size, bias_attr=False)
+        self.v_proj = nn.Linear(self.hidden_size, self.hidden_size, bias_attr=False)
+        self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias_attr=False)
+
+        self.lambda_init = config.lambda_init
+        self.lambda_q1 = self.create_parameter(shape=[self.head_dim], dtype="float32")
+        self.lambda_k1 = self.create_parameter(shape=[self.head_dim], dtype="float32")
+        self.lambda_q2 = self.create_parameter(shape=[self.head_dim], dtype="float32")
+        self.lambda_k2 = self.create_parameter(shape=[self.head_dim], dtype="float32")
+
+        self.subln = RMSNorm(self.hidden_size)
+
+    def forward(self, hidden_states, attention_mask=None, **kwargs):
+        bsz, seq_len, _ = hidden_states.shape
+
+        q = self.q_proj(hidden_states).reshape(bsz, seq_len, 2, self.num_heads, self.head_dim)
+        k = self.k_proj(hidden_states).reshape(bsz, seq_len, 2, self.num_heads, self.head_dim)
+        v = self.v_proj(hidden_states).reshape(bsz, seq_len, self.num_heads, self.head_dim)
+
+        q1, q2 = q[:, :, 0], q[:, :, 1]
+        k1, k2 = k[:, :, 0], k[:, :, 1]
+
+        attn1 = F.scaled_dot_product_attention(q1, k1, v, attn_mask=attention_mask)
+        attn2 = F.scaled_dot_product_attention(q2, k2, v, attn_mask=attention_mask)
+
+        lambda_1 = paddle.exp(paddle.sum(self.lambda_q1 * self.lambda_k1, axis=-1))
+        lambda_2 = paddle.exp(paddle.sum(self.lambda_q2 * self.lambda_k2, axis=-1))
+        lambda_full = lambda_1 - lambda_2 + self.lambda_init
+
+        attn = attn1 - lambda_full * attn2
+        attn = attn * (1 - self.lambda_init)
+
+        attn = attn.reshape(bsz, seq_len, -1)
+        attn = self.subln(attn)
+
+        return self.o_proj(attn), None, None
+
+class DiffTransformerBlock(nn.Layer):
+    def __init__(self, config, layer_idx):
+        super().__init__()
+        self.norm1 = RMSNorm(config.hidden_size)
+        self.attn = DiffAttn(config, layer_idx)
+        self.norm2 = RMSNorm(config.hidden_size)
+        self.mlp = nn.Sequential(
+            nn.Linear(config.hidden_size, config.intermediate_size),
+            nn.Silu(),
+            nn.Linear(config.intermediate_size, config.hidden_size),
+        )
+
+    def forward(self, x, attention_mask=None, **kwargs):
+        x = x + self.attn(self.norm1(x), attention_mask=attention_mask)[0]
+        x = x + self.mlp(self.norm2(x))
+        return x
+
+class DiffTransformerPreTrainedModel(PretrainedModel):
+    config_class = DiffTransformerConfig
+    base_model_prefix = "model"
+
+class DiffTransformerModel(DiffTransformerPreTrainedModel):
+    def __init__(self, config):
+        super().__init__(config)
+        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
+        self.layers = nn.LayerList([DiffTransformerBlock(config, i) for i in range(config.num_hidden_layers)])
+        self.norm = RMSNorm(config.hidden_size)
+
+    def forward(self, input_ids, attention_mask=None, **kwargs):
+        x = self.embed_tokens(input_ids)
+        for layer in self.layers:
+            x = layer(x, attention_mask=attention_mask)
+        return self.norm(x)
+
+class DiffTransformerForCausalLM(DiffTransformerPreTrainedModel):
+    def __init__(self, config):
+        super().__init__(config)
+        self.model = DiffTransformerModel(config)
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias_attr=False)
+
+    def forward(self, input_ids, labels=None, attention_mask=None,** kwargs):
+        hidden_states = self.model(input_ids, attention_mask=attention_mask)
+        logits = self.lm_head(hidden_states)
+
+        loss = None
+        if labels is not None:
+            shift_logits = logits[:, :-1, :].reshape([-1, logits.shape[-1]])
+            shift_labels = labels[:, 1:].reshape([-1])
+            loss = F.cross_entropy(shift_logits, shift_labels)
+
+        return (loss, logits) if loss is not None else logits
