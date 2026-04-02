@@ -34,6 +34,7 @@ from paddle.distributed.fleet.meta_parallel import (
 )
 from paddle.incubate.nn import FusedLinear
 
+from ...nn.experts import MoeExpertsBase
 from ...transformers.model_utils import VLMS
 from ...utils.import_utils import is_paddlefleet_available
 
@@ -48,6 +49,7 @@ if is_paddlefleet_available():
         ColumnParallelLinear as FleetColumnParallelLinear,
     )
     from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
+    from paddlefleet.transformer.moe.moe_expert import GroupedMLPExpert
 else:
     # Define mock objects or alternative implementations when paddlefleet is not available
     def get_tensor_model_parallel_group():
@@ -63,6 +65,9 @@ else:
         pass
 
     class FleetRowParallelLinear:
+        pass
+
+    class GroupedMLPExpert:
         pass
 
 
@@ -108,7 +113,7 @@ def get_lora_layers():
                 XPURowSequenceParallelLoRALinear as RowSequenceParallelLoRALinear,
             )
 
-            from .lora_layers import LoRAConv2D
+            from .lora_layers import FleetLoRAMoeExperts, LoRAConv2D, LoRAMoeExperts
         else:
             raise ImportError  # Force to use the fallback if not XPU
     except ImportError:
@@ -118,10 +123,12 @@ def get_lora_layers():
             FleetColumnParallelLoRALinear,
             FleetColumnSequenceParallelLoRALinear,
             FleetLoRALinear,
+            FleetLoRAMoeExperts,
             FleetRowParallelLoRALinear,
             FleetRowSequenceParallelLoRALinear,
             LoRAConv2D,
             LoRALinear,
+            LoRAMoeExperts,
             RowParallelLoRALinear,
             RowSequenceParallelLoRALinear,
         )
@@ -131,6 +138,7 @@ def get_lora_layers():
         "ColumnSequenceParallelLoRALinear": ColumnSequenceParallelLoRALinear,
         "LoRAConv2D": LoRAConv2D,
         "LoRALinear": LoRALinear,
+        "LoRAMoeExperts": LoRAMoeExperts,
         "RowParallelLoRALinear": RowParallelLoRALinear,
         "RowSequenceParallelLoRALinear": RowSequenceParallelLoRALinear,
         "FleetLoRALinear": FleetLoRALinear,
@@ -138,6 +146,7 @@ def get_lora_layers():
         "FleetColumnParallelLoRALinear": FleetColumnParallelLoRALinear,
         "FleetRowSequenceParallelLoRALinear": FleetRowSequenceParallelLoRALinear,
         "FleetColumnSequenceParallelLoRALinear": FleetColumnSequenceParallelLoRALinear,
+        "FleetLoRAMoeExperts": FleetLoRAMoeExperts,
     }
 
 
@@ -145,6 +154,7 @@ lora_layers = get_lora_layers()
 ColumnParallelLoRALinear = lora_layers["ColumnParallelLoRALinear"]
 ColumnSequenceParallelLoRALinear = lora_layers["ColumnSequenceParallelLoRALinear"]
 LoRAConv2D = lora_layers["LoRAConv2D"]
+LoRAMoeExperts = lora_layers["LoRAMoeExperts"]
 LoRALinear = lora_layers["LoRALinear"]
 RowParallelLoRALinear = lora_layers["RowParallelLoRALinear"]
 RowSequenceParallelLoRALinear = lora_layers["RowSequenceParallelLoRALinear"]
@@ -153,6 +163,7 @@ FleetRowParallelLoRALinear = lora_layers["FleetRowParallelLoRALinear"]
 FleetColumnParallelLoRALinear = lora_layers["FleetColumnParallelLoRALinear"]
 FleetRowSequenceParallelLoRALinear = lora_layers["FleetRowSequenceParallelLoRALinear"]
 FleetColumnSequenceParallelLoRALinear = lora_layers["FleetColumnSequenceParallelLoRALinear"]
+FleetLoRAMoeExperts = lora_layers["FleetLoRAMoeExperts"]
 
 
 from ...quantization.quantization_linear import (
@@ -203,12 +214,20 @@ AVAILABLE_LAYERS = [
     ColumnSequenceParallelLoRALinear,
     LoRAConv2D,
     LoRALinear,
+    LoRAMoeExperts,
     RowParallelLoRALinear,
     RowSequenceParallelLoRALinear,
     ColumnParallelQuantizationLoRALinear,
     QuantizationLoRALinear,
     RowParallelQuantizationLoRALinear,
 ]
+
+MOE_EXPERTS_LORA_MAPPING = {
+    "MoeExperts": LoRAMoeExperts,
+    "LoRAMoeExperts": LoRAMoeExperts,
+    "GroupedMLPExpert": FleetLoRAMoeExperts,
+    "FleetLoRAMoeExperts": FleetLoRAMoeExperts,
+}
 
 
 class LoRAModel(nn.Layer):
@@ -237,6 +256,15 @@ class LoRAModel(nn.Layer):
         if issubclass(type(self.model), tuple(pipeline_layer_types)):
             self.is_pipelinemodel = True
             self.model._single_to_pp_mapping = None
+
+        # For composite models (e.g., VL models), the inner language_model may be a
+        # PaddleFleet PipelineLayer. Invalidate its cached name mapping so it gets
+        # rebuilt on next state_dict() call with the newly added LoRA parameter keys.
+        if not self.is_pipelinemodel and is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
+            for sublayer in self.model.sublayers():
+                if isinstance(sublayer, PaddleFleetPipelineLayer):
+                    sublayer._pipeline_name_mapping = None
+                    sublayer._pp_to_single_mapping = None
 
         self.use_paddlefleet = False
         if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
@@ -590,6 +618,11 @@ class LoRAModel(nn.Layer):
 
         if self.is_pipelinemodel:
             self.model._single_to_pp_mapping = None
+        if not self.is_pipelinemodel and is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
+            for sublayer in self.model.sublayers():
+                if isinstance(sublayer, PaddleFleetPipelineLayer):
+                    sublayer._pipeline_name_mapping = None
+                    sublayer._pp_to_single_mapping = None
         if (
             self.is_pipelinemodel
             and merge_tensor_parallel
@@ -947,6 +980,16 @@ class LoRAModel(nn.Layer):
             lora_module = RowParallelQuantizationLoRALinear(module, lora_config)
             # Lora row parallel will spilt lora A matrix
             self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)
+        elif isinstance(module, MoeExpertsBase) or isinstance(module, GroupedMLPExpert):
+            cls = MOE_EXPERTS_LORA_MAPPING.get(module.__class__.__name__, LoRAMoeExperts)
+            lora_module = cls(
+                module,
+                r=lora_config.r,
+                lora_alpha=lora_config.lora_alpha,
+                lora_dropout=lora_config.lora_dropout,
+                rslora=lora_config.rslora,
+                lora_plus_scale=lora_config.lora_plus_scale,
+            )
         if lora_module is None:
             raise ValueError(
                 f"LoRA strategy only supports paddle.nn.Linear or paddle.distributed.fleet.meta_parallel.ColumnParallelLinear or paddleformers.transformers.sequence_utils. {module}({module_name} {type(module).__name__}) is not supported。"
@@ -1011,6 +1054,8 @@ class LoRAModel(nn.Layer):
                 or isinstance(layer, FleetColumnSequenceParallelLoRALinear)
                 or isinstance(layer, RowSequenceParallelLoRALinear)
                 or isinstance(layer, FleetRowSequenceParallelLoRALinear)
+                or isinstance(layer, LoRAMoeExperts)
+                or isinstance(layer, FleetLoRAMoeExperts)
                 or (QuantizationLoRALinear is not None and isinstance(layer, QuantizationLoRALinear))
                 or (
                     ColumnParallelQuantizationLoRALinear is not None
@@ -1056,8 +1101,7 @@ class LoRAModel(nn.Layer):
             return model
         if isinstance(lora_config.target_modules, str):
             lora_config.target_modules = [lora_config.target_modules]
-        for i in model.named_sublayers():
-            module_name = i[0]
+        for module_name, module in model.named_sublayers():
             for target_module in lora_config.target_modules:
                 if re.fullmatch(target_module, module_name):
                     self._find_and_replace_module(model, module_name, lora_config)
@@ -1190,16 +1234,29 @@ class LoRAModel(nn.Layer):
         base_state_dict = self.model.state_dict()
         scaling = self.lora_config.lora_alpha / self.lora_config.r
 
+        lora_A_keys = [k for k in base_state_dict.keys() if "lora_A" in k]
+        weight_to_lora = {}
+        for lora_A_key in lora_A_keys:
+            if lora_A_key.endswith(".lora_A"):
+                weight_key = lora_A_key[: -len(".lora_A")]
+                lora_B_key = weight_key + ".lora_B"
+                if lora_B_key in base_state_dict:
+                    weight_to_lora[weight_key + ".weight"] = (lora_A_key, lora_B_key)
+            elif lora_A_key.endswith("_lora_A"):
+                weight_key = lora_A_key[: -len("_lora_A")]
+                lora_B_key = weight_key + "_lora_B"
+                if lora_B_key in base_state_dict:
+                    weight_to_lora[weight_key] = (lora_A_key, lora_B_key)
+
         model_key_list = list(base_state_dict.keys())
         for k in model_key_list:
             if "lora" in k:
                 continue
             tensor = base_state_dict.pop(k)
-            if "weight" in k:
-                lora_A_key, lora_B_key = k.replace("weight", "lora_A"), k.replace("weight", "lora_B")
-                if lora_A_key in base_state_dict.keys():
-                    lora_A_tensor, lora_B_tensor = base_state_dict.pop(lora_A_key), base_state_dict.pop(lora_B_key)
-                    tensor += lora_A_tensor @ lora_B_tensor * scaling
+            if k in weight_to_lora:
+                lora_A_key, lora_B_key = weight_to_lora[k]
+                lora_A_tensor, lora_B_tensor = base_state_dict.pop(lora_A_key), base_state_dict.pop(lora_B_key)
+                tensor += lora_A_tensor @ lora_B_tensor * scaling
 
             if offload:
                 tensor = tensor.pin_memory()
