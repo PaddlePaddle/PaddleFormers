@@ -2,6 +2,8 @@ name: Model Unittest GPU CI
 
 on:
   pull_request:
+  issue_comment:
+    types: [created, edited]
   workflow_dispatch:
     inputs:
       update_baseline_models:
@@ -170,18 +172,42 @@ jobs:
       - name: Determine trigger mode
         id: trigger_mode
         run: |
+          UPDATE_BASELINE_MODELS="false"
+          MODE="pr"
+          TARGET_BRANCH="PR_${AGILE_COMPILE_BRANCH}"
+          PR_NUMBER="${PR_ID}"
+          
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "mode=manual" >> "$GITHUB_OUTPUT"
-            echo "update_baseline_models=${{ github.event.inputs.update_baseline_models }}" >> "$GITHUB_OUTPUT"
-            echo "target_branch=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-            echo "pr_number=manual" >> "$GITHUB_OUTPUT"
-          else
-            echo "mode=pr" >> "$GITHUB_OUTPUT"
-            echo "update_baseline_models=false" >> "$GITHUB_OUTPUT"
-            echo "target_branch=PR_${AGILE_COMPILE_BRANCH}" >> "$GITHUB_OUTPUT"
-            echo "pr_number=${PR_ID}" >> "$GITHUB_OUTPUT"
+            MODE="manual"
+            UPDATE_BASELINE_MODELS="${{ github.event.inputs.update_baseline_models }}"
+            TARGET_BRANCH="${{ github.ref_name }}"
+            PR_NUMBER="manual"
+          elif [[ "${{ github.event_name }}" == "issue_comment" ]]; then
+            # Parse comment for [update-baseline: models]
+            COMMENT_BODY="${{ github.event.comment.body }}"
+            if [[ $COMMENT_BODY =~ \[update-baseline:[[:space:]]*([a-zA-Z0-9_,]+)\] ]]; then
+              UPDATE_BASELINE_MODELS="${BASH_REMATCH[1]}"
+              MODE="comment"
+              PR_NUMBER="${{ github.event.issue.number }}"
+              TARGET_BRANCH="PR_${{ github.event.issue.number }}"
+              echo "Detected baseline update from comment: $UPDATE_BASELINE_MODELS"
+            fi
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # Parse PR description for [update-baseline: models]
+            PR_BODY="${{ github.event.pull_request.body }}"
+            if [[ $PR_BODY =~ \[update-baseline:[[:space:]]*([a-zA-Z0-9_,]+)\] ]]; then
+              UPDATE_BASELINE_MODELS="${BASH_REMATCH[1]}"
+              MODE="pr"
+              echo "Detected baseline update from PR description: $UPDATE_BASELINE_MODELS"
+            fi
           fi
-          echo "trigger_mode_output=mode=${{ steps.trigger_mode.outputs.mode }},update_baseline_models=${{ steps.trigger_mode.outputs.update_baseline_models }},target_branch=${{ steps.trigger_mode.outputs.target_branch }},pr_number=${{ steps.trigger_mode.outputs.pr_number }}" >> "$GITHUB_ENV"
+          
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "update_baseline_models=$UPDATE_BASELINE_MODELS" >> "$GITHUB_OUTPUT"
+          echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          
+          echo "trigger_mode_output=mode=$MODE,update_baseline_models=$UPDATE_BASELINE_MODELS,target_branch=$TARGET_BRANCH,pr_number=$PR_NUMBER" >> "$GITHUB_ENV"
 
       - name: Test
         run: |
@@ -198,10 +224,11 @@ jobs:
           git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
           
           # Parse trigger mode from env var
-          MODE=$(echo "$trigger_mode_output" | grep -oP "mode=\K\w+")
-          UPDATE_BASELINE_MODELS=$(echo "$trigger_mode_output" | grep -oP "update_baseline_models=\K\w+")
+          MODE=$(echo "$trigger_mode_output" | grep -oP "mode=\K[a-z]+")
+          UPDATE_BASELINE_MODELS=$(echo "$trigger_mode_output" | grep -oP "update_baseline_models=\K[a-zA-Z0-9_,]+")
           TARGET_BRANCH=$(echo "$trigger_mode_output" | grep -oP "target_branch=\K[a-zA-Z0-9_]+")
           PR_NUMBER=$(echo "$trigger_mode_output" | grep -oP "pr_number=\K[0-9a-z]+")
+
           
           echo "=== Trigger Mode: ${MODE} ==="
           echo "Update baseline: ${UPDATE_BASELINE_MODELS}"
@@ -221,7 +248,10 @@ jobs:
             else
               echo "Committing baseline changes..."
               if [ "$MODE" = "manual" ]; then
-                git commit -m "chore: update baseline from manual trigger"
+                git commit -m "chore: update baseline from manual workflow dispatch"
+                git push -f origin HEAD:refs/heads/${TARGET_BRANCH} || echo "Push failed"
+              elif [ "$MODE" = "comment" ]; then
+                git commit -m "chore: update baseline from PR #${PR_NUMBER} comment"
                 git push -f origin HEAD:refs/heads/${TARGET_BRANCH} || echo "Push failed"
               else
                 git commit -m "chore: update baseline from PR #${PR_NUMBER}"
