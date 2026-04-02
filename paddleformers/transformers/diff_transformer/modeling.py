@@ -108,9 +108,9 @@ class DiffTransformerModel(DiffTransformerPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
-        self.layers = nn.LayerList([
-            DiffTransformerBlock(config, i) for i in range(config.num_hidden_layers)
-        ])
+        self.layers = nn.LayerList(
+            [DiffTransformerBlock(config, i) for i in range(config.num_hidden_layers)]
+        )
         self.norm = RMSNorm(config.hidden_size)
 
     def forward(self, input_ids, attention_mask=None, **kwargs):
