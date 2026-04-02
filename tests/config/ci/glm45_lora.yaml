@@ -52,6 +52,7 @@ sequence_parallel: true
 moe_group: mp
 sharding: stage1
 amp_master_grad: true
+moe_use_fusion_node: false
 # recompute: false
 recompute_granularity: ""
 bf16: true
