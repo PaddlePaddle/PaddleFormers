@@ -69,7 +69,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
     [
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
-        ("diff_transformer", "DiffTransformerConfig"),
+        ("diff_transformer", "DiffTransformer"),
         ("ernie4_5", "Ernie4_5"),
         ("ernie4_5_moe", "Ernie4_5_Moe"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
