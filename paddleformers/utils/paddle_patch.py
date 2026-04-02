@@ -154,3 +154,53 @@ if enable_paddleformers_monkey_patch:
 
 if not hasattr(paddle, "cat"):
     paddle.cat = paddle.concat
+
+
+def _patch_fleet_create_hcg_for_context_parallel():
+    """
+    Older Paddle releases expose context parallel support only on
+    EPHybridCommunicateGroup, but Fleet still instantiates the legacy
+    HybridCommunicateGroup unless expert parallel is enabled. That breaks
+    non-MoE CP jobs during argument parsing and HCG access.
+    """
+
+    try:
+        from paddle.distributed import fleet as dist_fleet
+        from paddle.distributed.fleet.base import topology as tp
+    except Exception:
+        return
+
+    if not hasattr(tp, "EPHybridCommunicateGroup"):
+        return
+
+    # Newer Paddle releases already expose CP APIs on the default HCG path.
+    if hasattr(tp.HybridCommunicateGroup, "get_context_parallel_world_size"):
+        return
+    if not hasattr(tp.EPHybridCommunicateGroup, "get_context_parallel_world_size"):
+        return
+
+    fleet_obj = getattr(dist_fleet, "fleet", None)
+    if fleet_obj is None:
+        return
+
+    fleet_cls = type(fleet_obj)
+    if getattr(fleet_cls, "_paddleformers_cp_hcg_patched", False):
+        return
+
+    original_create_hcg = fleet_cls._create_hcg
+
+    def patched_create_hcg(self, hybrid_group_names, dims):
+        dim_dict = dict(zip(hybrid_group_names, dims))
+        use_ep_hcg = dim_dict.get("expert", 1) > 1 or dim_dict.get("context", 1) > 1
+        if use_ep_hcg:
+            hcg = tp.EPHybridCommunicateGroup(hybrid_group_names, dims, self.hybrid_configs)
+            self._topology = hcg._dense_topo
+            return hcg
+        return original_create_hcg(self, hybrid_group_names, dims)
+
+    fleet_cls._create_hcg = patched_create_hcg
+    fleet_cls._paddleformers_cp_hcg_patched = True
+
+
+if enable_paddleformers_monkey_patch:
+    _patch_fleet_create_hcg_for_context_parallel()

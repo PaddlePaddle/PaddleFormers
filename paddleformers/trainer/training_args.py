@@ -75,6 +75,69 @@ def default_logdir() -> str:
     return os.path.join("runs", current_time + "_" + socket.gethostname())
 
 
+def ensure_context_parallel_hcg():
+    """
+    Rebuild Fleet HCG with the CP-capable implementation on legacy Paddle
+    releases where `fleet.init` still creates `HybridCommunicateGroup` even
+    when `cp_degree > 1`.
+    """
+
+    fleet_env = getattr(fleet, "fleet", None)
+    if fleet_env is None or not hasattr(fleet_env, "_hcg"):
+        return
+
+    hcg = fleet_env.get_hybrid_communicate_group()
+    if hasattr(hcg, "get_context_parallel_world_size"):
+        return
+
+    cp_degree = max(getattr(fleet_env, "cp_degree", 1), 1)
+    if cp_degree <= 1:
+        return
+
+    from paddle.distributed.fleet.base import topology as tp
+
+    if not hasattr(tp, "EPHybridCommunicateGroup"):
+        return
+
+    order = list(fleet_env._user_defined_strategy.hybrid_parallel_order)
+    if "ep" not in order:
+        order.insert(-1, "ep")
+    if "sharding" in order and "moe_sharding" not in order:
+        order.insert(order.index("sharding"), "moe_sharding")
+    if cp_degree > 1 and "cp" not in order:
+        insert_idx = order.index("sharding") if "sharding" in order else max(len(order) - 1, 0)
+        order.insert(insert_idx, "cp")
+    fleet_env._user_defined_strategy.hybrid_parallel_order = order
+    degree_mapping = {
+        "dp": ["data", max(getattr(fleet_env, "dp_degree", 1), 1)],
+        "pp": ["pipe", max(getattr(fleet_env, "pp_degree", 1), 1)],
+        "sharding": ["sharding", max(getattr(fleet_env, "sharding_degree", 1), 1)],
+        "mp": ["model", max(getattr(fleet_env, "mp_degree", 1), 1)],
+        "sep": ["sep", max(getattr(fleet_env, "sep_degree", 1), 1)],
+        "cp": ["context", cp_degree],
+        "ep": ["expert", max(getattr(fleet_env, "ep_degree", 1), 1)],
+        "moe_sharding": [
+            "moe_sharding",
+            max(getattr(fleet_env, "moe_sharding_degree", 1), getattr(fleet_env, "sharding_degree", 1), 1),
+        ],
+    }
+
+    hybrid_group_names = []
+    dims = []
+    for key in order:
+        name, degree = degree_mapping[key]
+        hybrid_group_names.append(name)
+        dims.append(degree)
+
+    logger.warning(
+        "Detected legacy Fleet HCG without context parallel APIs. "
+        f"Rebuilding HCG with EPHybridCommunicateGroup for cp_degree={cp_degree}."
+    )
+    new_hcg = tp.EPHybridCommunicateGroup(hybrid_group_names, dims, fleet_env.hybrid_configs)
+    fleet_env._topology = new_hcg._dense_topo
+    fleet_env._hcg = new_hcg
+
+
 @dataclass
 class TrainingArguments:
     """
@@ -1988,6 +2051,9 @@ class TrainingArguments:
                         logger.warning("context parallel is not supported!!! Ignore it.")
                     return support_cp
 
+                support_cp = is_context_parallel_supported()
+                enable_context_parallel = self.context_parallel_size > 1 and support_cp
+
                 if self.hybrid_parallel_topo_order == "pp_first":
                     if is_segment_parallel_supported():
                         order = ["dp", "pp", "sharding", "sep", "mp"]
@@ -1998,6 +2064,12 @@ class TrainingArguments:
                         order = ["dp", "sharding", "pp", "sep", "mp"]
                     else:
                         order = ["dp", "sharding", "pp", "mp"]
+                if not self.use_expert_parallel and enable_context_parallel:
+                    order.insert(-1, "ep")
+                    sd_idx = order.index("sharding")
+                    order.insert(sd_idx, "moe_sharding")
+                    sd_idx = order.index("sharding")
+                    order.insert(sd_idx, "cp")
                 if self.use_expert_parallel:
                     if not self.reorder_pipeline_priority:
                         if self.moe_sharding_parallel_size >= 1 and self.expert_model_parallel_size > 1:
@@ -2006,19 +2078,19 @@ class TrainingArguments:
                             # if pp_first, the order = ["dp", "pp", "moe_sharding", "sharding", "sep", "ep", "mp"]
                             # if sharding_first, the order is ["dp", "moe_sharding", "sharding", "pp", "sep", "ep", "mp"]
                             order.insert(sd_idx, "moe_sharding")
-                            if is_context_parallel_supported():
+                            if enable_context_parallel:
                                 sd_idx = order.index("sharding")
                                 order.insert(sd_idx, "cp")
                     else:
                         if self.moe_sharding_parallel_size >= 1 and self.expert_model_parallel_size > 1:
-                            if is_context_parallel_supported():
+                            if enable_context_parallel:
                                 order = ["sharding", "moe_sharding", "pp", "sep", "cp", "dp", "ep", "mp"]
                             else:
                                 order = ["sharding", "moe_sharding", "pp", "sep", "dp", "ep", "mp"]
                         else:
                             order = ["sharding", "pp", "sep", "dp", "mp"]
 
-                if is_context_parallel_supported():
+                if support_cp:
                     hybrid_configs = {
                         "dp_degree": self.data_parallel_size,
                         "mp_degree": self.tensor_model_parallel_size,
@@ -2028,6 +2100,9 @@ class TrainingArguments:
                         "cp_degree": self.context_parallel_size,
                         "order": order,
                     }
+                    if not self.use_expert_parallel and enable_context_parallel:
+                        hybrid_configs["ep_degree"] = 1
+                        hybrid_configs["moe_sharding_degree"] = self.sharding_parallel_size
                 elif is_segment_parallel_supported():
                     hybrid_configs = {
                         "dp_degree": self.data_parallel_size,
@@ -2177,6 +2252,7 @@ class TrainingArguments:
                     strategy = init_nccl_config(self.nccl_comm_group_config, strategy)
 
                 fleet.init(is_collective=True, strategy=strategy)
+                ensure_context_parallel_hcg()
 
                 # In PaddleFleet, we should use the following code to initialize.
                 if (
