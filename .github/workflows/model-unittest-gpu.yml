@@ -141,7 +141,7 @@ jobs:
             
       - name: Download Code
         run: |
-          docker exec -t $container_name /bin/bash -c '
+          docker exec -t $container_name /bin/bash << 'DOCKER_EOF'
             rm -rf * .[^.]*
             echo "Downloading PaddleFormers.tar"
             wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
@@ -167,7 +167,7 @@ jobs:
               echo "Not in a pull_request event. Skipping PR-specific operations."
             fi
             git log --pretty=oneline -10
-            '
+            DOCKER_EOF
 
       - name: Determine trigger mode
         id: trigger_mode
@@ -185,7 +185,7 @@ jobs:
           elif [[ "${{ github.event_name }}" == "issue_comment" ]]; then
             # Parse comment for [update-baseline: models]
             COMMENT_BODY="${{ github.event.comment.body }}"
-            if [[ $COMMENT_BODY =~ \[update-baseline:[[:space:]]*([a-zA-Z0-9_,]+)\] ]]; then
+            if [[ "$COMMENT_BODY" =~ \[update-baseline:[[:space:]]*([a-zA-Z0-9_,]+)\] ]]; then
               UPDATE_BASELINE_MODELS="${BASH_REMATCH[1]}"
               MODE="comment"
               PR_NUMBER="${{ github.event.issue.number }}"
@@ -195,7 +195,7 @@ jobs:
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             # Parse PR description for [update-baseline: models]
             PR_BODY="${{ github.event.pull_request.body }}"
-            if [[ $PR_BODY =~ \[update-baseline:[[:space:]]*([a-zA-Z0-9_,]+)\] ]]; then
+            if [[ "$PR_BODY" =~ \[update-baseline:[[:space:]]*([a-zA-Z0-9_,]+)\] ]]; then
               UPDATE_BASELINE_MODELS="${BASH_REMATCH[1]}"
               MODE="pr"
               echo "Detected baseline update from PR description: $UPDATE_BASELINE_MODELS"
@@ -211,7 +211,7 @@ jobs:
 
       - name: Test
         run: |
-          docker exec -t $container_name /bin/bash -c '
+          docker exec -t $container_name /bin/bash << 'DOCKER_EOF'
           ldconfig
           mkdir -p /root/.cache/pip
           pip cache dir
@@ -239,7 +239,7 @@ jobs:
             echo "=== Running tests with baseline update ==="
             
             # Run tests with baseline update
-            bash -x scripts/regression/ci_model_unittest.sh True False ${UPDATE_BASELINE_MODELS} ${UPDATE_BASELINE_MODELS}
+            bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS" "$UPDATE_BASELINE_MODELS"
             
             # Check and commit changes
             git add scripts/regression/config.yaml
@@ -249,20 +249,20 @@ jobs:
               echo "Committing baseline changes..."
               if [ "$MODE" = "manual" ]; then
                 git commit -m "chore: update baseline from manual workflow dispatch"
-                git push -f origin HEAD:refs/heads/${TARGET_BRANCH} || echo "Push failed"
+                git push -f origin HEAD:refs/heads/"$TARGET_BRANCH" || echo "Push failed"
               elif [ "$MODE" = "comment" ]; then
                 git commit -m "chore: update baseline from PR #${PR_NUMBER} comment"
-                git push -f origin HEAD:refs/heads/${TARGET_BRANCH} || echo "Push failed"
+                git push -f origin HEAD:refs/heads/"$TARGET_BRANCH" || echo "Push failed"
               else
                 git commit -m "chore: update baseline from PR #${PR_NUMBER}"
-                git push -f origin HEAD:refs/heads/${TARGET_BRANCH} || echo "Push failed"
+                git push -f origin HEAD:refs/heads/"$TARGET_BRANCH" || echo "Push failed"
               fi
             fi
           else
             echo "=== Running tests without baseline update ==="
             bash -x scripts/regression/ci_model_unittest.sh True
           fi
-          '
+          DOCKER_EOF
         env:
           trigger_mode_output: ${{ env.trigger_mode_output }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
