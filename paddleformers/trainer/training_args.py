@@ -2101,7 +2101,9 @@ class TrainingArguments:
                         "order": order,
                     }
                     if not self.use_expert_parallel and enable_context_parallel:
-                        hybrid_configs["ep_degree"] = 1
+                        hybrid_configs["ep_degree"] = (
+                            self.data_parallel_size * self.sep_parallel_size * self.tensor_model_parallel_size
+                        )
                         hybrid_configs["moe_sharding_degree"] = self.sharding_parallel_size
                 elif is_segment_parallel_supported():
                     hybrid_configs = {
