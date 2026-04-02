@@ -37,7 +37,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PR_ID: ${{ github.event.pull_request.number || '0' }}
+  PR_ID: ${{ github.event.pull_request.number || github.event.issue.number || '0' }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
   TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-model-unittest-gpu
   CI_SCRIPTS_PATH: /workspace/PaddleFormers/scripts/ci_model_unittest.sh
@@ -171,6 +171,9 @@ jobs:
 
       - name: Determine trigger mode
         id: trigger_mode
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           UPDATE_BASELINE_MODELS="false"
           MODE="pr"
@@ -184,9 +187,8 @@ jobs:
             PR_NUMBER="manual"
           elif [[ "${{ github.event_name }}" == "issue_comment" ]]; then
             # Parse comment for [update-baseline: models]
-            COMMENT_BODY=${{ toJSON(github.event.comment.body) }}
-            if [[ "$COMMENT_BODY" =~ \[update-baseline:[[:space:]]*([a-zA-Z0-9_,]+)\] ]]; then
-              UPDATE_BASELINE_MODELS="${BASH_REMATCH[1]}"
+            if grep -qE '\[update-baseline:[[:space:]]*[a-zA-Z0-9_,]+\]' <<< "$COMMENT_BODY"; then
+              UPDATE_BASELINE_MODELS=$(grep -oE '\[update-baseline:[[:space:]]*([a-zA-Z0-9_,]+)\]' <<< "$COMMENT_BODY" | sed 's/.*\[\(.*\)\].*/\1/' | sed 's/update-baseline:[[:space:]]*//g')
               MODE="comment"
               PR_NUMBER="${{ github.event.issue.number }}"
               TARGET_BRANCH="PR_${{ github.event.issue.number }}"
@@ -194,9 +196,8 @@ jobs:
             fi
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             # Parse PR description for [update-baseline: models]
-            PR_BODY=${{ toJSON(github.event.pull_request.body) }}
-            if [[ "$PR_BODY" =~ \[update-baseline:[[:space:]]*([a-zA-Z0-9_,]+)\] ]]; then
-              UPDATE_BASELINE_MODELS="${BASH_REMATCH[1]}"
+            if grep -qE '\[update-baseline:[[:space:]]*[a-zA-Z0-9_,]+\]' <<< "$PR_BODY"; then
+              UPDATE_BASELINE_MODELS=$(grep -oE '\[update-baseline:[[:space:]]*([a-zA-Z0-9_,]+)\]' <<< "$PR_BODY" | sed 's/.*\[\(.*\)\].*/\1/' | sed 's/update-baseline:[[:space:]]*//g')
               MODE="pr"
               echo "Detected baseline update from PR description: $UPDATE_BASELINE_MODELS"
             fi
