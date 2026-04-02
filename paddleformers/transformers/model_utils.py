@@ -2922,8 +2922,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             # (e.g. model.visual._layers.0.xxx) differ from HF checkpoint keys,
             # and _gen_aoa_config already handles critical dtype specs (e.g. gate.weight -> float32)
             if dtype is not None and not getattr(cls, "is_fleet", False):
-                for key in model.sharded_state_dict().keys():
-                    if model.sharded_state_dict()[key].dtype == paddle.float32:
+                for key in model.state_dict().keys():
+                    if model.state_dict()[key].dtype == paddle.float32:
                         aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='float32'")
                     else:
                         aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='{dtype}'")
