@@ -34,6 +34,7 @@ __all__ = [
 CONFIG_MAPPING_NAMES = OrderedDict(
     [
         ("deepseek_v3", "DeepseekV3Config"),
+        ("diff_transformer", "DiffTransformerConfig"),
         ("ernie4_5", "Ernie4_5Config"),
         ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
@@ -68,6 +69,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
     [
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
+        ("diff_transformer", "DiffTransformerConfig"),
         ("ernie4_5", "Ernie4_5"),
         ("ernie4_5_moe", "Ernie4_5_Moe"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),

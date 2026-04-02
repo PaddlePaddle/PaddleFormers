@@ -1,36 +1,105 @@
-import sys
-import os
-sys.path.insert(0, os.path.abspath("/media/user/40da1a25-a924-43a2-b274-e33d39ea8680/cv/hzg/Diff-Transformer/PaddleFormers"))
+# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright 2020 The HuggingFace Team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+from __future__ import annotations
 
 import unittest
+
 import paddle
 
 from paddleformers.transformers.diff_transformer.configuration import DiffTransformerConfig
-from paddleformers.transformers.diff_transformer.modeling import DiffTransformerForCausalLM
+from paddleformers.transformers.diff_transformer.modeling import (
+    DiffTransformerModel,
+    DiffTransformerForCausalLM,
+)
 
-class TestDiffTransformerForward(unittest.TestCase):
-    def test_forward(self):
-        # 超小模型测试
-        config = DiffTransformerConfig(
-            hidden_size=64,
-            num_hidden_layers=2,
-            num_attention_heads=2,
-            intermediate_size=128,
-            vocab_size=32000,
+
+class DiffTransformerModelTester:
+    def __init__(self, parent):
+        self.parent = parent
+        self.vocab_size = 32000
+        self.hidden_size = 32
+        self.num_hidden_layers = 1
+        self.num_attention_heads = 2
+        self.batch_size = 2
+        self.seq_length = 8
+
+    def get_config(self):
+        return DiffTransformerConfig(
+            vocab_size=self.vocab_size,
+            hidden_size=self.hidden_size,
+            num_hidden_layers=self.num_hidden_layers,
+            num_attention_heads=self.num_attention_heads,
+            intermediate_size=64,
+            max_position_embeddings=128,
         )
 
+    def prepare_inputs(self):
+        input_ids = paddle.randint(0, self.vocab_size, (self.batch_size, self.seq_length))
+        return input_ids
+
+    def check_model(self):
+        config = self.get_config()
+        input_ids = self.prepare_inputs()
+        model = DiffTransformerModel(config)
+        model.eval()
+        output = model(input_ids)
+        self.parent.assertIsNotNone(output)
+
+    def check_causal_lm(self):
+        config = self.get_config()
+        input_ids = self.prepare_inputs()
         model = DiffTransformerForCausalLM(config)
         model.eval()
+        output = model(input_ids)
+        self.parent.assertIsNotNone(output)
 
-        # 构造输入
-        input_ids = paddle.randint(0, 32000, shape=[1, 8])
+    def check_loss(self):
+        config = self.get_config()
+        input_ids = self.prepare_inputs()
+        model = DiffTransformerForCausalLM(config)
+        model.train()
+        loss, logits = model(input_ids, labels=input_ids)
+        self.parent.assertIsInstance(loss.item(), float)
 
-        # 推理
-        with paddle.no_grad():
-            output = model(input_ids)
+    def check_backward(self):
+        config = self.get_config()
+        input_ids = self.prepare_inputs()
+        model = DiffTransformerForCausalLM(config)
+        loss, _ = model(input_ids, labels=input_ids)
+        loss.backward()
+        for p in model.parameters():
+            if p.requires_grad:
+                self.parent.assertIsNotNone(p.grad)
 
-        print("\n✅ 组网测试成功！模型结构 100% 正确！")
-        print(f"输出 shape: {output.shape}")
+
+class DiffTransformerTest(unittest.TestCase):
+    def setUp(self):
+        self.tester = DiffTransformerModelTester(self)
+
+    def test_model_forward(self):
+        self.tester.check_model()
+
+    def test_causal_lm_forward(self):
+        self.tester.check_causal_lm()
+
+    def test_loss_computation(self):
+        self.tester.check_loss()
+
+    def test_backward_pass(self):
+        self.tester.check_backward()
+
 
 if __name__ == "__main__":
     unittest.main()
