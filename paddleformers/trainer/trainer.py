@@ -3673,7 +3673,9 @@ class Trainer:
         else:
             return float(loss)
 
-    def training_pipeline_step(self, model: nn.Layer, inputs: Dict[str, Union[paddle.Tensor, Any]]) -> paddle.Tensor:
+    def training_pipeline_step(
+        self, model: nn.Layer, inputs: Dict[str, Union[paddle.Tensor, Any]], data_buffer_prepared=False
+    ) -> paddle.Tensor:
         """
         Perform a training step on a batch of inputs.
 
@@ -3692,11 +3694,15 @@ class Trainer:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
         # accumulation data
-        if not hasattr(self, "_pp_data_buffer"):
-            self._pp_data_buffer = []
-        self._pp_data_buffer.append(inputs)
-        if len(self._pp_data_buffer) != self.args.gradient_accumulation_steps:
-            return paddle.zeros([])
+        if data_buffer_prepared:
+            if len(self._pp_data_buffer) < self.args.gradient_accumulation_steps:
+                return paddle.zeros([])
+        else:
+            if not hasattr(self, "_pp_data_buffer"):
+                self._pp_data_buffer = []
+            self._pp_data_buffer.append(inputs)
+            if len(self._pp_data_buffer) != self.args.gradient_accumulation_steps:
+                return paddle.zeros([])
 
         model.train()
         if model._dp_comm_overlap or model._sharding_comm_overlap:
@@ -3712,7 +3718,10 @@ class Trainer:
             # This prevents the dataset from being passed as a direct argument to forward_backward_pipeline,
             # which would create additional reference counts that cannot be cleared, leading to GPU memory leaks.
             with self.autocast_smart_context_manager():
-                inputs = model._prepare_pipeline_inputs_func(self._pp_data_buffer)
+                if data_buffer_prepared:
+                    inputs = model._prepare_pipeline_inputs_func(self._pp_data_buffer, gather_pp_need_data=False)
+                else:
+                    inputs = model._prepare_pipeline_inputs_func(self._pp_data_buffer)
             self._pp_data_buffer = []
 
             return model._prepare_training(
@@ -4871,6 +4880,7 @@ class Trainer:
         ignore_keys: Optional[List[str]] = None,
         step: int = -1,
         need_clear: bool = True,
+        gather_pp_need_data: bool = True,
     ) -> Tuple[Optional[paddle.Tensor], Optional[paddle.Tensor], Optional[paddle.Tensor]]:
         """
         prediction_step function for pipeline parallel mode.
@@ -4884,7 +4894,10 @@ class Trainer:
         inputs = self._pp_eval_data_buffer
         self._pp_eval_data_buffer = []
         if hasattr(model, "_prepare_pipeline_inputs_func"):
-            data_provider = model._prepare_pipeline_inputs_func(inputs)
+            if gather_pp_need_data:
+                data_provider = model._prepare_pipeline_inputs_func(inputs)
+            else:
+                inputs, labels = model._prepare_pipeline_inputs_func(inputs, gather_pp_need_data=False)
             labels = None
             has_labels = True
         else:
