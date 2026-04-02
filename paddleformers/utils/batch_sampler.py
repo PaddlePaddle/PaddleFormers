@@ -22,14 +22,47 @@ import paddle
 __all__ = ["MappingBatchSampler", "MappingDistributedBatchSampler", "DistributedBatchSampler"]
 
 
+class RandomSamplerWithSeed(paddle.io.RandomSampler):
+    def __init__(self, data_source, replacement=False, num_samples=None, generator=None) -> None:
+        super().__init__(data_source, replacement=replacement, num_samples=num_samples, generator=generator)
+        self.epoch = 0
+
+    def set_epoch(self, epoch=0):
+        self.epoch = epoch
+
+    def __iter__(self):
+        n = len(self.data_source)
+        num_samples = self.num_samples if self.num_samples is not None else n
+        if self.generator:
+            for i in range(num_samples):
+                try:
+                    index = next(self.generator)
+                except StopIteration:
+                    return
+                yield index
+        else:
+            for index in (
+                np.random.RandomState(self.epoch).choice(np.arange(n), num_samples, replace=self.replacement).tolist()
+            ):
+                yield index
+
+
 class MappingBatchSampler(paddle.io.BatchSampler):
     def __init__(self, dataset, batch_size, shuffle=False, drop_last=False, consumed_samples=0):
-        super().__init__(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last)
+
+        if shuffle:
+            sampler = RandomSamplerWithSeed(dataset)
+        else:
+            sampler = paddle.io.SequenceSampler(dataset)
+
+        super().__init__(sampler=sampler, batch_size=batch_size, drop_last=drop_last)
         self.consumed_samples = consumed_samples
 
     def set_epoch(self, epoch=0, consumed_samples=0):
         self.epoch = epoch
         self.consumed_samples = consumed_samples
+        if isinstance(self.sampler, RandomSamplerWithSeed):
+            self.sampler.set_epoch(epoch=epoch)
 
     def __iter__(self):
 
