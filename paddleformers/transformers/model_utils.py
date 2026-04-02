@@ -2918,9 +2918,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 logger.error(f"Failed to delete {metadata_path}: {e}")
 
             # change dtype in aoa
-            if dtype is not None:
+            # Skip identity dtype mapping for fleet models — fleet state_dict keys
+            # (e.g. model.visual._layers.0.xxx) differ from HF checkpoint keys,
+            # and _gen_aoa_config already handles critical dtype specs (e.g. gate.weight -> float32)
+            if dtype is not None and not getattr(cls, "is_fleet", False):
                 for key in model.state_dict().keys():
-                    # keep fp32
                     if model.state_dict()[key].dtype == paddle.float32:
                         aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='float32'")
                     else:
