@@ -33,7 +33,6 @@ from paddle.distributed.fleet.meta_parallel import (
     RowParallelLinear,
 )
 from paddle.incubate.nn import FusedLinear
-from paddlefleet.transformer.moe.moe_expert import GroupedMLPExpert
 
 from ...nn.experts import MoeExpertsBase
 from ...transformers.model_utils import VLMS
@@ -50,6 +49,7 @@ if is_paddlefleet_available():
         ColumnParallelLinear as FleetColumnParallelLinear,
     )
     from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
+    from paddlefleet.transformer.moe.moe_expert import GroupedMLPExpert
 else:
     # Define mock objects or alternative implementations when paddlefleet is not available
     def get_tensor_model_parallel_group():
@@ -65,6 +65,9 @@ else:
         pass
 
     class FleetRowParallelLinear:
+        pass
+
+    class GroupedMLPExpert:
         pass
 
 
