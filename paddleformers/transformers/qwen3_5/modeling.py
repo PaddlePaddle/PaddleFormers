@@ -240,48 +240,59 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
             for i in linear_attn_layers
         ]
 
-        # ── MoE — router gate (all layers) ──
-        aoa_config["aoa_statements"] += [
-            f"model.language_model.layers.{i}.mlp.gate.weight -> {llm_prefix}layers.{i}.mlp.gate.weight, dtype='float32'"
-            for i in range(text_config.num_hidden_layers)
-        ]
-
-        # ── MoE — routed experts (all layers) ──
-        # HF experts are [num_experts, out_features, in_features] (PyTorch nn.Linear convention)
-        # Fleet grouped_gemm expects [num_experts, in_features, out_features]
-        # Need permute=[0,2,1] to swap last two dims
-        for i in range(text_config.num_hidden_layers):
-            if getattr(config, "moe_grouped_gemm", True):
-                aoa_config["aoa_statements"] += [
-                    f'model.language_model.layers.{i}.mlp.experts.gate_up_proj -> {llm_prefix}layers.{i}.mlp.grouped_gemm_experts.weight1, permute="[0, 2, 1]"',
-                    f'model.language_model.layers.{i}.mlp.experts.down_proj -> {llm_prefix}layers.{i}.mlp.grouped_gemm_experts.weight2, permute="[0, 2, 1]"',
-                ]
-            else:
-                split_experts_up_gate = ""
-                split_experts_down = ""
-                for expert_id in range(text_config.num_experts):
-                    split_experts_up_gate += f"{llm_prefix}layers.{i}.mlp.experts.{expert_id}.up_gate_proj.weight,"
-                    split_experts_down += f"{llm_prefix}layers.{i}.mlp.experts.{expert_id}.down_proj.weight,"
-                split_experts_down += "axis=0"
-                split_experts_up_gate += "axis=0"
-                aoa_config["aoa_statements"] += [
-                    f"model.language_model.layers.{i}.mlp.experts.gate_up_proj -> {split_experts_up_gate}",
-                    f"model.language_model.layers.{i}.mlp.experts.down_proj -> {split_experts_down}",
-                ]
-
-        # ── MoE — shared experts (all layers) ──
-        shared_expert_intermediate_size = getattr(text_config, "shared_expert_intermediate_size", 0)
-        if shared_expert_intermediate_size and shared_expert_intermediate_size > 0:
+        # ── MLP (dense or MoE, depending on model config) ──
+        # Qwen3_5TextConfig has num_experts=60 as class default even for dense models,
+        # so we use model_type to distinguish: "moe" in model_type means MoE variant
+        is_moe = "moe" in getattr(config, "model_type", "")
+        num_experts = getattr(text_config, "num_experts", 0) or getattr(text_config, "n_routed_experts", 0)
+        if is_moe and num_experts > 0:
+            # MoE — router gate
             aoa_config["aoa_statements"] += [
-                f"model.language_model.layers.{i}.mlp.shared_expert.gate_proj.weight^T, model.language_model.layers.{i}.mlp.shared_expert.up_proj.weight^T -> {llm_prefix}layers.{i}.mlp.shared_experts.up_gate_proj.weight, fused_ffn"
+                f"model.language_model.layers.{i}.mlp.gate.weight -> {llm_prefix}layers.{i}.mlp.gate.weight, dtype='float32'"
+                for i in range(text_config.num_hidden_layers)
+            ]
+            # MoE — routed experts
+            for i in range(text_config.num_hidden_layers):
+                if getattr(config, "moe_grouped_gemm", True):
+                    aoa_config["aoa_statements"] += [
+                        f'model.language_model.layers.{i}.mlp.experts.gate_up_proj -> {llm_prefix}layers.{i}.mlp.grouped_gemm_experts.weight1, permute="[0, 2, 1]"',
+                        f'model.language_model.layers.{i}.mlp.experts.down_proj -> {llm_prefix}layers.{i}.mlp.grouped_gemm_experts.weight2, permute="[0, 2, 1]"',
+                    ]
+                else:
+                    split_experts_up_gate = ""
+                    split_experts_down = ""
+                    for expert_id in range(num_experts):
+                        split_experts_up_gate += f"{llm_prefix}layers.{i}.mlp.experts.{expert_id}.up_gate_proj.weight,"
+                        split_experts_down += f"{llm_prefix}layers.{i}.mlp.experts.{expert_id}.down_proj.weight,"
+                    split_experts_down += "axis=0"
+                    split_experts_up_gate += "axis=0"
+                    aoa_config["aoa_statements"] += [
+                        f"model.language_model.layers.{i}.mlp.experts.gate_up_proj -> {split_experts_up_gate}",
+                        f"model.language_model.layers.{i}.mlp.experts.down_proj -> {split_experts_down}",
+                    ]
+            # MoE — shared experts
+            shared_expert_intermediate_size = getattr(text_config, "shared_expert_intermediate_size", 0)
+            if shared_expert_intermediate_size and shared_expert_intermediate_size > 0:
+                aoa_config["aoa_statements"] += [
+                    f"model.language_model.layers.{i}.mlp.shared_expert.gate_proj.weight^T, model.language_model.layers.{i}.mlp.shared_expert.up_proj.weight^T -> {llm_prefix}layers.{i}.mlp.shared_experts.up_gate_proj.weight, fused_ffn"
+                    for i in range(text_config.num_hidden_layers)
+                ]
+                aoa_config["aoa_statements"] += [
+                    f"model.language_model.layers.{i}.mlp.shared_expert.down_proj.weight^T -> {llm_prefix}layers.{i}.mlp.shared_experts.down_proj.weight"
+                    for i in range(text_config.num_hidden_layers)
+                ]
+                aoa_config["aoa_statements"] += [
+                    f"model.language_model.layers.{i}.mlp.shared_expert_gate.weight^T -> {llm_prefix}layers.{i}.mlp.shared_experts.gate_weight"
+                    for i in range(text_config.num_hidden_layers)
+                ]
+        else:
+            # Dense MLP (SwiGLU: gate_proj + up_proj fused, down_proj)
+            aoa_config["aoa_statements"] += [
+                f"model.language_model.layers.{i}.mlp.gate_proj.weight^T, model.language_model.layers.{i}.mlp.up_proj.weight^T -> {llm_prefix}layers.{i}.mlp.up_gate_proj.weight, fused_ffn"
                 for i in range(text_config.num_hidden_layers)
             ]
             aoa_config["aoa_statements"] += [
-                f"model.language_model.layers.{i}.mlp.shared_expert.down_proj.weight^T -> {llm_prefix}layers.{i}.mlp.shared_experts.down_proj.weight"
-                for i in range(text_config.num_hidden_layers)
-            ]
-            aoa_config["aoa_statements"] += [
-                f"model.language_model.layers.{i}.mlp.shared_expert_gate.weight^T -> {llm_prefix}layers.{i}.mlp.shared_experts.gate_weight"
+                f"model.language_model.layers.{i}.mlp.down_proj.weight^T -> {llm_prefix}layers.{i}.mlp.down_proj.weight"
                 for i in range(text_config.num_hidden_layers)
             ]
 
