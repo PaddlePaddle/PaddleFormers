@@ -822,9 +822,6 @@ class BaseSFTDataset:
                 tokens.extend(suffix_ids)
                 labels.extend(suffix_ids)
 
-        # label shift
-        labels = labels[1:] + [-100]
-
         # data truncate
         if self.truncation_strategy != "oral":
             tokens, labels = self._encode_truncated(tokens, labels)
@@ -836,7 +833,10 @@ class BaseSFTDataset:
             if len(tokens) > self.max_seq_len:
                 raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
-        pos_ids = list(range(len(tokens)))  # only pure text, mm_position_ids will be reconstructed in collate.py
+        # label shift
+        labels = labels[1:] + [-100]
+
+        pos_ids = list(range(len(tokens)))
 
         if all(x == -100 for x in labels):
             logger.warning(f"[SKIP] all labels set to -100: {example}")
