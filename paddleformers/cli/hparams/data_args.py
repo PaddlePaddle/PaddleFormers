@@ -140,7 +140,7 @@ class DataArguments:
     )
     data_cache: str = field(default=None, metadata={"help": "The path of the cached dataset."})
     truncation_strategy: str = field(
-        default="oral",
+        default="delete",
         metadata={"help": "The truncation strategy to use in data processing."},
     )
     truncate_packing: bool = field(
