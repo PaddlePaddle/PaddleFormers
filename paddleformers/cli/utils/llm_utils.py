@@ -174,7 +174,7 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
             # Projector
-            ".merger.mlp\.[02].*",
+            ".*merger.mlp\.[02].*",
         ]
     elif model.config.model_type == "qwen3_vl":
         target_modules = [
