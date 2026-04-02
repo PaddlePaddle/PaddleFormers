@@ -175,7 +175,3 @@ class DataArguments:
         default=1000,
         metadata={"help": "Interval of packing."},
     )
-    truncation_strategy: str = field(
-        default="right",
-        metadata={"help": "Truncation strategy for packing."},
-    )
