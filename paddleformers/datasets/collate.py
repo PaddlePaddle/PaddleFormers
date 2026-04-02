@@ -583,7 +583,7 @@ def mm_collate_fn(
         input_keys.append("token_type_ids")
         input_keys.append("images")
         input_keys.append("grid_thw")
-    elif model.model_type == "kimi_k25":
+    elif hasattr(model, "model_type") and model.model_type == "kimi_k25":
         input_keys.append("pixel_values")
         input_keys.append("grid_thws")
     else:
