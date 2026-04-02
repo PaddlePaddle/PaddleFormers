@@ -184,7 +184,7 @@ jobs:
             PR_NUMBER="manual"
           elif [[ "${{ github.event_name }}" == "issue_comment" ]]; then
             # Parse comment for [update-baseline: models]
-            COMMENT_BODY="${{ github.event.comment.body }}"
+            COMMENT_BODY=${{ toJSON(github.event.comment.body) }}
             if [[ "$COMMENT_BODY" =~ \[update-baseline:[[:space:]]*([a-zA-Z0-9_,]+)\] ]]; then
               UPDATE_BASELINE_MODELS="${BASH_REMATCH[1]}"
               MODE="comment"
@@ -194,7 +194,7 @@ jobs:
             fi
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             # Parse PR description for [update-baseline: models]
-            PR_BODY="${{ github.event.pull_request.body }}"
+            PR_BODY=${{ toJSON(github.event.pull_request.body) }}
             if [[ "$PR_BODY" =~ \[update-baseline:[[:space:]]*([a-zA-Z0-9_,]+)\] ]]; then
               UPDATE_BASELINE_MODELS="${BASH_REMATCH[1]}"
               MODE="pr"
@@ -211,7 +211,7 @@ jobs:
 
       - name: Test
         run: |
-          docker exec -it $container_name /bin/bash <<-'DOCKER_EOF'
+          docker exec -i $container_name /bin/bash <<-'DOCKER_EOF'
           ldconfig
           mkdir -p /root/.cache/pip
           pip cache dir
@@ -273,7 +273,7 @@ jobs:
           home_path: ${{ github.workspace }}/../../..
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
         run: |
-          docker exec -it $container_name /bin/bash <<-'DOCKER_EOF'
+          docker exec -i $container_name /bin/bash <<-'DOCKER_EOF'
           if [ ! -f "${{ env.bos_file }}" ]; then
             wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
             mkdir ${{ env.home_path }}/bos
