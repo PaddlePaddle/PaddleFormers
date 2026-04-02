@@ -27,7 +27,6 @@ from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
     build_sharded_state_dict,
     shard_weight,
 )
-from paddlefleet.transformer.moe.moe_expert import BMMFunction, DeepGEMMBMMFunction
 
 from ...nn.experts import MoeExpertsBase
 from ...transformers import linear_utils
@@ -47,7 +46,19 @@ from ...transformers.mc2_parallel_linear import (
     MC2RowParallelCoreLinear,
     MC2RowSeqParallelCoreLinear,
 )
+from ...utils.import_utils import is_paddlefleet_available
 from .utils import rng_ctx
+
+# Conditionally import paddlefleet modules
+if is_paddlefleet_available():
+    from paddlefleet.transformer.moe.moe_expert import BMMFunction, DeepGEMMBMMFunction
+else:
+    # Define mock objects or alternative implementations when paddlefleet is not available
+    class BMMFunction:
+        pass
+
+    class DeepGEMMBMMFunction:
+        pass
 
 
 class LoRALinear(nn.Linear):
