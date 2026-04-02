@@ -577,6 +577,33 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPretrainedModelFleet):
 
         return state_dict
 
+    def sharded_state_dict(self, *args, **kwargs):
+        # Override state_dict method to handle language_model's custom state_dict
+        state_dict = super().sharded_state_dict(*args, **kwargs)
+        # Remove existing language_model keys to avoid duplicates
+        delete_key = []
+        for key in state_dict.keys():
+            if key.startswith("model.language_model."):
+                delete_key.append(key)
+            if key.startswith("model.vision_model."):
+                delete_key.append(key)
+        for key in delete_key:
+            state_dict.pop(key)
+        if self.model.language_model is not None:
+            # Get language_model's state_dict
+            language_state_dict = self.model.language_model.sharded_state_dict(*args, **kwargs)
+
+            # Merge language_model parameters into main state_dict
+            for key, value in language_state_dict.items():
+                state_dict[key] = value
+
+        if self.model.vision_model is not None:
+            vision_state_dict = self.model.vision_model.sharded_state_dict(*args, **kwargs)
+            for key, value in vision_state_dict.items():
+                state_dict[key] = value
+
+        return state_dict
+
     # def get_input_embeddings(self):
     #     return self.model.get_input_embeddings()
     def forward(
