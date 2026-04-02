@@ -186,6 +186,9 @@ def get_lora_target_modules(model):
             "model.language_model.*down_proj.*",
             "model.language_model.*up_gate_proj.*",
             "model.language_model.*qkv_proj.*",
+            "model.language_model.*mlp.experts",
+            # Fleet Language Model
+            "model.language_model.*mlp.grouped_gemm_experts",
             # Vision Encoder
             "model.visual.blocks.*attn.qkv.*",
             "model.visual.blocks.*attn.proj.*",
@@ -229,6 +232,7 @@ def get_lora_target_modules(model):
             ".*k_proj.*",
             ".*v_proj.*",
             ".*o_proj.*",
+            ".*mlp.grouped_gemm_experts",
             ".*gate_proj.*",
             ".*up_proj.*",
             ".*down_proj.*",

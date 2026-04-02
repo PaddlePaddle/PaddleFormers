@@ -55,12 +55,10 @@ use_expert_parallel: true
 expert_model_parallel_size: 16
 
 # tensor_parallel_config
-tp_delay_scale_loss: true
 tp_sync_param: true
 sync_grad: true
 
 # pipeline_parallel_config
-pp_delay_scale_loss: true
 partial_send_recv: false
 batch_p2p_comm: false
 

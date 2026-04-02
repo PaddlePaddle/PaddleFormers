@@ -188,6 +188,13 @@ class Qwen3VLProvider(TransformerConfig):
         self.text_config.sequence_parallel = self.sequence_parallel
         self.text_config.context_parallel_size = self.context_parallel_size
         self.vision_config.tensor_model_parallel_size = self.tensor_model_parallel_size
+        # ViT always runs without sequence parallel. The vision encoder processes
+        # images as packed variable-length sequences (qkv_format="thd", cu_seqlens),
+        # whose token count per sample varies with image resolution and differs from
+        # the text sequence length that SP splits across ranks. There is no meaningful
+        # "equal-length sharding" to apply, so SP must stay disabled for the ViT
+        # regardless of the global sequence_parallel setting.
+        self.vision_config.sequence_parallel = False
         # self.vision_projection_config.tensor_model_parallel_size = self.tensor_model_parallel_size
         self.text_config.pipeline_model_parallel_size = self.pipeline_model_parallel_size
 
@@ -219,6 +226,10 @@ class Qwen3VLProvider(TransformerConfig):
         ]:
             for attr in config_attrs:
                 setattr(config, attr, getattr(self, attr))
+
+        # VIT uses 2D spatial RoPE which is incompatible with fused_rope kernel,
+        # force disable regardless of global setting.
+        self.vision_config.apply_rope_fusion = False
 
         self.text_config.tp_comm_overlap = self.tp_comm_overlap
         self.vision_config.tp_comm_overlap = False
@@ -368,17 +379,17 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             f"model.visual.blocks.$LAYER_ID.norm2.bias -> {visual_prefix}layers.$LAYER_ID.post_attention_layernorm.bias",
         ]
         aoa_config["aoa_statements"] += [
-            f"model.visual.merger.linear_fc1.weight^T -> {visual_prefix}merger.linear_fc1.weight",
-            f"model.visual.merger.linear_fc1.bias -> {visual_prefix}merger.linear_fc1.bias",
-            f"model.visual.merger.linear_fc2.weight^T -> {visual_prefix}merger.linear_fc2.weight",
-            f"model.visual.merger.linear_fc2.bias -> {visual_prefix}merger.linear_fc2.bias",
+            f"model.visual.merger.linear_fc1.weight^T -> {visual_prefix}merger.mlp.up_gate_proj.weight",
+            f"model.visual.merger.linear_fc1.bias -> {visual_prefix}merger.mlp.up_gate_proj.bias",
+            f"model.visual.merger.linear_fc2.weight^T -> {visual_prefix}merger.mlp.down_proj.weight",
+            f"model.visual.merger.linear_fc2.bias -> {visual_prefix}merger.mlp.down_proj.bias",
         ]
         for i, deepstack_idx in enumerate(config.vision_config.deepstack_visual_indexes):
             aoa_config["aoa_statements"] += [
-                f"model.visual.deepstack_merger_list.{i}.linear_fc1.weight^T -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc1.weight",
-                f"model.visual.deepstack_merger_list.{i}.linear_fc1.bias -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc1.bias",
-                f"model.visual.deepstack_merger_list.{i}.linear_fc2.weight^T -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc2.weight",
-                f"model.visual.deepstack_merger_list.{i}.linear_fc2.bias -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc2.bias",
+                f"model.visual.deepstack_merger_list.{i}.linear_fc1.weight^T -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.up_gate_proj.weight",
+                f"model.visual.deepstack_merger_list.{i}.linear_fc1.bias -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.up_gate_proj.bias",
+                f"model.visual.deepstack_merger_list.{i}.linear_fc2.weight^T -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.down_proj.weight",
+                f"model.visual.deepstack_merger_list.{i}.linear_fc2.bias -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.down_proj.bias",
                 f"model.visual.deepstack_merger_list.{i}.norm.weight -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.norm.weight",
                 f"model.visual.deepstack_merger_list.{i}.norm.bias -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.norm.bias",
             ]
@@ -475,17 +486,17 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             f"{visual_prefix}layers.$LAYER_ID.post_attention_layernorm.bias -> model.visual.blocks.$LAYER_ID.norm2.bias",
         ]
         aoa_config["aoa_statements"] += [
-            f"{visual_prefix}merger.linear_fc1.weight^T -> model.visual.merger.linear_fc1.weight",
-            f"{visual_prefix}merger.linear_fc1.bias -> model.visual.merger.linear_fc1.bias",
-            f"{visual_prefix}merger.linear_fc2.weight^T -> model.visual.merger.linear_fc2.weight",
-            f"{visual_prefix}merger.linear_fc2.bias -> model.visual.merger.linear_fc2.bias",
+            f"{visual_prefix}merger.mlp.up_gate_proj.weight^T -> model.visual.merger.linear_fc1.weight",
+            f"{visual_prefix}merger.mlp.up_gate_proj.bias -> model.visual.merger.linear_fc1.bias",
+            f"{visual_prefix}merger.mlp.down_proj.weight^T -> model.visual.merger.linear_fc2.weight",
+            f"{visual_prefix}merger.mlp.down_proj.bias -> model.visual.merger.linear_fc2.bias",
         ]
         for i, deepstack_idx in enumerate(config.vision_config.deepstack_visual_indexes):
             aoa_config["aoa_statements"] += [
-                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc1.weight^T -> model.visual.deepstack_merger_list.{i}.linear_fc1.weight",
-                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc1.bias -> model.visual.deepstack_merger_list.{i}.linear_fc1.bias",
-                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc2.weight^T -> model.visual.deepstack_merger_list.{i}.linear_fc2.weight",
-                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc2.bias -> model.visual.deepstack_merger_list.{i}.linear_fc2.bias",
+                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.up_gate_proj.weight^T -> model.visual.deepstack_merger_list.{i}.linear_fc1.weight",
+                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.up_gate_proj.bias -> model.visual.deepstack_merger_list.{i}.linear_fc1.bias",
+                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.down_proj.weight^T -> model.visual.deepstack_merger_list.{i}.linear_fc2.weight",
+                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.down_proj.bias -> model.visual.deepstack_merger_list.{i}.linear_fc2.bias",
                 f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.norm.weight -> model.visual.deepstack_merger_list.{i}.norm.weight",
                 f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.norm.bias -> model.visual.deepstack_merger_list.{i}.norm.bias",
             ]

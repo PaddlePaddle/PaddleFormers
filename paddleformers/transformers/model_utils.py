@@ -2443,9 +2443,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     state_dict,
                     config,
                     loaded_keys,
-                    pre_tensor_parallel_split=True
-                    if config is not None and config.tensor_model_parallel_size > 1
-                    else False,
+                    pre_tensor_parallel_split=(
+                        True if config is not None and config.tensor_model_parallel_size > 1 else False
+                    ),
                 )
                 missing_keys = list(set(missing_keys) - set(new_keys))
                 unexpected_keys = list(set(unexpected_keys) - set(fused_keys))
@@ -2573,13 +2573,15 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     state_dict = load_state_dict(
                         shard_file,
                         tp_actions if pre_tensor_parallel_split else None,
-                        {
-                            reverse_key_renaming_mapping[key]
-                            for key in filter_dict_keys
-                            if key in reverse_key_renaming_mapping
-                        }
-                        if key_mapping is not None
-                        else filter_dict_keys,
+                        (
+                            {
+                                reverse_key_renaming_mapping[key]
+                                for key in filter_dict_keys
+                                if key in reverse_key_renaming_mapping
+                            }
+                            if key_mapping is not None
+                            else filter_dict_keys
+                        ),
                         convert_from_hf=convert_from_hf,
                         transpose_weight_keys=cls.transpose_weight_keys,
                     )
@@ -2839,10 +2841,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     sub_config.dtype = dtype
 
         config.dtype = dtype
-
-        if config.moe_grouped_gemm and config.is_lora:
-            logger.info("Lora doesn't support moe_grouped_gemm, moe_grouped_gemm is set to False.")
-            config.moe_grouped_gemm = False
 
         init_contexts = []
         if low_cpu_mem_usage or config.quantization_config.is_weight_quantize():
@@ -3183,6 +3181,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         save_to_hf = kwargs.get("save_to_hf", True)
 
         save_checkpoint_format = kwargs.get("save_checkpoint_format", "flex_checkpoint")
+        memory_growth_threshold = kwargs.get("memory_growth_threshold", 8 * (2**30))
 
         if kwargs.get("enable_auto_parallel", ""):
             # use flex_checkpoint as the default format in auto_parallel
@@ -3208,6 +3207,16 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         model_to_save = unwrap_model(self)
 
         if save_checkpoint_format == "flex_checkpoint":
+            # autoregressive mtp training
+            autoregressive_mtp_training = model_to_save.config.mtp_num_layers > 0
+            if autoregressive_mtp_training:
+                tmp = model_to_save.config.mtp_num_layers
+                model_to_save.config.mtp_num_layers = model_to_save.config.num_nextn_predict_layers
+                model_to_save.config.num_nextn_predict_layers = tmp
+
+                logger.info(
+                    f"MTP args changing for autoregressive mtp training checkpoint saving, mtp_num_layers: {model_to_save.config.mtp_num_layers}, num_nextn_predict_layers: {model_to_save.config.num_nextn_predict_layers}!!"
+                )
             if not hasattr(self, "_gen_inv_aoa_config"):
                 if hasattr(self, "_gen_aoa_config"):
                     aoa_config = self._gen_aoa_config(model_to_save.config)
@@ -3225,9 +3234,13 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
             clean_unrelated_safetensors(save_dir)
 
             if using_sonic_moe:
-                SonicMoEHFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
+                SonicMoEHFFormatFullParamSaver(
+                    model_to_save, aoa_config, memory_growth_threshold=memory_growth_threshold
+                ).save_checkpoint(save_dir, max_shard_size)
             else:
-                HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(save_dir, max_shard_size)
+                HFFormatFullParamSaver(
+                    model_to_save, aoa_config, memory_growth_threshold=memory_growth_threshold
+                ).save_checkpoint(save_dir, max_shard_size)
 
             dtype = get_parameter_dtype(model_to_save)
             if dtype is not None:
@@ -3253,6 +3266,15 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     config_to_save.save_pretrained(save_directory)
                 if self.can_generate():
                     model_to_save.generation_config.save_pretrained(save_directory)
+
+            if autoregressive_mtp_training:
+                tmp = model_to_save.config.mtp_num_layers
+                model_to_save.config.mtp_num_layers = model_to_save.config.num_nextn_predict_layers
+                model_to_save.config.num_nextn_predict_layers = tmp
+
+                logger.info(
+                    f"MTP args changing for autoregressive mtp training checkpoint saving RECOVER, mtp_num_layers: {model_to_save.config.mtp_num_layers}, num_nextn_predict_layers: {model_to_save.config.num_nextn_predict_layers}!!"
+                )
             return
 
         # save the string version of dtype to the config, e.g. convert paddle.float32 => "float32"
@@ -3985,7 +4007,8 @@ def replace_name_and_gen_index(path, total_size, save_peft=False):
         index_infos = {}
         index_infos["metadata"] = {}
         index_infos["metadata"]["total_size"] = total_size
-        index_infos["weight_map"] = dict(sorted(index_mapping.items()))
+        # Sort by filename (file index) instead of weight name, zero-padded ensures correct order
+        index_infos["weight_map"] = dict(sorted(index_mapping.items(), key=lambda x: x[1]))
         with open(os.path.join(path, index_file_name), "w") as f:
             json.dump(index_infos, f, indent=4)
 

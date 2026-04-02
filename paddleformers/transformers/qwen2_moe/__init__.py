@@ -26,6 +26,8 @@ import_structure = {
         "Qwen2MoePretrainedModel",
         "Qwen2MoeForCausalLM",
         "Qwen2MoeForCausalLMPipe",
+        "Qwen2MoeForCausalLMDeprecated",
+        "Qwen2MoeForCausalLMPipeDeprecated",
     ],
 }
 

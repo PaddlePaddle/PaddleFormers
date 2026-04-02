@@ -18,6 +18,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Paddle Qwen3_VL_Moe model."""
+
 from __future__ import annotations
 
 import types
@@ -34,6 +35,7 @@ from ...nn.activation import ACT2FN
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
+from ...nn.experts import MoeExperts as Qwen3VLMoeTextExperts
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
@@ -53,47 +55,6 @@ from .configuration import (
     Qwen3VLMoeTextConfig,
     Qwen3VLMoeVisionConfig,
 )
-
-
-class Qwen3VLMoeTextExperts(nn.Layer):
-    def __init__(self, config):
-        super().__init__()
-        self.num_experts = config.num_experts
-        self.intermediate_dim = config.moe_intermediate_size
-        self.hidden_dim = config.hidden_size
-        self.act_fn = ACT2FN[config.hidden_act]
-
-        self.gate_up_proj = self.create_parameter(
-            shape=[self.num_experts, self.hidden_dim, 2 * self.intermediate_dim],
-            dtype=paddle.get_default_dtype(),
-            is_bias=False,
-        )
-        self.down_proj = self.create_parameter(
-            shape=[self.num_experts, self.intermediate_dim, self.hidden_dim],
-            dtype=paddle.get_default_dtype(),
-            is_bias=False,
-        )
-
-    def forward(self, hidden_states, top_k_index, top_k_weights):
-        final_hidden_states = paddle.zeros_like(hidden_states)
-        with paddle.no_grad():
-            expert_mask = paddle.nn.functional.one_hot(top_k_index, num_classes=self.num_experts)
-            expert_mask = expert_mask.permute(2, 1, 0)
-            expert_hit = paddle.greater(expert_mask.sum(dim=(-1, -2)), paddle.to_tensor(0, dtype="int32")).nonzero()
-
-        for expert_idx in expert_hit:
-            expert_idx = expert_idx[0]
-            if expert_idx == self.num_experts:
-                continue
-            top_k_pos, token_idx = paddle.where(expert_mask[expert_idx])
-            current_state = hidden_states[token_idx]
-            gate, up = nn.functional.linear(current_state, self.gate_up_proj[expert_idx]).chunk(2, dim=-1)
-            current_hidden_states = self.act_fn(gate) * up
-            current_hidden_states = nn.functional.linear(current_hidden_states, self.down_proj[expert_idx])
-            current_hidden_states = current_hidden_states * top_k_weights[token_idx, top_k_pos, None]
-            final_hidden_states.index_add_(0, token_idx, current_hidden_states.to(final_hidden_states.dtype))
-
-        return final_hidden_states
 
 
 class Qwen3VLMoeVisionMLP(nn.Layer):
@@ -413,17 +374,17 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
             f"model.visual.blocks.$LAYER_ID.norm2.bias -> {visual_prefix}layers.$LAYER_ID.post_attention_layernorm.bias",
         ]
         aoa_config["aoa_statements"] += [
-            f"model.visual.merger.linear_fc1.weight^T -> {visual_prefix}merger.linear_fc1.weight",
-            f"model.visual.merger.linear_fc1.bias -> {visual_prefix}merger.linear_fc1.bias",
-            f"model.visual.merger.linear_fc2.weight^T -> {visual_prefix}merger.linear_fc2.weight",
-            f"model.visual.merger.linear_fc2.bias -> {visual_prefix}merger.linear_fc2.bias",
+            f"model.visual.merger.linear_fc1.weight^T -> {visual_prefix}merger.mlp.up_gate_proj.weight",
+            f"model.visual.merger.linear_fc1.bias -> {visual_prefix}merger.mlp.up_gate_proj.bias",
+            f"model.visual.merger.linear_fc2.weight^T -> {visual_prefix}merger.mlp.down_proj.weight",
+            f"model.visual.merger.linear_fc2.bias -> {visual_prefix}merger.mlp.down_proj.bias",
         ]
         for i, deepstack_idx in enumerate(config.vision_config.deepstack_visual_indexes):
             aoa_config["aoa_statements"] += [
-                f"model.visual.deepstack_merger_list.{i}.linear_fc1.weight^T -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc1.weight",
-                f"model.visual.deepstack_merger_list.{i}.linear_fc1.bias -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc1.bias",
-                f"model.visual.deepstack_merger_list.{i}.linear_fc2.weight^T -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc2.weight",
-                f"model.visual.deepstack_merger_list.{i}.linear_fc2.bias -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc2.bias",
+                f"model.visual.deepstack_merger_list.{i}.linear_fc1.weight^T -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.up_gate_proj.weight",
+                f"model.visual.deepstack_merger_list.{i}.linear_fc1.bias -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.up_gate_proj.bias",
+                f"model.visual.deepstack_merger_list.{i}.linear_fc2.weight^T -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.down_proj.weight",
+                f"model.visual.deepstack_merger_list.{i}.linear_fc2.bias -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.down_proj.bias",
                 f"model.visual.deepstack_merger_list.{i}.norm.weight -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.norm.weight",
                 f"model.visual.deepstack_merger_list.{i}.norm.bias -> {visual_prefix}layers.{deepstack_idx}.deepstack_merger.norm.bias",
             ]
@@ -452,20 +413,14 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
                 f"{llm_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.language_model.layers.$LAYER_ID.input_layernorm.weight",
                 f"{llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.language_model.layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"{llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.language_model.layers.$LAYER_ID.self_attn.o_proj.weight",
-                f"{llm_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.language_model.layers.$LAYER_ID.mlp.gate.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.gate.weight -> model.language_model.layers.$LAYER_ID.mlp.gate.weight",
                 f"{llm_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.language_model.layers.$LAYER_ID.self_attn.q_norm.weight",
                 f"{llm_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.language_model.layers.$LAYER_ID.self_attn.k_norm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.grouped_gemm_experts.weight1 -> model.language_model.layers.$LAYER_ID.mlp.experts.gate_up_proj",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.grouped_gemm_experts.weight2 -> model.language_model.layers.$LAYER_ID.mlp.experts.down_proj",
             ]
         }
-        aoa_config["aoa_statements"] += [
-            state
-            for layer_id in range(config.text_config.num_hidden_layers)
-            for state in (
-                f"{llm_prefix}layers.{layer_id}.self_attn.o_proj.weight^T -> model.language_model.layers.{layer_id}.self_attn.o_proj.weight",
-                f"{llm_prefix}layers.{layer_id}.mlp.grouped_gemm_experts.weight1 -> model.language_model.layers.{layer_id}.mlp.experts.gate_up_proj",
-                f"{llm_prefix}layers.{layer_id}.mlp.grouped_gemm_experts.weight2 -> model.language_model.layers.{layer_id}.mlp.experts.down_proj",
-            )
-        ]
+
         # visual model
         aoa_config["aoa_statements"] += [
             stmt
@@ -505,17 +460,17 @@ class Qwen3VLMoePretrainedModelFleet(PretrainedModel):
             f"{visual_prefix}layers.$LAYER_ID.post_attention_layernorm.bias -> model.visual.blocks.$LAYER_ID.norm2.bias",
         ]
         aoa_config["aoa_statements"] += [
-            f"{visual_prefix}merger.linear_fc1.weight^T -> model.visual.merger.linear_fc1.weight",
-            f"{visual_prefix}merger.linear_fc1.bias -> model.visual.merger.linear_fc1.bias",
-            f"{visual_prefix}merger.linear_fc2.weight^T -> model.visual.merger.linear_fc2.weight",
-            f"{visual_prefix}merger.linear_fc2.bias -> model.visual.merger.linear_fc2.bias",
+            f"{visual_prefix}merger.mlp.up_gate_proj.weight^T -> model.visual.merger.linear_fc1.weight",
+            f"{visual_prefix}merger.mlp.up_gate_proj.bias -> model.visual.merger.linear_fc1.bias",
+            f"{visual_prefix}merger.mlp.down_proj.weight^T -> model.visual.merger.linear_fc2.weight",
+            f"{visual_prefix}merger.mlp.down_proj.bias -> model.visual.merger.linear_fc2.bias",
         ]
         for i, deepstack_idx in enumerate(config.vision_config.deepstack_visual_indexes):
             aoa_config["aoa_statements"] += [
-                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc1.weight^T -> model.visual.deepstack_merger_list.{i}.linear_fc1.weight",
-                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc1.bias -> model.visual.deepstack_merger_list.{i}.linear_fc1.bias",
-                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc2.weight^T -> model.visual.deepstack_merger_list.{i}.linear_fc2.weight",
-                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.linear_fc2.bias -> model.visual.deepstack_merger_list.{i}.linear_fc2.bias",
+                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.up_gate_proj.weight^T -> model.visual.deepstack_merger_list.{i}.linear_fc1.weight",
+                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.up_gate_proj.bias -> model.visual.deepstack_merger_list.{i}.linear_fc1.bias",
+                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.down_proj.weight^T -> model.visual.deepstack_merger_list.{i}.linear_fc2.weight",
+                f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.mlp.down_proj.bias -> model.visual.deepstack_merger_list.{i}.linear_fc2.bias",
                 f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.norm.weight -> model.visual.deepstack_merger_list.{i}.norm.weight",
                 f"{visual_prefix}layers.{deepstack_idx}.deepstack_merger.norm.bias -> model.visual.deepstack_merger_list.{i}.norm.bias",
             ]
