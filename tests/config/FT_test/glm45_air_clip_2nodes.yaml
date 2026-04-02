@@ -1,0 +1,99 @@
+# 2机 * 8卡
+train_dataset_type: messages
+eval_dataset_type: messages
+train_dataset_path: data/sft/train_messages.jsonl
+train_dataset_prob: "1.0"
+eval_dataset_path: data/sft/eval_messages.jsonl
+eval_dataset_prob: "1.0"
+
+max_seq_len: 4096
+packing: true
+use_template: false
+random_shuffle: true
+mix_strategy: concat
+truncate_packing: false
+padding_free: true
+
+### model
+model_name_or_path: glm45_air_clip_ckpt
+_attn_implementation: flashmask
+
+### finetuning
+# base
+stage: SFT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: false
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 1
+max_steps: 10
+eval_iters: 1000
+eval_steps: 1000000
+evaluation_strategy: steps
+save_steps: 50
+save_hf_steps: 50
+save_strategy: steps
+
+logging_steps: 1
+gradient_accumulation_steps: 16
+logging_dir: ./vdl_log
+output_dir: ./outputs
+disable_tqdm: true
+eval_accumulation_steps: 16
+
+# train
+lr_scheduler_type: constant_with_warmup
+warmup_steps: 2
+learning_rate: 3.0e-5
+weight decay: 0.1
+
+# performance
+context_parallel_size: 1
+tensor_model_parallel_size: 1
+expert_model_parallel_size: 8
+sequence_parallel: true
+use_expert_parallel: true
+pipeline_model_parallel_size: 2
+num_empty_layers_add_in_tail: 0
+
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
+
+moe_grouped_gemm: true
+moe_deep_gemm: false
+moe_shared_expert_overlap: true
+
+apply_rope_fusion: true
+fuse_rms_norm: true
+moe_router_force_load_balancing: false
+router_aux_loss_coef: 0.0001
+
+split_param: true
+sharding: stage1
+stage1_overlap: true
+
+# pp
+overlap_p2p_comm: true
+variable_seq_lengths: true
+best_unbalanced_scheduler: true
+pp_release_grads: true
+
+amp_master_grad: true
+bf16: true
+fp16_opt_level: O2
+fa_version: 3
+
+continue_training: true
+dataloader_shuffle: false
+
+dataloader_num_workers: 8
+prefetch_factor: 2
+
+fp32_residual_connection: false
+tensorwise_offload_optimizer: true
+
+num_nextn_predict_layers: 1
+mtp_loss_scaling_factor: 0.1
