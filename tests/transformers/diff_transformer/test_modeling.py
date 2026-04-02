@@ -19,7 +19,9 @@ import unittest
 
 import paddle
 
-from paddleformers.transformers.diff_transformer.configuration import DiffTransformerConfig
+from paddleformers.transformers.diff_transformer.configuration import (
+    DiffTransformerConfig,
+)
 from paddleformers.transformers.diff_transformer.modeling import (
     DiffTransformerForCausalLM,
     DiffTransformerModel,

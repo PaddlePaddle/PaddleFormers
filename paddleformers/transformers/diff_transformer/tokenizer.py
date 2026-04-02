@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import transformers
+
 from paddleformers.transformers.tokenizer_utils import warp_tokenizer
 
 DiffTransformerTokenizer = warp_tokenizer(transformers.LlamaTokenizer)
