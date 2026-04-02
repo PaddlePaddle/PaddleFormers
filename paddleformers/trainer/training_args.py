@@ -2927,7 +2927,7 @@ class TrainingArguments:
         if self.use_hybrid_parallel:
             hcg = fleet.get_hybrid_communicate_group()
             if hasattr(hcg, "get_context_parallel_rank"):
-                return max(hcg.get_context_parallel_rank(), 0)
+                return max(hcg._get_context_parallel_id(), 0)
             else:
                 return 0
         else:
