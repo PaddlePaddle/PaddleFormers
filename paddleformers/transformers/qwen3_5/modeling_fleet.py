@@ -126,6 +126,15 @@ class Qwen3_5TextModelProvider(GPTModelProvider):
             self.n_routed_experts = None
             self.n_shared_experts = 0
             self.moe_shared_expert_gate = False
+        # TODO: Qwen3.5 AOA has not been adapted for TP > 1 yet (first loss is abnormal).
+        # Block TP > 1 until AOA TP support is implemented.
+        tp_size = getattr(self, "tensor_model_parallel_size", 1) or 1
+        if tp_size > 1:
+            raise ValueError(
+                f"Qwen3.5 does not support tensor_model_parallel_size > 1 yet "
+                f"(got {tp_size}). AOA weight mapping for TP sharding has not been "
+                f"adapted. Please set tensor_model_parallel_size to 1."
+            )
 
     moe_grouped_gemm: bool = True
     moe_router_load_balancing_type: str = "aux_loss"
