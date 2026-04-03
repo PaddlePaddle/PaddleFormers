@@ -210,6 +210,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
+          echo "=== DEBUG INFO ==="
+          echo "work_dir='$work_dir'"
+          echo "trigger_mode_output='$trigger_mode_output'"
+          echo "GITHUB_TOKEN='${GITHUB_TOKEN:0:10}...'"
+          echo "GITHUB_REPOSITORY='$GITHUB_REPOSITORY'"
+          echo "container_name='$container_name'"
+          echo "GITHUB_ENV location: $GITHUB_ENV"
+          if [ -f "$GITHUB_ENV" ]; then
+            echo "=== GITHUB_ENV contents ==="
+            cat "$GITHUB_ENV"
+          fi
+          echo "=== END DEBUG INFO ==="
+          
           docker exec -i \
             -e work_dir="$work_dir" \
             -e trigger_mode_output="$trigger_mode_output" \
