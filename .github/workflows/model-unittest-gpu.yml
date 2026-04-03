@@ -40,7 +40,6 @@ env:
   PR_ID: ${{ github.event.pull_request.number || github.event.issue.number || '0' }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
   TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-model-unittest-gpu
-  CI_SCRIPTS_PATH: /workspace/PaddleFormers/scripts/ci_model_unittest.sh
   BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
   CI_JOB_NAME: model-unittest-gpu-ci
@@ -127,7 +126,6 @@ jobs:
             -e "PR_ID=$PR_ID" \
             -e "COMMIT_ID=$COMMIT_ID" \
             -e "work_dir=$work_dir" \
-            -e "CI_SCRIPTS_PATH=$CI_SCRIPTS_PATH" \
             -e "no_proxy=$no_proxy" \
             -e "CI_JOB_NAME=$CI_JOB_NAME" \
             -e "paddle_whl=$paddle_whl" \
@@ -212,7 +210,12 @@ jobs:
 
       - name: Test
         run: |
-          docker exec -i $container_name /bin/bash <<-DOCKER_EOF
+          docker exec -i \
+            -e work_dir="${{ github.workspace }}" \
+            -e trigger_mode_output="${{ env.trigger_mode_output }}" \
+            -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+            -e GITHUB_REPOSITORY="${{ github.repository }}" \
+            $container_name /bin/bash <<-DOCKER_EOF
           ldconfig
           mkdir -p /root/.cache/pip
           pip cache dir
@@ -264,9 +267,6 @@ jobs:
             bash -x scripts/regression/ci_model_unittest.sh True
           fi
           DOCKER_EOF
-        env:
-          trigger_mode_output: ${{ env.trigger_mode_output }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Products
         if: always()
@@ -274,7 +274,7 @@ jobs:
           home_path: ${{ github.workspace }}/../../..
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
         run: |
-          docker exec -i $container_name /bin/bash <<-DOCKER_EOF
+          docker exec -t $container_name /bin/bash -c '
           if [ ! -f "${{ env.bos_file }}" ]; then
             wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
             mkdir ${{ env.home_path }}/bos
@@ -292,8 +292,7 @@ jobs:
             python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/$file"
           done
-          DOCKER_EOF
-
+          '
       - name: Terminate And Delete the Container
         if: always()
         run: |
