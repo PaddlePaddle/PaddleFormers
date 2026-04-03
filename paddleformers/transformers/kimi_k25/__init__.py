@@ -17,14 +17,22 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
+    "configuration": ["KimiK25Config", "KimiK25VisionConfig"],
+    "modeling": [
+        "KimiK25ForConditionalGeneration",
+    ],
     "processor": ["KimiK25Processor"],
-    "tokenizer": ["TikTokenTokenizer"],
     "vision_processor": ["KimiK25VisionProcessor"],
+    "tokenizer": ["TikTokenTokenizer"],
 }
+
 if TYPE_CHECKING:
+    from .configuration import *
+    from .modeling import *
     from .processor import *
     from .tokenizer import *
     from .vision_processor import *
+
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

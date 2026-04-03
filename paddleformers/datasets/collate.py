@@ -583,6 +583,9 @@ def mm_collate_fn(
         input_keys.append("token_type_ids")
         input_keys.append("images")
         input_keys.append("grid_thw")
+    elif hasattr(model, "model_type") and model.model_type == "kimi_k25":
+        input_keys.append("pixel_values")
+        input_keys.append("grid_thws")
     else:
         input_keys.append("pixel_values")
         input_keys.append("image_grid_thw")
@@ -622,6 +625,8 @@ def mm_collate_fn(
             mm_inputs = seq.mm_inputs
             if "pixel_values" in mm_inputs:
                 pixel_values.append(mm_inputs["pixel_values"])
+            if "grid_thws" in seq.mm_inputs:
+                image_grid_thw.extend(mm_inputs["grid_thws"])
             if "image_grid_thw" in mm_inputs:
                 image_grid_thw.extend(mm_inputs["image_grid_thw"])
             if "pixel_values_videos" in mm_inputs:
@@ -648,6 +653,9 @@ def mm_collate_fn(
                         mm_token_type_ids[total_input_ids == rope_model.video_token_id] = 2
                     filtered_args["mm_token_type_ids"] = mm_token_type_ids
                 position_ids, _ = get_rope_func(input_ids=total_input_ids, **filtered_args)
+                original_position_ids.append(position_ids)
+            else:
+                position_ids = paddle.arange(len(seq.token_ids)).unsqueeze(0).unsqueeze(0)
                 original_position_ids.append(position_ids)
 
         if original_position_ids:
@@ -689,6 +697,14 @@ def mm_collate_fn(
                     padded_token_type_ids,
                     images,
                     grid_thw,
+                ]
+            )
+        elif model.model_type == "kimi_k25":
+            return_list[-1].extend(
+                [
+                    padded_position_ids,
+                    pixel_values,
+                    image_grid_thw,
                 ]
             )
         else:

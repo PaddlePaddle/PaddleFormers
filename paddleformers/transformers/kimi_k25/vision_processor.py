@@ -68,6 +68,7 @@ class KimiK25VisionProcessor(BaseImageProcessor):
         super().__init__(**kwargs)
         self.media_proc_cfg = media_proc_cfg
         self.num_frames_per_chunk = media_proc_cfg["temporal_merge_kernel_size"]
+        self.merge_kernel_size = media_proc_cfg["merge_kernel_size"]
 
     def media_tokens_calculator(self, media: MediaInput):
         media = ensure_media_type(media)
