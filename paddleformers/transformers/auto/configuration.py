@@ -52,6 +52,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("qwen3_vl_moe", "Qwen3VLMoeConfig"),
         ("qwen3_vl_moe_text", "Qwen3VLMoeTextConfig"),
         ("glm4_moe", "Glm4MoeConfig"),
+        ("glm_moe_dsa", "GlmMoeDsaConfig"),
         ("gpt_oss", "GptOssConfig"),
         ("granite", "GraniteConfig"),
         ("phi3", "Phi3Config"),
