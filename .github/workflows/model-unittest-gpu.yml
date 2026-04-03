@@ -89,6 +89,7 @@ jobs:
     runs-on: ${{ inputs.runner || 'ernie-8gpu' || 'distrbute' }}
     steps:
       - name: Determine Image Name
+        id: determine_image
         env:
           IMAGE_NAME: ${{ inputs.image_name }}
         run: |
@@ -108,6 +109,7 @@ jobs:
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> "$GITHUB_OUTPUT"
           echo "Workspace path: ${{ github.workspace }}"
+          IMAGE_NAME="${{ steps.determine_image.outputs.IMAGE_NAME }}"
           DOCKER_VER=$(docker version --format '{{.Server.Version}}' | cut -d. -f1,2)
           if (( $(echo "$DOCKER_VER < 19.03" | bc -l) )); then
             GPU_OPTION="--runtime=nvidia"
