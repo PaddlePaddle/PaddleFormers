@@ -58,18 +58,20 @@ install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
-    python -m pip install -U --no-cache-dir transformers
+    python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple  > /dev/null
+    cd /home/models/my_packages && dpkg -i *.deb > /dev/null
+    cd -
     # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
     # echo "paddlepaddle-gpu @ https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/cbf3469113cd76b7d5f4cba7b8d7d5f55d9e9911/paddlepaddle_gpu-3.3.0-cp310-cp310-linux_x86_64.whl" >> requirements.txt
     python setup.py bdist_wheel > /dev/null
-    pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+    pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
     echo "paddlefleet commit:"
     python -c "import paddlefleet; print(paddlefleet.version.commit)"
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
-    pip install -r tests/requirements.txt
+    pip install -r tests/requirements.txt -i https://pypi.org/simple 
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
-    python -m pip list >> ${log_path}/commit_info.txt
+    python -m pip list >> ${log_path}/commit_info.txt 
     end_ts=$(date +%s)
     echo -e "\033[32m install requirements cost $((end_ts - start_ts))s \033[0m"
 }
@@ -120,7 +122,7 @@ else
         ext="${file_name##*.}"
         echo "file_name: ${file_name}, ext: ${file_name##*.}"
         [[ -f "$file_name" ]] || continue
-        if [[ "$ext" == "py" ]]; then
+        if [[ "$ext" == "py" ]] || [[ "$ext" == "yml" ]]; then
             FLAGS_enable_CI=true
             break
         fi
@@ -136,13 +138,15 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     cd ${nlp_dir}
     echo ' Testing all unittest cases '
     unset http_proxy && unset https_proxy
+    export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}
     set +e
     export PYTHONFAULTHANDLER=1
+    
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
-    timeout 15m \
-    python -m pytest -v -s -n 4 \
+    timeout 25m \
+    python -m pytest -v -s -n 1 \
         --dist no \
         --maxfail=10 \
         --retries 3 --retry-delay 1 \

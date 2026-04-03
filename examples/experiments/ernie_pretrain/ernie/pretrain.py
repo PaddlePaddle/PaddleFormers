@@ -344,13 +344,6 @@ def main():
         logger.warning("disabling `partial_send_recv` when using sequence parallel")
         config.trainer_args.partial_send_recv = False
 
-    if getattr(config.trainer_args, "bf16", False) and not getattr(config.trainer_args, "pp_delay_scale_loss", False):
-        logger.warning(
-            "It is recommended to enable pp_delay_scale_loss for better performance "
-            "of precision when using bf16 in training"
-        )
-        config.trainer_args.pp_delay_scale_loss = True
-
     if getattr(config.trainer_args, "dp_comm_overlap", False):
         logger.warning("Pipeline dp_comm_overlap and FusedLinearWithGradAdd can not be used at the same time.")
 
@@ -393,7 +386,7 @@ def main():
     args.eval_iters = 10
     args.test_iters = args.eval_iters * 10
 
-    args.enable_delay_scale_loss = config.trainer_args.pp_delay_scale_loss
+    args.enable_delay_scale_loss = True
 
     model_config = dict(getattr(config.model_args, "model_config", {}))
     model_config = {k: formatv(v) for k, v in model_config.items()}

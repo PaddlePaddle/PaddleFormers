@@ -77,7 +77,6 @@ use_expert_parallel: true
 expert_model_parallel_size: 8
 
 
-tp_delay_scale_loss: True
 
 optim: adamw
 bf16: true

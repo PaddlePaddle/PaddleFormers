@@ -1272,6 +1272,16 @@ class TrainingArguments:
         metadata={"help": "If True, saves the last step of the training process."},
     )
 
+    save_hf_memory_growth_threshold: int = field(
+        default=8,
+        metadata={
+            "help": (
+                "Memory growth threshold (in GB) for HFFormatFullParamSaver when saving HF-format checkpoints. "
+                "Controls the maximum memory growth allowed during full-param checkpoint assembly. Default is 8 (GB)."
+            )
+        },
+    )
+
     hybrid_parallel_expert_grad_scale: Optional[float] = field(
         default=None,
         metadata={"help": ("Scaling factor for expert gradients.")},
@@ -1370,14 +1380,8 @@ class TrainingArguments:
             "help": "Support fused_linear_param_grad_add in ColumnParallelLinear (requires cuda >= 11.6). Only works when mp_async_allreduce is True. Can accelerate model parallel further."
         },
     )
-    tp_delay_scale_loss: bool = field(
-        default=False,
-        metadata={
-            "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
-        },
-    )
     pp_delay_scale_loss: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
         },
@@ -1852,7 +1856,7 @@ class TrainingArguments:
                         )
 
                     dygraph_pp_configs = {
-                        "delay_scale_loss": self.pp_delay_scale_loss,
+                        "delay_scale_loss": True,  # TODO[Waynezee]: remove this config in the future
                         "dp_comm_overlap": enable_dp_comm_overlap,
                         "sharding_comm_overlap": self.enable_sharding_comm_overlap,
                         "enable_timer": self.timer,

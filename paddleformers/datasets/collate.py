@@ -384,7 +384,17 @@ def mm_dpo_collate_fn(
                 res_position_ids = []
                 for i, input_ids in enumerate([chosen_input_ids, rejected_input_ids]):
                     if seq.has_mm[i]:
-                        pos_ids, _ = get_rope_func(input_ids=paddle.to_tensor([input_ids]), **filtered_args)
+                        input_ids_tensor = paddle.to_tensor([input_ids])
+                        call_args = dict(filtered_args)
+                        if "mm_token_type_ids" in func_params and "mm_token_type_ids" not in call_args:
+                            rope_model = get_rope_func.__self__
+                            mm_token_type_ids = paddle.zeros_like(input_ids_tensor)
+                            if hasattr(rope_model, "image_token_id") and rope_model.image_token_id is not None:
+                                mm_token_type_ids[input_ids_tensor == rope_model.image_token_id] = 1
+                            if hasattr(rope_model, "video_token_id") and rope_model.video_token_id is not None:
+                                mm_token_type_ids[input_ids_tensor == rope_model.video_token_id] = 2
+                            call_args["mm_token_type_ids"] = mm_token_type_ids
+                        pos_ids, _ = get_rope_func(input_ids=input_ids_tensor, **call_args)
                         res_position_ids.append(pos_ids)
                     else:
                         input_ids = paddle.to_tensor([input_ids])
@@ -628,6 +638,15 @@ def mm_collate_fn(
                 filtered_args["attention_mask"] = paddle.ones_like(total_input_ids)
                 if "video_second_per_grid" in mm_inputs:
                     filtered_args["second_per_grids"] = mm_inputs["video_second_per_grid"]
+
+                if "mm_token_type_ids" in func_params and "mm_token_type_ids" not in filtered_args:
+                    rope_model = get_rope_func.__self__
+                    mm_token_type_ids = paddle.zeros_like(total_input_ids)
+                    if hasattr(rope_model, "image_token_id") and rope_model.image_token_id is not None:
+                        mm_token_type_ids[total_input_ids == rope_model.image_token_id] = 1
+                    if hasattr(rope_model, "video_token_id") and rope_model.video_token_id is not None:
+                        mm_token_type_ids[total_input_ids == rope_model.video_token_id] = 2
+                    filtered_args["mm_token_type_ids"] = mm_token_type_ids
                 position_ids, _ = get_rope_func(input_ids=total_input_ids, **filtered_args)
                 original_position_ids.append(position_ids)
 

@@ -65,7 +65,6 @@ from paddleformers.transformers.configuration_utils import (
     LlmMetaConfig,
     QuantizationConfig,
 )
-from paddleformers.utils.import_utils import is_paddlefleet_available
 from paddleformers.utils.log import logger
 
 from .make_data_utils import DataGenerator
@@ -214,9 +213,6 @@ def run_sft(
     training_args.model_name_or_path = model_args.model_name_or_path
     training_args.download_hub = model_args.download_hub
     training_args.copy_custom_file_list = model_args.copy_custom_file_list
-    if is_paddlefleet_available() and model_args.lora and training_args.moe_token_dispatcher_type == "deepep":
-        logger.warning("For PaddleFleet, moe_use_fusion_node should False when using LoRA.")
-        training_args.moe_use_fusion_node = False
 
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
@@ -295,11 +291,6 @@ def run_sft(
     # (Liuting) Not support acc calculation now due to MTP.
     if "DeepseekV3" in str(model_config.architectures):
         training_args.prediction_loss_only = True
-
-    if "qwen3_vl" in model_config.model_type and not model_args.lora:
-        if training_args.sequence_parallel:
-            logger.warning("Qwen3VL model do not support `sequence_parallel` yet, temporarily set to False")
-        training_args.sequence_parallel = False
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
