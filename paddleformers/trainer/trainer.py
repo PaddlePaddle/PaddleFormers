@@ -1882,9 +1882,12 @@ class Trainer:
             and distributed_isfile(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))
             and not self.args.ignore_load_lr_and_optim
         ):
-            self.state = TrainerState.load_from_json(
-                distributed_file(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))
-            )
+            state_path = distributed_file(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))
+            # 根据文件扩展名判断使用哪种加载方法
+            if state_path.endswith(".json"):
+                self.state = TrainerState.load_from_json(state_path)
+            else:
+                self.state = TrainerState.load(state_path)
             if self.args.world_size > 1:
                 global_step_list = []
                 paddle.distributed.all_gather(
@@ -3937,7 +3940,7 @@ class Trainer:
 
         # Save the Trainer state
         if self.args.should_save:
-            self.state.save_to_json(os.path.join(output_dir, TRAINER_STATE_NAME))
+            self.state.save(os.path.join(output_dir, TRAINER_STATE_NAME))
 
         if self.args.save_rng_states:
             # Save RNG state in non-distributed training
