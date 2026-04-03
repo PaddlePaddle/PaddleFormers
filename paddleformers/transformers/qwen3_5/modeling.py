@@ -31,6 +31,99 @@ from .configuration import Qwen3_5VisionConfig
 from .modeling_fleet import build_qwen3_5_model
 
 
+# ── Register custom AOA macros for linear_attention TP-aware weight mapping ──
+def _register_fused_in_proj_macro():
+    """Register a ``fused_in_proj`` AOA macro that interleaves N source tensors
+    so that each TP shard receives a proportional slice of every section.
+
+    Syntax (N sources on the left, target on the right):
+        src1, src2, ..., srcN -> target, fused_in_proj, axis=0, tp_probe_key=fleet_key
+
+    The macro splits *each* source independently into ``tp_degree`` chunks,
+    then interleaves: ``[src0_shard0, src1_shard0, ..., srcN_shard0, src0_shard1, ...]``.
+    This way contiguous TP slicing gives each rank a proportional share of every section,
+    even when sources have different sizes (e.g. conv1d with q=2048, k=2048, v=4096).
+    """
+    try:
+        from paddle.distributed.flex_checkpoint.aoa.lexer import TokenType
+        from paddle.distributed.flex_checkpoint.aoa.macros import macro_registry
+    except ImportError:
+        return  # AOA not available (e.g. unit-test env)
+
+    FUSED_IN_PROJ_TAG = "fused_in_proj"
+
+    def fused_in_proj_macro(tokens, expression, context):
+        if not any(tkn.value == FUSED_IN_PROJ_TAG for tkn in tokens):
+            return expression
+
+        # --- parse axis ---
+        from paddle.distributed.flex_checkpoint.aoa.macros import (
+            extract_axis_and_clean_tokens,
+        )
+
+        axis, tokens = extract_axis_and_clean_tokens(tokens)
+
+        # --- locate '->' and tag ---
+        rarrow_pos = None
+        tag_pos = None
+        tp_probe_key = None
+        for idx, token in enumerate(tokens):
+            if token.type == TokenType.RARROW and rarrow_pos is None:
+                rarrow_pos = idx
+            elif token.type == TokenType.IDENTIFIER and token.value == FUSED_IN_PROJ_TAG:
+                tag_pos = idx
+            elif token.type == TokenType.IDENTIFIER and token.value == "tp_probe_key" and idx + 2 < len(tokens):
+                tp_probe_key = tokens[idx + 2].value
+        assert rarrow_pos is not None, "No -> found in expression."
+        assert tag_pos is not None, f"No {FUSED_IN_PROJ_TAG} tag found."
+
+        # --- collect source vars (left of ->) and target var (right of ->) ---
+        src_vars = []
+        for i in range(0, rarrow_pos, 2):  # identifiers separated by commas
+            src_vars.append(tokens[i].value)
+        dst_var = tokens[rarrow_pos + 1].value
+        n_sources = len(src_vars)
+        assert n_sources >= 2, f"fused_in_proj requires >= 2 sources, got {n_sources}"
+
+        # --- get TP degree from the probed key (the final Fleet parameter key) ---
+        probe = tp_probe_key or dst_var
+        tp_degree = context.get_dst_state_shard_num(probe)
+        if tp_degree is None or tp_degree <= 1:
+            # No TP: simple concat
+            return [f"{','.join(src_vars)} -> {dst_var}, axis={axis}"]
+
+        results = []
+
+        # Split each source independently into tp_degree chunks.
+        # This handles sources of different sizes correctly (each only needs
+        # to be divisible by tp_degree, not the total).
+        # chunk_names[src_idx] = [src_shard0, src_shard1, ..., src_shardT-1]
+        all_chunks = []
+        for src_idx, src_var in enumerate(src_vars):
+            chunks = [f"{dst_var}.__fip_s{src_idx}_r{r}" for r in range(tp_degree)]
+            all_chunks.append(chunks)
+            results.append(f"{src_var} -> {','.join(chunks)}, axis={axis}")
+
+        # Interleave: for each TP rank, take one chunk per source
+        # Layout: [src0_rank0, src1_rank0, ..., srcN_rank0, src0_rank1, ...]
+        interleaved = []
+        for tp_rank in range(tp_degree):
+            for src_idx in range(n_sources):
+                interleaved.append(all_chunks[src_idx][tp_rank])
+
+        results.append(f"{','.join(interleaved)} -> {dst_var}, axis={axis}")
+
+        return results
+
+    try:
+        macro_registry.register_macro(FUSED_IN_PROJ_TAG, fused_in_proj_macro, 3)
+    except ValueError:
+        pass  # already registered (re-import scenario)
+
+
+_register_fused_in_proj_macro()
+
+
 class Qwen3_5VisionModel(Qwen3VLVisionModel):
     config_class = Qwen3_5VisionConfig
     _no_split_modules = ["Qwen3VLVisionBlock"]
@@ -208,21 +301,70 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         ]
 
         # ── linear_attention layers: fused in_proj (qkv+z+b+a), conv1d, dt_bias, A_log, out_norm, out_proj ──
-        # HF has 4 separate projections; fleet fuses them into a single in_proj
-        # Fleet split order: [qkv, z(gate), beta, alpha]
-        # Step 1: concat 4 HF weights (no transpose) along axis=0 into virtual intermediate
-        # Step 2: transpose the intermediate -> fleet target
+        # HF has 4 separate projections; fleet fuses them into a single in_proj (ColumnParallelLinear).
+        # ColumnParallelLinear shards weight along axis=1 (output dim) via contiguous slicing.
+        # Fleet's in_proj has 6 logical sections: [q, k, v, z(gate), beta, alpha].
+        # The ``fused_in_proj`` macro splits each source independently by tp_degree and interleaves,
+        # so contiguous TP slicing gives each rank a proportional share of every section.
+        #
+        # in_proj: split HF in_proj_qkv into q,k,v first → 6 sources → fused_in_proj → ^T
+        # conv1d:  split HF conv1d into q,k,v sections   → 3 sources → fused_in_proj
+        lin_num_key_heads = getattr(text_config, "linear_num_key_heads", num_heads)
+        lin_num_value_heads = getattr(text_config, "linear_num_value_heads", num_heads)
+
         for i in linear_attn_layers:
             hf_pre = f"model.language_model.layers.{i}.linear_attn"
-            fused_tmp = f"model.language_model.layers.{i}.linear_attn.in_proj_fused_tmp"
+            fused_tmp = f"{hf_pre}.in_proj_fused_tmp"
+            fleet_in_proj_key = f"{llm_prefix}layers.{i}.self_attn.in_proj.weight"
+            # Step 1: Split in_proj_qkv [qk_dim+qk_dim+v_dim, hidden] into q, k, v along axis=0
+            # Use per-head split for equal chunks: key_head_dim == value_head_dim for Qwen3.5
+            n_qkv_heads = 2 * lin_num_key_heads + lin_num_value_heads
+            head_names = [f"{hf_pre}.in_proj_qkv._h{h}" for h in range(n_qkv_heads)]
+            aoa_config["aoa_statements"].append(f"{hf_pre}.in_proj_qkv.weight -> {','.join(head_names)}, axis=0")
+            q_part = ",".join(head_names[:lin_num_key_heads])
+            k_part = ",".join(head_names[lin_num_key_heads : 2 * lin_num_key_heads])
+            v_part = ",".join(head_names[2 * lin_num_key_heads :])
+            q_var = f"{hf_pre}.in_proj_qkv._q"
+            k_var = f"{hf_pre}.in_proj_qkv._k"
+            v_var = f"{hf_pre}.in_proj_qkv._v"
             aoa_config["aoa_statements"] += [
-                f"{hf_pre}.in_proj_qkv.weight, {hf_pre}.in_proj_z.weight, {hf_pre}.in_proj_b.weight, {hf_pre}.in_proj_a.weight -> {fused_tmp}, axis=0",
-                f"{fused_tmp}^T -> {llm_prefix}layers.{i}.self_attn.in_proj.weight",
+                f"{q_part} -> {q_var}, axis=0",
+                f"{k_part} -> {k_var}, axis=0",
+                f"{v_part} -> {v_var}, axis=0",
             ]
-        aoa_config["aoa_statements"] += [
-            f"model.language_model.layers.{i}.linear_attn.conv1d.weight -> {llm_prefix}layers.{i}.self_attn.conv1d.weight, dtype='bfloat16'"
-            for i in linear_attn_layers
-        ]
+            # Step 2: 6 sources (q, k, v, z, b, a) → fused_in_proj with TP interleaving
+            aoa_config["aoa_statements"].append(
+                f"{q_var}, {k_var}, {v_var}, {hf_pre}.in_proj_z.weight, {hf_pre}.in_proj_b.weight, {hf_pre}.in_proj_a.weight -> {fused_tmp}, fused_in_proj, axis=0, tp_probe_key={fleet_in_proj_key}"
+            )
+            # Step 3: Transpose to Fleet layout [hidden, in_proj_dim]
+            aoa_config["aoa_statements"].append(f"{fused_tmp}^T -> {fleet_in_proj_key}")
+        for i in linear_attn_layers:
+            hf_pre = f"model.language_model.layers.{i}.linear_attn"
+            # Split in_proj_qkv's conv channels into q, k, v parts
+            # HF conv1d weight: [qk+qk+v, 1, kernel]
+            q_conv = f"{hf_pre}.conv1d._q_conv"
+            k_conv = f"{hf_pre}.conv1d._k_conv"
+            v_conv = f"{hf_pre}.conv1d._v_conv"
+            n_qkv_heads = 2 * lin_num_key_heads + lin_num_value_heads
+            # Equal split by heads (key_head_dim == value_head_dim for Qwen3.5)
+            conv_names = [f"{hf_pre}.conv1d._cv{c}" for c in range(n_qkv_heads)]
+            aoa_config["aoa_statements"].append(f"{hf_pre}.conv1d.weight -> {','.join(conv_names)}, axis=0")
+            # Reassemble into 3 sections: q, k, v
+            q_parts = ",".join(conv_names[:lin_num_key_heads])
+            k_parts = ",".join(conv_names[lin_num_key_heads : 2 * lin_num_key_heads])
+            v_parts = ",".join(conv_names[2 * lin_num_key_heads :])
+            aoa_config["aoa_statements"] += [
+                f"{q_parts} -> {q_conv}, axis=0",
+                f"{k_parts} -> {k_conv}, axis=0",
+                f"{v_parts} -> {v_conv}, axis=0",
+            ]
+            conv_tmp = f"{hf_pre}.conv1d_fused_tmp"
+            fleet_conv_key = f"{llm_prefix}layers.{i}.self_attn.conv1d.weight"
+            aoa_config["aoa_statements"] += [
+                f"{q_conv}, {k_conv}, {v_conv} -> {conv_tmp}, fused_in_proj, axis=0, tp_probe_key={fleet_conv_key}",
+                f"{conv_tmp} -> {fleet_conv_key}, dtype='bfloat16'",
+            ]
+
         aoa_config["aoa_statements"] += [
             f"model.language_model.layers.{i}.linear_attn.dt_bias -> {llm_prefix}layers.{i}.self_attn.dt_bias, dtype='float32'"
             for i in linear_attn_layers
