@@ -210,10 +210,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
+          if [ -f "$GITHUB_ENV" ]; then
+            set -a  # Export all variables
+            source "$GITHUB_ENV"
+            set +a  # Stop exporting
+          fi
           echo "=== DEBUG INFO ==="
           echo "work_dir='$work_dir'"
           echo "trigger_mode_output='$trigger_mode_output'"
-          echo "GITHUB_TOKEN='${GITHUB_TOKEN:0:10}...'"
           echo "GITHUB_REPOSITORY='$GITHUB_REPOSITORY'"
           echo "container_name='$container_name'"
           echo "GITHUB_ENV location: $GITHUB_ENV"
