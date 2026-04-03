@@ -26,8 +26,6 @@ export AGILE_COMPILE_BRANCH=$AGILE_COMPILE_BRANCH
 cd $nlp_dir
 mkdir -p $log_path
 
-export no_proxy=localhost,bj.bcebos.com,su.bcebos.com,pypi.tuna.tsinghua.edu.cn,paddle-ci.gz.bcebos.com,0.0.0.0,baidu-int.com,aliyun.com,127.0.0.1,.baidu.com,.bcebos.com && export http_proxy=http://agent.baidu.com:8891 && export https_proxy=http://agent.baidu.com:8891
-
 install_requirements() {
     local ce_branch=${1:-""}
     start_ts=$(date +%s)
@@ -86,7 +84,7 @@ set_env() {
         install_requirements "${develop}"
     elif [[ "${FLAGS_enable_CI}" == "True" ]];then
         echo "CI: install paddle stable + fleet stable + formers"
-        # install_requirements
+        install_requirements
 
     fi
 }
