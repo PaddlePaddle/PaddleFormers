@@ -224,11 +224,11 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
             for i in linear_attn_layers
         ]
         aoa_config["aoa_statements"] += [
-            f"model.language_model.layers.{i}.linear_attn.dt_bias -> {llm_prefix}layers.{i}.self_attn.dt_bias, dtype='bfloat16'"
+            f"model.language_model.layers.{i}.linear_attn.dt_bias -> {llm_prefix}layers.{i}.self_attn.dt_bias, dtype='float32'"
             for i in linear_attn_layers
         ]
         aoa_config["aoa_statements"] += [
-            f"model.language_model.layers.{i}.linear_attn.A_log -> {llm_prefix}layers.{i}.self_attn.A_log, dtype='bfloat16'"
+            f"model.language_model.layers.{i}.linear_attn.A_log -> {llm_prefix}layers.{i}.self_attn.A_log, dtype='float32'"
             for i in linear_attn_layers
         ]
         aoa_config["aoa_statements"] += [
