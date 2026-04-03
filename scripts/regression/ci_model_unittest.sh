@@ -31,6 +31,8 @@ install_requirements() {
     start_ts=$(date +%s)
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet paddleformers -y
     rm -rf ./build ./dist ./paddleformers.egg-info/
+    # Todo: fix later 
+    # python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple > /dev/null
     python -m pip install -r requirements.txt -i https://pypi.org/simple 
     if [[ $ce_branch="release" ]]; then
         #fleet
@@ -63,7 +65,6 @@ install_requirements() {
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
-    python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple > /dev/null
     python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
     python -m pip list >> ${log_path}/commit_info.txt
     end_ts=$(date +%s)
