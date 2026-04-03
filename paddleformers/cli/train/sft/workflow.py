@@ -433,6 +433,7 @@ def run_sft(
         "template": data_args.template,
         "tool_format": None,
         "default_system": None,
+        "truncation_strategy": data_args.truncation_strategy,
     }
 
     if dataset_config["template_backend"] == "custom":

@@ -17,7 +17,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from itertools import chain
-from typing import Dict, List
+from typing import Dict, List, Literal, Optional
 
 import numpy as np
 from paddle.io import IterableDataset
@@ -81,6 +81,14 @@ class SFTDataSet(IterableDataset):
         self.split_multi_turn = dataset_config.get("split_multi_turn", False)
         self.encode_one_turn = dataset_config.get("encode_one_turn", True)
         self.is_pretraining = dataset_config.get("is_pretraining", False)
+        self.truncation_strategy = dataset_config.get("truncation_strategy", "delete")
+        assert self.truncation_strategy in [
+            "oral",
+            "delete",
+            "right",
+            "left",
+        ], f"truncation_strategy must be in [oral, delete, right, left], but got {self.truncation_strategy}"
+        logger.info(f"[dataflow] truncation_strategy: {self.truncation_strategy}")
         self.truncate_packing = dataset_config.get("truncate_packing", True)
         self.is_valid = dataset_config.get("is_valid", False)
         if self.truncate_packing and not self.is_pretraining:
@@ -98,6 +106,23 @@ class SFTDataSet(IterableDataset):
             self.begin_token_id = self.tokenizer._convert_token_to_id([self.begin_token])[0]
         else:
             self.begin_token_id = self.tokenizer.convert_tokens_to_ids([self.begin_token])[0]
+
+        # media placeholder token
+        self.placeholder_tokens = []
+        if self.template and self.template.mm_plugin:
+            for tok in [
+                self.template.mm_plugin.image_token,
+                self.template.mm_plugin.video_token,
+                self.template.mm_plugin.audio_token,
+            ]:
+                if tok:
+                    self.placeholder_tokens.append(tok)
+        for i, token in enumerate(self.placeholder_tokens):
+            if isinstance(token, str):
+                if isinstance(self.tokenizer, PretrainedTokenizer):
+                    self.placeholder_tokens[i] = self.tokenizer._convert_token_to_id(token)
+                else:
+                    self.placeholder_tokens[i] = self.tokenizer.convert_tokens_to_ids(token)
 
         # data loader + multisource dataset mix
         if self.is_valid:
@@ -718,19 +743,21 @@ class SFTDataSet(IterableDataset):
             if len(tokens_target) == 0:
                 logger.warning(f"[SKIP] The length of encoded assistant tokens is 0: {example}")
                 return None
-            remaining_len = self.max_seq_len - cur_len
-            if len(tokens_src) + len(tokens_target) > remaining_len:
-                if images or videos or audios:
-                    # If there is multimodal data, do not truncate it; just discard it directly.
-                    sub_src = example["messages"][0]["content"].strip()[:50]
-                    logger.warning(f"[SKIP] This data is too long: {sub_src}...")
-                    return None
-                # If the source (src) exceeds length limit, discard this round of conversation data
-                # If the target (tgt) exceeds length limit, truncate it
-                if len(tokens_src) > remaining_len:
-                    break
-                else:
-                    tokens_target = tokens_target[: remaining_len - len(tokens_src)]
+
+            if self.truncation_strategy == "oral":
+                remaining_len = self.max_seq_len - cur_len
+                if len(tokens_src) + len(tokens_target) > remaining_len:
+                    if images or videos or audios:
+                        # If there is multimodal data, do not truncate it; just discard it directly.
+                        sub_src = example["messages"][0]["content"].strip()[:50]
+                        logger.warning(f"[SKIP] This data is too long: {sub_src}...")
+                        return None
+                    # If the source (src) exceeds length limit, discard this round of conversation data
+                    # If the target (tgt) exceeds length limit, truncate it
+                    if len(tokens_src) > remaining_len:
+                        break
+                    else:
+                        tokens_target = tokens_target[: remaining_len - len(tokens_src)]
 
             labels_src = [-100] * len(tokens_src)
 
@@ -793,10 +820,19 @@ class SFTDataSet(IterableDataset):
                 tokens.extend(suffix_ids)
                 labels.extend(suffix_ids)
 
+        # data truncate
+        if self.truncation_strategy != "oral":
+            tokens, labels = self._encode_truncated(tokens, labels)
+            if not tokens:
+                sub_src = example["messages"][0]["content"].strip()[:50]
+                logger.warning(f"[SKIP] data is deleted by truncation strategy: {sub_src}...")
+                return None
+        else:
+            if len(tokens) > self.max_seq_len:
+                raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+
         # label shift
         labels = labels[1:] + [-100]
-        if len(tokens) > self.max_seq_len:
-            raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
         pos_ids = list(range(len(tokens)))
 
@@ -834,6 +870,56 @@ class SFTDataSet(IterableDataset):
             audios=audios,
             mm_inputs=mm_inputs,
         )
+
+    @staticmethod
+    def _get_length(input_ids, labels):
+        # input_ids might be a tensor.
+        lengths = [0]
+        if input_ids is not None:
+            lengths.append(len(input_ids))
+        if labels is not None:
+            lengths.append(len(labels))
+        length = max(lengths)
+        return length
+
+    def _truncate(
+        self,
+        input_ids: List[int],
+        labels: Optional[List[int]],
+        truncation_strategy: Literal["left", "right"],
+    ):
+        max_len = self.max_seq_len
+        placeholder_set = set(self.placeholder_tokens)
+
+        is_placeholder = [tok in placeholder_set for tok in input_ids]
+        placeholder_idx = [i for i, v in enumerate(is_placeholder) if v]
+
+        if len(placeholder_idx) >= max_len:
+            keep_idx = placeholder_idx[:max_len]
+        else:
+            remain = max_len - len(placeholder_idx)
+            non_placeholder_idx = [i for i, v in enumerate(is_placeholder) if not v]
+
+            if truncation_strategy == "left":
+                extra_idx = non_placeholder_idx[-remain:]
+            else:
+                extra_idx = non_placeholder_idx[:remain]
+
+            keep_idx = sorted(placeholder_idx + extra_idx)
+
+        input_ids = [input_ids[i] for i in keep_idx]
+        labels = [labels[i] for i in keep_idx]
+
+        return input_ids, labels
+
+    def _encode_truncated(self, input_ids, labels):
+        length = self._get_length(input_ids, labels)
+        if self.max_seq_len is not None and length > self.max_seq_len:
+            if self.truncation_strategy == "delete":
+                return None, None
+            if self.truncation_strategy in {"right", "left"}:
+                input_ids, labels = self._truncate(input_ids, labels, truncation_strategy=self.truncation_strategy)
+        return input_ids, labels
 
     def print_max_steps_estimate_progress(self):
         current_percent = (self.used_estimate_samples / self.max_estimate_samples) * 100
