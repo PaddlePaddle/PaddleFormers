@@ -148,7 +148,7 @@ fi
 
 set_env
 # 如果外部传入了 models，则跳过自动检测，使用外部传入的值
-if [[ -n "$update_baseline_models" ]] && [[ "$update_baseline_models" != "glm_moe" ]]; then
+if [[ "$update_baseline_models" != "false" ]] && [[ "$update_baseline_models" != "False" ]]; then
     echo "Update baseline models: $update_baseline_models"
     models=$update_baseline_models
 else
