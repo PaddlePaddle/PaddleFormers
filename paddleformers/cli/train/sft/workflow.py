@@ -437,7 +437,6 @@ def run_sft(
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
         "dataset_type": data_args.dataset_type,
-        "truncation_strategy": data_args.truncation_strategy,
         "dtype": compute_type,
         "dataset_num_proc": finetuning_args.dataset_num_proc,
         "binpacking": data_args.binpacking,
@@ -446,6 +445,7 @@ def run_sft(
         "template": data_args.template,
         "tool_format": None,
         "default_system": None,
+        "truncation_strategy": data_args.truncation_strategy,
     }
 
     if dataset_config["template_backend"] == "custom":
