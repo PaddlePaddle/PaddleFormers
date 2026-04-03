@@ -240,7 +240,7 @@ jobs:
             echo "=== Running tests with baseline update ==="
             
             # Run tests with baseline update
-            bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS" "$UPDATE_BASELINE_MODELS"
+            bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS"
             
             # Check and commit changes
             git add scripts/regression/config.yaml
