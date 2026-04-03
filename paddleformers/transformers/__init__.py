@@ -304,6 +304,8 @@ import_structure = {
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
     "glm_moe_dsa.configuration": ["GlmMoeDsaConfig"],
     "glm_moe_dsa": ["GlmMoeDsaForCausalLMPipe", "GlmMoeDsaForCausalLM"],
+    "minimax_m2.configuration": ["MiniMaxM2Config"],
+    "minimax_m2": ["MiniMaxM2ForCausalLMPipe", "MiniMaxM2ForCausalLM"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
     "glm4v_moe.image_processor_fast": ["Glm4vImageProcessorFast"],
     "auto": ["AutoModelForCausalLM"],
@@ -403,6 +405,7 @@ if TYPE_CHECKING:
     from .glm4_moe import *
     from .glm4v_moe import *
     from .glm_moe_dsa import *
+    from .minimax_m2 import *
     from .gpt_oss import *
     from .phi3 import *
     from .gemma3_text import *
