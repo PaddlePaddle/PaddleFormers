@@ -141,7 +141,7 @@ jobs:
             
       - name: Download Code
         run: |
-          docker exec -i $container_name /bin/bash <<-'DOCKER_EOF'
+          docker exec -i $container_name /bin/bash <<-DOCKER_EOF
           rm -rf * .[^.]*
           echo "Downloading PaddleFormers.tar"
           wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
@@ -212,7 +212,7 @@ jobs:
 
       - name: Test
         run: |
-          docker exec -i $container_name /bin/bash <<-'DOCKER_EOF'
+          docker exec -i $container_name /bin/bash <<-DOCKER_EOF
           ldconfig
           mkdir -p /root/.cache/pip
           pip cache dir
@@ -274,7 +274,7 @@ jobs:
           home_path: ${{ github.workspace }}/../../..
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
         run: |
-          docker exec -i $container_name /bin/bash <<-'DOCKER_EOF'
+          docker exec -i $container_name /bin/bash <<-DOCKER_EOF
           if [ ! -f "${{ env.bos_file }}" ]; then
             wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
             mkdir ${{ env.home_path }}/bos
