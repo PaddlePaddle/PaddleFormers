@@ -93,9 +93,9 @@ jobs:
           IMAGE_NAME: ${{ inputs.image_name }}
         run: |
           if [[ -n "${IMAGE_NAME}" ]]; then
-            echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
+            echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
           else
-            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
+            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_OUTPUT"
           fi
       - name: Run Container
         env:
@@ -106,7 +106,7 @@ jobs:
           paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda12.6-Cudnn9.5-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
-          echo "container_name=${container_name}" >> "$GITHUB_ENV"
+          echo "container_name=${container_name}" >> "$GITHUB_OUTPUT"
           echo "Workspace path: ${{ github.workspace }}"
           DOCKER_VER=$(docker version --format '{{.Server.Version}}' | cut -d. -f1,2)
           if (( $(echo "$DOCKER_VER < 19.03" | bc -l) )); then
@@ -206,13 +206,13 @@ jobs:
           echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
           
-          echo "trigger_mode_output=mode=$MODE,update_baseline_models=$UPDATE_BASELINE_MODELS,target_branch=$TARGET_BRANCH,pr_number=$PR_NUMBER" >> "$GITHUB_ENV"
+          echo "trigger_mode_output=mode=$MODE,update_baseline_models=$UPDATE_BASELINE_MODELS,target_branch=$TARGET_BRANCH,pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
       - name: Test
         run: |
           docker exec -i \
             -e work_dir="${{ github.workspace }}" \
-            -e trigger_mode_output="${{ env.trigger_mode_output }}" \
+            -e trigger_mode_output="${{ steps.trigger_mode.outputs.trigger_mode_output }}" \
             -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
             -e GITHUB_REPOSITORY="${{ github.repository }}" \
             $container_name /bin/bash <<-DOCKER_EOF
