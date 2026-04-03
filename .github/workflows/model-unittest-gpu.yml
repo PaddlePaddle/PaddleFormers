@@ -141,7 +141,7 @@ jobs:
             
       - name: Download Code
         run: |
-          docker exec -i $container_name /bin/bash <<-DOCKER_EOF
+          docker exec -i -e work_dir="$work_dir" -e PR_ID="$PR_ID" -e BRANCH="$BRANCH" $container_name /bin/bash <<-DOCKER_EOF
           rm -rf * .[^.]*
           echo "Downloading PaddleFormers.tar"
           wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
