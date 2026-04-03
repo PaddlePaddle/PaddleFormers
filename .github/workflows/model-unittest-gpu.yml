@@ -66,7 +66,6 @@ jobs:
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
             echo "PR labels: $labels"
-
             if echo "$labels" | grep -q "skip-models-ci"; then
               echo "skip=true" >> "$GITHUB_OUTPUT"
             else
@@ -75,13 +74,11 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-
       - name: Skip CI but mark success
         if: steps.check_skip.outputs.skip == 'true'
         run: |
           echo "skip-models-ci label found"
           echo "Downstream GPU jobs will be skipped"
-
   model-unittest-gpu-ci:
     needs: check_skip
     if: needs.check_skip.outputs.skip == 'false'
@@ -89,14 +86,13 @@ jobs:
     runs-on: ${{ inputs.runner || 'ernie-8gpu' || 'distrbute' }}
     steps:
       - name: Determine Image Name
-        id: determine_image
         env:
           IMAGE_NAME: ${{ inputs.image_name }}
         run: |
           if [[ -n "${IMAGE_NAME}" ]]; then
-            echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+            echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
           else
-            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_OUTPUT"
+            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
           fi
       - name: Run Container
         env:
@@ -107,9 +103,8 @@ jobs:
           paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda12.6-Cudnn9.5-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
-          echo "container_name=${container_name}" >> "$GITHUB_OUTPUT"
+          echo "container_name=${container_name}" >> "$GITHUB_ENV"
           echo "Workspace path: ${{ github.workspace }}"
-          IMAGE_NAME="${{ steps.determine_image.outputs.IMAGE_NAME }}"
           DOCKER_VER=$(docker version --format '{{.Server.Version}}' | cut -d. -f1,2)
           if (( $(echo "$DOCKER_VER < 19.03" | bc -l) )); then
             GPU_OPTION="--runtime=nvidia"
@@ -168,7 +163,6 @@ jobs:
           fi
           git log --pretty=oneline -10
           DOCKER_EOF
-
       - name: Determine trigger mode
         id: trigger_mode
         env:
@@ -208,15 +202,19 @@ jobs:
           echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
           
-          echo "trigger_mode_output=mode=$MODE,update_baseline_models=$UPDATE_BASELINE_MODELS,target_branch=$TARGET_BRANCH,pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-
+          echo "trigger_mode_output=mode=$MODE,update_baseline_models=$UPDATE_BASELINE_MODELS,target_branch=$TARGET_BRANCH,pr_number=$PR_NUMBER" >> "$GITHUB_ENV"
       - name: Test
+        env:
+          work_dir: ${{ github.workspace }}
+          trigger_mode_output: ${{ env.trigger_mode_output }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           docker exec -i \
-            -e work_dir="${{ github.workspace }}" \
-            -e trigger_mode_output="${{ steps.trigger_mode.outputs.trigger_mode_output }}" \
-            -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
-            -e GITHUB_REPOSITORY="${{ github.repository }}" \
+            -e work_dir="$work_dir" \
+            -e trigger_mode_output="$trigger_mode_output" \
+            -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+            -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
             $container_name /bin/bash <<-DOCKER_EOF
           ldconfig
           mkdir -p /root/.cache/pip
@@ -234,7 +232,6 @@ jobs:
           UPDATE_BASELINE_MODELS=$(echo "$trigger_mode_output" | grep -oP "update_baseline_models=\K[a-zA-Z0-9_,]+")
           TARGET_BRANCH=$(echo "$trigger_mode_output" | grep -oP "target_branch=\K[a-zA-Z0-9_]+")
           PR_NUMBER=$(echo "$trigger_mode_output" | grep -oP "pr_number=\K[0-9a-z]+")
-
           
           echo "=== Trigger Mode: ${MODE} ==="
           echo "Update baseline: ${UPDATE_BASELINE_MODELS}"
@@ -269,7 +266,6 @@ jobs:
             bash -x scripts/regression/ci_model_unittest.sh True
           fi
           DOCKER_EOF
-
       - name: Upload Products
         if: always()
         env:
