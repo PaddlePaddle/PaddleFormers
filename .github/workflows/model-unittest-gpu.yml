@@ -44,7 +44,6 @@ env:
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
   CI_JOB_NAME: model-unittest-gpu-ci
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 defaults:
   run:
@@ -202,8 +201,6 @@ jobs:
           echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
       - name: Test
-        env:
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           # Use step outputs from previous step instead of env vars
           MODE="${{ steps.trigger_mode.outputs.mode }}"
@@ -217,7 +214,6 @@ jobs:
             -e UPDATE_BASELINE_MODELS="$UPDATE_BASELINE_MODELS" \
             -e TARGET_BRANCH="$TARGET_BRANCH" \
             -e PR_NUMBER="$PR_NUMBER" \
-            -e PAT_TOKEN="$PAT_TOKEN" \
             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
             $container_name /bin/bash <<-DOCKER_EOF
           ldconfig
@@ -225,13 +221,6 @@ jobs:
           pip cache dir
           set -e
           rm -rf /root/.cache/aistudio/
-          cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-          echo "work_dir = ${work_dir}"
-          
-          # Configure git auth for baseline update using PAT token
-          git remote set-url origin https://${PAT_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
           
           # Use pre-parsed trigger mode variables
           echo "=== Trigger Mode: ${MODE} ==="
@@ -244,25 +233,14 @@ jobs:
             
             # Run tests with baseline update
             bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS"
+
+            # Upload baseline
+            cp -r /home/models/bos/* ./
+            mkdir upload 
+            cp config.yaml upload/
+            mv config.yaml config_${PR_NUMBER}.yaml upload/
+            python upload.py upload "paddle-qa/paddleformers/ci_config/"
             
-            # Check and commit changes
-            git add scripts/regression/config.yaml
-            if git diff --cached --quiet; then
-              echo "No baseline changes to commit"
-            else
-              echo "Committing baseline changes..."
-              source ${work_dir}/../../../proxy
-              if [ "$MODE" = "manual" ]; then
-                git commit -m "chore: update baseline from manual workflow dispatch"
-                git push -f origin HEAD:refs/heads/"$TARGET_BRANCH" || echo "Push failed"
-              elif [ "$MODE" = "comment" ]; then
-                git commit -m "chore: update baseline from PR #${PR_NUMBER} comment"
-                git push -f origin HEAD:refs/heads/"$TARGET_BRANCH" || echo "Push failed"
-              else
-                git commit -m "chore: update baseline from PR #${PR_NUMBER}"
-                git push -f origin HEAD:refs/heads/"$TARGET_BRANCH" || echo "Push failed"
-              fi
-            fi
           else
             echo "=== Running tests without baseline update ==="
             bash -x scripts/regression/ci_model_unittest.sh True

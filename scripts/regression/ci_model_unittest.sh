@@ -77,15 +77,37 @@ set_env() {
     export HF_ENDPOINT=https://hf-mirror.com
 
     # for CI/CE
+    if [ -f "./scripts/regression/config.yaml" ]; then
+      mv ./scripts/regression/config.yaml ./scripts/regression/config.yaml.bak
+    fi
+
     if [[ "${FLAGS_enable_CE}" == "CE_Release" ]];then
         echo "CE_Release: install paddle release + fleet release + formers release"
         install_requirements "${release}"
+        # donwload configs
+        cd  ./scripts/regression
+        wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_release_config/config.yaml 
+        # update configs
+        python merge_configs.py --origin_config config_rd.yaml --update_config config.yaml
+        cd -
     elif [[ "${FLAGS_enable_CE}" == "CE_Develop" ]];then
         echo "CE_Develop: install paddle develop + fleet develop + formers develop"
         install_requirements "${develop}"
+        # donwload configs
+        cd  ./scripts/regression
+        wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_develop_config/config.yaml 
+        # update configs
+        python merge_configs.py --origin_config config_rd.yaml --update_config config.yaml
+        cd -
     elif [[ "${FLAGS_enable_CI}" == "True" ]];then
         echo "CI: install paddle stable + fleet stable + formers"
         install_requirements
+        # donwload configs
+        cd  ./scripts/regression
+        wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_config/config.yaml 
+        # update configs
+        python merge_configs.py --origin_config config_rd.yaml --update_config config.yaml
+        cd -
 
     fi
 }
