@@ -3561,11 +3561,7 @@ class Trainer:
         else:
             labels = None
 
-        if (
-            is_paddle_cuda_available()
-            and PaddleFleetPipelineLayer is not None
-            and isinstance(model, PaddleFleetPipelineLayer)
-        ):
+        if is_paddle_cuda_available() and isinstance(model, PipelineLayer):
             outputs = model(inputs)
         else:
             outputs = model(**inputs)
@@ -4601,8 +4597,6 @@ class Trainer:
         prediction_loss_only = prediction_loss_only if prediction_loss_only is not None else args.prediction_loss_only
 
         if self.args.pipeline_model_parallel_size > 1:
-            from paddle.distributed.fleet.meta_parallel import PipelineLayer
-
             _prepare_pipeline_inputs_func = getattr(self.model_wrapped, "_prepare_pipeline_inputs_func", None)
             # Only accept wrapped model for pipeline_parallel mode
             if self.model is self.model_wrapped and isinstance(self.model_wrapped, PipelineLayer):
