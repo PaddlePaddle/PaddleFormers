@@ -36,10 +36,6 @@ import yaml
 from create_and_check_model_generate import create_and_check_model_generate
 from prepare_datasets import prepare_all_datasets
 
-# =============================================================================
-# Global Constants
-# =============================================================================
-
 CONFIG_PATH = "./examples/config/"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
@@ -57,11 +53,6 @@ LOSS_TOLERANCE = 1e-10
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["FLAGS_embedding_deterministic"] = "1"
 os.environ["FLAGS_cudnn_deterministic"] = "1"
-
-
-# =============================================================================
-# Data Classes
-# =============================================================================
 
 
 @dataclass
@@ -100,11 +91,6 @@ class TrainingResult:
     log_file: str
 
 
-# =============================================================================
-# Custom YAML Dumper
-# =============================================================================
-
-
 class CompactListDumper(yaml.SafeDumper):
     """Custom YAML dumper that uses flow style for numeric lists."""
 
@@ -117,11 +103,6 @@ class CompactListDumper(yaml.SafeDumper):
     def ignore_aliases(self, data):
         """Disable YAML aliases for cleaner output."""
         return True
-
-
-# =============================================================================
-# Training Test Helper Class
-# =============================================================================
 
 
 class TrainTester:
@@ -497,11 +478,6 @@ class TrainTester:
             shutil.rmtree(checkpoint_path)
 
 
-# =============================================================================
-# Test Workflow Base Class
-# =============================================================================
-
-
 class BaseTrainingTest:
     """Base class for training test workflows.
 
@@ -674,20 +650,10 @@ class BaseTrainingTest:
             raise e
 
 
-# =============================================================================
-# Session-scoped Fixture for Dataset Preparation
-# =============================================================================
-
-
 @pytest.fixture(scope="session", autouse=True)
 def prepare_datasets_once():
     """Download all datasets once at the start of the test session."""
     prepare_all_datasets()
-
-
-# =============================================================================
-# Main Test Class
-# =============================================================================
 
 
 class TestTrain:
