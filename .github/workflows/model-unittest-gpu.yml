@@ -231,7 +231,7 @@ jobs:
           echo "work_dir = ${work_dir}"
           
           # Configure git auth for baseline update using PAT token
-          git remote set-url origin https://x-access-token:${PAT_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
+          git remote set-url origin https://${PAT_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
           
           # Use pre-parsed trigger mode variables
           echo "=== Trigger Mode: ${MODE} ==="
