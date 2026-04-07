@@ -298,7 +298,7 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
                     tmpdirname,
                     convert_from_hf=True,
                     load_checkpoint_format="flex_checkpoint",
-                    # num_nextn_predict_layers=0,
+                    num_nextn_predict_layers=0,
                 )
                 model_state_2 = model2.state_dict()
 
