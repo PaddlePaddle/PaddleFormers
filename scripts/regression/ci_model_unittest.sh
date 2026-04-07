@@ -88,7 +88,7 @@ set_env() {
         cd  ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_release_config/config.yaml 
         # update configs
-        python merge_configs.py --origin_config config_rd.yaml --update_config config.yaml
+        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
         cd -
     elif [[ "${FLAGS_enable_CE}" == "CE_Develop" ]];then
         echo "CE_Develop: install paddle develop + fleet develop + formers develop"
@@ -97,7 +97,7 @@ set_env() {
         cd  ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_develop_config/config.yaml 
         # update configs
-        python merge_configs.py --origin_config config_rd.yaml --update_config config.yaml
+        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
         cd -
     elif [[ "${FLAGS_enable_CI}" == "True" ]];then
         echo "CI: install paddle stable + fleet stable + formers"
@@ -106,7 +106,7 @@ set_env() {
         cd  ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_config/config.yaml 
         # update configs
-        python merge_configs.py --origin_config config_rd.yaml --update_config config.yaml
+        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
         cd -
 
     fi
