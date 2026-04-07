@@ -425,7 +425,7 @@ class MMapIndexedDataset(paddle.io.Dataset):
                 self._doc_count = struct.unpack("<Q", stream.read(8))[0]
                 offset = stream.tell()
 
-            if not skip_warmup:
+            if not skip_warmup and paddle.distributed.get_rank() == 0:
                 print_rank_0("    warming up index mmap file...")
                 _warmup_mmap_file(path)
 
@@ -493,8 +493,10 @@ class MMapIndexedDataset(paddle.io.Dataset):
         self._index = self.Index(index_file_path(self._path), skip_warmup)
 
         if not skip_warmup:
-            print_rank_0("    warming up data mmap file...")
-            _warmup_mmap_file(data_file_path(self._path))
+            if paddle.distributed.get_rank() == 0:  # need api check
+                print_rank_0("    warming up data mmap file...")
+                _warmup_mmap_file(data_file_path(self._path))
+            paddle.distributed.barrier()
         print_rank_0("    creating numpy buffer of mmap...")
         self._bin_buffer_mmap = np.memmap(data_file_path(self._path), mode="r", order="C")
         if os.path.exists(loss_mask_file_path(self._path)):
@@ -639,7 +641,7 @@ class SFTMMapIndexedDataset(paddle.io.Dataset):
                 self._doc_count = struct.unpack("<Q", stream.read(8))[0]
                 offset = stream.tell()
 
-            if not skip_warmup:
+            if not skip_warmup and paddle.distributed.get_rank() == 0:
                 print_rank_0("    warming up index mmap file...")
                 _warmup_mmap_file(path)
 
@@ -704,9 +706,11 @@ class SFTMMapIndexedDataset(paddle.io.Dataset):
 
         self._index = self.Index(sft_index_file_path(self._path), skip_warmup)
         if not skip_warmup:
-            print_rank_0("    warming up data mmap file...")
-            for data_file in sft_data_file_path(self._path, self._dataclass):
-                _warmup_mmap_file(data_file)
+            if paddle.distributed.get_rank() == 0:  # need api check
+                print_rank_0("    warming up data mmap file...")
+                for data_file in sft_data_file_path(self._path, self._dataclass):
+                    _warmup_mmap_file(data_file)
+            paddle.distributed.barrier()
         print_rank_0("    creating numpy buffer of mmap...")
 
         self._bin_buffer_mmap_dict = {}

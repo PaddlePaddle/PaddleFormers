@@ -44,11 +44,12 @@ def create_dataset(**dataset_config: Dict[str, Any]):
     return train_dataset
 
 
-def create_indexed_dataset(data_file_prefix):
+def create_indexed_dataset(data_file_prefix, skip_warmup=True):
     """Create indexed dataset from raw data files.
 
     Args:
         data_file_prefix (str): Path prefix for raw data files
+        skip_warmup (bool): Whether to skip the warmup process of mmap files
 
     Returns:
         IndexedDataset: Preprocessed dataset with memory-efficient indexing
@@ -60,5 +61,6 @@ def create_indexed_dataset(data_file_prefix):
     indexed_dataset = make_sft_indexed_dataset(
         path=data_file_prefix,
         dataclass=TextSequence,
+        skip_warmup=skip_warmup,
     )
     return indexed_dataset
