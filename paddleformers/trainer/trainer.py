@@ -3145,6 +3145,29 @@ class Trainer:
 
             optimizer_cls = AdamWCustom
             optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.MUON:
+            assert (
+                args.save_checkpoint_format == "flex_checkpoint" and args.load_checkpoint_format == "flex_checkpoint"
+            ), (
+                "Muon optimizer only supports flex_checkpoint. "
+                "Please set --save_checkpoint_format flex_checkpoint --load_checkpoint_format flex_checkpoint."
+            )
+            from paddle.optimizer import Muon
+
+            logger.info("Creating Muon optimizer")
+            muon_kwargs = {
+                **adam_kwargs,
+                "momentum": args.muon_momentum,
+                "muon_version": args.muon_version,
+                "muon_exclude_patterns": args.muon_exclude_patterns,
+                "muon_qkv_update_mode": args.muon_qkv_update_mode,
+                "muon_ffn_split": args.muon_ffn_split,
+                "muon_extra_scale_factor": args.muon_extra_scale_factor,
+                "ns_steps": args.muon_ns_steps,
+                "ns_coeff_type": args.muon_ns_coeff_type,
+            }
+            optimizer_cls = Muon
+            optimizer_kwargs.update(muon_kwargs)
         else:
             raise ValueError(f"Trainer cannot instantiate unsupported optimizer: {args.optim}")
 
