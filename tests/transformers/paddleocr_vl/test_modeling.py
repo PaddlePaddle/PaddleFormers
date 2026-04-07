@@ -440,9 +440,9 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 model = model_class(config)
                 model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
 
-                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="", config=config)
+                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=False, load_checkpoint_format="")
 
-                model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint", config=config)
+                model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
 
                 model_state_1 = model1.state_dict()
                 model_state_2 = model2.state_dict()

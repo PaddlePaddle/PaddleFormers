@@ -296,7 +296,7 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
                 model1.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
                 model2 = model_class.from_pretrained(
                     tmpdirname,
-                    convert_from_hf=True,
+                    convert_from_hf=False,
                     load_checkpoint_format="flex_checkpoint",
                     num_nextn_predict_layers=0,
                 )
@@ -305,12 +305,6 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
                 for k, v in model_state_2.items():
                     md52 = v._md5sum()
                     md51 = model_state_1[k]._md5sum()
-                    if md51 != md52:
-                        print(f"\n[DEBUG][qwen3next] MD5 mismatch on key: {k}")
-                        print(f"  model1 dtype={model_state_1[k].dtype}, shape={model_state_1[k].shape}, md5={md51}")
-                        print(f"  model2 dtype={model_state_2[k].dtype}, shape={model_state_2[k].shape}, md5={md52}")
-                        print(f"  model1 stats: min={float(model_state_1[k].cast('float32').min()):.6f}, max={float(model_state_1[k].cast('float32').max()):.6f}")
-                        print(f"  model2 stats: min={float(model_state_2[k].cast('float32').min()):.6f}, max={float(model_state_2[k].cast('float32').max()):.6f}")
                     assert md51 == md52
 
 

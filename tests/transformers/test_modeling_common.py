@@ -262,7 +262,7 @@ class ModelTesterMixin:
 
             with tempfile.TemporaryDirectory() as tmpdirname:
                 model.save_pretrained(tmpdirname, save_to_hf=False, save_checkpoint_format="")
-                model = model_class.from_pretrained(tmpdirname, convert_from_hf=False, load_checkpoint_format="", config=config)
+                model = model_class.from_pretrained(tmpdirname, convert_from_hf=False, load_checkpoint_format="")
                 model.eval()
                 with paddle.no_grad():
                     second = model(**self._prepare_for_class(inputs_dict, model_class))[0]
