@@ -202,6 +202,8 @@ jobs:
           echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
       - name: Test
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           # Use step outputs from previous step instead of env vars
           MODE="${{ steps.trigger_mode.outputs.mode }}"
@@ -215,7 +217,7 @@ jobs:
             -e UPDATE_BASELINE_MODELS="$UPDATE_BASELINE_MODELS" \
             -e TARGET_BRANCH="$TARGET_BRANCH" \
             -e PR_NUMBER="$PR_NUMBER" \
-            -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+            -e PAT_TOKEN="$PAT_TOKEN" \
             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
             $container_name /bin/bash <<-DOCKER_EOF
           ldconfig
@@ -224,10 +226,12 @@ jobs:
           set -e
           rm -rf /root/.cache/aistudio/
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
           echo "work_dir = ${work_dir}"
           
-          # Configure git auth for baseline update
-          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
+          # Configure git auth for baseline update using PAT token
+          git remote set-url origin https://x-access-token:${PAT_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
           
           # Use pre-parsed trigger mode variables
           echo "=== Trigger Mode: ${MODE} ==="
