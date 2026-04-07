@@ -391,23 +391,33 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
             with tempfile.TemporaryDirectory() as tmpdirname:
                 model1.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
 
-                # 检查保存的文件里 qkv_proj 的实际 shape，定位 bug 在 save 还是 load
-                import os
+                # 检查保存的文件里实际存了什么 key，以及 config.json 的内容
+                import os, json
+                # 1. 打印 config.json，确认是否写入了错误的配置
+                config_path = os.path.join(tmpdirname, "config.json")
+                if os.path.exists(config_path):
+                    with open(config_path) as f:
+                        cfg = json.load(f)
+                    print(f"\n[DEBUG][glm4_moe] config.json num_attention_heads={cfg.get('num_attention_heads', 'N/A')}")
+                    print(f"[DEBUG][glm4_moe] config.json num_key_value_heads={cfg.get('num_key_value_heads', 'N/A')}")
+                    print(f"[DEBUG][glm4_moe] config.json hidden_size={cfg.get('hidden_size', 'N/A')}")
+                    print(f"[DEBUG][glm4_moe] config.json head_dim={cfg.get('head_dim', 'N/A')}")
+                # 2. 打印 safetensors 里所有含 attn 的 key（不只是 qkv_proj，可能已被拆分）
                 saved_files = sorted([f for f in os.listdir(tmpdirname) if f.endswith(".safetensors") or f.endswith(".pdparams")])
-                print(f"\n[DEBUG][glm4_moe] saved files: {saved_files}")
+                print(f"[DEBUG][glm4_moe] saved files: {saved_files}")
                 for fname in saved_files:
                     fpath = os.path.join(tmpdirname, fname)
                     if fname.endswith(".safetensors"):
                         from safetensors import safe_open
                         with safe_open(fpath, framework="pt") as f:
                             for key in f.keys():
-                                if "qkv_proj" in key:
+                                if "attn" in key or "proj" in key:
                                     t = f.get_slice(key)[:]
                                     print(f"[DEBUG][glm4_moe] {fname}: {key} shape={list(t.shape)}")
                     elif fname.endswith(".pdparams"):
                         sd = paddle.load(fpath)
                         for key, val in sd.items():
-                            if "qkv_proj" in key:
+                            if "attn" in key or "proj" in key:
                                 print(f"[DEBUG][glm4_moe] {fname}: {key} shape={list(val.shape)}")
 
                 model2 = model_class.from_pretrained(

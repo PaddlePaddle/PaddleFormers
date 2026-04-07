@@ -440,9 +440,19 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 model = model_class(config)
                 model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
 
+                # 打印 config.json，确认保存的配置是否正确
+                import os, json as _json
+                config_path = os.path.join(tmpdirname, "config.json")
+                if os.path.exists(config_path):
+                    with open(config_path) as _f:
+                        _cfg = _json.load(_f)
+                    print(f"\n[DEBUG][paddleocr_vl] config used to create model: num_attention_heads={config.num_attention_heads}, num_key_value_heads={config.num_key_value_heads}, hidden_size={config.hidden_size}, head_dim={config.head_dim}")
+                    print(f"[DEBUG][paddleocr_vl] config.json written by save_pretrained: num_attention_heads={_cfg.get('num_attention_heads', 'N/A')}, num_key_value_heads={_cfg.get('num_key_value_heads', 'N/A')}, hidden_size={_cfg.get('hidden_size', 'N/A')}, head_dim={_cfg.get('head_dim', 'N/A')}")
+
                 model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="", config=config)
 
                 model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
+                print(f"[DEBUG][paddleocr_vl] model2.config: num_attention_heads={model2.config.num_attention_heads}, num_key_value_heads={model2.config.num_key_value_heads}, hidden_size={model2.config.hidden_size}, head_dim={model2.config.head_dim}")
 
                 model_state_1 = model1.state_dict()
                 model_state_2 = model2.state_dict()
@@ -450,6 +460,8 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 for k, v in model_state_1.items():
                     md51 = v._md5sum()
                     md52 = model_state_2[k]._md5sum()
+                    if md51 != md52:
+                        print(f"[DEBUG][paddleocr_vl] MD5 mismatch: {k} model1.shape={list(v.shape)} model2.shape={list(model_state_2[k].shape)}")
                     assert md51 == md52
 
 
