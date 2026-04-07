@@ -221,7 +221,7 @@ jobs:
           pip cache dir
           set -e
           rm -rf /root/.cache/aistudio/
-          ls 
+          cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
           # Use pre-parsed trigger mode variables
           echo "=== Trigger Mode: ${MODE} ==="
           echo "Update baseline: ${UPDATE_BASELINE_MODELS}"
