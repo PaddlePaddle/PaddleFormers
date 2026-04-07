@@ -93,3 +93,5 @@ save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
 
 router_aux_loss_coef: 0.0
+
+using_sonic_moe: true

@@ -151,6 +151,20 @@ jobs:
             -e GITHUB_RUN_ID="${{ github.run_id }}" \
             -e PR_USER="${{ github.event.pull_request.user.login }}" \
             -w /workspace --network host ${docker_image}
+      
+      - name: install miniconda
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          set -x
+          source /root/proxy
+          wget https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+          conda init bash
+          echo "conda installed"
+          conda create -n py312 python=3.12 -y
+          '
 
       - name: Install PaddleFormers
         id: formers_install
@@ -159,6 +173,8 @@ jobs:
           rm -rf * .[^.]*
           echo $PR_USER
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
@@ -198,6 +214,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/preprocess.sh
           preprocess_exit_code=$?
           if [[ "$preprocess_exit_code" != "0" ]]; then
@@ -214,6 +232,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_single_card.sh
           glm45_single_card_exit_code=$?
           if [[ "$glm45_single_card_exit_code" != "0" ]]; then
@@ -229,6 +249,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3_single_card.sh
           qwen3_single_card_exit_code=$?
           if [[ "$qwen3_single_card_exit_code" != "0" ]]; then
@@ -244,6 +266,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft_single_card.sh single
           exit_code=$?
           if [[ "$exit_code" != "0" ]]; then
@@ -305,6 +329,19 @@ jobs:
             -e PR_USER="${{ github.event.pull_request.user.login }}" \
             -w /workspace --network host ${docker_image}
 
+      - name: install miniconda
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          set -x
+          source /root/proxy
+          wget https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+          conda init bash
+          echo "conda installed"
+          conda create -n py312 python=3.12 -y
+          '
 
       - name: Install PaddleFormers
         id: formers_install
@@ -312,6 +349,8 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           rm -rf * .[^.]*
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
@@ -349,6 +388,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -364,6 +405,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_sft.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -379,6 +422,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_lora.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -394,6 +439,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_dpo.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -409,6 +456,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_dpo_lora.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -423,6 +472,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_ep4.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -438,6 +489,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_fp8.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -453,6 +506,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_grouped_gemm.sh
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -468,6 +523,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh pt
           '
         
@@ -476,6 +533,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh sft
           '
 
@@ -485,6 +544,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh lora
           '
 
@@ -493,6 +554,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 h20
           '
       
@@ -501,6 +564,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_lora.sh h20
           '
 
@@ -509,6 +574,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe h20
           '
       
@@ -517,6 +584,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
           '
 
@@ -570,12 +639,28 @@ jobs:
             -e PR_USER="${{ github.event.pull_request.user.login }}" \
             -w /workspace --network host ${docker_image}
 
+      - name: install miniconda
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          set -x
+          source /root/proxy
+          wget https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+          conda init bash
+          echo "conda installed"
+          conda create -n py312 python=3.12 -y
+          '
+
       - name: Install PaddleFormers
         id: formers_install
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           rm -rf * .[^.]*
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
@@ -614,6 +699,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh pt
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -629,6 +716,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh sft
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -644,6 +733,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh lora
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -659,6 +750,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh dpo
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -674,6 +767,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh dpo_lora
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
@@ -689,6 +784,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3_a100.sh pt
           '
         
@@ -697,6 +794,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3_a100.sh sft
           '
 
@@ -705,6 +804,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3_a100.sh lora
           '
 
@@ -713,6 +814,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 a100
           '
       
@@ -721,6 +824,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_lora.sh a100
           '
 
@@ -730,6 +835,8 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
+          source "$HOME/miniconda/etc/profile.d/conda.sh"
+          conda activate py312
           timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe a100
           '
 
