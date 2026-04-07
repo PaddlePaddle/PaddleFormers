@@ -489,7 +489,6 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_group_beam_search_generate(self):
         pass
 
-
     def test_greedy_generate(self):
         for model_class in self.all_generative_model_classes:
             config, inputs_dict = self.prepare_config_and_inputs_for_generate()
@@ -980,7 +979,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
                 )
             )
 
-    @parameterized.expand([("Qwen3VLForConditionalGeneration")])
+    @parameterized.expand(["Qwen3VLForConditionalGeneration"])
     @require_package("transformers", "torch")
     def test_Qwen3VL_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
         pytorch_class_name = pytorch_class_name or class_name

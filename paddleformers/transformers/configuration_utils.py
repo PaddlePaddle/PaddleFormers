@@ -1382,6 +1382,8 @@ class PretrainedConfig:
             del output["_auto_class"]
         if "moe_group" in output:
             del output["moe_group"]
+        if "_unsavable_keys" in output:
+            del output["_unsavable_keys"]
         if self._save_to_hf and "dtype" in output:
             output["torch_dtype"] = str(output["dtype"])
             del output["dtype"]
