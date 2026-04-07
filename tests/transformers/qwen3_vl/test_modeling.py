@@ -489,9 +489,6 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_group_beam_search_generate(self):
         pass
 
-    @unittest.skip("Qwen3-VL currently does not support checkpoints save and load")
-    def test_save_load(self):
-        pass
 
     def test_greedy_generate(self):
         for model_class in self.all_generative_model_classes:
@@ -517,7 +514,6 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
             else:
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
-    @unittest.skip("Qwen3-VL currently does not support checkpoints save and load")
     def test_save_load_flex_checkpoint(self):
         for model_class in self.all_model_classes:
             with tempfile.TemporaryDirectory() as tmpdirname:
@@ -538,9 +534,9 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                 model = model_class(config)
                 model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
 
-                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
+                model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, config=config)
 
-                model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
+                model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint", config=config)
 
                 model_state_1 = model1.state_dict()
                 model_state_2 = model2.state_dict()

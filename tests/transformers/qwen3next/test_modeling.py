@@ -280,7 +280,6 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_for_causal_lm(*config_and_inputs)
 
-    @unittest.skip("Qwen3Next currently does not support checkpoints save and load")
     def test_save_load(self):
         for model_class in self.all_model_classes:
             # test from_pretrained
@@ -306,6 +305,12 @@ class Qwen3NextModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
                 for k, v in model_state_2.items():
                     md52 = v._md5sum()
                     md51 = model_state_1[k]._md5sum()
+                    if md51 != md52:
+                        print(f"\n[DEBUG][qwen3next] MD5 mismatch on key: {k}")
+                        print(f"  model1 dtype={model_state_1[k].dtype}, shape={model_state_1[k].shape}, md5={md51}")
+                        print(f"  model2 dtype={model_state_2[k].dtype}, shape={model_state_2[k].shape}, md5={md52}")
+                        print(f"  model1 stats: min={float(model_state_1[k].cast('float32').min()):.6f}, max={float(model_state_1[k].cast('float32').max()):.6f}")
+                        print(f"  model2 stats: min={float(model_state_2[k].cast('float32').min()):.6f}, max={float(model_state_2[k].cast('float32').max()):.6f}")
                     assert md51 == md52
 
 

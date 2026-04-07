@@ -376,7 +376,6 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_model_name_list(self):
         pass
 
-    @unittest.skip("glm_moe currently does not support checkpoints save and load")
     def test_save_load(self):
         for model_class in self.all_model_classes:
             # test from_pretrained
@@ -405,6 +404,12 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                     if k.endswith(".mlp.gate.weight"):
                         md51 = model_state_1[k].cast("bfloat16")._md5sum()
                         md52 = model_state_2[k].cast("bfloat16")._md5sum()
+                    if md51 != md52:
+                        print(f"\n[DEBUG][glm4_moe] MD5 mismatch on key: {k}")
+                        print(f"  model1 dtype={model_state_1[k].dtype}, shape={model_state_1[k].shape}, md5={md51}")
+                        print(f"  model2 dtype={model_state_2[k].dtype}, shape={model_state_2[k].shape}, md5={md52}")
+                        print(f"  model1 stats: min={float(model_state_1[k].cast('float32').min()):.6f}, max={float(model_state_1[k].cast('float32').max()):.6f}")
+                        print(f"  model2 stats: min={float(model_state_2[k].cast('float32').min()):.6f}, max={float(model_state_2[k].cast('float32').max()):.6f}")
                     assert md51 == md52
 
     def test_hidden_states_output(self):
