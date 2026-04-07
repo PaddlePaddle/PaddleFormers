@@ -690,7 +690,10 @@ if __name__ == "__main__":
 
 ## 6.3 部署推理
 
-部署 PaddleOCR-VL 模型，请参考 [基于 FastDeploy / vLLM 部署模型](../../../docs/zh/deployment_guide.md)和 [FastDeploy - PaddleOCR-VL-0.9B Best Practices](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)
+部署 PaddleOCR-VL 模型，请参考 [基于 FastDeploy / vLLM 部署模型](../../../docs/zh/deployment_guide.md)和 [FastDeploy - PaddleOCR-VL-0.9B Best Practices](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)。
+
+特别地，如果需要基于 vLLM 部署推理 PaddleOCR-VL 模型，可以额外参考 vLLM 官方提供的[PaddleOCR-VL模型使用文档](https://docs.vllm.ai/projects/recipes/en/latest/PaddlePaddle/PaddleOCR-VL.html)。
+
 
 # 7. 更多硬件上的使用说明
 

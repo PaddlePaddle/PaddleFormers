@@ -1077,8 +1077,38 @@ if __name__ == "__main__":
 |PaddleOCR-VL-1.5RegionOCR-SFT (LoRA)|0.2031|
 
 ### 部署推理
-部署 PaddleOCR-VL-1.5 模型，请参考 [PaddleFormers - 模型部署文档](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/docs/zh/deployment_guide.md) 和 [FastDeploy - PaddleOCR-VL-0.9B Best Practices](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)。
 
+#### 基于 PaddleFormers/FastDeploy 部署推理
+基于 PaddleFormers/FastDeploy 部署推理 PaddleOCR-VL-1.5 模型，请参考 [PaddleFormers - 模型部署文档](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/docs/zh/deployment_guide.md) 和 [FastDeploy - PaddleOCR-VL-0.9B Best Practices](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)。
+
+#### 基于 vLLM 部署推理
+基于 vLLM 部署推理 PaddleOCR-VL-1.5 模型，请参考 vLLM 官方提供的[PaddleOCR-VL模型使用文档](https://docs.vllm.ai/projects/recipes/en/latest/PaddlePaddle/PaddleOCR-VL.html)。
+
+具体来说，首先需要通过 `uv` 或 `pip` 安装 vLLM:
+
+使用 `uv` 安装 vLLM：
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly --extra-index-url https://download.pytorch.org/whl/cu129 --index-strategy unsafe-best-match
+```
+
+使用 `pip` 安装 vLLM：
+```bash
+pip install vllm>=0.11.1
+```
+
+安装完成后，基于 `vllm serve` 启动 vllm 服务，例如：
+
+```bash
+vllm serve MODEL_PATH \  # 需要部署的模型权重路径
+    --tensor-parallel-size 1 \
+    --trust-remote-code \
+    --host xxx.xxx.xxx.xxx \  # 填入用于部署机器的ip
+    --port xxxx  # 填入用于访问vLLM服务的端口
+```
+
+以上是示例脚本，具体启动时需要根据需求基于**PaddleOCR-VL模型使用文档**设置启动命令，并基于文档编写代码，调用 vLLM 服务进行推理。
 
 
 ## 注意事项

@@ -98,6 +98,12 @@ tar -xvf complex_table_dataset.tar -C ./complex_table
 
 如果您想要基于自己的数据集进行训练，请参考 [PaddleFormers - 数据集格式文档](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/docs/zh/dataset_format.md#24-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8C%87%E4%BB%A4%E5%BE%AE%E8%B0%83sft%E6%95%B0%E6%8D%AE%E6%A0%BC%E5%BC%8F) 准备数据。
 
+具体来说，在表格识别任务中，处理原始表格获得微调数据需要如下步骤：
+- 准备待训练的表格图像集，并对每张表格图像进行标注，标注内容只需包含表格结构和单元格文本（及内部换行、公式等），无需带有表格样式信息（如CSS样式）：
+  - 若表格标注为HTML等其他格式，则需要将其转换为OTSL格式；
+  - 若表格标注已是OTSL格式，则无需再进行格式转换。
+- 将表格图像、OTSL格式标注构建为训练格式数据集，完成微调数据构建。
+
 
 
 ## 训练配置
@@ -699,7 +705,38 @@ td, th {
 |PaddleOCR-VL-1.5-<br>Table-SFT (LoRA)|0.9909|0.9703|0.9872|0.9687|
 
 ### 部署推理
-部署 PaddleOCR-VL-1.5 模型，请参考 [PaddleFormers - 模型部署文档](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/docs/zh/deployment_guide.md) 和 [FastDeploy - PaddleOCR-VL-0.9B Best Practices](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)
+
+#### 基于 PaddleFormers/FastDeploy 部署推理
+基于 PaddleFormers/FastDeploy 部署推理 PaddleOCR-VL-1.5 模型，请参考 [PaddleFormers - 模型部署文档](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/docs/zh/deployment_guide.md) 和 [FastDeploy - PaddleOCR-VL-0.9B Best Practices](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)。
+
+#### 基于 vLLM 部署推理
+基于 vLLM 部署推理 PaddleOCR-VL-1.5 模型，请参考 vLLM 官方提供的[PaddleOCR-VL模型使用文档](https://docs.vllm.ai/projects/recipes/en/latest/PaddlePaddle/PaddleOCR-VL.html)。
+
+具体来说，首先需要通过 `uv` 或 `pip` 安装 vLLM:
+
+使用 `uv` 安装 vLLM：
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly --extra-index-url https://download.pytorch.org/whl/cu129 --index-strategy unsafe-best-match
+```
+
+使用 `pip` 安装 vLLM：
+```bash
+pip install vllm>=0.11.1
+```
+
+安装完成后，基于 `vllm serve` 启动 vllm 服务，例如：
+
+```bash
+vllm serve MODEL_PATH \  # 需要部署的模型权重路径
+    --tensor-parallel-size 1 \
+    --trust-remote-code \
+    --host xxx.xxx.xxx.xxx \  # 填入用于部署机器的ip
+    --port xxxx  # 填入用于访问vLLM服务的端口
+```
+
+以上是示例脚本，具体启动时需要根据需求基于**PaddleOCR-VL模型使用文档**设置启动命令，并基于文档编写代码，调用 vLLM 服务进行推理。
 
 
 
