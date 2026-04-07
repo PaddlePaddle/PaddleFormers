@@ -24,6 +24,9 @@ from parameterized import parameterized
 
 from paddleformers.peft.lora import LoRAConfig, LoRALinear, LoRAModel
 from paddleformers.transformers import AutoModelForCausalLM, Glm4MoeModel
+from paddleformers.transformers import (
+    Qwen3VLMoeForConditionalGenerationDeprecated as Qwen3VLMoeForConditionalGeneration,
+)
 
 from ..testing_utils import gpu_device_initializer
 
@@ -190,6 +193,76 @@ class TestLoraModel(unittest.TestCase):
             if any(target in k for target in ["qkv_proj"]):
                 lora_A_key = k.replace("weight", "lora_A")
                 lora_B_key = k.replace("weight", "lora_B")
+
+                lora_A_tensor = lora_model.model.state_dict()[lora_A_key]
+                lora_B_tensor = lora_model.model.state_dict()[lora_B_key]
+                expected_merged = orig_weight + lora_A_tensor @ lora_B_tensor * scaling
+
+                self.assertTrue(
+                    paddle.allclose(merged_weight, expected_merged, atol=1e-5), f"Merged weight mismatch in {k}"
+                )
+            else:
+                self.assertTrue(
+                    paddle.equal_all(merged_weight, orig_weight).item(), f"Non-LoRA weight should be unchanged in {k}"
+                )
+
+        try:
+            merge_state_dict_offload = lora_model.get_merge_state_dict(offload=True)
+            for tensor in merge_state_dict_offload.values():
+                self.assertIsInstance(tensor, paddle.Tensor)
+        except Exception as e:
+            self.fail(f"get_merge_state_dict(offload=True) raised an exception: {e}")
+
+    def test_fuse_moe_lora(self):
+        lora_config = LoRAConfig(
+            target_modules=[
+                "model.language_model.*mlp.experts",
+            ],
+            r=4,
+            lora_alpha=8,
+        )
+        model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
+            "PaddleFormers/tiny-random-qwen3vlmoev2",
+            dtype="float32",
+            load_checkpoint_format="flex_checkpoint",
+        )
+        lora_model = LoRAModel(model, lora_config)
+        lora_model.eval()
+        lora_model.merge()
+        lora_model.unmerge()
+
+        with TemporaryDirectory() as tempdir:
+            input_ids = paddle.to_tensor(np.random.randint(100, 200, [1, 20]))
+            original_results = lora_model(input_ids)
+            lora_model.save_pretrained(tempdir)
+
+            loaded_lora_model = LoRAModel.from_pretrained(model, tempdir)
+            loaded_lora_model.eval()
+            loaded_results = loaded_lora_model(input_ids)
+            self.assertTrue(paddle.allclose(original_results[0], loaded_results[0]))
+
+            config_loaded_lora_model = LoRAModel.from_pretrained(model, tempdir, lora_config=lora_config)
+            config_loaded_lora_model.eval()
+            config_loaded_results = config_loaded_lora_model(input_ids)
+            self.assertTrue(paddle.allclose(original_results[0], config_loaded_results[0]))
+
+        original_state_dict = {k: v.clone() for k, v in model.state_dict().items() if "lora" not in k}
+
+        merge_state_dict = lora_model.get_merge_state_dict(offload=False)
+
+        self.assertEqual(set(merge_state_dict.keys()), set(original_state_dict.keys()))
+
+        scaling = lora_config.lora_alpha / lora_config.r
+
+        for k in original_state_dict:
+            orig_weight = original_state_dict[k]
+            merged_weight = merge_state_dict[k]
+
+            self.assertIsInstance(merged_weight, paddle.Tensor)
+
+            if any(target in k for target in ["experts"]):
+                lora_A_key = k + "_lora_A"
+                lora_B_key = k + "_lora_B"
 
                 lora_A_tensor = lora_model.model.state_dict()[lora_A_key]
                 lora_B_tensor = lora_model.model.state_dict()[lora_B_key]

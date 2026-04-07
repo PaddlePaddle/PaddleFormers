@@ -65,7 +65,6 @@ from paddleformers.transformers.configuration_utils import (
     LlmMetaConfig,
     QuantizationConfig,
 )
-from paddleformers.utils.import_utils import is_paddlefleet_available
 from paddleformers.utils.log import logger
 
 from .make_data_utils import DataGenerator
@@ -214,9 +213,6 @@ def run_sft(
     training_args.model_name_or_path = model_args.model_name_or_path
     training_args.download_hub = model_args.download_hub
     training_args.copy_custom_file_list = model_args.copy_custom_file_list
-    if is_paddlefleet_available() and model_args.lora and training_args.moe_token_dispatcher_type == "deepep":
-        logger.warning("For PaddleFleet, moe_use_fusion_node should False when using LoRA.")
-        training_args.moe_use_fusion_node = False
 
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
@@ -441,7 +437,6 @@ def run_sft(
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
         "dataset_type": data_args.dataset_type,
-        "truncation_strategy": data_args.truncation_strategy,
         "dtype": compute_type,
         "dataset_num_proc": finetuning_args.dataset_num_proc,
         "binpacking": data_args.binpacking,
@@ -450,6 +445,7 @@ def run_sft(
         "template": data_args.template,
         "tool_format": None,
         "default_system": None,
+        "truncation_strategy": data_args.truncation_strategy,
     }
 
     if dataset_config["template_backend"] == "custom":

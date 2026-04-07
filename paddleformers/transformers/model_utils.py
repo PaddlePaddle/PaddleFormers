@@ -2443,9 +2443,9 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     state_dict,
                     config,
                     loaded_keys,
-                    pre_tensor_parallel_split=True
-                    if config is not None and config.tensor_model_parallel_size > 1
-                    else False,
+                    pre_tensor_parallel_split=(
+                        True if config is not None and config.tensor_model_parallel_size > 1 else False
+                    ),
                 )
                 missing_keys = list(set(missing_keys) - set(new_keys))
                 unexpected_keys = list(set(unexpected_keys) - set(fused_keys))
@@ -2573,13 +2573,15 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     state_dict = load_state_dict(
                         shard_file,
                         tp_actions if pre_tensor_parallel_split else None,
-                        {
-                            reverse_key_renaming_mapping[key]
-                            for key in filter_dict_keys
-                            if key in reverse_key_renaming_mapping
-                        }
-                        if key_mapping is not None
-                        else filter_dict_keys,
+                        (
+                            {
+                                reverse_key_renaming_mapping[key]
+                                for key in filter_dict_keys
+                                if key in reverse_key_renaming_mapping
+                            }
+                            if key_mapping is not None
+                            else filter_dict_keys
+                        ),
                         convert_from_hf=convert_from_hf,
                         transpose_weight_keys=cls.transpose_weight_keys,
                     )
@@ -2840,10 +2842,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
 
         config.dtype = dtype
 
-        if config.moe_grouped_gemm and config.is_lora:
-            logger.info("Lora doesn't support moe_grouped_gemm, moe_grouped_gemm is set to False.")
-            config.moe_grouped_gemm = False
-
         init_contexts = []
         if low_cpu_mem_usage or config.quantization_config.is_weight_quantize():
             # Instantiate model.
@@ -2920,9 +2918,11 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 logger.error(f"Failed to delete {metadata_path}: {e}")
 
             # change dtype in aoa
-            if dtype is not None:
+            # Skip identity dtype mapping for fleet models — fleet state_dict keys
+            # (e.g. model.visual._layers.0.xxx) differ from HF checkpoint keys,
+            # and _gen_aoa_config already handles critical dtype specs (e.g. gate.weight -> float32)
+            if dtype is not None and not getattr(cls, "is_fleet", False):
                 for key in model.state_dict().keys():
-                    # keep fp32
                     if model.state_dict()[key].dtype == paddle.float32:
                         aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='float32'")
                     else:

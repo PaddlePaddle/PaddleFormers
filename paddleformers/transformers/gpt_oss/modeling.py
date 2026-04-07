@@ -23,6 +23,7 @@ from paddle.nn import functional as F
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
+from ...nn.experts import MoeExperts
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.norm import Norm as GeneralNorm
@@ -76,27 +77,17 @@ def _expand_2d_mask(mask, dtype, tgt_length):
     return expanded_mask
 
 
-class GptOssExperts(nn.Layer):
+class GptOssExperts(MoeExperts):
     def __init__(self, config):
-        super().__init__()
+        super().__init__(config)
         self.intermediate_size = config.intermediate_size
         self.sequence_parallel = config.sequence_parallel
         self.num_experts = config.num_experts
         self.hidden_size = config.hidden_size
         self.expert_dim = self.intermediate_size
 
-        self.gate_up_proj = paddle.create_parameter(
-            shape=[self.num_experts, self.hidden_size, 2 * self.expert_dim],
-            dtype=paddle.get_default_dtype(),
-            default_initializer=paddle.nn.initializer.Uniform(),
-        )
         self.gate_up_proj_bias = paddle.create_parameter(
             shape=[self.num_experts, 2 * self.expert_dim],
-            dtype=paddle.get_default_dtype(),
-            default_initializer=paddle.nn.initializer.Uniform(),
-        )
-        self.down_proj = paddle.create_parameter(
-            shape=[self.num_experts, self.expert_dim, self.hidden_size],
             dtype=paddle.get_default_dtype(),
             default_initializer=paddle.nn.initializer.Uniform(),
         )

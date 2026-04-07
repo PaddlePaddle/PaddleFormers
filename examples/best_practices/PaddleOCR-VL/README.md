@@ -433,7 +433,7 @@ with paddle.no_grad():
 
     output_text = processor.decode(output_ids, skip_special_tokens=True)
 
-print(output_text[0])
+print(output_text)
 
 # GT = নট চলল রফযনর পঠ সওযর\nহয গলয গলয ভব এখন দটত, মঝ মঝ খবর নয যদও লগ যয\nঝগড\nদরগর কছ চল এল
 # Excepted Answer = নট চলল রফযনর পঠ সওযর\nহয গলয গলয ভব এখন দটত, মঝ মঝ খবর নয যদও লগ যয\nঝগড\nদরগর কছ চল এল
@@ -610,7 +610,7 @@ def main():
             }
         ]
         output = generate_response(model, processor, messages, args.max_length)
-        sample["answer"] = output[0]
+        sample["answer"] = output
         sample["label"] = sample["messages"][1]["content"]
 
         results.append(sample)
