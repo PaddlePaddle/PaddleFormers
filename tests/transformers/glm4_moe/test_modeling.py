@@ -390,13 +390,38 @@ class Glm4MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
             # test save_pretrained
             with tempfile.TemporaryDirectory() as tmpdirname:
                 model1.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+
+                # 检查保存的文件里 qkv_proj 的实际 shape，定位 bug 在 save 还是 load
+                import os
+                saved_files = sorted([f for f in os.listdir(tmpdirname) if f.endswith(".safetensors") or f.endswith(".pdparams")])
+                print(f"\n[DEBUG][glm4_moe] saved files: {saved_files}")
+                for fname in saved_files:
+                    fpath = os.path.join(tmpdirname, fname)
+                    if fname.endswith(".safetensors"):
+                        from safetensors import safe_open
+                        with safe_open(fpath, framework="pt") as f:
+                            for key in f.keys():
+                                if "qkv_proj" in key:
+                                    t = f.get_slice(key)[:]
+                                    print(f"[DEBUG][glm4_moe] {fname}: {key} shape={list(t.shape)}")
+                    elif fname.endswith(".pdparams"):
+                        sd = paddle.load(fpath)
+                        for key, val in sd.items():
+                            if "qkv_proj" in key:
+                                print(f"[DEBUG][glm4_moe] {fname}: {key} shape={list(val.shape)}")
+
                 model2 = model_class.from_pretrained(
                     tmpdirname,
-                    convert_from_hf=False,
+                    convert_from_hf=True,
                     load_checkpoint_format="flex_checkpoint",
-                    num_nextn_predict_layers=0,
+                    # num_nextn_predict_layers=0,
                 )
                 model_state_2 = model2.state_dict()
+
+                print(f"[DEBUG][glm4_moe] model1 qkv shape={list(model_state_1['layers.0.self_attn.qkv_proj.weight'].shape)}")
+                print(f"[DEBUG][glm4_moe] model2 qkv shape={list(model_state_2['layers.0.self_attn.qkv_proj.weight'].shape)}")
+                print(f"[DEBUG][glm4_moe] model1.config.tensor_model_parallel_size={getattr(model1.config, 'tensor_model_parallel_size', 'N/A')}")
+                print(f"[DEBUG][glm4_moe] model2.config.tensor_model_parallel_size={getattr(model2.config, 'tensor_model_parallel_size', 'N/A')}")
 
                 for k, v in model_state_2.items():
                     md52 = v._md5sum()
