@@ -24,7 +24,6 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
     @classmethod
     def _gen_aoa_config(cls, config: MiniMaxM2Config):
         model_prefix = "model."  # "" if cls == cls.base_model_class else
-        is_fleet = getattr(cls, "is_fleet", False)
         using_sonic_moe = config.using_sonic_moe
         if hasattr(config, "n_routed_experts"):
             num_experts = config.n_routed_experts
@@ -35,18 +34,14 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"model.norm.weight -> {model_prefix}norm.weight",
             ]
         }
-        if is_fleet:
-            aoa_config["aoa_statements"] += [
-                f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
-            ]
-            if config.tie_word_embeddings:
-                aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}lm_head.weight"]
-            else:
-                aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}lm_head.weight"]
+
+        aoa_config["aoa_statements"] += [
+            f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
+        ]
+        if config.tie_word_embeddings:
+            aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}lm_head.weight"]
         else:
-            aoa_config["aoa_statements"] += [
-                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
-            ]
+            aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}lm_head.weight"]
 
         num_hidden_layers = config.num_hidden_layers
         num_head_empty_layers = (
@@ -123,22 +118,16 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 ]
 
             for expert_id in range(config.n_routed_experts):
-                if is_fleet:
-                    if using_sonic_moe:
-                        aoa_config["aoa_statements"] += [
-                            f"{prefix}.block_sparse_moe.experts.{expert_id}.w1.weight, {prefix}.block_sparse_moe.experts.{expert_id}.w3.weight -> {prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight, axis=0",
-                        ]
-                    else:
-                        aoa_config["aoa_statements"] += [
-                            f"{prefix}.block_sparse_moe.experts.{expert_id}.w1.weight^T, {prefix}.block_sparse_moe.experts.{expert_id}.w3.weight^T -> {prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight, fused_ffn",
-                        ]
-
+                if using_sonic_moe:
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.block_sparse_moe.experts.{expert_id}.w1.weight, {prefix}.block_sparse_moe.experts.{expert_id}.w3.weight -> {prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight, axis=0",
+                    ]
                 else:
                     aoa_config["aoa_statements"] += [
-                        f"{prefix}.block_sparse_moe.experts.{expert_id}.w1.weight^T, {prefix}.block_sparse_moe.experts.{expert_id}.w3.weight^T -> {prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight, fused_ffn",
+                        f"{prefix}.block_sparse_moe.experts.{expert_id}.w1.weight^T, {prefix}.block_sparse_moe.experts.{expert_id}.w3.weight^T -> {prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight, axis=1",
                     ]
 
-            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
+            if (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(num_experts):
@@ -171,7 +160,6 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
     def _gen_inv_aoa_config(cls, config: MiniMaxM2Config):
         model_prefix = "" if cls == cls.base_model_class else "model."
         using_sonic_moe = config.using_sonic_moe
-        is_fleet = getattr(cls, "is_fleet", False)
         if hasattr(config, "n_routed_experts"):
             num_experts = config.n_routed_experts
         else:
@@ -180,18 +168,14 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             f"{model_prefix}norm.weight -> model.norm.weight",
         ]
 
-        if is_fleet:
-            aoa_statements += [
-                "model.embedding.embed_tokens.weight -> model.embed_tokens.weight",
-            ]
-            if config.tie_word_embeddings:
-                aoa_statements += [f"{model_prefix}lm_head.weight -> _"]
-            else:
-                aoa_statements += [f"{model_prefix}lm_head.weight -> lm_head.weight"]
+        aoa_statements += [
+            "model.embedding.embed_tokens.weight -> model.embed_tokens.weight",
+        ]
+        if config.tie_word_embeddings:
+            aoa_statements += [f"{model_prefix}lm_head.weight -> _"]
         else:
-            aoa_statements += [
-                f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
-            ]
+            aoa_statements += [f"{model_prefix}lm_head.weight -> lm_head.weight"]
+
         num_hidden_layers = config.num_hidden_layers
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
@@ -254,7 +238,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 # for mtp
                 prefix_offset += ".transformer_layer"
 
-            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
+            if (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
@@ -287,23 +271,17 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.block_sparse_moe.e_score_correction_bias",
             ]
 
-            # f"{prefix}.block_sparse_moe.experts.{expert_id}.w1.weight
-            if is_fleet:
-                if using_sonic_moe:
-                    aoa_statements += [
-                        f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.block_sparse_moe.experts.{expert_id}.w1.weight, {prefix_offset}.block_sparse_moe.experts.{expert_id}.w3.weight, axis=0"
-                        for expert_id in range(config.n_routed_experts)
-                    ]
-                else:
-                    aoa_statements += [
-                        f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.block_sparse_moe.experts.{expert_id}.w1.weight, {prefix_offset}.block_sparse_moe.experts.{expert_id}.w3.weight, axis=1"
-                        for expert_id in range(config.n_routed_experts)
-                    ]
-            else:
+            if using_sonic_moe:
                 aoa_statements += [
-                    f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix}.block_sparse_moe.experts.{expert_id}.w1.weight, {prefix}.block_sparse_moe.experts.{expert_id}.w3.weight, fused_ffn"
+                    f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.block_sparse_moe.experts.{expert_id}.w1.weight, {prefix_offset}.block_sparse_moe.experts.{expert_id}.w3.weight, axis=0"
                     for expert_id in range(config.n_routed_experts)
                 ]
+            else:
+                aoa_statements += [
+                    f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight -> {prefix_offset}.block_sparse_moe.experts.{expert_id}.w1.weight, {prefix_offset}.block_sparse_moe.experts.{expert_id}.w3.weight, axis=1"
+                    for expert_id in range(config.n_routed_experts)
+                ]
+
             if not using_sonic_moe:
                 aoa_statements += (
                     [
