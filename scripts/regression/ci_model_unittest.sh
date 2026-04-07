@@ -85,7 +85,7 @@ set_env() {
         echo "CE_Release: install paddle release + fleet release + formers release"
         install_requirements "${release}"
         # donwload configs
-        cd  ./scripts/regression
+        cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_release_config/config.yaml 
         # update configs
         python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
@@ -94,7 +94,7 @@ set_env() {
         echo "CE_Develop: install paddle develop + fleet develop + formers develop"
         install_requirements "${develop}"
         # donwload configs
-        cd  ./scripts/regression
+        cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_develop_config/config.yaml 
         # update configs
         python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
@@ -103,7 +103,7 @@ set_env() {
         echo "CI: install paddle stable + fleet stable + formers"
         install_requirements
         # donwload configs
-        cd  ./scripts/regression
+        cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_config/config.yaml 
         # update configs
         python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
