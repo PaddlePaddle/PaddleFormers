@@ -126,7 +126,6 @@ class MultiSourceDataset(IterableDataset):
                     file_path=task["filepath"],
                     file_type=task["type"],
                     file_samplenum=task["sampling_number"],
-                    shuffle_file=dataset_config["random_shuffle"],
                     split_multi_turn=dataset_config.get("split_multi_turn", False),
                     template_backend=dataset_config.get("template_backend", "jinja"),
                 )
@@ -135,7 +134,6 @@ class MultiSourceDataset(IterableDataset):
                     file_path=task["filepath"],
                     file_type=task["type"],
                     file_samplenum=task["sampling_number"],
-                    shuffle_file=dataset_config["random_shuffle"],
                     split_multi_turn=dataset_config.get("split_multi_turn", False),
                     template_backend=dataset_config.get("template_backend", "jinja"),
                 )
@@ -144,7 +142,6 @@ class MultiSourceDataset(IterableDataset):
                     file_path=task["filepath"],
                     file_type=task["type"],
                     file_samplenum=task["sampling_number"],
-                    shuffle_file=dataset_config["random_shuffle"],
                     split_multi_turn=dataset_config.get("split_multi_turn", False),
                     template_backend=dataset_config.get("template_backend", "jinja"),
                 )
