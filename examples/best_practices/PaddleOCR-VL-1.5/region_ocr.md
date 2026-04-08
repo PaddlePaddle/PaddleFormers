@@ -1107,7 +1107,7 @@ vllm serve {MODEL_PATH} \  # 微调后模型的本地存储路径
 通过微调后模型的路径启动 vLLM 服务后，vLLM 会加载路径下的**模型权重**和**对话模板**，其他可调整参数请参考[PaddleOCR-VL模型使用文档](https://docs.vllm.ai/projects/recipes/en/latest/PaddlePaddle/PaddleOCR-VL.html)和[vLLM官方文档](https://docs.vllm.ai/en/latest/usage)，并基于文档编写代码，调用 vLLM 服务进行推理。
 
 
-除此之外，如果需要结合前置版面分析模型进行推理，请参考[PaddleOCR官方文档](https://www.paddleocr.ai/latest/version3.x/pipeline_usage/PaddleOCR-VL.html#22-python)使用产线进行推理，并在实例化产线对象时指定版面分析模型、推理服务URL等信息。
+除此之外，如果需要结合前置版面区域检测排序模型进行推理，请参考[PaddleOCR官方文档](https://www.paddleocr.ai/latest/version3.x/pipeline_usage/PaddleOCR-VL.html#22-python)使用产线进行推理，并在实例化产线对象时指定版面区域检测排序模型、推理服务URL等信息。
 
 
 ## 注意事项
