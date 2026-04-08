@@ -1,9 +1,9 @@
 # 2机 * 8卡
 train_dataset_type: messages
 eval_dataset_type: messages
-train_dataset_path: data/sft/train_messages.jsonl
+train_dataset_path: /root/paddlejob/workspace/env_run/data/sft/train_messages.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: data/sft/eval_messages.jsonl
+eval_dataset_path: /root/paddlejob/workspace/env_run/data/sft/eval_messages.jsonl
 eval_dataset_prob: "1.0"
 
 max_seq_len: 4096
@@ -15,7 +15,7 @@ truncate_packing: false
 padding_free: true
 
 ### model
-model_name_or_path: glm45_air_clip_ckpt
+model_name_or_path: /root/paddlejob/workspace/env_run/glm45_air_clip_ckpt
 _attn_implementation: flashmask
 
 ### finetuning
@@ -28,18 +28,18 @@ do_eval: false
 per_device_eval_batch_size: 1
 per_device_train_batch_size: 1
 num_train_epochs: 1
-max_steps: 10
+max_steps: 100
 eval_iters: 1000
 eval_steps: 1000000
 evaluation_strategy: steps
-save_steps: 50
+save_steps: 10
 save_hf_steps: 50
 save_strategy: steps
 
 logging_steps: 1
 gradient_accumulation_steps: 16
 logging_dir: ./vdl_log
-output_dir: ./outputs
+output_dir: ./output/ckpt_path/
 disable_tqdm: true
 eval_accumulation_steps: 16
 
@@ -80,6 +80,8 @@ overlap_p2p_comm: true
 variable_seq_lengths: true
 best_unbalanced_scheduler: true
 pp_release_grads: true
+pp_delay_scale_loss: true
+tp_delay_scale_loss: True
 
 amp_master_grad: true
 bf16: true

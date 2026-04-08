@@ -129,6 +129,9 @@ class TrainerState:
         if self.log_history is None:
             self.log_history = []
 
+    def save(self, path):
+        paddle.save(self, path)
+
     def save_to_json(self, json_path: str):
         """Save the content of this instance in JSON format inside `json_path`."""
         json_string = json.dumps(dataclasses.asdict(self), indent=2, sort_keys=True) + "\n"
@@ -141,6 +144,12 @@ class TrainerState:
         with open(json_path, "r", encoding="utf-8") as f:
             text = f.read()
         return cls(**json.loads(text))
+
+    @classmethod
+    def load(cls, path):
+        """Load an instance from a file saved with `paddle.save`."""
+        state = paddle.load(path)
+        return state
 
 
 @dataclass

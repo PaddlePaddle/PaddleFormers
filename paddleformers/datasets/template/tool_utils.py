@@ -70,6 +70,19 @@ GLM4_MOE_TOOL_PROMPT = (
     "\n...\n</tool_call>\n"
 )
 
+# GLM_5 template (no \n separators in tool_call format)
+GLM_5_TOOL_PROMPT = (
+    "\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\n"
+    "You are provided with function signatures within <tools></tools> XML tags:\n<tools>{tool_text}"
+    "\n</tools>\n\nFor each function call, output the function name and arguments within the following XML format:"
+    "\n<tool_call>{{function-name}}"
+    "<arg_key>{{arg-key-1}}</arg_key>"
+    "<arg_value>{{arg-value-1}}</arg_value>"
+    "<arg_key>{{arg-key-2}}</arg_key>"
+    "<arg_value>{{arg-value-2}}</arg_value>"
+    "...</tool_call>"
+)
+
 LLAMA3_TOOL_PROMPT = (
     "Cutting Knowledge Date: December 2023\nToday Date: {date}\n\n"
     "You have access to the following functions. To call a function, please respond with JSON for a function call. "
@@ -218,6 +231,39 @@ class GLM4MOEToolUtils(QwenToolUtils):
         return "\n".join(function_texts)
 
 
+class GLM_5ToolUtils(QwenToolUtils):
+    r"""GLM-4.7/GLM-5 tool using template (GLM_5 style without \n separators)."""
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        tool_text = ""
+        for tool in tools:
+            wrapped_tool = tool if tool.get("type") == "function" else {"type": "function", "function": tool}
+            tool_text += "\n" + json.dumps(wrapped_tool, ensure_ascii=False)
+
+        return GLM_5_TOOL_PROMPT.format(tool_text=tool_text)
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        function_json = [
+            {"func_name": name, "func_key_values": json.loads(arguments)} for name, arguments in functions
+        ]
+        function_texts = []
+        for func in function_json:
+            prompt = "<tool_call>" + func["func_name"]
+            for key, value in func["func_key_values"].items():
+                prompt += "<arg_key>" + key + "</arg_key>"
+                if not isinstance(value, str):
+                    value = json.dumps(value, ensure_ascii=False)
+                prompt += "<arg_value>" + value + "</arg_value>"
+            prompt += "</tool_call>"
+            function_texts.append(prompt)
+
+        return "".join(function_texts)
+
+
 class Llama3ToolUtils(ToolUtils):
     r"""Llama 3.x tool using template with `tools_in_user_message=False`.
 
@@ -298,6 +344,7 @@ TOOLS = {
     "qwen3_5": QwenToolUtils(),
     "glm4": GLM4ToolUtils(),
     "glm4_moe": GLM4MOEToolUtils(),
+    "glm_moe_dsa": GLM_5ToolUtils(),
     "llama3": Llama3ToolUtils(),
 }
 
