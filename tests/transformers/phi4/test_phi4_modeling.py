@@ -145,7 +145,7 @@ class TestPhi4InferenceUseHf(unittest.TestCase):
         self.assertIsInstance(response, str)
         self.assertGreater(len(response), 0)
         print(f"\n{'=' * 60}")
-        print(f"Input: What is the capital of China?")
+        print("Input: What is the capital of China?")
         print(f"{'=' * 60}")
         print(f"Output:\n{response}")
         print(f"{'=' * 60}")
@@ -206,7 +206,7 @@ class TestPhi4InferenceUsePaddle(unittest.TestCase):
         self.assertIsInstance(response, str)
         self.assertGreater(len(response), 0)
         print(f"\n{'=' * 60}")
-        print(f"Input: What is the capital of China?")
+        print("Input: What is the capital of China?")
         print(f"{'=' * 60}")
         print(f"Output:\n{response}")
         print(f"{'=' * 60}")
@@ -238,7 +238,7 @@ class TestPhi4InferenceUsePaddle(unittest.TestCase):
 
         response = self.tokenizer.decode(generated, skip_special_tokens=True)
         print(f"\n{'=' * 60}")
-        print(f"[manual greedy, use_cache=False, 30 steps]")
+        print("[manual greedy, use_cache=False, 30 steps]")
         print(f"token ids: {generated}")
         print(f"Output:\n{response}")
         print(f"{'=' * 60}")
@@ -280,7 +280,7 @@ class TestPhi4InferenceUsePaddle(unittest.TestCase):
 
         response = self.tokenizer.decode(generated, skip_special_tokens=True)
         print(f"\n{'=' * 60}")
-        print(f"[manual greedy, use_cache=True, 30 steps]")
+        print("[manual greedy, use_cache=True, 30 steps]")
         print(f"token ids: {generated}")
         print(f"Output:\n{response}")
         print(f"{'=' * 60}")
@@ -291,7 +291,7 @@ class TestPhi4InferenceUsePaddle(unittest.TestCase):
 
 因为手动编译的cuda算子的差异，导致在多层网络的累加误差之下，无法在最后一层实现对齐，目前只能做到：
 
-1. 在 第一层的输出中，实现 0.000793 的平均误差； 
+1. 在 第一层的输出中，实现 0.000793 的平均误差；
 2. 前10个token id完全一致
 3. 最后一层是 0.281017 的平均误差
 
