@@ -25,7 +25,15 @@
 
 模型提前上传到 Aistudio。
 
-在 config_origin.yaml 中新增模型配置即可。
+在 config_origin.yaml 中新增模型配置即可。如下
+```bash
+repo_id: PaddleFormers/tiny-random-qwen3moev2
+    model_type: text # text纯文模型，vl 多模模型
+    cli_args:
+        template: qwen3
+        save_checkpoint_format: flex_checkpoint
+        load_checkpoint_format: flex_checkpoint
+```
 
 本地自测：
 
@@ -59,4 +67,8 @@ python -m pytest -s -v --models=deepseek_v3,qwen3_next scripts/regression/test_m
 
 # 更新所有模型的 baseline
 python -m pytest -s -v --models=all scripts/regression/test_models.py --update-baseline=all
+
+# 在PR 中更新baseline,描述中添加
+Description:
+[update-baseline: llama]
 ```
