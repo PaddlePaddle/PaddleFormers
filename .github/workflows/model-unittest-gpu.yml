@@ -23,6 +23,7 @@ on:
           - 'deepseek_v3'
           - 'qwen2_moe'
           - 'qwen2'
+          - 'gemma3_text'
   workflow_call:
     inputs:
       runner:

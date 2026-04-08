@@ -34,7 +34,7 @@ install_requirements() {
     # Todo: fix later 
     # python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple > /dev/null
     python -m pip install -r requirements.txt -i https://pypi.org/simple 
-    if [[ $ce_branch="release" ]]; then
+    if [[ $ce_branch="CE_Release" ]]; then
         #fleet
         wget -q https://paddle-github-action.bj.bcebos.com/PaddleFleet/release/0.2/latest/cu126/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
         pip install  paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ -i https://pypi.org/simple 
@@ -45,7 +45,7 @@ install_requirements() {
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl 
-    elif [[ $ce_branch="develop" ]]; then
+    elif [[ $ce_branch="CE_Develop" ]]; then
         #fleet
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ -i https://pypi.org/simple 
         python -m pip uninstall paddlepaddle-gpu -y
@@ -83,7 +83,7 @@ set_env() {
 
     if [[ "${FLAGS_enable_CE}" == "CE_Release" ]];then
         echo "CE_Release: install paddle release + fleet release + formers release"
-        install_requirements "${release}"
+        install_requirements "${FLAGS_enable_CE}"
         # donwload configs
         cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_release_config/config.yaml 
@@ -92,7 +92,7 @@ set_env() {
         cd -
     elif [[ "${FLAGS_enable_CE}" == "CE_Develop" ]];then
         echo "CE_Develop: install paddle develop + fleet develop + formers develop"
-        install_requirements "${develop}"
+        install_requirements "${FLAGS_enable_CE}"
         # donwload configs
         cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_develop_config/config.yaml 
@@ -148,8 +148,6 @@ for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF
         if [ -n "$model_name" ]; then
             if [[ ! " ${model_array[*]} " =~ " ${model_name} " ]]; then
                 model_array+=("$model_name")
-                FLAGS_enable_CI=True
-                echo "Detected model: $model_name"
             fi
         fi
     fi
@@ -170,11 +168,11 @@ set_env
 if [[ "$update_baseline_models" != "false" ]] && [[ "$update_baseline_models" != "False" ]]; then
     echo "Update baseline models: $update_baseline_models"
     models=$update_baseline_models
-else
+elif [[ ${FLAGS_enable_CI} == "True" ]];then
     get_diff_TO_case
 fi
 
-if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} == "CE_Develop" ]]|| [[ ${FLAGS_enable_CE} == "CE_Release" ]];then
+if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];then
     cd ${nlp_dir}
     unset http_proxy && unset https_proxy
     set +e
