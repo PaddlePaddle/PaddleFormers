@@ -493,7 +493,7 @@ class MMapIndexedDataset(paddle.io.Dataset):
         self._index = self.Index(index_file_path(self._path), skip_warmup)
 
         if not skip_warmup:
-            if paddle.distributed.get_rank() == 0:  # need api check
+            if paddle.distributed.get_rank() == 0:
                 print_rank_0("    warming up data mmap file...")
                 _warmup_mmap_file(data_file_path(self._path))
             paddle.distributed.barrier()
@@ -706,7 +706,7 @@ class SFTMMapIndexedDataset(paddle.io.Dataset):
 
         self._index = self.Index(sft_index_file_path(self._path), skip_warmup)
         if not skip_warmup:
-            if paddle.distributed.get_rank() == 0:  # need api check
+            if paddle.distributed.get_rank() == 0:
                 print_rank_0("    warming up data mmap file...")
                 for data_file in sft_data_file_path(self._path, self._dataclass):
                     _warmup_mmap_file(data_file)
