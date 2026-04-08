@@ -49,6 +49,12 @@ install_requirements() {
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
+     elif [[ "$ce_branch" == "CE_Release_Cuda130_Python311" ]]; then # release regerssion
+        #fleet
+        python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
+        #formers
+        python setup.py bdist_wheel  > /dev/null
+        python -m pip install ./dist/*.whl
     elif [[ "$ce_branch" == "CE_Release_Cuda129_Python312" ]]; then # release regerssion
         #fleet
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
