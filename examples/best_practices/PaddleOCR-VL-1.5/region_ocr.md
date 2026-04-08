@@ -1078,37 +1078,36 @@ if __name__ == "__main__":
 
 ### 部署推理
 
-#### 基于 PaddleFormers/FastDeploy 部署推理
-基于 PaddleFormers/FastDeploy 部署推理 PaddleOCR-VL-1.5 模型，请参考 [PaddleFormers - 模型部署文档](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/docs/zh/deployment_guide.md) 和 [FastDeploy - PaddleOCR-VL-0.9B Best Practices](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)。
+部署 PaddleOCR-VL-1.5 模型时，可以选取 **FastDeploy** 或 **vLLM** 两种方式之一进行部署推理。
+
+#### 基于 FastDeploy 部署推理
+基于 FastDeploy 部署推理 PaddleOCR-VL-1.5 模型，请参考 PaddlePaddle 官方提供的 [PaddleOCR-VL部署推理最佳实践](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)。
+
+在启动 FastDeploy 服务时，需要加载微调后的模型路径：
+
+```bash
+python -m fastdeploy.entrypoints.openai.api_server \
+    --model {MODEL_PATH} \  # 微调后模型的本地存储路径
+    ......
+```
+
+在 `--model` 配置项写入微调后模型的路径后 ，FastDeploy 会加载路径下的**模型权重**和**对话模板**，其他可调整参数请参考[PaddleOCR-VL部署推理最佳实践](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)，并基于文档编写代码，调用 FastDeploy 服务进行推理。
+
 
 #### 基于 vLLM 部署推理
 基于 vLLM 部署推理 PaddleOCR-VL-1.5 模型，请参考 vLLM 官方提供的[PaddleOCR-VL模型使用文档](https://docs.vllm.ai/projects/recipes/en/latest/PaddlePaddle/PaddleOCR-VL.html)。
 
-具体来说，首先需要通过 `uv` 或 `pip` 安装 vLLM:
-
-使用 `uv` 安装 vLLM：
-```bash
-uv venv
-source .venv/bin/activate
-uv pip install -U vllm --pre --extra-index-url https://wheels.vllm.ai/nightly --extra-index-url https://download.pytorch.org/whl/cu129 --index-strategy unsafe-best-match
-```
-
-使用 `pip` 安装 vLLM：
-```bash
-pip install vllm>=0.11.1
-```
-
-安装完成后，基于 `vllm serve` 启动 vllm 服务，例如：
+在启动 vLLM 服务时，需要加载微调后的模型路径：
 
 ```bash
-vllm serve MODEL_PATH \  # 需要部署的模型权重路径
-    --tensor-parallel-size 1 \
-    --trust-remote-code \
-    --host xxx.xxx.xxx.xxx \  # 填入用于部署机器的ip
-    --port xxxx  # 填入用于访问vLLM服务的端口
+vllm serve {MODEL_PATH} \  # 微调后模型的本地存储路径
+    ......
 ```
 
-以上是示例脚本，具体启动时需要根据需求基于**PaddleOCR-VL模型使用文档**设置启动命令，并基于文档编写代码，调用 vLLM 服务进行推理。
+通过微调后模型的路径启动 vLLM 服务后，vLLM 会加载路径下的**模型权重**和**对话模板**，其他可调整参数请参考[PaddleOCR-VL模型使用文档](https://docs.vllm.ai/projects/recipes/en/latest/PaddlePaddle/PaddleOCR-VL.html)和[vLLM官方文档](https://docs.vllm.ai/en/latest/usage)，并基于文档编写代码，调用 vLLM 服务进行推理。
+
+
+除此之外，如果需要结合前置版面分析模型进行推理，请参考[PaddleOCR官方文档](https://www.paddleocr.ai/latest/version3.x/pipeline_usage/PaddleOCR-VL.html#22-python)使用产线进行推理，并在实例化产线对象时指定版面分析模型、推理服务URL等信息。
 
 
 ## 注意事项
