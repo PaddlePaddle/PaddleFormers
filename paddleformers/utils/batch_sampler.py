@@ -14,210 +14,42 @@
 
 from __future__ import division, print_function
 
-import math
-
-import numpy as np
 import paddle
 
-__all__ = ["MappingBatchSampler", "MappingDistributedBatchSampler", "DistributedBatchSampler"]
-
-
-class RandomSamplerWithSeed(paddle.io.RandomSampler):
-    def __init__(self, data_source, replacement=False, num_samples=None, generator=None) -> None:
-        super().__init__(data_source, replacement=replacement, num_samples=num_samples, generator=generator)
-        self.epoch = 0
-
-    def set_epoch(self, epoch=0):
-        self.epoch = epoch
-
-    def __iter__(self):
-        n = len(self.data_source)
-        num_samples = self.num_samples if self.num_samples is not None else n
-        if self.generator:
-            for i in range(num_samples):
-                try:
-                    index = next(self.generator)
-                except StopIteration:
-                    return
-                yield index
-        else:
-            for index in (
-                np.random.RandomState(self.epoch).choice(np.arange(n), num_samples, replace=self.replacement).tolist()
-            ):
-                yield index
-
-
-class MappingBatchSampler(paddle.io.BatchSampler):
-    def __init__(self, dataset, batch_size, shuffle=False, drop_last=False, consumed_samples=0):
-
-        if shuffle:
-            sampler = RandomSamplerWithSeed(dataset)
-        else:
-            sampler = paddle.io.SequenceSampler(dataset)
-
-        super().__init__(sampler=sampler, batch_size=batch_size, drop_last=drop_last)
-        self.consumed_samples = consumed_samples
-
-    def set_epoch(self, epoch=0, consumed_samples=0):
-        self.epoch = epoch
-        self.consumed_samples = consumed_samples
-        if isinstance(self.sampler, RandomSamplerWithSeed):
-            self.sampler.set_epoch(epoch=epoch)
-
-    def __iter__(self):
-
-        # Yield in batches
-        local_batch_size = self.batch_size * self._acc_steps
-        batch_indices = []
-        for idx in self.sampler:
-            # Skip consumed samples for resume
-            if self.consumed_samples > 0:
-                self.consumed_samples -= 1
-                continue
-            batch_indices.append(idx)
-            if len(batch_indices) == local_batch_size:
-                yield batch_indices
-                batch_indices = []
-        if not self.drop_last and len(batch_indices) > 0:
-            yield batch_indices
-
-
-class MappingDistributedBatchSampler(paddle.io.DistributedBatchSampler):
-    def __init__(
-        self, dataset, batch_size, num_replicas=None, rank=None, shuffle=False, drop_last=False, consumed_samples=0
-    ):
-        super().__init__(
-            dataset, batch_size, num_replicas=num_replicas, rank=rank, shuffle=shuffle, drop_last=drop_last
-        )
-        self.consumed_samples = consumed_samples
-
-    def set_epoch(self, epoch=0, consumed_samples=0):
-        self.epoch = epoch
-        self.consumed_samples = consumed_samples
-
-    def __iter__(self):
-        num_samples = len(self.dataset)
-        indices = np.arange(num_samples).tolist()
-
-        # Add extra samples to make it evenly divisible
-        padding_size = self.total_size - len(indices)
-        if padding_size <= len(indices):
-            indices += indices[:padding_size]
-        else:
-            indices += (indices * math.ceil(padding_size / len(indices)))[:padding_size]
-
-        assert len(indices) == self.total_size
-
-        if self.shuffle:
-            np.random.RandomState(self.epoch).shuffle(indices)
-            self.epoch += 1
-
-        # Subsample for local rank
-        def _get_indices_by_batch_size(indices):
-            subsampled_indices = []
-            last_batch_size = self.total_size % (self.batch_size * self.nranks)
-            assert last_batch_size % self.nranks == 0
-            last_local_batch_size = last_batch_size // self.nranks
-
-            for i in range(
-                self.local_rank * self.batch_size,
-                len(indices) - last_batch_size,
-                self.batch_size * self.nranks,
-            ):
-                subsampled_indices.extend(indices[i : i + self.batch_size])
-
-            indices = indices[len(indices) - last_batch_size :]
-            subsampled_indices.extend(
-                indices[self.local_rank * last_local_batch_size : (self.local_rank + 1) * last_local_batch_size]
-            )
-            return subsampled_indices
-
-        if self.nranks > 1:
-            indices = _get_indices_by_batch_size(indices)
-
-        assert len(indices) == self.num_samples
-
-        assert (
-            self.consumed_samples % self.nranks == 0
-        ), "The consumed_samples should be divided by nranks. consumed_samples=%d, nranks=%s" % (
-            self.consumed_samples,
-            self.nranks,
-        )
-
-        # Skip consumed samples for resume (per-rank)
-        consumed_per_rank = self.consumed_samples // self.nranks
-        indices = indices[consumed_per_rank:]
-
-        # Yield in batches
-        local_batch_size = self.batch_size * self._acc_steps
-        batch_indices = []
-        for idx in indices:
-            batch_indices.append(idx)
-            if len(batch_indices) == local_batch_size:
-                yield batch_indices
-                batch_indices = []
-        if not self.drop_last and len(batch_indices) > 0:
-            yield batch_indices
+__all__ = ["DistributedBatchSampler"]
 
 
 class DistributedBatchSampler(paddle.io.BatchSampler):
     """Sampler that restricts data loading to a subset of the dataset.
 
-    In such case, each process can pass a DistributedBatchSampler instance
-    as a DataLoader sampler, and load a subset of the original dataset that
-    is exclusive to it.
+    Uses interleaved sharding (indices[rank::world_size]) to align with
+    ms-swift's BatchSamplerShard, instead of the contiguous-block strategy
+    used by paddle.io.DistributedBatchSampler.
 
-    .. note::
-        Dataset is assumed to be of constant size.
+    Supports consumed_samples for checkpoint-resume (resume-from-middle-of-epoch).
 
     Args:
-        dataset(paddle.io.Dataset): this could be a `paddle.io.Dataset` implement
-                     or other python object which implemented
-                     `__len__` for BatchSampler to get sample
-                     number of data source.
-        batch_size(int): sample indice number in a mini-batch indices.
-        num_replicas(int, optional): process number in distributed training.
-            If :attr:`num_replicas` is None, :attr:`num_replicas` will be
-            retrieved from :code:`paddle.distributed.ParallenEnv`.
-            Default None.
-        rank(int, optional): the rank of the current process among :attr:`num_replicas`
-            processes. If :attr:`rank` is None, :attr:`rank` is retrieved from
-            :code:`paddle.distributed.ParallenEnv`. Default None.
-        shuffle(bool): whether to shuffle indices order before generating
-            batch indices. Default False.
-        drop_last(bool): whether drop the last incomplete batch dataset size
-            is not divisible by the batch size. Default False
-
-    Examples:
-        .. code-block:: python
-
-            import numpy as np
-
-            from paddle.io import Dataset, DistributedBatchSampler
-
-            # init with dataset
-            class RandomDataset(Dataset):
-                def __init__(self, num_samples):
-                    self.num_samples = num_samples
-
-                def __getitem__(self, idx):
-                    image = np.random.random([784]).astype('float32')
-                    label = np.random.randint(0, 9, (1, )).astype('int64')
-                    return image, label
-
-                def __len__(self):
-                    return self.num_samples
-
-            dataset = RandomDataset(100)
-            sampler = DistributedBatchSampler(dataset, batch_size=64)
-
-            for data in sampler:
-                # do something
-                break
+        dataset(paddle.io.Dataset): dataset to sample from.
+        batch_size(int): sample indices number in a mini-batch.
+        num_replicas(int, optional): number of processes. Defaults to ParallelEnv().nranks.
+        rank(int, optional): rank of current process. Defaults to ParallelEnv().local_rank.
+        shuffle(bool): whether to shuffle. Uses paddle.randperm with seed=base_seed+epoch.
+        drop_last(bool): whether to drop the last incomplete batch.
+        consumed_samples(int): total number of samples already consumed across all ranks
+            (used to resume from a checkpoint mid-epoch).
+        data_seed(int): base random seed. Actual seed per epoch = data_seed + epoch.
     """
 
     def __init__(
-        self, dataset, batch_size, num_replicas=None, rank=None, shuffle=False, drop_last=False, consumed_samples=0
+        self,
+        dataset,
+        batch_size,
+        num_replicas=None,
+        rank=None,
+        shuffle=False,
+        drop_last=False,
+        consumed_samples=0,
+        data_seed=0,
     ):
         self.dataset = dataset
 
@@ -226,6 +58,7 @@ class DistributedBatchSampler(paddle.io.BatchSampler):
         assert isinstance(shuffle, bool), "shuffle should be a boolean value"
         self.shuffle = shuffle
         assert isinstance(drop_last, bool), "drop_last should be a boolean number"
+        self.drop_last = drop_last
 
         from paddle.distributed import ParallelEnv
 
@@ -241,83 +74,76 @@ class DistributedBatchSampler(paddle.io.BatchSampler):
         else:
             self.local_rank = ParallelEnv().local_rank
 
-        self.drop_last = drop_last
-        self.epoch = 0
-
         self.consumed_samples = consumed_samples
+        self.base_seed = data_seed
+        self.curr_seed = data_seed
+        self.epoch = 0
+        self._acc_steps = 1  # Required by LastBatchPaddingSampler and compatible with paddle.io.BatchSampler
+
         if self.dataset is None:
             # In pre-training mode when using distributed dataloader, the input dataset can be None. We should handle this situation.
             self.num_samples = 0
         else:
-            self.num_samples = int(len(self.dataset) * 1.0 / self.nranks)
+            # floor truncation (no padding)
+            total_size = (len(self.dataset) // self.nranks) * self.nranks
+            self.num_samples = total_size // self.nranks
         self.total_size = self.num_samples * self.nranks
-
-    def get_start_end_idx(self):
-        start_idx = self.local_rank * self.batch_size
-        end_idx = start_idx + self.batch_size
-        return start_idx, end_idx
 
     def __iter__(self):
         assert (
             self.consumed_samples % self.nranks == 0
-        ), "The consumed_samples should be divided by nranks. consumed_samples=%d, nranks=%s" % (
+        ), "consumed_samples should be divisible by nranks. consumed_samples=%d, nranks=%d" % (
             self.consumed_samples,
             self.nranks,
         )
-        self.remain_num_samples = int((len(self.dataset) - self.consumed_samples) * 1.0 / self.nranks)
-        self.remain_total_size = self.remain_num_samples * self.nranks
-        self.batch_size_times_rank_size = self.batch_size * self.nranks
 
-        batch_indices = []
-        for idx in range(self.consumed_samples, self.total_size):
-            batch_indices.append(idx)
-            if len(batch_indices) == self.batch_size_times_rank_size:
-                start_idx, end_idx = self.get_start_end_idx()
-                yield batch_indices[start_idx:end_idx]
-                batch_indices = []
-        if not self.drop_last and len(batch_indices) > 0:
-            yield batch_indices
+        # floor truncation (no padding)
+        total_size = (len(self.dataset) // self.nranks) * self.nranks
+
+        if self.shuffle:
+            # need align with torch
+            paddle.seed(self.curr_seed)
+            total_idx = paddle.randperm(total_size).tolist()
+            indices = total_idx[self.local_rank :: self.nranks]  # interleaved shard
+        else:
+            indices = list(range(self.local_rank, total_size, self.nranks))  # interleaved shard
+
+        # Resume from checkpoint: skip already-consumed samples for this rank
+        consumed_per_rank = self.consumed_samples // self.nranks
+        indices = indices[consumed_per_rank:]
+
+        batch = []
+        for idx in indices:
+            batch.append(idx)
+            if len(batch) == self.batch_size:
+                yield batch
+                batch = []
+        if not self.drop_last and len(batch) > 0:
+            yield batch
 
     def __len__(self):
-        num_samples = self.num_samples
-        num_samples += int(not self.drop_last) * (self.batch_size - 1)
-        return num_samples // self.batch_size
+        total_size = (len(self.dataset) // self.nranks) * self.nranks
+        per_rank = total_size // self.nranks
+        consumed_per_rank = self.consumed_samples // self.nranks
+        remaining = per_rank - consumed_per_rank
+        if self.drop_last:
+            return remaining // self.batch_size
+        else:
+            return (remaining + self.batch_size - 1) // self.batch_size
 
     def set_epoch(self, epoch=0, consumed_samples=0):
         """
-        Sets the epoch number. When :attr:`shuffle=True`, this number is used
-        as seeds of random numbers. By default, users may not set this, all
-        replicas (workers) use a different random ordering for each epoch.
-        If set same number at each epoch, this sampler will yield the same
-        ordering at all epoches.
+        Update epoch and consumed_samples.
 
-        Arguments:
-            epoch (int): Epoch number.
+        When shuffle=True, the seed for the next iteration will be base_seed + epoch,
+        consistent with ms-swift's BatchSamplerShard.set_epoch().
 
-        Examples:
-            .. code-block:: python
-
-                from paddle.io import Dataset, DistributedBatchSampler
-
-                # init with dataset
-                class RandomDataset(Dataset):
-                    def __init__(self, num_samples):
-                        self.num_samples = num_samples
-
-                    def __getitem__(self, idx):
-                        image = np.random.random([784]).astype('float32')
-                        label = np.random.randint(0, 9, (1, )).astype('int64')
-                        return image, label
-
-                    def __len__(self):
-                        return self.num_samples
-
-                dataset = RandomDataset(100)
-                sampler = DistributedBatchSampler(dataset, batch_size=64)
-
-                for epoch in range(10):
-                    sampler.set_epoch(epoch)
+        Args:
+            epoch(int): current epoch number.
+            consumed_samples(int): total samples consumed across all ranks so far.
+                Used to resume from a checkpoint mid-epoch.
         """
+        self.curr_seed = self.base_seed + epoch
         self.epoch = epoch
         # if we reset the epoch, the consumed_samples should be set to 0.
         self.consumed_samples = consumed_samples

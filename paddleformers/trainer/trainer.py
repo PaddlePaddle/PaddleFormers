@@ -137,8 +137,7 @@ from ..transformers.segment_parallel_utils import (
     split_inputs_sequence_dim,
 )
 from ..utils import empty_device_cache, perf_utils
-from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
-from ..utils.batch_sampler import MappingBatchSampler, MappingDistributedBatchSampler
+from ..utils.batch_sampler import DistributedBatchSampler
 from ..utils.download import resolve_file_path
 from ..utils.env import (
     EMA_STATE_DIC,
@@ -1874,8 +1873,8 @@ class Trainer:
         self.state.epoch = 0
         epochs_trained = 0
         steps_trained_in_current_epoch = 0
-        consumed_samples = 0
         steps_trained_progress_bar = None
+        _resume_consumed_samples = 0
 
         # Check if continuing training from a checkpoint
         if (
@@ -1884,7 +1883,6 @@ class Trainer:
             and not self.args.ignore_load_lr_and_optim
         ):
             state_path = distributed_file(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))
-            # 根据文件扩展名判断使用哪种加载方法
             if state_path.endswith(".json"):
                 self.state = TrainerState.load_from_json(state_path)
             else:
@@ -1919,13 +1917,17 @@ class Trainer:
                     steps_trained_progress_bar = tqdm(total=steps_trained_in_current_epoch)
                     steps_trained_progress_bar.set_description("Skipping the first batches")
             if not args.ignore_data_skip:
+                _resume_consumed_samples = 0
                 if isinstance(train_dataloader, paddle.io.DataLoader) and isinstance(
                     train_dataloader.batch_sampler,
-                    (NlpDistributedBatchSampler, MappingBatchSampler, MappingDistributedBatchSampler),
+                    DistributedBatchSampler,
                 ):
-                    consumed_samples = steps_trained_in_current_epoch * args.train_batch_size * args.dataset_world_size
-                    train_dataloader.batch_sampler.set_epoch(consumed_samples=consumed_samples)
-                    logger.info(f"Set Sampler consumed_samples to {consumed_samples}")
+                    _resume_consumed_samples = (
+                        steps_trained_in_current_epoch * args.train_batch_size * args.dataset_world_size
+                    )
+                    logger.info(
+                        f"Will resume with consumed_samples={_resume_consumed_samples} " f"for epoch {epochs_trained}"
+                    )
 
         epoch_iterator = train_dataloader
         # Use len_dataloader directly instead of len(epoch_iterator) to avoid
@@ -1972,9 +1974,10 @@ class Trainer:
             if (
                 not args.enable_auto_parallel
                 and isinstance(train_dataloader, paddle.io.DataLoader)
-                and isinstance(train_dataloader.batch_sampler, (MappingBatchSampler, MappingDistributedBatchSampler))
+                and isinstance(train_dataloader.batch_sampler, DistributedBatchSampler)
             ):
-                train_dataloader.batch_sampler.set_epoch(epoch, consumed_samples)
+                train_dataloader.batch_sampler.set_epoch(epoch, consumed_samples=_resume_consumed_samples)
+            _resume_consumed_samples = 0
 
             step_control = 0  # used in loop control, reset to 0 after every step
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
@@ -2001,15 +2004,13 @@ class Trainer:
                 self.callback_handler.on_load_data_end(args, self.state, self.control, inputs=inputs)
 
                 # Skip past any already trained steps if resuming training
-                # for paddleformers.utils.batch_sampler.(NlpDistributedBatchSampler & MappingBatchSampler & MappingDistributedBatchSampler)
                 # We use consumed_samples to reset the status
                 dataloader = train_dataloader
                 if self.args.enable_auto_parallel:
                     dataloader = train_dataloader._dataloader
 
                 if isinstance(dataloader, paddle.io.DataLoader) and isinstance(
-                    dataloader.batch_sampler,
-                    (NlpDistributedBatchSampler, MappingBatchSampler, MappingDistributedBatchSampler),
+                    dataloader.batch_sampler, DistributedBatchSampler
                 ):
                     if step == 0:
                         if steps_trained_progress_bar is not None:
@@ -2312,6 +2313,7 @@ class Trainer:
                 self.control.should_training_stop = True
 
             self.control = self.callback_handler.on_epoch_end(args, self.state, self.control)
+            steps_trained_in_current_epoch = 0
 
             if self.args.enable_auto_parallel:
                 with _exec_mode_guard("dynamic"):
@@ -2321,8 +2323,6 @@ class Trainer:
 
             if self.control.should_training_stop:
                 break
-
-            consumed_samples = 0
 
         if args.past_index and hasattr(self, "_past"):
             # Clean the state at the end of training
@@ -2444,8 +2444,8 @@ class Trainer:
         if self.args.enable_auto_parallel:
             total_batch_size = total_batch_size * self.args.dataset_world_size
 
-        if self.args.enable_auto_parallel or self.args.world_size <= 1:
-            batch_sampler = MappingBatchSampler(
+        if self.args.enable_auto_parallel:
+            batch_sampler = paddle.io.BatchSampler(
                 dataset=self.train_dataset,
                 shuffle=shuffle,
                 batch_size=total_batch_size,
@@ -2454,17 +2454,17 @@ class Trainer:
             # Set _acc_steps for auto_parallel mode to ensure correct __len__ calculation
             # When _acc_steps = gradient_accumulation_steps, the dataloader length will be
             # the number of optimizer steps, not micro-batches
-            if self.args.enable_auto_parallel:
-                batch_sampler._acc_steps = self.args.gradient_accumulation_steps
+            batch_sampler._acc_steps = self.args.gradient_accumulation_steps
             return batch_sampler
 
-        return MappingDistributedBatchSampler(
+        return DistributedBatchSampler(
             self.train_dataset,
             batch_size=total_batch_size,
             shuffle=shuffle,
             num_replicas=self.args.dataset_world_size,
             rank=self.args.dataset_rank,
             drop_last=self.args.dataloader_drop_last,
+            data_seed=self.args.seed,
         )
 
     def _set_state_dict_in_model(self, state_dict):
@@ -2798,38 +2798,31 @@ class Trainer:
     def _get_eval_sampler(self, eval_dataset: Dataset):
         if eval_dataset is None or not has_length(eval_dataset):
             return None
-        if self.args.world_size <= 1:
-            return MappingBatchSampler(
+        if (
+            is_paddlefleet_available() and isinstance(self.model, PaddleFleetPipelineLayer)
+        ) or self.args.pipeline_model_parallel_size > 1:
+            # In pipeline parallelism, batch size will be strictly checked
+            # Use LastBatchPaddingSampler to pad the last batch with the first batch
+            from .trainer_utils import LastBatchPaddingSampler
+
+            return LastBatchPaddingSampler(
                 eval_dataset,
+                num_replicas=self.args.dataset_world_size,
+                rank=self.args.dataset_rank,
                 batch_size=self.args.per_device_eval_batch_size,
                 shuffle=False,
                 drop_last=False,
             )
         else:
-            if (
-                is_paddlefleet_available() and isinstance(self.model, PaddleFleetPipelineLayer)
-            ) or self.args.pipeline_model_parallel_size > 1:
-                # In pipeline parallelism, batch size will be strictly checked
-                # Use LastBatchPaddingSampler to pad the last batch with the first batch
-                from .trainer_utils import LastBatchPaddingSampler
-
-                return LastBatchPaddingSampler(
-                    eval_dataset,
-                    num_replicas=self.args.dataset_world_size,
-                    rank=self.args.dataset_rank,
-                    batch_size=self.args.per_device_eval_batch_size,
-                    shuffle=False,
-                    drop_last=False,
-                )
-            else:
-                return MappingDistributedBatchSampler(
-                    eval_dataset,
-                    num_replicas=self.args.dataset_world_size,
-                    rank=self.args.dataset_rank,
-                    batch_size=self.args.per_device_eval_batch_size,
-                    shuffle=False,
-                    drop_last=False,
-                )
+            return DistributedBatchSampler(
+                eval_dataset,
+                num_replicas=self.args.dataset_world_size,
+                rank=self.args.dataset_rank,
+                batch_size=self.args.per_device_eval_batch_size,
+                shuffle=False,
+                drop_last=False,
+                data_seed=self.args.seed,
+            )
 
     def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
         """
@@ -4657,8 +4650,7 @@ class Trainer:
             # on eval limit steps
             num_samples = batch_size * self.args.dataset_world_size * max_eval_iters
             if isinstance(dataloader, _DataLoaderIterBase) and isinstance(
-                dataloader._batch_sampler,
-                (NlpDistributedBatchSampler, MappingBatchSampler, MappingDistributedBatchSampler),
+                dataloader._batch_sampler, DistributedBatchSampler
             ):
                 consumed_samples = (
                     ((self.state.global_step) // args.eval_steps)
