@@ -137,6 +137,7 @@ from ..transformers.segment_parallel_utils import (
     split_inputs_sequence_dim,
 )
 from ..utils import empty_device_cache, perf_utils
+from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.batch_sampler import MappingBatchSampler, MappingDistributedBatchSampler
 from ..utils.download import resolve_file_path
 from ..utils.env import (
@@ -1919,13 +1920,12 @@ class Trainer:
                     steps_trained_progress_bar.set_description("Skipping the first batches")
             if not args.ignore_data_skip:
                 if isinstance(train_dataloader, paddle.io.DataLoader) and isinstance(
-                    train_dataloader.batch_sampler, (MappingBatchSampler, MappingDistributedBatchSampler)
+                    train_dataloader.batch_sampler,
+                    (NlpDistributedBatchSampler, MappingBatchSampler, MappingDistributedBatchSampler),
                 ):
                     consumed_samples = steps_trained_in_current_epoch * args.train_batch_size * args.dataset_world_size
                     train_dataloader.batch_sampler.set_epoch(consumed_samples=consumed_samples)
-                    logger.info(
-                        f"Set MappingBatchSampler/MappingDistributedBatchSampler consumed_samples to {consumed_samples}"
-                    )
+                    logger.info(f"Set Sampler consumed_samples to {consumed_samples}")
 
         epoch_iterator = train_dataloader
         # Use len_dataloader directly instead of len(epoch_iterator) to avoid
@@ -2001,14 +2001,15 @@ class Trainer:
                 self.callback_handler.on_load_data_end(args, self.state, self.control, inputs=inputs)
 
                 # Skip past any already trained steps if resuming training
-                # for paddleformers.utils.batch_sampler.(MappingBatchSampler & MappingDistributedBatchSampler)
+                # for paddleformers.utils.batch_sampler.(NlpDistributedBatchSampler & MappingBatchSampler & MappingDistributedBatchSampler)
                 # We use consumed_samples to reset the status
                 dataloader = train_dataloader
                 if self.args.enable_auto_parallel:
                     dataloader = train_dataloader._dataloader
 
                 if isinstance(dataloader, paddle.io.DataLoader) and isinstance(
-                    dataloader.batch_sampler, (MappingBatchSampler, MappingDistributedBatchSampler)
+                    dataloader.batch_sampler,
+                    (NlpDistributedBatchSampler, MappingBatchSampler, MappingDistributedBatchSampler),
                 ):
                     if step == 0:
                         if steps_trained_progress_bar is not None:
@@ -4656,7 +4657,8 @@ class Trainer:
             # on eval limit steps
             num_samples = batch_size * self.args.dataset_world_size * max_eval_iters
             if isinstance(dataloader, _DataLoaderIterBase) and isinstance(
-                dataloader._batch_sampler, (MappingBatchSampler, MappingDistributedBatchSampler)
+                dataloader._batch_sampler,
+                (NlpDistributedBatchSampler, MappingBatchSampler, MappingDistributedBatchSampler),
             ):
                 consumed_samples = (
                     ((self.state.global_step) // args.eval_steps)
