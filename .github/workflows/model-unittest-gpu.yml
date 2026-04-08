@@ -236,9 +236,11 @@ jobs:
 
             # Upload baseline
             cp -r /home/models/bos/* ./
+            rm -rf upload
             mkdir upload 
             cp scripts/regression/config.yaml upload/
-            mv scripts/regression/config.yaml config_${PR_NUMBER}.yaml upload/
+            mv scripts/regression/config.yaml config_${PR_NUMBER}.yaml 
+            cp config_${PR_NUMBER}.yaml upload/
             python upload.py upload "paddle-qa/paddleformers/ci_config/"
             
           else

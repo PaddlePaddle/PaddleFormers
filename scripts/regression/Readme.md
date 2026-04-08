@@ -25,7 +25,7 @@
 
 模型提前上传到 Aistudio。
 
-在 config.yaml 中新增模型配置，复制其他模型配置，修改模型路径即可。
+在 config_origin.yaml 中新增模型配置即可。
 
 本地自测：
 
@@ -52,7 +52,7 @@ python -m pytest -s -v --models=all scripts/regression/test_models.py
 
 ```bash
 # 更新单个模型的 baseline
-python -m pytest -s -v --models=glm_moe scripts/regression/test_models.py::TestTrain::test_full_tp_vl --update-baseline=glm_moe
+python -m pytest -s -v --models=qwen3vl scripts/regression/test_models.py::TestTrain::test_full_tp_vl --update-baseline=glm_moe
 
 # 更新多个模型的 baseline
 python -m pytest -s -v --models=deepseek_v3,qwen3_next scripts/regression/test_models.py --update-baseline=deepseek_v3,qwen3_next
