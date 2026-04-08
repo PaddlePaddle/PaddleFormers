@@ -22,7 +22,7 @@ install_requirements() {
     # Todo: fix later 
     # python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple > /dev/null
     python -m pip install -r requirements.txt -i https://pypi.org/simple 
-    if [[ $ce_branch="CE_Release_cu130_py313" ]]; then
+    if [[ "$ce_branch" == "CE_Release_cu130_py313" ]]; then
         #fleet
         wget -q https://paddle-github-action.bj.bcebos.com/PaddleFleet/release/0.2/latest/cu130/paddlefleet-0.0.0-cp313-cp313-linux_x86_64.whl
         pip install  paddlefleet-0.0.0-cp313-cp313-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ -i https://pypi.org/simple 
@@ -33,7 +33,7 @@ install_requirements() {
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
-    elif [[ $ce_branch="CE_Release_cu129_py312" ]]; then
+    elif [[ "$ce_branch" == "CE_Release_cu129_py312" ]]; then
         #fleet
         wget -q https://paddle-github-action.bj.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp312-cp312-linux_x86_64.whl
         pip install  paddlefleet-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ -i https://pypi.org/simple 
@@ -44,7 +44,7 @@ install_requirements() {
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl 
-     elif [[ $ce_branch="CE_Release_cu126_py310" ]]; then
+     elif [[ "$ce_branch" == "CE_Release_cu126_py310" ]]; then
         #fleet
         wget -q https://paddle-github-action.bj.bcebos.com/PaddleFleet/release/0.2/latest/cu126/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
         pip install  paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ -i https://pypi.org/simple 
@@ -55,7 +55,7 @@ install_requirements() {
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl 
-    elif [[ $ce_branch="CE_Develop_cu130_py312" ]]; then
+    elif [[ "$ce_branch" == "CE_Develop_cu130_py312" ]]; then
         #fleet
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ -i https://pypi.org/simple 
         python -m pip uninstall paddlepaddle-gpu -y
@@ -65,7 +65,7 @@ install_requirements() {
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl 
-    elif [[ $ce_branch="CE_Develop_cu129_py313" ]]; then
+    elif [[ "$ce_branch" == "CE_Develop_cu129_py313" ]]; then
         #fleet
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ -i https://pypi.org/simple 
         python -m pip uninstall paddlepaddle-gpu -y
@@ -75,7 +75,7 @@ install_requirements() {
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl 
-    elif [[ $ce_branch="CE_Develop_cu129_py312" ]]; then
+    elif [[ "$ce_branch" == "CE_Develop_cu129_py312" ]]; then
         #fleet
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ -i https://pypi.org/simple 
         python -m pip uninstall paddlepaddle-gpu -y
@@ -85,7 +85,7 @@ install_requirements() {
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl 
-    elif [[ $ce_branch="CE_Develop_cu126_py310" ]]; then
+    elif [[ "$ce_branch" == "CE_Develop_cu126_py310" ]]; then
         #fleet
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ -i https://pypi.org/simple 
         python -m pip uninstall paddlepaddle-gpu -y
@@ -96,6 +96,7 @@ install_requirements() {
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl 
     else
+        echo "Install CI ENV: Cuda126+Python310"
         python setup.py bdist_wheel > /dev/null
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
     fi
@@ -111,5 +112,5 @@ install_requirements() {
     echo -e "\033[32m install requirements cost $((end_ts - start_ts))s \033[0m"
 }
 
-# Call the function with the first argument (ce_branch)
-install_requirements "$1"
+# Call the function with the first argument (ce_branch), default to "false" for CI env: Cuda126+Python310
+install_requirements "${1:-false}"
