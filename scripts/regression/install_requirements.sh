@@ -15,7 +15,7 @@
 # limitations under the License.
 
 install_requirements() {
-    local ce_branch=${1:-""}
+    local ce_branch=${1:-"false"}
     start_ts=$(date +%s)
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet paddleformers -y
     rm -rf ./build ./dist ./paddleformers.egg-info/

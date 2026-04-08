@@ -58,7 +58,7 @@ set_env() {
         cd -
     elif [[ "${FLAGS_enable_CI}" == "True" ]];then
         echo "CI: install paddle stable + fleet stable + formers"
-        bash ./scripts/regression/install_requirements.sh
+        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI} 
         # donwload configs
         cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_config/config.yaml 
