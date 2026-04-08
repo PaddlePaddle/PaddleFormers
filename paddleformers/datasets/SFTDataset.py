@@ -24,6 +24,7 @@ from paddle.io import Dataset, IterableDataset
 
 from paddleformers.datasets.data_utils import (
     calculate_matched_group,
+    generate_greedy_packs_from_sequences,
     get_worker_sliced_iterator,
     postprocess_fc_sequence,
     print_debug_info,
@@ -180,9 +181,13 @@ class BaseSFTDataset:
 
         # multiprocessing initialization
         if self.is_pretraining and self.packing and self.truncate_packing:
-            self._current_processor_func = self._process_pretraining_tokens
+            self._current_processor_func = self._tokenize_pretraining
         else:
-            self._current_processor_func = self._process_sequence
+            if self.is_pretraining:
+                self._current_processor_func = self._process_pretraining_sequence
+            else:
+                self._current_processor_func = self._process_sft_sequence
+
         if self.dataset_num_proc > 1:
             self.prefetch_size = self.dataset_num_proc * 2
             self._in_queue = mp.Queue(maxsize=self.prefetch_size)
@@ -315,46 +320,6 @@ class BaseSFTDataset:
                     if self.estimate:
                         self.unused_samples += actual_example_num
                         self.used_estimate_samples += actual_example_num
-
-    def _process_sequence(self, example, actual_example_num):
-        """Process a single example into a sequence."""
-        if self.is_pretraining:
-            return self._postprocess_pretraining_sequence(example, actual_example_num)
-        else:
-            return self._postprocess_sequence(example, actual_example_num)
-
-    def _process_pretraining_tokens(self, example, actual_example_num):
-        """Process a pretraining example into tokens."""
-        return self._encode_pretraining_messages(example["messages"], actual_example_num)
-
-    def _generate_greedy_packs_from_sequences(self, sequences):
-        """Generate packed sequences using greedy strategy from pre-processed sequences.
-
-        Args:
-            sequences: List of pre-processed Sequence objects.
-
-        Returns:
-            list: List of packed sequences.
-        """
-        left_len = np.zeros([len(sequences)]) - 1
-        left_len[0] = self.max_seq_len
-        generate_packs = [[]]
-        index = 0
-        left_index = 0
-
-        while index < len(sequences):
-            sequence = sequences[index]
-            max_left_index = left_len.argmax()
-            if len(sequence.token_ids) <= left_len[max_left_index]:
-                generate_packs[max_left_index].append(sequence)
-                left_len[max_left_index] -= len(sequence.token_ids)
-                index += 1
-            else:
-                left_index += 1
-                left_len[left_index] = self.max_seq_len
-                generate_packs.append([])
-
-        return generate_packs
 
     def _generate_sequences(self):
 
@@ -544,7 +509,7 @@ class BaseSFTDataset:
 
                         if len(sequences_buffer) >= buffer_size:
                             # Running greedy strategy in sequences_buffer.
-                            generate_packs = self._generate_greedy_packs_from_sequences(sequences_buffer)
+                            generate_packs = generate_greedy_packs_from_sequences(self.max_seq_len, sequences_buffer)
                             for pack in generate_packs:
                                 if len(pack) > 0:
                                     yield pack
@@ -557,7 +522,9 @@ class BaseSFTDataset:
                             if self.used_estimate_samples >= self.max_estimate_samples:
                                 # Yield left packs before estimation ends
                                 if len(sequences_buffer) > 0:
-                                    generate_packs = self._generate_greedy_packs_from_sequences(sequences_buffer)
+                                    generate_packs = generate_greedy_packs_from_sequences(
+                                        self.max_seq_len, sequences_buffer
+                                    )
                                     for pack in generate_packs:
                                         if len(pack) > 0:
                                             yield pack
@@ -566,7 +533,7 @@ class BaseSFTDataset:
                                 yield []
 
                     if len(sequences_buffer) > 0:
-                        generate_packs = self._generate_greedy_packs_from_sequences(sequences_buffer)
+                        generate_packs = generate_greedy_packs_from_sequences(self.max_seq_len, sequences_buffer)
                         for pack in generate_packs:
                             if len(pack) > 0:
                                 yield pack
@@ -584,15 +551,15 @@ class BaseSFTDataset:
             while True:
                 yield from self.__iter_func()
 
-    def _encode_pretraining_messages(self, messages, actual_example_num):
-        # tokens
-        content = messages[0]["content"]
+    def _tokenize_pretraining(self, example, actual_example_num):
+        """Process a pretraining example into tokens."""
+        content = example["messages"][0]["content"]
         tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(content))
         # Add an EOS token at the end of each sample
         tokens = tokens + [self.tokenizer.eos_token_id]
         return tokens
 
-    def _postprocess_pretraining_sequence(self, example, actual_example_num):
+    def _process_pretraining_sequence(self, example, actual_example_num):
 
         messages = example.get("messages", [])
         images = example.get("images", [])
@@ -600,7 +567,7 @@ class BaseSFTDataset:
         audios = example.get("audios", [])
 
         if len(images) == 0 and len(videos) == 0 and len(audios) == 0:
-            tokens = self._encode_pretraining_messages(messages, actual_example_num)
+            tokens = self._tokenize_pretraining(example, actual_example_num)
             if len(tokens) > self.max_seq_len + 1:
                 # Truncate the sequence to the maximum length
                 tokens = tokens[: self.max_seq_len + 1]
@@ -630,8 +597,8 @@ class BaseSFTDataset:
             messages = self.template.mm_plugin.process_messages(
                 messages, images, videos, audios, mm_inputs, self.processor
             )
-
-            tokens = self._encode_pretraining_messages(messages, actual_example_num)
+            example["messages"] = messages
+            tokens = self._tokenize_pretraining(example, actual_example_num)
             if len(tokens) > self.max_seq_len + 1:
                 # Truncate the sequence to the maximum length
                 tokens = tokens[: self.max_seq_len + 1]
@@ -678,7 +645,7 @@ class BaseSFTDataset:
                 mm_inputs=mm_inputs,
             )
 
-    def _postprocess_sequence(self, example, actual_example_num):
+    def _process_sft_sequence(self, example, actual_example_num):
         """Process code completion examples into token sequences.
 
         Args:
@@ -948,9 +915,9 @@ class MapSFTDataset(BaseSFTDataset, Dataset):
             example = self.raw_data[current_idx]
             try:
                 if self.is_pretraining:
-                    sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
+                    sequence = self._process_pretraining_sequence(example, actual_example_num)
                 else:
-                    sequence = self._postprocess_sequence(example, actual_example_num)
+                    sequence = self._process_sft_sequence(example, actual_example_num)
 
                 if sequence is not None:
                     return [sequence]
