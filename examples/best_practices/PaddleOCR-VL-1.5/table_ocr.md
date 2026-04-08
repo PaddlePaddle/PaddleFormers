@@ -98,10 +98,10 @@ tar -xvf complex_table_dataset.tar -C ./complex_table
 
 如果您想要基于自己的数据集进行训练，请参考 [PaddleFormers - 数据集格式文档](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/docs/zh/dataset_format.md#24-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8C%87%E4%BB%A4%E5%BE%AE%E8%B0%83sft%E6%95%B0%E6%8D%AE%E6%A0%BC%E5%BC%8F) 准备数据。
 
-在表格识别任务中，处理原始表格获得微调数据需要如下步骤：
+在表格识别任务中，**推荐使用 OTSL 格式进行微调训练**，处理原始表格获得微调数据需要如下步骤：
 1. 准备待训练的表格图像集，并对每张表格图像进行标注，标注内容只需包含表格结构和单元格文本（及内部换行、公式等），无需带有表格样式信息（如CSS样式）：
-  - 若表格标注为 HTML 格式，则需要参考[转换代码](https://paddle-model-ecology.bj.bcebos.com/paddlex/convert_html_to_otsl.py)将其转为 OTSL 格式；
-  - 若表格标注已是 OTSL 格式，则无需再进行格式转换。
+   - 若表格标注为 HTML 格式，则需要参考[转换代码](https://paddle-model-ecology.bj.bcebos.com/paddlex/convert_html_to_otsl.py)将其转为 OTSL 格式；
+   - 若表格标注已是 OTSL 格式，则无需再进行格式转换。
 2. 将表格图像、OTSL 格式标注构建为训练格式数据集，完成微调数据构建。
 
 此外，如果需要将 OTSL 格式表格转为 HTML 格式表格，可以参考[PaddleOCR-VL 后处理代码](https://github.com/PaddlePaddle/PaddleX/blob/release/3.4/paddlex/inference/pipelines/paddleocr_vl/uilts.py#L899)进行转换。
