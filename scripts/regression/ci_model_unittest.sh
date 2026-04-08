@@ -139,10 +139,8 @@ for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF
     ext="${file_name##*.}"
     echo "file_name: ${file_name}, ext: ${file_name##*.}"
 
-    [[ -f "$file_name" ]] || continue
-
+    # Check if file is in transformer directories (don't check file existence, rely on git diff)
     if [[ "$file_name" == "paddleformers/transformers/"* ]] || [[ "$file_name" == "tests/transformers/"* ]]; then
-        # Extract model name from path (e.g., paddleformers/transformers/qwen3/...)
         model_name=$(echo "$file_name" | sed -n 's#.*paddleformers/transformers/\([^/]*\)/.*#\1#p')
         if [ -z "$model_name" ]; then
             model_name=$(echo "$file_name" | sed -n 's#.*tests/transformers/\([^/]*\)/.*#\1#p')
@@ -150,20 +148,19 @@ for file_name in `git diff --numstat ${AGILE_COMPILE_BRANCH} -- |awk '{print $NF
         if [ -n "$model_name" ]; then
             if [[ ! " ${model_array[*]} " =~ " ${model_name} " ]]; then
                 model_array+=("$model_name")
+                FLAGS_enable_CI=True
+                echo "Detected model: $model_name"
             fi
         fi
-    fi
-
-    if [[ "$ext" == "py" ]]; then
-        FLAGS_enable_CI=True
-        break
     fi
 done
 
 if [ ${#model_array[@]} -gt 0 ]; then
-    models="${model_array[0]}"
+    models=$(IFS=,; echo "${model_array[*]}")
+    echo "Models to test: $models"
 else
     models="glm_moe"
+    echo "No transformer changes detected, using default model: $models"
 fi
 
 }
