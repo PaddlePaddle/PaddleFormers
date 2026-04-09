@@ -37,7 +37,7 @@ register_template(
 | `format_function` | 对 role 为 function（申请工具调用）的 content 进行 format |
 | `format_observation` | format_observation |
 | `format_tools` | 对 tools 信息进行 format |
-| `format_prefix` | 在 system 前面加的内容 |
+| `format_prefix` | 在格式化后最开头固定添加的内容 |
 | `default_system` | 默认的 system 信息，如果数据里面没有 role 为 system 的，就用这个 |
 | `stop_words` | 当 replace_eos 为 true 的时候，会用 stop words 替换掉实际的 eos token |
 | `replace_eos` | 是否使用 stop_words 替换默认的 eos token |
