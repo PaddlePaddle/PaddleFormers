@@ -206,18 +206,17 @@ jobs:
           docker exec -i -e "work_dir=$work_dir" -e "python_version=$python_version" $container_name /bin/bash <<-DOCKER_EOF
           echo "Change python version to $python_version"
           set -e
-          source ${work_dir}/../../../proxy_huggingface
-          wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh
+          cp ${work_dir}/../../../Miniconda3-latest-Linux-x86_64.sh /tmp/miniconda.sh
           bash /tmp/miniconda.sh -b -p /opt/conda
-          rm /tmp/miniconda.sh
           export PATH=/opt/conda/bin:$PATH
           conda init bash
           conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
           conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+          source ${work_dir}/../../../proxy_huggingface
           conda create -n py311 python=3.11 -y
           source ~/.bashrc
           conda activate py311
-          pip install -U pip
+          python --version
           DOCKER_EOF
       
       - name: Test
@@ -236,6 +235,7 @@ jobs:
             -e PR_NUMBER="$PR_NUMBER" \
             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
             $container_name /bin/bash <<-DOCKER_EOF
+          python --version
           ldconfig
           mkdir -p /root/.cache/pip
           pip cache dir
