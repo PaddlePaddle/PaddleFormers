@@ -373,6 +373,118 @@ class BasePlugin(MMPluginMixin):
             delta_len += len(mm_structure_ids) - 1
         return token_ids, labels
 
+    def replace_tag(self, content: str, media_type: str, index: int, mm_inputs: dict, processor) -> str:
+        """Phase-1: replace a single PLACEHOLDER with the single special token string (no expansion).
+
+        Args:
+            content: message content string containing one PLACEHOLDER to replace.
+            media_type: "image", "video", or "audio".
+            index: 0-based index of this media item among all items of the same type.
+            mm_inputs: dict returned by get_mm_inputs (contains thw etc.).
+            processor: the model processor.
+
+        Returns:
+            content with the first matching PLACEHOLDER replaced by the single special token.
+        """
+        if media_type == "image":
+            return content.replace(IMAGE_PLACEHOLDER, self.image_token, 1)
+        elif media_type == "video":
+            return content.replace(VIDEO_PLACEHOLDER, self.video_token, 1)
+        elif media_type == "audio":
+            return content.replace(AUDIO_PLACEHOLDER, self.audio_token, 1)
+        return content
+
+    def build_mm_structure(self, media_type: str, index: int, mm_inputs: dict, processor) -> list:
+        """Phase-2 builder: return the fully expanded token_ids for media[index].
+
+        This is called by _expand_mm_tokens as the builder argument to _replace_mm_tokens.
+        The default implementation returns just [token_id] (no BOS/EOS, no expansion).
+        Subclasses override to return the full structure including wrapper tokens.
+
+        Args:
+            media_type: "image", "video", or "audio".
+            index: 0-based index of this media item.
+            mm_inputs: dict returned by get_mm_inputs.
+            processor: the model processor.
+
+        Returns:
+            List[int] of token ids representing the expanded mm structure.
+        """
+        tokenizer = getattr(processor, "tokenizer")
+        if media_type == "image":
+            return [tokenizer.convert_tokens_to_ids(self.image_token)]
+        elif media_type == "video":
+            return [tokenizer.convert_tokens_to_ids(self.video_token)]
+        elif media_type == "audio":
+            return [tokenizer.convert_tokens_to_ids(self.audio_token)]
+        raise ValueError(f"Unknown media_type: {media_type}")
+
+    def _apply_replace_tag(self, messages, images, videos, audios, mm_inputs, processor):
+        """Phase-1 helper: apply replace_tag to every PLACEHOLDER across all messages.
+
+        Iterates through all messages and replaces each IMAGE/VIDEO/AUDIO_PLACEHOLDER
+        with the corresponding single special token, maintaining independent per-type counters.
+
+        Returns a deep-copied messages list with all PLACEHOLDERs replaced.
+        """
+        messages = deepcopy(messages)
+        img_idx, vid_idx, aud_idx = 0, 0, 0
+        for message in messages:
+            content = message["content"]
+            while IMAGE_PLACEHOLDER in content:
+                content = self.replace_tag(content, "image", img_idx, mm_inputs, processor)
+                img_idx += 1
+            while VIDEO_PLACEHOLDER in content:
+                content = self.replace_tag(content, "video", vid_idx, mm_inputs, processor)
+                vid_idx += 1
+            while AUDIO_PLACEHOLDER in content:
+                content = self.replace_tag(content, "audio", aud_idx, mm_inputs, processor)
+                aud_idx += 1
+            message["content"] = content
+        return messages
+
+    def _expand_mm_tokens(self, token_ids, labels, images, videos, audios, mm_inputs, processor):
+        """Phase-2 helper: expand single special tokens into full mm structures.
+
+        For each media type that is present, calls _replace_mm_tokens using
+        build_mm_structure as the builder. The expanded region gets labels=-100.
+
+        Returns updated (token_ids, labels).
+        """
+        tokenizer = getattr(processor, "tokenizer")
+        if images:
+            image_token_id = tokenizer.convert_tokens_to_ids(self.image_token)
+            image_grid_thw = mm_inputs.get("image_grid_thw", [None] * len(images))
+            token_ids, labels = self._replace_mm_tokens(
+                token_ids,
+                labels,
+                image_token_id,
+                image_grid_thw,
+                lambda i: self.build_mm_structure("image", i, mm_inputs, processor),
+            )
+        if videos:
+            video_token_id = tokenizer.convert_tokens_to_ids(self.video_token)
+            video_grid_thw = mm_inputs.get("video_grid_thw", [None] * len(videos))
+            token_ids, labels = self._replace_mm_tokens(
+                token_ids,
+                labels,
+                video_token_id,
+                video_grid_thw,
+                lambda i: self.build_mm_structure("video", i, mm_inputs, processor),
+            )
+        if audios:
+            audio_token_id = tokenizer.convert_tokens_to_ids(self.audio_token)
+            # audio uses feature_attention_mask as the "grid" list for length gating
+            audio_lengths = mm_inputs.get("feature_attention_mask", [None] * len(audios))
+            token_ids, labels = self._replace_mm_tokens(
+                token_ids,
+                labels,
+                audio_token_id,
+                audio_lengths,
+                lambda i: self.build_mm_structure("audio", i, mm_inputs, processor),
+            )
+        return token_ids, labels
+
     def pre_tokenize(
         self,
         messages,
@@ -382,27 +494,28 @@ class BasePlugin(MMPluginMixin):
         processor,
         **kwargs,
     ):
-        r"""
-        Pre-tokenize messages and return both tokens and pre_labels.
-        This is a default implementation that uses the existing process_messages flow.
-        Subclasses can override this for custom behavior (e.g., Qwen3VLPlugin).
+        r"""Pre-tokenize messages and return both tokens and pre_labels.
+
+        Uses the unified two-phase pipeline:
+          Phase-1: replace PLACEHOLDERs with single special tokens via _apply_replace_tag.
+          Phase-2: expand single tokens into full mm structures via _expand_mm_tokens.
 
         Returns:
-            tokens: List[int] - the tokenized message
-            pre_labels: List[int] - labels to be merged with process_tokens output
+            tokens: List[int] - the tokenized message (after expansion).
+            pre_labels: List[int] - -100 for mm regions, -1 elsewhere.
         """
-        # Default: process messages first (for VLMs, this replaces placeholders with vision tokens)
-        processed_messages = self.process_messages(messages, images, videos, [], mm_inputs, processor)
-
-        # Tokenize the processed content
+        audios = kwargs.get("audios", [])
         tokenizer = getattr(processor, "tokenizer")
-        content = processed_messages[0]["content"]
+
+        # Phase-1: PLACEHOLDER → single special token
+        messages_tagged = self._apply_replace_tag(messages, images, videos, audios, mm_inputs, processor)
+        content = messages_tagged[0]["content"]
         tokens = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(content))
         tokens = tokens + [tokenizer.eos_token_id]
 
-        # By default, pre_labels are all -1 (no special labels to apply)
-        # This allows SFTDataset to use process_tokens for label masking
+        # Phase-2: expand single tokens → full mm structures, labels=-100 for mm regions
         pre_labels = [-1] * len(tokens)
+        tokens, pre_labels = self._expand_mm_tokens(tokens, pre_labels, images, videos, audios, mm_inputs, processor)
 
         return tokens, pre_labels
 
@@ -507,6 +620,18 @@ class PaddleOCRVLPlugin(BasePlugin):
             mm_inputs.update(image_processor(images, return_tensors="pd"))
 
         return mm_inputs
+
+    @override
+    def build_mm_structure(self, media_type: str, index: int, mm_inputs: dict, processor) -> list:
+        if media_type == "image":
+            tokenizer = getattr(processor, "tokenizer")
+            image_processor = getattr(processor, "image_processor")
+            merge_length = int(getattr(image_processor, "merge_size")) ** 2
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            seqlen = image_grid_thw[index].prod().item() // merge_length if self.expand_mm_tokens else 1
+            s = f"{self.image_bos_token}{self.image_token * seqlen}{self.image_eos_token}"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
+        return super().build_mm_structure(media_type, index, mm_inputs, processor)
 
     @override
     def process_messages(
@@ -767,47 +892,39 @@ class ErnieVLPlugin(BasePlugin):
         return messages
 
     @override
-    def pre_tokenize(self, messages, images, videos, mm_inputs, processor):
+    def replace_tag(self, content: str, media_type: str, index: int, mm_inputs: dict, processor) -> str:
+        # Inject "Picture N:" / "Video N:" prefix before the single special token.
+        # The prefix is plain text that becomes normal tokens; _replace_mm_tokens
+        # then only expands the single image/video_token_id position.
+        if media_type == "image":
+            replacement = f"Picture {index + 1}:{self.image_token}"
+            return content.replace(IMAGE_PLACEHOLDER, replacement, 1)
+        elif media_type == "video":
+            replacement = f"Video {index + 1}:{self.video_token}"
+            return content.replace(VIDEO_PLACEHOLDER, replacement, 1)
+        return content
+
+    @override
+    def build_mm_structure(self, media_type: str, index: int, mm_inputs: dict, processor) -> list:
         tokenizer = getattr(processor, "tokenizer")
-        content = messages[0]["content"]
-        content = content.replace(IMAGE_PLACEHOLDER, self.image_token)
-        content = content.replace(VIDEO_PLACEHOLDER, self.video_token)
-        token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(content))
-        token_ids = token_ids + [tokenizer.eos_token_id]
-
-        image_token_id = tokenizer.convert_tokens_to_ids(self.image_token)
-        video_token_id = tokenizer.convert_tokens_to_ids(self.video_token)
         image_processor = getattr(processor, "image_processor")
-        merge_length = getattr(image_processor, "merge_size") ** 2
-        temporal_conv_size = getattr(image_processor, "temporal_conv_size")
-
-        if self.expand_mm_tokens:
+        merge_length = int(getattr(image_processor, "merge_size")) ** 2
+        if media_type == "image":
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            seqlen = image_grid_thw[index].prod().item() // merge_length if self.expand_mm_tokens else 1
+            s = f"{self.image_bos_token}{self.image_token * seqlen}{self.image_eos_token}"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
+        elif media_type == "video":
+            temporal_conv_size = getattr(image_processor, "temporal_conv_size")
             video_grid_thw = mm_inputs.get("video_grid_thw", [])
-        else:
-            image_grid_thw = [None] * len(images)
-            video_grid_thw = [None] * len(videos)
-
-        def build_image_structure(i):
-            seqlen = image_grid_thw[i].prod().item() // merge_length if self.expand_mm_tokens else 1
-            s = f"Picture {i + 1}:{self.image_bos_token}{self.image_token * seqlen}{self.image_eos_token}"
-            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
-
-        def build_video_structure(i):
             seqlen = (
-                video_grid_thw[i].prod().item() // merge_length // temporal_conv_size if self.expand_mm_tokens else 1
+                video_grid_thw[index].prod().item() // merge_length // temporal_conv_size
+                if self.expand_mm_tokens
+                else 1
             )
-            s = f"Video {i + 1}:{self.vision_bos_token}{self.video_token * seqlen}{self.vision_eos_token}"
+            s = f"{self.vision_bos_token}{self.video_token * seqlen}{self.vision_eos_token}"
             return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
-
-        labels = [-1] * len(token_ids)
-        token_ids, labels = self._replace_mm_tokens(
-            token_ids, labels, image_token_id, image_grid_thw, build_image_structure
-        )
-        token_ids, labels = self._replace_mm_tokens(
-            token_ids, labels, video_token_id, video_grid_thw, build_video_structure
-        )
-        return token_ids, labels
+        return super().build_mm_structure(media_type, index, mm_inputs, processor)
 
 
 @dataclass
@@ -957,6 +1074,23 @@ class Qwen2VLPlugin(BasePlugin):
 
         self.masked_tokens = [self.vision_bos_token, self.image_token, self.video_token, self.vision_eos_token]
         return messages
+
+    @override
+    def build_mm_structure(self, media_type: str, index: int, mm_inputs: dict, processor) -> list:
+        tokenizer = getattr(processor, "tokenizer")
+        image_processor = getattr(processor, "image_processor")
+        merge_length = int(getattr(image_processor, "merge_size")) ** 2
+        if media_type == "image":
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            seqlen = image_grid_thw[index].prod().item() // merge_length if self.expand_mm_tokens else 1
+            s = f"{self.vision_bos_token}{self.image_token * seqlen}{self.vision_eos_token}"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
+        elif media_type == "video":
+            video_grid_thw = mm_inputs.get("video_grid_thw", [])
+            seqlen = video_grid_thw[index].prod().item() // merge_length if self.expand_mm_tokens else 1
+            s = f"{self.vision_bos_token}{self.video_token * seqlen}{self.vision_eos_token}"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
+        return super().build_mm_structure(media_type, index, mm_inputs, processor)
 
 
 @dataclass
@@ -1138,6 +1272,38 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
 
         return messages
 
+    @override
+    def build_mm_structure(self, media_type: str, index: int, mm_inputs: dict, processor) -> list:
+        tokenizer = getattr(processor, "tokenizer")
+        image_processor = getattr(processor, "image_processor")
+        merge_length = int(getattr(image_processor, "merge_size")) ** 2
+        if media_type == "image":
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            seqlen = image_grid_thw[index].prod().item() // merge_length if self.expand_mm_tokens else 1
+            s = f"{self.vision_bos_token}{self.image_token * seqlen}{self.vision_eos_token}"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
+        elif media_type == "video":
+            video_grid_thw = mm_inputs.get("video_grid_thw", [])
+            seqlen = video_grid_thw[index].prod().item() // merge_length if self.expand_mm_tokens else 1
+            s = f"{self.vision_bos_token}{self.video_token * seqlen}{self.vision_eos_token}"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
+        elif media_type == "audio":
+            if self.expand_mm_tokens:
+                feature_attention_mask = mm_inputs.get("feature_attention_mask")
+                if processor.__class__.__name__ == "Qwen3OmniMoeProcessor":
+                    input_lengths = feature_attention_mask[index].sum(-1)
+                    input_lengths_leave = input_lengths % 100
+                    feature_lengths = (input_lengths_leave - 1) // 2 + 1
+                    audio_seqlen = int(((feature_lengths - 1) // 2 + 1 - 1) // 2 + 1 + (input_lengths // 100) * 13)
+                else:
+                    input_length = int((feature_attention_mask[index].sum(-1).item() - 1) // 2 + 1)
+                    audio_seqlen = int((input_length - 2) // 2 + 1)
+            else:
+                audio_seqlen = 1
+            s = f"{self.audio_bos_token}{self.audio_token * audio_seqlen}{self.audio_eos_token}"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
+        return super(Qwen2VLPlugin, self).build_mm_structure(media_type, index, mm_inputs, processor)
+
 
 @dataclass
 class Qwen3VLPlugin(Qwen2VLPlugin):
@@ -1183,82 +1349,40 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
         return mm_inputs
 
     @override
-    def pre_tokenize(self, messages, images, videos, mm_inputs, processor):
+    def build_mm_structure(self, media_type: str, index: int, mm_inputs: dict, processor) -> list:
         tokenizer = getattr(processor, "tokenizer")
-        content = messages[0]["content"]
-        # replace all PLACEHOLDER with self.image_token_id
-        content = content.replace(IMAGE_PLACEHOLDER, self.image_token)
-        content = content.replace(VIDEO_PLACEHOLDER, self.video_token)
-        token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(content))
-        # Add an EOS token at the end of each sample
-        token_ids = token_ids + [tokenizer.eos_token_id]
-        video_token_id = tokenizer.convert_tokens_to_ids(self.video_token)
-        image_token_id = tokenizer.convert_tokens_to_ids(self.image_token)
-
         image_processor = getattr(processor, "image_processor")
         video_processor = getattr(processor, "video_processor")
-
-        image_merge_length = getattr(image_processor, "merge_size") ** 2
-        video_merge_length = getattr(video_processor, "merge_size") ** 2
-        if self.expand_mm_tokens:
+        image_merge_length = int(getattr(image_processor, "merge_size")) ** 2
+        video_merge_length = int(getattr(video_processor, "merge_size")) ** 2
+        if media_type == "image":
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            seqlen = image_grid_thw[index].prod().item() // image_merge_length if self.expand_mm_tokens else 1
+            s = f"{self.vision_bos_token}{self.image_token * seqlen}{self.vision_eos_token}"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
+        elif media_type == "video":
             video_grid_thw = mm_inputs.get("video_grid_thw", [])
-            num_frames = video_grid_thw[0][0] if len(video_grid_thw) > 0 else 0
             video_metadata = mm_inputs.get("video_metadata", {})
-
-        else:
-            image_grid_thw = [None] * len(images)
-            video_grid_thw = [None] * len(videos)
-            num_frames = 0
-            # timestamps = [0]
-
-        def build_image_structure(i):
-            image_seqlen = image_grid_thw[i].prod().item() // image_merge_length if self.expand_mm_tokens else 1
-            image_structure = f"{self.vision_bos_token}{self.image_token * image_seqlen}{self.vision_eos_token}"
-            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(image_structure))
-
-        def build_video_structure(i):
-            metadata = video_metadata[i]
-            timestamps = processor._calculate_timestamps(
-                metadata.frames_indices,
-                metadata.fps,
-                video_processor.merge_size,
-            )
-            video_structure = ""
-            for frame_index in range(num_frames):
-                video_seqlen = (
-                    video_grid_thw[i][1:].prod().item() // video_merge_length if self.expand_mm_tokens else 1
+            num_frames = int(video_grid_thw[index][0]) if self.expand_mm_tokens and len(video_grid_thw) > 0 else 0
+            if self.expand_mm_tokens:
+                metadata = video_metadata[index]
+                timestamps = processor._calculate_timestamps(
+                    metadata.frames_indices,
+                    metadata.fps,
+                    video_processor.merge_size,
                 )
-                timestamp_sec = timestamps[frame_index]
-                frame_structure = (
-                    f"<{timestamp_sec:.1f} seconds>"
-                    f"{self.vision_bos_token}{self.video_token * video_seqlen}{self.vision_eos_token}"
-                )
-                video_structure += frame_structure
-
-            if not self.expand_mm_tokens:
+                video_structure = ""
+                for frame_index in range(num_frames):
+                    video_seqlen = video_grid_thw[index][1:].prod().item() // video_merge_length
+                    timestamp_sec = timestamps[frame_index]
+                    video_structure += (
+                        f"<{timestamp_sec:.1f} seconds>"
+                        f"{self.vision_bos_token}{self.video_token * video_seqlen}{self.vision_eos_token}"
+                    )
+            else:
                 video_structure = f"{self.vision_bos_token}{self.video_token}{self.vision_eos_token}"
             return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(video_structure))
-
-        labels = [-1] * len(token_ids)
-
-        token_ids, labels = self._replace_mm_tokens(
-            token_ids,
-            labels,
-            image_token_id,
-            image_grid_thw,
-            build_image_structure,
-        )
-
-        token_ids, labels = self._replace_mm_tokens(
-            token_ids,
-            labels,
-            video_token_id,
-            video_grid_thw,
-            build_video_structure,
-        )
-
-        return token_ids, labels
+        return super().build_mm_structure(media_type, index, mm_inputs, processor)
 
     @override
     def process_messages(
@@ -1475,22 +1599,18 @@ class GLM4VPlugin(Qwen2VLPlugin):
         return mm_inputs
 
     @override
-    def pre_tokenize(self, messages, images, videos, mm_inputs, processor):
+    def build_mm_structure(self, media_type: str, index: int, mm_inputs: dict, processor) -> list:
         tokenizer = getattr(processor, "tokenizer")
-        content = messages[0]["content"]
-        content = content.replace(IMAGE_PLACEHOLDER, self.image_token)
-        content = content.replace(VIDEO_PLACEHOLDER, self.video_token)
-        token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(content))
-        token_ids = token_ids + [tokenizer.eos_token_id]
-
-        image_token_id = tokenizer.convert_tokens_to_ids(self.image_token)
-        video_token_id = tokenizer.convert_tokens_to_ids(self.video_token)
-        merge_length = getattr(getattr(processor, "image_processor"), "merge_size") ** 2
-
-        if self.expand_mm_tokens:
+        image_processor = getattr(processor, "image_processor")
+        merge_length = int(getattr(image_processor, "merge_size")) ** 2
+        if media_type == "image":
             image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            seqlen = image_grid_thw[index].prod().item() // merge_length if self.expand_mm_tokens else 1
+            s = f"<|begin_of_image|>{self.image_token * seqlen}<|end_of_image|>"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
+        elif media_type == "video":
             video_grid_thw = mm_inputs.get("video_grid_thw", [])
-            num_frames = video_grid_thw[0][0] if len(video_grid_thw) > 0 else 0
+            num_frames = int(video_grid_thw[index][0]) if self.expand_mm_tokens and len(video_grid_thw) > 0 else 0
             timestamps = mm_inputs.get("timestamps", [])
             if hasattr(timestamps, "tolist"):
                 timestamps = timestamps.tolist()
@@ -1503,36 +1623,17 @@ class GLM4VPlugin(Qwen2VLPlugin):
             selected_timestamps = timestamps_list[:num_frames]
             while len(selected_timestamps) < num_frames:
                 selected_timestamps.append(selected_timestamps[-1] if selected_timestamps else 0)
-        else:
-            image_grid_thw = [None] * len(images)
-            video_grid_thw = [None] * len(videos)
-            num_frames = 0
-            selected_timestamps = [0]
-
-        def build_image_structure(i):
-            seqlen = image_grid_thw[i].prod().item() // merge_length if self.expand_mm_tokens else 1
-            s = f"<|begin_of_image|>{self.image_token * seqlen}<|end_of_image|>"
-            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
-
-        def build_video_structure(i):
-            video_structure = ""
-            for frame_index in range(num_frames):
-                seqlen = video_grid_thw[i][1:].prod().item() // merge_length if self.expand_mm_tokens else 1
-                ts = selected_timestamps[frame_index]
-                video_structure += f"<|begin_of_image|>{self.image_token * seqlen}<|end_of_image|>{ts}"
-            if not self.expand_mm_tokens:
+            if self.expand_mm_tokens:
+                video_structure = ""
+                for frame_index in range(num_frames):
+                    seqlen = video_grid_thw[index][1:].prod().item() // merge_length
+                    ts = selected_timestamps[frame_index]
+                    video_structure += f"<|begin_of_image|>{self.image_token * seqlen}<|end_of_image|>{ts}"
+            else:
                 video_structure = self.video_token
             s = f"<|begin_of_video|>{video_structure}<|end_of_video|>"
             return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
-
-        labels = [-1] * len(token_ids)
-        token_ids, labels = self._replace_mm_tokens(
-            token_ids, labels, image_token_id, image_grid_thw, build_image_structure
-        )
-        token_ids, labels = self._replace_mm_tokens(
-            token_ids, labels, video_token_id, video_grid_thw, build_video_structure
-        )
-        return token_ids, labels
+        return super().build_mm_structure(media_type, index, mm_inputs, processor)
 
 
 @dataclass
@@ -1588,6 +1689,19 @@ class Gemma3Plugin(BasePlugin):
         mm_inputs = self._get_mm_inputs(images, videos, audios, processor, **kwargs)
         mm_inputs.pop("num_crops", None)
         return mm_inputs
+
+    @override
+    def _apply_replace_tag(self, messages, images, videos, audios, mm_inputs, processor):
+        # Gemma3 uses processor.full_image_sequence which is a multi-token string and
+        # cannot be represented as a single special token for findall.
+        # Fall back to the full process_messages expansion path.
+        return self.process_messages(messages, images, videos, audios, mm_inputs, processor)
+
+    @override
+    def _expand_mm_tokens(self, token_ids, labels, images, videos, audios, mm_inputs, processor):
+        # process_messages already fully expanded the tokens during _apply_replace_tag,
+        # so there is nothing left to expand here.
+        return token_ids, labels
 
 
 @dataclass
@@ -1680,6 +1794,19 @@ class GlmOcrPlugin(BasePlugin):
         # 5) mask：这些 token 不参与 loss（和你原先 PaddleOCRVLPlugin 一致）
         self.masked_tokens = [self.image_token, self.image_bos_token, self.image_eos_token]
         return messages
+
+    @override
+    def build_mm_structure(self, media_type: str, index: int, mm_inputs: dict, processor) -> list:
+        if media_type == "image":
+            tokenizer = getattr(processor, "tokenizer")
+            image_processor = getattr(processor, "image_processor")
+            merge_length = int(getattr(image_processor, "merge_size")) ** 2
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            seqlen = int(image_grid_thw[index].prod().item()) // merge_length if self.expand_mm_tokens else 1
+            seqlen = max(1, seqlen)
+            s = f"{self.image_bos_token}{self.image_token * seqlen}{self.image_eos_token}"
+            return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(s))
+        return super().build_mm_structure(media_type, index, mm_inputs, processor)
 
 
 PLUGINS = {
