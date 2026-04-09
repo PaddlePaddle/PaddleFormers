@@ -203,13 +203,14 @@ jobs:
           MODE="${{ steps.trigger_mode.outputs.mode }}"
           UPDATE_BASELINE_MODELS="${{ steps.trigger_mode.outputs.update_baseline_models }}"
           PR_NUMBER="${{ steps.trigger_mode.outputs.pr_number }}"
+          BRANCH="${{ github.event.pull_request.base.ref || github.ref_name }}"
           work_dir="${{ github.workspace }}"
           docker exec -i \
             -e work_dir="$work_dir" \
             -e MODE="$MODE" \
             -e UPDATE_BASELINE_MODELS="$UPDATE_BASELINE_MODELS" \
             -e PR_NUMBER="$PR_NUMBER" \
-            -e BRANCH="$BRANCH" \ 
+            -e BRANCH="$BRANCH" \
             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
             $container_name /bin/bash <<-DOCKER_EOF
           ldconfig
@@ -220,7 +221,7 @@ jobs:
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
           echo "=== Trigger Mode: ${MODE} ==="
           echo "Update baseline: ${UPDATE_BASELINE_MODELS}"
-          echo "Branch: ${BRANCH}"
+          echo "BRANCH: ${BRANCH}"
           echo "PR number: ${PR_NUMBER}"
           bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS" $BRANCH      
           DOCKER_EOF
