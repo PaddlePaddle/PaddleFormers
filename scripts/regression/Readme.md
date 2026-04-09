@@ -25,7 +25,7 @@
 
 模型提前上传到 Aistudio。
 
-在 config.yaml 中新增模型配置即可,可复制其他模型配置，修改repo_id等参数，如下
+在 config.yaml 中新增模型配置即可,可复制其他模型配置，修改 repo_id 等参数，如下
 ```bash
 repo_id: PaddleFormers/tiny-random-qwen3moev2
     model_type: text # text纯文模型，vl 多模模型

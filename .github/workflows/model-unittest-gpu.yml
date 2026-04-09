@@ -218,12 +218,11 @@ jobs:
           set -e
           rm -rf /root/.cache/aistudio/
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
-          # Use pre-parsed trigger mode variables
           echo "=== Trigger Mode: ${MODE} ==="
           echo "Update baseline: ${UPDATE_BASELINE_MODELS}"
           echo "Branch: ${BRANCH}"
           echo "PR number: ${PR_NUMBER}"
-          bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS" $Branch        
+          bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS" $BRANCH      
           DOCKER_EOF
       - name: Upload Products
         if: always()
