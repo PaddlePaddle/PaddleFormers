@@ -391,9 +391,10 @@ class ParamFusionStorageHelper:
     def init_buffer(self, meta):
         if paddle.is_compiled_with_xpu():
             cuda_buffer = paddle.to_tensor(paddle.base.core.LoDTensor._new_shared_xpu(meta))
+            cpu_buffer = cuda_buffer.cpu()
         else:
             cuda_buffer = paddle.to_tensor(paddle.base.core.LoDTensor._new_shared_cuda(meta))
-        cpu_buffer = cuda_buffer.pin_memory()
+            cpu_buffer = cuda_buffer.pin_memory()
         return (cuda_buffer, cpu_buffer)
 
     @imperative_base.no_grad()
