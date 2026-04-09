@@ -24,6 +24,7 @@ on:
           - 'qwen2_moe'
           - 'qwen2'
           - 'gemma3_text'
+          - 'paddleocr_vl'
   workflow_call:
     inputs:
       runner:
