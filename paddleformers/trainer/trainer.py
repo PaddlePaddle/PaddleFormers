@@ -3650,7 +3650,7 @@ class Trainer:
         if self.args.pipeline_model_parallel_size > 1:
             return self.training_pipeline_step(model, inputs)
 
-        if hasattr(model, "_prepare_unified_non_pp_data"):
+        if hasattr(model, "_prepare_unified_non_pp_data") and model._prepare_unified_non_pp_data is not None:
             model._prepare_unified_non_pp_data(inputs)
 
         model.train()
