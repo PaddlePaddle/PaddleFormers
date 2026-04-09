@@ -399,6 +399,12 @@ class LlmMetaConfig:
             "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
         ),
         (
+            "moe_deep_gemm",
+            bool,
+            False,
+            "Whether to enable deep GEMM for MoE experts. Defaults to False. Effective only after the moe_grouped_gemm is set. ",
+        ),
+        (
             "moe_ep_barrier",
             bool,
             True,
