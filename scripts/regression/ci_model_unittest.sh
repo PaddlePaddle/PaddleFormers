@@ -37,46 +37,26 @@ init_env() {
       mv ./scripts/regression/config.yaml ./scripts/regression/config_origin.yaml
     fi
 
-    if echo "${FLAGS_enable_CE}" | grep -q "CE_Release"; then
-        echo "CE_Release: install paddle release + fleet release + formers release"
-        bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}"
-        # donwload configs
-        cd ./scripts/regression
-        wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_release_config/config.yaml 
-        # update configs
-        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
-        cd -
-    
-    elif echo "${FLAGS_enable_CE}" | grep -q "CE_Develop"; then
-    
-        echo "CE_Develop: install paddle develop + fleet develop + formers develop"
-        bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}"
-        # donwload configs
-        cd ./scripts/regression
-        wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_develop_config/config.yaml 
-        # update configs
-        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
-        cd -
-    elif [[ "${FLAGS_enable_CI}" == "True" ]] && [[ "${BRANCH}" == "develop" ]];then
-        echo "CI: install paddle stable + fleet stable + develop formers"
-        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI} 
-        # donwload configs
-        cd ./scripts/regression
-        wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_develop_config/config.yaml 
-        # update configs
-        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
-        cd -
-    else
-        # CI Release
-        echo "CI: install paddle stable + fleet stable + release formers"
-        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI} 
-        # donwload configs
-        cd ./scripts/regression
-        wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_release_config/config.yaml 
-        # update configs
-        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
-        cd - 
-    fi
+install_requirements() {
+    start_ts=$(date +%s)
+    python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+    python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
+    python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
+    # Fix later 
+    # python -m pip install -U --no-cache-dir transformers
+    python -m pip install -r requirements.txt -i https://pypi.org/simple
+    # echo "paddlepaddle-gpu @ https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/cbf3469113cd76b7d5f4cba7b8d7d5f55d9e9911/paddlepaddle_gpu-3.3.0-cp310-cp310-linux_x86_64.whl" >> requirements.txt
+    python setup.py bdist_wheel > /dev/null
+    pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+    echo "paddlefleet commit:"
+    python -c "import paddlefleet; print(paddlefleet.version.commit)"
+    python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
+    pip install -r tests/requirements.txt
+    python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
+    python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
+    python -m pip list >> ${log_path}/commit_info.txt
+    end_ts=$(date +%s)
+    echo -e "\033[32m install requirements cost $((end_ts - start_ts))s \033[0m"
 }
 
 upload_baseline(){
