@@ -17,7 +17,7 @@
 import json
 import time
 from itertools import islice
-from typing import Callable, List, Optional, Tuple
+from typing import List, Tuple
 
 # https://arxiv.org/pdf/2404.10830
 import binpacking
@@ -27,42 +27,6 @@ import paddle
 from paddleformers.utils.env import NONE_CHAT_TEMPLATE
 
 from ..utils.log import logger
-
-
-def _extend_tokens(
-    input_ids: List[int],
-    labels: Optional[List[int]],
-    replace_idx_list: List[int],
-    get_new_tokens: Callable[[int], List[int]],
-) -> Tuple[List[int], Optional[List[int]], Optional[List[float]]]:
-    """
-    Extend tokens at specified indices with new token sequences.
-
-    Replaces tokens at given indices with new token sequences, extending
-    input_ids and adjusting labels by masking replaced positions with -100.
-
-    Args:
-        input_ids: List of input token IDs
-        labels: List of label values (will be masked at replaced positions)
-        replace_idx_list: List of indices to replace (in order of appearance)
-        get_new_tokens: Callable that takes index and returns new tokens to insert
-
-    Returns:
-        Tuple of (input_ids, labels) with extended tokens
-    """
-    added_tokens_len = 0
-    for i, idx in enumerate(replace_idx_list):
-        try:
-            new_tokens = get_new_tokens(i)
-        except IndexError as e:
-            logger.warning(f"IndexError occurs in the _extend_tokens function: {e}.")
-            continue
-        token_len = len(new_tokens)
-        input_ids = input_ids[: idx + added_tokens_len] + new_tokens + input_ids[added_tokens_len + idx + 1 :]
-        if labels:
-            labels = labels[: idx + added_tokens_len] + [-100] * token_len + labels[added_tokens_len + idx + 1 :]
-        added_tokens_len += token_len - 1
-    return input_ids, labels
 
 
 def round_up_to_multiple_of_8(n):
