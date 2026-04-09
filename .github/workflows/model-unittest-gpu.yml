@@ -209,7 +209,7 @@ jobs:
             -e MODE="$MODE" \
             -e UPDATE_BASELINE_MODELS="$UPDATE_BASELINE_MODELS" \
             -e PR_NUMBER="$PR_NUMBER" \
-            -e BRANCH="$BRANCH"
+            -e BRANCH="$BRANCH" \ 
             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
             $container_name /bin/bash <<-DOCKER_EOF
           ldconfig
