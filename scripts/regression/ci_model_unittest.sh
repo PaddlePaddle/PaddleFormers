@@ -19,7 +19,6 @@ export FLAGS_enable_CI=${1-False}
 export FLAGS_enable_CE=${2-False}
 export update_baseline_models=${3-False}
 export BRANCH=${4-develop}
-export PR_NUMBER=${5-0000}
 
 export nlp_dir=/workspace/PaddleFormers
 export log_path=/workspace/PaddleFormers/model_unittest_logs
@@ -37,28 +36,47 @@ init_env() {
       mv ./scripts/regression/config.yaml ./scripts/regression/config_origin.yaml
     fi
 
-install_requirements() {
-    start_ts=$(date +%s)
-    python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-    python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
-    python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
-    # Fix later 
-    # python -m pip install -U --no-cache-dir transformers
-    python -m pip install -r requirements.txt -i https://pypi.org/simple
-    # echo "paddlepaddle-gpu @ https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/cbf3469113cd76b7d5f4cba7b8d7d5f55d9e9911/paddlepaddle_gpu-3.3.0-cp310-cp310-linux_x86_64.whl" >> requirements.txt
-    python setup.py bdist_wheel > /dev/null
-    pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
-    echo "paddlefleet commit:"
-    python -c "import paddlefleet; print(paddlefleet.version.commit)"
-    python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
-    pip install -r tests/requirements.txt
-    python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
-    python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
-    python -m pip list >> ${log_path}/commit_info.txt
-    end_ts=$(date +%s)
-    echo -e "\033[32m install requirements cost $((end_ts - start_ts))s \033[0m"
+    if echo "${FLAGS_enable_CE}" | grep -q "CE_Release"; then
+        echo "CE_Release: install paddle release + fleet release + formers release"
+        bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}"
+        # donwload configs
+        cd ./scripts/regression
+        wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_release_config/config.yaml 
+        # update configs
+        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
+        cd -
+    
+    elif echo "${FLAGS_enable_CE}" | grep -q "CE_Develop"; then
+    
+        echo "CE_Develop: install paddle develop + fleet develop + formers develop"
+        bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}"
+        # donwload configs
+        cd ./scripts/regression
+        wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_develop_config/config.yaml 
+        # update configs
+        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
+        cd -
+    elif [[ "${FLAGS_enable_CI}" == "True" ]] && [[ "${BRANCH}" == "develop" ]];then
+        echo "CI: install paddle stable + fleet stable + develop formers"
+        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI} 
+        # donwload configs
+        cd ./scripts/regression
+        wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_develop_config/config.yaml 
+        # update configs
+        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
+        cd -
+    else
+        # CI Release
+        echo "CI: install paddle stable + fleet stable + release formers"
+        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI} 
+        # donwload configs
+        cd ./scripts/regression
+        wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_release_config/config.yaml 
+        # update configs
+        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
+        cd - 
+    fi
 }
-
 upload_baseline(){
     cp -r /home/models/bos/* ./
     rm -rf upload
@@ -77,7 +95,6 @@ upload_baseline(){
         python upload.py upload "paddle-qa/paddleformers/ci_release_config/"
     fi
 }
-
 print_info() {
     if [ $1 -ne 0 ]; then
         cat ${log_path}/model_unittest.log | grep -v "Fail to fscanf: Success" \
@@ -153,7 +170,7 @@ if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];the
     python -m pytest -s -v --models=${models} --update-baseline=${update_baseline_models} scripts/regression/test_models.py > ${log_path}/model_unittest.log 2>&1
     exit_code=$?
     print_info $exit_code model_unittest
-    upload_baseline 
+    upload_baseline   
 else
     echo -e "\033[32m Changed Not CI case, Skips \033[0m"
     exit_code=0
