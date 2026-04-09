@@ -79,3 +79,15 @@ python -m pytest -s -v --models=all scripts/regression/test_models.py --update-b
 Description:
 [update-baseline: llama]
 ```
+### CI 触发规则
+
+```bash
+1、自动回归对应模型
+
+修改PaddleFormers/paddleformers/transformers/*.py
+修改PaddleFormers/tests/transformers/*.py
+
+2、回归glm_moe模型
+
+只改动了.py文件，没有捕获到修改模型文件
+```
