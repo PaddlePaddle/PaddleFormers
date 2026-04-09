@@ -38,7 +38,6 @@ from numpy import allclose, ndarray, transpose
 from paddle import Tensor
 from paddle.nn import Layer
 
-from ..quantization.quantization_utils import parse_weight_quantize_algo
 from ..utils.distributed import distributed_allgather, distributed_gather
 from ..utils.import_utils import (
     is_package_available,
@@ -73,6 +72,9 @@ def add_quant_mapping(name_action_mappings, quantization_config):
         )
     else:
         post_quantize = False
+
+    from ..quantization.quantization_utils import parse_weight_quantize_algo
+
     if not post_quantize:
         mapping_keys = list(name_action_mappings.keys())
         pattern = r"^(?:.*\.)?layers(\.[a-zA-Z0-9_]+)*\.weight$"

@@ -413,7 +413,10 @@ class LlmMetaConfig:
     ]
 
     mtp_attributes = [
+        ("train_mtp_only", int, 0, "Whether to train MTP only."),
+        ("mtp_distillation_loss", bool, False, "Whether to use distillation MTP loss."),
         ("num_nextn_predict_layers", int, 0, "Number of nextn predict layers."),
+        ("mtp_num_layers", int, 0, "Whether to use Autoregressive MTP Training, activate if > 1."),
         (
             "mtp_loss_scaling_factor",
             float,
@@ -796,8 +799,7 @@ class PretrainedConfig:
 
     _auto_class: Optional[str] = None
 
-    # Fix me, it is global for all config
-    _unsavable_keys = set()
+    _unsavable_keys = set()  # class-level default; each instance gets its own copy in __init__
 
     def __setattr__(self, key, value):
         if key in super().__getattribute__("attribute_map"):
@@ -823,8 +825,8 @@ class PretrainedConfig:
         kwargs = attribute_map(self, kwargs=kwargs)
         kwargs.pop("transformers_version", None)
         llm_meta = LlmMetaConfig._get_init()
-        self._unsavable_keys.update(LlmMetaConfig._get_unsavable_keys())
-        self._unsavable_keys.remove("tensor_model_parallel_size")
+        self._unsavable_keys = set(LlmMetaConfig._get_unsavable_keys())
+        self._unsavable_keys.discard("tensor_model_parallel_size")
         self._unsavable_keys.add("_attn_implementation")
 
         kwargs = set_expected_keys(self, llm_meta, kwargs)
@@ -1380,6 +1382,8 @@ class PretrainedConfig:
             del output["_auto_class"]
         if "moe_group" in output:
             del output["moe_group"]
+        if "_unsavable_keys" in output:
+            del output["_unsavable_keys"]
         if self._save_to_hf and "dtype" in output:
             output["torch_dtype"] = str(output["dtype"])
             del output["dtype"]
@@ -1694,6 +1698,7 @@ def recursive_diff_dict(dict_a, dict_b, config_obj=None):
 ALLOWED_LAYER_TYPES = (
     "full_attention",
     "sliding_attention",
+    "linear_attention",
 )
 
 

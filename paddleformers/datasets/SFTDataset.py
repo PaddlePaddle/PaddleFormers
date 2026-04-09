@@ -17,7 +17,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from itertools import chain
-from typing import Dict, List
+from typing import Dict, List, Literal, Optional
 
 import numpy as np
 from paddle.io import Dataset, IterableDataset
@@ -78,9 +78,9 @@ class BaseSFTDataset:
         self.split_multi_turn = dataset_config.get("split_multi_turn", False)
         self.encode_one_turn = dataset_config.get("encode_one_turn", True)
         self.is_pretraining = dataset_config.get("is_pretraining", False)
-        self.is_valid = dataset_config.get("is_valid", False)
+        self.truncation_strategy = dataset_config.get("truncation_strategy", "delete")
         self.truncate_packing = dataset_config.get("truncate_packing", True)
-        self.truncation_strategy = dataset_config.get("truncation_strategy", "right")
+        self.is_valid = dataset_config.get("is_valid", False)
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
         self.dtype = dataset_config.get("dtype", None)
@@ -96,6 +96,13 @@ class BaseSFTDataset:
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
         if self.is_pretraining and self.packing and self.truncate_packing:
             logger.info("[dataflow] pretrain dataflow using truncate packing.")
+        assert self.truncation_strategy in [
+            "oral",
+            "delete",
+            "right",
+            "left",
+        ], f"truncation_strategy must be in [oral, delete, right, left], but got {self.truncation_strategy}"
+        logger.info(f"[dataflow] truncation_strategy: {self.truncation_strategy}")
 
         # special token
         self.begin_token = getattr(self.tokenizer.special_tokens_map, "cls_token", "<|begin_of_sentence|>")
@@ -122,7 +129,7 @@ class BaseSFTDataset:
             self.num_reserved_tokens_for_each_dialog += 1
         logger.info(f"self.num_reserved_tokens_for_each_dialog: {self.num_reserved_tokens_for_each_dialog}")
 
-        # placeholder token init
+        # media placeholder token
         self.placeholder_tokens = []
         if self.template and self.template.mm_plugin:
             for tok in [
@@ -707,19 +714,21 @@ class BaseSFTDataset:
             if len(tokens_target) == 0:
                 logger.warning(f"[SKIP] The length of encoded assistant tokens is 0: {example}")
                 return None
-            remaining_len = self.max_seq_len - cur_len
-            if len(tokens_src) + len(tokens_target) > remaining_len:
-                if images or videos or audios:
-                    # If there is multimodal data, do not truncate it; just discard it directly.
-                    sub_src = example["messages"][0]["content"].strip()[:50]
-                    logger.warning(f"[SKIP] This data is too long: {sub_src}...")
-                    return None
-                # If the source (src) exceeds length limit, discard this round of conversation data
-                # If the target (tgt) exceeds length limit, truncate it
-                if len(tokens_src) > remaining_len:
-                    break
-                else:
-                    tokens_target = tokens_target[: remaining_len - len(tokens_src)]
+
+            if self.truncation_strategy == "oral":
+                remaining_len = self.max_seq_len - cur_len
+                if len(tokens_src) + len(tokens_target) > remaining_len:
+                    if images or videos or audios:
+                        # If there is multimodal data, do not truncate it; just discard it directly.
+                        sub_src = example["messages"][0]["content"].strip()[:50]
+                        logger.warning(f"[SKIP] This data is too long: {sub_src}...")
+                        return None
+                    # If the source (src) exceeds length limit, discard this round of conversation data
+                    # If the target (tgt) exceeds length limit, truncate it
+                    if len(tokens_src) > remaining_len:
+                        break
+                    else:
+                        tokens_target = tokens_target[: remaining_len - len(tokens_src)]
 
             labels_src = [-100] * len(tokens_src)
 
@@ -782,12 +791,21 @@ class BaseSFTDataset:
                 tokens.extend(suffix_ids)
                 labels.extend(suffix_ids)
 
+        # data truncate
+        if self.truncation_strategy != "oral":
+            tokens, labels = self._encode_truncated(tokens, labels)
+            if not tokens:
+                sub_src = example["messages"][0]["content"].strip()[:50]
+                logger.warning(f"[SKIP] data is deleted by truncation strategy: {sub_src}...")
+                return None
+        else:
+            if len(tokens) > self.max_seq_len:
+                raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+
         # label shift
         labels = labels[1:] + [-100]
-        if len(tokens) > self.max_seq_len:
-            raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
-        pos_ids = list(range(len(tokens)))  # only pure text, mm_position_ids will be reconstructed in collate.py
+        pos_ids = list(range(len(tokens)))
 
         if all(x == -100 for x in labels):
             logger.warning(f"[SKIP] all labels set to -100: {example}")
@@ -823,6 +841,56 @@ class BaseSFTDataset:
             audios=audios,
             mm_inputs=mm_inputs,
         )
+
+    @staticmethod
+    def _get_length(input_ids, labels):
+        # input_ids might be a tensor.
+        lengths = [0]
+        if input_ids is not None:
+            lengths.append(len(input_ids))
+        if labels is not None:
+            lengths.append(len(labels))
+        length = max(lengths)
+        return length
+
+    def _truncate(
+        self,
+        input_ids: List[int],
+        labels: Optional[List[int]],
+        truncation_strategy: Literal["left", "right"],
+    ):
+        max_len = self.max_seq_len
+        placeholder_set = set(self.placeholder_tokens)
+
+        is_placeholder = [tok in placeholder_set for tok in input_ids]
+        placeholder_idx = [i for i, v in enumerate(is_placeholder) if v]
+
+        if len(placeholder_idx) >= max_len:
+            keep_idx = placeholder_idx[:max_len]
+        else:
+            remain = max_len - len(placeholder_idx)
+            non_placeholder_idx = [i for i, v in enumerate(is_placeholder) if not v]
+
+            if truncation_strategy == "left":
+                extra_idx = non_placeholder_idx[-remain:]
+            else:
+                extra_idx = non_placeholder_idx[:remain]
+
+            keep_idx = sorted(placeholder_idx + extra_idx)
+
+        input_ids = [input_ids[i] for i in keep_idx]
+        labels = [labels[i] for i in keep_idx]
+
+        return input_ids, labels
+
+    def _encode_truncated(self, input_ids, labels):
+        length = self._get_length(input_ids, labels)
+        if self.max_seq_len is not None and length > self.max_seq_len:
+            if self.truncation_strategy == "delete":
+                return None, None
+            if self.truncation_strategy in {"right", "left"}:
+                input_ids, labels = self._truncate(input_ids, labels, truncation_strategy=self.truncation_strategy)
+        return input_ids, labels
 
     def print_max_steps_estimate_progress(self):
         current_percent = (self.used_estimate_samples / self.max_estimate_samples) * 100
