@@ -171,13 +171,11 @@ jobs:
         run: |
           UPDATE_BASELINE_MODELS="false"
           MODE="pr"
-          TARGET_BRANCH="PR_${AGILE_COMPILE_BRANCH}"
           PR_NUMBER="${PR_ID}"
           
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             MODE="manual"
             UPDATE_BASELINE_MODELS="${{ github.event.inputs.update_baseline_models }}"
-            TARGET_BRANCH="${{ github.ref_name }}"
             PR_NUMBER="manual"
           elif [[ "${{ github.event_name }}" == "issue_comment" ]]; then
             # Parse comment for [update-baseline: models]
@@ -185,7 +183,6 @@ jobs:
               UPDATE_BASELINE_MODELS=$(grep -oE '\[update-baseline:[[:space:]]*([a-zA-Z0-9_,]+)\]' <<< "$COMMENT_BODY" | sed 's/.*\[\(.*\)\].*/\1/' | sed 's/update-baseline:[[:space:]]*//g')
               MODE="comment"
               PR_NUMBER="${{ github.event.issue.number }}"
-              TARGET_BRANCH="PR_${{ github.event.issue.number }}"
               echo "Detected baseline update from comment: $UPDATE_BASELINE_MODELS"
             fi
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -199,22 +196,20 @@ jobs:
           
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
           echo "update_baseline_models=$UPDATE_BASELINE_MODELS" >> "$GITHUB_OUTPUT"
-          echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
       - name: Test
         run: |
           # Use step outputs from previous step instead of env vars
           MODE="${{ steps.trigger_mode.outputs.mode }}"
           UPDATE_BASELINE_MODELS="${{ steps.trigger_mode.outputs.update_baseline_models }}"
-          TARGET_BRANCH="${{ steps.trigger_mode.outputs.target_branch }}"
           PR_NUMBER="${{ steps.trigger_mode.outputs.pr_number }}"
           work_dir="${{ github.workspace }}"
           docker exec -i \
             -e work_dir="$work_dir" \
             -e MODE="$MODE" \
             -e UPDATE_BASELINE_MODELS="$UPDATE_BASELINE_MODELS" \
-            -e TARGET_BRANCH="$TARGET_BRANCH" \
             -e PR_NUMBER="$PR_NUMBER" \
+            -e BRANCH="$BRANCH"
             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
             $container_name /bin/bash <<-DOCKER_EOF
           ldconfig
@@ -226,28 +221,9 @@ jobs:
           # Use pre-parsed trigger mode variables
           echo "=== Trigger Mode: ${MODE} ==="
           echo "Update baseline: ${UPDATE_BASELINE_MODELS}"
-          echo "Target branch: ${TARGET_BRANCH}"
+          echo "Branch: ${BRANCH}"
           echo "PR number: ${PR_NUMBER}"
-          
-          if [ "$UPDATE_BASELINE_MODELS" != "false" ] && [ -n "$UPDATE_BASELINE_MODELS" ]; then
-            echo "=== Running tests with baseline update ==="
-            
-            # Run tests with baseline update
-            bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS"
-
-            # Upload baseline
-            cp -r /home/models/bos/* ./
-            rm -rf upload
-            mkdir upload 
-            cp scripts/regression/config.yaml upload/
-            mv scripts/regression/config.yaml config_${PR_NUMBER}.yaml 
-            cp config_${PR_NUMBER}.yaml upload/
-            python upload.py upload "paddle-qa/paddleformers/ci_config/"
-            
-          else
-            echo "=== Running tests without baseline update ==="
-            bash -x scripts/regression/ci_model_unittest.sh True
-          fi
+          bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS" $Branch        
           DOCKER_EOF
       - name: Upload Products
         if: always()

@@ -25,7 +25,7 @@
 
 模型提前上传到 Aistudio。
 
-在 config_origin.yaml 中新增模型配置即可。如下
+在 config.yaml 中新增模型配置即可,可复制其他模型配置，修改repo_id等参数，如下
 ```bash
 repo_id: PaddleFormers/tiny-random-qwen3moev2
     model_type: text # text纯文模型，vl 多模模型
@@ -33,6 +33,13 @@ repo_id: PaddleFormers/tiny-random-qwen3moev2
         template: qwen3
         save_checkpoint_format: flex_checkpoint
         load_checkpoint_format: flex_checkpoint
+    base_loss:
+        dpo_full_loss: 0.69314718
+        dpo_full_resume_loss: 0.69314718
+    base_result:
+        pt_full_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+    ...
 ```
 
 本地自测：
