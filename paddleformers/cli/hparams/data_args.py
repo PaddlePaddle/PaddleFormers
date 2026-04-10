@@ -175,3 +175,14 @@ class DataArguments:
         default=1000,
         metadata={"help": "Interval of packing."},
     )
+    packed_idx_cache_dir: str = field(
+        default=None,
+        metadata={
+            "help": (
+                "Directory to cache packed_idx built by MapSFTDataset. "
+                "Train and eval caches are stored as 'train.npz' and 'eval.npz' respectively. "
+                "When set, saves/reloads packed_idx to skip re-tokenization on restart. "
+                "Default is None (no caching)."
+            )
+        },
+    )
