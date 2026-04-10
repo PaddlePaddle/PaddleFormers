@@ -14,15 +14,11 @@
 # limitations under the License.
 from __future__ import annotations
 
-import tempfile
 import unittest
 
-import numpy as np
 import paddle
-from parameterized import parameterized
 
 from paddleformers.transformers import MiniCPMConfig, MiniCPMForCausalLM, MiniCPMModel
-from tests.testing_utils import require_package
 
 # from tests.testing_utils import slow
 from tests.transformers.test_configuration_common import ConfigTester
@@ -30,7 +26,6 @@ from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
     GenerationD2STestMixin,
     ModelTesterMixin,
-    ModelTesterPretrainedMixin,
     ids_tensor,
     random_attention_mask,
 )
@@ -381,59 +376,8 @@ class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         pass
 
 
-class MiniCPMModelIntegrationTest(ModelTesterPretrainedMixin, unittest.TestCase):
-    base_model_class = MiniCPMModel
-
-    # @slow
-    # def test_inference_no_attention(self):
-    #     model = MiniCPMModel.from_pretrained("__internal_testing__/tiny-random-MiniCPM")
-    #     model.eval()
-    #     input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
-    #     attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
-    #     with paddle.no_grad():
-    #         output = model(input_ids, attention_mask=attention_mask)[0]
-
-    #     expected_shape = [1, 11, 768]
-    #     self.assertEqual(output.shape, expected_shape)
-
-    #     expected_slice = paddle.to_tensor(
-    #         [
-    #             [
-    #                 [0.20443289, 0.18662477, -0.75216216],
-    #                 [0.37699354, -0.38747141, -1.21889985],
-    #                 [0.31100151, -0.40143669, -0.64101797],
-    #             ]
-    #         ]
-    #     )
-    #     self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
-
-    # @slow
-    # def test_inference_with_attention(self):
-    #     model = MiniCPMModel.from_pretrained("__internal_testing__/tiny-random-MiniCPM")
-    #     model.eval()
-    #     input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
-    #     attention_mask = paddle.to_tensor([[0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
-    #     with paddle.no_grad():
-    #         output = model(input_ids, attention_mask=attention_mask)[0]
-
-    #     expected_shape = [1, 11, 768]
-    #     self.assertEqual(output.shape, expected_shape)
-    #     expected_slice = paddle.to_tensor(
-    #         [
-    #             [
-    #                 [0.20443289, 0.18662477, -0.75216216],
-    #                 [0.37699354, -0.38747141, -1.21889985],
-    #                 [0.31100151, -0.40143669, -0.64101797],
-    #             ]
-    #         ]
-    #     )
-    #     self.assertTrue(paddle.allclose(output[:, 1:4, 1:4], expected_slice, atol=1e-4))
-
-
 class MiniCPMGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
     internal_testing_model = "__internal_testing__/micro-random-MiniCPM"
-
-
 
 
 if __name__ == "__main__":
