@@ -150,6 +150,7 @@ class Gemma3RotaryEmbedding(nn.Layer):
         dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
 
         attention_factor = 1.0  # Unused in this type of RoPE
+        
         # Compute the inverse frequencies
         inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
         return inv_freq, attention_factor

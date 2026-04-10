@@ -331,6 +331,7 @@ class DeepseekV3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
         self.model_tester.check_model_position_ids(config, input_ids, input_mask)
 
     def test_generate_without_input_ids(self):
+        # this requires 4-D attention mask logic, which is not supported yet
         pass
 
     def test_DeepseekV3_lm_head_model(self):
