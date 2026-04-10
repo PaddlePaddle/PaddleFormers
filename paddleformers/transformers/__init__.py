@@ -282,6 +282,12 @@ import_structure = {
         "Qwen3NextForCausalLMPipe",
         "Qwen3NextPretrainingCriterion",
     ],
+    "minicpm.configuration": ["MiniCPMConfig"],
+    "minicpm.modeling": [
+        "MiniCPMModel",
+        "MiniCPMForCausalLM",
+        "MiniCPMForCausalLMPipe",
+    ],
     "llama": [],
     "qwen2": [],
     "glm_ocr": [],
@@ -333,6 +339,7 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "minicpm": ["MiniCPMDecoderLayer", "MiniCPMModel", "MiniCPMForCausalLM"],
 }
 
 if TYPE_CHECKING:
