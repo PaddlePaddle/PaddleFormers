@@ -53,6 +53,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("qwen3_vl_moe_text", "Qwen3VLMoeTextConfig"),
         ("glm4_moe", "Glm4MoeConfig"),
         ("glm_moe_dsa", "GlmMoeDsaConfig"),
+        ("minimax_m2", "MiniMaxM2Config"),
         ("gpt_oss", "GptOssConfig"),
         ("phi3", "Phi3Config"),
         ("gemma3_text", "Gemma3TextConfig"),
