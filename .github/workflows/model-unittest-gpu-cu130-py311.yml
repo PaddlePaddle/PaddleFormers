@@ -206,7 +206,6 @@ jobs:
           docker exec -i -e "work_dir=$work_dir" -e "python_version=$python_version" $container_name /bin/bash <<-DOCKER_EOF
           echo "Change python version to $python_version"
           set -e
-          set -x
           cp ${work_dir}/../../../Miniconda3-latest-Linux-x86_64.sh /tmp/miniconda.sh
           bash /tmp/miniconda.sh -b -p /opt/conda
           export PATH=/opt/conda/bin:$PATH
@@ -249,6 +248,7 @@ jobs:
           echo "Update baseline: ${UPDATE_BASELINE_MODELS}"
           echo "Target branch: ${TARGET_BRANCH}"
           echo "PR number: ${PR_NUMBER}"
+          source ${work_dir}/../../../proxy_huggingface
           
           if [ "$UPDATE_BASELINE_MODELS" != "false" ] && [ -n "$UPDATE_BASELINE_MODELS" ]; then
             echo "=== Running tests with baseline update ==="
