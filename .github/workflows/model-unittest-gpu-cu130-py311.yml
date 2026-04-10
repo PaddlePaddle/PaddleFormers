@@ -235,6 +235,8 @@ jobs:
             -e PR_NUMBER="$PR_NUMBER" \
             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
             $container_name /bin/bash <<-DOCKER_EOF
+          . /opt/conda/etc/profile.d/conda.sh
+          conda activate py311
           python --version
           ldconfig
           mkdir -p /root/.cache/pip
