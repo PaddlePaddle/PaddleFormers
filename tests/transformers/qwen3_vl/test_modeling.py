@@ -489,10 +489,6 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_group_beam_search_generate(self):
         pass
 
-    @unittest.skip("Qwen3-VL currently does not support checkpoints save and load")
-    def test_save_load(self):
-        pass
-
     def test_greedy_generate(self):
         for model_class in self.all_generative_model_classes:
             config, inputs_dict = self.prepare_config_and_inputs_for_generate()
@@ -517,7 +513,6 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
             else:
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
-    @unittest.skip("Qwen3-VL currently does not support checkpoints save and load")
     def test_save_load_flex_checkpoint(self):
         for model_class in self.all_model_classes:
             with tempfile.TemporaryDirectory() as tmpdirname:
@@ -984,7 +979,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
                 )
             )
 
-    @parameterized.expand([("Qwen3VLForConditionalGeneration")])
+    @parameterized.expand(["Qwen3VLForConditionalGeneration"])
     @require_package("transformers", "torch")
     def test_Qwen3VL_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
         pytorch_class_name = pytorch_class_name or class_name
