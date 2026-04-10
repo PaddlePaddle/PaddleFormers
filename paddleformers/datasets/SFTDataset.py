@@ -1083,7 +1083,7 @@ class MapSFTDataset(BaseSFTDataset, Dataset):
                 end = group_offsets[i + 1]
                 packed_idx.append(flat_indices[start:end].tolist())
 
-            logger.info(f"[MapSFTDataset] Loaded packed_idx cache from {cache_path}: " f"{len(packed_idx)} groups")
+            logger.info(f"[MapSFTDataset] Loaded packed_idx cache from {cache_path}: " f"{len(packed_idx)} groups.")
             return packed_idx
 
         except Exception as e:
