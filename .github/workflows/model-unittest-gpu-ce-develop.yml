@@ -25,24 +25,17 @@ on:
           - 'qwen2'
           - 'gemma3_text'
           - 'paddleocr_vl'
-      cuda_version:
+      FLAGS_enable_CE:
         required: false
-        default: '13.0'
+        default: 'CE_Develop_cu130_py313'
         type: choice
         options:
-          - '13.0'
-          - '12.9'
-          - '12.6'
-      python_version:
-        required: false
-        default: '3.13'
-        type: choice
-        options:
-          - '3.13'
-          - '3.12'
-          - '3.11'
-          - '3.10'
-
+          - 'CE_Develop_cu130_py313'
+          - 'CE_Release_cu129_py312'
+          - 'CE_Release_Cuda130_Python313'
+          - 'CE_Release_Cuda130_Python311'
+          - 'CE_Release_Cuda129_Python312'
+          - 'CE_Release_Cuda126_Python310'
   workflow_call:
     inputs:
       runner:
@@ -57,8 +50,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  cuda_version: "${{ github.event.inputs.cuda_version || '13.0' }}"
-  python_version: "${{ github.event.inputs.python_version || '3.13' }}"
+  FLAGS_enable_CE: "${{ github.event.inputs.FLAGS_enable_CE || 'CE_Develop_cu130_py313' }}"
   PR_ID: ${{ github.event.pull_request.number || github.event.issue.number || '0' }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
   TASK: PaddleFormers-CE-${{ github.event.pull_request.number }}-model-unittest-gpu
@@ -112,14 +104,14 @@ jobs:
         run: |
           if [[ -n "${IMAGE_NAME}" ]]; then
             echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
-          elif [[ "${{ env.cuda_version }}" == "13.0" ]]; then
+          elif [[ "${{ env.FLAGS_enable_CE }}" == *cu130* ]]; then
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda130-dev" >> "$GITHUB_ENV"
-          elif [[ "${{ env.cuda_version }}" == "12.9" ]]; then
+          elif [[ "${{ env.FLAGS_enable_CE }}" == *cu129* ]]; then
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda129-dev" >> "$GITHUB_ENV"
-          elif [[ "${{ env.cuda_version }}" == "12.6" ]]; then
+          elif [[ "${{ env.FLAGS_enable_CE }}" == *cu126* ]]; then
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev" >> "$GITHUB_ENV"
           else
-            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda130-dev" >> "$GITHUB_ENV"
+            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev" >> "$GITHUB_ENV"
           fi
       - name: Run Container
         env:
@@ -223,7 +215,8 @@ jobs:
       
       - name: Change python version
         run: |
-          python_version=${{ env.python_version }}
+          FLAGS_enable_CE=${{ env.FLAGS_enable_CE }}
+          python_version=$(echo "${FLAGS_enable_CE##*_py}" | sed 's/\(.\)\(..\)/\1.\2/')
           work_dir="${{ github.workspace }}"
           docker exec -i -e "work_dir=$work_dir" -e "python_version=$python_version" $container_name /bin/bash <<-DOCKER_EOF
           echo "Change python version to $python_version"
@@ -242,9 +235,8 @@ jobs:
       
       - name: Test
         run: |
-          cuda_version=${{ env.cuda_version }}
-          python_version=${{ env.python_version }}
-          ce_branch=CE_Develop_cu${cuda_version//.}_py${python_version//.}
+          FLAGS_enable_CE=${{ env.FLAGS_enable_CE }}
+          python_version=$(echo "${FLAGS_enable_CE##*_py}" | sed 's/\(.\)\(..\)/\1.\2/')
           # Use step outputs from previous step instead of env vars
           MODE="${{ steps.trigger_mode.outputs.mode }}"
           UPDATE_BASELINE_MODELS="${{ steps.trigger_mode.outputs.update_baseline_models }}"
@@ -253,7 +245,7 @@ jobs:
           work_dir="${{ github.workspace }}"
           docker exec -i \
             -e python_version="$python_version" \
-            -e ce_branch="$ce_branch" \
+            -e FLAGS_enable_CE="$FLAGS_enable_CE" \
             -e work_dir="$work_dir" \
             -e MODE="$MODE" \
             -e UPDATE_BASELINE_MODELS="$UPDATE_BASELINE_MODELS" \
@@ -274,8 +266,7 @@ jobs:
           echo "Update baseline: ${UPDATE_BASELINE_MODELS}"
           echo "BRANCH: ${BRANCH}"
           echo "PR number: ${PR_NUMBER}"
-          echo bash -x scripts/regression/ci_model_unittest.sh False $ce_branch "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
-          sleep 3h
+          echo bash -x scripts/regression/ci_model_unittest.sh False $FLAGS_enable_CE "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
           DOCKER_EOF
       - name: Upload Products
         if: always()
