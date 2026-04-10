@@ -206,6 +206,8 @@ jobs:
           docker exec -i -e "work_dir=$work_dir" -e "python_version=$python_version" $container_name /bin/bash <<-DOCKER_EOF
           echo "Change python version to $python_version"
           set -e
+          set -x
+          sleep 3h
           cp ${work_dir}/../../../Miniconda3-latest-Linux-x86_64.sh /tmp/miniconda.sh
           bash /tmp/miniconda.sh -b -p /opt/conda
           export PATH=/opt/conda/bin:$PATH
