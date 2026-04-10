@@ -20,7 +20,7 @@ env:
   BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
   CI_name: fleet-model-test
   no_proxy: "bcebos.com,.bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
-  docker_image: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda129-coverage-test"
+  docker_image: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:ubuntu24-cuda129-py312-dev"
 
 defaults:
   run:
