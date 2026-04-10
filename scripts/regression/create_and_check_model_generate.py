@@ -52,14 +52,14 @@ MODEL_MAPPING = {
         "class_name": "LlamaForCausalLM",
         "dtype": "bfloat16",
     },
-    # "deepseek_v3": {
-    #     "import_path": "paddleformers.transformers.deepseek_v3.modeling",
-    #     "class_name": "DeepseekV3ForCausalLM",
-    #     "dtype": "bfloat16",
-    # },
+    "deepseek_v3": {
+        "import_path": "paddleformers.transformers.deepseek_v3.modeling",
+        "class_name": "DeepseekV3ForCausalLM",
+        "dtype": "bfloat16",
+    },
     "qwen2_moe": {
         "import_path": "paddleformers.transformers",
-        "class_name": "Qwen2MoeForCausalLM",
+        "class_name": "Qwen2MoeForCausalLMDeprecated",
         "dtype": "float32",
     },
     "qwen3": {

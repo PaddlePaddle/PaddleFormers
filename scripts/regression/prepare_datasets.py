@@ -23,10 +23,6 @@ import argparse
 import os
 import subprocess
 
-# =============================================================================
-# Dataset Configuration
-# =============================================================================
-
 VL_DATA_DIR = "tests/fixtures/dummy/sft-vl"
 
 VL_DATASETS = {
@@ -60,11 +56,6 @@ VL_DATASETS = {
 
 DPO_VL_IMAGES_URL = "https://paddle-qa.bj.bcebos.com/paddleformers/images.tar"
 DPO_VL_DATA_DIR = "tests/fixtures/dummy/dpo-vl"
-
-
-# =============================================================================
-# Download Functions
-# =============================================================================
 
 
 def download_file(url: str, target_dir: str, filename: str = None) -> str:
@@ -176,11 +167,6 @@ def prepare_all_datasets(force: bool = False) -> None:
     # Also download DPO VL images as they may be needed for dpo-vl tests
     download_dpo_vl_images(force=force)
     print("[INFO] All datasets prepared successfully.")
-
-
-# =============================================================================
-# Main Entry Point
-# =============================================================================
 
 
 def main():

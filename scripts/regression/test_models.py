@@ -40,16 +40,13 @@ CONFIG_PATH = "./examples/config/"
 LOG_PATH = "./model_unittest_logs"
 OUTPUT_DIR = tempfile.TemporaryDirectory().name
 
-# Training step configurations
 MAX_STEPS = 2
 SAVE_STEPS = 1
 MAX_RESUME_STEPS = 2
 SAVE_RESUME_STEPS = 1000
 
-# Loss comparison tolerance
 LOSS_TOLERANCE = 1e-10
 
-# Environment settings for deterministic training
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 os.environ["FLAGS_embedding_deterministic"] = "1"
 os.environ["FLAGS_cudnn_deterministic"] = "1"
@@ -417,8 +414,6 @@ class TrainTester:
         if sleep_before > 0:
             time.sleep(sleep_before)
 
-        # Use shell execution (like shell scripts) to avoid Python subprocess issues
-        # with distributed training environments
         cmd_str = f"paddleformers-cli train {config_path} > {log_file} 2>&1"
         return_code = os.system(cmd_str)
         # os.system returns exit_code * 256 on Unix
@@ -541,19 +536,15 @@ class BaseTrainingTest:
 
         # Thorough cleanup between training runs to avoid state pollution
         cleanup_cmds = [
-            # Kill launcher processes
             "pkill -9 -f 'paddleformers/cli/launcher.py' 2>/dev/null || true",
-            # Kill any remaining paddle/python training processes
             "pkill -9 -f 'paddle.distributed.launch' 2>/dev/null || true",
-            # Clean up NCCL shared memory files that might cause issues
             "rm -f /dev/shm/nccl-* 2>/dev/null || true",
             "rm -f /dev/shm/*nccl* 2>/dev/null || true",
         ]
         for cmd in cleanup_cmds:
             subprocess.run(cmd, shell=True)
 
-        # Wait for processes to fully terminate and release GPU resources
-        time.sleep(5)
+        time.sleep(3)
 
         # Debug: Check for any remaining processes that might interfere
         remaining_procs = subprocess.run(
@@ -611,8 +602,13 @@ class BaseTrainingTest:
             generate_dir = os.path.join(output_dir, "export")
 
         # Test model generation
-        result = self._run_generation_test(model_key, generate_dir, expected_result, should_update)
-
+        generate_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_{test_type}_generate.log")
+        if model_key == "qwen2_moe" or model_key == "deepseeek_v3":
+            print("qwen2_moe and deepseeek_v3 don't support generation test. Skip.")
+        else:
+            result = self._run_generation_test(
+                model_key, generate_dir, expected_result, should_update, generate_log_file
+            )
         # Update baseline if needed
         if should_update:
             self.tester.update_baseline(
@@ -628,26 +624,42 @@ class BaseTrainingTest:
             raise AssertionError(errors)
 
     def _run_generation_test(
-        self, model_key: str, output_dir: str, expected_result: Any, should_update: bool
+        self, model_key: str, output_dir: str, expected_result: Any, should_update: bool, log_file: str = ""
     ) -> List[List[int]]:
-        """Run model generation test with error handling.
+        """Run model generation test with error handling and logging.
 
         Args:
             model_key: Model identifier.
             output_dir: Directory containing the model.
             expected_result: Expected generation result.
             should_update: Whether in update mode.
+            log_file: Path to save the generation test log.
 
         Returns:
             Generation result or placeholder if update mode.
         """
+
+        log_lines = []
+        log_lines.append(f"Model: {model_key}")
+        log_lines.append("-" * 50)
         try:
-            return create_and_check_model_generate(model_key, output_dir, expected_result)
+            result = create_and_check_model_generate(model_key, output_dir, expected_result)
+            log_lines.append("=== Execution Output(Success) ===")
+            return result
         except Exception as e:
+            log_lines.append("=== Execution Output (Failed) ===")
+            log_lines.append(f"Error: {e}")
             if should_update:
                 print(f"[UPDATE MODE] Model generate failed but continuing: {e}")
                 return [[]]
             raise e
+        finally:
+            # Save logs to file
+            if log_file:
+                os.makedirs(os.path.dirname(log_file), exist_ok=True)
+                with open(log_file, "w", encoding="utf-8") as f:
+                    f.write("\n".join(log_lines))
+                print(f"[INFO] Generation test log saved to: {log_file}")
 
 
 @pytest.fixture(scope="session", autouse=True)
