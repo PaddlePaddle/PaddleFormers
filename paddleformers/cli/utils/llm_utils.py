@@ -176,7 +176,7 @@ def get_lora_target_modules(model):
             # Projector
             ".*merger.mlp\.[02].*",
         ]
-    elif model.config.model_type == "qwen3_vl":
+    elif model.config.model_type in {"qwen3_vl", "qwen3_vl_moe"}:
         target_modules = [
             # Language Model
             "model.language_model.*q_proj.*",
@@ -186,38 +186,32 @@ def get_lora_target_modules(model):
             "model.language_model.*gate_proj.*",
             "model.language_model.*up_proj.*",
             "model.language_model.*down_proj.*",
+            "model.language_model.*up_gate_proj.*",
+            "model.language_model.*qkv_proj.*",
+            "model.language_model.*mlp.experts",
+            # Fleet Language Model
+            "model.language_model.*mlp.grouped_gemm_experts",
             # Vision Encoder
             "model.visual.blocks.*attn.qkv.*",
             "model.visual.blocks.*attn.proj.*",
             "model.visual.blocks.*mlp.linear_fc1.*",
             "model.visual.blocks.*mlp.linear_fc2.*",
+            "model.vision_model.*qkv_proj.*",
+            "model.vision_model.*o_proj.*",
+            "model.vision_model.*mlp.up_gate_proj.*",
+            "model.vision_model.*mlp.down_proj.*",
+            # Merger
+            "model.visual.merger.linear_fc1.*",
+            "model.visual.merger.linear_fc2.*",
+            "model.vision_model.\d+.linear_fc1.*",
+            "model.vision_model.\d+.linear_fc2.*",
             # Projector
             "model.visual.merger.linear_fc1.*",
             "model.visual.merger.linear_fc2.*",
             "model.visual.deepstack_merger_list.*.linear_fc1.*",
             "model.visual.deepstack_merger_list.*.linear_fc2.*",
-        ]
-    elif model.config.model_type == "qwen3_vl_moe":
-        target_modules = [
-            # Language Model
-            "model.language_model.*q_proj.*",
-            "model.language_model.*k_proj.*",
-            "model.language_model.*v_proj.*",
-            "model.language_model.*o_proj.*",
-            "model.language_model.*mlp.experts",
-            # Fleet Language Model
-            "model.language_model.*mlp.grouped_gemm_experts",
-            # Vision
-            "model.visual.blocks.*attn.qkv.*",
-            "model.visual.blocks.*attn.proj.*",
-            "model.visual.blocks.*mlp.linear_fc1.*",
-            "model.visual.blocks.*mlp.linear_fc2.*",
-            # Merger
-            "model.visual.merger.linear_fc1.*",
-            "model.visual.merger.linear_fc2.*",
-            # DeepStack Merger
-            "model.visual.deepstack_merger_list.*.linear_fc1.*",
-            "model.visual.deepstack_merger_list.*.linear_fc2.*",
+            "model.vision_model.\d+.deepstack_merger.linear_fc1.*",
+            "model.vision_model.\d+.deepstack_merger.linear_fc2.*",
         ]
     elif model.config.model_type == "qwen2_moe":
         target_modules = [
