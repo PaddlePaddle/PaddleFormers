@@ -34,8 +34,8 @@ save_steps: 50
 save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
-logging_dir: /root/paddlejob/share-storage/gpfs/system-public/wangyuwen/upload_env/glm45_fleet/glm_full_pp_vdl_log
-output_dir: /root/paddlejob/share-storage/gpfs/system-public/wangyuwen/upload_env/glm45_fleet/checkpoints/glm_full_pp_ckpts
+logging_dir: /root/paddlejob/share-storage/gpfs/system-public/wangyuwen/upload_env/glm45_fleet/glm_full_pp_cp_vdl_log
+output_dir: /root/paddlejob/share-storage/gpfs/system-public/wangyuwen/upload_env/glm45_fleet/checkpoints/glm_full_pp_cp_ckpts
 disable_tqdm: true
 eval_accumulation_steps: 16
 # args
