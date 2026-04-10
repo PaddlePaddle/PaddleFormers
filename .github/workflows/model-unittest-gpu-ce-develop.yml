@@ -1,4 +1,4 @@
-name: Model Unittest GPU CE
+name: Model Unittest GPU CE Develop
 
 on:
   pull_request:
@@ -23,6 +23,26 @@ on:
           - 'deepseek_v3'
           - 'qwen2_moe'
           - 'qwen2'
+          - 'gemma3_text'
+          - 'paddleocr_vl'
+      cuda_version:
+        required: false
+        default: '13.0'
+        type: choice
+        options:
+          - '13.0'
+          - '12.9'
+          - '12.6'
+      python_version:
+        required: false
+        default: '3.13'
+        type: choice
+        options:
+          - '3.13'
+          - '3.12'
+          - '3.11'
+          - '3.10'
+
   workflow_call:
     inputs:
       runner:
@@ -37,12 +57,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  cuda_version: "${{ github.event.inputs.cuda_version }}"
+  python_version: "${{ github.event.inputs.python_version }}"
   PR_ID: ${{ github.event.pull_request.number || github.event.issue.number || '0' }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
-  TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-model-unittest-gpu
+  TASK: PaddleFormers-CE-${{ github.event.pull_request.number }}-model-unittest-gpu
   BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
-  CI_JOB_NAME: model-unittest-gpu-ci
+  CE_JOB_NAME: model-unittest-gpu-cE
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
 
 defaults:
@@ -51,21 +73,21 @@ defaults:
 
 jobs:
   check_skip:
-    name: Check skip-models-ci label
+    name: Check skip-models-ce label
     runs-on: ubuntu-latest
 
     outputs:
       skip: ${{ steps.check_skip.outputs.skip }}
 
     steps:
-      - name: Check skip-models-ci label
+      - name: Check skip-models-ce label
         id: check_skip
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
             echo "PR labels: $labels"
-            if echo "$labels" | grep -q "skip-models-ci"; then
+            if echo "$labels" | grep -q "skip-models-ce"; then
               echo "skip=true" >> "$GITHUB_OUTPUT"
             else
               echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -73,15 +95,15 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Skip CI but mark success
+      - name: Skip CE but mark success
         if: steps.check_skip.outputs.skip == 'true'
         run: |
-          echo "skip-models-ci label found"
+          echo "skip-models-ce label found"
           echo "Downstream GPU jobs will be skipped"
-  model-unittest-gpu-ci:
+  model-unittest-gpu-ce:
     needs: check_skip
     if: needs.check_skip.outputs.skip == 'false'
-    name: model-unittest-gpu-ci
+    name: model-unittest-gpu-ce
     runs-on: 'models'
     steps:
       - name: Determine Image Name
@@ -90,6 +112,12 @@ jobs:
         run: |
           if [[ -n "${IMAGE_NAME}" ]]; then
             echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
+          elif [[ "${{ env.cuda_version }}" == "13.0" ]]; then
+            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda130-dev" >> "$GITHUB_ENV"
+          elif [[ "${{ env.cuda_version }}" == "12.9" ]]; then
+            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda129-dev" >> "$GITHUB_ENV"
+          elif [[ "${{ env.cuda_version }}" == "12.6" ]]; then
+            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev" >> "$GITHUB_ENV"
           else
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda130-dev" >> "$GITHUB_ENV"
           fi
@@ -120,7 +148,7 @@ jobs:
             -e "COMMIT_ID=$COMMIT_ID" \
             -e "work_dir=$work_dir" \
             -e "no_proxy=$no_proxy" \
-            -e "CI_JOB_NAME=$CI_JOB_NAME" \
+            -e "CE_JOB_NAME=$CE_JOB_NAME" \
             -e "FLAGS_dynamic_static_unified_comm=$FLAGS_dynamic_static_unified_comm" \
             -e HF_PROXY_PATH=${work_dir}/../../../proxy_huggingface \
             -e AISTUDIO_PROXY_PATH=${work_dir}/../../../proxy_aistudio \
@@ -166,13 +194,11 @@ jobs:
         run: |
           UPDATE_BASELINE_MODELS="false"
           MODE="pr"
-          TARGET_BRANCH="PR_${AGILE_COMPILE_BRANCH}"
           PR_NUMBER="${PR_ID}"
           
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             MODE="manual"
             UPDATE_BASELINE_MODELS="${{ github.event.inputs.update_baseline_models }}"
-            TARGET_BRANCH="${{ github.ref_name }}"
             PR_NUMBER="manual"
           elif [[ "${{ github.event_name }}" == "issue_comment" ]]; then
             # Parse comment for [update-baseline: models]
@@ -180,7 +206,6 @@ jobs:
               UPDATE_BASELINE_MODELS=$(grep -oE '\[update-baseline:[[:space:]]*([a-zA-Z0-9_,]+)\]' <<< "$COMMENT_BODY" | sed 's/.*\[\(.*\)\].*/\1/' | sed 's/update-baseline:[[:space:]]*//g')
               MODE="comment"
               PR_NUMBER="${{ github.event.issue.number }}"
-              TARGET_BRANCH="PR_${{ github.event.issue.number }}"
               echo "Detected baseline update from comment: $UPDATE_BASELINE_MODELS"
             fi
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -194,15 +219,12 @@ jobs:
           
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
           echo "update_baseline_models=$UPDATE_BASELINE_MODELS" >> "$GITHUB_OUTPUT"
-          echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
       
       - name: Change python version
-        env:
-          python_version: "3.11"
         run: |
+          python_version=${{ env.python_version }}
           work_dir="${{ github.workspace }}"
-          python_version=$python_version
           docker exec -i -e "work_dir=$work_dir" -e "python_version=$python_version" $container_name /bin/bash <<-DOCKER_EOF
           echo "Change python version to $python_version"
           set -e
@@ -212,30 +234,35 @@ jobs:
           source ${work_dir}/../../../proxy_huggingface
           conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
           conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
-          conda create -n py311 python=3.11 -y
+          conda create -n py_$python_version python=$python_version -y
           . /opt/conda/etc/profile.d/conda.sh
-          conda activate py311
+          conda activate py_$python_version
           python --version
           DOCKER_EOF
       
       - name: Test
         run: |
+          cuda_version=${{ env.cuda_version }}
+          python_version=${{ env.python_version }}
+          ce_branch=CE_Develop_cu${cuda_version//.}_py${python_version//.}
           # Use step outputs from previous step instead of env vars
           MODE="${{ steps.trigger_mode.outputs.mode }}"
           UPDATE_BASELINE_MODELS="${{ steps.trigger_mode.outputs.update_baseline_models }}"
-          TARGET_BRANCH="${{ steps.trigger_mode.outputs.target_branch }}"
           PR_NUMBER="${{ steps.trigger_mode.outputs.pr_number }}"
+          BRANCH="${{ github.event.pull_request.base.ref || github.ref_name }}"
           work_dir="${{ github.workspace }}"
           docker exec -i \
+            -e python_version="$python_version"
+            -e ce_branch="$ce_branch"
             -e work_dir="$work_dir" \
             -e MODE="$MODE" \
             -e UPDATE_BASELINE_MODELS="$UPDATE_BASELINE_MODELS" \
-            -e TARGET_BRANCH="$TARGET_BRANCH" \
             -e PR_NUMBER="$PR_NUMBER" \
+            -e BRANCH="$BRANCH" \
             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
             $container_name /bin/bash <<-DOCKER_EOF
           . /opt/conda/etc/profile.d/conda.sh
-          conda activate py311
+          conda activate py_$python_version
           python --version
           ldconfig
           mkdir -p /root/.cache/pip
@@ -243,32 +270,12 @@ jobs:
           set -e
           rm -rf /root/.cache/aistudio/
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
-          # Use pre-parsed trigger mode variables
           echo "=== Trigger Mode: ${MODE} ==="
           echo "Update baseline: ${UPDATE_BASELINE_MODELS}"
-          echo "Target branch: ${TARGET_BRANCH}"
+          echo "BRANCH: ${BRANCH}"
           echo "PR number: ${PR_NUMBER}"
-          source ${work_dir}/../../../proxy_huggingface
-          
-          if [ "$UPDATE_BASELINE_MODELS" != "false" ] && [ -n "$UPDATE_BASELINE_MODELS" ]; then
-            echo "=== Running tests with baseline update ==="
-            
-            # Run tests with baseline update
-            bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS"
-
-            # Upload baseline
-            cp -r /home/models/bos/* ./
-            rm -rf upload
-            mkdir upload 
-            cp scripts/regression/config.yaml upload/
-            mv scripts/regression/config.yaml config_${PR_NUMBER}.yaml 
-            cp config_${PR_NUMBER}.yaml upload/
-            python upload.py upload "paddle-qa/paddleformers/ci_config/"
-            
-          else
-            echo "=== Running tests without baseline update ==="
-            bash -x scripts/regression/ci_model_unittest.sh True
-          fi
+          echo bash -x scripts/regression/ci_model_unittest.sh False $ce_branch "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
+          sleep 3h
           DOCKER_EOF
       - name: Upload Products
         if: always()
