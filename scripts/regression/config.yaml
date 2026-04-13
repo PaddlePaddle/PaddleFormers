@@ -1,0 +1,567 @@
+qwen3moe:
+    repo_id: PaddleFormers/tiny-random-qwen3moev2
+    model_type: text
+    cli_args:
+        template: qwen3
+        save_checkpoint_format: flex_checkpoint
+        load_checkpoint_format: flex_checkpoint
+    base_loss:
+        sft_full_loss: 12.95810509
+        sft_full_resume_loss: 12.95479584
+        dpo_full_loss: 0.69314718
+        dpo_full_resume_loss: 0.69314718
+        pt_full_loss: 12.925501345
+        pt_full_resume_loss: 12.92546844
+        sft_lora_loss: 12.95810509
+        sft_lora_resume_loss: 12.95479584
+        dpo_lora_loss: 0.69314718
+        dpo_lora_resume_loss: 0.69314718
+        pt_lora_loss: 12.925527095
+        pt_lora_resume_loss: 12.92549324
+        sft_full_tp_pp_loss: 13.02254295
+        sft_full_tp_pp_resume_loss: 13.02262115
+        dpo_full_tp_pp_loss: 0.69314718
+        dpo_full_tp_pp_resume_loss: 0.69314718
+        pt_full_tp_pp_loss: 12.925347325
+        pt_full_tp_pp_resume_loss: 12.92498302
+        sft_lora_tp_pp_loss: 13.02574444
+        sft_lora_tp_pp_resume_loss: 13.02575493
+        dpo_lora_tp_pp_loss: 0.69314718
+        dpo_lora_tp_pp_resume_loss: 0.69314718
+        pt_lora_tp_pp_loss: 12.925374985
+        pt_lora_tp_pp_resume_loss: 12.92507362
+        sft_full_function_call_loss: 12.94006157
+        sft_full_function_call_resume_loss: 12.94625473
+        dpo_full_function_call_loss: 0.69314718
+        dpo_full_function_call_resume_loss: 0.69314718
+    base_result:
+        pt_full_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        sft_full_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        dpo_full_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        pt_lora_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        sft_lora_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        dpo_lora_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        pt_full_tp_pp_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        sft_full_tp_pp_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        dpo_full_tp_pp_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        pt_lora_tp_pp_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        sft_lora_tp_pp_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        dpo_lora_tp_pp_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        sft_full_function_call_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+        dpo_full_function_call_excepted_result:
+        - [94529, 130950, 94529, 138785, 11615, 90320, 84803, 138785, 791, 104475]
+qwen3:
+    repo_id: PaddleFormers/tiny-random-qwen3v2
+    model_type: text
+    cli_args:
+        save_checkpoint_format: flex_checkpoint
+        load_checkpoint_format: flex_checkpoint
+        template: qwen3
+    base_loss:
+        sft_full_loss: 12.783403875
+        sft_full_resume_loss: 12.76594067
+        dpo_full_loss: 0.69314718
+        dpo_full_resume_loss: 0.69314718
+        pt_full_loss: 12.88364506
+        pt_full_resume_loss: 12.88369179
+        sft_lora_loss: 12.783403875
+        sft_lora_resume_loss: 12.76594067
+        dpo_lora_loss: 0.69314718
+        dpo_lora_resume_loss: 0.69314718
+        pt_lora_loss: 12.88363552
+        pt_lora_resume_loss: 12.88369179
+        sft_full_tp_pp_loss: 12.881659985
+        sft_full_tp_pp_resume_loss: 12.88167095
+        dpo_full_tp_pp_loss: 0.69314718
+        dpo_full_tp_pp_resume_loss: 0.69314718
+        pt_full_tp_pp_loss: 12.883553505
+        pt_full_tp_pp_resume_loss: 12.88364315
+        sft_lora_tp_pp_loss: 12.88196325
+        sft_lora_tp_pp_resume_loss: 12.88195896
+        dpo_lora_tp_pp_loss: 0.69314718
+        dpo_lora_tp_pp_resume_loss: 0.69314718
+        pt_lora_tp_pp_loss: 12.883553505
+        pt_lora_tp_pp_resume_loss: 12.88364315
+        sft_full_function_call_loss: 12.90184498
+        sft_full_function_call_resume_loss: 12.9037056
+        dpo_full_function_call_loss: 0.69314718
+        dpo_full_function_call_resume_loss: 0.69314718
+    base_result:
+        pt_full_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        sft_full_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        dpo_full_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        pt_lora_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        sft_lora_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        dpo_lora_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        pt_full_tp_pp_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        sft_full_tp_pp_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        dpo_full_tp_pp_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        pt_lora_tp_pp_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        sft_lora_tp_pp_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        dpo_lora_tp_pp_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        sft_full_function_call_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+        dpo_full_function_call_excepted_result:
+        - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
+glm_moe:
+    repo_id: PaddleFormers/tiny-random-glm4moe-bf16
+    model_type: text
+    cli_args:
+        save_checkpoint_format: flex_checkpoint
+        load_checkpoint_format: flex_checkpoint
+        template: glm4_moe
+    base_loss:
+        pt_full_loss: 12.830768105
+        pt_full_resume_loss: 12.83085155
+        sft_full_loss: 12.71898651
+        sft_full_resume_loss: 12.72072887
+        dpo_full_loss: 0.69314718
+        dpo_full_resume_loss: 0.69314718
+        pt_lora_loss: 12.830774305
+        pt_lora_resume_loss: 12.83086395
+        sft_lora_loss: 12.71898651
+        sft_lora_resume_loss: 12.72072887
+        dpo_lora_loss: 0.69314718
+        dpo_lora_resume_loss: 0.69314718
+        pt_full_tp_pp_loss: 12.830832005
+        pt_full_tp_pp_resume_loss: 12.83077812
+        sft_full_tp_pp_loss: 12.78896332
+        sft_full_tp_pp_resume_loss: 12.78896332
+        dpo_full_tp_pp_loss: 0.69314718
+        dpo_full_tp_pp_resume_loss: 0.69314718
+        pt_lora_tp_pp_loss: 12.83084917
+        pt_lora_tp_pp_resume_loss: 12.83082867
+        sft_lora_tp_pp_loss: 12.78872299
+        sft_lora_tp_pp_resume_loss: 12.78872299
+        dpo_lora_tp_pp_loss: 0.69314718
+        dpo_lora_tp_pp_resume_loss: 0.69314718
+        sft_full_function_call_loss: 12.936312675
+        sft_full_function_call_resume_loss: 12.93564415
+        dpo_full_function_call_loss: 0.69314718
+        dpo_full_function_call_resume_loss: 0.69314718
+    base_result:
+        pt_full_excepted_result:
+        - [10564, 10564, 10564, 138932, 102954, 47231, 47231, 47231, 47231, 47231]
+        sft_full_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        dpo_full_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        pt_lora_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        sft_lora_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        dpo_lora_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        pt_full_tp_pp_excepted_result:
+        - [10564, 10564, 10564, 138932, 102954, 47231, 47231, 47231, 47231, 47231]
+        sft_full_tp_pp_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        dpo_full_tp_pp_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        pt_lora_tp_pp_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        sft_lora_tp_pp_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        dpo_lora_tp_pp_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        sft_full_function_call_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        dpo_full_function_call_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+qwen2:
+    repo_id: PaddleFormers/tiny-random-qwen2v2
+    model_type: text
+    cli_args:
+        save_checkpoint_format: flex_checkpoint
+        load_checkpoint_format: flex_checkpoint
+        template: qwen
+    base_loss:
+        sft_full_loss: 12.751743795
+        sft_full_resume_loss: 12.75366116
+        dpo_full_loss: 0.69314718
+        dpo_full_resume_loss: 0.69314718
+        pt_full_loss: 12.9430995
+        pt_full_resume_loss: 12.94307518
+        sft_lora_loss: 12.751743795
+        sft_lora_resume_loss: 12.75366116
+        dpo_lora_loss: 0.69314718
+        dpo_lora_resume_loss: 0.69314718
+        pt_lora_loss: 12.9430995
+        pt_lora_resume_loss: 12.94307518
+        sft_full_tp_pp_loss: 12.835041045
+        sft_full_tp_pp_resume_loss: 12.83503151
+        dpo_full_tp_pp_loss: 0.69314718
+        dpo_full_tp_pp_resume_loss: 0.69314718
+        pt_full_tp_pp_loss: 12.943032265
+        pt_full_tp_pp_resume_loss: 12.94280052
+        sft_lora_tp_pp_loss: 12.83521986
+        sft_lora_tp_pp_resume_loss: 12.83525467
+        dpo_lora_tp_pp_loss: 0.69314718
+        dpo_lora_tp_pp_resume_loss: 0.69314718
+        pt_lora_tp_pp_loss: 12.943032265
+        pt_lora_tp_pp_resume_loss: 12.94280052
+        sft_full_function_call_loss: 12.800441265
+        sft_full_function_call_resume_loss: 12.80294609
+        dpo_full_function_call_loss: 0.69314718
+        dpo_full_function_call_resume_loss: 0.69314718
+    base_result:
+        pt_full_excepted_result: []
+        sft_full_excepted_result: []
+        dpo_full_excepted_result: []
+        pt_lora_excepted_result: []
+        sft_lora_excepted_result: []
+        dpo_lora_excepted_result: []
+        pt_full_tp_pp_excepted_result: []
+        sft_full_tp_pp_excepted_result: []
+        dpo_full_tp_pp_excepted_result: []
+        pt_lora_tp_pp_excepted_result: []
+        sft_lora_tp_pp_excepted_result: []
+        dpo_lora_tp_pp_excepted_result: []
+        sft_full_function_call_excepted_result: []
+        dpo_full_function_call_excepted_result: []
+llama:
+    repo_id: PaddleFormers/tiny-random-llama3
+    model_type: text
+    cli_args:
+        save_checkpoint_format: flex_checkpoint
+        load_checkpoint_format: flex_checkpoint
+        template: llama3
+    base_loss:
+        sft_full_loss: 11.85069847
+        sft_full_resume_loss: 11.85155487
+        dpo_full_loss: 0.69314718
+        dpo_full_resume_loss: 0.69314718
+        pt_full_loss: 11.87149477
+        pt_full_resume_loss: 11.87149906
+        sft_lora_loss: 11.85069847
+        sft_lora_resume_loss: 11.85155487
+        dpo_lora_loss: 0.69314718
+        dpo_lora_resume_loss: 0.69314718
+        pt_lora_loss: 11.87149477
+        pt_lora_resume_loss: 11.87149906
+        sft_full_tp_pp_loss: 11.834570405
+        sft_full_tp_pp_resume_loss: 11.83456993
+        dpo_full_tp_pp_loss: 0.69314718
+        dpo_full_tp_pp_resume_loss: 0.69314718
+        pt_full_tp_pp_loss: 11.871563435
+        pt_full_tp_pp_resume_loss: 11.87158108
+        sft_lora_tp_pp_loss: 11.834570405
+        sft_lora_tp_pp_resume_loss: 11.83456993
+        dpo_lora_tp_pp_loss: 0.69314718
+        dpo_lora_tp_pp_resume_loss: 0.69314718
+        pt_lora_tp_pp_loss: 11.871563435
+        pt_lora_tp_pp_resume_loss: 11.87158108
+        sft_full_function_call_loss: 11.87305403
+        sft_full_function_call_resume_loss: 11.87132931
+        dpo_full_function_call_loss: 0.69314718
+        dpo_full_function_call_resume_loss: 0.69314718
+    base_result:
+        pt_full_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        sft_full_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        dpo_full_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        pt_lora_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        sft_lora_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        dpo_lora_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        pt_full_tp_pp_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        sft_full_tp_pp_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        dpo_full_tp_pp_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        pt_lora_tp_pp_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        sft_lora_tp_pp_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        dpo_lora_tp_pp_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        sft_full_function_call_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+        dpo_full_function_call_excepted_result:
+        - [8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027, 8027]
+qwen3_next:
+    repo_id: PaddleFormers/tiny-random-qwen3next
+    model_type: text
+    cli_args:
+        save_checkpoint_format: flex_checkpoint
+        load_checkpoint_format: flex_checkpoint
+        template: qwen3
+    base_loss:
+        sft_full_loss: 13.007920745
+        sft_full_resume_loss: 13.01660824
+        dpo_full_loss: 0.69314718
+        dpo_full_resume_loss: 0.69314718
+        pt_full_loss: 12.9083066
+        pt_full_resume_loss: 12.90881634
+        sft_lora_loss: 13.007920745
+        sft_lora_resume_loss: 13.01660824
+        dpo_lora_loss: 0.69314718
+        dpo_lora_resume_loss: 0.69314718
+        pt_lora_loss: 12.9083066
+        pt_lora_resume_loss: 12.90881634
+        sft_full_tp_pp_loss: 12.8885026
+        sft_full_tp_pp_resume_loss: 12.88928223
+        dpo_full_tp_pp_loss: 0.69314718
+        dpo_full_tp_pp_resume_loss: 0.69314718
+        pt_full_tp_pp_loss: 12.908236505
+        pt_full_tp_pp_resume_loss: 12.90702057
+        sft_lora_tp_pp_loss: 12.8885026
+        sft_lora_tp_pp_resume_loss: 12.88928223
+        dpo_lora_tp_pp_loss: 0.69314718
+        dpo_lora_tp_pp_resume_loss: 0.69314718
+        pt_lora_tp_pp_loss: 12.908236505
+        pt_lora_tp_pp_resume_loss: 12.90702057
+        sft_full_function_call_loss: 12.797636985
+        sft_full_function_call_resume_loss: 12.78254318
+        dpo_full_function_call_loss: 0.69314718
+        dpo_full_function_call_resume_loss: 0.69314718
+    base_result:
+        pt_full_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        sft_full_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        dpo_full_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        pt_lora_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        sft_lora_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        dpo_lora_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        pt_full_tp_pp_excepted_result:
+        - [8928, 143003, 37313, 15487, 8973, 61062, 135931, 58958, 126928, 85831]
+        sft_full_tp_pp_excepted_result:
+        - [8928, 143003, 37313, 15487, 8973, 61062, 135931, 58958, 126928, 85831]
+        dpo_full_tp_pp_excepted_result:
+        - [8928, 143003, 37313, 15487, 8973, 61062, 135931, 58958, 126928, 85831]
+        pt_lora_tp_pp_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        sft_lora_tp_pp_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        dpo_lora_tp_pp_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        sft_full_function_call_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+        dpo_full_function_call_excepted_result:
+        - [71143, 5315, 145839, 92761, 23999, 75384, 34454, 24393, 73235, 124473]
+phi3:
+    repo_id: PaddleFormers/tiny-random-phi4-bf16
+    model_type: text
+    cli_args:
+        save_checkpoint_format: flex_checkpoint
+        load_checkpoint_format: flex_checkpoint
+        template: phi4
+    base_loss:
+        sft_full_loss: 11.512324335
+        sft_full_resume_loss: 11.51243973
+        dpo_full_loss: 0.69314718
+        dpo_full_resume_loss: 0.69314718
+        pt_full_loss: 11.527086735
+        pt_full_resume_loss: 11.52614594
+        sft_lora_loss: 11.512324335
+        sft_lora_resume_loss: 11.51243973
+        dpo_lora_loss: 0.69314718
+        dpo_lora_resume_loss: 0.69314718
+        pt_lora_loss: 11.527086735
+        pt_lora_resume_loss: 11.52614594
+        sft_full_tp_pp_loss: 11.51192856
+        sft_full_tp_pp_resume_loss: 11.51192856
+        dpo_full_tp_pp_loss: 0.69314718
+        dpo_full_tp_pp_resume_loss: 0.69314718
+        pt_full_tp_pp_loss: 11.528105735
+        pt_full_tp_pp_resume_loss: 11.52816582
+        sft_lora_tp_pp_loss: 11.51192856
+        sft_lora_tp_pp_resume_loss: 11.51192856
+        dpo_lora_tp_pp_loss: 0.69314718
+        dpo_lora_tp_pp_resume_loss: 0.69314718
+        pt_lora_tp_pp_loss: 11.528105735
+        pt_lora_tp_pp_resume_loss: 11.52816582
+        sft_full_function_call_loss: 11.534447195
+        sft_full_function_call_resume_loss: 11.53539467
+        dpo_full_function_call_loss: 0.69314718
+        dpo_full_function_call_resume_loss: 0.69314718
+    base_result:
+        pt_full_excepted_result:
+        - [68784, 5802, 68784, 96218, 46803, 10620, 96559, 78218, 6051, 6051]
+        sft_full_excepted_result:
+        - [68784, 5802, 68784, 5802, 68784, 96218, 59409, 56373, 17549, 7859]
+        dpo_full_excepted_result:
+        - [68784, 5802, 68784, 96218, 46803, 68784, 96218, 6051, 6051, 6051]
+        pt_lora_excepted_result:
+        - [68784, 5802, 68784, 96218, 46803, 68784, 96218, 6051, 6051, 6051]
+        sft_lora_excepted_result:
+        - [68784, 5802, 68784, 96218, 46803, 68784, 96218, 6051, 6051, 6051]
+        dpo_lora_excepted_result:
+        - [68784, 5802, 5105, 58905, 7859, 7859, 7859, 7859, 7859, 41005]
+        pt_full_tp_pp_excepted_result:
+        - [97446, 32022, 87570, 16555, 41005, 56054, 94825, 55860, 46803, 46803]
+        sft_full_tp_pp_excepted_result:
+        - [97446, 32022, 87570, 16555, 41005, 56054, 94825, 55860, 46803, 46803]
+        dpo_full_tp_pp_excepted_result:
+        - [97446, 32022, 87570, 16555, 41005, 56054, 94825, 55860, 46803, 46803]
+        pt_lora_tp_pp_excepted_result:
+        - [68784, 5802, 68784, 96218, 46803, 68784, 96218, 6051, 6051, 6051]
+        sft_lora_tp_pp_excepted_result:
+        - [68784, 5802, 68784, 96218, 46803, 10620, 96559, 78218, 6051, 6051]
+        dpo_lora_tp_pp_excepted_result:
+        - [68784, 5802, 68784, 96218, 46803, 68784, 96218, 6051, 6051, 6051]
+        sft_full_function_call_excepted_result:
+        - [68784, 5802, 68784, 96218, 46803, 10620, 96559, 78218, 6051, 6051]
+        dpo_full_function_call_excepted_result:
+        - [68784, 5802, 68784, 96218, 46803, 68784, 96218, 6051, 6051, 6051]
+gemma3_text:
+    repo_id: PaddleFormers/tiny-random-gemma3
+    model_type: text
+    cli_args:
+        save_checkpoint_format: flex_checkpoint
+        load_checkpoint_format: flex_checkpoint
+        tensor_model_parallel_size: 1
+        sequence_parallel: false
+        template: gemma
+    base_loss:
+        sft_full_loss: 12.50187826
+        sft_full_resume_loss: 12.50134277
+        dpo_full_loss: 0.69314718
+        dpo_full_resume_loss: 0.69314718
+        pt_full_loss: 12.50470114
+        pt_full_resume_loss: 12.50417328
+        sft_lora_loss: 12.50187826
+        sft_lora_resume_loss: 12.50134277
+        dpo_lora_loss: 0.69314718
+        dpo_lora_resume_loss: 0.69314718
+        pt_lora_loss: 12.50470114
+        pt_lora_resume_loss: 12.50417328
+        sft_full_tp_pp_loss: 12.50841904
+        sft_full_tp_pp_resume_loss: 12.50841904
+        dpo_full_tp_pp_loss: 0.69314718
+        dpo_full_tp_pp_resume_loss: 0.69314718
+        pt_full_tp_pp_loss: 12.505197045
+        pt_full_tp_pp_resume_loss: 12.50471401
+        sft_lora_tp_pp_loss: 12.50841904
+        sft_lora_tp_pp_resume_loss: 12.50841904
+        dpo_lora_tp_pp_loss: 0.69314718
+        dpo_lora_tp_pp_resume_loss: 0.69314718
+        pt_lora_tp_pp_loss: 12.505197045
+        pt_lora_tp_pp_resume_loss: 12.50471401
+        sft_full_function_call_loss: 12.52293873
+        sft_full_function_call_resume_loss: 12.52273846
+        dpo_full_function_call_loss: 0.69314718
+        dpo_full_function_call_resume_loss: 0.69314718
+    base_result:
+        pt_full_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 201204, 4214, 190858]
+        sft_full_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        dpo_full_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        pt_lora_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        sft_lora_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        dpo_lora_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        pt_full_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 201204, 4214, 190858]
+        sft_full_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 201204, 4214, 190858]
+        dpo_full_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        pt_lora_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        sft_lora_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        dpo_lora_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        sft_full_function_call_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        dpo_full_function_call_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+paddleocr_vl:
+    repo_id: PaddleFormers/tiny-random-paddleocr-vl-bf16
+    model_type: vl
+    cli_args:
+        template: ernie_vl_nothink
+        train_dataset_path: ./tests/fixtures/dummy/sft-vl/ocr_vl_sft-train_Bengali.jsonl
+        eval_dataset_path: ./tests/fixtures/dummy/sft-vl/ocr_vl_sft-test_Bengali.jsonl
+        train_dataset_type: messages
+        eval_dataset_type: messages
+        random_shuffle: false
+        dataloader_shuffle: false
+        freeze_config: ''
+    base_loss:
+        sft_full_loss: 0.0
+        sft_full_resume_loss: 0.0
+        dpo_full_loss: 0.69314718
+        dpo_full_resume_loss: 0.69314718
+        pt_full_loss: 0.0
+        pt_full_resume_loss: 0.0
+        sft_lora_loss: 0.0
+        sft_lora_resume_loss: 0.0
+        dpo_lora_loss: 0.69314718
+        dpo_lora_resume_loss: 0.69314718
+        pt_lora_loss: 0.0
+        pt_lora_resume_loss: 0.0
+        sft_full_tp_pp_loss: 0.0
+        sft_full_tp_pp_resume_loss: 0.0
+        dpo_full_tp_pp_loss: 0.69314718
+        dpo_full_tp_pp_resume_loss: 0.69314718
+        pt_full_tp_pp_loss: 0.0
+        pt_full_tp_pp_resume_loss: 0.0
+        sft_lora_tp_pp_loss: 0.0
+        sft_lora_tp_pp_resume_loss: 0.0
+        dpo_lora_tp_pp_loss: 0.69314718
+        dpo_lora_tp_pp_resume_loss: 0.69314718
+        pt_lora_tp_pp_loss: 0.0
+        pt_lora_tp_pp_resume_loss: 0.0
+        sft_full_function_call_loss: 0.0
+        sft_full_function_call_resume_loss: 0.0
+        dpo_full_function_call_loss: 0.69314718
+        dpo_full_function_call_resume_loss: 0.69314718
+        sft-vl_full_loss: 12.476868625
+        sft-vl_full_resume_loss: 12.49209785
+    base_result:
+        pt_full_excepted_result: []
+        sft_full_excepted_result: []
+        dpo_full_excepted_result: []
+        pt_lora_excepted_result: []
+        sft_lora_excepted_result: []
+        dpo_lora_excepted_result: []
+        pt_full_tp_pp_excepted_result: []
+        sft_full_tp_pp_excepted_result: []
+        dpo_full_tp_pp_excepted_result: []
+        pt_lora_tp_pp_excepted_result: []
+        sft_lora_tp_pp_excepted_result: []
+        dpo_lora_tp_pp_excepted_result: []
+        sft_full_function_call_excepted_result: []
+        dpo_full_function_call_excepted_result: []
+        sft-vl_full_excepted_result: []
