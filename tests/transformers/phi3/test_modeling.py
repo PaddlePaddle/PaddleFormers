@@ -368,7 +368,6 @@ class Phi3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
                 md52 = model_state_2[k]._md5sum()
                 assert md51 == md52
 
-            # test save_pretrained
             with tempfile.TemporaryDirectory() as tmpdirname:
                 model2.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
                 model3 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
