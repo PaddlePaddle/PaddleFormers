@@ -306,6 +306,7 @@ class Qwen2MoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         self.model_tester.check_model_position_ids(*config_and_inputs)
 
     def test_generate_without_input_ids(self):
+        # this requires 4-D attention mask logic, which is not supported y\t
         pass
 
     def test_model_decoder_model(self):

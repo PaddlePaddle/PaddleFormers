@@ -20,8 +20,6 @@ on:
           - 'qwen3_next'
           - 'qwen3moe'
           - 'phi3'
-          - 'deepseek_v3'
-          - 'qwen2_moe'
           - 'qwen2'
           - 'gemma3_text'
           - 'paddleocr_vl'
