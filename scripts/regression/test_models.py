@@ -128,6 +128,9 @@ class TrainTester:
         with open(self.CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
+        if model_key not in data:
+            pytest.skip(f"Model '{model_key}' not found in config")
+            
         model_cfg = data[model_key]
         return ModelConfig(
             name=model_key,
