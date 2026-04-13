@@ -57,7 +57,7 @@ MODEL_MAPPING = {
         "class_name": "DeepseekV3ForCausalLM",
         "dtype": "bfloat16",
     },
-    "qwen2_moe": {
+    "qwen2moe": {
         "import_path": "paddleformers.transformers",
         "class_name": "Qwen2MoeForCausalLMDeprecated",
         "dtype": "float32",
