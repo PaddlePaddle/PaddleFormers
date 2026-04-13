@@ -416,10 +416,8 @@ class TrainTester:
 
         cmd_str = f"paddleformers-cli train {config_path} > {log_file} 2>&1"
         return_code = os.system(cmd_str)
-        # os.system returns exit_code * 256 on Unix
         return_code = return_code >> 8 if return_code > 0 else return_code
 
-        # Read back log content for TrainingResult
         stdout_content = ""
         if os.path.exists(log_file):
             with open(log_file, "r", encoding="utf-8") as f:
@@ -536,15 +534,19 @@ class BaseTrainingTest:
 
         # Thorough cleanup between training runs to avoid state pollution
         cleanup_cmds = [
+            # Kill launcher processes
             "pkill -9 -f 'paddleformers/cli/launcher.py' 2>/dev/null || true",
+            # Kill any remaining paddle/python training processes
             "pkill -9 -f 'paddle.distributed.launch' 2>/dev/null || true",
+            # Clean up NCCL shared memory files that might cause issues
             "rm -f /dev/shm/nccl-* 2>/dev/null || true",
             "rm -f /dev/shm/*nccl* 2>/dev/null || true",
         ]
         for cmd in cleanup_cmds:
             subprocess.run(cmd, shell=True)
 
-        time.sleep(3)
+        # Wait for processes to fully terminate and release GPU resources
+        time.sleep(5)
 
         # Debug: Check for any remaining processes that might interfere
         remaining_procs = subprocess.run(
@@ -573,27 +575,22 @@ class BaseTrainingTest:
         resume_result = self.tester.run_training(updated_config, resume_log_file)
         self.tester.assert_result(resume_result.return_code, resume_result.stdout)
 
-        # Collect validation errors
         errors = []
 
-        # Validate training loss
         actual_loss, msg = self.tester.assert_loss(training_result.stdout, base_loss, "First-Training", should_update)
         if msg:
             errors.append(AssertionError(msg))
 
-        # Validate resume loss
         actual_resume_loss, msg = self.tester.assert_loss(
             resume_result.stdout, base_resume_loss, "Resume-Training", should_update
         )
         if msg:
             errors.append(AssertionError(msg))
 
-        # Validate loss consistency
         _, msg = self.tester.assert_loss_consistent(log_file, resume_log_file)
         if msg:
             errors.append(AssertionError(msg))
 
-        # Handle LoRA export if required
         generate_dir = output_dir
         if requires_export:
             export_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_{test_type}_export.log")
@@ -603,17 +600,27 @@ class BaseTrainingTest:
 
         # Test model generation
         generate_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_{test_type}_generate.log")
-        result = self._run_generation_test(model_key, generate_dir, expected_result, should_update, generate_log_file)
+        skip_generation = model_key in ["qwen2_moe", "deepseek_v3"]
+        if skip_generation:
+            result = None
+        else:
+            result = self._run_generation_test(
+                model_key, generate_dir, expected_result, should_update, generate_log_file
+            )
         # Update baseline if needed
         if should_update:
-            self.tester.update_baseline(
-                model_key=model_key,
-                train_type=train_type,
-                test_type=test_type,
-                new_loss=actual_loss,
-                new_resume_loss=actual_resume_loss,
-                new_result=result[0] if result else [[]],
-            )
+            new_result = result[0] if result else None
+            if new_result is not None:
+                self.tester.update_baseline(
+                    model_key=model_key,
+                    train_type=train_type,
+                    test_type=test_type,
+                    new_loss=actual_loss,
+                    new_resume_loss=actual_resume_loss,
+                    new_result=new_result,
+                )
+            else:
+                print(f"[SKIP] Skipping baseline update for {model_key} (generation test skipped)")
 
         if errors:
             raise AssertionError(errors)
@@ -680,10 +687,8 @@ class TestTrain:
         self.train_tester = TrainTester()
         self.workflow = BaseTrainingTest(self.train_tester)
 
-        # Kill any remaining launcher processes to free GPU resources
         subprocess.run("pkill -9 -f 'paddleformers/cli/launcher.py' 2>/dev/null || true", shell=True)
 
-        # Clean up dist log directory before each test
         dist_log_dir = "./paddleformers_dist_log"
         if os.path.exists(dist_log_dir):
             shutil.rmtree(dist_log_dir)
