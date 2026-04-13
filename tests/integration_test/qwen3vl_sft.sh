@@ -68,7 +68,7 @@ unset http_proxy https_proxy
 log_file=qwen3vl_sft_${machine}_${step}_multi_card.txt
 gt_loss_file=qwen3vl_sft_${machine}_${step}_multi_card_gt_loss.txt
 
-if [[ "$step" == "moe" ]]; then
+if [[ "$step" == "moe" && "$machine" == "h20" ]]; then
     gt_loss_file=qwen3vl_sft_release_${machine}_${step}_multi_card_gt_loss.txt
 fi
 
