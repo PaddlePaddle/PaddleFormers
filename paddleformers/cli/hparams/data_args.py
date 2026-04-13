@@ -138,6 +138,10 @@ class DataArguments:
         default=True,
         metadata={"help": "Whether to skip the warmup process of mmap files."},
     )
+    warmup_only_rank0: bool = field(
+        default=False,
+        metadata={"help": "Whether to warmup mmap files only on rank 0. If False, all ranks do warmup."},
+    )
     data_cache: str = field(default=None, metadata={"help": "The path of the cached dataset."})
     truncation_strategy: str = field(
         default="delete",
