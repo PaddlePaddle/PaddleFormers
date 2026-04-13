@@ -881,10 +881,6 @@ class Qwen3VLProvider(TransformerConfig):
             for attr in config_attrs:
                 setattr(config, attr, getattr(self, attr))
 
-        # VIT uses 2D spatial RoPE which is incompatible with fused_rope kernel,
-        # force disable regardless of global setting.
-        self.vision_config.apply_rope_fusion = False
-
         self.text_config.tp_comm_overlap = self.tp_comm_overlap
         self.vision_config.tp_comm_overlap = False
         # self.vision_projection_config.tp_comm_overlap = False
