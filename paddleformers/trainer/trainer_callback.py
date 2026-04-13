@@ -21,6 +21,7 @@ Callbacks to use with the Trainer class and customize the training loop.
 import dataclasses
 import json
 import os
+import random
 import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
@@ -41,8 +42,12 @@ from ..utils.import_utils import is_paddlefleet_available
 # Conditionally import paddlefleet modules
 if is_paddlefleet_available():
     from paddlefleet.models.gpt import GPTModel
+    from paddlefleet.transformer.moe.moe_layer import MoELayer
+    from paddlefleet.transformer.moe.moe_router import StandardMoERouter
 else:
     GPTModel = None  # Define a mock or None when not available
+    StandardMoERouter = None
+    MoELayer = None
 
 from tqdm.auto import tqdm
 
@@ -773,7 +778,9 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
         usages = []
 
         def get_stat(layer):
-            if isinstance(layer, PretrainedMoEGate) and layer.topk_method == "noaux_tc":
+            if (
+                isinstance(layer, PretrainedMoEGate) or isinstance(layer, StandardMoERouter)
+            ) and layer.topk_method == "noaux_tc":
                 biases.append(layer.e_score_correction_bias)
                 usages.append(layer.expert_usage)
 
@@ -808,7 +815,9 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
         # print('on_optimizer_end update:', update.tolist())
 
         def update_bias(layer):
-            if isinstance(layer, PretrainedMoEGate) and layer.topk_method == "noaux_tc":
+            if (
+                isinstance(layer, PretrainedMoEGate) or isinstance(layer, StandardMoERouter)
+            ) and layer.topk_method == "noaux_tc":
                 with paddle.no_grad():
                     if not layer.weight.stop_gradient:
                         biases.pop(0).add_(update_list.pop(0))
@@ -932,3 +941,18 @@ class InterleaveGateUpCallback(TrainerCallback):
         for name, param in self.model.state_dict().items():
             if "weight1" in name:
                 self.interleave_gate_up_proj(param)
+
+
+class GlobalRNGCallback(TrainerCallback):
+    """
+    此 hook 给组网插入正确的全局 随机数生成器
+    """
+
+    def on_step_end(self, args, state, control, model, **kwargs):
+        rng = random.Random(state.global_step)
+
+        def _set_global_rng(layer):
+            if isinstance(layer, MoELayer):
+                layer.rng = rng
+
+        model.apply(_set_global_rng)
