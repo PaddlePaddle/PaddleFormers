@@ -71,6 +71,11 @@ gt_loss_file=qwen3vl_sft_${machine}_${step}_multi_card_gt_loss.txt
 set +e
 NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./${log_file}
 
+if [[ "$step" == "moe" && "$BRANCH" == release* ]]; then
+    echo "Running moe step on release branch: $BRANCH"
+    gt_loss_file=qwen3vl_sft_moe_release_${machine}_multi_card_gt_loss.txt
+fi
+
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
    echo "qwen sft training failed, try to check the log file"
