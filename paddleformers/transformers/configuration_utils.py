@@ -1363,6 +1363,8 @@ class PretrainedConfig:
 
         self._remove_keys_not_serialized(serializable_config_dict, saving_file)
 
+        serializable_config_dict.pop("_unsavable_keys", None)
+
         return serializable_config_dict
 
     def register_unsavable_keys(self, keys):
