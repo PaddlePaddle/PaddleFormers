@@ -603,12 +603,7 @@ class BaseTrainingTest:
 
         # Test model generation
         generate_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_{test_type}_generate.log")
-        if model_key == "qwen2_moe" or model_key == "deepseeek_v3":
-            print("qwen2_moe and deepseeek_v3 don't support generation test. Skip.")
-        else:
-            result = self._run_generation_test(
-                model_key, generate_dir, expected_result, should_update, generate_log_file
-            )
+        result = self._run_generation_test(model_key, generate_dir, expected_result, should_update, generate_log_file)
         # Update baseline if needed
         if should_update:
             self.tester.update_baseline(
