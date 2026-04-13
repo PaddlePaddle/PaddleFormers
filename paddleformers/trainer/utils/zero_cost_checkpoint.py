@@ -1044,7 +1044,7 @@ class ZeroCostCheckpointWorker:
         # Step2.4: save TrainerState
         trainer_state_name_path = os.path.join(output_dir, TRAINER_STATE_NAME)
         if self.device_id == 0:
-            self.trainer_state.save_to_json(trainer_state_name_path)
+            self.trainer_state.save(trainer_state_name_path)
 
         # Step2.5: save RNG State
         if self.rng_state is not None:
