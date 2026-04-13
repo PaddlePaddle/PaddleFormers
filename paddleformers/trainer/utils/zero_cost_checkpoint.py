@@ -212,12 +212,13 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
         index += 1
     for k, v in manipulated_state_dict.items():
         if k not in param_mappings:
+            unshard_buffer_index = f"unshard_{k}"
             param_meta = {}
-            param_meta["buffer_index"] = "unshard"
+            param_meta["buffer_index"] = unshard_buffer_index
             param_meta["shape"] = v.shape
             param_meta["name"] = v.name
-            param_meta["tensor_data"] = v.numpy()
             param_mappings[k] = param_meta
+            ipc_meta_mappings[unshard_buffer_index] = v.get_tensor()._share_cuda()
     return param_mappings, ipc_meta_mappings
 
 
@@ -376,7 +377,6 @@ class ParamFusionStorageHelper:
         self.inited_buffers = {}
         self.all_param_numel = 0
         self.model_weights_metas = OrderedDict()
-        self.unshard_params = OrderedDict()
         if len(model_weights_metas) == 0:
             logger.info("No model states need to save in current worker")
             return
@@ -384,12 +384,12 @@ class ParamFusionStorageHelper:
         for k, v in model_weights_metas.items():
             assert isinstance(v, dict), "model_weights_metas must be a dict"
             buffer_index = v["buffer_index"]
-            if buffer_index == "unshard":
-                self.unshard_params[k] = v
-                continue
             if buffer_index not in self.inited_buffers.keys():
                 buffer_tuple = self.init_buffer(buffer_ipc_metas[buffer_index])
                 self.inited_buffers[buffer_index] = buffer_tuple
+            if buffer_index.startswith("unshard_"):
+                self.model_weights_metas[k] = v
+                continue
             v["start"] = int(v["start"])
             v["end"] = int(v["end"])
             v["logical_start"] = self.all_param_numel
@@ -463,12 +463,8 @@ class ParamFusionStorageHelper:
     def state_dict(self):
         state_dict = {}
         for k, v in self.model_weights_metas.items():
-            state_dict[k] = self.restore_tensor_from_meta(v)
-        if dist.get_rank() == 0:
-            for k, meta in self.unshard_params.items():
-                tensor = paddle.to_tensor(meta["tensor_data"])
-                tensor.get_tensor()._set_dims(meta["shape"])
-                tensor.name = meta["name"]
+            tensor = self.restore_tensor_from_meta(v)
+            if tensor is not None:
                 state_dict[k] = tensor
         return state_dict
 
@@ -476,10 +472,18 @@ class ParamFusionStorageHelper:
     def restore_tensor_from_meta(self, tensor_meta):
         shape = tensor_meta["shape"]
         name = tensor_meta["name"]
-        start = tensor_meta["start"]
-        end = tensor_meta["end"]
-        cpu_buffer = self.inited_buffers[tensor_meta["buffer_index"]][1]
-        tensor = cpu_buffer._slice(start, end)
+        buffer_index = tensor_meta["buffer_index"]
+        if buffer_index.startswith("unshard_"):
+            if dist.get_rank() != 0:
+                return None
+            # unshard params not synced, re-copy from shared cuda_buffer
+            cuda_buffer, cpu_buffer = self.inited_buffers[buffer_index]
+            tensor = cuda_buffer.pin_memory()
+        else:
+            start = tensor_meta["start"]
+            end = tensor_meta["end"]
+            cpu_buffer = self.inited_buffers[buffer_index][1]
+            tensor = cpu_buffer._slice(start, end)
         tensor.get_tensor()._set_dims(shape)
         tensor.name = name
         return tensor
