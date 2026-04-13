@@ -15,7 +15,7 @@ gradio
 codecov-cli
 allure-pytest
 bce-python-sdk==0.8.74
-pytest==8.1.1
+pytest==9.0.3
 pytest-cov
 pytest-xdist
 pytest-timeout
