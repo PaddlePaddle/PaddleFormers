@@ -1,7 +1,7 @@
 name: Model Unittest GPU CE Develop
 
 on:
-  pull_request
+  pull_request:
   schedule:
     - cron: "0 17 * * 0-4"
     - cron: "0 18 * * 0-4"
