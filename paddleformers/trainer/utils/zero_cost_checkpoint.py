@@ -463,9 +463,7 @@ class ParamFusionStorageHelper:
     def state_dict(self):
         state_dict = {}
         for k, v in self.model_weights_metas.items():
-            tensor = self.restore_tensor_from_meta(v)
-            if tensor is not None:
-                state_dict[k] = tensor
+            state_dict[k] = self.restore_tensor_from_meta(v)
         return state_dict
 
     @imperative_base.no_grad()
