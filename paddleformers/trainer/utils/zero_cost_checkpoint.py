@@ -313,10 +313,10 @@ class ZeroCostCheckpointEMAProcessor:
                 buffer_index = tensor_meta["buffer_index"]
                 if buffer_index.startswith("unshard_"):
                     continue
-                start = tensor_meta["start"]
-                end = tensor_meta["end"]
                 if buffer_index not in self.ema_buffer_model_params:
                     continue  # non fp32 has no `self.ema_buffer_model_params`
+                start = tensor_meta["start"]
+                end = tensor_meta["end"]
                 cpu_buffer = self.ema_buffer_model_params[buffer_index]
                 tensor = cpu_buffer._slice(start, end).clone()  # slice 出来的 tensor 在执行`paddle.save`会异常慢，此处必须clone
                 tensor.get_tensor()._set_dims(shape)
