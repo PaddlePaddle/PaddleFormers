@@ -472,9 +472,8 @@ class ParamFusionStorageHelper:
         name = tensor_meta["name"]
         buffer_index = tensor_meta["buffer_index"]
         if buffer_index.startswith("unshard_"):
-            # unshard params not synced, re-copy from shared cuda_buffer
-            cuda_buffer, cpu_buffer = self.inited_buffers[buffer_index]
-            tensor = cuda_buffer.pin_memory()
+            # use cpu_buffer directly
+            tensor = self.inited_buffers[buffer_index][1]
         else:
             start = tensor_meta["start"]
             end = tensor_meta["end"]
