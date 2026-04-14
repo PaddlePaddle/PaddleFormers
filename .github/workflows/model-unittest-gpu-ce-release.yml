@@ -1,6 +1,7 @@
 name: Model Unittest GPU CE Release
 
 on:
+  pull_request
   schedule:
     - cron: "0 17 * * 0-4"
     - cron: "0 17 * * 5"
@@ -251,7 +252,7 @@ jobs:
         env:
           FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
         run: |
-          python_version=$(echo "${FLAGS_enable_CE##*_py}" | sed 's/\(.\)\(..\)/\1.\2/')
+          python_version=$(echo "${FLAGS_enable_CE##*_py}" | sed 's/_.*$//;s/\(.\)\(..\)/\1.\2/')
           work_dir="${{ github.workspace }}"
           docker exec -i -e "work_dir=$work_dir" -e "python_version=$python_version" $container_name /bin/bash <<-DOCKER_EOF
           echo "Change python version to $python_version"
@@ -272,7 +273,7 @@ jobs:
         env:
           FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
         run: |
-          python_version=$(echo "${FLAGS_enable_CE##*_py}" | sed 's/\(.\)\(..\)/\1.\2/')
+          python_version=$(echo "${FLAGS_enable_CE##*_py}" | sed 's/_.*$//;s/\(.\)\(..\)/\1.\2/')
           # Use step outputs from previous step instead of env vars
           MODE="${{ steps.trigger_mode.outputs.mode }}"
           UPDATE_BASELINE_MODELS="${{ steps.trigger_mode.outputs.update_baseline_models }}"
