@@ -466,11 +466,6 @@ class ParamFusionStorageHelper:
             tensor = self.restore_tensor_from_meta(v)
             if tensor is not None:
                 state_dict[k] = tensor
-        # for k, meta in self.unshard_params.items():
-        #     tensor = paddle.to_tensor(meta["tensor_data"])
-        #     tensor.get_tensor()._set_dims(meta["shape"])
-        #     tensor.name = meta["name"]
-        #     state_dict[k] = tensor
         return state_dict
 
     @imperative_base.no_grad()
