@@ -25,6 +25,7 @@ import io
 import math
 import os
 import random
+import sys
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, BinaryIO, Optional
@@ -33,7 +34,6 @@ import librosa
 import numpy as np
 import paddle
 import requests
-from decord import VideoReader, cpu
 from PIL import Image
 from PIL.Image import Image as ImageObject
 from transformers.image_utils import is_valid_image
@@ -59,6 +59,27 @@ VIDEO_PLACEHOLDER = os.getenv("VIDEO_PLACEHOLDER", "<video>")
 AUDIO_PLACEHOLDER = os.getenv("AUDIO_PLACEHOLDER", "<audio>")
 os.environ["https_proxy"] = os.environ.get("HTTPS_PROXY", "")
 os.environ["http_proxy"] = os.environ.get("HTTP_PROXY", "")
+
+
+def _create_video_decoder(video_src):
+    """Create a paddlecodec VideoDecoder via the Paddle proxy import."""
+    try:
+        del sys.modules["torchcodec"]
+        paddle.enable_compat(scope={"torchcodec"})
+        from torchcodec.decoders import VideoDecoder
+
+        sys.modules["torchcodec"] = None
+    except (ImportError, RuntimeError) as e:
+        logger.error(
+            f"Failed to load 'torchcodec' backend via Paddle proxy.\n"
+            f"  - Recommended Fix Steps:\n"
+            f"    1. Install dependencies: `conda install ffmpeg -c conda-forge`\n"
+            f"    2. Reinstall packages: `pip install paddlecodec --force-reinstall`\n"
+            f"  - Original Error: {e}"
+        )
+        raise
+    PADDLECODEC_NUM_THREADS = int(os.environ.get("PADDLECODEC_NUM_THREADS", 0))
+    return VideoDecoder(video_src, num_ffmpeg_threads=PADDLECODEC_NUM_THREADS)
 
 
 def _make_batched_images(images, imglens: list[int]):
@@ -169,11 +190,13 @@ class MMPluginMixin:
 
         return img
 
-    def _video_download(self, url: str) -> VideoReader:
-        bytes_content = self._file_download(url)
-        video_reader = VideoReader(bytes_content, ctx=cpu(0), num_threads=1)
-
-        return video_reader
+    def _video_download(self, url: str):
+        if os.path.isfile(url):
+            return _create_video_decoder(url)
+        # For URLs, download bytes and pass as paddle tensor (raw encoded bytes)
+        response = requests.get(url)
+        video_tensor = paddle.to_tensor(np.frombuffer(response.content, dtype="uint8"))
+        return _create_video_decoder(video_tensor)
 
     def _preprocess_image(self, image, image_max_pixels, image_min_pixels, **kwargs):
         r"""Pre-process a single image."""
@@ -194,11 +217,11 @@ class MMPluginMixin:
 
     def _get_video_sample_indices(self, video_reader, video_fps, video_maxlen, **kwargs):
         r"""Compute video sample indices according to fps."""
-        total_frames = len(video_reader)
+        total_frames = video_reader.metadata.num_frames
         if total_frames == 0:  # infinite video
             return np.linspace(0, video_maxlen - 1, video_maxlen).astype(np.int32)
 
-        sample_frames = max(1, math.floor(float(total_frames / video_reader.get_avg_fps()) * video_fps))
+        sample_frames = max(1, math.floor(float(total_frames / video_reader.metadata.average_fps) * video_fps))
         sample_frames = min(total_frames, video_maxlen, sample_frames)
         start_frame, end_frame = 0, total_frames - 1
         frame_indices = np.linspace(start_frame, end_frame, sample_frames).round()
@@ -228,8 +251,14 @@ class MMPluginMixin:
                 video_reader = self._video_download(video)
                 sample_indices = self._get_video_sample_indices(video_reader, **kwargs)
                 try:
-                    frames = video_reader.get_batch(sample_indices)
-                    video_reader.seek(0)
+                    frames = (
+                        video_reader.get_frames_at(indices=[int(i) for i in sample_indices])
+                        .data.contiguous()
+                        .cpu()
+                        .numpy()
+                        .transpose(0, 2, 3, 1)  # [N,C,H,W] -> [N,H,W,C]
+                    )
+                    paddle.disable_compat()
                 except Exception:
                     logger.info(f"get {sample_indices} frames error")
 
@@ -561,8 +590,8 @@ class ErnieVLPlugin(BasePlugin):
     @override
     def _get_video_sample_indices(self, video_reader, video_fps, video_maxlen, frames_sample, **kwargs):
         r"""Compute video sample indices according to fps."""
-        total_frames = len(video_reader)
-        duration = total_frames / video_reader.get_avg_fps()
+        total_frames = video_reader.metadata.num_frames
+        duration = total_frames / video_reader.metadata.average_fps
         if total_frames == 0:  # infinite video
             return np.linspace(0, video_maxlen - 1, video_maxlen).astype(np.int32)
 
@@ -609,8 +638,14 @@ class ErnieVLPlugin(BasePlugin):
                 video_reader = self._video_download(video)
                 sample_indices, time_stamps = self._get_video_sample_indices(video_reader, **kwargs)
                 try:
-                    frames = video_reader.get_batch(sample_indices).asnumpy()
-                    video_reader.seek(0)
+                    frames = (
+                        video_reader.get_frames_at(indices=[int(i) for i in sample_indices])
+                        .data.contiguous()
+                        .cpu()
+                        .numpy()
+                        .transpose(0, 2, 3, 1)  # [N,C,H,W] -> [N,H,W,C]
+                    )
+                    paddle.disable_compat()
                 except Exception:
                     logger.info(f"get {sample_indices} frames error")
 
@@ -761,13 +796,19 @@ class Qwen2VLPlugin(BasePlugin):
                 video_reader = self._video_download(video)
                 sample_indices = self._get_video_sample_indices(video_reader, **kwargs)
                 try:
-                    frames = video_reader.get_batch(sample_indices).asnumpy()
-                    video_reader.seek(0)
+                    frames = (
+                        video_reader.get_frames_at(indices=[int(i) for i in sample_indices])
+                        .data.contiguous()
+                        .cpu()
+                        .numpy()
+                        .transpose(0, 2, 3, 1)  # [N,C,H,W] -> [N,H,W,C]
+                    )
+                    paddle.disable_compat()
                 except Exception:
                     logger.info(f"get {sample_indices} frames error")
 
                 try:
-                    fps_per_video.append(video_reader.get_avg_fps())
+                    fps_per_video.append(video_reader.metadata.average_fps)
                 except Exception:
                     fps_per_video.append(kwargs.get("video_fps", 2.0))
 
