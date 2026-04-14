@@ -47,12 +47,7 @@ from paddle import framework
 from paddle.base import core
 from paddle.distributed import ShardedWeight
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
-from paddle.distributed.fleet.meta_parallel import (
-    MetaParallelBase,
-    NoPipelineParallel,
-    PipelineLayer,
-    PipelineParallel,
-)
+from paddle.distributed.fleet.meta_parallel import PipelineLayer
 
 try:
     from paddle.distributed.fleet.meta_parallel import PipelineDatasetPreprocessor
@@ -342,6 +337,13 @@ class Trainer:
         processing_class: Optional[ImageProcessingMixin] = None,
         resume_from_custom_func: Optional[Callable] = None,
     ):
+        if is_paddlefleet_available() and (
+            isinstance(model, FleetGPTModel)
+            or (isinstance(model, LoRAModel) and isinstance(model.model, FleetGPTModel))
+        ):
+            self.using_fleet_model = True
+        else:
+            self.using_fleet_model = False
 
         if args is None:
             output_dir = "tmp_trainer"
@@ -477,14 +479,9 @@ class Trainer:
             )
 
         if self.args.pipeline_model_parallel_size > 1 and self.args.use_hybrid_parallel:
-            if is_paddlefleet_available():
-                assert (isinstance(model, LoRAModel) and isinstance(model.model, PipelineLayer)) or isinstance(
-                    model, PipelineLayer
-                ), f"Only support pipeline parallel mode when model is PipelineLayer or PipelineLayer!!! but get {type(model.model)}"
-            else:
-                assert (isinstance(model, LoRAModel) and isinstance(model.model, PipelineLayer)) or isinstance(
-                    model, PipelineLayer
-                ), f"Only support pipeline parallel mode when model is PipelineLayer!!! but get {type(model.model)}"
+            assert (isinstance(model, LoRAModel) and isinstance(model.model, PipelineLayer)) or isinstance(
+                model, PipelineLayer
+            ), f"Only support pipeline parallel mode when model is PipelineLayer or PipelineLayer!!! but get {type(model.model)}"
         default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(self.args.report_to)
         callbacks = default_callbacks if callbacks is None else default_callbacks + callbacks
         self.callback_handler = CallbackHandler(
@@ -2805,9 +2802,7 @@ class Trainer:
                 drop_last=False,
             )
         else:
-            if (
-                is_paddlefleet_available() and isinstance(self.model, PipelineLayer)
-            ) or self.args.pipeline_model_parallel_size > 1:
+            if (is_paddlefleet_available() and self.using_fleet_model) or self.args.pipeline_model_parallel_size > 1:
                 # In pipeline parallelism, batch size will be strictly checked
                 # Use LastBatchPaddingSampler to pad the last batch with the first batch
                 from .trainer_utils import LastBatchPaddingSampler
@@ -3286,7 +3281,7 @@ class Trainer:
 
         if isinstance(model, LoRAModel):
             model = model.model
-        if is_paddlefleet_available() and isinstance(model, PipelineLayer):
+        if is_paddlefleet_available() and self.using_fleet_model:
             in_pipeline_parallel_mode = True
         else:
             in_pipeline_parallel_mode = self.args.pipeline_model_parallel_size > 1
@@ -3351,7 +3346,7 @@ class Trainer:
 
                     keys = list(inputs[0].keys())
                     inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
-                    if is_paddlefleet_available() and isinstance(model, MetaParallelBase):
+                    if is_paddlefleet_available() and self.using_fleet_model:
                         first_stage_inputs_batch = inputs_batch
                         last_stage_inputs = first_stage_inputs_batch.pop("labels")
                         outputs = (
@@ -3561,7 +3556,7 @@ class Trainer:
         else:
             labels = None
 
-        if is_paddle_cuda_available() and isinstance(model, PipelineLayer):
+        if is_paddle_cuda_available() and self.using_fleet_model:
             outputs = model(inputs)
         else:
             outputs = model(**inputs)
@@ -3619,9 +3614,7 @@ class Trainer:
         Return:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
-        if is_paddlefleet_available() and (
-            isinstance(model, PipelineParallel) or isinstance(model, NoPipelineParallel)
-        ):
+        if is_paddlefleet_available() and self.using_fleet_model:
             return self.training_pipeline_step(model, inputs)
 
         if self.args.pipeline_model_parallel_size > 1:
@@ -4906,7 +4899,7 @@ class Trainer:
                             inputs = {"input_ids": inputs[0], "position_ids": inputs[1]}
                         return inputs
 
-                    if is_paddlefleet_available() and isinstance(model, MetaParallelBase):
+                    if is_paddlefleet_available() and self.using_fleet_model:
                         inputs = _prepare_inputs_for_fleet(inputs)
                     loss = model.eval_batch(data_provider, compute_loss=True)
                     # loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
@@ -4951,9 +4944,7 @@ class Trainer:
             Tuple[Optional[paddle.Tensor], Optional[paddle.Tensor], Optional[paddle.Tensor]]: A tuple with the loss,
             logits and labels (each being optional).
         """
-        if self.args.pipeline_model_parallel_size > 1 or (
-            is_paddlefleet_available() and isinstance(model, MetaParallelBase)
-        ):
+        if self.args.pipeline_model_parallel_size > 1 or self.using_fleet_model:
             # hack for pipeline mode
             inputs = self._prepare_inputs(inputs)
             return self.prediction_pipeline_step(model, inputs, prediction_loss_only, ignore_keys, step)

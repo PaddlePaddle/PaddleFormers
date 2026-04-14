@@ -40,6 +40,7 @@ from ...utils.import_utils import is_paddlefleet_available
 
 # Conditionally import paddlefleet modules
 if is_paddlefleet_available():
+    from paddlefleet.models.gpt import GPTModel as FleetGPTModel
     from paddlefleet.parallel_state import (
         get_tensor_model_parallel_group,
         get_tensor_model_parallel_world_size,
@@ -64,6 +65,9 @@ else:
         pass
 
     class GroupedMLPExpert:
+        pass
+
+    class FleetGPTModel:
         pass
 
 
@@ -251,19 +255,19 @@ class LoRAModel(nn.Layer):
             self.is_pipelinemodel = True
             self.model._single_to_pp_mapping = None
 
+        self.use_paddlefleet = False
+        if is_paddlefleet_available():
+            if isinstance(self.model, FleetGPTModel):
+                self.use_paddlefleet = True
+
         # For composite models (e.g., VL models), the inner language_model may be a
         # PaddleFleet PipelineLayer. Invalidate its cached name mapping so it gets
         # rebuilt on next state_dict() call with the newly added LoRA parameter keys.
-        if not self.is_pipelinemodel and is_paddlefleet_available():
+        if not self.is_pipelinemodel and self.use_paddlefleet:
             for sublayer in self.model.sublayers():
                 if isinstance(sublayer, PipelineLayer):
                     sublayer._pipeline_name_mapping = None
                     sublayer._pp_to_single_mapping = None
-
-        self.use_paddlefleet = False
-        if is_paddlefleet_available():
-            if isinstance(self.model, PipelineLayer):
-                self.use_paddlefleet = True
 
         if self.lora_config.tensor_model_parallel_size != self.model.config.tensor_model_parallel_size:
             self.lora_config.tensor_model_parallel_size = self.model.config.tensor_model_parallel_size
@@ -608,7 +612,7 @@ class LoRAModel(nn.Layer):
 
         if self.is_pipelinemodel:
             self.model._single_to_pp_mapping = None
-        if not self.is_pipelinemodel and is_paddlefleet_available():
+        if not self.is_pipelinemodel and self.use_paddlefleet:
             for sublayer in self.model.sublayers():
                 if isinstance(sublayer, PipelineLayer):
                     sublayer._pipeline_name_mapping = None
