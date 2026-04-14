@@ -1,9 +1,9 @@
-name: Model Unittest GPU CE Develop
+name: Model Unittest GPU CE Release
 
 on:
   pull_request:
   schedule:
-    - cron: "0 18 * * *"
+    - cron: "0 19 * * *"
   issue_comment:
     types: [created, edited]
   workflow_dispatch:
@@ -53,7 +53,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FLAGS_enable_CE: "${{ github.event.inputs.FLAGS_enable_CE || 'CE_Develop_cu130_py313' }}"
+  FLAGS_enable_CE: "${{ github.event.inputs.FLAGS_enable_CE || 'CE_Release_cu129_py312' }}"
   PR_ID: ${{ github.event.pull_request.number || github.event.issue.number || '0' }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
   TASK: PaddleFormers-CE-${{ github.event.pull_request.number }}-model-unittest-gpu
@@ -95,10 +95,10 @@ jobs:
         run: |
           echo "skip-models-ce label found"
           echo "Downstream GPU jobs will be skipped"
-  model-unittest-gpu-ce-develop:
+  model-unittest-gpu-ce-release:
     needs: check_skip
     if: needs.check_skip.outputs.skip == 'false'
-    name: model-unittest-gpu-ce-develop
+    name: model-unittest-gpu-ce-release
     runs-on: 'models'
     steps:
       - name: Determine Image Name
@@ -156,13 +156,15 @@ jobs:
           work_dir="${{ github.workspace }}"
           docker exec -i -e work_dir="$work_dir" -e PR_ID="$PR_ID" -e BRANCH="$BRANCH" $container_name /bin/bash <<-DOCKER_EOF
           rm -rf * .[^.]*
-          echo "Downloading PaddleFormers.tar"
-          wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
-          echo "Extracting PaddleFormers.tar"
-          rm -rf PaddleFormers
-          tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+          # echo "Downloading PaddleFormers.tar"
+          # wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+          # echo "Extracting PaddleFormers.tar"
+          # rm -rf PaddleFormers
+          # tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+
           echo "work_dir = ${work_dir}"
           source ${work_dir}/../../../proxy_huggingface
+          git clone -b release/1.1 --depth=20 https://github.com/PaddlePaddle/PaddleFormers.git
           cd PaddleFormers
           git config --global user.name "PaddleCI"
           git config --global user.email "paddle_ci@example.com"
