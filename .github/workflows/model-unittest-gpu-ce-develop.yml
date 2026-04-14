@@ -269,6 +269,7 @@ jobs:
           echo "Update baseline: ${UPDATE_BASELINE_MODELS}"
           echo "BRANCH: ${BRANCH}"
           echo "PR number: ${PR_NUMBER}"
+          source ${work_dir}/../../../proxy_huggingface
           bash -x scripts/regression/ci_model_unittest.sh False $FLAGS_enable_CE "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
           DOCKER_EOF
       - name: Upload Products
