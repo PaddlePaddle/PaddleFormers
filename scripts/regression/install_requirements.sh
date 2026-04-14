@@ -22,7 +22,7 @@ install_requirements() {
     # Todo: fix later 
     # python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple > /dev/null
     python -m pip install -r requirements.txt -i https://pypi.org/simple 
-    if [[ "$ce_branch" == "CE_Release_cu129_py312" ]]; then # nightly regerssion
+    if [[ "$ce_branch" == "CE_Release_cu129_py312_nightly" ]]; then # nightly regerssion
         #fleet
         wget -q https://paddle-github-action.bj.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp312-cp312-linux_x86_64.whl
         pip install  paddlefleet-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ -i https://pypi.org/simple 
@@ -49,12 +49,18 @@ install_requirements() {
         python -m pip uninstall paddlepaddle-gpu -y
         #paddle
         wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda130-Cudnn913-Trt1013-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp311-cp311-linux_x86_64.whl
-        python -m pip install paddlepaddle_gpu-0.0.0-cp313-cp313-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ 
+        python -m pip install paddlepaddle_gpu-0.0.0-cp311-cp311-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ 
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
 
     elif [[ "$ce_branch" == "CE_Release_cu130_py313" ]]; then # release regerssion
+        #fleet
+        python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
+        #formers
+        python setup.py bdist_wheel  > /dev/null
+        python -m pip install ./dist/*.whl
+    elif [[ "$ce_branch" == "CE_Release_cu130_py312" ]]; then # release regerssion
         #fleet
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
         #formers
@@ -66,7 +72,13 @@ install_requirements() {
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
-    elif [[ "$ce_branch" == "CE_Release_cu129_py312" ]]; then # release regerssion
+    elif [[ "$ce_branch" == "CE_Release_cu129_py313" ]]; then # release regerssion
+        #fleet
+        python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+        #formers
+        python setup.py bdist_wheel  > /dev/null
+        python -m pip install ./dist/*.whl 
+    elif [[ "$ce_branch" == "CE_Release_cu129_py312_weekly" ]]; then # release regerssion
         #fleet
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
         #formers

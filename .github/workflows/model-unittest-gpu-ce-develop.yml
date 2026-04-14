@@ -3,7 +3,8 @@ name: Model Unittest GPU CE Develop
 on:
   pull_request:
   schedule:
-    - cron: "0 18 * * *"
+    - cron: "0 17 * * 0-4"
+    - cron: "0 18 * * 0-4"
   issue_comment:
     types: [created, edited]
   workflow_dispatch:
@@ -32,12 +33,14 @@ on:
         default: 'CE_Develop_cu130_py313'
         type: choice
         options:
+          - 'CE_Release_cu129_py312_nightly'
           - 'CE_Develop_cu130_py313'
-          - 'CE_Release_cu129_py312'
           - 'CE_Develop_cu130_py311'
           - 'CE_Release_cu130_py313'
+          - 'CE_Release_cu130_py312'
           - 'CE_Release_cu130_py311'
-          - 'CE_Release_cu129_py312'
+          - 'CE_Release_cu129_py313'
+          - 'CE_Release_cu129_py312_weekly'
           - 'CE_Release_cu126_py310'
   workflow_call:
     inputs:
@@ -53,7 +56,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FLAGS_enable_CE: "${{ github.event.inputs.FLAGS_enable_CE || 'CE_Develop_cu130_py313' }}"
   PR_ID: ${{ github.event.pull_request.number || github.event.issue.number || '0' }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
   TASK: PaddleFormers-CE-${{ github.event.pull_request.number }}-model-unittest-gpu
@@ -101,17 +103,29 @@ jobs:
     name: model-unittest-gpu-ce-develop
     runs-on: 'models'
     steps:
+      - name: Determine CE branch by time
+        id: determine
+        run: |
+          schedule_time="${{ github.event.schedule || '' }}"
+          if [[ "$schedule_time" == "0 17 "* ]]; then
+            echo "FLAGS_enable_CE=CE_Develop_cu130_py313" >> $GITHUB_OUTPUT
+          elif [[ "$schedule_time" == "0 18 "* ]]; then
+            echo "FLAGS_enable_CE=CE_Develop_cu130_py311" >> $GITHUB_OUTPUT
+          else
+            echo "FLAGS_enable_CE=${{ github.event.inputs.FLAGS_enable_CE || 'CE_Develop_cu130_py313' }}" >> $GITHUB_OUTPUT
+          fi
       - name: Determine Image Name
         env:
           IMAGE_NAME: ${{ inputs.image_name }}
+          FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
         run: |
           if [[ -n "${IMAGE_NAME}" ]]; then
             echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
-          elif [[ "${{ env.FLAGS_enable_CE }}" == *cu130* ]]; then
+          elif [[ "${FLAGS_enable_CE}" == *cu130* ]]; then
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda130-dev" >> "$GITHUB_ENV"
-          elif [[ "${{ env.FLAGS_enable_CE }}" == *cu129* ]]; then
+          elif [[ "${FLAGS_enable_CE}" == *cu129* ]]; then
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda129-dev" >> "$GITHUB_ENV"
-          elif [[ "${{ env.FLAGS_enable_CE }}" == *cu126* ]]; then
+          elif [[ "${FLAGS_enable_CE}" == *cu126* ]]; then
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev" >> "$GITHUB_ENV"
           else
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev" >> "$GITHUB_ENV"
@@ -217,8 +231,9 @@ jobs:
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
       
       - name: Change python version
+        env:
+          FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
         run: |
-          FLAGS_enable_CE=${{ env.FLAGS_enable_CE }}
           python_version=$(echo "${FLAGS_enable_CE##*_py}" | sed 's/\(.\)\(..\)/\1.\2/')
           work_dir="${{ github.workspace }}"
           docker exec -i -e "work_dir=$work_dir" -e "python_version=$python_version" $container_name /bin/bash <<-DOCKER_EOF
@@ -237,8 +252,9 @@ jobs:
           DOCKER_EOF
       
       - name: Test
+        env:
+          FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
         run: |
-          FLAGS_enable_CE=${{ env.FLAGS_enable_CE }}
           python_version=$(echo "${FLAGS_enable_CE##*_py}" | sed 's/\(.\)\(..\)/\1.\2/')
           # Use step outputs from previous step instead of env vars
           MODE="${{ steps.trigger_mode.outputs.mode }}"
