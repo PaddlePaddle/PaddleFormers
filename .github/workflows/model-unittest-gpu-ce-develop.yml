@@ -1,7 +1,6 @@
 name: Model Unittest GPU CE Develop
 
 on:
-  pull_request:
   schedule:
     - cron: "0 17 * * 0-4"
     - cron: "0 18 * * 0-4"
@@ -295,6 +294,7 @@ jobs:
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
         run: |
           docker exec -t $container_name /bin/bash -c '
+          python -m pip install baidubce
           if [ ! -f "${{ env.bos_file }}" ]; then
             wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
             mkdir ${{ env.home_path }}/bos
