@@ -61,6 +61,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("glm_ocr", "GlmOcrConfig"),
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
+        ("mistral3", "Mistral3Config"),
     ]
 )
 
@@ -89,6 +90,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
+        ("mistral3", "Mistral3ForConditionalGeneration"),
     ]
 )
 
@@ -102,6 +104,7 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
         ("qwen2_5_vl_text", "qwen2_5_vl"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
+        ("mistral3", "ministral3"),
     ]
 )
 
@@ -339,6 +342,9 @@ class AutoConfig(PretrainedConfig):
             subfolder = ""
         cache_dir = kwargs.pop("cache_dir", None)
         download_hub = kwargs.get("download_hub", None)
+
+        if isinstance(pretrained_model_name_or_path, str) and pretrained_model_name_or_path.startswith("~"):
+            pretrained_model_name_or_path = os.path.expanduser(pretrained_model_name_or_path)
 
         config_file = resolve_file_path(
             pretrained_model_name_or_path,

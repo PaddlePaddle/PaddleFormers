@@ -333,6 +333,21 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "ministral3.configuration": ["Mistral3Config", "Mistral3TextConfig", "Mistral3VisionConfig", "Ministral3TextConfig"],
+    "ministral3.modeling": [
+        "Mistral3ForConditionalGeneration",
+        "Mistral3Model",
+        "Mistral3MultiModalProjector",
+        "Mistral3PatchMerger",
+        "Mistral3PreTrainedModel",
+        "Mistral3RMSNorm",
+        "Ministral3TextDecoder",
+        "Ministral3DecoderLayer",
+        "Ministral3Attention",
+        "Ministral3MLP",
+    ],
+    "ministral3.tokenizer": ["Mistral3Tokenizer"],
+    "ministral3": [],
 }
 
 if TYPE_CHECKING:
@@ -410,6 +425,7 @@ if TYPE_CHECKING:
     from .phi3 import *
     from .gemma3_text import *
     from .glm_ocr import *
+    from .ministral3 import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

@@ -977,6 +977,18 @@ register_template(
     chat_sep="<|im_end|>",
 )
 
+
+register_template(
+    name="mistral3",
+    format_user=StringFormatter(slots=["[INST]{{content}}[/INST]"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["[SYSTEM_PROMPT]{{content}}[/SYSTEM_PROMPT]"]),
+    format_prefix=EmptyFormatter(slots=["<s>"]),
+    chat_sep="</s>",
+    suffix=["</s>"],
+)
+
+
 register_template(
     name="glm_ocr",
     format_user=StringFormatter(slots=["<|user|>\n{{content}}\n"]),

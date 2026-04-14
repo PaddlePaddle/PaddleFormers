@@ -78,6 +78,7 @@ MAPPING_NAMES = OrderedDict(
         ("Gemma3", "gemma3_text"),
         ("Glm4vMoe", "glm4v_moe"),
         ("GlmOcr", "glm_ocr"),
+        ("Mistral3", "mistral3"),
     ]
 )
 
@@ -199,6 +200,9 @@ class _BaseAutoModelClass:
             )
         init_class = cls._name_mapping[model_name + "_Import_Class"]
         class_name = cls._name_mapping[init_class]
+        # model_type 到实际模块名的特殊映射（如 mistral3 -> ministral3）
+        from .configuration import SPECIAL_MODEL_TYPE_TO_MODULE_NAME
+        class_name = SPECIAL_MODEL_TYPE_TO_MODULE_NAME.get(class_name, class_name)
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
         try:
             model_class = getattr(import_class, init_class)
@@ -243,6 +247,9 @@ class _BaseAutoModelClass:
             subfolder = ""
         kwargs["cache_dir"] = cache_dir
         kwargs["subfolder"] = subfolder
+
+        if isinstance(pretrained_model_name_or_path, str) and pretrained_model_name_or_path.startswith("~"):
+            pretrained_model_name_or_path = os.path.expanduser(pretrained_model_name_or_path)
         all_model_names = []
         for pretrained_model_names, model_name in cls._pretrained_model_dict.items():
             for name in pretrained_model_names:
