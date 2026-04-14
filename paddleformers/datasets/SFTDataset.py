@@ -636,17 +636,21 @@ class BaseSFTDataset:
                 messages=messages,
             )
 
-            messages = self.template.mm_plugin.process_messages(
-                messages, images, videos, audios, mm_inputs, self.processor
+            tokens, pre_labels = self.template.mm_plugin.pre_tokenize(
+                messages, images, videos, mm_inputs, self.processor
             )
 
-            tokens = self._encode_pretraining_messages(messages, actual_example_num)
             if len(tokens) > self.max_seq_len + 1:
-                # Truncate the sequence to the maximum length
+                # Truncate the sequence to the maximum length.
+                # pre_tokenize already performed Phase-1 + Phase-2 expansion, so
+                # tokens/pre_labels are already at their final (expanded) length.
                 tokens = tokens[: self.max_seq_len + 1]
+                pre_labels = pre_labels[: self.max_seq_len + 1]
 
             labels = self.template.mm_plugin.process_tokens(tokens, self.processor)
-
+            # use -100 value in pre_labels to cover values in labels
+            assert len(pre_labels) == len(labels)
+            labels = [-100 if p == -100 else l for p, l in zip(pre_labels, labels)]
             # label shift
             labels = labels[1:] + [-100]
 
@@ -730,7 +734,8 @@ class BaseSFTDataset:
                     messages=messages,
                     dtype=self.dtype,
                 )
-                messages = self.template.mm_plugin.process_messages(
+                # Phase-1: replace each PLACEHOLDER with a single special token
+                messages = self.template.mm_plugin._apply_replace_tag(
                     messages, images, videos, audios, mm_inputs, self.processor
                 )
                 encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools)
@@ -838,6 +843,12 @@ class BaseSFTDataset:
                 raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
         # label shift
+        if mm_inputs is not None and (images or videos or audios):
+            # Phase-2: expand single special tokens into full mm structures.
+            # Must happen after truncation/eos and before label shift.
+            tokens, labels = self.template.mm_plugin._expand_mm_tokens(
+                tokens, labels, images, videos, audios, mm_inputs, self.processor
+            )
         labels = labels[1:] + [-100]
 
         pos_ids = list(range(len(tokens)))
