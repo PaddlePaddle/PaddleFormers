@@ -379,6 +379,7 @@ class Qwen3VLTextProvider(GPTModelProvider):
     rms_norm_eps: float = 1e-6
     rotary_base: float = 1000000.0
     position_embedding_type: str = "rope"
+    bias_activation_fusion: bool = True
     use_qk_norm: bool = True
     specific_layer: type = Qwen3VLTextTransformerLayer
     max_sequence_length: int = 262144
@@ -955,10 +956,6 @@ class Qwen3VLProvider(TransformerConfig):
         ]:
             for attr in config_attrs:
                 setattr(config, attr, getattr(self, attr))
-
-        # VIT uses 2D spatial RoPE which is incompatible with fused_rope kernel,
-        # force disable regardless of global setting.
-        self.vision_config.apply_rope_fusion = False
 
         self.text_config.tp_comm_overlap = self.tp_comm_overlap
         self.vision_config.tp_comm_overlap = False
