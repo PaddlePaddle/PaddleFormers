@@ -351,3 +351,33 @@ def calculate_matched_group(sequences, packing_length: int, is_finished: bool = 
     else:
         ret_sequences = []
     return sequences, ret_sequences
+
+
+def generate_greedy_packs_from_sequences(max_seq_len, sequences):
+    """Generate packed sequences using greedy strategy from pre-processed sequences.
+
+    Args:
+        sequences: List of pre-processed Sequence objects.
+
+    Returns:
+        list: List of packed sequences.
+    """
+    left_len = np.zeros([len(sequences)]) - 1
+    left_len[0] = max_seq_len
+    generate_packs = [[]]
+    index = 0
+    left_index = 0
+
+    while index < len(sequences):
+        sequence = sequences[index]
+        max_left_index = left_len.argmax()
+        if len(sequence.token_ids) <= left_len[max_left_index]:
+            generate_packs[max_left_index].append(sequence)
+            left_len[max_left_index] -= len(sequence.token_ids)
+            index += 1
+        else:
+            left_index += 1
+            left_len[left_index] = max_seq_len
+            generate_packs.append([])
+
+    return generate_packs
