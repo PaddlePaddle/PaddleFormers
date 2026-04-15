@@ -29,7 +29,7 @@ on:
           - 'paddleocr_vl'
       FLAGS_enable_CE:
         required: false
-        default: 'CE_Develop_cu130_py313'
+        default: 'CE_Develop_cu130_py312'
         type: choice
         options:
           - 'CE_Release_cu129_py312_nightly'
