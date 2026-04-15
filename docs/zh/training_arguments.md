@@ -133,10 +133,6 @@
                         梯度裁剪（Gradient Clipping）的最大范数。
                         默认为 1.0。用于防止梯度爆炸，对大模型训练稳定性至关重要。(`float`, 可选)
 
-  --offload_optim
-                        是否在 `optimizer.step()` 后将优化器状态卸载到 CPU，以节省 GPU 显存。
-                        注意这与 Sharding Offload 不同，适用于非 Sharding 场景。(`bool`, 可选, 默认为 `False`)
-
   --adam_beta1
                         AdamW 优化器的 beta1 超参数。默认为 0.9。(`float`, 可选)
 
@@ -243,10 +239,6 @@
                         张量并行的配置，异步通信。
                         默认为 `False`。(`bool`, 可选)
 
-  --tp_delay_scale_loss
-                        张量并行的配置，延迟 Loss 缩放。
-                        默认为 `False`。(`bool`, 可选)
-
   --pipeline_model_parallel_size
                         流水线并行（Pipeline Parallelism）的并行度。(`int`, 可选)
 
@@ -265,10 +257,6 @@
   --use_dualpipev
                         流水线并行的配置，启用 DualPipe 调度。
                         默认为 `False`。(`bool`, 可选)
-
-  --pp_delay_scale_loss
-                        流水线并行的配置，重要精度选项。
-                        默认为 `True`。(`bool`, 可选)
 
   --batch_p2p_comm
                         流水线并行的配置，启用批处理 P2P 通信。

@@ -77,14 +77,12 @@ expert_model_parallel_size: 4
 
 
 # pp
-pp_delay_scale_loss: true
 overlap_p2p_comm: true
 variable_seq_lengths: true
 best_unbalanced_scheduler: true
 pp_release_grads: true
 
 # tp
-tp_delay_scale_loss: true
 
 
 optim: adamw
