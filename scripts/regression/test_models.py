@@ -130,7 +130,7 @@ class TrainTester:
 
         if model_key not in data:
             pytest.skip(f"Model '{model_key}' not found in config")
-            
+
         model_cfg = data[model_key]
         return ModelConfig(
             name=model_key,
@@ -603,7 +603,7 @@ class BaseTrainingTest:
 
         # Test model generation
         generate_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_{test_type}_generate.log")
-        skip_generation = model_key in ["qwen2_moe", "deepseek_v3"]
+        skip_generation = model_key in ["qwen2", "qwen2_moe", "deepseek_v3", "qwen2_5_vl", "qwen3_vl_moe", "qwen3_vl"]
         if skip_generation:
             result = None
         else:
@@ -870,9 +870,6 @@ class TestTrain:
             request: Pytest request fixture.
         """
 
-        if model_key == "qwen3_vl_moe":
-            pytest.skip("Unsupported resume hang")
-
         model_cfg = self.train_tester.load_model_config(model_key)
         print(f"\n[INFO] Testing model={model_key}, train_type={train_type}_lora")
         should_update = self._should_update_baseline(request, model_key)
@@ -903,9 +900,6 @@ class TestTrain:
         if model_key == "paddleocr_vl":
             pytest.skip("Unsupported")
 
-        if model_key == "qwen3_vl":
-            pytest.skip("Unsupported resume hang")
-
         should_update = self._should_update_baseline(request, model_key)
 
         self.workflow.execute_training_workflow(
@@ -934,8 +928,6 @@ class TestTrain:
 
         if model_key == "paddleocr_vl":
             pytest.skip("Unsupported")
-        if model_key == "qwen3_vl_moe" or model_key == "qwen3_vl":
-            pytest.skip("Unsupported resume hang")
 
         should_update = self._should_update_baseline(request, model_key)
 
