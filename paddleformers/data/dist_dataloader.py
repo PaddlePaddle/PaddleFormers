@@ -331,12 +331,14 @@ class StreamDistDataLoader:
                 persistent_workers=persistent_workers,
                 reader_buffer_size=reader_buffer_size,
             )
-            self._lazy_dataloader_iter = None
         else:
             logger.info(
                 "StreamDistDataLoader: rank {} does not read data, "
                 "only global rank 0 reads.".format(paddle.distributed.get_rank())
             )
+
+        if self._need_data:
+            self._lazy_dataloader_iter = None
 
     @property
     def _dataloader_iter(self):
@@ -379,7 +381,7 @@ class StreamDistDataLoader:
 
             if exhausted or len(batches) < self._dataset_world_size:
                 # Not enough data for a full round, signal stop
-                fake_data = [None]
+                fake_data = [None] * self._dataset_world_size
                 paddle.distributed.broadcast_object_list(
                     fake_data, src=self._stream_data_src, group=self._stream_data_group
                 )
@@ -477,6 +479,9 @@ class StreamDistDataLoader:
     def __next__(self):
         data = None
         if self._need_data:
-            data = self._scatter_data()
+            try:
+                data = self._scatter_data()
+            except Exception as e:
+                logger.debug(e)
         data = self._broadcast_data(data)
         return data
