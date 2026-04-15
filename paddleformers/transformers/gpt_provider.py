@@ -17,8 +17,9 @@
 
 import contextlib
 import inspect
+import json
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from functools import partial
 from typing import Any, Callable, Literal, Optional, Union
 
@@ -207,6 +208,22 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
                         pass
 
         return model
+
+    def to_json_string(self, use_diff: bool = True, saving_file=False) -> str:
+        config_dict = asdict(self)
+
+        def make_serializable(obj):
+            if isinstance(obj, dict):
+                return {k: make_serializable(v) for k, v in obj.items() if make_serializable(v) is not None}
+            elif isinstance(obj, (list, tuple)):
+                return [make_serializable(item) for item in obj if make_serializable(item) is not None]
+            elif isinstance(obj, (str, int, float, bool, type(None))):
+                return obj
+            else:
+                return None
+
+        serializable_config = make_serializable(config_dict)
+        return json.dumps(serializable_config, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
 def mtp_block_spec(config: "GPTModelProvider", vp_stage: Optional[int] = None) -> Optional[LayerSpec]:

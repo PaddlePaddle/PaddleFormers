@@ -2051,9 +2051,12 @@ class EMAStateAssembler:
 
         for k, v in self.model_sharded_state_dict.items():
             if v.local_tensor.dtype == paddle.bfloat16:
-                ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(
-                    k, ema_params_recovered[_rename(k, False)], v
-                )
+                ema_tensor = ema_params_recovered[_rename(k, False)]
+                expected_shape = v.local_shape
+                # Handle grouped_gemm_experts: reshape 3D [num_experts, hidden, intermediate] to 2D [num_experts*hidden, intermediate]
+                if "grouped_gemm_experts" in k:
+                    ema_tensor = paddle.reshape(ema_tensor, expected_shape)
+                ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, ema_tensor, v)
 
         ema_state_dict.pop("master_weights")
         del ema_params_recovered
@@ -2079,7 +2082,18 @@ class EMAStateAssembler:
 
         for k, v in extra_params.items():
             assert k in self.model_sharded_state_dict, f"[EMAStateAssembler] {k} not in model_sharded_state_dict"
-            ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, v, self.model_sharded_state_dict[k])
+            ref_tensor = self.model_sharded_state_dict[k]
+            expected_shape = ref_tensor.local_shape
+            if "grouped_gemm_experts" in k:
+                v = paddle.reshape(v, expected_shape)
+            ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, v, ref_tensor)
+
+        # Fill missing params from model (e.g., e_score_correction_bias not tracked by EMA)
+        for k, v in self.model_sharded_state_dict.items():
+            if k not in ema_sharded_state_dict:
+                logger.debug(f"[EMAStateAssembler] Filling missing param {k} from model")
+                ema_sharded_state_dict[k] = v
+
         return ema_sharded_state_dict
 
     def _save_full_ema_states(self, step, ema_sharded_state_dict):

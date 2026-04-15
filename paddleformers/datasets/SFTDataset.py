@@ -24,6 +24,7 @@ from paddle.io import Dataset, IterableDataset
 
 from paddleformers.datasets.data_utils import (
     calculate_matched_group,
+    generate_greedy_packs_from_sequences,
     get_worker_sliced_iterator,
     postprocess_fc_sequence,
     print_debug_info,
@@ -64,14 +65,10 @@ class BaseSFTDataset:
 
         # parameter init
         self.tokenizer = dataset_config.get("tokenizer", None)
+        self.processor = dataset_config.get("processor", None)
         self.dataset_num_proc = dataset_config.get("dataset_num_proc", 1)
-        if not self.dataset_num_proc:
-            self.dataset_num_proc = 1
         logger.info(f"self.dataset_num_proc: {self.dataset_num_proc}")
         self.dataloader_num_workers = dataset_config.get("dataloader_num_workers", 0)
-        if self.dataset_num_proc > 1 and self.dataloader_num_workers > 0:
-            raise ValueError("dataset_num_proc and dataloader_num_workers can not be set simultaneously now.")
-        self.processor = dataset_config.get("processor", None)
         self.max_seq_len = dataset_config.get("max_seq_len", 8192)
         self.template = dataset_config.get("template_instance", None)
         self.template_backend = dataset_config.get("template_backend", "jinja")
@@ -82,6 +79,23 @@ class BaseSFTDataset:
         self.encode_one_turn = dataset_config.get("encode_one_turn", True)
         self.is_pretraining = dataset_config.get("is_pretraining", False)
         self.truncation_strategy = dataset_config.get("truncation_strategy", "delete")
+        self.truncate_packing = dataset_config.get("truncate_packing", True)
+        self.is_valid = dataset_config.get("is_valid", False)
+        self.packing = dataset_config.get("packing", False)
+        self.greedy_intokens = dataset_config.get("greedy_intokens", True)
+        self.dtype = dataset_config.get("dtype", None)
+        self.binpacking = dataset_config.get("binpacking", False)
+        self.packing_interval = dataset_config.get("packing_interval", 1000)
+
+        # check
+        if not self.dataset_num_proc:
+            self.dataset_num_proc = 1
+        if self.dataset_num_proc > 1 and self.dataloader_num_workers > 0:
+            raise ValueError("dataset_num_proc and dataloader_num_workers can not be set simultaneously now.")
+        if self.truncate_packing and not self.is_pretraining:
+            logger.warning_once("Truncate packing is only valid in pretraining data flow")
+        if self.is_pretraining and self.packing and self.truncate_packing:
+            logger.info("[dataflow] pretrain dataflow using truncate packing.")
         assert self.truncation_strategy in [
             "oral",
             "delete",
@@ -89,17 +103,6 @@ class BaseSFTDataset:
             "left",
         ], f"truncation_strategy must be in [oral, delete, right, left], but got {self.truncation_strategy}"
         logger.info(f"[dataflow] truncation_strategy: {self.truncation_strategy}")
-        self.truncate_packing = dataset_config.get("truncate_packing", True)
-        self.is_valid = dataset_config.get("is_valid", False)
-        if self.truncate_packing and not self.is_pretraining:
-            logger.warning_once("Truncate packing is only valid in pretraining data flow")
-        self.packing = dataset_config.get("packing", False)
-        self.greedy_intokens = dataset_config.get("greedy_intokens", True)
-        self.dtype = dataset_config.get("dtype", None)
-        self.binpacking = dataset_config.get("binpacking", False)
-        self.packing_interval = dataset_config.get("packing_interval", 1000)
-        if self.is_pretraining and self.packing and self.truncate_packing:
-            logger.info("[dataflow] pretrain dataflow using truncate packing.")
 
         # special token
         self.begin_token = getattr(self.tokenizer.special_tokens_map, "cls_token", "<|begin_of_sentence|>")
@@ -107,6 +110,24 @@ class BaseSFTDataset:
             self.begin_token_id = self.tokenizer._convert_token_to_id([self.begin_token])[0]
         else:
             self.begin_token_id = self.tokenizer.convert_tokens_to_ids([self.begin_token])[0]
+        self.sep_token_len = 0
+        if self.use_template and self.template_backend != "jinja":
+            self.sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
+
+        # The number of reserved tokens for each dialog
+        self.num_reserved_tokens_for_each_dialog = 0
+        if self.use_template:
+            # add dynamic eos
+            suffix_ids = (
+                self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
+                if self.template_backend == "custom"
+                else [self.tokenizer.eos_token_id]
+            )
+            self.num_reserved_tokens_for_each_dialog += len(suffix_ids)
+
+            # bos token
+            self.num_reserved_tokens_for_each_dialog += 1
+        logger.info(f"self.num_reserved_tokens_for_each_dialog: {self.num_reserved_tokens_for_each_dialog}")
 
         # media placeholder token
         self.placeholder_tokens = []
@@ -144,6 +165,7 @@ class BaseSFTDataset:
                 reverse=True,
             )
 
+        # max_steps estimate
         self.estimate = False
         # The number of valid samples and skipped samples in estimation
         self.unused_samples = 0
@@ -154,40 +176,25 @@ class BaseSFTDataset:
         # set max estimate samples
         if not self.is_valid:
             self.max_estimate_samples = len(self.mix_datasets)
-
         self.last_printed_percent = 0
         self._estimate_start_time = None
+
+        # flags
         self.enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
         self.mem_debug = os.getenv("FLAGS_enable_mem_debug", "false").lower() in ("true", "1", "t")
-
-        self.sep_token_len = 0
-        if self.use_template and self.template_backend != "jinja":
-            self.sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
 
         # The flag indicating whether all examples have been iterated
         self.iter_all_examples = False
 
-        # The number of reserved tokens for each dialog
-        self.num_reserved_tokens_for_each_dialog = 0
-        if self.use_template:
-            # add dynamic eos
-            suffix_ids = (
-                self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
-                if self.template_backend == "custom"
-                else [self.tokenizer.eos_token_id]
-            )
-            self.num_reserved_tokens_for_each_dialog += len(suffix_ids)
-
-            # bos token
-            self.num_reserved_tokens_for_each_dialog += 1
-        logger.info(f"self.num_reserved_tokens_for_each_dialog: {self.num_reserved_tokens_for_each_dialog}")
-
-        if self.is_pretraining and self.packing and self.truncate_packing:
-            self._current_processor_func = self._process_pretraining_tokens
-        else:
-            self._current_processor_func = self._process_sequence
-
         # multiprocessing initialization
+        if self.is_pretraining and self.packing and self.truncate_packing:
+            self._current_processor_func = self._tokenize_pretraining
+        else:
+            if self.is_pretraining:
+                self._current_processor_func = self._process_pretraining_sequence
+            else:
+                self._current_processor_func = self._process_sft_sequence
+
         if self.dataset_num_proc > 1:
             self.prefetch_size = self.dataset_num_proc * 2
             self._in_queue = mp.Queue(maxsize=self.prefetch_size)
@@ -216,13 +223,16 @@ class BaseSFTDataset:
             except Exception:
                 break
 
-    def _get_processed_data_iterator(self, dataset_iterator, actual_example_num, processor_func):
+    def _get_processed_data_iterator(
+        self, dataset_iterator, actual_example_num, processor_func, yield_with_index=False
+    ):
         """Get an iterator that yields processed data, using multiprocessing if enabled.
 
         Args:
             dataset_iterator: Raw data iterator.
             actual_example_num: Number of examples used.
             processor_func: Function to process each example.
+            yield_with_index: whether yield (raw_idx, result) tuples or yield result
 
         Yields:
             Processed results in order (skips None results).
@@ -285,6 +295,7 @@ class BaseSFTDataset:
                     # Yield results in order, skip None
                     while recv_idx in result_buffer:
                         res = result_buffer.pop(recv_idx)
+                        current_idx = recv_idx
                         recv_idx += 1
                         if res is not None:
                             _yield_cnt += 1
@@ -294,7 +305,7 @@ class BaseSFTDataset:
                                     f"pending={pending}, result_buf={len(result_buffer)}, "
                                     f"in_q~{self._in_queue.qsize()}, out_q~{self._out_queue.qsize()}"
                                 )
-                            yield res
+                            yield (current_idx, res) if yield_with_index else res
                         else:
                             if self.estimate:
                                 self.used_estimate_samples += actual_example_num
@@ -304,7 +315,7 @@ class BaseSFTDataset:
                     print(f"[MemDebug] iteration finished, RSS={_rss_mb():.0f} MB, " f"workers kept alive for reuse")
         else:
             # Single process mode
-            for _ in range(len(self.mix_datasets)):
+            for raw_idx in range(len(self.mix_datasets)):
                 example = next(dataset_iterator)
                 try:
                     result = processor_func(example, actual_example_num)
@@ -315,51 +326,11 @@ class BaseSFTDataset:
                     _yield_cnt += 1
                     if self.mem_debug and _yield_cnt % _log_interval == 0:
                         print(f"[MemDebug][single] yielded={_yield_cnt}, RSS={_rss_mb():.0f} MB")
-                    yield result
+                    yield (raw_idx, result) if yield_with_index else result
                 else:
                     if self.estimate:
                         self.unused_samples += actual_example_num
                         self.used_estimate_samples += actual_example_num
-
-    def _process_sequence(self, example, actual_example_num):
-        """Process a single example into a sequence."""
-        if self.is_pretraining:
-            return self._postprocess_pretraining_sequence(example, actual_example_num)
-        else:
-            return self._postprocess_sequence(example, actual_example_num)
-
-    def _process_pretraining_tokens(self, example, actual_example_num):
-        """Process a pretraining example into tokens."""
-        return self._encode_pretraining_messages(example["messages"], actual_example_num)
-
-    def _generate_greedy_packs_from_sequences(self, sequences):
-        """Generate packed sequences using greedy strategy from pre-processed sequences.
-
-        Args:
-            sequences: List of pre-processed Sequence objects.
-
-        Returns:
-            list: List of packed sequences.
-        """
-        left_len = np.zeros([len(sequences)]) - 1
-        left_len[0] = self.max_seq_len
-        generate_packs = [[]]
-        index = 0
-        left_index = 0
-
-        while index < len(sequences):
-            sequence = sequences[index]
-            max_left_index = left_len.argmax()
-            if len(sequence.token_ids) <= left_len[max_left_index]:
-                generate_packs[max_left_index].append(sequence)
-                left_len[max_left_index] -= len(sequence.token_ids)
-                index += 1
-            else:
-                left_index += 1
-                left_len[left_index] = self.max_seq_len
-                generate_packs.append([])
-
-        return generate_packs
 
     def _generate_sequences(self):
 
@@ -376,7 +347,7 @@ class BaseSFTDataset:
             take_lengths = []
             buffer = []
             data_iter = self._get_processed_data_iterator(
-                dataset_iterator, actual_example_num, self._process_pretraining_tokens
+                dataset_iterator, actual_example_num, self._current_processor_func
             )
             for tokens in data_iter:
                 if self.estimate:
@@ -451,7 +422,7 @@ class BaseSFTDataset:
                 logger.info("Not using packing mode for data iteration.")
                 # No packing mode
                 data_iter = self._get_processed_data_iterator(
-                    dataset_iterator, actual_example_num, self._process_sequence
+                    dataset_iterator, actual_example_num, self._current_processor_func
                 )
                 for sequence in data_iter:
                     if self.estimate:
@@ -474,7 +445,7 @@ class BaseSFTDataset:
                 if self.binpacking:
                     logger.info("Using binpacking mode for data iteration.")
                     data_iter = self._get_processed_data_iterator(
-                        dataset_iterator, actual_example_num, self._process_sequence
+                        dataset_iterator, actual_example_num, self._current_processor_func
                     )
                     accumulated_data = []
 
@@ -507,7 +478,7 @@ class BaseSFTDataset:
                     logger.info("Using base packing mode for data iteration.")
                     # base packing mode
                     data_iter = self._get_processed_data_iterator(
-                        dataset_iterator, actual_example_num, self._process_sequence
+                        dataset_iterator, actual_example_num, self._current_processor_func
                     )
                     for sequence in data_iter:
                         if self.estimate:
@@ -539,7 +510,7 @@ class BaseSFTDataset:
                     buffer_size = self.packing_interval
                     sequences_buffer = []
                     data_iter = self._get_processed_data_iterator(
-                        dataset_iterator, actual_example_num, self._process_sequence
+                        dataset_iterator, actual_example_num, self._current_processor_func
                     )
                     for sequence in data_iter:
                         if self.estimate:
@@ -549,7 +520,7 @@ class BaseSFTDataset:
 
                         if len(sequences_buffer) >= buffer_size:
                             # Running greedy strategy in sequences_buffer.
-                            generate_packs = self._generate_greedy_packs_from_sequences(sequences_buffer)
+                            generate_packs = generate_greedy_packs_from_sequences(self.max_seq_len, sequences_buffer)
                             for pack in generate_packs:
                                 if len(pack) > 0:
                                     yield pack
@@ -562,7 +533,9 @@ class BaseSFTDataset:
                             if self.used_estimate_samples >= self.max_estimate_samples:
                                 # Yield left packs before estimation ends
                                 if len(sequences_buffer) > 0:
-                                    generate_packs = self._generate_greedy_packs_from_sequences(sequences_buffer)
+                                    generate_packs = generate_greedy_packs_from_sequences(
+                                        self.max_seq_len, sequences_buffer
+                                    )
                                     for pack in generate_packs:
                                         if len(pack) > 0:
                                             yield pack
@@ -571,7 +544,7 @@ class BaseSFTDataset:
                                 yield []
 
                     if len(sequences_buffer) > 0:
-                        generate_packs = self._generate_greedy_packs_from_sequences(sequences_buffer)
+                        generate_packs = generate_greedy_packs_from_sequences(self.max_seq_len, sequences_buffer)
                         for pack in generate_packs:
                             if len(pack) > 0:
                                 yield pack
@@ -589,15 +562,15 @@ class BaseSFTDataset:
             while True:
                 yield from self.__iter_func()
 
-    def _encode_pretraining_messages(self, messages, actual_example_num):
-        # tokens
-        content = messages[0]["content"]
+    def _tokenize_pretraining(self, example, actual_example_num):
+        """Process a pretraining example into tokens."""
+        content = example["messages"][0]["content"]
         tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(content))
         # Add an EOS token at the end of each sample
         tokens = tokens + [self.tokenizer.eos_token_id]
         return tokens
 
-    def _postprocess_pretraining_sequence(self, example, actual_example_num):
+    def _process_pretraining_sequence(self, example, actual_example_num):
 
         messages = example.get("messages", [])
         images = example.get("images", [])
@@ -605,7 +578,7 @@ class BaseSFTDataset:
         audios = example.get("audios", [])
 
         if len(images) == 0 and len(videos) == 0 and len(audios) == 0:
-            tokens = self._encode_pretraining_messages(messages, actual_example_num)
+            tokens = self._tokenize_pretraining(example, actual_example_num)
             if len(tokens) > self.max_seq_len + 1:
                 # Truncate the sequence to the maximum length
                 tokens = tokens[: self.max_seq_len + 1]
@@ -635,8 +608,8 @@ class BaseSFTDataset:
             messages = self.template.mm_plugin.process_messages(
                 messages, images, videos, audios, mm_inputs, self.processor
             )
-
-            tokens = self._encode_pretraining_messages(messages, actual_example_num)
+            example["messages"] = messages
+            tokens = self._tokenize_pretraining(example, actual_example_num)
             if len(tokens) > self.max_seq_len + 1:
                 # Truncate the sequence to the maximum length
                 tokens = tokens[: self.max_seq_len + 1]
@@ -683,7 +656,7 @@ class BaseSFTDataset:
                 mm_inputs=mm_inputs,
             )
 
-    def _postprocess_sequence(self, example, actual_example_num):
+    def _process_sft_sequence(self, example, actual_example_num):
         """Process code completion examples into token sequences.
 
         Args:
@@ -950,16 +923,22 @@ class BaseSFTDataset:
                 if length >= suffix_len and input_ids[start : start + suffix_len] == suffix_tokens_id:
                     labels[start : start + suffix_len] = suffix_tokens_id
 
-    def _binpacking_process_batch(self, iterator, batch_size):
+    def _binpacking_process_batch(self, iterator, batch_size, index_only=False):
         batch = []
         count = 0
         for _ in range(batch_size):
             try:
-                encoded = next(iterator)
+                item = next(iterator)
                 if self.estimate:
                     self.used_samples += 1
-                if encoded:
-                    batch.append((encoded, len(encoded.token_ids)))
+                if index_only:
+                    raw_idx, encoded = item
+                    if encoded:
+                        batch.append((raw_idx, len(encoded.token_ids)))
+                else:
+                    encoded = item
+                    if encoded:
+                        batch.append((encoded, len(encoded.token_ids)))
                 count += 1
             except StopIteration:
                 break
@@ -982,11 +961,7 @@ class MapSFTDataset(BaseSFTDataset, Dataset):
     def __init__(self, **dataset_config):
         super().__init__(**dataset_config)
 
-        if self.packing:
-            raise ValueError(
-                "[MapSFTDataset] packing=True is not supported for non-streaming (Map) dataset. "
-                "Please use IteratorSFTDataset instead or set packing=False."
-            )
+        self.packed_idx_cache_dir = dataset_config.get("packed_idx_cache_dir", None)
 
         self.raw_data = list(self.mix_datasets)
         logger.info(f"[MapSFTDataset] Total samples: {len(self.raw_data)}")
@@ -997,11 +972,159 @@ class MapSFTDataset(BaseSFTDataset, Dataset):
         self._traceback_counter = 0
         self._idx = 0
         self._idx_list = self.random_state.permutation(len(self.raw_data)).tolist()
+        self.packed_idx = None
+
+        if self.packing and self.binpacking:
+            self.packed_idx = self._build_or_load_packed_idx()
+
+        elif self.packing and (not self.binpacking):
+            raise ValueError("[MapSFTDataset] packing only support binpacking")
+
+    def _build_or_load_packed_idx(self):
+
+        if self.packed_idx_cache_dir is not None:
+            split = "eval" if self.is_valid else "train"
+            self.cache_path = os.path.join(self.packed_idx_cache_dir, f"{split}_packed_idx.npz")
+            packed_idx = self._load_packed_idx_cache(self.cache_path)
+            if packed_idx is not None:
+                return packed_idx
+
+        packed_idx = self._compute_packed_idx()
+
+        if self.packed_idx_cache_dir is not None:
+            self._save_packed_idx_cache(packed_idx, self.cache_path)
+
+        return packed_idx
+
+    def _compute_packed_idx(self):
+        """
+        Mirrors the binpacking loop in _generate_sequences
+        but uses index_only=True:
+        (Sequence, token_length) -> (raw_idx, token_length)
+        """
+        logger.info("[MapSFTDataset] Computing token lengths for bin packing...")
+        actual_example_num = 1
+
+        dataset_iterator = iter(self.raw_data)
+        data_iter = self._get_processed_data_iterator(
+            dataset_iterator, actual_example_num, self._process_sequence, yield_with_index=True
+        )
+
+        accumulated_data = []
+        packed_idx = []
+
+        while True:
+            batch_data, num_samples = self._binpacking_process_batch(data_iter, self.packing_interval, index_only=True)
+            finished = num_samples != self.packing_interval
+
+            accumulated_data += batch_data
+
+            groups, accumulated_data = calculate_matched_group(
+                accumulated_data, self.max_seq_len, is_finished=finished
+            )
+
+            for row in groups:
+                packed_idx.append([item[0] for item in row])
+
+            if finished:
+                break
+
+        logger.info(
+            f"[MapSFTDataset] {sum(len(g) for g in packed_idx)} valid samples -> " f"{len(packed_idx)} packed groups."
+        )
+        return packed_idx
+
+    def _load_packed_idx_cache(self, cache_path):
+        """from an .npz cache file."""
+        if not os.path.isfile(cache_path):
+            logger.info(f"[MapSFTDataset] No packed_idx cache found at {cache_path}")
+            return None
+
+        try:
+            data = np.load(cache_path, allow_pickle=False)
+
+            group_offsets = data["group_offsets"]
+            flat_indices = data["flat_indices"]
+
+            packed_idx = []
+            for i in range(len(group_offsets) - 1):
+                start = group_offsets[i]
+                end = group_offsets[i + 1]
+                packed_idx.append(flat_indices[start:end].tolist())
+
+            logger.info(f"[MapSFTDataset] Loaded packed_idx cache from {cache_path}: " f"{len(packed_idx)} groups.")
+            return packed_idx
+
+        except Exception as e:
+            logger.warning(f"[MapSFTDataset] Failed to load packed_idx cache from {cache_path}: {e}. " "Recomputing.")
+            return None
+
+    def _save_packed_idx_cache(self, packed_idx, cache_path):
+        """to an .npz cache file."""
+        try:
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+
+            offsets = [0]
+            flat = []
+            for group in packed_idx:
+                flat.extend(group)
+                offsets.append(len(flat))
+
+            np.savez(
+                cache_path,
+                group_offsets=np.array(offsets, dtype=np.int64),
+                flat_indices=np.array(flat, dtype=np.int64),
+            )
+
+            logger.info(f"[MapSFTDataset] Saved packed_idx cache to {cache_path}: " f"{len(packed_idx)} groups")
+        except Exception as e:
+            logger.warning(
+                f"[MapSFTDataset] Failed to save packed_idx cache to {cache_path}: {e}. " "Continuing without cache."
+            )
 
     def __len__(self):
+        if self.packed_idx is not None:
+            return len(self.packed_idx)
         return len(self.raw_data)
 
     def __getitem__(self, idx):
+        if self.packed_idx is not None:
+            return self._getitem_packed(idx)
+        return self._getitem_single(idx)
+
+    def _getitem_packed(self, idx):
+        """Get a packed group of sequences by bin packing index."""
+        group_indices = self.packed_idx[idx]
+        actual_example_num = 1
+        sequences = []
+
+        for raw_idx in group_indices:
+            example = self.raw_data[raw_idx]
+            try:
+                sequence = self._process_sequence(example, actual_example_num)
+
+                if sequence is not None:
+                    sequences.append(sequence)
+                else:
+                    logger.warning(
+                        f"[MapSFTDataset] Sample {raw_idx} in packed group {idx} "
+                        "returned None during __getitem__. Skipping within group."
+                    )
+            except Exception:
+                if self.traceback_limit is not None and self._traceback_counter < self.traceback_limit:
+                    import traceback
+
+                    logger.info(traceback.format_exc())
+                    logger.warning(
+                        f"[MapSFTDataset] Error processing sample {raw_idx} in packed group {idx}. "
+                        "Skipping within group."
+                    )
+                    self._traceback_counter += 1
+
+        return sequences
+
+    def _getitem_single(self, idx):
+        """same as original __getitem__"""
         actual_example_num = 1
 
         for i in range(self.n_try_fetch):
@@ -1013,10 +1136,7 @@ class MapSFTDataset(BaseSFTDataset, Dataset):
 
             example = self.raw_data[current_idx]
             try:
-                if self.is_pretraining:
-                    sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
-                else:
-                    sequence = self._postprocess_sequence(example, actual_example_num)
+                sequence = self._process_sequence(example, actual_example_num)
 
                 if sequence is not None:
                     return [sequence]

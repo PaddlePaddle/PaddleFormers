@@ -1,7 +1,14 @@
-name: Model Unittest GPU CI
+name: Model Unittest GPU CE Release
 
 on:
-  pull_request:
+  schedule:
+    - cron: "0 19 * * 0-4"
+    - cron: "0 17 * * 5"
+    - cron: "0 18 * * 5"
+    - cron: "0 19 * * 5"
+    - cron: "0 20 * * 5"
+    - cron: "0 21 * * 5"
+    - cron: "0 22 * * 5"
   issue_comment:
     types: [created, edited]
   workflow_dispatch:
@@ -20,9 +27,25 @@ on:
           - 'qwen3_next'
           - 'qwen3moe'
           - 'phi3'
+          - 'deepseek_v3'
+          - 'qwen2_moe'
           - 'qwen2'
           - 'gemma3_text'
           - 'paddleocr_vl'
+      FLAGS_enable_CE:
+        required: false
+        default: 'CE_Release_cu129_py312_nightly'
+        type: choice
+        options:
+          - 'CE_Release_cu129_py312_nightly'
+          - 'CE_Develop_cu130_py313'
+          - 'CE_Develop_cu130_py312'
+          - 'CE_Release_cu130_py313'
+          - 'CE_Release_cu130_py312'
+          - 'CE_Release_cu130_py311'
+          - 'CE_Release_cu129_py313'
+          - 'CE_Release_cu129_py312_weekly'
+          - 'CE_Release_cu126_py310'
   workflow_call:
     inputs:
       runner:
@@ -37,12 +60,13 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  FLAGS_enable_CE: "${{ github.event.inputs.FLAGS_enable_CE || 'CE_Release_cu129_py312' }}"
   PR_ID: ${{ github.event.pull_request.number || github.event.issue.number || '0' }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
-  TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-model-unittest-gpu
+  TASK: PaddleFormers-CE-${{ github.event.pull_request.number }}-model-unittest-gpu
   BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
-  CI_JOB_NAME: model-unittest-gpu-ci
+  CE_JOB_NAME: model-unittest-gpu-cE
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
 
 defaults:
@@ -51,21 +75,21 @@ defaults:
 
 jobs:
   check_skip:
-    name: Check skip-models-ci label
+    name: Check skip-models-ce label
     runs-on: ubuntu-latest
 
     outputs:
       skip: ${{ steps.check_skip.outputs.skip }}
 
     steps:
-      - name: Check skip-models-ci label
+      - name: Check skip-models-ce label
         id: check_skip
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
             echo "PR labels: $labels"
-            if echo "$labels" | grep -q "skip-models-ci"; then
+            if echo "$labels" | grep -q "skip-models-ce"; then
               echo "skip=true" >> "$GITHUB_OUTPUT"
             else
               echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -73,32 +97,58 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Skip CI but mark success
+      - name: Skip CE but mark success
         if: steps.check_skip.outputs.skip == 'true'
         run: |
-          echo "skip-models-ci label found"
+          echo "skip-models-ce label found"
           echo "Downstream GPU jobs will be skipped"
-  model-unittest-gpu-ci:
+  model-unittest-gpu-ce-release:
     needs: check_skip
     if: needs.check_skip.outputs.skip == 'false'
-    name: model-unittest-gpu-ci
-    runs-on: ${{ inputs.runner || 'ernie-8gpu' || 'distrbute' }}
+    name: model-unittest-gpu-ce-release
+    runs-on: 'models'
     steps:
+      - name: Determine CE branch by time
+        id: determine
+        run: |
+          schedule_time="${{ github.event.schedule || '' }}"
+          if [[ "$schedule_time" == "0 17 * * 0-4" ]]; then
+            echo "FLAGS_enable_CE=CE_Release_cu129_py312_nightly" >> $GITHUB_OUTPUT
+          elif [[ "$schedule_time" == "0 17 * * 5" ]]; then
+            echo "FLAGS_enable_CE=CE_Release_cu130_py313" >> $GITHUB_OUTPUT
+          elif [[ "$schedule_time" == "0 18 * * 5" ]]; then
+            echo "FLAGS_enable_CE=CE_Release_cu130_py312" >> $GITHUB_OUTPUT
+          elif [[ "$schedule_time" == "0 19 * * 5" ]]; then
+            echo "FLAGS_enable_CE=CE_Release_cu130_py311" >> $GITHUB_OUTPUT
+          elif [[ "$schedule_time" == "0 20 * * 5" ]]; then
+            echo "FLAGS_enable_CE=CE_Release_cu129_py313" >> $GITHUB_OUTPUT
+          elif [[ "$schedule_time" == "0 21 * * 5" ]]; then
+            echo "FLAGS_enable_CE=CE_Release_cu129_py312_weekly" >> $GITHUB_OUTPUT
+          elif [[ "$schedule_time" == "0 22 * * 5" ]]; then
+            echo "FLAGS_enable_CE=CE_Release_cu126_py310" >> $GITHUB_OUTPUT
+          else
+            echo "FLAGS_enable_CE=${{ github.event.inputs.FLAGS_enable_CE || 'CE_Release_cu129_py312_nightly' }}" >> $GITHUB_OUTPUT
+          fi
       - name: Determine Image Name
         env:
           IMAGE_NAME: ${{ inputs.image_name }}
+          FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
         run: |
           if [[ -n "${IMAGE_NAME}" ]]; then
             echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
+          elif [[ "${FLAGS_enable_CE}" == *cu130* ]]; then
+            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda130-dev" >> "$GITHUB_ENV"
+          elif [[ "${FLAGS_enable_CE}" == *cu129* ]]; then
+            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda129-dev" >> "$GITHUB_ENV"
+          elif [[ "${FLAGS_enable_CE}" == *cu126* ]]; then
+            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev" >> "$GITHUB_ENV"
           else
-            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
+            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev" >> "$GITHUB_ENV"
           fi
       - name: Run Container
         env:
           FLAGS_dynamic_static_unified_comm: "True"
-          python_version: "3.10"
           PIP_CACHE_DIR: /root/.cache/pip
-          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda12.6-Cudnn9.5-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
           work_dir="${{ github.workspace }}"
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
@@ -122,10 +172,8 @@ jobs:
             -e "COMMIT_ID=$COMMIT_ID" \
             -e "work_dir=$work_dir" \
             -e "no_proxy=$no_proxy" \
-            -e "CI_JOB_NAME=$CI_JOB_NAME" \
-            -e "paddle_whl=$paddle_whl" \
+            -e "CE_JOB_NAME=$CE_JOB_NAME" \
             -e "FLAGS_dynamic_static_unified_comm=$FLAGS_dynamic_static_unified_comm" \
-            -e "python_version=$python_version" \
             -e HF_PROXY_PATH=${work_dir}/../../../proxy_huggingface \
             -e AISTUDIO_PROXY_PATH=${work_dir}/../../../proxy_aistudio \
             -e PF_HOME=/home/models/ \
@@ -137,13 +185,15 @@ jobs:
           work_dir="${{ github.workspace }}"
           docker exec -i -e work_dir="$work_dir" -e PR_ID="$PR_ID" -e BRANCH="$BRANCH" $container_name /bin/bash <<-DOCKER_EOF
           rm -rf * .[^.]*
-          echo "Downloading PaddleFormers.tar"
-          wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
-          echo "Extracting PaddleFormers.tar"
-          rm -rf PaddleFormers
-          tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+          # echo "Downloading PaddleFormers.tar"
+          # wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+          # echo "Extracting PaddleFormers.tar"
+          # rm -rf PaddleFormers
+          # tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+
           echo "work_dir = ${work_dir}"
-          source ${work_dir}/../../../proxy
+          source ${work_dir}/../../../proxy_huggingface
+          git clone -b release/1.1 --depth=20 https://github.com/PaddlePaddle/PaddleFormers.git
           cd PaddleFormers
           git config --global user.name "PaddleCI"
           git config --global user.email "paddle_ci@example.com"
@@ -196,8 +246,33 @@ jobs:
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
           echo "update_baseline_models=$UPDATE_BASELINE_MODELS" >> "$GITHUB_OUTPUT"
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-      - name: Test
+      
+      - name: Change python version
+        env:
+          FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
         run: |
+          python_version=$(echo "${FLAGS_enable_CE##*_py}" | sed 's/_.*$//;s/\(.\)\(..\)/\1.\2/')
+          work_dir="${{ github.workspace }}"
+          docker exec -i -e "work_dir=$work_dir" -e "python_version=$python_version" $container_name /bin/bash <<-DOCKER_EOF
+          echo "Change python version to $python_version"
+          set -e
+          cp ${work_dir}/../../../Miniconda3-latest-Linux-x86_64.sh /tmp/miniconda.sh
+          bash /tmp/miniconda.sh -b -p /opt/conda
+          export PATH=/opt/conda/bin:$PATH
+          source ${work_dir}/../../../proxy_huggingface
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+          conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+          conda create -n py_$python_version python=$python_version -y
+          . /opt/conda/etc/profile.d/conda.sh
+          conda activate py_$python_version
+          python --version
+          DOCKER_EOF
+      
+      - name: Test
+        env:
+          FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
+        run: |
+          python_version=$(echo "${FLAGS_enable_CE##*_py}" | sed 's/_.*$//;s/\(.\)\(..\)/\1.\2/')
           # Use step outputs from previous step instead of env vars
           MODE="${{ steps.trigger_mode.outputs.mode }}"
           UPDATE_BASELINE_MODELS="${{ steps.trigger_mode.outputs.update_baseline_models }}"
@@ -205,6 +280,8 @@ jobs:
           BRANCH="${{ github.event.pull_request.base.ref || github.ref_name }}"
           work_dir="${{ github.workspace }}"
           docker exec -i \
+            -e python_version="$python_version" \
+            -e FLAGS_enable_CE="$FLAGS_enable_CE" \
             -e work_dir="$work_dir" \
             -e MODE="$MODE" \
             -e UPDATE_BASELINE_MODELS="$UPDATE_BASELINE_MODELS" \
@@ -212,6 +289,9 @@ jobs:
             -e BRANCH="$BRANCH" \
             -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
             $container_name /bin/bash <<-DOCKER_EOF
+          . /opt/conda/etc/profile.d/conda.sh
+          conda activate py_$python_version
+          python --version
           ldconfig
           mkdir -p /root/.cache/pip
           pip cache dir
@@ -222,7 +302,8 @@ jobs:
           echo "Update baseline: ${UPDATE_BASELINE_MODELS}"
           echo "BRANCH: ${BRANCH}"
           echo "PR number: ${PR_NUMBER}"
-          bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
+          source ${work_dir}/../../../proxy_huggingface
+          bash -x scripts/regression/ci_model_unittest.sh False $FLAGS_enable_CE "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
           DOCKER_EOF
       - name: Upload Products
         if: always()
@@ -231,6 +312,8 @@ jobs:
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
         run: |
           docker exec -t $container_name /bin/bash -c '
+          source ${work_dir}/../../../proxy_huggingface
+          python -m pip install baidubce protocol utils -i https://pypi.org/simple
           if [ ! -f "${{ env.bos_file }}" ]; then
             wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
             mkdir ${{ env.home_path }}/bos
