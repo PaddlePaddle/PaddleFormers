@@ -205,7 +205,7 @@ def _load_paddlecodec_decoder(video_src):
     return decoder
 
 
-def read_video_decord(video_path, save_to_disk):
+def read_video_paddlecodec(video_path, save_to_disk):
     """get reader and meta using paddlecodec (replaces decord backend)"""
     video_path = get_downloadable(video_path, save_to_disk=save_to_disk)
     if isinstance(video_path, bytes):
@@ -286,7 +286,7 @@ def get_frame_indices(
     return frame_indices
 
 
-def read_frames_decord(
+def read_frames_paddlecodec(
     video_path,
     video_reader,
     video_meta,
@@ -297,7 +297,7 @@ def read_frames_decord(
     frame_indices=None,
     tol=10,
 ):
-    """get frames using paddlecodec (replaces decord backend, keeps same API)"""
+    """get frames using paddlecodec"""
 
     if frame_indices is None:
         frame_indices = get_frame_indices(

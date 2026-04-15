@@ -28,8 +28,8 @@ from ..processing_utils import ProcessorMixin
 from .vision_process import (
     RAW_IMAGE_DIR,
     get_downloadable,
-    read_frames_decord,
-    read_video_decord,
+    read_frames_paddlecodec,
+    read_video_paddlecodec,
     render_frame_timestamp,
 )
 
@@ -326,7 +326,7 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
         self._add_special_token(self.VID_END, outputs)
 
     def _load_and_process_video(self, url: str, item: Dict) -> List[Image.Image]:
-        reader, meta, path = read_video_decord(url, save_to_disk=False)
+        reader, meta, path = read_video_paddlecodec(url, save_to_disk=False)
 
         video_frame_args = dict()
         video_frame_args["fps"] = item.get("fps", -1)
@@ -340,7 +340,7 @@ class Ernie4_5_VLProcessor(ProcessorMixin):
 
         video_frame_args = self._set_video_frame_args(video_frame_args, meta)
 
-        frames_data, timestamps = read_frames_decord(
+        frames_data, timestamps = read_frames_paddlecodec(
             path,
             reader,
             meta,
