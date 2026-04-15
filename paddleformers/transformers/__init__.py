@@ -76,6 +76,7 @@ import_structure = {
         "AutoModelForQuestionAnswering",
         "AutoModelForMultipleChoice",
         "AutoModelForMaskedLM",
+        "AutoModelForCausalLM",
         "AutoModelForCausalLMPipe",
         "AutoEncoder",
         "AutoDecoder",
@@ -172,6 +173,8 @@ import_structure = {
     "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe", "LlamaRotaryEmbedding"],
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
+    "olmo2.configuration": ["Olmo2Config"],
+    "olmo2.modeling": ["Olmo2ForCausalLM", "Olmo2ForCausalLMPipe", "Olmo2Model", "Olmo2PretrainedModel"],
     "optimization": [
         "LinearDecayWithWarmup",
         "ConstScheduleWithWarmup",
