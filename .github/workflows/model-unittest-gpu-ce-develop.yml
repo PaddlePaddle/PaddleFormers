@@ -285,7 +285,7 @@ jobs:
           echo "BRANCH: ${BRANCH}"
           echo "PR number: ${PR_NUMBER}"
           source ${work_dir}/../../../proxy_huggingface
-          bash -x scripts/regression/ci_model_unittest.sh False $FLAGS_enable_CE "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
+          bash -x scripts/regression/ci_model_unittest.sh False CE_Develop_cu130_py312 "all" $BRANCH ${PR_NUMBER}
           DOCKER_EOF
       - name: Upload Products
         if: always()
