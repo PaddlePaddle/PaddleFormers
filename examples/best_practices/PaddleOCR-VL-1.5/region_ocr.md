@@ -1086,12 +1086,12 @@ if __name__ == "__main__":
 在启动 FastDeploy 服务时，需要加载微调后的模型路径：
 
 ```bash
-python -m fastdeploy.entrypoints.openai.api_server \
-    --model {MODEL_PATH} \  # 微调后模型的本地存储路径
+vllm serve {MODEL_PATH} \  # 微调后模型的本地存储路径
+    --chat-template {chat_template_path}/
     ......
 ```
 
-在 `--model` 配置项写入微调后模型的路径后 ，FastDeploy 会加载路径下的**模型权重**和**对话模板**，其他可调整参数请参考[PaddleOCR-VL部署推理最佳实践](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)，并基于文档编写代码，调用 FastDeploy 服务进行推理。
+通过微调后的模型路径、对话模板路径（一般以 chat_template.jinja 为文件名存储在模型路径下）启动 vLLM 服务，vLLM 会加载给定路径的**模型权重**和**对话模板**进行部署，其他可调整参数请参考[PaddleOCR-VL模型使用文档](https://docs.vllm.ai/projects/recipes/en/latest/PaddlePaddle/PaddleOCR-VL.html)和[vLLM官方文档](https://docs.vllm.ai/en/latest/usage)，并基于文档编写代码，调用 vLLM 服务进行推理。
 
 
 #### 基于 vLLM 部署推理
