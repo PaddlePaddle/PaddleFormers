@@ -40,7 +40,7 @@ on:
         options:
           - 'CE_Release_cu129_py312_nightly'
           - 'CE_Develop_cu130_py313'
-          - 'CE_Develop_cu130_py311'
+          - 'CE_Develop_cu130_py312'
           - 'CE_Release_cu130_py313'
           - 'CE_Release_cu130_py312'
           - 'CE_Release_cu130_py311'
@@ -242,7 +242,6 @@ jobs:
               MODE="pr"
               echo "Detected baseline update from PR description: $UPDATE_BASELINE_MODELS"
             fi
-            UPDATE_BASELINE_MODELS="all"
           fi
           
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"

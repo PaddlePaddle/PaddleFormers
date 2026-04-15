@@ -35,7 +35,7 @@ on:
         options:
           - 'CE_Release_cu129_py312_nightly'
           - 'CE_Develop_cu130_py313'
-          - 'CE_Develop_cu130_py311'
+          - 'CE_Develop_cu130_py312'
           - 'CE_Release_cu130_py313'
           - 'CE_Release_cu130_py312'
           - 'CE_Release_cu130_py311'
@@ -110,7 +110,7 @@ jobs:
           if [[ "$schedule_time" == "0 17 "* ]]; then
             echo "FLAGS_enable_CE=CE_Develop_cu130_py313" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "0 18 "* ]]; then
-            echo "FLAGS_enable_CE=CE_Develop_cu130_py311" >> $GITHUB_OUTPUT
+            echo "FLAGS_enable_CE=CE_Develop_cu130_py312" >> $GITHUB_OUTPUT
           else
             echo "FLAGS_enable_CE=${{ github.event.inputs.FLAGS_enable_CE || 'CE_Develop_cu130_py313' }}" >> $GITHUB_OUTPUT
           fi
@@ -224,7 +224,6 @@ jobs:
               MODE="pr"
               echo "Detected baseline update from PR description: $UPDATE_BASELINE_MODELS"
             fi
-            UPDATE_BASELINE_MODELS="all"
           fi
           
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
