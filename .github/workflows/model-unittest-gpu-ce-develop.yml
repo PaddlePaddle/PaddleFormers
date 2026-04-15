@@ -4,8 +4,6 @@ on:
   schedule:
     - cron: "0 17 * * 0-4"
     - cron: "0 18 * * 0-4"
-  issue_comment:
-    types: [created, edited]
   workflow_dispatch:
     inputs:
       update_baseline_models:
@@ -50,9 +48,9 @@ on:
         required: false
         type: string
 
-concurrency:
-  group: model-unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+# concurrency:
+#   group: model-unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+#   cancel-in-progress: true
 
 env:
   PR_ID: ${{ github.event.pull_request.number || github.event.issue.number || '0' }}
