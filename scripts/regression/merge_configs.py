@@ -230,6 +230,8 @@ def merge_configs(config_path, config_ci_path, output_path=None):
 
     if has_changes:
         save_yaml(output_path, config)
+    else:
+        print("No new content found, config files are already synchronized.")
 
     return {
         "new_models": list(new_models.keys()),
@@ -298,8 +300,6 @@ Examples:
 
         if result["new_models"]:
             models_str = ",".join(result["new_models"])
-            print("new_models={models_str}")
+            print("new_models=" + models_str)
         else:
             print("new_models=false")
-    else:
-        print("No new content found, config files are already synchronized.")
