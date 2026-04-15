@@ -76,7 +76,7 @@ python -m pytest -s -v --models=deepseek_v3,qwen3_next scripts/regression/test_m
 python -m pytest -s -v --models=all scripts/regression/test_models.py --update-baseline=all
 
 # 在PR 中更新baseline,描述中添加
-[update-baseline: llama]
+[update-baseline: llama] ⚠️ 更新 baseline 之后 PR 需要尽快合入
 
 ```
 ### CI 触发规则

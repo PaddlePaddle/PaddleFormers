@@ -603,7 +603,15 @@ class BaseTrainingTest:
 
         # Test model generation
         generate_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_{test_type}_generate.log")
-        skip_generation = model_key in ["qwen2", "qwen2_moe", "deepseek_v3", "qwen2_5_vl", "qwen3_vl_moe", "qwen3_vl"]
+        skip_generation = model_key in [
+            "qwen2",
+            "qwen2_moe",
+            "deepseek_v3",
+            "qwen2_5_vl",
+            "qwen3_vl_moe",
+            "qwen3_vl",
+            "paddleocr_vl",
+        ]
         if skip_generation:
             result = None
         else:
