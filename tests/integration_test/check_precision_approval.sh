@@ -52,10 +52,15 @@ echo_line="You must be approved by one of ${PRECISION_APPROVERS1} for changing p
 APPROVER_LIST1=(${PRECISION_APPROVERS1})
 check_approval 1 "${APPROVER_LIST1[@]}"
 
-PRECISION_APPROVERS2="tianlef swgu98"
+PRECISION_APPROVERS2="lugimzzz zjjlivein tianlef"
 echo_line="You must be approved by one of ${PRECISION_APPROVERS2} for changing precision.\n"
 APPROVER_LIST2=(${PRECISION_APPROVERS2})
 check_approval 1 "${APPROVER_LIST2[@]}"
+
+PRECISION_APPROVERS3="tianlef swgu98"
+echo_line="You must be approved by one of ${PRECISION_APPROVERS3} for changing precision.\n"
+APPROVER_LIST3=(${PRECISION_APPROVERS3})
+check_approval 1 "${APPROVER_LIST3[@]}"
 
 
 if [ -n "${echo_list}" ];then
