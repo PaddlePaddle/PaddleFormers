@@ -24,6 +24,7 @@ from paddle.io import Dataset, IterableDataset
 
 from paddleformers.datasets.data_utils import (
     calculate_matched_group,
+    generate_greedy_packs_from_sequences,
     get_worker_sliced_iterator,
     postprocess_fc_sequence,
     print_debug_info,
@@ -64,14 +65,10 @@ class BaseSFTDataset:
 
         # parameter init
         self.tokenizer = dataset_config.get("tokenizer", None)
+        self.processor = dataset_config.get("processor", None)
         self.dataset_num_proc = dataset_config.get("dataset_num_proc", 1)
-        if not self.dataset_num_proc:
-            self.dataset_num_proc = 1
         logger.info(f"self.dataset_num_proc: {self.dataset_num_proc}")
         self.dataloader_num_workers = dataset_config.get("dataloader_num_workers", 0)
-        if self.dataset_num_proc > 1 and self.dataloader_num_workers > 0:
-            raise ValueError("dataset_num_proc and dataloader_num_workers can not be set simultaneously now.")
-        self.processor = dataset_config.get("processor", None)
         self.max_seq_len = dataset_config.get("max_seq_len", 8192)
         self.template = dataset_config.get("template_instance", None)
         self.template_backend = dataset_config.get("template_backend", "jinja")
@@ -82,6 +79,23 @@ class BaseSFTDataset:
         self.encode_one_turn = dataset_config.get("encode_one_turn", True)
         self.is_pretraining = dataset_config.get("is_pretraining", False)
         self.truncation_strategy = dataset_config.get("truncation_strategy", "delete")
+        self.truncate_packing = dataset_config.get("truncate_packing", True)
+        self.is_valid = dataset_config.get("is_valid", False)
+        self.packing = dataset_config.get("packing", False)
+        self.greedy_intokens = dataset_config.get("greedy_intokens", True)
+        self.dtype = dataset_config.get("dtype", None)
+        self.binpacking = dataset_config.get("binpacking", False)
+        self.packing_interval = dataset_config.get("packing_interval", 1000)
+
+        # check
+        if not self.dataset_num_proc:
+            self.dataset_num_proc = 1
+        if self.dataset_num_proc > 1 and self.dataloader_num_workers > 0:
+            raise ValueError("dataset_num_proc and dataloader_num_workers can not be set simultaneously now.")
+        if self.truncate_packing and not self.is_pretraining:
+            logger.warning_once("Truncate packing is only valid in pretraining data flow")
+        if self.is_pretraining and self.packing and self.truncate_packing:
+            logger.info("[dataflow] pretrain dataflow using truncate packing.")
         assert self.truncation_strategy in [
             "oral",
             "delete",
@@ -89,17 +103,6 @@ class BaseSFTDataset:
             "left",
         ], f"truncation_strategy must be in [oral, delete, right, left], but got {self.truncation_strategy}"
         logger.info(f"[dataflow] truncation_strategy: {self.truncation_strategy}")
-        self.truncate_packing = dataset_config.get("truncate_packing", True)
-        self.is_valid = dataset_config.get("is_valid", False)
-        if self.truncate_packing and not self.is_pretraining:
-            logger.warning_once("Truncate packing is only valid in pretraining data flow")
-        self.packing = dataset_config.get("packing", False)
-        self.greedy_intokens = dataset_config.get("greedy_intokens", True)
-        self.dtype = dataset_config.get("dtype", None)
-        self.binpacking = dataset_config.get("binpacking", False)
-        self.packing_interval = dataset_config.get("packing_interval", 1000)
-        if self.is_pretraining and self.packing and self.truncate_packing:
-            logger.info("[dataflow] pretrain dataflow using truncate packing.")
 
         # special token
         self.begin_token = getattr(self.tokenizer.special_tokens_map, "cls_token", "<|begin_of_sentence|>")
@@ -107,6 +110,24 @@ class BaseSFTDataset:
             self.begin_token_id = self.tokenizer._convert_token_to_id([self.begin_token])[0]
         else:
             self.begin_token_id = self.tokenizer.convert_tokens_to_ids([self.begin_token])[0]
+        self.sep_token_len = 0
+        if self.use_template and self.template_backend != "jinja":
+            self.sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
+
+        # The number of reserved tokens for each dialog
+        self.num_reserved_tokens_for_each_dialog = 0
+        if self.use_template:
+            # add dynamic eos
+            suffix_ids = (
+                self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
+                if self.template_backend == "custom"
+                else [self.tokenizer.eos_token_id]
+            )
+            self.num_reserved_tokens_for_each_dialog += len(suffix_ids)
+
+            # bos token
+            self.num_reserved_tokens_for_each_dialog += 1
+        logger.info(f"self.num_reserved_tokens_for_each_dialog: {self.num_reserved_tokens_for_each_dialog}")
 
         # media placeholder token
         self.placeholder_tokens = []
@@ -144,6 +165,7 @@ class BaseSFTDataset:
                 reverse=True,
             )
 
+        # max_steps estimate
         self.estimate = False
         # The number of valid samples and skipped samples in estimation
         self.unused_samples = 0
@@ -154,40 +176,25 @@ class BaseSFTDataset:
         # set max estimate samples
         if not self.is_valid:
             self.max_estimate_samples = len(self.mix_datasets)
-
         self.last_printed_percent = 0
         self._estimate_start_time = None
+
+        # flags
         self.enable_dataset_debug = os.getenv("FLAGS_enable_dataset_debug", "false").lower() in ("true", "1", "t")
         self.mem_debug = os.getenv("FLAGS_enable_mem_debug", "false").lower() in ("true", "1", "t")
-
-        self.sep_token_len = 0
-        if self.use_template and self.template_backend != "jinja":
-            self.sep_token_len = len(self.tokenizer.tokenize(self.template.chat_sep))
 
         # The flag indicating whether all examples have been iterated
         self.iter_all_examples = False
 
-        # The number of reserved tokens for each dialog
-        self.num_reserved_tokens_for_each_dialog = 0
-        if self.use_template:
-            # add dynamic eos
-            suffix_ids = (
-                self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
-                if self.template_backend == "custom"
-                else [self.tokenizer.eos_token_id]
-            )
-            self.num_reserved_tokens_for_each_dialog += len(suffix_ids)
-
-            # bos token
-            self.num_reserved_tokens_for_each_dialog += 1
-        logger.info(f"self.num_reserved_tokens_for_each_dialog: {self.num_reserved_tokens_for_each_dialog}")
-
-        if self.is_pretraining and self.packing and self.truncate_packing:
-            self._current_processor_func = self._process_pretraining_tokens
-        else:
-            self._current_processor_func = self._process_sequence
-
         # multiprocessing initialization
+        if self.is_pretraining and self.packing and self.truncate_packing:
+            self._current_processor_func = self._tokenize_pretraining
+        else:
+            if self.is_pretraining:
+                self._current_processor_func = self._process_pretraining_sequence
+            else:
+                self._current_processor_func = self._process_sft_sequence
+
         if self.dataset_num_proc > 1:
             self.prefetch_size = self.dataset_num_proc * 2
             self._in_queue = mp.Queue(maxsize=self.prefetch_size)
@@ -325,46 +332,6 @@ class BaseSFTDataset:
                         self.unused_samples += actual_example_num
                         self.used_estimate_samples += actual_example_num
 
-    def _process_sequence(self, example, actual_example_num):
-        """Process a single example into a sequence."""
-        if self.is_pretraining:
-            return self._postprocess_pretraining_sequence(example, actual_example_num)
-        else:
-            return self._postprocess_sequence(example, actual_example_num)
-
-    def _process_pretraining_tokens(self, example, actual_example_num):
-        """Process a pretraining example into tokens."""
-        return self._encode_pretraining_messages(example["messages"], actual_example_num)
-
-    def _generate_greedy_packs_from_sequences(self, sequences):
-        """Generate packed sequences using greedy strategy from pre-processed sequences.
-
-        Args:
-            sequences: List of pre-processed Sequence objects.
-
-        Returns:
-            list: List of packed sequences.
-        """
-        left_len = np.zeros([len(sequences)]) - 1
-        left_len[0] = self.max_seq_len
-        generate_packs = [[]]
-        index = 0
-        left_index = 0
-
-        while index < len(sequences):
-            sequence = sequences[index]
-            max_left_index = left_len.argmax()
-            if len(sequence.token_ids) <= left_len[max_left_index]:
-                generate_packs[max_left_index].append(sequence)
-                left_len[max_left_index] -= len(sequence.token_ids)
-                index += 1
-            else:
-                left_index += 1
-                left_len[left_index] = self.max_seq_len
-                generate_packs.append([])
-
-        return generate_packs
-
     def _generate_sequences(self):
 
         # prepare epoch data
@@ -380,7 +347,7 @@ class BaseSFTDataset:
             take_lengths = []
             buffer = []
             data_iter = self._get_processed_data_iterator(
-                dataset_iterator, actual_example_num, self._process_pretraining_tokens
+                dataset_iterator, actual_example_num, self._current_processor_func
             )
             for tokens in data_iter:
                 if self.estimate:
@@ -455,7 +422,7 @@ class BaseSFTDataset:
                 logger.info("Not using packing mode for data iteration.")
                 # No packing mode
                 data_iter = self._get_processed_data_iterator(
-                    dataset_iterator, actual_example_num, self._process_sequence
+                    dataset_iterator, actual_example_num, self._current_processor_func
                 )
                 for sequence in data_iter:
                     if self.estimate:
@@ -478,7 +445,7 @@ class BaseSFTDataset:
                 if self.binpacking:
                     logger.info("Using binpacking mode for data iteration.")
                     data_iter = self._get_processed_data_iterator(
-                        dataset_iterator, actual_example_num, self._process_sequence
+                        dataset_iterator, actual_example_num, self._current_processor_func
                     )
                     accumulated_data = []
 
@@ -511,7 +478,7 @@ class BaseSFTDataset:
                     logger.info("Using base packing mode for data iteration.")
                     # base packing mode
                     data_iter = self._get_processed_data_iterator(
-                        dataset_iterator, actual_example_num, self._process_sequence
+                        dataset_iterator, actual_example_num, self._current_processor_func
                     )
                     for sequence in data_iter:
                         if self.estimate:
@@ -543,7 +510,7 @@ class BaseSFTDataset:
                     buffer_size = self.packing_interval
                     sequences_buffer = []
                     data_iter = self._get_processed_data_iterator(
-                        dataset_iterator, actual_example_num, self._process_sequence
+                        dataset_iterator, actual_example_num, self._current_processor_func
                     )
                     for sequence in data_iter:
                         if self.estimate:
@@ -553,7 +520,7 @@ class BaseSFTDataset:
 
                         if len(sequences_buffer) >= buffer_size:
                             # Running greedy strategy in sequences_buffer.
-                            generate_packs = self._generate_greedy_packs_from_sequences(sequences_buffer)
+                            generate_packs = generate_greedy_packs_from_sequences(self.max_seq_len, sequences_buffer)
                             for pack in generate_packs:
                                 if len(pack) > 0:
                                     yield pack
@@ -566,7 +533,9 @@ class BaseSFTDataset:
                             if self.used_estimate_samples >= self.max_estimate_samples:
                                 # Yield left packs before estimation ends
                                 if len(sequences_buffer) > 0:
-                                    generate_packs = self._generate_greedy_packs_from_sequences(sequences_buffer)
+                                    generate_packs = generate_greedy_packs_from_sequences(
+                                        self.max_seq_len, sequences_buffer
+                                    )
                                     for pack in generate_packs:
                                         if len(pack) > 0:
                                             yield pack
@@ -575,7 +544,7 @@ class BaseSFTDataset:
                                 yield []
 
                     if len(sequences_buffer) > 0:
-                        generate_packs = self._generate_greedy_packs_from_sequences(sequences_buffer)
+                        generate_packs = generate_greedy_packs_from_sequences(self.max_seq_len, sequences_buffer)
                         for pack in generate_packs:
                             if len(pack) > 0:
                                 yield pack
@@ -593,15 +562,15 @@ class BaseSFTDataset:
             while True:
                 yield from self.__iter_func()
 
-    def _encode_pretraining_messages(self, messages, actual_example_num):
-        # tokens
-        content = messages[0]["content"]
+    def _tokenize_pretraining(self, example, actual_example_num):
+        """Process a pretraining example into tokens."""
+        content = example["messages"][0]["content"]
         tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(content))
         # Add an EOS token at the end of each sample
         tokens = tokens + [self.tokenizer.eos_token_id]
         return tokens
 
-    def _postprocess_pretraining_sequence(self, example, actual_example_num):
+    def _process_pretraining_sequence(self, example, actual_example_num):
 
         messages = example.get("messages", [])
         images = example.get("images", [])
@@ -609,7 +578,7 @@ class BaseSFTDataset:
         audios = example.get("audios", [])
 
         if len(images) == 0 and len(videos) == 0 and len(audios) == 0:
-            tokens = self._encode_pretraining_messages(messages, actual_example_num)
+            tokens = self._tokenize_pretraining(example, actual_example_num)
             if len(tokens) > self.max_seq_len + 1:
                 # Truncate the sequence to the maximum length
                 tokens = tokens[: self.max_seq_len + 1]
@@ -639,8 +608,8 @@ class BaseSFTDataset:
             messages = self.template.mm_plugin.process_messages(
                 messages, images, videos, audios, mm_inputs, self.processor
             )
-
-            tokens = self._encode_pretraining_messages(messages, actual_example_num)
+            example["messages"] = messages
+            tokens = self._tokenize_pretraining(example, actual_example_num)
             if len(tokens) > self.max_seq_len + 1:
                 # Truncate the sequence to the maximum length
                 tokens = tokens[: self.max_seq_len + 1]
@@ -687,7 +656,7 @@ class BaseSFTDataset:
                 mm_inputs=mm_inputs,
             )
 
-    def _postprocess_sequence(self, example, actual_example_num):
+    def _process_sft_sequence(self, example, actual_example_num):
         """Process code completion examples into token sequences.
 
         Args:

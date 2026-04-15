@@ -210,9 +210,15 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
                 param_meta["end"] = param_meta["start"] + v._numel()
                 param_mappings[k] = param_meta
         index += 1
-    assert len(manipulated_state_dict) == len(
-        param_mappings
-    ), f"manipulated state dict is not fully covered in param mappings, manipulated_state_dict:{manipulated_state_dict.keys()}, param_mappings:{param_mappings.keys()}"
+    for k, v in manipulated_state_dict.items():
+        if k not in param_mappings:
+            unshard_buffer_index = f"unshard_{k}"
+            param_meta = {}
+            param_meta["buffer_index"] = unshard_buffer_index
+            param_meta["shape"] = v.shape
+            param_meta["name"] = v.name
+            param_mappings[k] = param_meta
+            ipc_meta_mappings[unshard_buffer_index] = v.get_tensor()._share_cuda()
     return param_mappings, ipc_meta_mappings
 
 
@@ -304,11 +310,14 @@ class ZeroCostCheckpointEMAProcessor:
             for k, tensor_meta in self.param_fusion_storage_helper.model_weights_metas.items():
                 shape = tensor_meta["shape"]
                 name = tensor_meta["name"]
+                buffer_index = tensor_meta["buffer_index"]
+                if buffer_index.startswith("unshard_"):
+                    continue
+                if buffer_index not in self.ema_buffer_model_params:
+                    continue  # non fp32 has no `self.ema_buffer_model_params`
                 start = tensor_meta["start"]
                 end = tensor_meta["end"]
-                if tensor_meta["buffer_index"] not in self.ema_buffer_model_params:
-                    continue  # non fp32 has no `self.ema_buffer_model_params`
-                cpu_buffer = self.ema_buffer_model_params[tensor_meta["buffer_index"]]
+                cpu_buffer = self.ema_buffer_model_params[buffer_index]
                 tensor = cpu_buffer._slice(start, end).clone()  # slice 出来的 tensor 在执行`paddle.save`会异常慢，此处必须clone
                 tensor.get_tensor()._set_dims(shape)
                 tensor.name = name
@@ -381,6 +390,9 @@ class ParamFusionStorageHelper:
             if buffer_index not in self.inited_buffers.keys():
                 buffer_tuple = self.init_buffer(buffer_ipc_metas[buffer_index])
                 self.inited_buffers[buffer_index] = buffer_tuple
+            if buffer_index.startswith("unshard_"):
+                self.model_weights_metas[k] = v
+                continue
             v["start"] = int(v["start"])
             v["end"] = int(v["end"])
             v["logical_start"] = self.all_param_numel
@@ -461,10 +473,15 @@ class ParamFusionStorageHelper:
     def restore_tensor_from_meta(self, tensor_meta):
         shape = tensor_meta["shape"]
         name = tensor_meta["name"]
-        start = tensor_meta["start"]
-        end = tensor_meta["end"]
-        cpu_buffer = self.inited_buffers[tensor_meta["buffer_index"]][1]
-        tensor = cpu_buffer._slice(start, end)
+        buffer_index = tensor_meta["buffer_index"]
+        if buffer_index.startswith("unshard_"):
+            # use cpu_buffer directly
+            tensor = self.inited_buffers[buffer_index][1]
+        else:
+            start = tensor_meta["start"]
+            end = tensor_meta["end"]
+            cpu_buffer = self.inited_buffers[buffer_index][1]
+            tensor = cpu_buffer._slice(start, end)
         tensor.get_tensor()._set_dims(shape)
         tensor.name = name
         return tensor
