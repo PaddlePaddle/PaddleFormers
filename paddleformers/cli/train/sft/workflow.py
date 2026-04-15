@@ -441,11 +441,13 @@ def run_sft(
         "dataset_num_proc": finetuning_args.dataset_num_proc,
         "binpacking": data_args.binpacking,
         "packing_interval": data_args.packing_interval,
+        "packed_idx_cache_dir": data_args.packed_idx_cache_dir,
         "dataloader_num_workers": training_args.dataloader_num_workers,
         "template": data_args.template,
         "tool_format": None,
         "default_system": None,
         "truncation_strategy": data_args.truncation_strategy,
+        "skip_warmup": data_args.skip_warmup,
     }
 
     if dataset_config["template_backend"] == "custom":
@@ -576,10 +578,18 @@ def run_sft(
         )
     elif data_args.dataset_type == "offline":
         train_file_path = os.path.join(data_args.input_dir, "train")
-        train_dataset = create_indexed_dataset(data_file_prefix=train_file_path)
+        train_dataset = create_indexed_dataset(
+            data_file_prefix=train_file_path,
+            skip_warmup=data_args.skip_warmup,
+            warmup_only_rank0=data_args.warmup_only_rank0,
+        )
         if training_args.do_eval:
             eval_file_path = os.path.join(data_args.input_dir, "eval")
-            eval_dataset = create_indexed_dataset(data_file_prefix=eval_file_path)
+            eval_dataset = create_indexed_dataset(
+                data_file_prefix=eval_file_path,
+                skip_warmup=data_args.skip_warmup,
+                warmup_only_rank0=data_args.warmup_only_rank0,
+            )
     else:
         if training_args.should_load_dataset:
             train_dataset = create_dataset_sft(

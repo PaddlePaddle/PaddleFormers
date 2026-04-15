@@ -366,7 +366,7 @@ def read_video_paddlecodec(
         import sys
 
         del sys.modules["torchcodec"]
-        paddle.compat.enable_torch_proxy(scope={"torchcodec"})
+        paddle.enable_compat(scope={"torchcodec"})
         from torchcodec.decoders import VideoDecoder
 
         sys.modules["torchcodec"] = None
@@ -415,7 +415,7 @@ def read_video_paddlecodec(
     indices = sample_indices_fn(metadata=metadata, **kwargs)
     video = decoder.get_frames_at(indices=indices).data.contiguous().to("cuda")
     logger.info(f"paddlecodec:  {video_path=}, {total_num_frames=}, {video_fps=}, time={time.time() - st:.3f}s")
-    paddle.compat.disable_torch_proxy()
+    paddle.disable_compat()
     metadata.frames_indices = indices
     return video, metadata
 

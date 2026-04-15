@@ -2450,6 +2450,7 @@ class Trainer:
                 shuffle=shuffle,
                 batch_size=total_batch_size,
                 drop_last=self.args.dataloader_drop_last,
+                data_seed=self.args.seed,
             )
             # Set _acc_steps for auto_parallel mode to ensure correct __len__ calculation
             # When _acc_steps = gradient_accumulation_steps, the dataloader length will be
@@ -2465,6 +2466,7 @@ class Trainer:
             num_replicas=self.args.dataset_world_size,
             rank=self.args.dataset_rank,
             drop_last=self.args.dataloader_drop_last,
+            data_seed=self.args.seed,
         )
 
     def _set_state_dict_in_model(self, state_dict):
