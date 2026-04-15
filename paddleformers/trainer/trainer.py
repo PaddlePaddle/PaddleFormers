@@ -94,7 +94,7 @@ from paddle.distributed.fleet.utils.hybrid_parallel_util import (
 from paddle.distributed.fleet.utils.sequence_parallel_utils import (
     register_sequence_parallel_allreduce_hooks,
 )
-from paddle.io import DataLoader, Dataset, DistributedBatchSampler
+from paddle.io import DataLoader, Dataset
 from tqdm.auto import tqdm
 
 from ..data import (
@@ -138,6 +138,7 @@ from ..transformers.segment_parallel_utils import (
 )
 from ..utils import empty_device_cache, perf_utils
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
+from ..utils.batch_sampler import MappingBatchSampler, MappingDistributedBatchSampler
 from ..utils.download import resolve_file_path
 from ..utils.env import (
     EMA_STATE_DIC,
@@ -437,6 +438,8 @@ class Trainer:
         self.model_wrapped = model
         self.model = model
         self.criterion = criterion
+        if self.criterion is None and getattr(self.model, "_loss_fn", None) is not None:
+            self.criterion = self.model._loss_fn[0]
 
         # Set use_cache for the model
         if getattr(self.model, "config", None) is not None:
@@ -1386,6 +1389,31 @@ class Trainer:
                     exp_step = max(int(exp_step - exp_step % 10), 10)
                     logger.info("Reset eval step by minimum_eval_times to %d" % exp_step)
                     args.eval_steps = exp_step
+        elif has_length(self.train_dataset) and args.enable_auto_parallel:
+            # For IterableDataset with __len__ in auto_parallel mode,
+            # estimate len_dataloader from dataset length since dataloader doesn't support len()
+            dataset_len = len(self.train_dataset)
+            per_rank_samples = math.ceil(dataset_len / args.dataset_world_size)
+            len_dataloader = (
+                per_rank_samples // args.per_device_train_batch_size
+                if args.dataloader_drop_last
+                else math.ceil(per_rank_samples / args.per_device_train_batch_size)
+            )
+
+            num_update_steps_per_epoch = len_dataloader // args.gradient_accumulation_steps
+            num_update_steps_per_epoch = max(num_update_steps_per_epoch, 1)
+            num_examples = dataset_len
+
+            if args.max_steps > 0:
+                max_steps = args.max_steps
+                num_train_epochs = args.max_steps // num_update_steps_per_epoch + int(
+                    args.max_steps % num_update_steps_per_epoch > 0
+                )
+                num_train_samples = args.max_steps * total_train_batch_size
+            else:
+                max_steps = int(num_update_steps_per_epoch * args.num_train_epochs)
+                num_train_epochs = math.ceil(args.num_train_epochs)
+                num_train_samples = int(dataset_len * args.num_train_epochs)
         elif args.max_steps > 0:  # Rely on max_steps when dataloader does not have a working size
             max_steps = args.max_steps
             # Setting a very large number of epochs so we go as many times as necessary over the iterator.
@@ -1846,6 +1874,7 @@ class Trainer:
         self.state.epoch = 0
         epochs_trained = 0
         steps_trained_in_current_epoch = 0
+        consumed_samples = 0
         steps_trained_progress_bar = None
 
         # Check if continuing training from a checkpoint
@@ -1854,9 +1883,12 @@ class Trainer:
             and distributed_isfile(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))
             and not self.args.ignore_load_lr_and_optim
         ):
-            self.state = TrainerState.load_from_json(
-                distributed_file(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))
-            )
+            state_path = distributed_file(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))
+            # 根据文件扩展名判断使用哪种加载方法
+            if state_path.endswith(".json"):
+                self.state = TrainerState.load_from_json(state_path)
+            else:
+                self.state = TrainerState.load(state_path)
             if self.args.world_size > 1:
                 global_step_list = []
                 paddle.distributed.all_gather(
@@ -1888,27 +1920,25 @@ class Trainer:
                     steps_trained_progress_bar.set_description("Skipping the first batches")
             if not args.ignore_data_skip:
                 if isinstance(train_dataloader, paddle.io.DataLoader) and isinstance(
-                    train_dataloader.batch_sampler, NlpDistributedBatchSampler
+                    train_dataloader.batch_sampler,
+                    (NlpDistributedBatchSampler, MappingBatchSampler, MappingDistributedBatchSampler),
                 ):
-                    consumed_samples = (
-                        self.state.global_step
-                        * args.train_batch_size
-                        * args.gradient_accumulation_steps
-                        * args.dataset_world_size
-                    )
+                    consumed_samples = steps_trained_in_current_epoch * args.train_batch_size * args.dataset_world_size
                     train_dataloader.batch_sampler.set_epoch(consumed_samples=consumed_samples)
-                    logger.info(f"Set DistributedBatchSampler consumed_samples to {consumed_samples}")
+                    logger.info(f"Set Sampler consumed_samples to {consumed_samples}")
 
         epoch_iterator = train_dataloader
+        # Use len_dataloader directly instead of len(epoch_iterator) to avoid
+        # calling __len__ on IterableDataset which would raise an exception
         steps_in_epoch = (
-            len(epoch_iterator) if len_dataloader is not None else args.max_steps * args.gradient_accumulation_steps
+            len_dataloader if len_dataloader is not None else args.max_steps * args.gradient_accumulation_steps
         )
         if len_dataloader is not None:
-            if self.args.gradient_accumulation_steps > len(epoch_iterator):
+            if self.args.gradient_accumulation_steps > len_dataloader:
                 logger.warning(
-                    f"changing accumulation step from `{self.args.gradient_accumulation_steps}` to `{len(epoch_iterator)}` to avoid, cross epoch accumulate"
+                    f"changing accumulation step from `{self.args.gradient_accumulation_steps}` to `{len_dataloader}` to avoid, cross epoch accumulate"
                 )
-                self.args.gradient_accumulation_steps = len(epoch_iterator)
+                self.args.gradient_accumulation_steps = len_dataloader
 
         self.callback_handler.model = self.model
         self.callback_handler.optimizer = self.optimizer
@@ -1942,9 +1972,9 @@ class Trainer:
             if (
                 not args.enable_auto_parallel
                 and isinstance(train_dataloader, paddle.io.DataLoader)
-                and isinstance(train_dataloader.batch_sampler, DistributedBatchSampler)
+                and isinstance(train_dataloader.batch_sampler, (MappingBatchSampler, MappingDistributedBatchSampler))
             ):
-                train_dataloader.batch_sampler.set_epoch(epoch)
+                train_dataloader.batch_sampler.set_epoch(epoch, consumed_samples)
 
             step_control = 0  # used in loop control, reset to 0 after every step
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
@@ -1971,14 +2001,15 @@ class Trainer:
                 self.callback_handler.on_load_data_end(args, self.state, self.control, inputs=inputs)
 
                 # Skip past any already trained steps if resuming training
-                # for paddleformers.utils.batch_sampler.DistributedBatchSampler
+                # for paddleformers.utils.batch_sampler.(NlpDistributedBatchSampler & MappingBatchSampler & MappingDistributedBatchSampler)
                 # We use consumed_samples to reset the status
                 dataloader = train_dataloader
                 if self.args.enable_auto_parallel:
                     dataloader = train_dataloader._dataloader
 
                 if isinstance(dataloader, paddle.io.DataLoader) and isinstance(
-                    dataloader.batch_sampler, NlpDistributedBatchSampler
+                    dataloader.batch_sampler,
+                    (NlpDistributedBatchSampler, MappingBatchSampler, MappingDistributedBatchSampler),
                 ):
                     if step == 0:
                         if steps_trained_progress_bar is not None:
@@ -2291,6 +2322,8 @@ class Trainer:
             if self.control.should_training_stop:
                 break
 
+            consumed_samples = 0
+
         if args.past_index and hasattr(self, "_past"):
             # Clean the state at the end of training
             delattr(self, "_past")
@@ -2409,23 +2442,31 @@ class Trainer:
         shuffle = True if self.args.enable_auto_parallel else self.args.dataloader_shuffle
         total_batch_size = self.args.per_device_train_batch_size
         if self.args.enable_auto_parallel:
-            total_batch_size = total_batch_size * self.args.dataset_world_size * self.args.gradient_accumulation_steps
+            total_batch_size = total_batch_size * self.args.dataset_world_size
 
         if self.args.enable_auto_parallel or self.args.world_size <= 1:
-            return paddle.io.BatchSampler(
+            batch_sampler = MappingBatchSampler(
                 dataset=self.train_dataset,
                 shuffle=shuffle,
                 batch_size=total_batch_size,
                 drop_last=self.args.dataloader_drop_last,
+                data_seed=self.args.seed,
             )
+            # Set _acc_steps for auto_parallel mode to ensure correct __len__ calculation
+            # When _acc_steps = gradient_accumulation_steps, the dataloader length will be
+            # the number of optimizer steps, not micro-batches
+            if self.args.enable_auto_parallel:
+                batch_sampler._acc_steps = self.args.gradient_accumulation_steps
+            return batch_sampler
 
-        return DistributedBatchSampler(
+        return MappingDistributedBatchSampler(
             self.train_dataset,
             batch_size=total_batch_size,
             shuffle=shuffle,
             num_replicas=self.args.dataset_world_size,
             rank=self.args.dataset_rank,
             drop_last=self.args.dataloader_drop_last,
+            data_seed=self.args.seed,
         )
 
     def _set_state_dict_in_model(self, state_dict):
@@ -2608,16 +2649,22 @@ class Trainer:
                 run_dir = self.args.output_dir
                 checkpoint_folder = f"{PREFIX_HF_CHECKPOINT_DIR}-{self.state.global_step}"
                 ckpt_path = os.path.join(run_dir, checkpoint_folder)
+                # Convert user-configured GB value to bytes for HFFormatFullParamSaver
+                memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
                 if isinstance(self.model, LoRAModel):
                     self.model.save_pretrained(
                         ckpt_path,
                         merge_tensor_parallel=True,
                         variant=self.args.weight_name_suffix,
                         save_checkpoint_format=self.args.save_checkpoint_format,
+                        memory_growth_threshold=memory_growth_threshold_bytes,
                     )
                 else:
                     self.model.save_pretrained(
-                        ckpt_path, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
+                        ckpt_path,
+                        is_main_process,
+                        save_checkpoint_format=self.args.save_checkpoint_format,
+                        memory_growth_threshold=memory_growth_threshold_bytes,
                     )
                 if self.tokenizer is not None and self.args.save_tokenizer:
                     self.tokenizer.save_pretrained(ckpt_path)
@@ -2680,16 +2727,22 @@ class Trainer:
         additional_configs = {}
         if is_iterable_dataset:  # For iterable dataset
             total_batch_size = self.args.per_device_train_batch_size
-            if self.args.enable_auto_parallel:
-                total_batch_size = total_batch_size * self.args.dataset_world_size
-            if self.args.dataset_world_size > 1 and train_dataset is not None:
-                train_dataset = IterableDatasetShard(
-                    train_dataset,
-                    batch_size=total_batch_size,
-                    drop_last=self.args.dataloader_drop_last,
-                    num_processes=self.args.dataset_world_size,
-                    process_index=self.args.dataset_rank,
-                )
+
+            # For auto_parallel mode, skip IterableDatasetShard to avoid double sharding
+            # DataLoader and dist.shard_dataloader will handle the sharding
+            if not self.args.enable_auto_parallel:
+                if self.args.dataset_world_size > 1 and train_dataset is not None:
+                    train_dataset = IterableDatasetShard(
+                        train_dataset,
+                        batch_size=total_batch_size,
+                        drop_last=self.args.dataloader_drop_last,
+                        num_processes=self.args.dataset_world_size,
+                        process_index=self.args.dataset_rank,
+                    )
+            else:
+                # For auto_parallel, set batch_size to be divisible by dp_world_size
+                # so that DataLoader's internal sharding works correctly
+                total_batch_size = self.args.per_device_train_batch_size * self.args.dataset_world_size
 
             if self.args.distributed_dataloader:
                 logger.info("Training using DistDataLoader.")
@@ -2722,11 +2775,24 @@ class Trainer:
 
         if self.args.enable_auto_parallel:
             self.dense_tensor_idx = dense_tensor_idx
+
+            # For IterableDataset, pass shard_dims=None to use original dataloader directly
+            # because ShardDataloader's DistributedBatchSampler is incompatible with IterableDataset
+            # For non-IterableDataset, pass is_dataset_splitted=True if dataset_world_size > 1
+            # because DistributedBatchSampler already handled the sharding
+            if is_iterable_dataset:
+                shard_dims_arg = None
+                is_dataset_splitted_arg = False
+            else:
+                shard_dims_arg = "dp"
+                is_dataset_splitted_arg = self.args.dataset_world_size > 1
+
             train_dataloader = dist.shard_dataloader(
                 dataloader=train_dataloader,
                 meshes=self._get_meshes_for_loader(),
-                shard_dims="dp",
+                shard_dims=shard_dims_arg,
                 dense_tensor_idx=dense_tensor_idx,
+                is_dataset_splitted=is_dataset_splitted_arg,
             )
 
         return train_dataloader
@@ -2735,7 +2801,7 @@ class Trainer:
         if eval_dataset is None or not has_length(eval_dataset):
             return None
         if self.args.world_size <= 1:
-            return paddle.io.BatchSampler(
+            return MappingBatchSampler(
                 eval_dataset,
                 batch_size=self.args.per_device_eval_batch_size,
                 shuffle=False,
@@ -2758,7 +2824,7 @@ class Trainer:
                     drop_last=False,
                 )
             else:
-                return DistributedBatchSampler(
+                return MappingDistributedBatchSampler(
                     eval_dataset,
                     num_replicas=self.args.dataset_world_size,
                     rank=self.args.dataset_rank,
@@ -3498,6 +3564,7 @@ class Trainer:
         How the loss is computed by Trainer. By default, all models return the loss in the first element.
         Subclass and override for custom behavior.
         """
+
         if self.criterion is not None:
             if "labels" in inputs:
                 labels = inputs.pop("labels")
@@ -3513,7 +3580,14 @@ class Trainer:
         else:
             labels = None
 
-        outputs = model(**inputs)
+        if (
+            is_paddle_cuda_available()
+            and PaddleFleetPipelineLayer is not None
+            and isinstance(model, PaddleFleetPipelineLayer)
+        ):
+            outputs = model(inputs)
+        else:
+            outputs = model(**inputs)
 
         if self.criterion is not None:
             if self.args.enable_auto_parallel:
@@ -3578,7 +3652,7 @@ class Trainer:
         if self.args.pipeline_model_parallel_size > 1:
             return self.training_pipeline_step(model, inputs)
 
-        if hasattr(model, "_prepare_unified_non_pp_data"):
+        if hasattr(model, "_prepare_unified_non_pp_data") and model._prepare_unified_non_pp_data is not None:
             model._prepare_unified_non_pp_data(inputs)
 
         # Buffer micro-batch data for token-weighted accumulation loss.
@@ -3676,7 +3750,9 @@ class Trainer:
             else:
                 return float(loss)
 
-    def training_pipeline_step(self, model: nn.Layer, inputs: Dict[str, Union[paddle.Tensor, Any]]) -> paddle.Tensor:
+    def training_pipeline_step(
+        self, model: nn.Layer, inputs: Dict[str, Union[paddle.Tensor, Any]], data_buffer_prepared=False
+    ) -> paddle.Tensor:
         """
         Perform a training step on a batch of inputs.
 
@@ -3695,11 +3771,15 @@ class Trainer:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
         # accumulation data
-        if not hasattr(self, "_pp_data_buffer"):
-            self._pp_data_buffer = []
-        self._pp_data_buffer.append(inputs)
-        if len(self._pp_data_buffer) != self.args.gradient_accumulation_steps:
-            return paddle.zeros([])
+        if data_buffer_prepared:
+            if len(self._pp_data_buffer) < self.args.gradient_accumulation_steps:
+                return paddle.zeros([])
+        else:
+            if not hasattr(self, "_pp_data_buffer"):
+                self._pp_data_buffer = []
+            self._pp_data_buffer.append(inputs)
+            if len(self._pp_data_buffer) != self.args.gradient_accumulation_steps:
+                return paddle.zeros([])
 
         model.train()
         if model._dp_comm_overlap or model._sharding_comm_overlap:
@@ -3715,7 +3795,10 @@ class Trainer:
             # This prevents the dataset from being passed as a direct argument to forward_backward_pipeline,
             # which would create additional reference counts that cannot be cleared, leading to GPU memory leaks.
             with self.autocast_smart_context_manager():
-                inputs = model._prepare_pipeline_inputs_func(self._pp_data_buffer)
+                if data_buffer_prepared:
+                    inputs = model._prepare_pipeline_inputs_func(self._pp_data_buffer, gather_pp_need_data=False)
+                else:
+                    inputs = model._prepare_pipeline_inputs_func(self._pp_data_buffer)
             self._pp_data_buffer = []
 
             return model._prepare_training(
@@ -3931,7 +4014,7 @@ class Trainer:
 
         # Save the Trainer state
         if self.args.should_save:
-            self.state.save_to_json(os.path.join(output_dir, TRAINER_STATE_NAME))
+            self.state.save(os.path.join(output_dir, TRAINER_STATE_NAME))
 
         if self.args.save_rng_states:
             # Save RNG state in non-distributed training
@@ -4269,16 +4352,22 @@ class Trainer:
             if self.args.save_checkpoint_format == "flex_checkpoint":
                 if last_fc_to_hf:
                     is_main_process = paddle.distributed.get_rank() == 0
+                    # Convert user-configured GB value to bytes for HFFormatFullParamSaver
+                    memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
                     if isinstance(self.model, LoRAModel):
                         self.model.save_pretrained(
                             output_dir,
                             merge_tensor_parallel=merge_tensor_parallel,
                             variant=self.args.weight_name_suffix,
                             save_checkpoint_format=self.args.save_checkpoint_format,
+                            memory_growth_threshold=memory_growth_threshold_bytes,
                         )
                     else:
                         self.model.save_pretrained(
-                            output_dir, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
+                            output_dir,
+                            is_main_process,
+                            save_checkpoint_format=self.args.save_checkpoint_format,
+                            memory_growth_threshold=memory_growth_threshold_bytes,
                         )
                 else:
                     self._save_flex_model_state(output_dir)
@@ -4641,7 +4730,8 @@ class Trainer:
             # on eval limit steps
             num_samples = batch_size * self.args.dataset_world_size * max_eval_iters
             if isinstance(dataloader, _DataLoaderIterBase) and isinstance(
-                dataloader._batch_sampler, NlpDistributedBatchSampler
+                dataloader._batch_sampler,
+                (NlpDistributedBatchSampler, MappingBatchSampler, MappingDistributedBatchSampler),
             ):
                 consumed_samples = (
                     ((self.state.global_step) // args.eval_steps)
@@ -4868,6 +4958,7 @@ class Trainer:
         ignore_keys: Optional[List[str]] = None,
         step: int = -1,
         need_clear: bool = True,
+        gather_pp_need_data: bool = True,
     ) -> Tuple[Optional[paddle.Tensor], Optional[paddle.Tensor], Optional[paddle.Tensor]]:
         """
         prediction_step function for pipeline parallel mode.
@@ -4881,7 +4972,10 @@ class Trainer:
         inputs = self._pp_eval_data_buffer
         self._pp_eval_data_buffer = []
         if hasattr(model, "_prepare_pipeline_inputs_func"):
-            data_provider = model._prepare_pipeline_inputs_func(inputs)
+            if gather_pp_need_data:
+                data_provider = model._prepare_pipeline_inputs_func(inputs)
+            else:
+                inputs, labels = model._prepare_pipeline_inputs_func(inputs, gather_pp_need_data=False)
             labels = None
             has_labels = True
         else:

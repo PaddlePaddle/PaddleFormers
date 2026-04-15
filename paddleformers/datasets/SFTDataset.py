@@ -17,7 +17,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from itertools import chain
-from typing import Dict, List
+from typing import Dict, List, Literal, Optional
 
 import numpy as np
 from paddle.io import Dataset, IterableDataset
@@ -81,9 +81,16 @@ class BaseSFTDataset:
         self.split_multi_turn = dataset_config.get("split_multi_turn", False)
         self.encode_one_turn = dataset_config.get("encode_one_turn", True)
         self.is_pretraining = dataset_config.get("is_pretraining", False)
-        self.is_valid = dataset_config.get("is_valid", False)
+        self.truncation_strategy = dataset_config.get("truncation_strategy", "delete")
+        assert self.truncation_strategy in [
+            "oral",
+            "delete",
+            "right",
+            "left",
+        ], f"truncation_strategy must be in [oral, delete, right, left], but got {self.truncation_strategy}"
+        logger.info(f"[dataflow] truncation_strategy: {self.truncation_strategy}")
         self.truncate_packing = dataset_config.get("truncate_packing", True)
-        self.truncation_strategy = dataset_config.get("truncation_strategy", "right")
+        self.is_valid = dataset_config.get("is_valid", False)
         if self.truncate_packing and not self.is_pretraining:
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
         self.packing = dataset_config.get("packing", False)
@@ -101,7 +108,7 @@ class BaseSFTDataset:
         else:
             self.begin_token_id = self.tokenizer.convert_tokens_to_ids([self.begin_token])[0]
 
-        # placeholder token init
+        # media placeholder token
         self.placeholder_tokens = []
         if self.template and self.template.mm_plugin:
             for tok in [
@@ -209,13 +216,16 @@ class BaseSFTDataset:
             except Exception:
                 break
 
-    def _get_processed_data_iterator(self, dataset_iterator, actual_example_num, processor_func):
+    def _get_processed_data_iterator(
+        self, dataset_iterator, actual_example_num, processor_func, yield_with_index=False
+    ):
         """Get an iterator that yields processed data, using multiprocessing if enabled.
 
         Args:
             dataset_iterator: Raw data iterator.
             actual_example_num: Number of examples used.
             processor_func: Function to process each example.
+            yield_with_index: whether yield (raw_idx, result) tuples or yield result
 
         Yields:
             Processed results in order (skips None results).
@@ -278,6 +288,7 @@ class BaseSFTDataset:
                     # Yield results in order, skip None
                     while recv_idx in result_buffer:
                         res = result_buffer.pop(recv_idx)
+                        current_idx = recv_idx
                         recv_idx += 1
                         if res is not None:
                             _yield_cnt += 1
@@ -287,7 +298,7 @@ class BaseSFTDataset:
                                     f"pending={pending}, result_buf={len(result_buffer)}, "
                                     f"in_q~{self._in_queue.qsize()}, out_q~{self._out_queue.qsize()}"
                                 )
-                            yield res
+                            yield (current_idx, res) if yield_with_index else res
                         else:
                             if self.estimate:
                                 self.used_estimate_samples += actual_example_num
@@ -297,7 +308,7 @@ class BaseSFTDataset:
                     print(f"[MemDebug] iteration finished, RSS={_rss_mb():.0f} MB, " f"workers kept alive for reuse")
         else:
             # Single process mode
-            for _ in range(len(self.mix_datasets)):
+            for raw_idx in range(len(self.mix_datasets)):
                 example = next(dataset_iterator)
                 try:
                     result = processor_func(example, actual_example_num)
@@ -308,7 +319,7 @@ class BaseSFTDataset:
                     _yield_cnt += 1
                     if self.mem_debug and _yield_cnt % _log_interval == 0:
                         print(f"[MemDebug][single] yielded={_yield_cnt}, RSS={_rss_mb():.0f} MB")
-                    yield result
+                    yield (raw_idx, result) if yield_with_index else result
                 else:
                     if self.estimate:
                         self.unused_samples += actual_example_num
@@ -738,19 +749,21 @@ class BaseSFTDataset:
             if len(tokens_target) == 0:
                 logger.warning(f"[SKIP] The length of encoded assistant tokens is 0: {example}")
                 return None
-            remaining_len = self.max_seq_len - cur_len
-            if len(tokens_src) + len(tokens_target) > remaining_len:
-                if images or videos or audios:
-                    # If there is multimodal data, do not truncate it; just discard it directly.
-                    sub_src = example["messages"][0]["content"].strip()[:50]
-                    logger.warning(f"[SKIP] This data is too long: {sub_src}...")
-                    return None
-                # If the source (src) exceeds length limit, discard this round of conversation data
-                # If the target (tgt) exceeds length limit, truncate it
-                if len(tokens_src) > remaining_len:
-                    break
-                else:
-                    tokens_target = tokens_target[: remaining_len - len(tokens_src)]
+
+            if self.truncation_strategy == "oral":
+                remaining_len = self.max_seq_len - cur_len
+                if len(tokens_src) + len(tokens_target) > remaining_len:
+                    if images or videos or audios:
+                        # If there is multimodal data, do not truncate it; just discard it directly.
+                        sub_src = example["messages"][0]["content"].strip()[:50]
+                        logger.warning(f"[SKIP] This data is too long: {sub_src}...")
+                        return None
+                    # If the source (src) exceeds length limit, discard this round of conversation data
+                    # If the target (tgt) exceeds length limit, truncate it
+                    if len(tokens_src) > remaining_len:
+                        break
+                    else:
+                        tokens_target = tokens_target[: remaining_len - len(tokens_src)]
 
             labels_src = [-100] * len(tokens_src)
 
@@ -813,12 +826,21 @@ class BaseSFTDataset:
                 tokens.extend(suffix_ids)
                 labels.extend(suffix_ids)
 
+        # data truncate
+        if self.truncation_strategy != "oral":
+            tokens, labels = self._encode_truncated(tokens, labels)
+            if not tokens:
+                sub_src = example["messages"][0]["content"].strip()[:50]
+                logger.warning(f"[SKIP] data is deleted by truncation strategy: {sub_src}...")
+                return None
+        else:
+            if len(tokens) > self.max_seq_len:
+                raise RuntimeError(f"token_ids is too long: {len(tokens)}")
+
         # label shift
         labels = labels[1:] + [-100]
-        if len(tokens) > self.max_seq_len:
-            raise RuntimeError(f"token_ids is too long: {len(tokens)}")
 
-        pos_ids = list(range(len(tokens)))  # only pure text, mm_position_ids will be reconstructed in collate.py
+        pos_ids = list(range(len(tokens)))
 
         if all(x == -100 for x in labels):
             logger.warning(f"[SKIP] all labels set to -100: {example}")
@@ -855,6 +877,56 @@ class BaseSFTDataset:
             mm_inputs=mm_inputs,
         )
 
+    @staticmethod
+    def _get_length(input_ids, labels):
+        # input_ids might be a tensor.
+        lengths = [0]
+        if input_ids is not None:
+            lengths.append(len(input_ids))
+        if labels is not None:
+            lengths.append(len(labels))
+        length = max(lengths)
+        return length
+
+    def _truncate(
+        self,
+        input_ids: List[int],
+        labels: Optional[List[int]],
+        truncation_strategy: Literal["left", "right"],
+    ):
+        max_len = self.max_seq_len
+        placeholder_set = set(self.placeholder_tokens)
+
+        is_placeholder = [tok in placeholder_set for tok in input_ids]
+        placeholder_idx = [i for i, v in enumerate(is_placeholder) if v]
+
+        if len(placeholder_idx) >= max_len:
+            keep_idx = placeholder_idx[:max_len]
+        else:
+            remain = max_len - len(placeholder_idx)
+            non_placeholder_idx = [i for i, v in enumerate(is_placeholder) if not v]
+
+            if truncation_strategy == "left":
+                extra_idx = non_placeholder_idx[-remain:]
+            else:
+                extra_idx = non_placeholder_idx[:remain]
+
+            keep_idx = sorted(placeholder_idx + extra_idx)
+
+        input_ids = [input_ids[i] for i in keep_idx]
+        labels = [labels[i] for i in keep_idx]
+
+        return input_ids, labels
+
+    def _encode_truncated(self, input_ids, labels):
+        length = self._get_length(input_ids, labels)
+        if self.max_seq_len is not None and length > self.max_seq_len:
+            if self.truncation_strategy == "delete":
+                return None, None
+            if self.truncation_strategy in {"right", "left"}:
+                input_ids, labels = self._truncate(input_ids, labels, truncation_strategy=self.truncation_strategy)
+        return input_ids, labels
+
     def print_max_steps_estimate_progress(self):
         current_percent = (self.used_estimate_samples / self.max_estimate_samples) * 100
         if self._estimate_start_time is None:
@@ -882,16 +954,22 @@ class BaseSFTDataset:
                 if length >= suffix_len and input_ids[start : start + suffix_len] == suffix_tokens_id:
                     labels[start : start + suffix_len] = suffix_tokens_id
 
-    def _binpacking_process_batch(self, iterator, batch_size):
+    def _binpacking_process_batch(self, iterator, batch_size, index_only=False):
         batch = []
         count = 0
         for _ in range(batch_size):
             try:
-                encoded = next(iterator)
+                item = next(iterator)
                 if self.estimate:
                     self.used_samples += 1
-                if encoded:
-                    batch.append((encoded, len(encoded.token_ids)))
+                if index_only:
+                    raw_idx, encoded = item
+                    if encoded:
+                        batch.append((raw_idx, len(encoded.token_ids)))
+                else:
+                    encoded = item
+                    if encoded:
+                        batch.append((encoded, len(encoded.token_ids)))
                 count += 1
             except StopIteration:
                 break
@@ -914,11 +992,7 @@ class MapSFTDataset(BaseSFTDataset, Dataset):
     def __init__(self, **dataset_config):
         super().__init__(**dataset_config)
 
-        if self.packing:
-            raise ValueError(
-                "[MapSFTDataset] packing=True is not supported for non-streaming (Map) dataset. "
-                "Please use IteratorSFTDataset instead or set packing=False."
-            )
+        self.packed_idx_cache_dir = dataset_config.get("packed_idx_cache_dir", None)
 
         self.raw_data = list(self.mix_datasets)
         logger.info(f"[MapSFTDataset] Total samples: {len(self.raw_data)}")
@@ -929,11 +1003,159 @@ class MapSFTDataset(BaseSFTDataset, Dataset):
         self._traceback_counter = 0
         self._idx = 0
         self._idx_list = self.random_state.permutation(len(self.raw_data)).tolist()
+        self.packed_idx = None
+
+        if self.packing and self.binpacking:
+            self.packed_idx = self._build_or_load_packed_idx()
+
+        elif self.packing and (not self.binpacking):
+            raise ValueError("[MapSFTDataset] packing only support binpacking")
+
+    def _build_or_load_packed_idx(self):
+
+        if self.packed_idx_cache_dir is not None:
+            split = "eval" if self.is_valid else "train"
+            self.cache_path = os.path.join(self.packed_idx_cache_dir, f"{split}_packed_idx.npz")
+            packed_idx = self._load_packed_idx_cache(self.cache_path)
+            if packed_idx is not None:
+                return packed_idx
+
+        packed_idx = self._compute_packed_idx()
+
+        if self.packed_idx_cache_dir is not None:
+            self._save_packed_idx_cache(packed_idx, self.cache_path)
+
+        return packed_idx
+
+    def _compute_packed_idx(self):
+        """
+        Mirrors the binpacking loop in _generate_sequences
+        but uses index_only=True:
+        (Sequence, token_length) -> (raw_idx, token_length)
+        """
+        logger.info("[MapSFTDataset] Computing token lengths for bin packing...")
+        actual_example_num = 1
+
+        dataset_iterator = iter(self.raw_data)
+        data_iter = self._get_processed_data_iterator(
+            dataset_iterator, actual_example_num, self._process_sequence, yield_with_index=True
+        )
+
+        accumulated_data = []
+        packed_idx = []
+
+        while True:
+            batch_data, num_samples = self._binpacking_process_batch(data_iter, self.packing_interval, index_only=True)
+            finished = num_samples != self.packing_interval
+
+            accumulated_data += batch_data
+
+            groups, accumulated_data = calculate_matched_group(
+                accumulated_data, self.max_seq_len, is_finished=finished
+            )
+
+            for row in groups:
+                packed_idx.append([item[0] for item in row])
+
+            if finished:
+                break
+
+        logger.info(
+            f"[MapSFTDataset] {sum(len(g) for g in packed_idx)} valid samples -> " f"{len(packed_idx)} packed groups."
+        )
+        return packed_idx
+
+    def _load_packed_idx_cache(self, cache_path):
+        """from an .npz cache file."""
+        if not os.path.isfile(cache_path):
+            logger.info(f"[MapSFTDataset] No packed_idx cache found at {cache_path}")
+            return None
+
+        try:
+            data = np.load(cache_path, allow_pickle=False)
+
+            group_offsets = data["group_offsets"]
+            flat_indices = data["flat_indices"]
+
+            packed_idx = []
+            for i in range(len(group_offsets) - 1):
+                start = group_offsets[i]
+                end = group_offsets[i + 1]
+                packed_idx.append(flat_indices[start:end].tolist())
+
+            logger.info(f"[MapSFTDataset] Loaded packed_idx cache from {cache_path}: " f"{len(packed_idx)} groups.")
+            return packed_idx
+
+        except Exception as e:
+            logger.warning(f"[MapSFTDataset] Failed to load packed_idx cache from {cache_path}: {e}. " "Recomputing.")
+            return None
+
+    def _save_packed_idx_cache(self, packed_idx, cache_path):
+        """to an .npz cache file."""
+        try:
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+
+            offsets = [0]
+            flat = []
+            for group in packed_idx:
+                flat.extend(group)
+                offsets.append(len(flat))
+
+            np.savez(
+                cache_path,
+                group_offsets=np.array(offsets, dtype=np.int64),
+                flat_indices=np.array(flat, dtype=np.int64),
+            )
+
+            logger.info(f"[MapSFTDataset] Saved packed_idx cache to {cache_path}: " f"{len(packed_idx)} groups")
+        except Exception as e:
+            logger.warning(
+                f"[MapSFTDataset] Failed to save packed_idx cache to {cache_path}: {e}. " "Continuing without cache."
+            )
 
     def __len__(self):
+        if self.packed_idx is not None:
+            return len(self.packed_idx)
         return len(self.raw_data)
 
     def __getitem__(self, idx):
+        if self.packed_idx is not None:
+            return self._getitem_packed(idx)
+        return self._getitem_single(idx)
+
+    def _getitem_packed(self, idx):
+        """Get a packed group of sequences by bin packing index."""
+        group_indices = self.packed_idx[idx]
+        actual_example_num = 1
+        sequences = []
+
+        for raw_idx in group_indices:
+            example = self.raw_data[raw_idx]
+            try:
+                sequence = self._process_sequence(example, actual_example_num)
+
+                if sequence is not None:
+                    sequences.append(sequence)
+                else:
+                    logger.warning(
+                        f"[MapSFTDataset] Sample {raw_idx} in packed group {idx} "
+                        "returned None during __getitem__. Skipping within group."
+                    )
+            except Exception:
+                if self.traceback_limit is not None and self._traceback_counter < self.traceback_limit:
+                    import traceback
+
+                    logger.info(traceback.format_exc())
+                    logger.warning(
+                        f"[MapSFTDataset] Error processing sample {raw_idx} in packed group {idx}. "
+                        "Skipping within group."
+                    )
+                    self._traceback_counter += 1
+
+        return sequences
+
+    def _getitem_single(self, idx):
+        """same as original __getitem__"""
         actual_example_num = 1
 
         for i in range(self.n_try_fetch):
@@ -945,10 +1167,7 @@ class MapSFTDataset(BaseSFTDataset, Dataset):
 
             example = self.raw_data[current_idx]
             try:
-                if self.is_pretraining:
-                    sequence = self._postprocess_pretraining_sequence(example, actual_example_num)
-                else:
-                    sequence = self._postprocess_sequence(example, actual_example_num)
+                sequence = self._process_sequence(example, actual_example_num)
 
                 if sequence is not None:
                     return [sequence]

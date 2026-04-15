@@ -181,6 +181,46 @@ class TestMergeModel(unittest.TestCase):
             mergekit = MergeModel(merge_config)
             mergekit.merge_model()
 
+    def test_fuse_moe_lora_merge(self):
+        with TemporaryDirectory() as tempdir:
+            from paddleformers.peft import LoRAConfig, LoRAModel
+            from paddleformers.transformers import (
+                Qwen3VLMoeForConditionalGenerationDeprecated as Qwen3VLMoeForConditionalGeneration,
+            )
+
+            model_path = os.path.join(tempdir, "model")
+            lora_config = LoRAConfig(
+                target_modules=[
+                    ".*qkv_proj.*",
+                    "model.language_model.*mlp.experts",
+                ],
+                r=4,
+                lora_alpha=8,
+            )
+            model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
+                "PaddleFormers/tiny-random-qwen3vlmoev2",
+                dtype="float32",
+                load_checkpoint_format="flex_checkpoint",
+            )
+            model.save_pretrained(model_path)
+            lora_model = LoRAModel(model, lora_config)
+            lora_model_path = os.path.join(tempdir, "lora_model")
+            lora_model.save_pretrained(lora_model_path, save_checkpoint_format="flex_checkpoint")
+
+            # merge lora model
+            from paddleformers.mergekit import MergeConfig, MergeModel
+
+            output_path = os.path.join(tempdir, "merged_model")
+            merge_config = MergeConfig(
+                base_model_path=model_path,
+                lora_model_path=lora_model_path,
+                output_path=output_path,
+                convert_from_hf=True,
+                save_to_hf=True,
+            )
+            mergekit = MergeModel(merge_config)
+            mergekit.merge_model()
+
     def test_qdq_lora_merge(self):
         with TemporaryDirectory() as tempdir:
             import paddle.distributed as dist

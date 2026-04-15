@@ -641,14 +641,28 @@ class MergeModel:
         else:
             scaling = lora_config.lora_alpha / math.sqrt(lora_config.r)
 
+        lora_A_keys = [k for k in lora_state_dict.keys() if "lora_A" in k]
+        weight_to_lora = {}
+        for lora_A_key in lora_A_keys:
+            if lora_A_key.endswith(".lora_A"):
+                weight_key = lora_A_key[: -len(".lora_A")]
+                lora_B_key = weight_key + ".lora_B"
+                if lora_B_key in lora_state_dict:
+                    weight_to_lora[weight_key + ".weight"] = (lora_A_key, lora_B_key)
+            elif lora_A_key.endswith("_lora_A"):
+                weight_key = lora_A_key[: -len("_lora_A")]
+                lora_B_key = weight_key + "_lora_B"
+                if lora_B_key in lora_state_dict:
+                    weight_to_lora[weight_key] = (lora_A_key, lora_B_key)
+
         model_key_list = list(base_state_dict.keys())
         for k in tqdm(model_key_list, desc="Merging tensor"):
             if lora_state_dict is not None and k in lora_state_dict.keys():
                 tensor = lora_state_dict.pop(k)
             else:
                 tensor = base_state_dict.pop(k)
-            if "weight" in k:
-                lora_A_key, lora_B_key = k.replace("weight", "lora_A"), k.replace("weight", "lora_B")
+            if k in weight_to_lora:
+                lora_A_key, lora_B_key = weight_to_lora[k]
                 lora_A_tensor = None
                 if lora_state_dict is not None and lora_A_key in lora_state_dict.keys():
                     lora_A_tensor, lora_B_tensor = lora_state_dict.pop(lora_A_key), lora_state_dict.pop(lora_B_key)
