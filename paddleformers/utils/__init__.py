@@ -31,6 +31,7 @@ import_structure = {
     ],
     "import_utils": [
         "is_torch_available",
+        "is_decord_available",
         "is_paddlenlp_ops_available",
         "auto_dynamic_graph_pybind",
         "is_paddle_cuda_available",
