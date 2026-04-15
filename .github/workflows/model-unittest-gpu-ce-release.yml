@@ -9,8 +9,6 @@ on:
     - cron: "0 20 * * 5"
     - cron: "0 21 * * 5"
     - cron: "0 22 * * 5"
-  issue_comment:
-    types: [created, edited]
   workflow_dispatch:
     inputs:
       update_baseline_models:
@@ -55,9 +53,9 @@ on:
         required: false
         type: string
 
-concurrency:
-  group: model-unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+# concurrency:
+#   group: model-unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+#   cancel-in-progress: true
 
 env:
   FLAGS_enable_CE: "${{ github.event.inputs.FLAGS_enable_CE || 'CE_Release_cu129_py312' }}"
