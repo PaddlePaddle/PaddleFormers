@@ -29,4 +29,3 @@ triton >= 3.1
 use_triton_in_paddle
 audioread
 librosa
-decord
