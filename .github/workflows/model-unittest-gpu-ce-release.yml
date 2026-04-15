@@ -116,11 +116,11 @@ jobs:
           if [[ "$schedule_time" == "0 17 * * 0-4" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu129_py312_nightly" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "0 17 * * 5" ]]; then
-            echo "FLAGS_enable_CE=CE_Develop_cu130_py313" >> $GITHUB_OUTPUT
+            echo "FLAGS_enable_CE=CE_Release_cu130_py313" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "0 18 * * 5" ]]; then
-            echo "FLAGS_enable_CE=CE_Develop_cu130_py312" >> $GITHUB_OUTPUT
+            echo "FLAGS_enable_CE=CE_Release_cu130_py312" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "0 19 * * 5" ]]; then
-            echo "FLAGS_enable_CE=CE_Develop_cu130_py311" >> $GITHUB_OUTPUT
+            echo "FLAGS_enable_CE=CE_Release_cu130_py311" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "0 20 * * 5" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu129_py313" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "0 21 * * 5" ]]; then
