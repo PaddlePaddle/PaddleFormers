@@ -242,7 +242,7 @@ jobs:
               MODE="pr"
               echo "Detected baseline update from PR description: $UPDATE_BASELINE_MODELS"
             fi
-            UPDATE_BASELINE_MODELS="true"
+            UPDATE_BASELINE_MODELS="all"
           fi
           
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
