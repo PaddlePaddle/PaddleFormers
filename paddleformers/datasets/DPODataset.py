@@ -59,15 +59,15 @@ class BaseDPODataSet:
         self.processor = dataset_config.get("processor", None)
         self.max_seq_len = dataset_config.get("max_seq_len", 8192)
         self.template = dataset_config.get("template_instance", None)
-        self.use_attn_mask_startend_row_indices = dataset_config.get("use_attn_mask_startend_row_indices", True)
         self.template_backend = dataset_config.get("template_backend", "jinja")
+        self.efficient_eos = True if not self.template else getattr(self.template, "efficient_eos", True)
         self.split_multi_turn = dataset_config.get("split_multi_turn", False)
-        self.is_valid = dataset_config.get("is_valid", False)
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
         self.buffer_size = dataset_config.get("buffer_size", 500)
-        self.efficient_eos = True if not self.template else getattr(self.template, "efficient_eos", True)
         self.use_filtered_label_loss = dataset_config.get("use_filtered_label_loss", False)
+        self.use_attn_mask_startend_row_indices = dataset_config.get("use_attn_mask_startend_row_indices", True)
+        self.is_valid = dataset_config.get("is_valid", False)
 
         # data loader + multisource dataset mix
         if self.is_valid:
