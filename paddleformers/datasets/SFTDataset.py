@@ -1038,7 +1038,7 @@ class MapSFTDataset(BaseSFTDataset, Dataset):
 
         dataset_iterator = iter(self.raw_data)
         data_iter = self._get_processed_data_iterator(
-            dataset_iterator, actual_example_num, self._process_sequence, yield_with_index=True
+            dataset_iterator, actual_example_num, self._current_processor_func, yield_with_index=True
         )
 
         accumulated_data = []
@@ -1132,7 +1132,7 @@ class MapSFTDataset(BaseSFTDataset, Dataset):
         for raw_idx in group_indices:
             example = self.raw_data[raw_idx]
             try:
-                sequence = self._process_sequence(example, actual_example_num)
+                sequence = self._current_processor_func(example, actual_example_num)
 
                 if sequence is not None:
                     sequences.append(sequence)
@@ -1167,7 +1167,7 @@ class MapSFTDataset(BaseSFTDataset, Dataset):
 
             example = self.raw_data[current_idx]
             try:
-                sequence = self._process_sequence(example, actual_example_num)
+                sequence = self._current_processor_func(example, actual_example_num)
 
                 if sequence is not None:
                     return [sequence]
