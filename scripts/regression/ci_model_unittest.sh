@@ -71,7 +71,7 @@ init_env() {
         python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml --output config.yaml 2>&1 | tee /tmp/merge_output.txt
         cd -
     fi
-    grep "^new_models=" /tmp/merge_output.txt
+    grep "^new_models=" /tmp/merge_output.txt || true
     new_models=$(grep "^new_models=" /tmp/merge_output.txt | cut -d'=' -f2)
 
     if [[ "$new_models" != "" ]] && [[ "$new_models" != "false" ]] && [[ "$new_models" != "False" ]]; then
