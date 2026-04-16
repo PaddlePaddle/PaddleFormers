@@ -245,18 +245,6 @@ if __name__ == "__main__":
         description="Compare two YAML config files and copy new content to target file",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  # Use default file names (config.yaml and config_ci.yaml)
-  python merge_configs.py
-
-  # Specify custom file names
-  python merge_configs.py --origin_config config.yaml --update_config config_ci.yaml
-
-  # Specify custom output file
-  python merge_configs.py --origin_config config.yaml --update_config config_origin.yaml --output config.yaml
-
-  # Only specify origin_config, keep update_config as default
-  python merge_configs.py --origin_config base_config.yaml
         """,
     )
 
