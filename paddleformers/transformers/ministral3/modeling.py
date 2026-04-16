@@ -628,9 +628,11 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
         import re
         import os
         import glob
+        import ml_dtypes
         import paddle
         import numpy as np
-        import torch
+
+        from ...utils.safetensors import fast_safe_open
 
         model_path = os.path.expanduser(model_path)
 
@@ -642,11 +644,9 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
             else:
                 raise FileNotFoundError(f"未找到 safetensors 权重文件: {model_path}")
 
-        from safetensors import safe_open
-
         scale_inv_map = {}
         for sf in shard_files:
-            with safe_open(sf, framework="pt", device="cpu") as f:
+            with fast_safe_open(sf) as f:
                 for key in f.keys():
                     if key.endswith("weight_scale_inv"):
                         weight_key = key[: -len("_scale_inv")]
@@ -654,27 +654,25 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
 
         state_dict = {}
         for sf in shard_files:
-            with safe_open(sf, framework="pt", device="cpu") as f:
+            with fast_safe_open(sf) as f:
                 for hf_name in f.keys():
                     if any(hf_name.endswith(suf) for suf in cls._HF_QUANT_SUFFIXES):
                         continue
 
-                    torch_tensor = f.get_tensor(hf_name)
-
-                    if torch_tensor.dtype == torch.float8_e4m3fn:
+                    np_arr = f.get_tensor(hf_name)
+                    if np_arr.dtype == ml_dtypes.float8_e4m3fn:
                         scale = scale_inv_map.get(hf_name)
                         if scale is not None:
-                            torch_tensor = torch_tensor.float() * scale.float()
+                            np_arr = np_arr.astype(np.float32) * scale.astype(np.float32)
                         else:
-                            torch_tensor = torch_tensor.float()
+                            np_arr = np_arr.astype(np.float32)
                     else:
-                        torch_tensor = torch_tensor.float()
+                        np_arr = np_arr.astype(np.float32)
 
                     paddle_name = hf_name
                     for pattern, replacement in cls._HF_NAME_MAPPING:
                         paddle_name = re.sub(pattern, replacement, paddle_name)
 
-                    np_arr = torch_tensor.cpu().numpy()
                     if (
                         np_arr.ndim == 2
                         and any(hf_name.endswith(suf) for suf in cls._HF_TRANSPOSE_SUFFIXES)
@@ -726,7 +724,7 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
         1. 已转换的 .pdparams（AIStudio）: convert_from_hf=False 直接加载
         2. 原始 HF safetensors（含 FP8）: 内存中做反量化 + 映射 + 转置
         3. 已转换的 safetensors（无 FP8）: flex_checkpoint + AOA 加载
-        原始代码参考: .claude/ai_history/mistralai/ministral3-raw"""
+        """
         import os
 
         use_converted_weights = kwargs.pop("use_converted_weights", None)
