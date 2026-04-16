@@ -96,11 +96,19 @@ install_requirements() {
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
     fi
    
+    
+    echo "paddle commit:"
+    python -c "import paddle; print(paddle.version.commit)"
     echo "paddlefleet commit:"
     python -c "import paddlefleet; print(paddlefleet.version.commit)"
+    echo "paddleformers commit:"
+    python -c "import paddlefleet; print(paddleformers.version.commit)"
+    
+    python -c "import paddle; print('paddle commit:',paddle.version.commit)" >> ${log_path}/commit_info.txt
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
+    python -c "import paddlefleet; print('paddlefleet commit:',paddlefleet.version.commit)" >> ${log_path}/commit_info.txt
     python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
     python -m pip list >> ${log_path}/commit_info.txt
     end_ts=$(date +%s)

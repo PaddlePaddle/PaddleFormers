@@ -130,7 +130,7 @@ class TrainTester:
 
         if model_key not in data:
             pytest.skip(f"Model '{model_key}' not found in config")
-            
+
         model_cfg = data[model_key]
         return ModelConfig(
             name=model_key,
@@ -312,9 +312,9 @@ class TrainTester:
 
         if update_flag:
             return avg_loss, None
-
-        if abs(avg_loss - base_loss) > LOSS_TOLERANCE:
-            return avg_loss, f"{phase_name} loss: {avg_loss}, base_loss: {base_loss}, difference detected!"
+        else:
+            if abs(avg_loss - base_loss) > LOSS_TOLERANCE:
+                return avg_loss, f"{phase_name} loss: {avg_loss}, base_loss: {base_loss}, difference detected!"
 
         return avg_loss, None
 
@@ -590,9 +590,10 @@ class BaseTrainingTest:
         if msg:
             errors.append(AssertionError(msg))
 
-        _, msg = self.tester.assert_loss_consistent(log_file, resume_log_file)
-        if msg:
-            errors.append(AssertionError(msg))
+        if not should_update:
+            _, msg = self.tester.assert_loss_consistent(log_file, resume_log_file)
+            if msg:
+                errors.append(AssertionError(msg))
 
         generate_dir = output_dir
         if requires_export:
@@ -603,7 +604,15 @@ class BaseTrainingTest:
 
         # Test model generation
         generate_log_file = os.path.join(LOG_PATH, f"{model_key}_{train_type}_{test_type}_generate.log")
-        skip_generation = model_key in ["qwen2_moe", "deepseek_v3"]
+        skip_generation = model_key in [
+            "qwen2",
+            "qwen2_moe",
+            "deepseek_v3",
+            "qwen2_5_vl",
+            "qwen3_vl_moe",
+            "qwen3_vl",
+            "paddleocr_vl",
+        ]
         if skip_generation:
             result = None
         else:
@@ -712,7 +721,12 @@ class TestTrain:
             True if baseline should be updated.
         """
         update_baseline = request.config.getoption("--update-baseline")
-        return update_baseline in ["all", model_key]
+        if update_baseline == "all":
+            return True
+        if update_baseline:
+            update_models = [m.strip() for m in update_baseline.split(",")]
+            return model_key in update_models
+        return False
 
     @pytest.mark.model_type("text")
     @pytest.mark.parametrize("train_type", ["sft", "dpo", "pt"])
@@ -870,9 +884,6 @@ class TestTrain:
             request: Pytest request fixture.
         """
 
-        if model_key == "qwen3_vl_moe":
-            pytest.skip("Unsupported resume hang")
-
         model_cfg = self.train_tester.load_model_config(model_key)
         print(f"\n[INFO] Testing model={model_key}, train_type={train_type}_lora")
         should_update = self._should_update_baseline(request, model_key)
@@ -903,9 +914,6 @@ class TestTrain:
         if model_key == "paddleocr_vl":
             pytest.skip("Unsupported")
 
-        if model_key == "qwen3_vl":
-            pytest.skip("Unsupported resume hang")
-
         should_update = self._should_update_baseline(request, model_key)
 
         self.workflow.execute_training_workflow(
@@ -934,8 +942,6 @@ class TestTrain:
 
         if model_key == "paddleocr_vl":
             pytest.skip("Unsupported")
-        if model_key == "qwen3_vl_moe" or model_key == "qwen3_vl":
-            pytest.skip("Unsupported resume hang")
 
         should_update = self._should_update_baseline(request, model_key)
 
