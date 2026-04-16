@@ -276,10 +276,6 @@ if __name__ == "__main__":
         print(f"Error: {update_config_path} does not exist")
         sys.exit(1)
 
-    print("Source config file: {origin_config_path}")
-    print("Target config file: {update_config_path}")
-    print()
-
     result = merge_configs(str(origin_config_path), str(update_config_path), args.output)
 
     if result["new_models"] or result["updated_models"]:
