@@ -721,7 +721,12 @@ class TestTrain:
             True if baseline should be updated.
         """
         update_baseline = request.config.getoption("--update-baseline")
-        return update_baseline in ["all", model_key]
+        if update_baseline == "all":
+            return True
+        if update_baseline:
+            update_models = [m.strip() for m in update_baseline.split(",")]
+            return model_key in update_models
+        return False
 
     @pytest.mark.model_type("text")
     @pytest.mark.parametrize("train_type", ["sft", "dpo", "pt"])
