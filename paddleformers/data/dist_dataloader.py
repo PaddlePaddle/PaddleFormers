@@ -241,6 +241,9 @@ def init_stream_data_group():
     dataset_ranks = []
     for rank in range(world_size):
         coord = topo.get_coord(rank)
+        logger.info(
+            "[dataflow] rank: {}, model: {}, pipe: {}, sep: {}".format(rank, coord.model, coord.pipe, coord.sep)
+        )
         if coord.model == 0 and coord.pipe == 0 and getattr(coord, "sep", 0) == 0:
             dataset_ranks.append(rank)
 
