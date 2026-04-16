@@ -312,9 +312,9 @@ class TrainTester:
 
         if update_flag:
             return avg_loss, None
-
-        if abs(avg_loss - base_loss) > LOSS_TOLERANCE:
-            return avg_loss, f"{phase_name} loss: {avg_loss}, base_loss: {base_loss}, difference detected!"
+        else:
+            if abs(avg_loss - base_loss) > LOSS_TOLERANCE:
+                return avg_loss, f"{phase_name} loss: {avg_loss}, base_loss: {base_loss}, difference detected!"
 
         return avg_loss, None
 
@@ -590,9 +590,10 @@ class BaseTrainingTest:
         if msg:
             errors.append(AssertionError(msg))
 
-        _, msg = self.tester.assert_loss_consistent(log_file, resume_log_file)
-        if msg:
-            errors.append(AssertionError(msg))
+        if not should_update:
+            _, msg = self.tester.assert_loss_consistent(log_file, resume_log_file)
+            if msg:
+                errors.append(AssertionError(msg))
 
         generate_dir = output_dir
         if requires_export:
