@@ -254,6 +254,18 @@ def get_train_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _
     if data_args.split_multi_turn and data_args.template_backend != "jinja":
         raise ValueError("data_args.template_backend must be jinja when split_multi_turn is True")
 
+    if data_args.dataset_type == "iterable" and finetuning_args.dataloader_num_workers > 0:
+        if finetuning_args.device != "xpu":
+            logger.warning(
+                "Iterator dataset type does not support multi-thread loading, we will enforce that dataloader_num_workers=0."
+            )
+            finetuning_args.dataloader_num_workers = 0
+        else:
+            logger.warning(
+                "Iterator dataset type does not support multi-thread loading, we will enforce that dataloader_num_workers=1."
+            )
+            finetuning_args.dataloader_num_workers = 1
+
     if model_args._attn_implementation.lower() == "flashmask" and not model_args.use_attn_mask_startend_row_indices:
         raise ValueError(
             "_attn_implementation is set to flashmask, but use_attn_mask_startend_row_indices is False. Please set use_attn_mask_startend_row_indices=True."
