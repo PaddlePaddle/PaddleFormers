@@ -396,11 +396,6 @@ class Mistral3PreTrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_aoa_config(cls, config: Mistral3Config):
-        text_cfg = (
-            config.text_config
-            if isinstance(config.text_config, Ministral3TextConfig)
-            else Ministral3TextConfig.from_dict(config.text_config)
-        )
         model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
 
         aoa_statements = [
@@ -428,11 +423,6 @@ class Mistral3PreTrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_inv_aoa_config(cls, config: Mistral3Config):
-        text_cfg = (
-            config.text_config
-            if isinstance(config.text_config, Ministral3TextConfig)
-            else Ministral3TextConfig.from_dict(config.text_config)
-        )
         model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
 
         aoa_statements = [
