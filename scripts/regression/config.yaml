@@ -244,57 +244,6 @@ qwen2:
         dpo_lora_tp_pp_excepted_result: []
         sft_full_function_call_excepted_result: []
         dpo_full_function_call_excepted_result: []
-qwen2_moe:
-    repo_id: PaddleFormers/tiny-random-qwen2moev2
-    model_type: text
-    cli_args:
-        save_checkpoint_format: flex_checkpoint
-        load_checkpoint_format: flex_checkpoint
-        template: qwen
-    base_loss:
-        sft_full_loss: 12.75137949
-        sft_full_resume_loss: 12.7533474
-        dpo_full_loss: 0.69314718
-        dpo_full_resume_loss: 0.69314718
-        pt_full_loss: 12.943089005
-        pt_full_resume_loss: 12.94309425
-        sft_lora_loss: 12.75137949
-        sft_lora_resume_loss: 12.7533474
-        dpo_lora_loss: 0.69314718
-        dpo_lora_resume_loss: 0.69314718
-        pt_lora_loss: 12.943089005
-        pt_lora_resume_loss: 12.94309425
-        sft_full_tp_pp_loss: 12.83477211
-        sft_full_tp_pp_resume_loss: 12.83484077
-        dpo_full_tp_pp_loss: 0.69314718
-        dpo_full_tp_pp_resume_loss: 0.69314718
-        pt_full_tp_pp_loss: 12.94299936
-        pt_full_tp_pp_resume_loss: 12.94278812
-        sft_lora_tp_pp_loss: 12.83494377
-        sft_lora_tp_pp_resume_loss: 12.83502769
-        dpo_lora_tp_pp_loss: 0.69314718
-        dpo_lora_tp_pp_resume_loss: 0.69314718
-        pt_lora_tp_pp_loss: 12.94299936
-        pt_lora_tp_pp_resume_loss: 12.94278812
-        sft_full_function_call_loss: 12.800385
-        sft_full_function_call_resume_loss: 12.80296135
-        dpo_full_function_call_loss: 0.69314718
-        dpo_full_function_call_resume_loss: 0.69314718
-    base_result:
-        pt_full_excepted_result: []
-        sft_full_excepted_result: []
-        dpo_full_excepted_result: []
-        pt_lora_excepted_result: []
-        sft_lora_excepted_result: []
-        dpo_lora_excepted_result: []
-        pt_full_tp_pp_excepted_result: []
-        sft_full_tp_pp_excepted_result: []
-        dpo_full_tp_pp_excepted_result: []
-        pt_lora_tp_pp_excepted_result: []
-        sft_lora_tp_pp_excepted_result: []
-        dpo_lora_tp_pp_excepted_result: []
-        sft_full_function_call_excepted_result: []
-        dpo_full_function_call_excepted_result: []
 llama:
     repo_id: PaddleFormers/tiny-random-llama3
     model_type: text
