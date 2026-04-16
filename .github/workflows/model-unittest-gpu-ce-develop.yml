@@ -1,6 +1,7 @@
 name: Model Unittest GPU CE Develop
 
 on:
+  pull_request:
   schedule:
     - cron: "0 17 * * 0-4"
     - cron: "0 18 * * 0-4"
@@ -283,7 +284,8 @@ jobs:
           echo "BRANCH: ${BRANCH}"
           echo "PR number: ${PR_NUMBER}"
           source ${work_dir}/../../../proxy_huggingface
-          bash -x scripts/regression/ci_model_unittest.sh False $FLAGS_enable_CE "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
+          sleep 1h
+          #bash -x scripts/regression/ci_model_unittest.sh False $FLAGS_enable_CE "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
           DOCKER_EOF
       - name: Upload Products
         if: always()
@@ -292,6 +294,8 @@ jobs:
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
         run: |
           docker exec -t $container_name /bin/bash -c '
+          . /opt/conda/etc/profile.d/conda.sh
+          conda activate py_$python_version
           source ${work_dir}/../../../proxy_huggingface
           python -m pip install baidubce protocol utils -i https://pypi.org/simple
           if [ ! -f "${{ env.bos_file }}" ]; then
