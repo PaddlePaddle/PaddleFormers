@@ -342,9 +342,6 @@ class AutoConfig(PretrainedConfig):
         cache_dir = kwargs.pop("cache_dir", None)
         download_hub = kwargs.get("download_hub", None)
 
-        if isinstance(pretrained_model_name_or_path, str) and pretrained_model_name_or_path.startswith("~"):
-            pretrained_model_name_or_path = os.path.expanduser(pretrained_model_name_or_path)
-
         config_file = resolve_file_path(
             pretrained_model_name_or_path,
             [cls.config_file, cls.legacy_config_file],
