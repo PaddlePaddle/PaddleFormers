@@ -2,8 +2,6 @@ name: Model Unittest GPU CI
 
 on:
   pull_request:
-  issue_comment:
-    types: [created, edited]
   workflow_dispatch:
     inputs:
       update_baseline_models:
