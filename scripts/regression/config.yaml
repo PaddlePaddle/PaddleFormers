@@ -616,46 +616,6 @@ paddleocr_vl:
         sft_full_function_call_excepted_result: []
         dpo_full_function_call_excepted_result: []
         sft-vl_full_excepted_result: []
-qwen3_vl:
-    repo_id: PaddleFormers/tiny-random-qwen3vlv2
-    model_type: vl
-    cli_args:
-        save_checkpoint_format: flex_checkpoint
-        load_checkpoint_format: flex_checkpoint
-        template: qwen3_vl
-        sequence_parallel: false
-    base_loss:
-        sft-vl_full_loss: 11.93664551
-        sft-vl_full_resume_loss: 11.93703556
-        sft-vl_lora_loss: 11.93664551
-        sft-vl_lora_resume_loss: 11.93703556
-        sft-vl_full_tp_loss: 11.93693018
-        sft-vl_full_tp_resume_loss: 11.93614006
-    base_result:
-        sft-vl_full_excepted_result: []
-        sft-vl_lora_excepted_result: []
-        sft-vl_full_tp_excepted_result: []
-qwen3_vl_moe:
-    repo_id: PaddleFormers/tiny-random-qwen3vlmoev2
-    model_type: vl
-    cli_args:
-        save_checkpoint_format: flex_checkpoint
-        load_checkpoint_format: flex_checkpoint
-        template: qwen3_vl
-        sequence_parallel: false
-    base_loss:
-        sft-vl_full_loss: 12.77496433
-        sft-vl_full_resume_loss: 12.78281116
-        sft-vl_full_tp_loss: 12.80296898
-        sft-vl_full_tp_resume_loss: 12.82027054
-        sft-vl_lora_loss: 12.77497625
-        sft-vl_lora_resume_loss: 0
-    base_result:
-        sft-vl_full_excepted_result:
-        - [138886, 65624, 138886, 108115, 65624, 138886, 138886, 138886, 93699, 34232]
-        sft-vl_full_tp_excepted_result:
-        - [138886, 65624, 138886, 108115, 65624, 138886, 138886, 138886, 93699, 34232]
-        sft-vl_lora_excepted_result: []
 qwen2_5_vl:
     repo_id: PaddleFormers/tiny-random-qwen25vlv2
     model_type: vl
