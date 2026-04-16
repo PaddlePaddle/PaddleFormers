@@ -2,13 +2,13 @@ name: Model Unittest GPU CE Release
 
 on:
   schedule:
-    - cron: "0 19 * * 0-4"
-    - cron: "0 17 * * 5"
-    - cron: "0 18 * * 5"
-    - cron: "0 19 * * 5"
-    - cron: "0 20 * * 5"
-    - cron: "0 21 * * 5"
-    - cron: "0 22 * * 5"
+    - cron: "0 11 * * 0-4"
+    - cron: "0 9 * * 5"
+    - cron: "0 10 * * 5"
+    - cron: "0 11 * * 5"
+    - cron: "0 12 * * 5"
+    - cron: "0 13 * * 5"
+    - cron: "0 14 * * 5"
   workflow_dispatch:
     inputs:
       update_baseline_models:
@@ -110,19 +110,19 @@ jobs:
         id: determine
         run: |
           schedule_time="${{ github.event.schedule || '' }}"
-          if [[ "$schedule_time" == "0 17 * * 0-4" ]]; then
+          if [[ "$schedule_time" == "0 11 * * 0-4" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu129_py312_nightly" >> $GITHUB_OUTPUT
-          elif [[ "$schedule_time" == "0 17 * * 5" ]]; then
+          elif [[ "$schedule_time" == "0 9 * * 5" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu130_py313" >> $GITHUB_OUTPUT
-          elif [[ "$schedule_time" == "0 18 * * 5" ]]; then
+          elif [[ "$schedule_time" == "0 10 * * 5" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu130_py312" >> $GITHUB_OUTPUT
-          elif [[ "$schedule_time" == "0 19 * * 5" ]]; then
+          elif [[ "$schedule_time" == "0 11 * * 5" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu130_py311" >> $GITHUB_OUTPUT
-          elif [[ "$schedule_time" == "0 20 * * 5" ]]; then
+          elif [[ "$schedule_time" == "0 12 * * 5" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu129_py313" >> $GITHUB_OUTPUT
-          elif [[ "$schedule_time" == "0 21 * * 5" ]]; then
+          elif [[ "$schedule_time" == "0 13 * * 5" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu129_py312_weekly" >> $GITHUB_OUTPUT
-          elif [[ "$schedule_time" == "0 22 * * 5" ]]; then
+          elif [[ "$schedule_time" == "0 14 * * 5" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu126_py310" >> $GITHUB_OUTPUT
           else
             echo "FLAGS_enable_CE=${{ github.event.inputs.FLAGS_enable_CE || 'CE_Release_cu129_py312_nightly' }}" >> $GITHUB_OUTPUT
@@ -191,7 +191,7 @@ jobs:
 
           echo "work_dir = ${work_dir}"
           source ${work_dir}/../../../proxy_huggingface
-          git clone -b release/1.1 --depth=20 https://github.com/PaddlePaddle/PaddleFormers.git
+          git clone -b release/1.2 --depth=20 https://github.com/PaddlePaddle/PaddleFormers.git
           cd PaddleFormers
           git config --global user.name "PaddleCI"
           git config --global user.email "paddle_ci@example.com"
@@ -311,7 +311,7 @@ jobs:
         run: |
           docker exec -t $container_name /bin/bash -c '
           source ${work_dir}/../../../proxy_huggingface
-          python -m pip install baidubce protocol utils -i https://pypi.org/simple
+          python -m pip install bce-python-sdk==0.8.87 -i https://pypi.org/simple
           if [ ! -f "${{ env.bos_file }}" ]; then
             wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
             mkdir ${{ env.home_path }}/bos
