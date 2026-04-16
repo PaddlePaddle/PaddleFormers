@@ -174,7 +174,6 @@ class VideosKwargs(TypedDict, total=False):
             - `'np'`: Return NumPy `np.ndarray` objects.
         video_backend (`str`, *optional*):
             The video_backend to be used for video loading. Acceptable values are:
-            - `'decord'`: Use `decord` library.
             - `'paddlecodec'`: Use `paddlecodec` library.
     """
 
