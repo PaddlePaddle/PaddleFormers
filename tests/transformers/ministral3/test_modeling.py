@@ -19,7 +19,7 @@ import unittest
 import numpy as np
 import paddle
 
-from tests.testing_utils import slow, require_package
+from tests.testing_utils import require_package, slow
 
 _MODEL_3B_PADDLE_ID = "learncat/Ministral-3-3B-Instruct-2512-for-paddle"
 _MODEL_3B_HF_ID = "mistralai/Ministral-3-3B-Instruct-2512"
@@ -64,13 +64,16 @@ SMALL_VISION_CFG = {
     "hidden_act": "gelu",
 }
 
+
 class TestMinistral3TextDecoder(unittest.TestCase):
     BATCH = 2
     SEQ = 10
 
     def setUp(self):
-        from paddleformers.transformers import Ministral3TextConfig
-        from paddleformers.transformers import Ministral3TextDecoder
+        from paddleformers.transformers import (
+            Ministral3TextConfig,
+            Ministral3TextDecoder,
+        )
 
         self.text_cfg = Ministral3TextConfig(SMALL_TEXT_CFG)
         self.model = Ministral3TextDecoder(self.text_cfg)
@@ -142,8 +145,10 @@ class TestMistral3Model(unittest.TestCase):
             output = self.model(input_ids=input_ids)
         self.assertTrue(output.last_hidden_state.dtype in [paddle.float32, paddle.float16, paddle.bfloat16])
 
+
 def _load_paddle_model_3b(dtype="float32"):
     import paddle
+
     from paddleformers.transformers import Mistral3ForConditionalGeneration
 
     paddle.set_device("gpu")
@@ -179,7 +184,10 @@ class TestMistral3DiffAlignment(unittest.TestCase):
     def test_diff_alignment(self):
         import paddle
         import torch
-        from transformers import Mistral3ForConditionalGeneration as TorchMistral3ForConditionalGeneration
+        from transformers import (
+            Mistral3ForConditionalGeneration as TorchMistral3ForConditionalGeneration,
+        )
+
         from paddleformers.transformers import Mistral3Tokenizer
 
         os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
@@ -224,7 +232,7 @@ class TestMistral3DiffAlignment(unittest.TestCase):
                 top_p=None,
                 use_cache=True,
             )
-        torch_gen_ids = torch_gen[0, input_ids_pt.shape[1]:].cpu().tolist()
+        torch_gen_ids = torch_gen[0, input_ids_pt.shape[1] :].cpu().tolist()
         print(f"[Diff] PyTorch 生成 tokens: {torch_gen_ids}")
         print(f"[Diff] PyTorch 生成文本: {repr(tokenizer.decode(torch_gen_ids, skip_special_tokens=True))}")
 
@@ -235,9 +243,7 @@ class TestMistral3DiffAlignment(unittest.TestCase):
         print("[Diff] 加载 Paddle 模型...")
         paddle_model = _load_paddle_model_3b(dtype="float32")
 
-        input_ids_pd = paddle.to_tensor(
-            np.array([input_ids_list], dtype=np.int64), dtype="int64"
-        )
+        input_ids_pd = paddle.to_tensor(np.array([input_ids_list], dtype=np.int64), dtype="int64")
 
         with paddle.no_grad():
             paddle_out = paddle_model(input_ids=input_ids_pd, use_cache=False)
@@ -289,13 +295,14 @@ class TestMistral3DiffAlignment(unittest.TestCase):
         )
 
 
-
 class TestMistral3PaddleInference(unittest.TestCase):
     """使用paddle版本的权重加载并推理"""
+
     @slow
     @require_package("transformers", "torch")
     def test_paddle_inference(self):
         import paddle
+
         from paddleformers.transformers import Mistral3Tokenizer
 
         os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
@@ -337,7 +344,11 @@ class TestMistral3PaddleInference(unittest.TestCase):
     def test_02_load_hf_original_model(self):
         """使用huggingface版本的权重加载并推理"""
         import paddle
-        from paddleformers.transformers import Mistral3ForConditionalGeneration, Mistral3Tokenizer
+
+        from paddleformers.transformers import (
+            Mistral3ForConditionalGeneration,
+            Mistral3Tokenizer,
+        )
 
         os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
@@ -384,8 +395,6 @@ class TestMistral3PaddleInference(unittest.TestCase):
         printable_chars = sum(1 for c in gen_text if c.isprintable() or c.isspace())
         printable_ratio = printable_chars / len(gen_text) if len(gen_text) > 0 else 0
         self.assertGreater(printable_ratio, 0.5, "输出包含过多不可打印字符，可能是乱码")
-
-
 
 
 if __name__ == "__main__":
