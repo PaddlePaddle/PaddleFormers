@@ -333,7 +333,12 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
-    "ministral3.configuration": ["Mistral3Config", "Mistral3TextConfig", "Mistral3VisionConfig", "Ministral3TextConfig"],
+    "ministral3.configuration": [
+        "Mistral3Config",
+        "Mistral3TextConfig",
+        "Mistral3VisionConfig",
+        "Ministral3TextConfig",
+    ],
     "ministral3.modeling": [
         "Mistral3ForConditionalGeneration",
         "Mistral3Model",

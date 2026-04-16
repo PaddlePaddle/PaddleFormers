@@ -38,17 +38,20 @@ class Ministral3TextConfig:
         self.num_hidden_layers = cfg_dict.get("num_hidden_layers", 34)
         self.num_key_value_heads = cfg_dict.get("num_key_value_heads", 8)
         self.rms_norm_eps = cfg_dict.get("rms_norm_eps", 1e-5)
-        self.rope_parameters = cfg_dict.get("rope_parameters", {
-            "rope_type": "yarn",
-            "rope_theta": 1000000.0,
-            "factor": 16.0,
-            "original_max_position_embeddings": 16384,
-            "beta_fast": 32.0,
-            "beta_slow": 1.0,
-            "llama_4_scaling_beta": 0.1,
-            "mscale": 1.0,
-            "mscale_all_dim": 1.0,
-        })
+        self.rope_parameters = cfg_dict.get(
+            "rope_parameters",
+            {
+                "rope_type": "yarn",
+                "rope_theta": 1000000.0,
+                "factor": 16.0,
+                "original_max_position_embeddings": 16384,
+                "beta_fast": 32.0,
+                "beta_slow": 1.0,
+                "llama_4_scaling_beta": 0.1,
+                "mscale": 1.0,
+                "mscale_all_dim": 1.0,
+            },
+        )
         self.sliding_window = cfg_dict.get("sliding_window", None)
         self.use_cache = cfg_dict.get("use_cache", True)
         self.vocab_size = cfg_dict.get("vocab_size", 131072)

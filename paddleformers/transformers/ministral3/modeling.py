@@ -24,7 +24,11 @@ from ..activations import ACT2FN
 from ..cache_utils import Cache, DynamicCache
 from ..model_outputs import BaseModelOutputWithPast, ModelOutput
 from ..model_utils import PretrainedModel, register_base_model
-from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update, standardize_rope_params
+from ..modeling_rope_utils import (
+    ROPE_INIT_FUNCTIONS,
+    dynamic_rope_update,
+    standardize_rope_params,
+)
 from .configuration import Ministral3TextConfig, Mistral3Config
 
 __all__ = [
@@ -80,7 +84,9 @@ class _RMSNorm(nn.Layer):
     def forward(self, hidden_states: Tensor) -> Tensor:
         input_dtype = hidden_states.dtype
         hidden_states = hidden_states.astype("float32")
-        hidden_states = hidden_states * paddle.rsqrt(hidden_states.pow(2).mean(-1, keepdim=True) + self.variance_epsilon)
+        hidden_states = hidden_states * paddle.rsqrt(
+            hidden_states.pow(2).mean(-1, keepdim=True) + self.variance_epsilon
+        )
         return self.weight * hidden_states.astype(input_dtype)
 
     def extra_repr(self):
@@ -92,7 +98,6 @@ Ministral3RMSNorm = _RMSNorm
 
 
 class Ministral3RotaryEmbedding(nn.Layer):
-
     def __init__(self, text_cfg: "Ministral3TextConfig"):
         super().__init__()
         self.config = text_cfg
@@ -102,10 +107,7 @@ class Ministral3RotaryEmbedding(nn.Layer):
 
         rope_type = text_cfg.rope_parameters.get("rope_type", "default")
         self.rope_type = rope_type
-        rope_init_fn = (
-            self._compute_default if rope_type == "default"
-            else ROPE_INIT_FUNCTIONS[rope_type]
-        )
+        rope_init_fn = self._compute_default if rope_type == "default" else ROPE_INIT_FUNCTIONS[rope_type]
         inv_freq, self.attention_scaling = rope_init_fn(text_cfg)
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.original_inv_freq = inv_freq
@@ -114,9 +116,7 @@ class Ministral3RotaryEmbedding(nn.Layer):
     def _compute_default(config, **kwargs):
         base = config.rope_parameters.get("rope_theta", 1000000.0)
         dim = config.head_dim
-        inv_freq = 1.0 / (
-            base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype("float32") / dim)
-        )
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype("float32") / dim))
         return inv_freq, 1.0
 
     @dynamic_rope_update
@@ -131,7 +131,6 @@ class Ministral3RotaryEmbedding(nn.Layer):
 
 
 class Ministral3Attention(nn.Layer):
-
     def __init__(self, text_cfg: "Ministral3TextConfig", layer_idx: int):
         super().__init__()
         self.layer_idx = layer_idx
@@ -139,7 +138,7 @@ class Ministral3Attention(nn.Layer):
         self.num_heads = text_cfg.num_attention_heads
         self.num_kv_heads = text_cfg.num_key_value_heads
         self.num_kv_groups = self.num_heads // self.num_kv_heads
-        self.scaling = self.head_dim ** -0.5
+        self.scaling = self.head_dim**-0.5
         self.attention_dropout = text_cfg.attention_dropout
 
         rope_params = text_cfg.rope_parameters
@@ -164,20 +163,28 @@ class Ministral3Attention(nn.Layer):
     ) -> Tuple[Tensor, Optional[Tensor]]:
         batch, seq, _ = hidden_states.shape
 
-        query = self.q_proj(hidden_states).reshape([batch, seq, self.num_heads,    self.head_dim]).transpose([0, 2, 1, 3])
-        key   = self.k_proj(hidden_states).reshape([batch, seq, self.num_kv_heads, self.head_dim]).transpose([0, 2, 1, 3])
-        value = self.v_proj(hidden_states).reshape([batch, seq, self.num_kv_heads, self.head_dim]).transpose([0, 2, 1, 3])
+        query = self.q_proj(hidden_states).reshape([batch, seq, self.num_heads, self.head_dim]).transpose([0, 2, 1, 3])
+        key = (
+            self.k_proj(hidden_states).reshape([batch, seq, self.num_kv_heads, self.head_dim]).transpose([0, 2, 1, 3])
+        )
+        value = (
+            self.v_proj(hidden_states).reshape([batch, seq, self.num_kv_heads, self.head_dim]).transpose([0, 2, 1, 3])
+        )
 
         query, key = apply_rotary_pos_emb(query, key, cos.unsqueeze(1), sin.unsqueeze(1))
-        query = query * _get_llama4_attn_scale(cache_position, self.llama4_beta, self.original_max_pos).cast(query.dtype)
+        query = query * _get_llama4_attn_scale(cache_position, self.llama4_beta, self.original_max_pos).cast(
+            query.dtype
+        )
 
         if past_key_values is not None:
             key, value = past_key_values.update(
-                key, value, self.layer_idx,
+                key,
+                value,
+                self.layer_idx,
                 {"sin": sin, "cos": cos, "cache_position": cache_position},
             )
 
-        key   = repeat_kv(key,   self.num_kv_groups)
+        key = repeat_kv(key, self.num_kv_groups)
         value = repeat_kv(value, self.num_kv_groups)
 
         attn_weights = paddle.matmul(query, key.transpose([0, 1, 3, 2])) * self.scaling
@@ -199,7 +206,7 @@ class Ministral3MLP(nn.Layer):
     def __init__(self, text_cfg: "Ministral3TextConfig"):
         super().__init__()
         self.gate_proj = nn.Linear(text_cfg.hidden_size, text_cfg.intermediate_size, bias_attr=False)
-        self.up_proj   = nn.Linear(text_cfg.hidden_size, text_cfg.intermediate_size, bias_attr=False)
+        self.up_proj = nn.Linear(text_cfg.hidden_size, text_cfg.intermediate_size, bias_attr=False)
         self.down_proj = nn.Linear(text_cfg.intermediate_size, text_cfg.hidden_size, bias_attr=False)
         self.act_fn = ACT2FN[text_cfg.hidden_act]
 
@@ -228,7 +235,8 @@ class Ministral3DecoderLayer(nn.Layer):
         residual = hidden_states
         hidden_states, _ = self.self_attn(
             hidden_states=self.input_layernorm(hidden_states),
-            cos=cos, sin=sin,
+            cos=cos,
+            sin=sin,
             attention_mask=attention_mask,
             cache_position=cache_position,
             past_key_values=past_key_values,
@@ -298,7 +306,8 @@ class Ministral3TextDecoder(nn.Layer):
         for layer in self.layers:
             hidden_states = layer(
                 hidden_states=hidden_states,
-                cos=cos, sin=sin,
+                cos=cos,
+                sin=sin,
                 attention_mask=causal_mask,
                 cache_position=cache_position,
                 past_key_values=past_key_values,
@@ -316,12 +325,10 @@ class Mistral3PatchMerger(nn.Layer):
         super().__init__()
         vision_cfg = config.vision_config
         hidden_size = vision_cfg.get("hidden_size", 1024) if isinstance(vision_cfg, dict) else vision_cfg.hidden_size
-        patch_size  = vision_cfg.get("patch_size", 14)    if isinstance(vision_cfg, dict) else vision_cfg.patch_size
+        patch_size = vision_cfg.get("patch_size", 14) if isinstance(vision_cfg, dict) else vision_cfg.patch_size
         self.spatial_merge_size = config.spatial_merge_size
         self.patch_size = patch_size
-        self.merging_layer = nn.Linear(
-            hidden_size * self.spatial_merge_size ** 2, hidden_size, bias_attr=False
-        )
+        self.merging_layer = nn.Linear(hidden_size * self.spatial_merge_size**2, hidden_size, bias_attr=False)
 
     def forward(self, image_features: Tensor, image_sizes: Tensor) -> Tensor:
         p = self.patch_size
@@ -333,7 +340,7 @@ class Mistral3PatchMerger(nn.Layer):
             h, w = image_sizes_list[idx]
             grid = img_tokens.reshape([h, w, d]).transpose([2, 0, 1]).unsqueeze(0)
             grid = F.unfold(grid, kernel_sizes=self.spatial_merge_size, strides=self.spatial_merge_size, paddings=0)
-            permuted.append(grid.reshape([d * self.spatial_merge_size ** 2, -1]).transpose([1, 0]))
+            permuted.append(grid.reshape([d * self.spatial_merge_size**2, -1]).transpose([1, 0]))
         return self.merging_layer(paddle.concat(permuted, axis=0))
 
 
@@ -341,16 +348,16 @@ class Mistral3MultiModalProjector(nn.Layer):
     def __init__(self, config: "Mistral3Config"):
         super().__init__()
         vision_cfg = config.vision_config
-        text_cfg   = config.text_config
+        text_cfg = config.text_config
         vision_hidden = vision_cfg.get("hidden_size", 1024) if isinstance(vision_cfg, dict) else vision_cfg.hidden_size
-        text_hidden   = text_cfg.get("hidden_size", 4096)   if isinstance(text_cfg, dict)   else text_cfg.hidden_size
-        rms_eps       = text_cfg.get("rms_norm_eps", 1e-5)  if isinstance(text_cfg, dict)   else text_cfg.rms_norm_eps
-        num_feature_layers = (
-            1 if isinstance(config.vision_feature_layer, int) else len(config.vision_feature_layer)
-        )
+        text_hidden = text_cfg.get("hidden_size", 4096) if isinstance(text_cfg, dict) else text_cfg.hidden_size
+        rms_eps = text_cfg.get("rms_norm_eps", 1e-5) if isinstance(text_cfg, dict) else text_cfg.rms_norm_eps
+        num_feature_layers = 1 if isinstance(config.vision_feature_layer, int) else len(config.vision_feature_layer)
         self.norm = Mistral3RMSNorm(vision_hidden, eps=rms_eps)
         self.patch_merger = Mistral3PatchMerger(config)
-        self.linear_1 = nn.Linear(vision_hidden * num_feature_layers, text_hidden, bias_attr=config.multimodal_projector_bias)
+        self.linear_1 = nn.Linear(
+            vision_hidden * num_feature_layers, text_hidden, bias_attr=config.multimodal_projector_bias
+        )
         self.act = ACT2FN[config.projector_hidden_act]
         self.linear_2 = nn.Linear(text_hidden, text_hidden, bias_attr=config.multimodal_projector_bias)
 
@@ -389,7 +396,11 @@ class Mistral3PreTrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_aoa_config(cls, config: Mistral3Config):
-        text_cfg = config.text_config if isinstance(config.text_config, Ministral3TextConfig) else Ministral3TextConfig.from_dict(config.text_config)
+        text_cfg = (
+            config.text_config
+            if isinstance(config.text_config, Ministral3TextConfig)
+            else Ministral3TextConfig.from_dict(config.text_config)
+        )
         model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
 
         aoa_statements = [
@@ -417,7 +428,11 @@ class Mistral3PreTrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_inv_aoa_config(cls, config: Mistral3Config):
-        text_cfg = config.text_config if isinstance(config.text_config, Ministral3TextConfig) else Ministral3TextConfig.from_dict(config.text_config)
+        text_cfg = (
+            config.text_config
+            if isinstance(config.text_config, Ministral3TextConfig)
+            else Ministral3TextConfig.from_dict(config.text_config)
+        )
         model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
 
         aoa_statements = [
@@ -466,26 +481,34 @@ class Mistral3Model(Mistral3PreTrainedModel):
         else:
             # Mistral3TextConfig (PretrainedConfig) 或其他对象 -> 转为 dict 再包装
             from .configuration import Mistral3TextConfig as _PretrainedTextCfg
+
             if isinstance(text_cfg_raw, _PretrainedTextCfg):
-                self._text_cfg = Ministral3TextConfig({
-                    "attention_dropout": text_cfg_raw.attention_dropout,
-                    "head_dim": text_cfg_raw.head_dim,
-                    "hidden_act": text_cfg_raw.hidden_act,
-                    "hidden_size": text_cfg_raw.hidden_size,
-                    "initializer_range": text_cfg_raw.initializer_range,
-                    "intermediate_size": text_cfg_raw.intermediate_size,
-                    "max_position_embeddings": text_cfg_raw.max_position_embeddings,
-                    "num_attention_heads": text_cfg_raw.num_attention_heads,
-                    "num_hidden_layers": text_cfg_raw.num_hidden_layers,
-                    "num_key_value_heads": text_cfg_raw.num_key_value_heads,
-                    "rms_norm_eps": text_cfg_raw.rms_norm_eps,
-                    "rope_parameters": getattr(text_cfg_raw, "rope_parameters", {
-                        "rope_type": "default", "rope_theta": getattr(text_cfg_raw, "rope_theta", 1000000.0),
-                    }),
-                    "sliding_window": text_cfg_raw.sliding_window,
-                    "use_cache": text_cfg_raw.use_cache,
-                    "vocab_size": text_cfg_raw.vocab_size,
-                })
+                self._text_cfg = Ministral3TextConfig(
+                    {
+                        "attention_dropout": text_cfg_raw.attention_dropout,
+                        "head_dim": text_cfg_raw.head_dim,
+                        "hidden_act": text_cfg_raw.hidden_act,
+                        "hidden_size": text_cfg_raw.hidden_size,
+                        "initializer_range": text_cfg_raw.initializer_range,
+                        "intermediate_size": text_cfg_raw.intermediate_size,
+                        "max_position_embeddings": text_cfg_raw.max_position_embeddings,
+                        "num_attention_heads": text_cfg_raw.num_attention_heads,
+                        "num_hidden_layers": text_cfg_raw.num_hidden_layers,
+                        "num_key_value_heads": text_cfg_raw.num_key_value_heads,
+                        "rms_norm_eps": text_cfg_raw.rms_norm_eps,
+                        "rope_parameters": getattr(
+                            text_cfg_raw,
+                            "rope_parameters",
+                            {
+                                "rope_type": "default",
+                                "rope_theta": getattr(text_cfg_raw, "rope_theta", 1000000.0),
+                            },
+                        ),
+                        "sliding_window": text_cfg_raw.sliding_window,
+                        "use_cache": text_cfg_raw.use_cache,
+                        "vocab_size": text_cfg_raw.vocab_size,
+                    }
+                )
             else:
                 self._text_cfg = text_cfg_raw
         self.language_model = Ministral3TextDecoder(self._text_cfg)
@@ -569,6 +592,7 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
             if os.path.exists(config_file):
                 try:
                     import json
+
                     with open(config_file, "r") as f:
                         config = json.load(f)
                         if config.get("_paddleformers_converted", False):
@@ -608,29 +632,42 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
     ]
 
     _HF_TRANSPOSE_SUFFIXES = (
-        "self_attn.q_proj.weight", "self_attn.k_proj.weight",
-        "self_attn.v_proj.weight", "self_attn.o_proj.weight",
-        "mlp.gate_proj.weight", "mlp.up_proj.weight", "mlp.down_proj.weight",
-        "attention.q_proj.weight", "attention.k_proj.weight",
-        "attention.v_proj.weight", "attention.o_proj.weight",
-        "feed_forward.gate_proj.weight", "feed_forward.up_proj.weight", "feed_forward.down_proj.weight",
-        "merging_layer.weight", "linear_1.weight", "linear_2.weight",
+        "self_attn.q_proj.weight",
+        "self_attn.k_proj.weight",
+        "self_attn.v_proj.weight",
+        "self_attn.o_proj.weight",
+        "mlp.gate_proj.weight",
+        "mlp.up_proj.weight",
+        "mlp.down_proj.weight",
+        "attention.q_proj.weight",
+        "attention.k_proj.weight",
+        "attention.v_proj.weight",
+        "attention.o_proj.weight",
+        "feed_forward.gate_proj.weight",
+        "feed_forward.up_proj.weight",
+        "feed_forward.down_proj.weight",
+        "merging_layer.weight",
+        "linear_1.weight",
+        "linear_2.weight",
     )
 
     _HF_QUANT_SUFFIXES = (
-        "activation_scale", "weight_scale_inv", "qscale_act", "qscale_weight",
+        "activation_scale",
+        "weight_scale_inv",
+        "qscale_act",
+        "qscale_weight",
     )
 
     @classmethod
     def _load_hf_safetensors_to_paddle(cls, model_path):
-        """FP8 反量化 + HF 名称映射 + Linear 权重转置 -> Paddle state_dict
-        """
-        import re
-        import os
+        """FP8 反量化 + HF 名称映射 + Linear 权重转置 -> Paddle state_dict"""
         import glob
+        import os
+        import re
+
         import ml_dtypes
-        import paddle
         import numpy as np
+        import paddle
 
         from ...utils.safetensors import fast_safe_open
 
@@ -698,6 +735,7 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
         if hub_str == "aistudio":
             try:
                 from aistudio_sdk.file_download import get_model_cache_root
+
                 cache_candidate = os.path.join(get_model_cache_root(), model_path)
                 if os.path.isdir(cache_candidate):
                     return cache_candidate, "aistudio"
@@ -707,6 +745,7 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
         if hub_str in ("huggingface", ""):
             try:
                 from huggingface_hub import scan_cache_dir
+
                 cache = scan_cache_dir()
                 for repo in cache.repos:
                     if repo.repo_id == model_path:
@@ -735,9 +774,7 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
         if isinstance(model_path, str) and model_path.startswith("~"):
             model_path = os.path.expanduser(model_path)
 
-        check_path, cache_source = cls._resolve_local_cache_path(
-            model_path, kwargs.get("download_hub", None)
-        )
+        check_path, cache_source = cls._resolve_local_cache_path(model_path, kwargs.get("download_hub", None))
         # 缓存命中但未指定 download_hub 时，自动推断下载源
         if cache_source is not None and kwargs.get("download_hub") is None:
             kwargs["download_hub"] = cache_source
@@ -786,8 +823,12 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
         super().__init__(config)
         self.model = Mistral3Model(config)
         text_cfg_raw = config.text_config
-        vocab_size  = text_cfg_raw.get("vocab_size", 131072)  if isinstance(text_cfg_raw, dict) else text_cfg_raw.vocab_size
-        hidden_size = text_cfg_raw.get("hidden_size", 4096)   if isinstance(text_cfg_raw, dict) else text_cfg_raw.hidden_size
+        vocab_size = (
+            text_cfg_raw.get("vocab_size", 131072) if isinstance(text_cfg_raw, dict) else text_cfg_raw.vocab_size
+        )
+        hidden_size = (
+            text_cfg_raw.get("hidden_size", 4096) if isinstance(text_cfg_raw, dict) else text_cfg_raw.hidden_size
+        )
 
         self.lm_head = nn.Embedding(vocab_size, hidden_size)
         self.lm_head.weight.is_persistable = True
