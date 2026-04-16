@@ -131,6 +131,8 @@ class TrainerState:
     trial_params: Dict[str, Union[str, float, int, bool]] = None
 
     def __post_init__(self):
+        print("Hello")
+        a = 1 + 1
         if self.log_history is None:
             self.log_history = []
 
