@@ -1,6 +1,7 @@
 name: Model Unittest GPU CE Develop
 
 on:
+  pull_request:
   schedule:
     - cron: "0 9 * * 0-4"
     - cron: "0 10 * * 0-4"
@@ -310,6 +311,7 @@ jobs:
             file=$(basename "$FILE")
             python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/$file"
+            sleep 1h
           done
           '
       - name: Terminate And Delete the Container
