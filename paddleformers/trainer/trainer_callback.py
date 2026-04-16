@@ -900,6 +900,10 @@ class SPGradSyncCallback(TrainerCallback):
 
         logger.info(f"#-sp-sync param:{len(params)}")
         self._sp_params = params
+        if self.model:
+            print("Hello")
+            b = [1, 2, 3]
+            self.temp_b = b
 
     def on_optimizer_begin(self, args, state, control, **kwargs):
         """on_optimizer_begin"""
