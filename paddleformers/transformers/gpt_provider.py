@@ -35,7 +35,7 @@ if not is_paddlefleet_available():
         "You can install it with: pip install paddlefleet"
     )
 
-from paddlefleet import LayerSpec
+from paddle.distributed.fleet.meta_parallel import LayerSpec
 from paddlefleet.models.gpt import GPTModel as FleetGPTModel
 from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
 

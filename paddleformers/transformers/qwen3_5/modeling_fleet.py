@@ -19,6 +19,11 @@ import paddle
 import paddle.nn.functional as F
 from paddle import Tensor
 from paddle.distributed import fleet
+from paddle.distributed.fleet.meta_parallel import (
+    LayerSpec,
+    NoPipelineParallel,
+    build_spec_layer,
+)
 from paddlefleet.models.common.empty_layer import EmptyLayer
 from paddlefleet.models.gpt.gpt_embedding import GPTEmbedding
 from paddlefleet.models.gpt.gpt_layer_specs import (
@@ -28,8 +33,6 @@ from paddlefleet.models.gpt.gpt_layer_specs import (
 from paddlefleet.models.gpt.lm_head import GPTLMHead
 from paddlefleet.models.qwen3_5.layer_specs import get_qwen3_5_vision_spec
 from paddlefleet.models.qwen3_5.qwen3_5_model import Qwen3_5RMSNorm, Qwen3_5RMSNormPipe
-from paddlefleet.pipeline_parallel import NoPipelineParallel
-from paddlefleet.spec_utils import LayerSpec, build_layer
 from paddlefleet.tensor_parallel.mappings import scatter_to_sequence_parallel_region
 from paddlefleet.transformer.layer import FleetLayer
 from paddlefleet.transformer.paddle_norm import WrappedPaddleNorm, WrappedPaddleNormPipe
@@ -74,7 +77,7 @@ class Qwen3_5VisionProvider(TransformerConfig):
 
     def provide(self):
         spec = get_qwen3_5_vision_spec(self)
-        return build_layer(
+        return build_spec_layer(
             spec,
             seg_method="layer:TransformerLayer|EmptyLayer",
             num_stages=self.pipeline_model_parallel_size,
@@ -251,7 +254,7 @@ def build_qwen3_5_model(config, criterion):
     language_config.video_token_id = config.video_token_id
 
     language_spec = get_qwen3_5_language_spec(language_config)
-    language_model = build_layer(
+    language_model = build_spec_layer(
         language_spec,
         seg_method="layer:TransformerLayer|EmptyLayer",
         num_stages=1,

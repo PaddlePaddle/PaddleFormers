@@ -27,6 +27,7 @@ from typing import Optional, Union
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
+from paddle.distributed.fleet.meta_parallel import LayerSpec
 from paddle.distributed.fleet.utils import recompute
 from paddlefleet import parallel_state, tensor_parallel
 from paddlefleet.fusions.fused_bias_dropout import get_bias_dropout_add
@@ -34,7 +35,6 @@ from paddlefleet.models.common.vision_layer.vision_layer import VisionLayer
 from paddlefleet.models.multimodal.llava_model import LLaVAModel as MCoreLLaVAModel
 from paddlefleet.packed_seq_params import PackedSeqParams
 from paddlefleet.process_groups_config import ProcessGroupCollection
-from paddlefleet.spec_utils import LayerSpec
 from paddlefleet.tensor_parallel.layers import ColumnParallelLinear, RowParallelLinear
 from paddlefleet.transformer.attention import SelfAttention, SelfAttentionSublayersSpec
 from paddlefleet.transformer.dot_product_attention import DotProductAttention
