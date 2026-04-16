@@ -45,9 +45,16 @@ if is_paddlefleet_available():
     from paddlefleet.transformer.moe.moe_layer import MoELayer
     from paddlefleet.transformer.moe.moe_router import StandardMoERouter
 else:
-    GPTModel = None  # Define a mock or None when not available
-    StandardMoERouter = None
-    MoELayer = None
+
+    class GPTModel:
+        pass
+
+    class MoELayer:
+        pass
+
+    class StandardMoERouter:
+        pass
+
 
 from tqdm.auto import tqdm
 
@@ -719,7 +726,7 @@ class FP8QuantWeightCallback(TrainerCallback):
         ):
             self.moe_weights_name = []
             self.use_fp8 = True
-            if GPTModel is not None and isinstance(model, GPTModel):
+            if isinstance(model, GPTModel):
                 self.use_fp8 = model.use_fp8()
             if not self.use_fp8:
                 return
