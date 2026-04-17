@@ -312,6 +312,11 @@ class ZeroCostCheckpointEMAProcessor:
                 name = tensor_meta["name"]
                 buffer_index = tensor_meta["buffer_index"]
                 if buffer_index.startswith("unshard_"):
+                    # unshard_ type tensors use the entire buffer directly
+                    tensor = self.ema_buffer_model_params[buffer_index].clone()
+                    tensor.get_tensor()._set_dims(shape)
+                    tensor.name = name
+                    ema_state_dict[k] = tensor
                     continue
                 if buffer_index not in self.ema_buffer_model_params:
                     continue  # non fp32 has no `self.ema_buffer_model_params`
@@ -336,6 +341,11 @@ class ZeroCostCheckpointEMAProcessor:
     def load_ema_state_dict(self, state_dict):
         for k, tensor_meta in self.param_fusion_storage_helper.model_weights_metas.items():
             logger.info(f"[ZCC EMA] load model weight key={k}")
+            if tensor_meta["buffer_index"].startswith("unshard_"):
+                # unshard_ type tensors use the entire buffer directly
+                if k in state_dict:
+                    self.ema_buffer_model_params[tensor_meta["buffer_index"]][:] = state_dict[k].flatten()
+                continue
             start = tensor_meta["start"]
             end = tensor_meta["end"]
             if tensor_meta["buffer_index"] not in self.ema_buffer_model_params:
