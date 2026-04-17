@@ -158,6 +158,14 @@ import_structure = {
     "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
+    "granite.configuration": ["GraniteConfig"],
+    "granite.modeling": [
+        "GraniteDecoderLayer",
+        "GraniteModel",
+        "GranitePretrainedModel",
+        "GraniteForCausalLM",
+        "GraniteForCausalLMPipe",
+    ],
     "kimi_k25.vision_processor": ["KimiK25VisionProcessor"],
     "kimi_k25.processor": ["KimiK25Processor"],
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
@@ -298,6 +306,7 @@ import_structure = {
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
+    "granite": ["GraniteModel", "GranitePretrainedModel", "GraniteForCausalLM"],
     "qwen3_next": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
     "whisper.processor": ["WhisperFeatureExtractor"],
@@ -401,6 +410,7 @@ if TYPE_CHECKING:
     from .glm4_moe import *
     from .glm4v_moe import *
     from .gpt_oss import *
+    from .granite import *
     from .phi3 import *
     from .gemma3_text import *
     from .glm_ocr import *
