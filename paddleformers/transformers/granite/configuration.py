@@ -101,7 +101,9 @@ class GraniteConfig(PretrainedConfig):
             **kwargs,
         )
 
-        self.register_unsavable_keys(["ignored_index", "pp_seg_method", "dpo_config", "kto_config", "max_sequence_length"])
+        self.register_unsavable_keys(
+            ["ignored_index", "pp_seg_method", "dpo_config", "kto_config", "max_sequence_length"]
+        )
         standardize_rope_params(self, rope_theta=self.rope_theta)
         rope_config_validation(self)
 

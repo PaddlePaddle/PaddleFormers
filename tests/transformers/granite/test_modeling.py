@@ -20,11 +20,7 @@ import unittest
 import numpy as np
 import paddle
 
-from paddleformers.transformers import (
-    GraniteConfig,
-    GraniteForCausalLM,
-    GraniteModel,
-)
+from paddleformers.transformers import GraniteConfig, GraniteForCausalLM, GraniteModel
 from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -66,6 +62,7 @@ class GraniteModelTester:
         type_sequence_label_size=2,
         num_labels=3,
         num_choices=4,
+        is_training=True,
         use_input_mask: bool = True,
         use_labels: bool = False,
         return_dict: bool = False,
@@ -98,6 +95,7 @@ class GraniteModelTester:
         self.type_sequence_label_size = type_sequence_label_size
         self.num_labels = num_labels
         self.num_choices = num_choices
+        self.is_training = is_training
         self.use_input_mask = use_input_mask
         self.use_labels = use_labels
         self.return_dict = return_dict
@@ -188,8 +186,8 @@ class GraniteModelTester:
         outputs = model(input_ids, attention_mask=input_mask, use_cache=True, return_dict=self.return_dict)
         past_key_values = outputs.past_key_values if self.return_dict else outputs[1]
 
-        next_tokens = ids_tensor((self.batch_size, 3), self.vocab_size)
-        next_mask = ids_tensor((self.batch_size, 3), vocab_size=2)
+        next_tokens = ids_tensor((self.batch_size, 3), self.vocab_size, dtype=input_ids.dtype)
+        next_mask = ids_tensor((self.batch_size, 3), vocab_size=2, dtype=input_mask.dtype)
         next_input_ids = paddle.cat([input_ids, next_tokens], axis=-1)
         next_attention_mask = paddle.cat([input_mask, next_mask], axis=-1)
 

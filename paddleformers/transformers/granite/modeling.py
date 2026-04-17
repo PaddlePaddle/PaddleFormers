@@ -99,9 +99,7 @@ class GraniteRotaryEmbedding(nn.Layer):
         del seq_len
         base = config.rope_parameters["rope_theta"]
         dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
-        inv_freq = 1.0 / (
-            base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype("float32").to(device) / dim)
-        )
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype("float32").to(device) / dim))
         return inv_freq, 1.0
 
     @dynamic_rope_update
@@ -184,13 +182,15 @@ class GraniteAttention(nn.Layer):
         else:
             input_shape = hidden_states.shape[:-1]
 
-        query_states = self.q_proj(hidden_states).reshape([*input_shape, self.num_heads, self.head_dim]).transpose(1, 2)
-        key_states = self.k_proj(hidden_states).reshape(
-            [*input_shape, self.num_key_value_heads, self.head_dim]
-        ).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).reshape(
-            [*input_shape, self.num_key_value_heads, self.head_dim]
-        ).transpose(1, 2)
+        query_states = (
+            self.q_proj(hidden_states).reshape([*input_shape, self.num_heads, self.head_dim]).transpose(1, 2)
+        )
+        key_states = (
+            self.k_proj(hidden_states).reshape([*input_shape, self.num_key_value_heads, self.head_dim]).transpose(1, 2)
+        )
+        value_states = (
+            self.v_proj(hidden_states).reshape([*input_shape, self.num_key_value_heads, self.head_dim]).transpose(1, 2)
+        )
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -361,7 +361,9 @@ class GraniteModel(GranitePretrainedModel):
             embedding_dim=config.hidden_size,
             padding_idx=config.pad_token_id,
         )
-        self.layers = nn.LayerList([GraniteDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)])
+        self.layers = nn.LayerList(
+            [GraniteDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+        )
         self.norm = GraniteRMSNorm(config.hidden_size, config.rms_norm_eps)
         self.rotary_emb = GraniteRotaryEmbedding(config=config)
         self.embedding_multiplier = config.embedding_multiplier
@@ -380,7 +382,9 @@ class GraniteModel(GranitePretrainedModel):
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
 
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time.")

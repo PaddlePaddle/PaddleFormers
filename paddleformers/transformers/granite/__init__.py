@@ -19,7 +19,13 @@ from ...utils.lazy_import import _LazyModule
 
 import_structure = {
     "configuration": ["GraniteConfig"],
-    "modeling": ["GraniteDecoderLayer", "GraniteModel", "GranitePretrainedModel", "GraniteForCausalLM", "GraniteForCausalLMPipe"],
+    "modeling": [
+        "GraniteDecoderLayer",
+        "GraniteModel",
+        "GranitePretrainedModel",
+        "GraniteForCausalLM",
+        "GraniteForCausalLMPipe",
+    ],
 }
 
 if TYPE_CHECKING:
