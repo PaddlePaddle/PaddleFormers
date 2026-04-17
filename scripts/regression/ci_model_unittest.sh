@@ -148,7 +148,7 @@ if [ ${#model_array[@]} -gt 0 ]; then
     models=$(IFS=,; echo "${model_array[*]}")
     echo "Models to test: $models"
 else
-    models="glm_moe"
+    models="glm4_moe"
     echo "No transformer changes detected, using default model: $models"
 fi
 
