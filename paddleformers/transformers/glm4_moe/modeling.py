@@ -88,6 +88,9 @@ class GLMMoEModelProvider(GPTModelProvider):
     router_aux_loss_coef: float = 0.001
     moe_grouped_gemm: bool = False
 
+    attention_softmax_in_fp32: bool = True
+    bf16: bool = True
+
 
 def eager_attention_forward(
     module: nn.Layer,
