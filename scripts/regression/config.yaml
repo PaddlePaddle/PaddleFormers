@@ -128,7 +128,7 @@ qwen3:
         - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
         dpo_full_function_call_excepted_result:
         - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
-glm_moe:
+glm4_moe:
     repo_id: PaddleFormers/tiny-random-glm4moe-bf16
     model_type: text
     cli_args:

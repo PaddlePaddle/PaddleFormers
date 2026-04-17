@@ -49,7 +49,7 @@ def pytest_addoption(parser):
         "--update-baseline",
         action="store",
         default="",
-        help="Update baseline values eg: --update-baseline=all or glm_moe",
+        help="Update baseline values eg: --update-baseline=all or glm4_moe",
     )
 
 

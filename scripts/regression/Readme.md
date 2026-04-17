@@ -7,7 +7,7 @@
 | qwen3moe | PaddleFormers/tiny-random-qwen3moev2 | text | qwen3 |
 | qwen2_moe | PaddleFormers/tiny-random-qwen2moev2 | text | qwen |
 | qwen3 | PaddleFormers/tiny-random-qwen3v2 | text | qwen3 |
-| glm_moe | PaddleFormers/tiny-random-glm4moe-bf16 | text | glm4_moe |
+| glm4_moe | PaddleFormers/tiny-random-glm4moe-bf16 | text | glm4_moe |
 | qwen2 | PaddleFormers/tiny-random-qwen2v2 | text | qwen |
 | llama | PaddleFormers/tiny-random-llama3 | text | llama3 |
 | qwen3_next | PaddleFormers/tiny-random-qwen3next | text | qwen3 |
@@ -57,7 +57,7 @@ export PF_HOME="/xx/repo_id"
 python -m pytest -s -v --models=qwen2_moe scripts/regression/test_models.py
 
 # 运行多个模型测试
-python -m pytest -s -v --models=qwen3,glm_moe scripts/regression/test_models.py
+python -m pytest -s -v --models=qwen3,glm4_moe scripts/regression/test_models.py
 
 # 运行所有模型测试
 python -m pytest -s -v --models=all scripts/regression/test_models.py
@@ -67,7 +67,7 @@ python -m pytest -s -v --models=all scripts/regression/test_models.py
 
 ```bash
 # 更新单个模型的 baseline
-python -m pytest -s -v --models=qwen3vl scripts/regression/test_models.py::TestTrain::test_full_tp_vl --update-baseline=glm_moe
+python -m pytest -s -v --models=qwen3vl scripts/regression/test_models.py::TestTrain::test_full_tp_vl --update-baseline=glm4_moe
 
 # 更新多个模型的 baseline
 python -m pytest -s -v --models=deepseek_v3,qwen3_next scripts/regression/test_models.py --update-baseline=deepseek_v3,qwen3_next
@@ -87,7 +87,7 @@ python -m pytest -s -v --models=all scripts/regression/test_models.py --update-b
 修改PaddleFormers/paddleformers/transformers/*.py
 修改PaddleFormers/tests/transformers/*.py
 
-2、回归glm_moe模型
+2、回归glm4_moe模型
 
 只改动了.py文件，没有捕获到修改模型文件
 ```

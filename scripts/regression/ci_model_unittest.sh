@@ -39,10 +39,8 @@ init_env() {
     if echo "${FLAGS_enable_CE}" | grep -q "CE_Release"; then
         echo "CE_Release: install paddle release + fleet release + formers release"
         bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}"
-        # donwload configs
         cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_release_config/config.yaml
-        # update configs: find new models in downloaded config and add to local config, save directly to config.yaml
         python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml --output config.yaml 2>&1 | tee /tmp/merge_output.txt
         cd -
 
@@ -150,7 +148,7 @@ if [ ${#model_array[@]} -gt 0 ]; then
     models=$(IFS=,; echo "${model_array[*]}")
     echo "Models to test: $models"
 else
-    models="glm_moe"
+    models="glm4_moe"
     echo "No transformer changes detected, using default model: $models"
 fi
 
@@ -187,6 +185,8 @@ if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];the
     else
         echo " fix error, first"
     fi
+else
     echo -e "\033[32m Changed Not CI case, Skips \033[0m"
+    exit_code=0
 fi
 exit $exit_code
