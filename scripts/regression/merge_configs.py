@@ -231,8 +231,8 @@ def merge_configs(config_path, config_ci_path, output_path=None):
     if has_changes:
         save_yaml(output_path, config)
     else:
-        print("No new content found, config files are already synchronized.")
-
+        # No changes: preserve the original update_config (config.yaml) as output
+        save_yaml(output_path, config_ci)
     return {
         "new_models": list(new_models.keys()),
         "updated_models": list(updated_models.keys()),
@@ -244,8 +244,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Compare two YAML config files and copy new content to target file",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-        """,
     )
 
     script_dir = Path(__file__).parent.absolute()
