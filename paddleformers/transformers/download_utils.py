@@ -802,6 +802,45 @@ register_model_group(
 )
 
 
+# olmo2
+register_model_group(
+    models={
+        "OLMo-2-0425-1B": {
+            DownloadSource.MODELSCOPE: "allenai/OLMo-2-0425-1B",
+            DownloadSource.HUGGINGFACE: "allenai/OLMo-2-0425-1B",
+        },
+        "OLMo-2-0425-1B-Instruct": {
+            DownloadSource.MODELSCOPE: "allenai/OLMo-2-0425-1B-Instruct",
+            DownloadSource.HUGGINGFACE: "allenai/OLMo-2-0425-1B-Instruct",
+        },
+        "OLMo-2-1124-7B": {
+            DownloadSource.MODELSCOPE: "allenai/OLMo-2-1124-7B",
+            DownloadSource.HUGGINGFACE: "allenai/OLMo-2-1124-7B",
+        },
+        "OLMo-2-1124-7B-Instruct": {
+            DownloadSource.MODELSCOPE: "allenai/OLMo-2-1124-7B-Instruct",
+            DownloadSource.HUGGINGFACE: "allenai/OLMo-2-1124-7B-Instruct",
+        },
+        "OLMo-2-1124-13B": {
+            DownloadSource.MODELSCOPE: "allenai/OLMo-2-1124-13B",
+            DownloadSource.HUGGINGFACE: "allenai/OLMo-2-1124-13B",
+        },
+        "OLMo-2-1124-13B-Instruct": {
+            DownloadSource.MODELSCOPE: "allenai/OLMo-2-1124-13B-Instruct",
+            DownloadSource.HUGGINGFACE: "allenai/OLMo-2-1124-13B-Instruct",
+        },
+        "OLMo-2-0325-32B": {
+            DownloadSource.MODELSCOPE: "allenai/OLMo-2-0325-32B",
+            DownloadSource.HUGGINGFACE: "allenai/OLMo-2-0325-32B",
+        },
+        "OLMo-2-0325-32B-Instruct": {
+            DownloadSource.MODELSCOPE: "allenai/OLMo-2-0325-32B-Instruct",
+            DownloadSource.HUGGINGFACE: "allenai/OLMo-2-0325-32B-Instruct",
+        },
+    },
+)
+
+
 # llama
 register_model_group(
     models={

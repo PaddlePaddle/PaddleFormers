@@ -76,6 +76,7 @@ import_structure = {
         "AutoModelForQuestionAnswering",
         "AutoModelForMultipleChoice",
         "AutoModelForMaskedLM",
+        "AutoModelForCausalLM",
         "AutoModelForCausalLMPipe",
         "AutoEncoder",
         "AutoDecoder",
@@ -172,6 +173,8 @@ import_structure = {
     "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe", "LlamaRotaryEmbedding"],
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
+    "olmo2.configuration": ["Olmo2Config"],
+    "olmo2.modeling": ["Olmo2ForCausalLM", "Olmo2ForCausalLMPipe", "Olmo2Model", "Olmo2PretrainedModel"],
     "optimization": [
         "LinearDecayWithWarmup",
         "ConstScheduleWithWarmup",
@@ -390,6 +393,7 @@ if TYPE_CHECKING:
     from .kimi_k2 import *
     from .paddleocr_vl import *
     from .llama import *
+    from .olmo2 import *
     from .optimization import *
     from .qwen2 import *
     from .qwen2_5_vl import *
