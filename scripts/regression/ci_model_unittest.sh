@@ -39,10 +39,8 @@ init_env() {
     if echo "${FLAGS_enable_CE}" | grep -q "CE_Release"; then
         echo "CE_Release: install paddle release + fleet release + formers release"
         bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}"
-        # donwload configs
         cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_release_config/config.yaml
-        # update configs: find new models in downloaded config and add to local config, save directly to config.yaml
         python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml --output config.yaml 2>&1 | tee /tmp/merge_output.txt
         cd -
 
