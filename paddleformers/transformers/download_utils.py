@@ -866,6 +866,25 @@ register_model_group(
 )
 
 
+# granite-3.2
+register_model_group(
+    models={
+        "Granite-3.2-2B-Instruct": {
+            DownloadSource.HUGGINGFACE: "ibm-granite/granite-3.2-2b-instruct",
+        },
+        "Granite-3.2-8B-Instruct": {
+            DownloadSource.HUGGINGFACE: "ibm-granite/granite-3.2-8b-instruct",
+        },
+        "Granite-3.2-2B": {
+            DownloadSource.HUGGINGFACE: "ibm-granite/granite-3.2-2b",
+        },
+        "Granite-3.2-8B": {
+            DownloadSource.HUGGINGFACE: "ibm-granite/granite-3.2-8b",
+        },
+    }
+)
+
+
 # llama3
 register_model_group(
     models={

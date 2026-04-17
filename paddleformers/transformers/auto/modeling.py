@@ -74,6 +74,7 @@ MAPPING_NAMES = OrderedDict(
         ("GlmMoeDsa", "glm_moe_dsa"),
         ("MiniMaxM2", "minimax_m2"),
         ("GptOss", "gpt_oss"),
+        ("Granite", "granite"),
         ("Phi3", "phi3"),
         ("Gemma3", "gemma3_text"),
         ("Glm4vMoe", "glm4v_moe"),
