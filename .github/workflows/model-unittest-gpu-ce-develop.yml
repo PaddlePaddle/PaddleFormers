@@ -16,7 +16,7 @@ on:
           - 'all'
           - 'llama'
           - 'qwen3'
-          - 'glm_moe'
+          - 'glm4_moe'
           - 'qwen3_next'
           - 'qwen3moe'
           - 'phi3'
