@@ -185,6 +185,8 @@ if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];the
     else
         echo " fix error, first"
     fi
+else
     echo -e "\033[32m Changed Not CI case, Skips \033[0m"
+    exit_code=0
 fi
 exit $exit_code
