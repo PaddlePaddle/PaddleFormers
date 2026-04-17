@@ -36,7 +36,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 DEFAULT_MODEL = "allenai/OLMo-2-0425-1B"
 DEFAULT_WORK_DIR = Path("/tmp/olmo2_inference_alignment")
 DEFAULT_PROMPT = (
@@ -140,7 +139,12 @@ def run_torch(args):
 
 def run_paddle(args):
     import paddle
-    from paddleformers.transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+
+    from paddleformers.transformers import (
+        AutoConfig,
+        AutoModelForCausalLM,
+        AutoTokenizer,
+    )
 
     paddle.seed(2026)
     paddle.set_default_dtype("float32")

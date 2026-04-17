@@ -246,9 +246,7 @@ class Olmo2RotaryEmbedding(nn.Layer):
     @dynamic_rope_update
     def forward(self, x, position_ids):
         with paddle.amp.auto_cast(enable=False):
-            inv_freq_expanded = self.inv_freq[None, :, None].astype("float32").expand(
-                [position_ids.shape[0], -1, 1]
-            )
+            inv_freq_expanded = self.inv_freq[None, :, None].astype("float32").expand([position_ids.shape[0], -1, 1])
             position_ids_expanded = position_ids[:, None, :].astype("float32")
             freqs = (inv_freq_expanded @ position_ids_expanded).transpose(1, 2)
             emb = paddle.concat((freqs, freqs), axis=-1)

@@ -13,6 +13,11 @@
 # limitations under the License.
 
 from .configuration import Olmo2Config
-from .modeling import Olmo2ForCausalLM, Olmo2ForCausalLMPipe, Olmo2Model, Olmo2PretrainedModel
+from .modeling import (
+    Olmo2ForCausalLM,
+    Olmo2ForCausalLMPipe,
+    Olmo2Model,
+    Olmo2PretrainedModel,
+)
 
 __all__ = ["Olmo2Config", "Olmo2ForCausalLM", "Olmo2ForCausalLMPipe", "Olmo2Model", "Olmo2PretrainedModel"]

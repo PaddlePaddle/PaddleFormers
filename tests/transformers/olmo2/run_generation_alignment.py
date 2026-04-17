@@ -33,7 +33,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 DEFAULT_MODEL = "allenai/OLMo-2-0425-1B"
 DEFAULT_WORK_DIR = Path("/tmp/olmo2_generation_alignment")
 DEFAULT_PROMPT = "Question: What is 2 + 2?\nAnswer:"
@@ -170,6 +169,7 @@ def load_hf_safetensors_into_paddle(model, model_dir):
 
 def run_paddle(args):
     import paddle
+
     from paddleformers.transformers import AutoTokenizer
     from paddleformers.transformers.olmo2 import Olmo2ForCausalLM
 

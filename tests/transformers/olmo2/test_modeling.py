@@ -125,8 +125,12 @@ class Olmo2ModelTester:
         result_4d = model(input_ids, attention_mask=attn_mask_4d)[0]
         result_no_mask = model(input_ids, attention_mask=None)[0]
 
-        self.parent.assertTrue((result_2d[attn_mask_2d.astype("bool")] == result_3d[attn_mask_2d.astype("bool")]).all())
-        self.parent.assertTrue((result_2d[attn_mask_2d.astype("bool")] == result_4d[attn_mask_2d.astype("bool")]).all())
+        self.parent.assertTrue(
+            (result_2d[attn_mask_2d.astype("bool")] == result_3d[attn_mask_2d.astype("bool")]).all()
+        )
+        self.parent.assertTrue(
+            (result_2d[attn_mask_2d.astype("bool")] == result_4d[attn_mask_2d.astype("bool")]).all()
+        )
         self.parent.assertTrue(
             (result_2d[attn_mask_2d.astype("bool")] == result_no_mask[attn_mask_2d.astype("bool")]).all()
         )
