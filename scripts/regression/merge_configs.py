@@ -219,5 +219,6 @@ if __name__ == "__main__":
 
         if result["new_models"]:
             models_str = ",".join(result["new_models"])
+            print("new_models=" + models_str)
         else:
             print("new_models=false")
