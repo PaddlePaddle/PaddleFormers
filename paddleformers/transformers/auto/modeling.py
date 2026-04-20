@@ -53,6 +53,7 @@ __all__ = [
 
 MAPPING_NAMES = OrderedDict(
     [
+        ("DeepseekOCR2", "deepseek_ocr2"),
         ("DeepseekV3", "deepseek_v3"),
         ("Ernie4_5", "ernie4_5"),
         ("Ernie4_5_Moe", "ernie4_5_moe"),
