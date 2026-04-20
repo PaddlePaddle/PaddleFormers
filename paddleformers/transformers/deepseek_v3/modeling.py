@@ -379,7 +379,7 @@ class DeepseekV3TopkRouter(nn.Layer):
 
     @paddle.no_grad()
     def get_topk_indices(self, scores):
-        if self.topk_method == "greedy":
+        if self.topk_method == "greedy" or self.topk_method == "gready":
             topk_indices = paddle.topk(scores, k=self.top_k, dim=-1, sorted=False)[1]
         elif self.topk_method == "group_limited_greedy":
             scores = scores.view(-1, self.n_routed_experts)
