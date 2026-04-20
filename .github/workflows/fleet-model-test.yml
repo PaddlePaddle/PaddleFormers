@@ -28,8 +28,19 @@ defaults:
     shell: bash
 
 jobs:
+  check-bypass:
+    name: Check bypass
+    if: ${{ inputs.can-skip != 'true' }}
+    uses: ./.github/workflows/check-bypass.yml
+    with:
+      workflow-name: 'fleet-model-test'
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+
   check_documents_type:
     name: check documents type for pull request
+    needs: check-bypass
+    if: ${{ needs.check-bypass.outputs.can-skip == 'false' }}
     runs-on: ubuntu-latest
     env:
       GITHUB_REPO_NAME: ${{ github.repository }}
@@ -69,8 +80,8 @@ jobs:
           echo "is_md_only: $(cat $GITHUB_OUTPUT | grep is_md_only || echo '未找到')"
     
   integration-test-H20-single-card:
-    needs: check_documents_type
-    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' }}
+    needs: [check_documents_type, check-bypass]
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check-bypass.outputs.can-skip == 'false' }}
     name: Integration test (H20, single card)
     runs-on:
       group: Fleet-H-single-card
@@ -232,8 +243,8 @@ jobs:
 
 
   integration-test-H20-multi-card:
-    needs: check_documents_type
-    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' }}
+    needs: [check_documents_type, check-bypass]
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check-bypass.outputs.can-skip == 'false' }}
     name: Integration test (H20, multi-card)
     runs-on:
       group: Fleet-H-multi-card
@@ -341,6 +352,21 @@ jobs:
             exit 1
           else
             echo -e "\033[32mIntegration test succeeded: GLM4.5 sft.\033[0m"
+          fi
+          '
+          
+      - name: GLM4.5 sft cp
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_sft_cp.sh
+          glm45_exit_code=$?
+          if [[ "$glm45_exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: GLM4.5 sft cp.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: GLM4.5 sft cp.\033[0m"
           fi
           '
       
@@ -500,8 +526,8 @@ jobs:
       
 
   integration-test-a100:
-    needs: check_documents_type
-    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' }}
+    needs: [check_documents_type, check-bypass]
+    if: ${{ needs.check_documents_type.outputs.is_md_only == 'false' && needs.check-bypass.outputs.can-skip == 'false' }}
     name: Integration test (A100)
     runs-on:
       group: Distribute
