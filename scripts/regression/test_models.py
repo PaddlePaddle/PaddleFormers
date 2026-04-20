@@ -535,36 +535,7 @@ class BaseTrainingTest:
         training_result = self.tester.run_training(updated_config, log_file)
         self.tester.assert_result(training_result.return_code, training_result.stdout)
 
-        # Thorough cleanup between training runs to avoid state pollution
-        cleanup_cmds = [
-            # Kill launcher processes
-            "pkill -9 -f 'paddleformers/cli/launcher.py' 2>/dev/null || true",
-            # Kill any remaining paddle/python training processes
-            "pkill -9 -f 'paddle.distributed.launch' 2>/dev/null || true",
-            # Clean up NCCL shared memory files that might cause issues
-            "rm -f /dev/shm/nccl-* 2>/dev/null || true",
-            "rm -f /dev/shm/*nccl* 2>/dev/null || true",
-        ]
-        for cmd in cleanup_cmds:
-            subprocess.run(cmd, shell=True)
-
-        # Wait for processes to fully terminate and release GPU resources
-        time.sleep(5)
-
-        # Debug: Check for any remaining processes that might interfere
-        remaining_procs = subprocess.run(
-            "ps aux | grep -E 'paddleformers|python.*train' | grep -v grep || true",
-            shell=True,
-            capture_output=True,
-            text=True,
-        )
-        if remaining_procs.stdout.strip():
-            print(f"[DEBUG] Remaining processes before resume training:\n{remaining_procs.stdout}")
-        else:
-            print("[DEBUG] No remaining paddleformers/training processes found.")
-
-        # Execute resume training - use sed-like in-place modification (matching shell script behavior)
-        # This modifies the same config file used in first training, not regenerating from original
+        time.sleep(3)
         resume_sed_cmds = [
             f"sed -i 's|^\\s*max_steps:.*|max_steps: {MAX_RESUME_STEPS}|' {updated_config}",
             f"sed -i 's|^\\s*eval_steps:.*|eval_steps: 1000|' {updated_config}",
