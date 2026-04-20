@@ -37,6 +37,9 @@ jobs:
       github-token: ${{ secrets.GITHUB_TOKEN }}
       
   
+
+
+      
   check_documents_type:
     needs: check-bypass
     if: ${{ needs.check-bypass.outputs.can-skip == 'false' }}
