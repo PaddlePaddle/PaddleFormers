@@ -172,6 +172,8 @@ import_structure = {
     "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe", "LlamaRotaryEmbedding"],
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
+    "pixtral.configuration": ["PixtralVisionConfig"],
+    "pixtral.modeling": ["PixtralVision", "PixtralVisionModel", "PixtralPreTrainedModel"],
     "optimization": [
         "LinearDecayWithWarmup",
         "ConstScheduleWithWarmup",
@@ -283,6 +285,7 @@ import_structure = {
         "Qwen3NextPretrainingCriterion",
     ],
     "llama": [],
+    "pixtral": [],
     "qwen2": [],
     "glm_ocr": [],
     "qwen3": [],
@@ -390,6 +393,7 @@ if TYPE_CHECKING:
     from .kimi_k2 import *
     from .paddleocr_vl import *
     from .llama import *
+    from .pixtral import *
     from .optimization import *
     from .qwen2 import *
     from .qwen2_5_vl import *
