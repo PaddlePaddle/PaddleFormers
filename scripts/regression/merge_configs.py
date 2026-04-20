@@ -217,7 +217,6 @@ if __name__ == "__main__":
     result = merge_configs(str(origin_config_path), str(update_config_path), args.output)
 
     if result["new_models"] or result["updated_models"]:
-
         if result["new_models"]:
             models_str = ",".join(result["new_models"])
             print("new_models=" + models_str)
