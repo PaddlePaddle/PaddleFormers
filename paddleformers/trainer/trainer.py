@@ -3657,11 +3657,7 @@ class Trainer:
 
         # Buffer micro-batch data for token-weighted accumulation loss.
         # Then compute total tokens and process all micro-batches with token-weighted loss.
-        if (
-            self.args.enable_token_weighted_acc_loss
-            and self.args.gradient_accumulation_steps > 1
-            and not self._enable_delay_scale_loss()
-        ):
+        if self.args.enable_token_weighted_acc_loss and self.args.gradient_accumulation_steps > 1:
             if not hasattr(self, "_acc_data_buffer"):
                 self._acc_data_buffer = []
             self._acc_data_buffer.append(inputs)
@@ -3699,44 +3695,41 @@ class Trainer:
 
                 if total_tokens > 0 and tokens_i > 0:
                     weight = tokens_i / total_tokens
-                    loss_for_backward = loss * weight
+                    weighted_loss = loss * weight
                 else:
-                    loss_for_backward = loss / self.args.gradient_accumulation_steps
+                    weighted_loss = loss / self.args.gradient_accumulation_steps
 
                 if self.do_grad_scaling:
-                    self.scaler.scale(loss_for_backward).backward()
+                    self.scaler.scale(weighted_loss).backward()
                 else:
-                    loss_for_backward.backward()
+                    weighted_loss.backward()
 
-                weighted_loss_sum += loss_for_backward.detach()
+                weighted_loss_sum += weighted_loss.detach()
 
             if not self.args.enable_auto_parallel:
                 return weighted_loss_sum
             if isinstance(weighted_loss_sum, paddle.Tensor):
                 return weighted_loss_sum.detach() if weighted_loss_sum._is_initialized() else float(0.0)
-            return float(weighted_loss_sum)
+            elif isinstance(weighted_loss_sum, np.ndarray):
+                return np.sum(weighted_loss_sum)
+            elif weighted_loss_sum is None:
+                return float(0.0)
+            else:
+                return float(weighted_loss_sum)
 
         # Normal average accumulation loss
         else:
             model.train()
             inputs = self._prepare_inputs(inputs)
-        if self.do_grad_scaling:
-            self.scaler.scale(loss).backward()
-        else:
-            loss.backward()
-        if self.args.gradient_accumulation_steps > 1:
-            loss = loss / self.args.gradient_accumulation_steps
-
             with self.autocast_smart_context_manager():
                 loss = self.compute_loss(model, inputs)
-
-            if self.args.gradient_accumulation_steps > 1 and not self._enable_delay_scale_loss():
-                loss = loss / self.args.gradient_accumulation_steps
 
             if self.do_grad_scaling:
                 self.scaler.scale(loss).backward()
             else:
                 loss.backward()
+            if self.args.gradient_accumulation_steps > 1:
+                loss = loss / self.args.gradient_accumulation_steps
 
             if not self.args.enable_auto_parallel:
                 return loss.detach()
