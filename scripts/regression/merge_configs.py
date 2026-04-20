@@ -152,7 +152,7 @@ def merge_configs(config_path, config_ci_path, output_path=None):
     if new_models:
         for model_name, model_config in new_models.items():
             new_model = model_config.copy()
-            config[model_name] = new_model
+            config_ci[model_name] = new_model
 
     if updated_models:
         print(f"\nUpdating {len(updated_models)} model(s)...")
@@ -167,10 +167,8 @@ def merge_configs(config_path, config_ci_path, output_path=None):
                 for key, value in new_fields["other_fields"].items():
                     config_ci[model_name][key] = value
 
-            print(f"  ✓ Updated model {model_name}")
-
     if has_changes:
-        save_yaml(output_path, config)
+        save_yaml(output_path, config_ci)
     else:
         # No changes: preserve the original update_config (config.yaml) as output
         save_yaml(output_path, config_ci)
@@ -218,11 +216,8 @@ if __name__ == "__main__":
     result = merge_configs(str(origin_config_path), str(update_config_path), args.output)
 
     if result["new_models"] or result["updated_models"]:
-        print("  New models: {len(result['new_models'])}")
-        print("  Updated models: {len(result['updated_models'])}")
 
         if result["new_models"]:
             models_str = ",".join(result["new_models"])
-            print("new_models=" + models_str)
         else:
             print("new_models=false")
