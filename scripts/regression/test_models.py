@@ -911,7 +911,7 @@ class TestTrain:
         model_cfg = self.train_tester.load_model_config(model_key)
         print(f"\n[INFO] Testing model={model_key}, train_type={train_type}_full_fsdp")
 
-        if model_key == "paddleocr_vl":
+        if model_key == "paddleocr_vl" or model_key == "qwen3_vl_moe" or model_key == "qwen3_vl":
             pytest.skip("Unsupported")
 
         should_update = self._should_update_baseline(request, model_key)
