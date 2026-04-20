@@ -99,6 +99,8 @@ jobs:
           for FILE in /workspace/PaddleFormers/upload/*; do
             file=$(basename "$FILE")
             python bos_tools.py $file paddle-whl/nightly/cu126/paddleformers/
+            python bos_tools.py $file paddle-whl/nightly/cu129/paddleformers/
+            python bos_tools.py $file paddle-whl/nightly/cu130/paddleformers/
             echo "$file: https://paddle-whl.bj.bcebos.com/nightly/cu126/paddleformers/$file"
           done
           '

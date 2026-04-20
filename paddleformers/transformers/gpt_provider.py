@@ -17,8 +17,9 @@
 
 import contextlib
 import inspect
+import json
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from functools import partial
 from typing import Any, Callable, Literal, Optional, Union
 
@@ -34,7 +35,7 @@ if not is_paddlefleet_available():
         "You can install it with: pip install paddlefleet"
     )
 
-from paddlefleet import LayerSpec
+from paddle.distributed.fleet.meta_parallel import LayerSpec
 from paddlefleet.models.gpt import GPTModel as FleetGPTModel
 from paddlefleet.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
 
@@ -172,6 +173,14 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
         if self.init_model_with_meta_device:
             model_init_device_context = partial(paddle.device, device="meta")
 
+        # Flatten rope_parameters
+        if hasattr(self, "rope_parameters") and self.rope_parameters:
+            if "rope_type" in self.rope_parameters:
+                if not self.rope_parameters["rope_type"] == "default":
+                    self.rope_type = self.rope_parameters["rope_type"]
+            if "rope_theta" in self.rope_parameters:
+                self.rope_theta = self.rope_parameters["rope_theta"]
+
         # Check if mtp_block_spec parameter is supported
         kwargs = {}
         if "mtp_block_spec" in inspect.signature(GPTModel.__init__).parameters:
@@ -199,6 +208,22 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
                         pass
 
         return model
+
+    def to_json_string(self, use_diff: bool = True, saving_file=False) -> str:
+        config_dict = asdict(self)
+
+        def make_serializable(obj):
+            if isinstance(obj, dict):
+                return {k: make_serializable(v) for k, v in obj.items() if make_serializable(v) is not None}
+            elif isinstance(obj, (list, tuple)):
+                return [make_serializable(item) for item in obj if make_serializable(item) is not None]
+            elif isinstance(obj, (str, int, float, bool, type(None))):
+                return obj
+            else:
+                return None
+
+        serializable_config = make_serializable(config_dict)
+        return json.dumps(serializable_config, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
 def mtp_block_spec(config: "GPTModelProvider", vp_stage: Optional[int] = None) -> Optional[LayerSpec]:

@@ -854,9 +854,6 @@ def log_metrics(self, split, metrics):
         metrics (`Dict[str, float]`):
             The metrics returned from train/evaluate/predictmetrics: metrics dict
     """
-    if not self.is_world_process_zero():
-        return
-
     logger.info(f"***** {split} metrics *****")
     metrics_formatted = self.metrics_format(metrics)
     k_width = max(len(str(x)) for x in metrics_formatted.keys())
@@ -1773,11 +1770,13 @@ class EMAStateAssembler:
         model,
         optimizer,
         start_step,
+        memory_growth_threshold=8 * (2**30),
     ):
         self.output_dir = Path(output_dir)
         self.save_checkpoint_format = save_checkpoint_format
         self.save_hf_steps = save_hf_steps
         self.save_steps = save_steps
+        self.memory_growth_threshold = memory_growth_threshold
         if save_hf_steps > 0 and save_hf_steps % save_steps != 0:
             raise ValueError("[EMAStateAssembler] save_hf_steps must be a multiple of save_steps.")
 
@@ -1788,6 +1787,7 @@ class EMAStateAssembler:
         self.model = model
         self.optimizer = optimizer
         self.model_sharded_state_dict = self.model.sharded_state_dict()
+        n_routed_experts = self.model.config.n_routed_experts
 
         hcg = paddle.distributed.fleet.get_hybrid_communicate_group()
         try:
@@ -1797,34 +1797,30 @@ class EMAStateAssembler:
         except Exception:
             raise RuntimeError("[EMAStateAssembler] Only support when pp_group is not None.")
 
-        try:
+        if n_routed_experts == 0:
+            tp_group = hcg.get_model_parallel_group()
+            sharding_group = hcg.get_sharding_parallel_group()
+            sharding_rank = hcg.get_sharding_parallel_rank()
+            self.sharding_group = sharding_group
+            self.h_group = tp_group
+            self.v_group = pp_group
+            self.num_splits = sharding_group.nranks
+            self.shard_idx = sharding_rank
+            self.expert_id_offset = -1
+        else:
             moe_group = hcg.get_expert_parallel_group()
-            if moe_group is None or moe_group.nranks < 1:
-                raise NotImplementedError("[EMAStateAssembler] Only support when moe_group is not None.")
-        except Exception:
-            raise RuntimeError("[EMAStateAssembler] Only support when moe_group is not None.")
-
-        try:
             moe_sharding_group = hcg.get_moe_sharding_parallel_group()
-            if moe_sharding_group is None:
-                raise NotImplementedError("[EMAStateAssembler] Only support when moe_sharding_group is not None.")
-        except Exception:
-            raise RuntimeError("[EMAStateAssembler] Only support when moe_sharding_group is not None.")
+            moe_sharding_rank = hcg.get_moe_sharding_parallel_rank()
+            self.sharding_group = moe_sharding_group
+            assert (
+                n_routed_experts % moe_group.nranks == 0
+            ), "[EMAStateAssembler] n_routed_experts must be divisible by moe_group size."
+            self.h_group = moe_group
+            self.v_group = pp_group
+            self.num_splits = moe_sharding_group.nranks
+            self.shard_idx = moe_sharding_rank
+            self.expert_id_offset = (n_routed_experts // moe_group.nranks) * moe_group.rank
 
-        moe_sharding_rank = hcg.get_moe_sharding_parallel_rank()
-
-        self.moe_sharding_group = moe_sharding_group
-
-        n_routed_experts = self.model.config.n_routed_experts
-        assert (
-            n_routed_experts % moe_group.nranks == 0
-        ), "[EMAStateAssembler] n_routed_experts must be divisible by moe_group size."
-
-        self.h_group = moe_group
-        self.v_group = pp_group
-        self.num_splits = moe_sharding_group.nranks
-        self.shard_idx = moe_sharding_rank
-        self.expert_id_offset = (n_routed_experts // moe_group.nranks) * moe_group.rank
         self._set_latest_processed_checkpoint_step(start_step)
         self.expected_next_save_ckpt_step = self.latest_processed_checkpoint_step + save_steps
 
@@ -2045,6 +2041,9 @@ class EMAStateAssembler:
 
         def _rename(key, add_mode=True):
             if ".experts." in key:
+                assert (
+                    self.expert_id_offset != -1
+                ), f"Your n_routed_experts is {self.model.config.n_routed_experts}, but you have param name:{key}, please check!"
                 key = _update_expert_number(key, self.expert_id_offset, add_mode)
             elif "_layer_" in key:
                 key = _remove_layer_suffix(key)
@@ -2052,20 +2051,23 @@ class EMAStateAssembler:
 
         for k, v in self.model_sharded_state_dict.items():
             if v.local_tensor.dtype == paddle.bfloat16:
-                ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(
-                    k, ema_params_recovered[_rename(k, False)], v
-                )
+                ema_tensor = ema_params_recovered[_rename(k, False)]
+                expected_shape = v.local_shape
+                # Handle grouped_gemm_experts: reshape 3D [num_experts, hidden, intermediate] to 2D [num_experts*hidden, intermediate]
+                if "grouped_gemm_experts" in k:
+                    ema_tensor = paddle.reshape(ema_tensor, expected_shape)
+                ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, ema_tensor, v)
 
         ema_state_dict.pop("master_weights")
         del ema_params_recovered
-        if self.moe_sharding_group.nranks > 1:
+        if self.sharding_group.nranks > 1:
             extra_params = {}
             extra_params_meta_info = {}
             for k, v in ema_state_dict.items():
                 extra_params_meta_info[k] = {"shape": tuple(v.shape), "dtype": v.dtype, "src": self.rank}
 
             extra_params_meta_infos = []
-            dist.all_gather_object(extra_params_meta_infos, extra_params_meta_info, group=self.moe_sharding_group)
+            dist.all_gather_object(extra_params_meta_infos, extra_params_meta_info, group=self.sharding_group)
             extra_params_meta_info = {k: info for infos in extra_params_meta_infos for k, info in infos.items()}
 
             for k, v in extra_params_meta_info.items():
@@ -2073,14 +2075,25 @@ class EMAStateAssembler:
                     buffer = ema_state_dict[k]
                 else:
                     buffer = paddle.zeros(v["shape"], dtype=v["dtype"])
-                dist.broadcast(buffer, src=v["src"], group=self.moe_sharding_group)
+                dist.broadcast(buffer, src=v["src"], group=self.sharding_group)
                 extra_params[k] = buffer
         else:
             extra_params = ema_state_dict
 
         for k, v in extra_params.items():
             assert k in self.model_sharded_state_dict, f"[EMAStateAssembler] {k} not in model_sharded_state_dict"
-            ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, v, self.model_sharded_state_dict[k])
+            ref_tensor = self.model_sharded_state_dict[k]
+            expected_shape = ref_tensor.local_shape
+            if "grouped_gemm_experts" in k:
+                v = paddle.reshape(v, expected_shape)
+            ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, v, ref_tensor)
+
+        # Fill missing params from model (e.g., e_score_correction_bias not tracked by EMA)
+        for k, v in self.model_sharded_state_dict.items():
+            if k not in ema_sharded_state_dict:
+                logger.debug(f"[EMAStateAssembler] Filling missing param {k} from model")
+                ema_sharded_state_dict[k] = v
+
         return ema_sharded_state_dict
 
     def _save_full_ema_states(self, step, ema_sharded_state_dict):
@@ -2097,6 +2110,7 @@ class EMAStateAssembler:
             v_group=self.v_group,
             num_splits=self.num_splits,
             shard_idx=self.shard_idx,
+            memory_growth_threshold=self.memory_growth_threshold,
         )
         saver.save_checkpoint(str(save_path))
 

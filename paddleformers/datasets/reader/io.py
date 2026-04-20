@@ -13,30 +13,35 @@
 # limitations under the License.
 
 import csv
-import json
+import os
+import time
 
+import orjson
 import pyarrow.parquet as pq
 
 
 def load_json(file_path):
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
+    """load json file"""
+    print(f"json file path: {file_path}")
+    if not os.path.exists(file_path):
         raise FileNotFoundError(f"file {file_path} not exists")
-    except json.JSONDecodeError:
-        pass  # fallback to JSONL
 
-    res = []
-    with open(file_path, "r", encoding="utf-8") as file:
-        for i, line in enumerate(file, 1):
-            if not line.strip():
-                continue
-            try:
-                res.append(json.loads(line))
-            except json.JSONDecodeError as e:
-                raise json.JSONDecodeError(f"JSONL parse error at line {i}: {e.msg}", e.doc, e.pos)
-    return res
+    t_start = time.perf_counter()
+    count = 0
+
+    try:
+        with open(file_path, "rb") as file:
+            for i, line in enumerate(file, 1):
+                if not line.strip():
+                    continue
+                try:
+                    yield orjson.loads(line)
+                    count += 1
+                except orjson.JSONDecodeError as e:
+                    raise ValueError(f"JSONL parse error at line {i}: {e}")
+    finally:
+        elapsed = time.perf_counter() - t_start
+        print(f"[load json] done. total: {count} lines, elapsed: {elapsed:.2f}s")
 
 
 def load_txt(file_path):

@@ -13,9 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Paddle Qwen2Moe model."""
+
 from __future__ import annotations
 
 import copy
+import json
+import os
+from dataclasses import asdict, dataclass
 from typing import Optional, Tuple, Union
 
 import paddle
@@ -27,15 +31,17 @@ from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
     build_sharded_state_dict,
 )
 
-from ...nn.activation import ACT2FN
+from paddleformers.transformers.gpt_provider import GPTModelProvider
+
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
+from ...nn.experts import MoeExperts
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
-from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import (
@@ -47,6 +53,65 @@ from ..model_utils import PretrainedModel, dtype_guard, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ..moe_gate import PretrainedMoEGate
 from .configuration import Qwen2MoeConfig
+
+
+@dataclass
+class Qwen2MoeModelProvider(GPTModelProvider):
+    """Base provider for Qwen2Moe Models."""
+
+    model_type = "qwen2_moe"
+
+    moe_shared_expert_gate: bool = True
+
+    attention_bias: bool = True
+
+    bias_activation_fusion: bool = True
+    bias_dropout_fusion: bool = True
+
+    transform_rules = {
+        "dtype": "params_dtype",
+        "num_experts": "n_routed_experts",
+    }
+
+    persist_layer_norm: bool = True
+    share_embeddings_and_output_weights: bool = False
+
+    def save_pretrained(self, save_directory: Union[str, os.PathLike], **kwargs):
+        """
+        Save a configuration object to the directory `save_directory`, so that it can be re-loaded using the
+        [`~PretrainedConfig.from_pretrained`] class method.
+
+        Args:
+            save_directory (`str` or `os.PathLike`):
+                Directory where the configuration JSON file will be saved (will be created if it does not exist).
+            kwargs:
+                Additional key word arguments passed along to the [`~utils.PushToHubMixin.push_to_hub`] method.
+        """
+        if os.path.isfile(save_directory):
+            raise AssertionError(f"Provided path ({save_directory}) should be a directory, not a file")
+
+        os.makedirs(save_directory, exist_ok=True)
+
+        output_config_file = os.path.join(save_directory, self.CONFIG_NAME)
+        config_dict = asdict(self)
+
+        # Filter out non-serializable values
+        def make_serializable(obj):
+            if isinstance(obj, dict):
+                return {k: make_serializable(v) for k, v in obj.items() if make_serializable(v) is not None}
+            elif isinstance(obj, (list, tuple)):
+                return [make_serializable(item) for item in obj if make_serializable(item) is not None]
+            elif isinstance(obj, (str, int, float, bool, type(None))):
+                return obj
+            else:
+                # Skip non-serializable types like partial, function, etc.
+                return None
+
+        serializable_config = make_serializable(config_dict)
+
+        with open(output_config_file, "w", encoding="utf-8") as writer:
+            writer.write(json.dumps(serializable_config, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+        logger.info(f"Configuration saved in {output_config_file}")
 
 
 def rotate_half(x):
@@ -218,66 +283,21 @@ class Qwen2MoeGate(PretrainedMoEGate):
         return capacity, combine_weights, dispatch_mask, exp_counts, l_aux, l_zloss
 
 
-class Qwen2MoeExperts(nn.Layer):
-    def __init__(self, config):
-        super().__init__()
-        self.num_experts = config.num_experts
-        self.intermediate_size = config.moe_intermediate_size
-        self.hidden_size = config.hidden_size
-        self.act_fn = ACT2FN[config.hidden_act]
-
-        self.up_gate_proj = self.create_parameter(
-            shape=[self.num_experts, self.hidden_size, 2 * self.intermediate_size],
-            dtype=paddle.get_default_dtype(),
-            is_bias=False,
-        )
-        self.down_proj = self.create_parameter(
-            shape=[self.num_experts, self.intermediate_size, self.hidden_size],
-            dtype=paddle.get_default_dtype(),
-            is_bias=False,
-        )
-
+class Qwen2MoeExperts(MoeExperts):
     def sharded_state_dict(
         self,
         structured_name_prefix: str = "",
     ):
         state_dict = self.state_dict(structured_name_prefix="")
-        w1 = state_dict["up_gate_proj"].reshape(-1, self.up_gate_proj.shape[-1])
+        w1 = state_dict["gate_up_proj"].reshape(-1, self.gate_up_proj.shape[-1])
         w2 = state_dict["down_proj"].reshape(-1, self.down_proj.shape[-1])
-        state_dict["up_gate_proj"] = w1
+        state_dict["gate_up_proj"] = w1
         state_dict["down_proj"] = w2
         sharded_dict = {}
 
         sharded_dict = build_sharded_state_dict(state_dict, None, structured_name_prefix)
 
         return sharded_dict
-
-    def forward(
-        self,
-        hidden_states: paddle.Tensor,
-        top_k_index: paddle.Tensor,
-        top_k_weights: paddle.Tensor,
-    ) -> paddle.Tenosr:
-        final_hidden_states = paddle.zeros_like(hidden_states)
-
-        with paddle.no_grad():
-            expert_mask = paddle.nn.functional.one_hot(top_k_index, num_classes=self.num_experts)
-            expert_mask = expert_mask.permute(2, 1, 0)
-            expert_hit = paddle.greater(expert_mask.sum(dim=(-1, -2)), paddle.to_tensor(0)).nonzero()
-
-        for expert_idx in expert_hit:
-            expert_idx = expert_idx[0]
-            if expert_idx == self.num_experts:
-                continue
-            top_k_pos, token_idx = paddle.where(expert_mask[expert_idx])
-            current_state = hidden_states[token_idx]
-            gate, up = nn.functional.linear(current_state, self.up_gate_proj[expert_idx]).chunk(2, dim=-1)
-            current_hidden_states = self.act_fn(gate) * up
-            current_hidden_states = nn.functional.linear(current_hidden_states, self.down_proj[expert_idx])
-            current_hidden_states = current_hidden_states * top_k_weights[token_idx, top_k_pos, None]
-            final_hidden_states.index_add_(0, token_idx, current_hidden_states.to(final_hidden_states.dtype))
-
-        return final_hidden_states
 
 
 class Qwen2MoeSparseMoeBlock(nn.Layer):
@@ -554,19 +574,31 @@ class Qwen2MoePretrainedModel(PretrainedModel):
         else:
             num_experts = config.num_experts
         model_prefix = "" if cls == cls.base_model_class else "model."
+        is_fleet = getattr(cls, "is_fleet", False)
         aoa_config = {
             "aoa_statements": [
-                f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
                 f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
-                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
                 f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
                 f"model.norm.weight -> {model_prefix}norm.weight",
+            ]
+        }
+
+        if is_fleet:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.gate.weight -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
+                f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
+                f"model.layers.$LAYER_ID.mlp.shared_expert.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
+                f"model.layers.$LAYER_ID.mlp.shared_expert_gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.gate_weight, dtype='float32'",
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
+                f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
                 f"model.layers.$LAYER_ID.mlp.shared_expert.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_expert.down_proj.weight",
                 f"model.layers.$LAYER_ID.mlp.shared_expert_gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_expert_gate.weight, dtype='float32'",
             ]
-        }
 
         # attention qkv
         aoa_config["aoa_statements"] += [
@@ -578,10 +610,16 @@ class Qwen2MoePretrainedModel(PretrainedModel):
             ]
 
         # FFN
-        aoa_config["aoa_statements"] += [
-            f"model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_expert.up_gate_proj.weight, fused_ffn",
-            f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
-        ]
+        if is_fleet:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
+                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, axis=1",
+            ]
+        else:
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_expert.up_gate_proj.weight, fused_ffn",
+                f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
+            ]
 
         if config.get("fd_fallback", False):
             for layer_idx in range(0, config.num_hidden_layers):
@@ -595,13 +633,19 @@ class Qwen2MoePretrainedModel(PretrainedModel):
                 group1 = ",".join(ep_weight1)
                 group2 = ",".join(ep_weight2)
                 aoa_config["aoa_statements"] += [
-                    f"{group1} -> {tgt_prefix}.mlp.experts.up_gate_proj, axis=0"
+                    f"{group1} -> {tgt_prefix}.mlp.experts.gate_up_proj, axis=0"
                     f"{group2} -> {tgt_prefix}.mlp.experts.down_proj, axis=0"
                 ]
 
         # lm_head
         if config.tie_word_embeddings:
-            aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
+            if is_fleet:
+                aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}lm_head.weight"]
+            else:
+                aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
+        else:
+            if is_fleet:
+                aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}lm_head.weight"]
 
         return aoa_config
 
@@ -612,17 +656,29 @@ class Qwen2MoePretrainedModel(PretrainedModel):
         else:
             num_experts = config.num_experts
         model_prefix = "" if cls == cls.base_model_class else "model."
+        is_fleet = getattr(cls, "is_fleet", False)
         aoa_statements = [
-            f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
             f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.down_proj.weight",
-            f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
             f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
             f"{model_prefix}norm.weight -> model.norm.weight",
-            f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert.down_proj.weight",
-            f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert_gate.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert_gate.weight, dtype='bfloat16'",
         ]
+
+        if is_fleet:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
+                f"{model_prefix}embedding.embed_tokens.weight -> model.embed_tokens.weight",
+                f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert.down_proj.weight",
+                f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.gate_weight^T -> model.layers.$LAYER_ID.mlp.shared_expert_gate.weight, dtype='bfloat16'",
+            ]
+        else:
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.mlp.gate.weight^T -> model.layers.$LAYER_ID.mlp.gate.weight, dtype='bfloat16'",
+                f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+                f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert.down_proj.weight",
+                f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert_gate.weight^T -> model.layers.$LAYER_ID.mlp.shared_expert_gate.weight, dtype='bfloat16'",
+            ]
 
         aoa_statements += [
             f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
@@ -647,12 +703,17 @@ class Qwen2MoePretrainedModel(PretrainedModel):
                 group1 = ",".join(ep_weight1)
                 group2 = ",".join(ep_weight2)
                 aoa_statements += [
-                    f"{model_prefix}layers.{layer_id}.mlp.experts.up_gate_proj -> {group1}, axis=0"
+                    f"{model_prefix}layers.{layer_id}.mlp.experts.gate_up_proj -> {group1}, axis=0"
                     f"{model_prefix}layers.{layer_id}.mlp.experts.down_proj -> {group2}, axis=0"
                 ]
-            aoa_statements += [
-                f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight, fused_ffn",
-            ]
+            if is_fleet:
+                aoa_statements += [
+                    f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight, fused_ffn",
+                ]
+            else:
+                aoa_statements += [
+                    f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight, fused_ffn",
+                ]
             for layer_id in range(config.num_hidden_layers):
                 for expert_id in range(num_experts):
                     aoa_statements += [
@@ -662,23 +723,35 @@ class Qwen2MoePretrainedModel(PretrainedModel):
                         f"model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.down_proj.weight",
                     ]
         else:
-            aoa_statements += [
-                f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight, fused_ffn",
-                f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
-            ]
+            if is_fleet:
+                aoa_statements += [
+                    f"{model_prefix}layers.$LAYER_ID.mlp.shared_experts.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight, fused_ffn",
+                    f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, axis=1",
+                ]
+            else:
+                aoa_statements += [
+                    f"{model_prefix}layers.$LAYER_ID.mlp.shared_expert.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.shared_expert.gate_proj.weight, model.layers.$LAYER_ID.mlp.shared_expert.up_proj.weight, fused_ffn",
+                    f"{model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight, fused_ffn",
+                ]
         for layer_id in range(config.num_hidden_layers):
             aoa_statements += [
                 f"model.layers.{layer_id}.mlp.shared_expert.gate_proj.weight^T -> model.layers.{layer_id}.mlp.shared_expert.gate_proj.weight",
                 f"model.layers.{layer_id}.mlp.shared_expert.up_proj.weight^T -> model.layers.{layer_id}.mlp.shared_expert.up_proj.weight",
             ]
-            for expert_id in range(config.num_experts):
+            for expert_id in range(num_experts):
                 aoa_statements += [
                     f"model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.gate_proj.weight",
                     f"model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight^T -> model.layers.{layer_id}.mlp.experts.{expert_id}.up_proj.weight",
                 ]
 
         if config.tie_word_embeddings:
-            aoa_statements += ["lm_head.weight -> _"]
+            if is_fleet:
+                aoa_statements += [f"{model_prefix}lm_head.weight -> _"]
+            else:
+                aoa_statements += ["lm_head.weight -> _"]
+        else:
+            if is_fleet:
+                aoa_statements += [f"{model_prefix}lm_head.weight -> lm_head.weight"]
 
         aoa_config = {"aoa_statements": aoa_statements}
         return aoa_config
@@ -925,6 +998,31 @@ def load_balancing_loss_func(gate_logits, num_experts, top_k=2, attention_mask=N
 
 
 class Qwen2MoeForCausalLM(Qwen2MoePretrainedModel):
+    is_fleet = True
+
+    def __new__(cls, config):
+        # Hybrid parallel config convert.
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+        config.n_shared_experts = config.shared_expert_intermediate_size // config.moe_intermediate_size
+
+        model_provider_class = Qwen2MoeModelProvider
+        model_provider = model_provider_class.from_config(config)
+        loss_fn = None
+        if getattr(config, "dpo_config", None):
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
+        gpt_model = model_provider.provide(loss_fn=loss_fn)
+        gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
+        return gpt_model
+
+
+class Qwen2MoeForCausalLMDeprecated(Qwen2MoePretrainedModel):
     enable_to_static_method = True
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -1052,7 +1150,34 @@ class Qwen2MoeForCausalLM(Qwen2MoePretrainedModel):
         )
 
 
-class Qwen2MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
+class Qwen2MoeForCausalLMPipe(Qwen2MoePretrainedModel, GeneralModelForCausalLMPipe):
+    is_fleet = True
+
+    def __new__(cls, config):
+        # Hybrid parallel config convert.
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        config.context_parallel_size = max(config.context_parallel_size, 1)
+        config.pipeline_model_parallel_size = max(config.pipeline_model_parallel_size, 1)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
+        config.n_shared_experts = config.shared_expert_intermediate_size // config.moe_intermediate_size
+
+        model_provider_class = Qwen2MoeModelProvider
+        model_provider = model_provider_class.from_config(config)
+        loss_fn = None
+        if getattr(config, "dpo_config", None):
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
+        gpt_model = model_provider.provide(loss_fn=loss_fn)
+        gpt_model._gen_aoa_config = cls._gen_aoa_config
+        gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        if not hasattr(config, "architectures"):
+            config.architectures = [cls.__name__.replace("Pipe", "")]
+        gpt_model.config_to_save = config
+        gpt_model.is_fleet = cls.is_fleet
+        return gpt_model
+
+
+class Qwen2MoeForCausalLMPipeDeprecated(GeneralModelForCausalLMPipe):
     config_class = Qwen2MoeConfig
     _decoder_layer_cls = Qwen2MoeDecoderLayer
     _get_tensor_parallel_mappings = Qwen2MoeModel._get_tensor_parallel_mappings
@@ -1061,8 +1186,8 @@ class Qwen2MoeForCausalLMPipe(GeneralModelForCausalLMPipe):
     _rotary_emb_cls = Qwen2MoeRotaryEmbedding
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Qwen2MoeModel.transpose_weight_keys
-    _gen_aoa_config = Qwen2MoeForCausalLM._gen_aoa_config
-    _gen_inv_aoa_config = Qwen2MoeForCausalLM._gen_inv_aoa_config
+    _gen_aoa_config = Qwen2MoeForCausalLMDeprecated._gen_aoa_config
+    _gen_inv_aoa_config = Qwen2MoeForCausalLMDeprecated._gen_inv_aoa_config
 
 
 __all__ = [
@@ -1070,4 +1195,6 @@ __all__ = [
     "Qwen2MoePretrainedModel",
     "Qwen2MoeForCausalLM",
     "Qwen2MoeForCausalLMPipe",
+    "Qwen2MoeForCausalLMDeprecated",
+    "Qwen2MoeForCausalLMPipeDeprecated",
 ]
