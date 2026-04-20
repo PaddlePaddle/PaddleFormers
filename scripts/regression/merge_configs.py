@@ -80,6 +80,7 @@ def save_yaml(filepath, data):
     with open(filepath, "w", encoding="utf-8") as f:
         f.write("\n".join(result_lines))
 
+
 def merge_configs(config_path, config_ci_path, output_path=None):
     """
     Compare two YAML config files and copy new models from origin to update config.
