@@ -50,6 +50,7 @@ from paddlefleet.gpt_builders import gpt_builder
 
 from paddleformers.transformers.model_utils import PretrainedModel
 
+from .auto.configuration import AutoConfig
 from .model_provider import ModelProviderMixin
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,10 @@ class GPTModel(FleetGPTModel, PretrainedModel):
     GPTModel class that inherits from FleetGPTModel.
     This class requires paddlefleet to be installed.
     """
+
+    # Mark PaddleFleet GPT models as config-backed so VisualDL/TensorBoard can
+    # emit `model_config` text summaries for provider-based pipeline models.
+    config_class = AutoConfig
 
     def get_input_embeddings(self):
         """获取 embedding.embed_tokens 层"""
