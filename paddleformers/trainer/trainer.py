@@ -3333,7 +3333,7 @@ class Trainer:
             else:
 
                 def _prepare_pipeline_inputs_func(inputs):
-                    first_stage_keys = ["input_ids", "attention_mask", "position_ids"]
+                    first_stage_keys = ["input_ids", "attention_mask", "position_ids", "labels"]
                     last_stage_keys = ["labels"]
 
                     def get_expected_keys(inputs, keys):
@@ -3352,7 +3352,7 @@ class Trainer:
                     inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
                     if is_paddlefleet_available() and self.using_fleet_model:
                         first_stage_inputs_batch = inputs_batch
-                        last_stage_inputs = first_stage_inputs_batch.pop("labels")
+                        last_stage_inputs = first_stage_inputs_batch.get("labels")
                         outputs = (
                             first_stage_inputs_batch,
                             last_stage_inputs,
