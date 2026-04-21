@@ -405,6 +405,12 @@ class LlmMetaConfig:
             "Whether to enable deep GEMM for MoE experts. Defaults to False. Effective only after the moe_grouped_gemm is set. ",
         ),
         (
+            "high_precision_rope",
+            bool,
+            False,
+            "Whether to use high precision ROPEs.",
+        ),
+        (
             "moe_ep_barrier",
             bool,
             True,
