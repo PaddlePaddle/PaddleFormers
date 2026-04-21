@@ -188,7 +188,11 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     TrainerMemoryTracker,
     TrainOutput,
     _exec_mode_guard,
+    _get_muon_2d_param_names,
     _insert_sync,
+    _is_muon_sharding_optimizer,
+    _restore_master_weights_single,
+    _unwrap_muon_sharding_optimizer,
     download_recovery_ckpt_from_pdc,
     find_batch_size,
     get_last_checkpoint,
@@ -1216,8 +1220,12 @@ class Trainer:
         enable_bf16_opt = (
             not isinstance(self.model, LoRAModel)
             and self.args.bf16
-            and isinstance(self.optimizer._inner_opt, DygraphShardingOptimizerV2)
+            and (
+                isinstance(self.optimizer._inner_opt, DygraphShardingOptimizerV2)
+                or _is_muon_sharding_optimizer(self.optimizer)
+            )
         )
+
         logger.debug(f"sharded_model_from_ema: {self.args.sharded_model_from_ema}")
         logger.debug(f"enable_bf16_opt: {enable_bf16_opt}")
 
@@ -1259,47 +1267,82 @@ class Trainer:
         if enable_bf16_opt:
             opt_state_dict = self.optimizer.state_dict()
 
-            def recover_params_from_master_weight(opt_state_dict, group):
-                master_weights = opt_state_dict["master_weights"]
-                tmp = OrderedDict()
-                (master_weights, tmp) = (tmp, master_weights)
-                # cast to before
-                for (k, v) in tmp.items():
-                    name = v.name
-                    master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
-                    master_weights[k].name = name
-
-                structure_name_map = {k: v.name for (k, v) in self.model.state_dict().items()}
-                node_model_state = reshard_util.NodeModelState(group=group)
-                node_model_state_tmp = reshard_util.NodeModelState(group=group)
-                node_model_state_tmp.add_master_weights(master_weights)
-                node_model_state_tmp.pack_keys(structure_name_map)
-                node_model_state.merge_from(node_model_state_tmp, max(group.rank, 0))
-                del node_model_state_tmp
-                sharding_strategy = reshard_util.get_sharding_strategy(self.optimizer)
-                logger.debug(f"sharding_strategy: {sharding_strategy}")
-                restore_func = (
-                    reshard_util.sharding_v1.restore
-                    if sharding_strategy == SHARDING_STRATEGY_V1
-                    else reshard_util.sharding_v2.restore
-                )
-                node_model_state = restore_func(node_model_state, self.model, self.optimizer)
-                node_model_state.unpack_keys()
-                master_weights = node_model_state.master_weights
-
-                master_weights = reshard_util.all_gather_state_dict(master_weights, lambda x: True, group)
-
+            def _assign_master_weights_to_model(master_weights):
                 model_state_dict = self.model.state_dict()
                 for key, param in model_state_dict.items():
                     if param.name in master_weights and param.dtype == paddle.bfloat16:
                         logger.debug(
-                            f"key {key}, convert master weights {param.name} shape {master_weights[param.name].shape} to param {param.name} shape{param.shape}"
+                            f"key {key}, convert master weights {param.name} "
+                            f"shape {master_weights[param.name].shape} to param "
+                            f"{param.name} shape{param.shape}"
                         )
                         assert (
                             param.shape == master_weights[param.name].shape
                         ), f"got {param.shape} vs {master_weights[param.name].shape}"
                         master_weight = paddle.reshape(master_weights[param.name], param.shape)
                         paddle.assign(paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key])
+
+            def recover_params_from_master_weight(opt_state_dict, group):
+                master_weights = opt_state_dict["master_weights"]
+                tmp = OrderedDict()
+                master_weights, tmp = (tmp, master_weights)
+                # cast to bf16 and move to cpu
+                for k, v in tmp.items():
+                    name = v.name
+                    master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
+                    master_weights[k].name = name
+
+                structure_name_map = {k: v.name for (k, v) in self.model.state_dict().items()}
+
+                muon_opt = _unwrap_muon_sharding_optimizer(self.optimizer)
+                if muon_opt is not None:
+                    param_2d_names = _get_muon_2d_param_names(muon_opt)
+                    logger.debug(f"Muon recovery: {len(param_2d_names)} 2D params detected")
+
+                    mw_2d = OrderedDict()
+                    mw_1d = OrderedDict()
+                    for k, v in master_weights.items():
+                        if k in param_2d_names:
+                            mw_2d[k] = v
+                        else:
+                            mw_1d[k] = v
+
+                    all_master_weights = OrderedDict()
+                    if mw_2d:
+                        restored_2d = _restore_master_weights_single(
+                            mw_2d,
+                            self.model,
+                            self.optimizer,
+                            group,
+                            structure_name_map,
+                            reshard_util.sharding_v1.restore,
+                        )
+                        all_master_weights.update(restored_2d)
+                    if mw_1d:
+                        restored_1d = _restore_master_weights_single(
+                            mw_1d,
+                            self.model,
+                            self.optimizer,
+                            group,
+                            structure_name_map,
+                            reshard_util.sharding_v2.restore,
+                        )
+                        all_master_weights.update(restored_1d)
+
+                    master_weights = all_master_weights
+                else:
+                    sharding_strategy = reshard_util.get_sharding_strategy(self.optimizer)
+                    logger.debug(f"sharding_strategy: {sharding_strategy}")
+                    restore_func = (
+                        reshard_util.sharding_v1.restore
+                        if sharding_strategy == SHARDING_STRATEGY_V1
+                        else reshard_util.sharding_v2.restore
+                    )
+                    master_weights = _restore_master_weights_single(
+                        master_weights, self.model, self.optimizer, group, structure_name_map, restore_func
+                    )
+
+                _assign_master_weights_to_model(master_weights)
 
             with paddle.no_grad():
                 if paddle.distributed.is_initialized():
