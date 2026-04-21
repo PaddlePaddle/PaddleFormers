@@ -188,7 +188,11 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     TrainerMemoryTracker,
     TrainOutput,
     _exec_mode_guard,
+    _get_muon_2d_param_names,
     _insert_sync,
+    _is_muon_sharding_optimizer,
+    _restore_master_weights_single,
+    _unwrap_muon_sharding_optimizer,
     download_recovery_ckpt_from_pdc,
     find_batch_size,
     get_last_checkpoint,
@@ -253,33 +257,6 @@ if is_datasets_available():
 from paddle.distributed import in_auto_parallel_align_mode
 from paddle.distributed.fleet.utils import mix_precision_utils
 from paddle.io.dataloader.dataloader_iter import _DataLoaderIterBase
-
-
-def _is_muon_sharding_optimizer(optimizer):
-    opt = optimizer
-    while opt is not None:
-        if type(opt).__name__ == "MuonShardingOptimizer":
-            return True
-        opt = getattr(opt, "_inner_opt", None)
-    return False
-
-
-def _unwrap_muon_sharding_optimizer(optimizer):
-    opt = optimizer
-    while opt is not None:
-        if type(opt).__name__ == "MuonShardingOptimizer":
-            return opt
-        opt = getattr(opt, "_inner_opt", None)
-    return None
-
-
-def _get_muon_2d_param_names(muon_opt):
-    names = set()
-    for _color_key, params in muon_opt._params_2d_by_color.items():
-        for p in params:
-            names.add(p.name)
-    return names
-
 
 __all__ = ["Trainer"]
 
@@ -1290,17 +1267,6 @@ class Trainer:
         if enable_bf16_opt:
             opt_state_dict = self.optimizer.state_dict()
 
-            def _restore_master_weights_single(master_weights, group, structure_name_map, restore_func):
-                nms = reshard_util.NodeModelState(group=group)
-                nms_tmp = reshard_util.NodeModelState(group=group)
-                nms_tmp.add_master_weights(master_weights)
-                nms_tmp.pack_keys(structure_name_map)
-                nms.merge_from(nms_tmp, max(group.rank, 0))
-                del nms_tmp
-                nms = restore_func(nms, self.model, self.optimizer)
-                nms.unpack_keys()
-                return reshard_util.all_gather_state_dict(nms.master_weights, lambda x: True, group)
-
             def _assign_master_weights_to_model(master_weights):
                 model_state_dict = self.model.state_dict()
                 for key, param in model_state_dict.items():
@@ -1344,12 +1310,22 @@ class Trainer:
                     all_master_weights = OrderedDict()
                     if mw_2d:
                         restored_2d = _restore_master_weights_single(
-                            mw_2d, group, structure_name_map, reshard_util.sharding_v1.restore
+                            mw_2d,
+                            self.model,
+                            self.optimizer,
+                            group,
+                            structure_name_map,
+                            reshard_util.sharding_v1.restore,
                         )
                         all_master_weights.update(restored_2d)
                     if mw_1d:
                         restored_1d = _restore_master_weights_single(
-                            mw_1d, group, structure_name_map, reshard_util.sharding_v2.restore
+                            mw_1d,
+                            self.model,
+                            self.optimizer,
+                            group,
+                            structure_name_map,
+                            reshard_util.sharding_v2.restore,
                         )
                         all_master_weights.update(restored_1d)
 
@@ -1363,7 +1339,7 @@ class Trainer:
                         else reshard_util.sharding_v2.restore
                     )
                     master_weights = _restore_master_weights_single(
-                        master_weights, group, structure_name_map, restore_func
+                        master_weights, self.model, self.optimizer, group, structure_name_map, restore_func
                     )
 
                 _assign_master_weights_to_model(master_weights)
