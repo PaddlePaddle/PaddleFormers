@@ -86,6 +86,7 @@ from ...utils.env import (
 from ...utils.fault_tolerance import FC_DUMP_ERROR, PC_DUMP_ERROR
 from ...utils.log import logger
 from ...utils.pdc_sdk import FLASH_DEVICE
+from ..trainer_utils import _is_muon_sharding_optimizer
 from . import reshard as reshard_util
 from .reshard import (
     SHARDING_STRATEGY_V1,
@@ -93,15 +94,6 @@ from .reshard import (
     split_model_state,
     split_opt_state,
 )
-
-
-def _is_muon_sharding_optimizer(optimizer):
-    opt = optimizer
-    while opt is not None:
-        if type(opt).__name__ == "MuonShardingOptimizer":
-            return True
-        opt = getattr(opt, "_inner_opt", None)
-    return False
 
 
 def _unwrap_opt_for_fused_states(optimizer):

@@ -1709,6 +1709,15 @@ class HFFormatFullParamSaver:
         return total_saved_size
 
 
+def _is_muon_sharding_optimizer(optimizer):
+    opt = optimizer
+    while opt is not None:
+        if type(opt).__name__ == "MuonShardingOptimizer":
+            return True
+        opt = getattr(opt, "_inner_opt", None)
+    return False
+
+
 def _unwrap_muon_sharding_optimizer(optimizer):
     opt = optimizer
     while opt is not None:
