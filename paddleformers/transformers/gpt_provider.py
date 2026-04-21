@@ -129,6 +129,9 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
     # Multi-token prediction
     mtp_enabled: bool = False
 
+    # Sepatate MTP LMHead & Loss calculate for pipeline balance
+    separate_mtp_headloss: bool = False
+
     # Additional parameters that might be needed
     init_model_with_meta_device: bool = False
     use_te_rng_tracker: bool = False
@@ -193,9 +196,11 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
         """
 
         with model_init_device_context():
-            fleet_model = gpt_builder(
-                self, num_stages=pp_size, seg_method="layer:TransformerLayer|EmptyLayer", loss_fn=loss_fn
-            )
+            seg_method = "layer:TransformerLayer|EmptyLayer"
+            if self.separate_mtp_headloss:
+                seg_method = "layer:TransformerLayer|EmptyLayer|MultiTokenPredictionLayer"
+
+            fleet_model = gpt_builder(self, num_stages=pp_size, seg_method=seg_method, loss_fn=loss_fn)
             # Convert original FleetGPTModel to our GPTModel to correctly inherit PretrainedModel methods
             model = GPTModel.__new__(GPTModel)
             # Manually copy all attributes
