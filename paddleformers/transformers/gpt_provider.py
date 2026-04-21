@@ -129,9 +129,6 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
     # Multi-token prediction
     mtp_enabled: bool = False
 
-    # Sepatate MTP LMHead & Loss calculate for pipeline balance
-    separate_mtp_headloss: bool = False
-
     # Additional parameters that might be needed
     init_model_with_meta_device: bool = False
     use_te_rng_tracker: bool = False
