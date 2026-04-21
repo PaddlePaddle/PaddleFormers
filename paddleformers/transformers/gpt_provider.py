@@ -61,6 +61,24 @@ class GPTModel(FleetGPTModel, PretrainedModel):
     This class requires paddlefleet to be installed.
     """
 
+    def get_input_embeddings(self):
+        """获取 embedding.embed_tokens 层"""
+        from paddlefleet.models.gpt.gpt_embedding import GPTEmbedding
+
+        for layer in self.run_function:
+            if isinstance(layer, GPTEmbedding):
+                return layer.embedding.embed_tokens
+        return None
+
+    def get_lm_head(self):
+        """获取 lm_head 层"""
+        from paddlefleet.models.gpt.lm_head import GPTLMHead
+
+        for layer in self.run_function:
+            if isinstance(layer, GPTLMHead):
+                return layer
+        return None
+
 
 # GPTModel = FleetGPTModel
 
