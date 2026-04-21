@@ -638,6 +638,7 @@ qwen2_5_vl:
     load_checkpoint_format: flex_checkpoint
     template: qwen2_vl
     random_shuffle: false
+    ignore_data_skip: true
   base_loss:
     sft-vl_full_tp_pp_loss: 11.926148415
     sft-vl_full_tp_pp_resume_loss: 11.92575741
