@@ -81,20 +81,33 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix}.post_attention_layernorm.weight -> {prefix_offset}.post_attention_layernorm.weight",
                 f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
             ]
-            if config.use_qk_norm:
-                aoa_config["aoa_statements"] += [
-                    f"{prefix}.self_attn.q_norm.weight -> {prefix_offset}.self_attn.q_norm.weight",
-                    f"{prefix}.self_attn.k_norm.weight -> {prefix_offset}.self_attn.k_norm.weight",
-                ]
 
-            # attention qkv
-            aoa_config["aoa_statements"] += [
-                f"{prefix}.self_attn.q_proj.weight^T, {prefix}.self_attn.k_proj.weight^T, {prefix}.self_attn.v_proj.weight^T -> {prefix_offset}.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
-            ]
-            if config.attention_bias:
+            if config.q_lora_rank:
+                # MLA attention
                 aoa_config["aoa_statements"] += [
-                    f"{prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias -> {prefix_offset}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                    f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
+                    f"{prefix}.self_attn.q_a_proj.weight^T -> {prefix_offset}.self_attn.q_a_proj.weight",
+                    f"{prefix}.self_attn.q_b_proj.weight^T -> {prefix_offset}.self_attn.q_b_proj.weight",
+                    f"{prefix}.self_attn.kv_a_proj_with_mqa.weight^T -> {prefix_offset}.self_attn.kv_a_proj_with_mqa.weight",
+                    f"{prefix}.self_attn.kv_b_proj.weight^T -> {prefix_offset}.self_attn.kv_b_proj.weight",
+                    f"{prefix}.self_attn.q_a_layernorm.weight -> {prefix_offset}.self_attn.q_a_layernorm.weight",
+                    f"{prefix}.self_attn.kv_a_layernorm.weight -> {prefix_offset}.self_attn.kv_a_layernorm.weight",
                 ]
+            else:
+                if config.use_qk_norm:
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.self_attn.q_norm.weight -> {prefix_offset}.self_attn.q_norm.weight",
+                        f"{prefix}.self_attn.k_norm.weight -> {prefix_offset}.self_attn.k_norm.weight",
+                    ]
+
+                # attention qkv
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.self_attn.q_proj.weight^T, {prefix}.self_attn.k_proj.weight^T, {prefix}.self_attn.v_proj.weight^T -> {prefix_offset}.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
+                ]
+                if config.attention_bias:
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias -> {prefix_offset}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                    ]
 
         # All layers are MoE (first_k_dense_replace=0)
         for layer_idx in reversed(range(config.first_k_dense_replace, num_hidden_layers + num_nextn_predict_layers)):
