@@ -25,6 +25,14 @@ jobs:
       id-token: write
       actions: read # Required for Claude to read CI results on PRs
     steps:
+      - name: Debug user and Claude path
+        run: |
+          echo "Current user: $(whoami)"
+          echo "Home directory: $HOME"
+          echo "Checking Claude path permissions:"
+          ls -la /usr/local/bin/claude || echo "Claude not found at /usr/local/bin/claude"
+          which claude || echo "Claude not in PATH"
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -38,8 +46,7 @@ jobs:
           anthropic_base_url: ${{ secrets.ANTHROPIC_BASE_URL }}
 
           # Use pre-installed Claude CLI on paddle-bot runner
-          # Remove this line to let action download its own version
-          path_to_claude_code_executable: /root/.baidu-cc/baidu-cc/bin/claude
+          path_to_claude_code_executable: /usr/local/bin/claude
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
