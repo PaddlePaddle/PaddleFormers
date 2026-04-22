@@ -515,6 +515,20 @@ class TrainingArguments:
         and decreased for the experts with more assigned tokens."""
         },
     )
+    freeze_training: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "When set to True, the training process will be frozen: "
+                "1) Model parameters will not be updated (backward and optimizer step are skipped). "
+                "2) Optimizer state remains unchanged. "
+                "3) Learning rate scheduler is not updated. "
+                "4) MoE e_score_correction_bias is not updated. "
+                "This is useful for debugging, profiling, or running inference-only passes through the training loop. "
+                "Note: The learning rate will also be effectively set to 0 when this flag is enabled."
+            )
+        },
+    )
 
     log_on_each_node: bool = field(
         default=True,

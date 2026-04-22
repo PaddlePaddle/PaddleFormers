@@ -1826,6 +1826,16 @@ class Trainer:
         return global_micro_batchs
 
     def optimizer_step(self, args, model, parameters_list=None):
+        # When freeze_training is enabled, skip optimizer step and lr scheduler step
+        # to keep both model parameters and optimizer state unchanged
+        if args.freeze_training:
+            logger.warning(
+                "freeze_training is enabled! Model parameters and optimizer state will NOT be updated. "
+                "This is intended for debugging/profiling only."
+            )
+            self.optimizer.clear_grad()
+            return
+
         if parameters_list is None:
             parameters_list = []
 
@@ -3220,16 +3230,28 @@ class Trainer:
             decay_steps = self.args.decay_steps
 
         if self.lr_scheduler is None:
-            self.lr_scheduler = get_scheduler(
-                self.args.lr_scheduler_type,
-                learning_rate=self.args.learning_rate,
-                num_warmup_steps=warmup,
-                num_training_steps=decay_steps,
-                num_cycles=self.args.num_cycles,
-                lr_end=self.args.lr_end,
-                power=self.args.power,
-                min_lr=self.args.min_lr,
-            )
+            # When freeze_training is enabled, use constant scheduler with lr=0
+            # to ensure learning rate stays 0 throughout training
+            if self.args.freeze_training:
+                logger.warning(
+                    "WARNING: freeze_training is enabled! "
+                    "Learning rate is set to 0 and model parameters will NOT be updated. "
+                    "This mode is intended for debugging/profiling only, NOT for actual training."
+                )
+                from .trainer_utils import get_constant_schedule
+
+                self.lr_scheduler = get_constant_schedule(learning_rate=0.0)
+            else:
+                self.lr_scheduler = get_scheduler(
+                    self.args.lr_scheduler_type,
+                    learning_rate=self.args.learning_rate,
+                    num_warmup_steps=warmup,
+                    num_training_steps=decay_steps,
+                    num_cycles=self.args.num_cycles,
+                    lr_end=self.args.lr_end,
+                    power=self.args.power,
+                    min_lr=self.args.min_lr,
+                )
 
         return self.lr_scheduler
 
