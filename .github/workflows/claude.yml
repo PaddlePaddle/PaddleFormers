@@ -43,6 +43,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_base_url: ${{ secrets.ANTHROPIC_BASE_URL }}
 
           # Use pre-installed Claude CLI on paddle-bot runner
           path_to_claude_code_executable: /usr/local/bin/claude
