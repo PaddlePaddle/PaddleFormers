@@ -30,8 +30,7 @@ jobs:
           echo "Current user: $(whoami)"
           echo "Home directory: $HOME"
           echo "Checking Claude path permissions:"
-          ls -la /usr/local/bin/claude || echo "Claude not found at /usr/local/bin/claude"
-          which claude || echo "Claude not in PATH"
+          ls -la /home/paddle-1/.baidu-cc/baidu-cc/bin/ducc || echo "Claude not found at /home/paddle-1/.baidu-cc/baidu-cc/bin/ducc"
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -43,10 +42,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          anthropic_base_url: ${{ secrets.ANTHROPIC_BASE_URL }}
 
           # Use pre-installed Claude CLI on paddle-bot runner
-          path_to_claude_code_executable: /usr/local/bin/claude
+          path_to_claude_code_executable: /home/paddle-1/.baidu-cc/baidu-cc/bin/ducc
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
