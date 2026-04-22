@@ -161,7 +161,7 @@ if [[ "$update_baseline_models" != "false" ]] && [[ "$update_baseline_models" !=
 elif [[ ${FLAGS_enable_CI} == "True" ]];then
     get_diff_TO_case
 elif [[ ${FLAGS_enable_CE} != "False" ]];then
-    models="all"
+    models="llama" ##for test
 fi
 
 if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];then
@@ -177,7 +177,7 @@ if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];the
     export FLAGS_tcp_store_using_libuv=0
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
-    python -m pytest -s -v --models=${models} --update-baseline=${update_baseline_models} scripts/regression/test_models.py > ${log_path}/model_unittest.log 2>&1
+    python -m pytest -s -v --alluredir=allure-results --models=${models} --update-baseline=${update_baseline_models} scripts/regression/test_models.py > ${log_path}/model_unittest.log 2>&1
     exit_code=$?
     print_info $exit_code model_unittest
     if [[ $exit_code -eq 0 ]] && [[ "$update_baseline_models" != "false" ]] && [[ "$update_baseline_models" != "False" ]]; then

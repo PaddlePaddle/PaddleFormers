@@ -1,6 +1,7 @@
 name: Model Unittest GPU CE Develop
 
 on:
+  pull_request: ##for test
   schedule:
     - cron: "0 9 * * 0-4"
     - cron: "0 10 * * 0-4"
@@ -312,6 +313,18 @@ jobs:
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/$file"
           done
           '
+      - name: Generate Allure Report
+        uses: simple-elf/allure-report-action@master
+        if: always()
+        with:
+          allure_results: allure-results
+          allure_history: allure-history
+      - name: Deploy to GitHub Pages
+        if: always()
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./allure-history
       - name: Terminate And Delete the Container
         if: always()
         run: |
