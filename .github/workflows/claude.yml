@@ -25,13 +25,6 @@ jobs:
       id-token: write
       actions: read # Required for Claude to read CI results on PRs
     steps:
-      - name: Debug user and Claude path
-        run: |
-          echo "Current user: $(whoami)"
-          echo "Home directory: $HOME"
-          echo "Checking Claude path permissions:"
-          ls -la /home/paddle-1/.baidu-cc/baidu-cc/bin/ducc || echo "Claude not found at /home/paddle-1/.baidu-cc/baidu-cc/bin/ducc"
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
