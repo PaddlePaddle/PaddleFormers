@@ -1,0 +1,13 @@
+{
+    "env": {
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "Claude Sonnet 4.6",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "Claude Opus 4.6",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "Claude Haiku 4.5",
+        "ANTHROPIC_MODEL": "Claude Sonnet 4.6",
+        "ANTHROPIC_BASE_URL": "https://oneapi-comate.baidu-int.com",
+        "ANTHROPIC_API_KEY": "sk-C4LCmMqwNblWJ2Cz337059C4627247Bd8dF52206305070Af",
+        "CLAUDE_CODE_NO_FLICKER": "1",
+        "CLAUDE_CODE_NEW_INIT": "1",
+        "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    }
+}
