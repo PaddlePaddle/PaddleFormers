@@ -947,7 +947,7 @@ class Qwen3VLProvider(TransformerConfig):
             "apply_rope_fusion",
             "overlap_p2p_comm",
             "batch_p2p_comm",
-            "high_precision_rope",
+            # "high_precision_rope",
         ]
 
         for config in [
