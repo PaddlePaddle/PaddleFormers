@@ -1990,12 +1990,6 @@ class Trainer:
         steps_in_epoch = (
             len_dataloader if len_dataloader is not None else args.max_steps * args.gradient_accumulation_steps
         )
-        if len_dataloader is not None:
-            if self.args.gradient_accumulation_steps > len_dataloader:
-                logger.warning(
-                    f"changing accumulation step from `{self.args.gradient_accumulation_steps}` to `{len_dataloader}` to avoid, cross epoch accumulate"
-                )
-                self.args.gradient_accumulation_steps = len_dataloader
 
         self.callback_handler.model = self.model
         self.callback_handler.optimizer = self.optimizer
@@ -2025,6 +2019,8 @@ class Trainer:
         if self.resume_from_custom_func is not None:
             self.resume_from_custom_func(model)
 
+        step_control = 0  # used in loop control, reset at each epoch boundary via forced flush
+        self.current_gradient_accumulation_steps = args.gradient_accumulation_steps
         for epoch in range(epochs_trained, num_train_epochs):
             if (
                 not args.enable_auto_parallel
@@ -2032,8 +2028,6 @@ class Trainer:
                 and isinstance(train_dataloader.batch_sampler, (MappingBatchSampler, MappingDistributedBatchSampler))
             ):
                 train_dataloader.batch_sampler.set_epoch(epoch, consumed_samples)
-
-            step_control = 0  # used in loop control, reset to 0 after every step
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
 
             step = -1
@@ -2097,9 +2091,9 @@ class Trainer:
                     # skip this step
 
                     if (step_control + 1) % self.args.gradient_accumulation_steps == 0 or (
-                        # last step in epoch but step is always smaller than gradient_accumulation_steps
-                        steps_in_epoch <= args.gradient_accumulation_steps
-                        and (step + 1) == steps_in_epoch
+                        # last step in epoch: flush remaining accumulated gradients
+                        (step + 1)
+                        == steps_in_epoch
                     ):
                         # update current global step and skip step
                         self.state.global_step += 1
@@ -2152,6 +2146,13 @@ class Trainer:
 
                 for inputs in inputs_list:
                     if step_control % args.gradient_accumulation_steps == 0:
+                        # Compute actual accumulation steps for this group
+                        # (may be less than gradient_accumulation_steps at end of epoch)
+                        remaining_steps_in_epoch = steps_in_epoch - step
+
+                        self.current_gradient_accumulation_steps = min(
+                            args.gradient_accumulation_steps, remaining_steps_in_epoch
+                        )
                         self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
                         self.timers and self.timers("forward-backward").start()
 
@@ -2160,11 +2161,11 @@ class Trainer:
                         # stage2 and stage3 should not no_sync, because the is no DDP wrapper and no_sync API
                         # hybrid_parallel (tp or pp or sharding stage 1) should not no_sync
                         available_no_sync = hasattr(model, "no_sync")
+                        do_sync_step = (step_control + 1) % args.gradient_accumulation_steps == 0 or (
+                            step + 1
+                        ) == steps_in_epoch
                         is_no_sync = (
-                            (
-                                ((step_control + 1) % args.gradient_accumulation_steps != 0)
-                                and args._no_sync_in_gradient_accumulation
-                            )
+                            ((not do_sync_step) and args._no_sync_in_gradient_accumulation)
                             or args.recompute_granularity is not None
                             or args.use_expert_parallel
                         ) and available_no_sync
@@ -2234,9 +2235,8 @@ class Trainer:
                     disable_accumulation = False
 
                     if (step_control + 1) % args.gradient_accumulation_steps == 0 or (
-                        # last step in epoch but step is always smaller than gradient_accumulation_steps
-                        steps_in_epoch <= args.gradient_accumulation_steps
-                        and (step + 1) == steps_in_epoch
+                        # last step in epoch: flush remaining accumulated gradients
+                        (step + 1) == steps_in_epoch
                         or disable_accumulation
                     ):
                         # assert if loss is invalid
@@ -2341,7 +2341,7 @@ class Trainer:
                         logger.info(
                             f"[DataLoad global_step: {self.state.global_step}] "
                             f"data_load_time: {_data_load_time_for_global_step * 1000:.2f} ms "
-                            f"(accumulated over {args.gradient_accumulation_steps} micro-batches)"
+                            f"(accumulated over {self.current_gradient_accumulation_steps} micro-batches)"
                         )
                         self._print_timer()
                         # Reset data loading timer for next global_step
@@ -3737,7 +3737,7 @@ class Trainer:
         Return:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
-        if is_paddlefleet_available() and self.using_fleet_model:
+        if is_paddlefleet_available() and self.using_fleet_model and self.args.pipeline_model_parallel_size > 1:
             return self.training_pipeline_step(model, inputs)
 
         if self.args.pipeline_model_parallel_size > 1:
@@ -3756,7 +3756,7 @@ class Trainer:
         else:
             loss.backward()
         if self.args.gradient_accumulation_steps > 1:
-            loss = loss / self.args.gradient_accumulation_steps
+            loss = loss / getattr(self, "current_gradient_accumulation_steps", self.args.gradient_accumulation_steps)
 
         if not self.args.enable_auto_parallel:
             return loss.detach()
