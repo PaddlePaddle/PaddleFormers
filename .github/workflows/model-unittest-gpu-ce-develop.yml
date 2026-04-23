@@ -291,6 +291,7 @@ jobs:
         env:
           home_path: ${{ github.workspace }}/../../..
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
+          allure_file: ${{ github.workspace }}/../../../allure-2.19.0/bin/allure
         run: |
           docker exec -t $container_name /bin/bash -c '
           source ${work_dir}/../../../proxy_huggingface
@@ -312,20 +313,39 @@ jobs:
             python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/$file"
           done
+          # allure
+          cd /workspace/PaddleFormers/
+          ${{ env.allure_file }} generate result -o report
+          tar -czf report.tar.gz report
+          python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
+          echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/report.tar.gz"
           '
-      - name: Generate Allure Report
-        uses: simple-elf/allure-report-action@master
+      - name: Terminate And Delete the Container
         if: always()
-        with:
-          allure_results: allure-results
-          allure_history: allure-history
+        run: |
+          docker rm -f $container_name 2>/dev/null || true
+
+  upload-allure:
+    name: upload-allure
+    needs: [model-unittest-gpu-ce-develop]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download report
+        run: |
+          if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
+            bos_prefix="${PR_ID}/${COMMIT_ID}"
+          else
+            bos_prefix="schedule/$(date +%Y%m%d)"
+          fi
+          echo "bos_prefix=${bos_prefix}"
+          wget -q --no-proxy \
+            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/report.tar.gz \
+            --no-check-certificate
+          tar -xzf report.tar.gz -C /workspace/PaddleFormers/
       - name: Deploy to GitHub Pages
         if: always()
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./allure-history
-      - name: Terminate And Delete the Container
-        if: always()
-        run: |
-          docker rm -f $container_name 2>/dev/null || true
+          publish_dir: ./report
