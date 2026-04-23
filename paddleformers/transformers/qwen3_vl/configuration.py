@@ -292,12 +292,29 @@ class Qwen3VLConfig(PretrainedConfig):
         self.vision_end_token_id = vision_end_token_id
 
     def __setattr__(self, key, value):
-        if (
-            (text_config := super().__getattribute__("__dict__").get("text_config")) is not None
-            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
-            and key in text_config.__dict__
-        ):
+        # Attributes that should not be forwarded to sub-configs
+        _excluded_keys = ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+
+        if key in _excluded_keys:
+            super().__setattr__(key, value)
+            return
+
+        __dict__ = super().__getattribute__("__dict__")
+        text_config = __dict__.get("text_config")
+        vision_config = __dict__.get("vision_config")
+
+        # Check if the attribute exists in sub-configs
+        in_text = text_config is not None and key in text_config.__dict__
+        in_vision = vision_config is not None and key in vision_config.__dict__
+
+        if in_text and in_vision:
+            # Both sub-configs have this attribute, set to both
             setattr(text_config, key, value)
+            setattr(vision_config, key, value)
+        elif in_text:
+            setattr(text_config, key, value)
+        elif in_vision:
+            setattr(vision_config, key, value)
         else:
             super().__setattr__(key, value)
 
