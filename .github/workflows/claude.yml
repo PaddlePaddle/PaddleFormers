@@ -33,18 +33,18 @@ jobs:
       - name: Setup custom Claude Code
         run: | 
           mkdir -p /home/paddle-1/actions-runner/_work/_actions/anthropics/claude-code-action/v1/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl/
-          ln -sf /home/paddle-1/.baidu-cc/baidu-cc/bin/ducc /home/paddle-1/actions-runner/_work/_actions/anthropics/claude-code-action/v1/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl/claude
-
+          ln -sf /home/paddle-1/.baidu-cc/baidu-cc-linux-amd64-2.1.76.8/bin/claude \
+            /home/paddle-1/actions-runner/_work/_actions/anthropics/claude-code-action/v1/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl/claude
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          anthropic_base_url: ${{ secrets.ANTHROPIC_BASE_URL }}
-          trigger_phrase: '@formers'
 
           # Use pre-installed Claude CLI on paddle-bot runner
-          path_to_claude_code_executable: /home/paddle-1/.baidu-cc/baidu-cc/bin/ducc
+          path_to_claude_code_executable: /home/paddle-1/.baidu-cc/baidu-cc-linux-amd64-2.1.76.8/bin/claude
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
