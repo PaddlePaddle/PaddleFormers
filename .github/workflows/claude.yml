@@ -13,10 +13,10 @@ on:
 jobs:
   claude:
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@formers')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@formers')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@formers')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@formers') || contains(github.event.issue.title, '@formers')))
     runs-on: paddle-bot
     permissions:
       contents: read
@@ -32,7 +32,7 @@ jobs:
 
       - name: Setup custom Claude Code
         run: |
-          ln -sf /home/paddle-1/.baidu-cc/baidu-cc/bin/claude ${{ github.action_path }}/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl/claude
+          ln -sf /home/paddle-1/.baidu-cc/baidu-cc/bin/claude /home/paddle-1/actions-runner/_work/_actions/anthropics/claude-code-action/v1/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl/claude
 
       - name: Run Claude Code
         id: claude
@@ -55,4 +55,3 @@ jobs:
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
           claude_args: '--print'
-
