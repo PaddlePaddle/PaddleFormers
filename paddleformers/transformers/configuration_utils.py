@@ -477,12 +477,12 @@ class LlmMetaConfig:
             "rope",
             "Type of position embedding. Defaults to RoPE (Rotary Position Embedding).",
         ),
-        # (
-        #     "high_precision_rope",
-        #     bool,
-        #     False,
-        #     "Whether to use high precision ROPEs.",
-        # ),
+        (
+            "high_precision_rope",
+            bool,
+            False,
+            "Whether to use high precision ROPEs.",
+        ),
         (
             "gated_linear_unit",
             bool,
