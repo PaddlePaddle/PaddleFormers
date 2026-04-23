@@ -33,7 +33,7 @@ jobs:
       - name: Setup custom Claude Code
         run: | 
           mkdir -p /home/paddle-1/actions-runner/_work/_actions/anthropics/claude-code-action/v1/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl/claude
-          ln -sf /home/paddle-1/.baidu-cc/baidu-cc/bin/claude /home/paddle-1/actions-runner/_work/_actions/anthropics/claude-code-action/v1/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl/claude
+          ln -sf /home/paddle-1/.baidu-cc/baidu-cc/bin/ducc /home/paddle-1/actions-runner/_work/_actions/anthropics/claude-code-action/v1/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl/claude
 
       - name: Run Claude Code
         id: claude
