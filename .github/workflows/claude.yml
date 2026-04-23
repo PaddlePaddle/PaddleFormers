@@ -30,6 +30,10 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Setup custom Claude Code
+        run: |
+          ln -sf /home/paddle-1/.baidu-cc/baidu-cc/bin/claude ${{ github.action_path }}/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl/claude
+
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
