@@ -23,7 +23,7 @@ jobs:
       pull-requests: read
       issues: read
       id-token: write
-      actions: read # Required for Claude to read CI results on PRs
+      actions: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -58,5 +58,5 @@ jobs:
           # or https://code.claude.com/docs/en/cli-reference for available options
           claude_args: '--print'
           trigger_phrase: '@formers'
-
-
+          bot_name: formers[bot]
+          label_trigger: fomrers
