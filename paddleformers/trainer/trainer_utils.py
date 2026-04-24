@@ -58,7 +58,13 @@ from transformers.tokenization_utils_base import BatchEncoding
 
 # from ..ops import Topology
 from ..trainer.argparser import strtobool
-from ..transformers.gpt_provider import GPTModel
+from ..utils.import_utils import is_paddlefleet_available
+
+if is_paddlefleet_available():
+    from ..transformers.gpt_provider import GPTModel
+else:
+    GPTModel = None
+
 from ..transformers.model_utils import (
     EMAStateHFFormatFullParamSaver,
     _add_variant,
@@ -2084,7 +2090,7 @@ class EMAStateAssembler:
 
         ema_sharded_state_dict = {}
 
-        is_gpt_model = isinstance(self.model, GPTModel)
+        is_gpt_model = GPTModel is not None and isinstance(self.model, GPTModel)
 
         def _remove_layer_suffix(s):
             return re.sub(r"_layer_\d+$", "", s)
