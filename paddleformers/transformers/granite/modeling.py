@@ -19,6 +19,7 @@ from typing import Callable, Optional, Tuple, Union
 import paddle
 from paddle import nn
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
+from paddle.nn.functional.flash_attention import flashmask_attention
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
@@ -55,6 +56,14 @@ def apply_rotary_pos_emb(
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed, k_embed
+
+
+def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
+    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
+    if n_rep == 1:
+        return hidden_states
+    hidden_states = hidden_states[:, :, None, :, :].expand([batch, num_key_value_heads, n_rep, slen, head_dim])
+    return hidden_states.reshape([batch, num_key_value_heads * n_rep, slen, head_dim])
 
 
 class GraniteRMSNorm(nn.Layer):
@@ -163,6 +172,55 @@ class GraniteAttention(nn.Layer):
             input_is_parallel=False,
         )
 
+    def _flashmask_attention_forward(
+        self,
+        query: paddle.Tensor,
+        key: paddle.Tensor,
+        value: paddle.Tensor,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor],
+        dropout: float = 0.0,
+        scaling: Optional[float] = None,
+    ) -> Tuple[paddle.Tensor, None]:
+        # Keep Granite's custom attention parameters on the flashmask path.
+        # flashmask_attention (FA2) always applies head_dim^-0.5 internally and does not
+        # expose a softmax_scale parameter. To achieve the desired effective scale we
+        # pre-multiply query by (scaling / head_dim^-0.5) so that:
+        #   effective_scale = (scaling / head_dim^-0.5) * head_dim^-0.5 = scaling
+        if scaling is not None:
+            head_dim = query.shape[-1]
+            default_fa_scale = head_dim ** -0.5
+            query = query * (scaling / default_fa_scale)
+        if self.num_key_value_groups > 1:
+            key = repeat_kv(key, self.num_key_value_groups)
+            value = repeat_kv(value, self.num_key_value_groups)
+        query = query.transpose(1, 2)
+        key = key.transpose(1, 2)
+        value = value.transpose(1, 2)
+
+        if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.ndim == 3:
+            attn_mask_startend_row_indices = attn_mask_startend_row_indices.unsqueeze(-1)
+
+        is_causal = query.shape[1] > 1
+        if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 1:
+            is_causal = True
+        if attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == 4:
+            is_causal = False
+
+        attn_output = flashmask_attention(
+            query,
+            key,
+            value,
+            startend_row_indices=attn_mask_startend_row_indices,
+            dropout=dropout,
+            training=self.training,
+            causal=is_causal,
+        )
+        attn_output = paddle.reshape(
+            x=attn_output,
+            shape=[0, 0, attn_output.shape[2] * attn_output.shape[3]],
+        )
+        return attn_output, None
+
     def forward(
         self,
         hidden_states: paddle.Tensor,
@@ -197,17 +255,28 @@ class GraniteAttention(nn.Layer):
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
-        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
-        attn_output, attn_weights = attention_interface(
-            self,
-            query=query_states,
-            key=key_states,
-            value=value_states,
-            attention_mask=attention_mask,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            dropout=0.0 if not self.training else self.attention_dropout,
-            scaling=self.scaling,
-        )
+        dropout = 0.0 if not self.training else self.attention_dropout
+        if self.config._attn_implementation == "flashmask":
+            attn_output, attn_weights = self._flashmask_attention_forward(
+                query=query_states,
+                key=key_states,
+                value=value_states,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                dropout=dropout,
+                scaling=self.scaling,
+            )
+        else:
+            attention_interface: Callable = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+            attn_output, attn_weights = attention_interface(
+                self,
+                query=query_states,
+                key=key_states,
+                value=value_states,
+                attention_mask=attention_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                dropout=dropout,
+                scaling=self.scaling,
+            )
         if self.config.sequence_parallel:
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
         attn_output = self.o_proj(attn_output)
@@ -520,17 +589,3 @@ class GraniteForCausalLM(GranitePretrainedModel):
 class GraniteForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = GraniteConfig
     _decoder_layer_cls = GraniteDecoderLayer
-    _rotary_emb_cls = GraniteRotaryEmbedding
-    _tied_weights_keys = ["lm_head.weight"]
-    transpose_weight_keys = GranitePretrainedModel.transpose_weight_keys
-    _gen_aoa_config = GranitePretrainedModel._gen_aoa_config
-    _gen_inv_aoa_config = GranitePretrainedModel._gen_inv_aoa_config
-
-
-__all__ = [
-    "GraniteDecoderLayer",
-    "GraniteForCausalLM",
-    "GraniteForCausalLMPipe",
-    "GraniteModel",
-    "GranitePretrainedModel",
-]
