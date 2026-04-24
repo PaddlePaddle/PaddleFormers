@@ -92,7 +92,7 @@ else
         echo "file_name: ${file_name}, ext: ${file_name##*.}"
         
         [[ -f "$file_name" ]] || continue
-        if [[ "$ext" == "py" ]] || [[ "$ext" == "yml" ]] || [[ "$base_name" == "requirements.txt" ]]; then
+        if [[ "$ext" == "py" ]] || [[ "$ext" == "yml" ]] || [[ "$file_name" == "requirements.txt" ]]; then
             FLAGS_enable_CI=true
             break
         fi
