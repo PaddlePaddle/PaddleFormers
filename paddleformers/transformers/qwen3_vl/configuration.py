@@ -291,6 +291,9 @@ class Qwen3VLConfig(PretrainedConfig):
         self.vision_start_token_id = vision_start_token_id
         self.vision_end_token_id = vision_end_token_id
 
+    # Attributes that should be synced to both text_config and vision_config
+    _sync_to_both_configs = {"high_precision_rope"}
+
     def __setattr__(self, key, value):
         # Attributes that should not be forwarded to sub-configs
         _excluded_keys = ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
@@ -307,14 +310,15 @@ class Qwen3VLConfig(PretrainedConfig):
         in_text = text_config is not None and key in text_config.__dict__
         in_vision = vision_config is not None and key in vision_config.__dict__
 
-        if in_text and in_vision:
-            # Both sub-configs have this attribute, set to both
+        # Only sync to both configs if explicitly whitelisted
+        if in_text and in_vision and key in self._sync_to_both_configs:
             setattr(text_config, key, value)
             setattr(vision_config, key, value)
         elif in_text:
             setattr(text_config, key, value)
         elif in_vision:
-            setattr(vision_config, key, value)
+            # Vision-only attributes: store at top level, don't sync
+            super().__setattr__(key, value)
         else:
             super().__setattr__(key, value)
 
@@ -333,11 +337,16 @@ class Qwen3VLConfig(PretrainedConfig):
             if text_config is not None and key in text_config.__dict__:
                 return getattr(text_config, key)
 
-        # Then check vision_config
+        # For vision-only attributes, read from top level first (user override),
+        # then fall back to vision_config default
         if "vision_config" in __dict__:
             vision_config = __dict__["vision_config"]
             if vision_config is not None and key in vision_config.__dict__:
-                return getattr(vision_config, key)
+                # Check if user has set a top-level override
+                try:
+                    return super().__getattribute__(key)
+                except AttributeError:
+                    return getattr(vision_config, key)
 
         return super().__getattribute__(key)
 
