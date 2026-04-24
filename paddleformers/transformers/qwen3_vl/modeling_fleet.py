@@ -991,7 +991,9 @@ class Qwen3VLProvider(TransformerConfig):
     def from_config(cls, config):
         res = super().from_config(config)
         res.vision_config = Qwen3VLVisionProvider.from_config(config.vision_config)
+        res.vision_config.fa_version = config.fa_version
         res.text_config = Qwen3VLTextProvider.from_config(config.text_config)
+
         res.vision_config.normalization = "LayerNorm"
         res.vision_config.gated_linear_unit = False
         res.text_config.multimodal_embedding = True
