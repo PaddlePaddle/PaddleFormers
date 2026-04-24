@@ -981,7 +981,7 @@ class TrainingArguments:
         metadata={"help": "The optimizer to use."},
     )
     muon_exclude_patterns: Optional[List[str]] = field(
-        default_factory=lambda: ["embed", "bias", "gptlm_head_0.w_0", "mlp.gate"],
+        default_factory=lambda: ["embed", "bias", "lm_head", "mlp.gate"],
         metadata={
             "help": "List of substrings to exclude from Muon orthogonal updates. "
             "Parameters whose name contains any of these substrings will use AdamW instead. "
@@ -1620,7 +1620,7 @@ class TrainingArguments:
         },
     )
     muon_ns_coeff_type: str = field(
-        default="simple",
+        default="quintic",
         metadata={
             "help": (
                 "Coefficient type for Newton-Schulz iteration in Muon optimizer. "
