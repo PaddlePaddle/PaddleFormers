@@ -52,10 +52,9 @@ def apply_rotary_pos_emb(
     del position_ids
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
-    original_dtype = q.dtype
-    q_embed = (q.astype("float32") * cos) + (rotate_half(q).astype("float32") * sin)
-    k_embed = (k.astype("float32") * cos) + (rotate_half(k).astype("float32") * sin)
-    return q_embed.astype(original_dtype), k_embed.astype(original_dtype)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed, k_embed
 
 
 class GraniteRMSNorm(nn.Layer):
