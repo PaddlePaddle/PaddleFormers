@@ -58,6 +58,7 @@ from transformers.tokenization_utils_base import BatchEncoding
 
 # from ..ops import Topology
 from ..trainer.argparser import strtobool
+from ..transformers.gpt_provider import GPTModel
 from ..transformers.model_utils import (
     EMAStateHFFormatFullParamSaver,
     _add_variant,
@@ -2083,6 +2084,8 @@ class EMAStateAssembler:
 
         ema_sharded_state_dict = {}
 
+        is_gpt_model = isinstance(self.model, GPTModel)
+
         def _remove_layer_suffix(s):
             return re.sub(r"_layer_\d+$", "", s)
 
@@ -2102,7 +2105,8 @@ class EMAStateAssembler:
                 assert (
                     self.expert_id_offset != -1
                 ), f"Your n_routed_experts is {self.model.config.n_routed_experts}, but you have param name:{key}, please check!"
-                key = _update_expert_number(key, self.expert_id_offset, add_mode)
+                if not is_gpt_model:
+                    key = _update_expert_number(key, self.expert_id_offset, add_mode)
             elif "_layer_" in key:
                 key = _remove_layer_suffix(key)
             return key
@@ -2145,12 +2149,6 @@ class EMAStateAssembler:
             if "grouped_gemm_experts" in k:
                 v = paddle.reshape(v, expected_shape)
             ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, v, ref_tensor)
-
-        # Fill missing params from model (e.g., e_score_correction_bias not tracked by EMA)
-        for k, v in self.model_sharded_state_dict.items():
-            if k not in ema_sharded_state_dict:
-                logger.debug(f"[EMAStateAssembler] Filling missing param {k} from model")
-                ema_sharded_state_dict[k] = v
 
         return ema_sharded_state_dict
 
