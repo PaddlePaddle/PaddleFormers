@@ -8,7 +8,7 @@ huggingface_hub>=0.19.2
 protobuf>=3.20.2
 visualdl
 safetensors
-paddlecodec; sys_platform == 'linux'
+paddlecodec>=0.1, <0.2; sys_platform == 'linux'
 fast_dataindex>=0.1.1 ; platform_system == "Linux"
 aistudio-sdk>=0.3.0
 jinja2
