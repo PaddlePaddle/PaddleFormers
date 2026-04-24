@@ -270,6 +270,12 @@ class Qwen3VLMoeConfig(PretrainedConfig):
     model_type = "qwen3_vl_moe"
     sub_configs = {"vision_config": Qwen3VLMoeVisionConfig, "text_config": Qwen3VLMoeTextConfig}
     keys_to_ignore_at_inference = ["past_key_values"]
+    ignore_keys = {
+        "_name_or_path",
+        "model_type",
+        "dtype",
+        "_attn_implementation_internal",
+    }
 
     def __init__(
         self,
@@ -303,27 +309,26 @@ class Qwen3VLMoeConfig(PretrainedConfig):
         self.vision_end_token_id = vision_end_token_id
 
     def __setattr__(self, key, value):
-        if (
-            (text_config := super().__getattribute__("__dict__").get("text_config")) is not None
-            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
-            and key in text_config.__dict__
-        ):
+        # Note: text_config might not be initialized yet during the early stages of __init__.
+        text_config = self.__dict__.get("text_config")
+        if text_config is not None and key not in self.__class__.ignore_keys and hasattr(text_config, key):
             setattr(text_config, key, value)
-        else:
-            super().__setattr__(key, value)
+            # Delete from __dict__ to ensure future access triggers __getattr__
+            # instead of returning a stale local value.
+            if key in self.__dict__:
+                del self.__dict__[key]
+            return
+        super().__setattr__(key, value)
 
-    def __getattribute__(self, key):
-        if "text_config" in super().__getattribute__("__dict__") and key not in [
-            "_name_or_path",
-            "model_type",
-            "dtype",
-            "_attn_implementation_internal",
-        ]:
-            text_config = super().__getattribute__("text_config")
-            if key in text_config.__dict__:
-                return getattr(text_config, key)
-
-        return super().__getattribute__(key)
+    def __getattr__(self, key):
+        if key not in self.__class__.ignore_keys:
+            text_config = self.__dict__.get("text_config")
+            if text_config is not None:
+                try:
+                    return getattr(text_config, key)
+                except AttributeError:
+                    pass
+        return super().__getattr__(key)
 
 
 __all__ = ["Qwen3VLMoeConfig", "Qwen3VLMoeTextConfig"]

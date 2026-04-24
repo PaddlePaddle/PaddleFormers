@@ -14,7 +14,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" Configuration base class and utilities."""
+"""Configuration base class and utilities."""
+
 from __future__ import annotations
 
 import copy
@@ -793,6 +794,7 @@ class PretrainedConfig:
             This attribute is currently not being used during model loading time, but this may change in the future
             versions. But we can already start preparing for the future by saving the dtype with save_pretrained.
     """
+
     model_type: str = ""
     base_config_key: str = ""
     sub_configs: dict[str, type["PretrainedConfig"]] = {}
@@ -808,15 +810,21 @@ class PretrainedConfig:
     _unsavable_keys = set()  # class-level default; each instance gets its own copy in __init__
 
     def __setattr__(self, key, value):
-        if key in super().__getattribute__("attribute_map"):
-            key = super().__getattribute__("attribute_map")[key]
+        map_ = getattr(self.__class__, "attribute_map", {})
+
+        if key in map_:
+            key = map_[key]
+
         super().__setattr__(key, value)
         assert hasattr(self, key)
 
-    def __getattribute__(self, key):
-        if key != "attribute_map" and key in super().__getattribute__("attribute_map"):
-            key = super().__getattribute__("attribute_map")[key]
-        return super().__getattribute__(key)
+    def __getattr__(self, key):
+        map_ = getattr(self.__class__, "attribute_map", {})
+
+        if key in map_:
+            return getattr(self, map_[key])
+
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
 
     def __getitem__(self, key):
         return getattr(self, key, None)
@@ -1260,7 +1268,7 @@ class PretrainedConfig:
             id2label = kwargs["id2label"] if kwargs["id2label"] is not None else []
             if len(id2label) != num_labels:
                 raise ValueError(
-                    f"You passed along `num_labels={num_labels }` with an incompatible id to label map: "
+                    f"You passed along `num_labels={num_labels}` with an incompatible id to label map: "
                     f"{kwargs['id2label']}. Since those arguments are inconsistent with each other, you should remove "
                     "one of them."
                 )
@@ -1370,7 +1378,7 @@ class PretrainedConfig:
     def register_unsavable_keys(self, keys):
         # Save: not save it in any case
         # Print: show it if non default value
-        if type(keys) == list or type(keys) == tuple:
+        if isinstance(keys, (list, tuple)):
             for key in keys:
                 self._unsavable_keys.add(key)
         else:
@@ -1384,6 +1392,18 @@ class PretrainedConfig:
             `Dict[str, Any]`: Dictionary of all the attributes that make up this configuration instance.
         """
         output = copy.deepcopy(self.__dict__)
+
+        # In __setattr__, we enforce a proxy mechanism where attributes belonging to sub-configs
+        # (like text_config) are removed from self.__dict__ to prevent "attribute shadowing" (stale local cache).
+        # Since copy.deepcopy(self.__dict__) misses these proxied attributes, we must flatten
+        # and merge them back from the sub-configs to ensure the serialized dictionary is complete.
+        for key, value in self.__dict__.items():
+            if isinstance(value, PretrainedConfig):
+                sub_config_dict = value.to_dict(saving_file=saving_file)
+                for sub_key, sub_value in sub_config_dict.items():
+                    if sub_key not in output:
+                        output[sub_key] = sub_value
+
         if hasattr(self.__class__, "model_type"):
             output["model_type"] = self.__class__.model_type
         if "_auto_class" in output:
@@ -1562,15 +1582,9 @@ class PretrainedConfig:
 
     def get(self, key, default=None):
         """
-        Return the value for key if config class has the attribute , else default.
-        If default is not given, it defaults to None, so that this method never raises a AttributeError.
+        Return the value for key if config class has the attribute, else default.
         """
-        try:
-            value = self.__getattribute__(key)
-        except AttributeError:
-            return default
-        else:
-            return value
+        return getattr(self, key, default)
 
     def get_text_config(self, decoder=None, encoder=None) -> "PretrainedConfig":
         """
