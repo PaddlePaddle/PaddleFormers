@@ -69,7 +69,11 @@ jobs:
       - name: Determine Image Name
         run: |
           echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
-
+      - name: Determine the runner
+        run: |
+          gpu_id=$(( $(echo $PWD | awk -F'/' '{print $4}' | awk -F'_' '{print $2}') ))
+          echo $PWD
+          echo GPU_DEVICES="$gpu_id" >> $GITHUB_ENV
       - name: Run Container
         env:
           work_dir: ${{ github.workspace }}
