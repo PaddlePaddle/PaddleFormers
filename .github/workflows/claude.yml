@@ -29,22 +29,24 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
-      - name: Setup custom Claude Code
-        run: | 
-          mkdir -p /home/paddle-1/actions-runner/_work/_actions/anthropics/claude-code-action/v1/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl/
-          ln -sf /home/paddle-1/.baidu-cc/baidu-cc-linux-amd64-2.1.76.8/bin/claude \
-            /home/paddle-1/actions-runner/_work/_actions/anthropics/claude-code-action/v1/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl/claude
+      - name: Check env
+        run: |
+          echo "TMPDIR=$TMPDIR"
+          echo "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          HOME: /home/paddle-1
+          TMPDIR: /tmp
+          TMP: /tmp
+          TEMP: /tmp
+          XDG_RUNTIME_DIR: /tmp
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-
-          # Use pre-installed Claude CLI on paddle-bot runner
-          path_to_claude_code_executable: /home/paddle-1/.baidu-cc/baidu-cc-linux-amd64-2.1.76.8/bin/claude
+          
+          path_to_claude_code_executable: /home/paddle-1/.baidu-cc/baidu-cc/bin/claude
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
@@ -59,4 +61,4 @@ jobs:
           claude_args: '--print'
           trigger_phrase: '@formers'
           bot_name: formers[bot]
-          label_trigger: fomrers
+          label_trigger: formers
