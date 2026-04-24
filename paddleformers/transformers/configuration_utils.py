@@ -410,6 +410,18 @@ class LlmMetaConfig:
             False,
             "Whether to use SonicMoE as the computation backend for the moelayer.",
         ),
+        (
+            "moe_subbatch_diag",
+            bool,
+            False,
+            "Whether to use diagonal subbatching for MoE experts. This option is helpful for debugging memory behavior. Defaults to False.",
+        ),
+        (
+            "use_auto_subbatch",
+            bool,
+            False,
+            "Whether to enable automatic subbatching for MoE experts. Defaults to False.",
+        ),
     ]
 
     mtp_attributes = [
