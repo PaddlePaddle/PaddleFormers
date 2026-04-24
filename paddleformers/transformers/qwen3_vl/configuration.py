@@ -319,15 +319,25 @@ class Qwen3VLConfig(PretrainedConfig):
             super().__setattr__(key, value)
 
     def __getattribute__(self, key):
-        if "text_config" in super().__getattribute__("__dict__") and key not in [
-            "_name_or_path",
-            "model_type",
-            "dtype",
-            "_attn_implementation_internal",
-        ]:
-            text_config = super().__getattribute__("text_config")
-            if key in text_config.__dict__:
+        # Attributes that should not be forwarded to sub-configs
+        _excluded_keys = ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+
+        if key in _excluded_keys:
+            return super().__getattribute__(key)
+
+        __dict__ = super().__getattribute__("__dict__")
+
+        # Check text_config first (maintains original priority)
+        if "text_config" in __dict__:
+            text_config = __dict__["text_config"]
+            if text_config is not None and key in text_config.__dict__:
                 return getattr(text_config, key)
+
+        # Then check vision_config
+        if "vision_config" in __dict__:
+            vision_config = __dict__["vision_config"]
+            if vision_config is not None and key in vision_config.__dict__:
+                return getattr(vision_config, key)
 
         return super().__getattribute__(key)
 
