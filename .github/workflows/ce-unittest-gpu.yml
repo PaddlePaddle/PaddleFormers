@@ -1,14 +1,13 @@
 name: Unittest GPU CE
 
 on:
-  pull_request:
   schedule:
-    - cron: "0 1 * * *"     # every day at 09:00 Beijing time (UTC+8)
+    - cron: "0 16 * * *"     # every day at 00:00 Beijing time (UTC+8)
   workflow_dispatch:        # allow to manually trigger the workflow
 
-concurrency:
-  group: unittest-ce-${{ github.workflow }}
-  cancel-in-progress: true
+# concurrency:
+#   group: unittest-ce-${{ github.workflow }}
+#   cancel-in-progress: true
 
 env:
   COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
