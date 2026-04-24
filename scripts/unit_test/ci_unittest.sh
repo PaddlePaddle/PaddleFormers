@@ -94,12 +94,12 @@ set_env() {
     export HF_ENDPOINT=https://hf-mirror.com
 
     # for CE
-    if [[ ${FLAGS_enable_CE} == "true" ]];then
-        export CE_TEST_ENV=1
-        export RUN_SLOW_TEST=1
-        unset PF_HOME
-        export PYTHONPATH=${nlp_dir}:${nlp_dir}/llm:${PYTHONPATH}
-    fi
+    # if [[ ${FLAGS_enable_CE} == "true" ]];then
+    #     export CE_TEST_ENV=1
+    #     export RUN_SLOW_TEST=1
+    #     unset PF_HOME
+    #     export PYTHONPATH=${nlp_dir}:${nlp_dir}/llm:${PYTHONPATH}
+    # fi
 }
 
 print_info() {
