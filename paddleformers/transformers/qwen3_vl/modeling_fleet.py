@@ -386,7 +386,6 @@ class Qwen3VLTextProvider(GPTModelProvider):
     multimodal_embedding: bool = False
     _save_to_hf: bool = False
     use_fused_linear_cross_entropy: bool = True
-    high_precision_rope: bool = True
     moe_grouped_gemm: bool = True
 
     n_shared_experts: int = 0
@@ -439,7 +438,6 @@ class Qwen3VLVisionProvider(TransformerConfig):
     img_w: int = 336
     add_class_token: bool = False
     class_token_len: int = 1
-    high_precision_rope: bool = True
     # _save_to_hf: bool = False
     # use_fused_linear_cross_entropy: bool = True
     # fuse_linear: bool = True

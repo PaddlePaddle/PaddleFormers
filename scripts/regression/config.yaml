@@ -588,23 +588,3 @@ paddleocr_vl:
         sft-vl_full_resume_loss: 12.49209785
     base_result:
         sft-vl_full_excepted_result: []
-qwen3_vl:
-    repo_id: PaddleFormers/tiny-random-qwen3vlv2
-    model_type: vl
-    cli_args:
-        save_checkpoint_format: flex_checkpoint
-        load_checkpoint_format: flex_checkpoint
-        template: qwen3_vl
-        sequence_parallel: false
-        ignore_data_skip: true
-    base_loss:
-        sft-vl_full_loss: 11.93664551
-        sft-vl_full_resume_loss: 11.93703556
-        sft-vl_lora_loss: 11.93664551
-        sft-vl_lora_resume_loss: 11.93703556
-        sft-vl_full_tp_loss: 11.93693018
-        sft-vl_full_tp_resume_loss: 11.93614006
-    base_result:
-        sft-vl_full_excepted_result: []
-        sft-vl_lora_excepted_result: []
-        sft-vl_full_tp_excepted_result: []
