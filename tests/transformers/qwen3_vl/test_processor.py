@@ -357,6 +357,7 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         """Tests that special vision tokens do not get truncated when `truncation=True` is set."""
 
         processor = self.get_processor(use_fast=False)  # only support with slow image processor
+
         input_str = self.prepare_text_inputs(batch_size=2, modalities="image")
         image_input = self.prepare_image_inputs(batch_size=2)
 
