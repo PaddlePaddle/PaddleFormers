@@ -333,6 +333,9 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "olmo2.configuration": ["Olmo2Config"],
+    "olmo2.modeling": ["Olmo2Model", "Olmo2ForCausalLM", "Olmo2ForCausalLMPipe"],
+    "olmo2": [],
 }
 
 if TYPE_CHECKING:
@@ -410,6 +413,7 @@ if TYPE_CHECKING:
     from .phi3 import *
     from .gemma3_text import *
     from .glm_ocr import *
+    from .olmo2 import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
