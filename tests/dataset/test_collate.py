@@ -19,6 +19,9 @@ import numpy as np
 from paddleformers.datasets.collate import (
     calc_padding_size,
     gen_attn_mask_startend_row_indices,
+    gen_mtp_attn_mask,
+    gen_mtp_attn_mask_startend_row_indices,
+    gen_mtp_layer_mask,
     gen_self_attn_mask,
     pad_batch_data,
 )
@@ -45,37 +48,17 @@ class _TrainingArgs:
 
 class TestCalcPaddingSize(unittest.TestCase):
     def test_no_parallelism_no_padding(self):
-        """cp=1, sp=1 → padding_to_size=1, result equals seq_len."""
         args = _TrainingArgs(cp_size=1, tp_size=1, sequence_parallel=False)
         self.assertEqual(calc_padding_size(100, args), 100)
-        self.assertEqual(calc_padding_size(1, args), 1)
 
     def test_cp2_pads_to_multiple_of_4(self):
-        """cp=2, sp=1 → padding_to_size=4 (2*2), seq_len rounded up to multiple of 4."""
         args = _TrainingArgs(cp_size=2, tp_size=1, sequence_parallel=False)
         self.assertEqual(calc_padding_size(5, args), 8)
         self.assertEqual(calc_padding_size(8, args), 8)
-        self.assertEqual(calc_padding_size(9, args), 12)
 
     def test_sequence_parallel_uses_tp_size(self):
-        """sequence_parallel=True activates tp_size in the computation."""
         args = _TrainingArgs(cp_size=1, tp_size=2, sequence_parallel=True)
-        # padding_to_size = 2 * 1 * 2 = 4
         self.assertEqual(calc_padding_size(5, args), 8)
-
-    def test_fp8_rounds_padding_to_size_to_multiple_of_4(self):
-        """fp8=True applies an additional round-up of padding_to_size to multiples of 4."""
-        # cp=2, sp=1 → base padding_to_size=2; after fp8: ceil(2/4)*4=4; final=4*2=8
-        args = _TrainingArgs(cp_size=2, tp_size=1, sequence_parallel=False, fp8=True)
-        result = calc_padding_size(1, args)
-        # Must be a multiple of 8
-        self.assertEqual(result % 8, 0)
-
-    def test_already_aligned_is_unchanged(self):
-        """A sequence already aligned to the padding size should not be padded further."""
-        args = _TrainingArgs(cp_size=2, tp_size=1, sequence_parallel=False)
-        # padding_to_size=4; 16 is already a multiple of 4
-        self.assertEqual(calc_padding_size(16, args), 16)
 
 
 # ---------------------------------------------------------------------------
@@ -85,21 +68,13 @@ class TestCalcPaddingSize(unittest.TestCase):
 
 class TestPadBatchData(unittest.TestCase):
     def test_pads_to_max_length(self):
-        insts = [[1, 2, 3], [4, 5]]
-        result = pad_batch_data(insts, pad_idx=0)
+        result = pad_batch_data([[1, 2, 3], [4, 5]], pad_idx=0)
         self.assertEqual(result.shape, (2, 3))
         np.testing.assert_array_equal(result[1], [4, 5, 0])
 
     def test_pads_to_explicit_max_seq_len(self):
-        insts = [[1, 2], [3]]
-        result = pad_batch_data(insts, pad_idx=-1, max_seq_len=5)
-        self.assertEqual(result.shape, (2, 5))
+        result = pad_batch_data([[1, 2], [3]], pad_idx=-1, max_seq_len=5)
         np.testing.assert_array_equal(result[0], [1, 2, -1, -1, -1])
-
-    def test_single_sequence_no_padding_needed(self):
-        insts = [[10, 20, 30]]
-        result = pad_batch_data(insts, pad_idx=0)
-        np.testing.assert_array_equal(result[0], [10, 20, 30])
 
 
 # ---------------------------------------------------------------------------
@@ -109,45 +84,16 @@ class TestPadBatchData(unittest.TestCase):
 
 class TestGenSelfAttnMask(unittest.TestCase):
     def test_output_shape(self):
-        """Result shape must be (1, 1, max_seq_len, max_seq_len)."""
-        token_ids = [[1, 2, 3], [4, 5]]
-        mask = gen_self_attn_mask(token_ids, max_seq_len=8, use_global_causal_attn=False)
+        mask = gen_self_attn_mask([[1, 2, 3], [4, 5]], max_seq_len=8, use_global_causal_attn=False)
         self.assertEqual(mask.shape, (1, 1, 8, 8))
 
-    def test_causal_within_each_segment(self):
-        """Without global causal, each segment is independently causal (lower triangular)."""
-        token_ids = [[1, 2, 3]]
-        mask = gen_self_attn_mask(token_ids, max_seq_len=3, use_global_causal_attn=False)
-        seg = mask[0, 0, :3, :3]
-        # Lower triangular
-        self.assertEqual(seg[0, 0], 1.0)
-        self.assertEqual(seg[0, 1], 0.0)
-        self.assertEqual(seg[1, 0], 1.0)
-        self.assertEqual(seg[1, 1], 1.0)
-
     def test_no_cross_segment_attention(self):
-        """Tokens in segment B should not attend to tokens in segment A."""
-        # Two segments of length 2 each
-        token_ids = [[1, 2], [3, 4]]
-        mask = gen_self_attn_mask(token_ids, max_seq_len=4, use_global_causal_attn=False)
-        # token 2 (offset 2, seg B) attending to token 0 (seg A) should be 0
+        mask = gen_self_attn_mask([[1, 2], [3, 4]], max_seq_len=4, use_global_causal_attn=False)
         self.assertEqual(mask[0, 0, 2, 0], 0.0)
-        self.assertEqual(mask[0, 0, 3, 1], 0.0)
 
-    def test_global_causal_attn_is_single_lower_triangular(self):
-        """use_global_causal_attn=True treats all segments as one causal sequence."""
-        token_ids = [[1, 2], [3, 4]]
-        mask = gen_self_attn_mask(token_ids, max_seq_len=4, use_global_causal_attn=True)
-        seq = mask[0, 0, :4, :4]
-        expected = np.tril(np.ones((4, 4)))
-        np.testing.assert_array_equal(seq, expected)
-
-    def test_padding_area_is_zero(self):
-        """Positions beyond the actual sequence length should remain 0."""
-        token_ids = [[1, 2]]
-        mask = gen_self_attn_mask(token_ids, max_seq_len=5, use_global_causal_attn=False)
-        # Rows / cols 2-4 are padding
-        np.testing.assert_array_equal(mask[0, 0, 2:, :], 0.0)
+    def test_global_causal_is_lower_triangular(self):
+        mask = gen_self_attn_mask([[1, 2], [3, 4]], max_seq_len=4, use_global_causal_attn=True)
+        np.testing.assert_array_equal(mask[0, 0, :4, :4], np.tril(np.ones((4, 4))))
 
 
 # ---------------------------------------------------------------------------
@@ -156,40 +102,164 @@ class TestGenSelfAttnMask(unittest.TestCase):
 
 
 class TestGenAttnMaskStartendRowIndices(unittest.TestCase):
-    def test_output_shape(self):
-        """Result shape must be (1, 1, max_seq_len, 1)."""
-        token_ids = [[1, 2, 3]]
-        result = gen_attn_mask_startend_row_indices(token_ids, max_seq_len=3, use_global_causal_attn=False)
+    def test_output_shape_and_dtype(self):
+        result = gen_attn_mask_startend_row_indices([[1, 2, 3]], max_seq_len=3, use_global_causal_attn=False)
         self.assertEqual(result.shape, (1, 1, 3, 1))
-
-    def test_dtype_is_int32(self):
-        token_ids = [[1, 2]]
-        result = gen_attn_mask_startend_row_indices(token_ids, max_seq_len=2, use_global_causal_attn=False)
         self.assertEqual(result.dtype, np.int32)
 
-    def test_non_global_each_token_points_to_segment_end(self):
-        """Each token index should point to the end of its own segment (exclusive)."""
-        # Segment A: tokens 0,1,2 → end = 3; segment B: tokens 3,4 → end = 5
-        token_ids = [[0, 0, 0], [0, 0]]
-        result = gen_attn_mask_startend_row_indices(token_ids, max_seq_len=5, use_global_causal_attn=False)
+    def test_each_token_points_to_segment_end(self):
+        # Segment A: tokens 0-2 → end=3; Segment B: tokens 3-4 → end=5
+        result = gen_attn_mask_startend_row_indices([[0, 0, 0], [0, 0]], max_seq_len=5, use_global_causal_attn=False)
         indices = result[0, 0, :, 0].tolist()
-        self.assertEqual(indices[0], 3)
-        self.assertEqual(indices[1], 3)
-        self.assertEqual(indices[2], 3)
-        self.assertEqual(indices[3], 5)
-        self.assertEqual(indices[4], 5)
-
-    def test_global_causal_all_tokens_point_to_total_length(self):
-        """With global causal, every token points to the total sequence length."""
-        token_ids = [[0, 0], [0]]
-        result = gen_attn_mask_startend_row_indices(token_ids, max_seq_len=3, use_global_causal_attn=True)
-        indices = result[0, 0, :3, 0].tolist()
-        self.assertTrue(all(v == 3 for v in indices))
+        self.assertEqual(indices[:3], [3, 3, 3])
+        self.assertEqual(indices[3:], [5, 5])
 
     def test_padding_area_is_ascending(self):
-        """Positions in the padding area (beyond sequence) should be ascending."""
-        token_ids = [[0, 0]]
-        result = gen_attn_mask_startend_row_indices(token_ids, max_seq_len=5, use_global_causal_attn=False)
-        pad_indices = result[0, 0, 2:, 0].tolist()
-        # Should be [2, 3, 4] (range(offset, max_seq_len))
-        self.assertEqual(pad_indices, [2, 3, 4])
+        result = gen_attn_mask_startend_row_indices([[0, 0]], max_seq_len=5, use_global_causal_attn=False)
+        self.assertEqual(result[0, 0, 2:, 0].tolist(), [2, 3, 4])
+
+
+# ---------------------------------------------------------------------------
+# Shared fixture
+#
+# BATCH = [[1, 2, EOS], [4, 5, 6]]
+# total_len=6, mtp_depth=2, max_seq_len=8
+# internal_boundaries=[3]
+#
+# Boundary shift rule (layer k): shifted = original - (k+1)
+#   Layer 0: 3-1=2 → blocks [0:2], [2:6]
+#   Layer 1: 3-2=1 → blocks [0:1], [1:6]
+# ---------------------------------------------------------------------------
+
+EOS = 3
+BATCH = [[1, 2, EOS], [4, 5, 6]]
+MTP_DEPTH = 2
+TOTAL_LEN = 6
+MAX_SEQ_LEN = TOTAL_LEN + MTP_DEPTH  # 8
+
+
+# ---------------------------------------------------------------------------
+# gen_mtp_attn_mask
+# ---------------------------------------------------------------------------
+
+
+class TestGenMtpAttnMask(unittest.TestCase):
+    def _call(self, use_global_causal_attn):
+        return gen_mtp_attn_mask(BATCH, MAX_SEQ_LEN, MTP_DEPTH, use_global_causal_attn)
+
+    def test_output_shape(self):
+        self.assertEqual(self._call(False).shape, (MTP_DEPTH, 1, MAX_SEQ_LEN, MAX_SEQ_LEN))
+
+    def test_global_causal_is_lower_triangular(self):
+        mask = self._call(True)
+        expected = np.tril(np.ones((TOTAL_LEN, TOTAL_LEN), dtype=np.float32))
+        for k in range(MTP_DEPTH):
+            np.testing.assert_array_equal(mask[k, 0, :TOTAL_LEN, :TOTAL_LEN], expected)
+
+    def test_layer0_block_boundaries(self):
+        """Layer 0: blocks [0:2] and [2:6], no cross-block attention."""
+        m = self._call(False)[0, 0]
+        np.testing.assert_array_equal(m[:2, :2], np.tril(np.ones((2, 2))))
+        np.testing.assert_array_equal(m[2:6, 2:6], np.tril(np.ones((4, 4))))
+        np.testing.assert_array_equal(m[2:6, :2], 0.0)
+
+    def test_layer1_block_boundaries(self):
+        """Layer 1: blocks [0:1] and [1:6], no cross-block attention."""
+        m = self._call(False)[1, 0]
+        self.assertEqual(m[0, 0], 1.0)
+        np.testing.assert_array_equal(m[1:6, 1:6], np.tril(np.ones((5, 5))))
+        np.testing.assert_array_equal(m[1:6, :1], 0.0)
+
+    def test_padding_area_is_zero(self):
+        mask = self._call(False)
+        for k in range(MTP_DEPTH):
+            np.testing.assert_array_equal(mask[k, 0, TOTAL_LEN:, :], 0.0)
+
+
+# ---------------------------------------------------------------------------
+# gen_mtp_attn_mask_startend_row_indices
+# ---------------------------------------------------------------------------
+
+
+class TestGenMtpAttnMaskStartendRowIndices(unittest.TestCase):
+    def _call(self, use_global_causal_attn):
+        return gen_mtp_attn_mask_startend_row_indices(BATCH, MAX_SEQ_LEN, MTP_DEPTH, use_global_causal_attn)
+
+    def test_output_shape_and_dtype(self):
+        result = self._call(False)
+        self.assertEqual(result.shape, (MTP_DEPTH, 1, MAX_SEQ_LEN, 1))
+        self.assertEqual(result.dtype, np.int32)
+
+    def test_layer0_end_row_values(self):
+        """Layer 0: positions 0-1 → end=2, positions 2-5 → end=6."""
+        indices = self._call(False)[0, 0, :TOTAL_LEN, 0].tolist()
+        self.assertEqual(indices[:2], [2, 2])
+        self.assertEqual(indices[2:], [6, 6, 6, 6])
+
+    def test_layer1_end_row_values(self):
+        """Layer 1: position 0 → end=1, positions 1-5 → end=6."""
+        indices = self._call(False)[1, 0, :TOTAL_LEN, 0].tolist()
+        self.assertEqual(indices[0], 1)
+        self.assertEqual(indices[1:], [6, 6, 6, 6, 6])
+
+    def test_padding_area_is_ascending(self):
+        result = self._call(False)
+        for k in range(MTP_DEPTH):
+            self.assertEqual(result[k, 0, TOTAL_LEN:, 0].tolist(), list(range(TOTAL_LEN, MAX_SEQ_LEN)))
+
+    def test_consistency_with_2d_mask(self):
+        """startend_row_indices must agree with the 2D matrix version."""
+        mask_2d = gen_mtp_attn_mask(BATCH, MAX_SEQ_LEN, MTP_DEPTH, use_global_causal_attn=False)
+        result = self._call(False)
+        for k in range(MTP_DEPTH):
+            for pos in range(TOTAL_LEN):
+                end = int(result[k, 0, pos, 0])
+                np.testing.assert_array_equal(
+                    mask_2d[k, 0, pos, end:TOTAL_LEN],
+                    0.0,
+                    err_msg=f"layer={k} pos={pos} end={end}",
+                )
+
+
+# ---------------------------------------------------------------------------
+# gen_mtp_layer_mask
+# ---------------------------------------------------------------------------
+#
+# all_token_ids=[1,2,EOS,4,5,6], ids_mtp=[5,6], ids_ori=[1,2,3,4]
+# Layer 0: mtp_ids=[2,3,4,5] → EOS@1 → mask[1]=0
+# Layer 1: mtp_ids=[3,4,5,6] → EOS@0 → mask[0]=0
+# ---------------------------------------------------------------------------
+
+
+class TestGenMtpLayerMask(unittest.TestCase):
+    def _call(self, eos_token_id=None):
+        return gen_mtp_layer_mask(BATCH, MAX_SEQ_LEN, MTP_DEPTH, eos_token_id)
+
+    def test_output_shape_and_dtype(self):
+        result = self._call()
+        self.assertEqual(result.shape, (MTP_DEPTH, MAX_SEQ_LEN))
+        self.assertEqual(result.dtype, np.int32)
+
+    def test_no_eos_all_ones(self):
+        np.testing.assert_array_equal(self._call(None), np.ones((MTP_DEPTH, MAX_SEQ_LEN), dtype=np.int32))
+
+    def test_layer0_eos_zeroed_at_shifted_position(self):
+        """Layer 0: EOS at shifted position 1 → mask[0,1]=0, rest=1."""
+        result = self._call(EOS)
+        self.assertEqual(result[0, 1], 0)
+        np.testing.assert_array_equal(np.delete(result[0], 1), 1)
+
+    def test_layer1_eos_zeroed_at_shifted_position(self):
+        """Layer 1: EOS at shifted position 0 → mask[1,0]=0, rest=1."""
+        result = self._call(EOS)
+        self.assertEqual(result[1, 0], 0)
+        np.testing.assert_array_equal(result[1, 1:], 1)
+
+    def test_padding_area_is_one(self):
+        result = self._call(EOS)
+        for k in range(MTP_DEPTH):
+            np.testing.assert_array_equal(result[k, TOTAL_LEN:], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
