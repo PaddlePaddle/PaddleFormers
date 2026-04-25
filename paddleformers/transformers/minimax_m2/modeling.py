@@ -344,6 +344,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         else:
             num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
 
+        n_shared_experts = config.n_shared_experts if hasattr(config, "n_shared_experts") else 0
+        if n_shared_experts > 0:
+            assert n_shared_experts == 1, f"n_shared_experts must be 0 or 1 in MiniMax-M2, but got {n_shared_experts}"
+
+        # mtp layers
         for layer_idx in reversed(range(num_hidden_layers, num_hidden_layers + num_nextn_predict_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix = f"model.layers.{layer_idx}"
@@ -354,6 +359,14 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix}.hnorm.weight -> {prefix_offset}.hnorm.weight",
                 f"{prefix}.shared_head.norm.weight -> {prefix_offset}.norm.weight",
             ]
+
+            # transformer_layer.mlp.up_gate_proj.weight
+            if config.use_dense_mtp:
+                prefix_offset += ".transformer_layer"
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.mlp.gate_proj.weight^T, {prefix}.mlp.up_proj.weight^T -> {prefix_offset}.mlp.up_gate_proj.weight, fused_ffn",
+                    f"{prefix}.mlp.down_proj.weight^T -> {prefix_offset}.mlp.down_proj.weight",
+                ]
 
         # layer0 - layer_num_hidden_layers
         for layer_idx in reversed(range(0, num_hidden_layers + num_nextn_predict_layers)):
@@ -396,8 +409,10 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         f"{prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias -> {prefix_offset}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
                     ]
 
+        moe_layer_start = config.first_k_dense_replace
+        moe_layer_end = num_hidden_layers if config.use_dense_mtp else num_hidden_layers + num_nextn_predict_layers
         # All layers are MoE (first_k_dense_replace=0)
-        for layer_idx in reversed(range(config.first_k_dense_replace, num_hidden_layers + num_nextn_predict_layers)):
+        for layer_idx in reversed(range(moe_layer_start, moe_layer_end)):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix = f"model.layers.{layer_idx}"
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
@@ -415,6 +430,12 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             else:
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.block_sparse_moe.experts.$EXPERT_ID.w2.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight",
+                ]
+
+            if n_shared_experts > 0:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.block_sparse_moe.shared_experts.gate_proj.weight^T, {prefix}.block_sparse_moe.shared_experts.up_proj.weight^T -> {prefix_offset}.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
+                    f"{prefix}.block_sparse_moe.shared_experts.down_proj.weight^T -> {prefix_offset}.mlp.shared_experts.down_proj.weight",
                 ]
 
             for expert_id in range(config.n_routed_experts):
@@ -485,8 +506,16 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
         # NOTE: MiniMax-M2 has no dense layers (first_k_dense_replace=0)
 
-        num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
+        if config.mtp_num_layers > 0:
+            num_nextn_predict_layers = config.mtp_num_layers
+        else:
+            num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
 
+        n_shared_experts = config.n_shared_experts if hasattr(config, "n_shared_experts") else 0
+        if n_shared_experts > 0:
+            assert n_shared_experts == 1, f"n_shared_experts must be 0 or 1 in MiniMax-M2, but got {n_shared_experts}"
+
+        # mtp layers
         for layer_idx in reversed(range(num_hidden_layers, num_hidden_layers + num_nextn_predict_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix = f"model.layers.{layer_idx}"
@@ -497,6 +526,16 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.hnorm.weight -> {prefix}.hnorm.weight",
                 f"{prefix_offset}.norm.weight -> {prefix}.shared_head.norm.weight",
             ]
+
+            # dense MTP: inverse mapping for dense MLP weights
+            if config.use_dense_mtp:
+                prefix_offset_tf = f"{prefix_offset}.transformer_layer"
+                aoa_statements += [
+                    f"{prefix_offset_tf}.mlp.up_gate_proj.weight -> {prefix}.mlp.gate_proj.weight, {prefix}.mlp.up_proj.weight, fused_ffn",
+                    f"{prefix}.mlp.gate_proj.weight^T -> {prefix}.mlp.gate_proj.weight",
+                    f"{prefix}.mlp.up_proj.weight^T -> {prefix}.mlp.up_proj.weight",
+                    f"{prefix_offset_tf}.mlp.down_proj.weight^T -> {prefix}.mlp.down_proj.weight",
+                ]
 
         # layer 0 -> layer num_hidden_layers-1
         for layer_idx in range(0, num_hidden_layers + num_nextn_predict_layers):
@@ -544,7 +583,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     ]
 
         # All layers are MoE (first_k_dense_replace=0)
-        for layer_idx in range(config.first_k_dense_replace, num_hidden_layers + num_nextn_predict_layers):
+        moe_layer_end = num_hidden_layers if config.use_dense_mtp else num_hidden_layers + num_nextn_predict_layers
+        for layer_idx in range(config.first_k_dense_replace, moe_layer_end):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
             prefix = f"model.layers.{layer_idx}"
@@ -577,6 +617,14 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         f"{prefix_offset}.mlp.experts.up_gate_proj -> {group1}, axis=0"
                         f"{prefix_offset}.mlp.experts.down_proj -> {group2}, axis=0"
                     ]
+
+            if n_shared_experts > 0:
+                aoa_statements += [
+                    f"{prefix_offset}.mlp.shared_experts.down_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.down_proj.weight",
+                    f"{prefix_offset}.mlp.shared_experts.up_gate_proj.weight -> {prefix_offset}.block_sparse_moe.shared_experts.gate_proj.weight, {prefix_offset}.block_sparse_moe.shared_experts.up_proj.weight, fused_ffn",
+                    f"{prefix_offset}.block_sparse_moe.shared_experts.gate_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.gate_proj.weight",
+                    f"{prefix_offset}.block_sparse_moe.shared_experts.up_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.up_proj.weight",
+                ]
 
             aoa_statements += [
                 # do cast
