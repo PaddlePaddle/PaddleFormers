@@ -779,6 +779,11 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
         self.use_mp = use_mp
 
     def on_optimizer_end(self, args, state, control, **kwargs):
+        # Skip bias update when freeze_training is enabled
+        if getattr(args, "freeze_training", False):
+            logger.warning("freeze_training is enabled! MoE e_score_correction_bias will NOT be updated.")
+            return
+
         model = kwargs["model"]
 
         biases = []

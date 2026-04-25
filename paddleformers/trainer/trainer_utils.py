@@ -1709,35 +1709,93 @@ class HFFormatFullParamSaver:
         return total_saved_size
 
 
+def _is_muon_sharding_optimizer(optimizer):
+    opt = optimizer
+    while opt is not None:
+        if type(opt).__name__ == "MuonShardingOptimizer":
+            return True
+        opt = getattr(opt, "_inner_opt", None)
+    return False
+
+
+def _unwrap_muon_sharding_optimizer(optimizer):
+    opt = optimizer
+    while opt is not None:
+        if type(opt).__name__ == "MuonShardingOptimizer":
+            return opt
+        opt = getattr(opt, "_inner_opt", None)
+    return None
+
+
+def _get_muon_2d_param_names(muon_opt):
+    names = set()
+    for _color_key, params in muon_opt._params_2d_by_color.items():
+        for p in params:
+            names.add(p.name)
+    return names
+
+
+def _restore_master_weights_single(master_weights, model, optimizer, group, structure_name_map, restore_func):
+    nms = reshard_util.NodeModelState(group=group)
+    nms_tmp = reshard_util.NodeModelState(group=group)
+    nms_tmp.add_master_weights(master_weights)
+    nms_tmp.pack_keys(structure_name_map)
+    nms.merge_from(nms_tmp, max(group.rank, 0))
+    del nms_tmp
+    nms = restore_func(nms, model, optimizer)
+    nms.unpack_keys()
+    return reshard_util.all_gather_state_dict(nms.master_weights, lambda x: True, group)
+
+
 def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
     master_weights = ema_state_dict["master_weights"]
     tmp = OrderedDict()
     (master_weights, tmp) = (tmp, master_weights)
-    # cast to before
+    # cast to bf16 and move to cpu
     for (k, v) in tmp.items():
         name = v.name
         master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
         master_weights[k].name = name
 
     structure_name_map = {k: v.name for (k, v) in model.state_dict().items()}
-    node_model_state = reshard_util.NodeModelState(group=group)
-    node_model_state_tmp = reshard_util.NodeModelState(group=group)
-    node_model_state_tmp.add_master_weights(master_weights)
-    node_model_state_tmp.pack_keys(structure_name_map)
-    node_model_state.merge_from(node_model_state_tmp, max(group.rank, 0))
-    del node_model_state_tmp
-    sharding_strategy = reshard_util.get_sharding_strategy(optimizer)
-    logger.debug(f"sharding_strategy: {sharding_strategy}")
-    restore_func = (
-        reshard_util.sharding_v1.restore
-        if sharding_strategy == SHARDING_STRATEGY_V1
-        else reshard_util.sharding_v2.restore
-    )
-    node_model_state = restore_func(node_model_state, model, optimizer)
-    node_model_state.unpack_keys()
-    master_weights = node_model_state.master_weights
 
-    master_weights = reshard_util.all_gather_state_dict(master_weights, lambda x: True, group)
+    muon_opt = _unwrap_muon_sharding_optimizer(optimizer)
+    if muon_opt is not None:
+        param_2d_names = _get_muon_2d_param_names(muon_opt)
+        logger.debug(f"Muon EMA recovery: {len(param_2d_names)} 2D params detected")
+
+        mw_2d = OrderedDict()
+        mw_1d = OrderedDict()
+        for k, v in master_weights.items():
+            if k in param_2d_names:
+                mw_2d[k] = v
+            else:
+                mw_1d[k] = v
+
+        all_master_weights = OrderedDict()
+        if mw_2d:
+            restored_2d = _restore_master_weights_single(
+                mw_2d, model, optimizer, group, structure_name_map, reshard_util.sharding_v1.restore
+            )
+            all_master_weights.update(restored_2d)
+        if mw_1d:
+            restored_1d = _restore_master_weights_single(
+                mw_1d, model, optimizer, group, structure_name_map, reshard_util.sharding_v2.restore
+            )
+            all_master_weights.update(restored_1d)
+
+        master_weights = all_master_weights
+    else:
+        sharding_strategy = reshard_util.get_sharding_strategy(optimizer)
+        logger.debug(f"sharding_strategy: {sharding_strategy}")
+        restore_func = (
+            reshard_util.sharding_v1.restore
+            if sharding_strategy == SHARDING_STRATEGY_V1
+            else reshard_util.sharding_v2.restore
+        )
+        master_weights = _restore_master_weights_single(
+            master_weights, model, optimizer, group, structure_name_map, restore_func
+        )
 
     model_state_dict = model.state_dict()
     ema_param_state_dict = OrderedDict()

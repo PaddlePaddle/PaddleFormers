@@ -593,17 +593,17 @@ class BaseTrainingTest:
         # Update baseline if needed
         if should_update:
             new_result = result[0] if result else None
-            if new_result is not None:
-                self.tester.update_baseline(
-                    model_key=model_key,
-                    train_type=train_type,
-                    test_type=test_type,
-                    new_loss=actual_loss,
-                    new_resume_loss=actual_resume_loss,
-                    new_result=new_result,
-                )
-            else:
-                print(f"[SKIP] Skipping baseline update for {model_key} (generation test skipped)")
+            if new_result is None:
+                print(f"[WARN] Generation test skipped for {model_key}, updating loss only")
+                new_result = [[]]  # Use empty list as placeholder for skipped generation
+            self.tester.update_baseline(
+                model_key=model_key,
+                train_type=train_type,
+                test_type=test_type,
+                new_loss=actual_loss,
+                new_resume_loss=actual_resume_loss,
+                new_result=new_result,
+            )
 
         if errors:
             raise AssertionError(errors)
