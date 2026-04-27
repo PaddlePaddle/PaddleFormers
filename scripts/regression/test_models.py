@@ -724,6 +724,30 @@ class TestTrain:
         )
 
     @pytest.mark.model_type("text")
+    @pytest.mark.parametrize("train_type", ["sft"])
+    def test_full_map(self, train_type: str, model_key: str, request) -> None:
+        """Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        """
+        model_cfg = self.train_tester.load_model_config(model_key)
+        print(f"\n[INFO] Testing model={model_key}, train_type=sft_full_map")
+        should_update = self._should_update_baseline(request, model_key)
+
+        self.workflow.execute_training_workflow(
+            model_key=model_key,
+            train_type=train_type,
+            test_type="full_map",
+            config_subpath=f"{train_type}/full_map.yaml",
+            model_cfg=model_cfg,
+            should_update=should_update,
+            requires_export=False,
+        )
+
+    @pytest.mark.model_type("text")
     @pytest.mark.parametrize("train_type", ["sft", "dpo", "pt"])
     def test_lora(self, train_type: str, model_key: str, request) -> None:
         """Test LoRA fine-tuning workflow for text models.

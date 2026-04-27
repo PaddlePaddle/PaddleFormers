@@ -140,6 +140,8 @@ glm4_moe:
         pt_full_resume_loss: 12.83085155
         sft_full_loss: 12.71898651
         sft_full_resume_loss: 12.72072887
+        sft_full_map_loss: 12.89130259
+        sft_full_map_resume_loss: 13.02694035
         dpo_full_loss: 0.69314718
         dpo_full_resume_loss: 0.69314718
         pt_lora_loss: 12.830774305
@@ -168,6 +170,8 @@ glm4_moe:
         pt_full_excepted_result:
         - [10564, 10564, 10564, 138932, 102954, 47231, 47231, 47231, 47231, 47231]
         sft_full_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        sft_full_map_excepted_result:
         - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
         dpo_full_excepted_result:
         - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
