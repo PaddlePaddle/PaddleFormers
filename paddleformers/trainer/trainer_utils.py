@@ -1532,12 +1532,6 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
         parameter_list = []
 
         # --- 1D params: build shard-sized slice params from FusedCommBuffer ---
-        # (same logic as V2 branch above, using _comm_buffer_list)
-        # IMPORTANT: set slice_param.name = "slice@" + param_name so that the
-        # accumulator key matches what muon_sharding's sharded_state_dict expects via
-        # _split_state_name (it strips the "_moment1_0" suffix to get static_name,
-        # which must match param_slice_info keys = original param names after
-        # removing the "slice@" prefix added back in sharded_state_dict).
         for buffer in optimizer._comm_buffer_list:
             for param_name, grad_view in buffer._sharding_param_grad_view.items():
                 if param_name not in static_to_struct_mapping:
@@ -1554,31 +1548,24 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
                     slice_param.name = param_name
                     parameter_list.append(slice_param)
 
-        # --- 2D non-MoE params: local rank's full tensors (Muon) ---
-        local_2d = optimizer._rank2params_2d.get(optimizer._sharding_rank, [])
-        for param in local_2d:
-            param_name = param.name
-            if param_name not in static_to_struct_mapping:
-                continue
-            struct_name = static_to_struct_mapping[param_name]
-            if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
-                continue
-            parameter_list.append(param)
+        # -- 2D params: build full-sized 2D params from _params_2d_by_color ---
+        for color_key, _ in optimizer._params_2d_by_color.items():
+            assert (
+                color_key in optimizer._rank2params_2d_by_color
+            ), f"color_key '{color_key}' not in optimizer._rank2params_2d_by_color."
+            rank2params_2d_by_color = optimizer._rank2params_2d_by_color[color_key]
 
-        # --- 2D MoE expert params: local rank's full tensors (Muon) ---
-        if optimizer._moe_sharding_world_size > 1:
-            moe_rank = optimizer._moe_sharding_rank
-        else:
-            moe_rank = 0
-        local_2d_moe = optimizer._rank2params_2d_moe.get(moe_rank, [])
-        for param in local_2d_moe:
-            param_name = param.name
-            if param_name not in static_to_struct_mapping:
-                continue
-            struct_name = static_to_struct_mapping[param_name]
-            if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
-                continue
-            parameter_list.append(param)
+            group_info = optimizer._color_to_group_info[color_key]
+            sharding_rank = group_info["rank"] if group_info["rank"] >= 0 else 0
+            local_2d = rank2params_2d_by_color[sharding_rank]
+            for param in local_2d:
+                param_name = param.name
+                if param_name not in static_to_struct_mapping:
+                    continue
+                struct_name = static_to_struct_mapping[param_name]
+                if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+                    continue
+                parameter_list.append(param)
 
         optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), parameter_list)
         return
