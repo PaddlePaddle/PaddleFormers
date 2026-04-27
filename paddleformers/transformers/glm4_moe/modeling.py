@@ -420,6 +420,8 @@ class GLm4MoeNaiveMoe(nn.Module):
         top_k_index: paddle.Tensor,
         top_k_weights: paddle.Tensor,
     ) -> paddle.Tensor:
+        print("Hello")
+        temp_a = 1
         final_hidden_states = paddle.zeros_like(hidden_states)
 
         with paddle.no_grad():
