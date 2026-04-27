@@ -2019,7 +2019,6 @@ class Trainer:
         if self.resume_from_custom_func is not None:
             self.resume_from_custom_func(model)
 
-        step_control = 0  # used in loop control, reset at each epoch boundary via forced flush
         self.current_gradient_accumulation_steps = args.gradient_accumulation_steps
         for epoch in range(epochs_trained, num_train_epochs):
             if (
@@ -2028,6 +2027,7 @@ class Trainer:
                 and isinstance(train_dataloader.batch_sampler, (MappingBatchSampler, MappingDistributedBatchSampler))
             ):
                 train_dataloader.batch_sampler.set_epoch(epoch, consumed_samples)
+            step_control = 0
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
 
             step = -1
@@ -2093,7 +2093,7 @@ class Trainer:
                     if (step_control + 1) % self.args.gradient_accumulation_steps == 0 or (
                         # last step in epoch: flush remaining accumulated gradients
                         (step + 1)
-                        == steps_in_epoch
+                        >= steps_in_epoch
                     ):
                         # update current global step and skip step
                         self.state.global_step += 1
@@ -2163,7 +2163,7 @@ class Trainer:
                         available_no_sync = hasattr(model, "no_sync")
                         do_sync_step = (step_control + 1) % args.gradient_accumulation_steps == 0 or (
                             step + 1
-                        ) == steps_in_epoch
+                        ) >= steps_in_epoch
                         is_no_sync = (
                             ((not do_sync_step) and args._no_sync_in_gradient_accumulation)
                             or args.recompute_granularity is not None
@@ -2234,11 +2234,9 @@ class Trainer:
 
                     disable_accumulation = False
 
-                    if (step_control + 1) % args.gradient_accumulation_steps == 0 or (
-                        # last step in epoch: flush remaining accumulated gradients
-                        (step + 1) == steps_in_epoch
-                        or disable_accumulation
-                    ):
+                    _cond_acc = (step_control + 1) % args.gradient_accumulation_steps == 0
+                    _cond_epoch_end = (step + 1) >= steps_in_epoch
+                    if _cond_acc or (_cond_epoch_end or disable_accumulation):
                         # assert if loss is invalid
                         self._check_loss_valid(tr_loss)
 
@@ -2368,6 +2366,72 @@ class Trainer:
                 )
                 self.control.should_training_stop = True
 
+            # Epoch tail: flush partial accumulated gradients as an optimizer step.
+            # When len(dataloader) is not a multiple of gradient_accumulation_steps,
+            # the tail micro-batches have accumulated gradients but never triggered
+            # an optimizer step inside the loop.  Do it now so global_step advances.
+            if step_control > 0:
+                logger.info(
+                    f"[epoch_tail_flush] Flushing {step_control} accumulated micro-batch "
+                    f"gradients at epoch {epoch} end as optimizer step."
+                )
+                _tail_parameters_list = None
+                if not args.enable_auto_parallel:
+                    if hasattr(self.optimizer, "_hcg"):
+                        hybrid_parallel_scale_param_grad(list(model.parameters()), self.optimizer._hcg)
+
+                    if (args.recompute_granularity is not None or args.use_expert_parallel) and available_no_sync:
+                        fused_allreduce_gradients_no_sync(list(model.parameters()), None)
+                    elif dp_master_grad:
+                        fused_allreduce_gradients_no_sync(list(model.parameters()), None)
+
+                    enable_dp_comm_overlap = self.args.pipeline_model_parallel_size > 1 and args.dp_comm_overlap
+                    if isinstance(self.optimizer, HybridParallelOptimizer) and not self.do_grad_scaling:
+                        _tail_parameters_list = _obtain_optimizer_parameters_list(self.optimizer._inner_opt)
+                        if not enable_dp_comm_overlap:
+                            if self.optimizer._sharding_enable:
+                                self.optimizer._inner_opt.reduce_gradients(
+                                    list(_tail_parameters_list), self.optimizer._hcg
+                                )
+                            if self.optimizer._dp_enable or getattr(self.optimizer, "_sep_enable", False):
+                                fused_allreduce_gradients_no_sync(list(_tail_parameters_list), self.optimizer._hcg)
+
+                # Scale gradients by actual micro-batch count (not gradient_accumulation_steps)
+                if not args.enable_auto_parallel and self.args.gradient_accumulation_steps > 1:
+                    paddle.device.synchronize()
+                    parameters = model._layers.parameters() if hasattr(model, "_layers") else model.parameters()
+                    for p in parameters:
+                        with paddle.no_grad():
+                            if hasattr(p, "main_grad") and p.main_grad is not None:
+                                assert p.grad is None
+                                p.main_grad.scale_(1.0 / step_control)
+                            elif p.grad is not None:
+                                p.grad.scale_(1.0 / step_control)
+
+                self.callback_handler.on_optimizer_begin(
+                    args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
+                )
+                self.optimizer_step(args, model=model, parameters_list=_tail_parameters_list)
+                self.callback_handler.on_optimizer_end(
+                    args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
+                )
+
+                self.state.global_step += 1
+                logger.info(
+                    f"[epoch_tail_flush] optimizer step done! epoch={epoch} "
+                    f"step_control={step_control} new_global_step={self.state.global_step}"
+                )
+                self.state.epoch = epoch + 1.0
+                self.control = self.callback_handler.on_step_end(args, self.state, self.control)
+                self._maybe_log_save_evaluate(tr_loss, model, epoch, ignore_keys_for_eval, inputs=inputs)
+                logger.info(
+                    f"[DataLoad global_step: {self.state.global_step}] "
+                    f"data_load_time: {_data_load_time_for_global_step * 1000:.2f} ms "
+                    f"(accumulated over {step_control} micro-batches, epoch tail)"
+                )
+                _data_load_time_for_global_step = 0.0
+                step_control = 0
+
             self.control = self.callback_handler.on_epoch_end(args, self.state, self.control)
 
             if self.args.enable_auto_parallel:
@@ -2380,6 +2444,7 @@ class Trainer:
                 break
 
             consumed_samples = 0
+            steps_trained_in_current_epoch = 0
 
         if args.past_index and hasattr(self, "_past"):
             # Clean the state at the end of training
