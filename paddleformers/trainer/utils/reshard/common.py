@@ -21,6 +21,9 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding
     DygraphShardingOptimizer,
     DygraphShardingOptimizerV2,
 )
+from paddle.distributed.fleet.meta_optimizers.muon_sharding_optimizer import (
+    MuonShardingOptimizer,
+)
 from paddle.distributed.fleet.utils.log_util import logger
 
 from paddleformers.utils.tools import get_env_device
@@ -43,6 +46,10 @@ def is_sharding_opt(optimizer):
 
     if DygraphShardingOptimizerV2 is not None:
         if check(DygraphShardingOptimizerV2):
+            return True
+
+    if MuonShardingOptimizer is not None:
+        if check(MuonShardingOptimizer):
             return True
 
     return False
