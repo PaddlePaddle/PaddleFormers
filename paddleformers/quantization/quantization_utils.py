@@ -48,7 +48,6 @@ if is_paddlefleet_available():
         get_tensor_model_parallel_group,
         get_tensor_model_parallel_world_size,
     )
-    from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
     from paddlefleet.tensor_parallel import (
         ColumnParallelLinear as FleetColumnParallelLinear,
     )
@@ -66,9 +65,6 @@ else:
 
     def get_tensor_model_parallel_world_size():
         return 1
-
-    class PaddleFleetPipelineLayer:
-        pass
 
     class FleetColumnParallelLinear:
         pass

@@ -14,13 +14,17 @@ on:
           - 'all'
           - 'llama'
           - 'qwen3'
-          - 'glm_moe'
+          - 'glm4_moe'
           - 'qwen3_next'
           - 'qwen3moe'
           - 'phi3'
           - 'qwen2'
           - 'gemma3_text'
           - 'paddleocr_vl'
+          - 'qwen2_moe'
+          - 'qwen3_vl'
+          - 'qwen3_vl_moe'
+          - 'qwen2_5_vl' 
   workflow_call:
     inputs:
       runner:

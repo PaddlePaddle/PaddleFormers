@@ -45,6 +45,9 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding
     DygraphShardingOptimizer,
     DygraphShardingOptimizerV2,
 )
+from paddle.distributed.fleet.meta_optimizers.muon_sharding_optimizer import (
+    MuonShardingOptimizer,
+)
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_stage2 import (
     GroupShardedOptimizerStage2,
@@ -58,6 +61,13 @@ from transformers.tokenization_utils_base import BatchEncoding
 
 # from ..ops import Topology
 from ..trainer.argparser import strtobool
+from ..utils.import_utils import is_paddlefleet_available
+
+if is_paddlefleet_available():
+    from ..transformers.gpt_provider import GPTModel
+else:
+    GPTModel = None
+
 from ..transformers.model_utils import (
     EMAStateHFFormatFullParamSaver,
     _add_variant,
@@ -498,6 +508,7 @@ class OptimizerNames(ExplicitEnum):
     ADAFACTOR = "adafactor"
     ADAMW_MINI = "adamw_mini"
     ADAMW_CUSTOM = "adamw_custom"
+    MUON = "muon"
 
 
 class ShardingOption(ExplicitEnum):
@@ -1517,6 +1528,61 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
         optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), parameter_list)
         return
 
+    elif MuonShardingOptimizer is not None and isinstance(inner_opt, MuonShardingOptimizer):
+        parameter_list = []
+
+        # --- 1D params: build shard-sized slice params from FusedCommBuffer ---
+        # (same logic as V2 branch above, using _comm_buffer_list)
+        # IMPORTANT: set slice_param.name = "slice@" + param_name so that the
+        # accumulator key matches what muon_sharding's sharded_state_dict expects via
+        # _split_state_name (it strips the "_moment1_0" suffix to get static_name,
+        # which must match param_slice_info keys = original param names after
+        # removing the "slice@" prefix added back in sharded_state_dict).
+        for buffer in optimizer._comm_buffer_list:
+            for param_name, grad_view in buffer._sharding_param_grad_view.items():
+                if param_name not in static_to_struct_mapping:
+                    continue
+                struct_name = static_to_struct_mapping[param_name]
+                if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+                    continue
+                param_buffer = grad_view._param_buffer
+                param_begin = grad_view._param_begin
+                param_end = grad_view._param_end
+                if param_begin >= 0 and param_end > 0 and param_end > param_begin:
+                    slice_param = paddle.slice(param_buffer, axes=[0], starts=[param_begin], ends=[param_end])
+                    assert slice_param.numel().item() > 0
+                    slice_param.name = param_name
+                    parameter_list.append(slice_param)
+
+        # --- 2D non-MoE params: local rank's full tensors (Muon) ---
+        local_2d = optimizer._rank2params_2d.get(optimizer._sharding_rank, [])
+        for param in local_2d:
+            param_name = param.name
+            if param_name not in static_to_struct_mapping:
+                continue
+            struct_name = static_to_struct_mapping[param_name]
+            if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+                continue
+            parameter_list.append(param)
+
+        # --- 2D MoE expert params: local rank's full tensors (Muon) ---
+        if optimizer._moe_sharding_world_size > 1:
+            moe_rank = optimizer._moe_sharding_rank
+        else:
+            moe_rank = 0
+        local_2d_moe = optimizer._rank2params_2d_moe.get(moe_rank, [])
+        for param in local_2d_moe:
+            param_name = param.name
+            if param_name not in static_to_struct_mapping:
+                continue
+            struct_name = static_to_struct_mapping[param_name]
+            if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
+                continue
+            parameter_list.append(param)
+
+        optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), parameter_list)
+        return
+
     elif isinstance(optimizer, GroupShardedOptimizerStage2):
         local_params = optimizer._segment_params()[optimizer._rank]
         for p in local_params:
@@ -1709,35 +1775,93 @@ class HFFormatFullParamSaver:
         return total_saved_size
 
 
+def _is_muon_sharding_optimizer(optimizer):
+    opt = optimizer
+    while opt is not None:
+        if type(opt).__name__ == "MuonShardingOptimizer":
+            return True
+        opt = getattr(opt, "_inner_opt", None)
+    return False
+
+
+def _unwrap_muon_sharding_optimizer(optimizer):
+    opt = optimizer
+    while opt is not None:
+        if type(opt).__name__ == "MuonShardingOptimizer":
+            return opt
+        opt = getattr(opt, "_inner_opt", None)
+    return None
+
+
+def _get_muon_2d_param_names(muon_opt):
+    names = set()
+    for _color_key, params in muon_opt._params_2d_by_color.items():
+        for p in params:
+            names.add(p.name)
+    return names
+
+
+def _restore_master_weights_single(master_weights, model, optimizer, group, structure_name_map, restore_func):
+    nms = reshard_util.NodeModelState(group=group)
+    nms_tmp = reshard_util.NodeModelState(group=group)
+    nms_tmp.add_master_weights(master_weights)
+    nms_tmp.pack_keys(structure_name_map)
+    nms.merge_from(nms_tmp, max(group.rank, 0))
+    del nms_tmp
+    nms = restore_func(nms, model, optimizer)
+    nms.unpack_keys()
+    return reshard_util.all_gather_state_dict(nms.master_weights, lambda x: True, group)
+
+
 def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
     master_weights = ema_state_dict["master_weights"]
     tmp = OrderedDict()
     (master_weights, tmp) = (tmp, master_weights)
-    # cast to before
+    # cast to bf16 and move to cpu
     for (k, v) in tmp.items():
         name = v.name
         master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
         master_weights[k].name = name
 
     structure_name_map = {k: v.name for (k, v) in model.state_dict().items()}
-    node_model_state = reshard_util.NodeModelState(group=group)
-    node_model_state_tmp = reshard_util.NodeModelState(group=group)
-    node_model_state_tmp.add_master_weights(master_weights)
-    node_model_state_tmp.pack_keys(structure_name_map)
-    node_model_state.merge_from(node_model_state_tmp, max(group.rank, 0))
-    del node_model_state_tmp
-    sharding_strategy = reshard_util.get_sharding_strategy(optimizer)
-    logger.debug(f"sharding_strategy: {sharding_strategy}")
-    restore_func = (
-        reshard_util.sharding_v1.restore
-        if sharding_strategy == SHARDING_STRATEGY_V1
-        else reshard_util.sharding_v2.restore
-    )
-    node_model_state = restore_func(node_model_state, model, optimizer)
-    node_model_state.unpack_keys()
-    master_weights = node_model_state.master_weights
 
-    master_weights = reshard_util.all_gather_state_dict(master_weights, lambda x: True, group)
+    muon_opt = _unwrap_muon_sharding_optimizer(optimizer)
+    if muon_opt is not None:
+        param_2d_names = _get_muon_2d_param_names(muon_opt)
+        logger.debug(f"Muon EMA recovery: {len(param_2d_names)} 2D params detected")
+
+        mw_2d = OrderedDict()
+        mw_1d = OrderedDict()
+        for k, v in master_weights.items():
+            if k in param_2d_names:
+                mw_2d[k] = v
+            else:
+                mw_1d[k] = v
+
+        all_master_weights = OrderedDict()
+        if mw_2d:
+            restored_2d = _restore_master_weights_single(
+                mw_2d, model, optimizer, group, structure_name_map, reshard_util.sharding_v1.restore
+            )
+            all_master_weights.update(restored_2d)
+        if mw_1d:
+            restored_1d = _restore_master_weights_single(
+                mw_1d, model, optimizer, group, structure_name_map, reshard_util.sharding_v2.restore
+            )
+            all_master_weights.update(restored_1d)
+
+        master_weights = all_master_weights
+    else:
+        sharding_strategy = reshard_util.get_sharding_strategy(optimizer)
+        logger.debug(f"sharding_strategy: {sharding_strategy}")
+        restore_func = (
+            reshard_util.sharding_v1.restore
+            if sharding_strategy == SHARDING_STRATEGY_V1
+            else reshard_util.sharding_v2.restore
+        )
+        master_weights = _restore_master_weights_single(
+            master_weights, model, optimizer, group, structure_name_map, restore_func
+        )
 
     model_state_dict = model.state_dict()
     ema_param_state_dict = OrderedDict()
@@ -2025,6 +2149,8 @@ class EMAStateAssembler:
 
         ema_sharded_state_dict = {}
 
+        is_gpt_model = GPTModel is not None and isinstance(self.model, GPTModel)
+
         def _remove_layer_suffix(s):
             return re.sub(r"_layer_\d+$", "", s)
 
@@ -2044,7 +2170,8 @@ class EMAStateAssembler:
                 assert (
                     self.expert_id_offset != -1
                 ), f"Your n_routed_experts is {self.model.config.n_routed_experts}, but you have param name:{key}, please check!"
-                key = _update_expert_number(key, self.expert_id_offset, add_mode)
+                if not is_gpt_model:
+                    key = _update_expert_number(key, self.expert_id_offset, add_mode)
             elif "_layer_" in key:
                 key = _remove_layer_suffix(key)
             return key
@@ -2087,12 +2214,6 @@ class EMAStateAssembler:
             if "grouped_gemm_experts" in k:
                 v = paddle.reshape(v, expected_shape)
             ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, v, ref_tensor)
-
-        # Fill missing params from model (e.g., e_score_correction_bias not tracked by EMA)
-        for k, v in self.model_sharded_state_dict.items():
-            if k not in ema_sharded_state_dict:
-                logger.debug(f"[EMAStateAssembler] Filling missing param {k} from model")
-                ema_sharded_state_dict[k] = v
 
         return ema_sharded_state_dict
 

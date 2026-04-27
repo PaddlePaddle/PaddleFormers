@@ -17,7 +17,7 @@ import sys
 import paddle
 
 MODEL_MAPPING = {
-    "glm_moe": {
+    "glm4_moe": {
         "import_path": "paddleformers.transformers.glm4_moe.modeling",
         "class_name": "Glm4MoeForCausalLMDeprecated",
         "dtype": "bfloat16",

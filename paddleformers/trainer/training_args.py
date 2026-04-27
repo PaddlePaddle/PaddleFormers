@@ -515,6 +515,20 @@ class TrainingArguments:
         and decreased for the experts with more assigned tokens."""
         },
     )
+    freeze_training: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "When set to True, the training process will be frozen: "
+                "1) Model parameters will not be updated (backward and optimizer step are skipped). "
+                "2) Optimizer state remains unchanged. "
+                "3) Learning rate scheduler is not updated. "
+                "4) MoE e_score_correction_bias is not updated. "
+                "This is useful for debugging, profiling, or running inference-only passes through the training loop. "
+                "Note: The learning rate will also be effectively set to 0 when this flag is enabled."
+            )
+        },
+    )
 
     log_on_each_node: bool = field(
         default=True,
@@ -979,6 +993,14 @@ class TrainingArguments:
     optim: str = field(
         default="adamw",
         metadata={"help": "The optimizer to use."},
+    )
+    muon_exclude_patterns: Optional[List[str]] = field(
+        default_factory=lambda: ["embed", "bias", "lm_head", "mlp.gate"],
+        metadata={
+            "help": "List of substrings to exclude from Muon orthogonal updates. "
+            "Parameters whose name contains any of these substrings will use AdamW instead. "
+            "Default: ['embed', 'bias', 'gptlm_head_0.w_0', 'mlp.gate]"
+        },
     )
     use_lowprecision_moment: bool = field(
         default=False,
@@ -1554,6 +1576,73 @@ class TrainingArguments:
             "help": "Enable parameter sharding to distribute model parameters across devices, reducing memory footprint per GPU (ZeRO-style optimization)."
         },
     )
+    muon_qkv_update_mode: str = field(
+        default="split_head",
+        metadata={
+            "help": (
+                "Controls how QKV weight matrices are orthogonalised in the Muon optimizer. "
+                "Options: "
+                "'split_head' (default) — each Q/K/V head is orthogonalised independently (interleaved layout); "
+                "'split_qkv' — Q, K, V projections each treated as one whole matrix for Newton-Schulz; "
+                "'fused_qkv' — the entire QKV matrix is treated as one matrix. "
+                "Only used when optim=muon."
+            )
+        },
+    )
+    muon_ffn_split: bool = field(
+        default=True,
+        metadata={
+            "help": (
+                "Whether to split FFN gate_up weights for separate orthogonalisation. "
+                "If True, gate and up projections are orthogonalised independently. "
+                "Only used when optim=muon."
+            )
+        },
+    )
+    muon_extra_scale_factor: float = field(
+        default=0.2,
+        metadata={
+            "help": (
+                "Additional scaling factor for Muon orthogonal updates. "
+                "The final scale = dimension_scale * muon_extra_scale_factor. "
+                "Default: 0.2. Only used when optim=muon."
+            )
+        },
+    )
+    muon_momentum: float = field(
+        default=0.95,
+        metadata={"help": ("Momentum coefficient for Muon optimizer. " "Default: 0.95. Only used when optim=muon.")},
+    )
+    muon_version: int = field(
+        default=3,
+        metadata={
+            "help": (
+                "Scaling-function version for Muon optimizer (1, 2, or 3). "
+                "Version 1: scale = max(1, dout/din)^0.5. "
+                "Version 2: scale = (dout/din)^0.5. "
+                "Version 3: scale = max(dout, din)^0.5. "
+                "Default: 3. Only used when optim=muon."
+            )
+        },
+    )
+    muon_ns_steps: int = field(
+        default=5,
+        metadata={
+            "help": (
+                "Number of Newton-Schulz iteration steps for Muon optimizer. " "Default: 5. Only used when optim=muon."
+            )
+        },
+    )
+    muon_ns_coeff_type: str = field(
+        default="quintic",
+        metadata={
+            "help": (
+                "Coefficient type for Newton-Schulz iteration in Muon optimizer. "
+                "Options: 'simple', 'quintic', 'polar_express', 'aol'. "
+                "Default: 'simple'. Only used when optim=muon."
+            )
+        },
+    )
     sd_sharding_comm_overlap: bool = field(
         default=False,
         metadata={
@@ -1780,6 +1869,9 @@ class TrainingArguments:
             if not (self.bf16 or self.fp16):
                 logger.warning("set amp_master_grad to false since amp is disabled.")
                 self.amp_master_grad = False
+
+        if self.optim == OptimizerNames.MUON:
+            assert self.use_hybrid_parallel, "Muon optimizer only supports use_hybrid_parallel=True"
 
         # use_hybrid_parallel
         if self.use_hybrid_parallel:
@@ -2119,6 +2211,10 @@ class TrainingArguments:
                             strategy.hybrid_configs["sharding_configs"].split_param = True
                             assert self.amp_master_grad, "Currently sharding stage1 v2 only support amp_master_grad"
 
+                        # Muon optimizer requires split_param for MuonSharding
+                        if self.optim == OptimizerNames.MUON:
+                            assert self.split_param, "Muon optimizer requires split_param=True for MuonSharding"
+
                         if self.sd_release_grads:
                             strategy.hybrid_configs["sharding_configs"].release_gradients = True
 
@@ -2175,6 +2271,11 @@ class TrainingArguments:
 
                 if self.nccl_comm_group_config is not None:
                     strategy = init_nccl_config(self.nccl_comm_group_config, strategy)
+
+                # Enable MuonShardingOptimizer automatically when optim=muon
+                if self.optim == OptimizerNames.MUON:
+                    strategy.use_muon_sharding = True
+                    logger.info("MuonShardingOptimizer enabled for Muon optimizer")
 
                 fleet.init(is_collective=True, strategy=strategy)
 
