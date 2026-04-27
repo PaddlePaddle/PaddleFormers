@@ -131,7 +131,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         muon_configs = config.muon_configs
 
         num_hidden_layers = config.num_hidden_layers
-        num_attention_head = config.num_attention_head
+        num_attention_head = config.num_attention_heads
         num_key_value_heads = config.num_key_value_heads
         num_key_value_groups = num_attention_head // num_key_value_heads
         use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
