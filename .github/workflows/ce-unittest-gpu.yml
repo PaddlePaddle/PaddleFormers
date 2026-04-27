@@ -143,8 +143,11 @@ jobs:
             git log --pretty=oneline -10
             '
       - name: Change python version
+        env:
+          work_dir: ${{ github.workspace }}
+          python_version: "3.12"
         run: |
-          docker exec -i $container_name /bin/bash <<-DOCKER_EOF
+          docker exec -i -e "work_dir=$work_dir" -e "python_version=$python_version" $container_name /bin/bash <<-DOCKER_EOF
           echo "Change python version to $python_version"
           set -e
           cp ${work_dir}/../../../Miniconda3-latest-Linux-x86_64.sh /tmp/miniconda.sh
