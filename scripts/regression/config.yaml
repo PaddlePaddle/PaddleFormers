@@ -591,18 +591,4 @@ paddleocr_vl:
         sft-vl_full_loss: 12.476868625
         sft-vl_full_resume_loss: 12.49209785
     base_result:
-        pt_full_excepted_result: []
-        sft_full_excepted_result: []
-        dpo_full_excepted_result: []
-        pt_lora_excepted_result: []
-        sft_lora_excepted_result: []
-        dpo_lora_excepted_result: []
-        pt_full_tp_pp_excepted_result: []
-        sft_full_tp_pp_excepted_result: []
-        dpo_full_tp_pp_excepted_result: []
-        pt_lora_tp_pp_excepted_result: []
-        sft_lora_tp_pp_excepted_result: []
-        dpo_lora_tp_pp_excepted_result: []
-        sft_full_function_call_excepted_result: []
-        dpo_full_function_call_excepted_result: []
         sft-vl_full_excepted_result: []
