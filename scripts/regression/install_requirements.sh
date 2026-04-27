@@ -91,9 +91,9 @@ install_requirements() {
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl    
     else
-        echo "Install CI ENV: Cuda126+Python310"
+        echo "Install CI ENV: Cuda129+Python312"
         python setup.py bdist_wheel > /dev/null
-        pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+        pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
     fi
    
     
