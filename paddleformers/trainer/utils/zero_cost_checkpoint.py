@@ -223,17 +223,6 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
                 param_mappings[k] = param_meta
         index += 1
 
-    if not is_muon:
-        for k, v in manipulated_state_dict.items():
-            if k not in param_mappings:
-                unshard_buffer_index = f"unshard_{k}"
-                param_meta = {}
-                param_meta["buffer_index"] = unshard_buffer_index
-                param_meta["shape"] = v.shape
-                param_meta["name"] = v.name
-                param_mappings[k] = param_meta
-                ipc_meta_mappings[unshard_buffer_index] = v.get_tensor()._share_cuda()
-
     if is_muon:
         sharding_rank = optimizer._sharding_rank
         local_2d_params = list(optimizer._rank2params_2d.get(sharding_rank, []))
@@ -243,7 +232,6 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
             local_2d_moe = list(optimizer._rank2params_2d_moe.get(0, []))
         local_2d_params.extend(local_2d_moe)
 
-        # TODO(xingmingyyj) : handle multi to one
         local_2d_name_to_param = {p.name: p for p in local_2d_params}
 
         for k, v in manipulated_state_dict.items():
@@ -263,11 +251,10 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
                 param_mappings[k] = param_meta
                 index += 1
 
-    # Third Muon block: map remaining params (e.g. stop_gradient parameters) via
-    # optimizer._parameter_list. Note that persistable registered buffers are NOT in
-    # _parameter_list and would not be mapped here — see the comment in
-    # _muon_manipulate_state_dict() for details.
-    if is_muon:
+        # Third Muon block: map remaining params (e.g. stop_gradient parameters) via
+        # optimizer._parameter_list. Note that persistable registered buffers are NOT in
+        # _parameter_list and would not be mapped here — see the comment in
+        # _muon_manipulate_state_dict() for details.
         all_param_by_name = {p.name: p for p in optimizer._parameter_list}
         if hasattr(optimizer, "_origin_parameter_list"):
             for p in optimizer._origin_parameter_list:
@@ -290,6 +277,16 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
                 }
                 param_mappings[k] = param_meta
                 index += 1
+
+    for k, v in manipulated_state_dict.items():
+        if k not in param_mappings:
+            unshard_buffer_index = f"unshard_{k}"
+            param_meta = {}
+            param_meta["buffer_index"] = unshard_buffer_index
+            param_meta["shape"] = v.shape
+            param_meta["name"] = v.name
+            param_mappings[k] = param_meta
+            ipc_meta_mappings[unshard_buffer_index] = v.get_tensor()._share_cuda()
 
     # If this assertion fails under Muon, it is likely because the model contains persistable
     # registered buffers that are included in manipulated_state_dict but cannot be mapped via
