@@ -252,14 +252,6 @@ def is_torch_available() -> bool:
     return is_package_available("torch")
 
 
-def is_decord_available() -> bool:
-    """check if `decord` package is installed
-    Returns:
-        bool: if `decord` is available
-    """
-    return _is_package_available("decord")
-
-
 def is_package_available(package_name: str) -> bool:
     """check if the package is available
     Args:

@@ -44,13 +44,11 @@ class TestAistudioDownload(unittest.TestCase):
     @slow
     @unittest.skip("TODO: Temporarily skipped because of unstable download logic (fix later)")
     def test_aistudio_download_transformer(self):
-        # 设置测试数据
         repo_id = "PaddleFormers/tiny-random-qwen2v2"
         filename = "model.safetensors"
         revision = "master"
         cache_dir = "./local/model"
 
-        # 调用待测试的函数
         result = aistudio_download(
             repo_id=repo_id,
             filename=filename,
@@ -58,7 +56,6 @@ class TestAistudioDownload(unittest.TestCase):
             cache_dir=cache_dir,
         )
 
-        # 验证结果
         print(result)
         self.assertEqual(result, f"{cache_dir}/{repo_id}/{filename}")
 

@@ -399,6 +399,12 @@ class LlmMetaConfig:
             "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
         ),
         (
+            "moe_deep_gemm",
+            bool,
+            False,
+            "Whether to enable deep GEMM for MoE experts. Defaults to False. Effective only after the moe_grouped_gemm is set. ",
+        ),
+        (
             "moe_ep_barrier",
             bool,
             True,
@@ -470,6 +476,12 @@ class LlmMetaConfig:
             str,
             "rope",
             "Type of position embedding. Defaults to RoPE (Rotary Position Embedding).",
+        ),
+        (
+            "high_precision_rope",
+            bool,
+            False,
+            "Whether to use high precision ROPEs.",
         ),
         (
             "gated_linear_unit",
@@ -1356,6 +1368,8 @@ class PretrainedConfig:
                 serializable_config_dict[key] = value
 
         self._remove_keys_not_serialized(serializable_config_dict, saving_file)
+
+        serializable_config_dict.pop("_unsavable_keys", None)
 
         return serializable_config_dict
 
