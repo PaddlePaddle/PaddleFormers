@@ -98,6 +98,54 @@ def nested_broadcast_tensor_with_empty(tensor, src=0, group=None):
     return tensor
 
 
+def nested_scatter_tensor(data_list, out_data, src, group):
+    """
+    Distribute nested dict/list/tensor structures from src rank to all ranks in group.
+
+    Uses point-to-point send/recv to support variable tensor shapes across batches.
+
+    On the src rank, data_list is a list of N data items (one per rank in group),
+    each being a nested dict/list structure containing paddle.Tensor.
+    On non-src ranks, data_list can be None.
+
+    out_data is a pre-allocated output structure (from nested_empty_tensor) on all ranks.
+    """
+    process_rank = paddle.distributed.get_rank()
+
+    if isinstance(out_data, dict):
+        for key in out_data.keys():
+            nested_scatter_tensor(
+                [d[key] for d in data_list] if process_rank == src else None,
+                out_data[key],
+                src,
+                group,
+            )
+        return out_data
+
+    if isinstance(out_data, list):
+        for i in range(len(out_data)):
+            nested_scatter_tensor(
+                [d[i] for d in data_list] if process_rank == src else None,
+                out_data[i],
+                src,
+                group,
+            )
+        return out_data
+
+    if isinstance(out_data, paddle.Tensor):
+        if process_rank == src:
+            src_index = group.ranks.index(src)
+            for i, rank in enumerate(group.ranks):
+                if i == src_index:
+                    out_data.copy_(data_list[i], False)
+                else:
+                    paddle.distributed.send(data_list[i], dst=rank, group=group)
+        else:
+            paddle.distributed.recv(out_data, src=src, group=group)
+
+    return out_data
+
+
 def nested_copy(inputs):
     if isinstance(inputs, dict):
         outputs = {}

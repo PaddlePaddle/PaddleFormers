@@ -35,7 +35,6 @@ except:
 
 from ..utils.import_utils import is_paddlefleet_available
 from ..utils.log import logger
-from .qat_utils import quantize
 from .quantization_linear import (
     ColumnParallelQuantizationLinear,
     QuantizationLinear,
@@ -49,7 +48,6 @@ if is_paddlefleet_available():
         get_tensor_model_parallel_group,
         get_tensor_model_parallel_world_size,
     )
-    from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
     from paddlefleet.tensor_parallel import (
         ColumnParallelLinear as FleetColumnParallelLinear,
     )
@@ -67,9 +65,6 @@ else:
 
     def get_tensor_model_parallel_world_size():
         return 1
-
-    class PaddleFleetPipelineLayer:
-        pass
 
     class FleetColumnParallelLinear:
         pass
@@ -274,6 +269,8 @@ def convert_to_weight_quantize_state_dict(state_dict, name, quantization_config,
         target_weight = state_dict.pop(weight_name).cast(dtype).cuda()
 
         if weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
+            from .qat_utils import quantize
+
             quant_weight, weight_scale = quantize(
                 target_weight,
                 weight_quantize_algo,
@@ -370,6 +367,8 @@ def convert_to_weight_quantize_dequantize_state_dict(state_dict, name, quantizat
         target_weight = paddle.to_tensor(tensor).cuda()
 
         if weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
+            from .qat_utils import quantize
+
             quant_weight, weight_scale = quantize(
                 target_weight,
                 weight_quantize_algo,

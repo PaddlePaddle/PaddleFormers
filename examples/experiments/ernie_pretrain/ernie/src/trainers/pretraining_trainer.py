@@ -209,7 +209,7 @@ class PreTrainingArguments(TrainingArguments):
         default=False,
         metadata={"help": "print global grad-norm"},
     )
-    multi_token_pred_depth: Optional[int] = field(
+    num_nextn_predict_layers: Optional[int] = field(
         default=0,
         metadata={},
     )
@@ -233,7 +233,7 @@ class PreTrainingArguments(TrainingArguments):
         default=True,
         metadata={"help": "use callback for sequence parallel"},
     )
-    moe_use_aux_free_update_coef: float = field(
+    moe_router_bias_update_rate: float = field(
         default=1.0e-3,
         metadata={"help": "moe aux free update coef,"},
     )
@@ -1300,6 +1300,18 @@ class PretrainingTrainer(Trainer):
                 self._end_save_time = time.time()
 
     def create_scheduler(self, num_training_steps):
+        # When freeze_training is enabled, use constant scheduler with lr=0
+        if getattr(self.args, "freeze_training", False):
+            logger.warning(
+                "WARNING: freeze_training is enabled! "
+                "Learning rate is set to 0 and model parameters will NOT be updated. "
+                "This mode is intended for debugging/profiling only, NOT for actual training."
+            )
+            from paddleformers.trainer.trainer_utils import get_constant_schedule
+
+            self.lr_scheduler = get_constant_schedule(learning_rate=0.0)
+            return self.lr_scheduler
+
         if self.args.warmup_steps > 0:
             warmup = self.args.warmup_steps
         else:

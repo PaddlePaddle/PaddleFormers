@@ -37,14 +37,12 @@ class BaseReader(IterableDataset):
         file_path,
         file_type,
         file_samplenum=None,
-        shuffle_file=True,
         split_multi_turn=False,
         template_backend="jinja",
     ):
         self._file_path = file_path
         self._file_type = file_type  # erniekit, alpaca, ...
         self._file_samplenum = file_samplenum
-        self._shuffle_file = shuffle_file
         self._split_multi_turn = split_multi_turn
         self._template_backend = template_backend
         self.loader_map = {
@@ -66,7 +64,6 @@ class FileReader(BaseReader):
         file_path,
         file_type,
         file_samplenum=None,
-        shuffle_file=True,
         split_multi_turn=False,
         template_backend="jinja",
     ):
@@ -74,7 +71,6 @@ class FileReader(BaseReader):
             file_path=file_path,
             file_type=file_type,
             file_samplenum=file_samplenum,
-            shuffle_file=shuffle_file,
             split_multi_turn=split_multi_turn,
             template_backend=template_backend,
         )
@@ -105,11 +101,11 @@ class FileReader(BaseReader):
                 if remainder > 0:
                     sampled_data.extend(res_list[:remainder])
 
+            del res_list
             res = sampled_data
             logger.info(f"Sampled {len(res)} samples from {total_samples} total samples.")
         else:
-            res = list(res)
-            logger.info(f"Loaded {len(res)} samples from {self._file_path}.")
+            logger.info(f"Loading {self._file_path} as stream.")
 
         # data preprocess
         if self._file_type not in self.convertor_map:
@@ -119,7 +115,7 @@ class FileReader(BaseReader):
         for item in res:
             try:
                 convert_data = self.convertor_map[self._file_type](item)
-                checked_data = self.data_check(convert_data)
+                checked_data = self._data_check(convert_data)
             except Exception as e:
                 logger.warning(f"preprocess data error: {e}, data: {str(item)[:30]}")
                 continue
@@ -130,11 +126,12 @@ class FileReader(BaseReader):
             if self._split_multi_turn:
                 assistant_index = 0
                 for index, turn in enumerate(checked_data["messages"]):
-                    if "assistant" in turn["role"] and checked_data["label"][assistant_index]:
-                        new_data = copy.deepcopy(checked_data)
-                        new_data["messages"] = checked_data["messages"][: index + 1]
-                        new_data["label"] = [1]
-                        yield new_data
+                    if "assistant" in turn["role"]:
+                        if checked_data["label"][assistant_index]:
+                            new_data = copy.deepcopy(checked_data)
+                            new_data["messages"] = checked_data["messages"][: index + 1]
+                            new_data["label"] = [1]
+                            yield new_data
                         assistant_index += 1
             else:
                 yield checked_data
@@ -143,7 +140,7 @@ class FileReader(BaseReader):
         _, ext = os.path.splitext(self._file_path)
         return ext.lower()
 
-    def data_check(self, data):
+    def _data_check(self, data):
         if not data:
             return None
 
@@ -227,7 +224,6 @@ class FileListReader(BaseReader):
         file_path,
         file_type,
         file_samplenum=None,
-        shuffle_file=True,
         split_multi_turn=False,
         template_backend="jinja",
     ):
@@ -237,7 +233,6 @@ class FileListReader(BaseReader):
             file_path=file_path,
             file_type=file_type,
             file_samplenum=file_samplenum,
-            shuffle_file=shuffle_file,
             split_multi_turn=split_multi_turn,
             template_backend=template_backend,
         )
@@ -249,7 +244,6 @@ class FileListReader(BaseReader):
                 file_path,
                 self._file_type,
                 self._file_samplenum,
-                self._shuffle_file,
                 self._split_multi_turn,
                 self._template_backend,
             )
@@ -277,7 +271,6 @@ class HuggingFaceReader(BaseReader):
         file_path,
         file_type="alpaca",
         file_samplenum=None,
-        shuffle_file=True,
         split_multi_turn=False,
         template_backend="jinja",
     ):
@@ -296,7 +289,6 @@ class HuggingFaceReader(BaseReader):
                     download_file_path,
                     download_file_type,
                     file_samplenum,
-                    shuffle_file,
                     split_multi_turn,
                     template_backend,
                 )
@@ -305,7 +297,6 @@ class HuggingFaceReader(BaseReader):
                     download_file_path,
                     download_file_type,
                     file_samplenum,
-                    shuffle_file,
                     split_multi_turn,
                     template_backend,
                 )

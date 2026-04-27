@@ -28,7 +28,7 @@ from tqdm.auto import tqdm
 
 from ..peft import LoRAConfig
 from ..quantization.quantization_utils import convert_to_quantize_dequantize_state_dict
-from ..transformers import PretrainedConfig
+from ..transformers import AutoConfig, PretrainedConfig
 from ..transformers.auto.modeling import get_name_mapping
 from ..transformers.configuration_utils import QuantizationConfig
 from ..transformers.conversion_utils import ConversionMixin
@@ -641,14 +641,28 @@ class MergeModel:
         else:
             scaling = lora_config.lora_alpha / math.sqrt(lora_config.r)
 
+        lora_A_keys = [k for k in lora_state_dict.keys() if "lora_A" in k]
+        weight_to_lora = {}
+        for lora_A_key in lora_A_keys:
+            if lora_A_key.endswith(".lora_A"):
+                weight_key = lora_A_key[: -len(".lora_A")]
+                lora_B_key = weight_key + ".lora_B"
+                if lora_B_key in lora_state_dict:
+                    weight_to_lora[weight_key + ".weight"] = (lora_A_key, lora_B_key)
+            elif lora_A_key.endswith("_lora_A"):
+                weight_key = lora_A_key[: -len("_lora_A")]
+                lora_B_key = weight_key + "_lora_B"
+                if lora_B_key in lora_state_dict:
+                    weight_to_lora[weight_key] = (lora_A_key, lora_B_key)
+
         model_key_list = list(base_state_dict.keys())
         for k in tqdm(model_key_list, desc="Merging tensor"):
             if lora_state_dict is not None and k in lora_state_dict.keys():
                 tensor = lora_state_dict.pop(k)
             else:
                 tensor = base_state_dict.pop(k)
-            if "weight" in k:
-                lora_A_key, lora_B_key = k.replace("weight", "lora_A"), k.replace("weight", "lora_B")
+            if k in weight_to_lora:
+                lora_A_key, lora_B_key = weight_to_lora[k]
                 lora_A_tensor = None
                 if lora_state_dict is not None and lora_A_key in lora_state_dict.keys():
                     lora_A_tensor, lora_B_tensor = lora_state_dict.pop(lora_A_key), lora_state_dict.pop(lora_B_key)
@@ -695,15 +709,34 @@ class MergeModel:
 
         # get transpose_weight_keys
         if self.merge_config.convert_from_hf:
-            config_dict = PretrainedConfig.get_config_dict(self.merge_config.base_model_path)[0]
+            base_model_config = AutoConfig.from_pretrained(self.merge_config.base_model_path)
             name_mapping = get_name_mapping()
             model_class_name = None
             for key, value in name_mapping.items():
-                if value == config_dict["model_type"]:
+                if value == base_model_config.model_type:
                     model_class_name = key
                     break
-            import_class = importlib.import_module(f"paddleformers.transformers.{config_dict['model_type']}.modeling")
-            self.transpose_weight_keys = getattr(import_class, model_class_name).transpose_weight_keys
+            import_class = importlib.import_module(
+                f"paddleformers.transformers.{base_model_config.model_type}.modeling"
+            )
+            # parser aoa statements
+            aoa_config = getattr(import_class, model_class_name)._gen_aoa_config(base_model_config)
+            transpose_weight_keys_set = set()
+            for aoa_state in aoa_config["aoa_statements"]:
+                left_parts = aoa_state.split("->")[0].strip().split(",")
+                for full_key_name in left_parts:
+                    full_key_name = full_key_name.strip()
+                    if full_key_name.endswith(".weight^T"):
+                        part_key_name = full_key_name.split(".")[-2]
+                        if part_key_name.isdigit() or part_key_name in {"$LAYER_ID", "$EXPERT_ID"}:
+                            prev_part_key_name = full_key_name.split(".")[-3]
+                            if part_key_name.isdigit():
+                                transpose_weight_keys_set.add(f"{prev_part_key_name}\.{part_key_name}")
+                            else:
+                                transpose_weight_keys_set.add(f"{prev_part_key_name}\.\d+")
+                        else:
+                            transpose_weight_keys_set.add(part_key_name)
+            self.transpose_weight_keys = list(transpose_weight_keys_set)
 
         # Initialize new index
         index = {}

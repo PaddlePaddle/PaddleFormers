@@ -55,12 +55,10 @@ use_expert_parallel: true
 expert_model_parallel_size: 16
 
 # tensor_parallel_config
-tp_delay_scale_loss: true
 tp_sync_param: true
 sync_grad: true
 
 # pipeline_parallel_config
-pp_delay_scale_loss: true
 partial_send_recv: false
 batch_p2p_comm: false
 
@@ -75,7 +73,6 @@ sharding: stage1
 bf16: true
 amp_master_grad: true
 fp16_opt_level: O2
-use_attn_mask_startend_row_indices: true
 moe_router_force_load_balancing: false
 pre_alloc_memory: 60
 tensorwise_offload_optimizer: true

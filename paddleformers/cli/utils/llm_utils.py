@@ -158,21 +158,23 @@ def get_lora_target_modules(model):
     elif model.config.model_type == "qwen2_5_vl":
         target_modules = [
             # Language Model
-            "model.language_model.*q_proj.*",
-            "model.language_model.*k_proj.*",
-            "model.language_model.*v_proj.*",
-            "model.language_model.*o_proj.*",
-            "model.language_model.*gate_proj.*",
-            "model.language_model.*up_proj.*",
-            "model.language_model.*down_proj.*",
+            ".*qkv_proj.*",
+            ".*up_gate_proj.*",
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
             # Vision Encoder
-            "model.visual.*attn.qkv.*",
-            "model.visual.*attn.proj.*",
-            "model.visual.*gate_proj.*",
-            "model.visual.*up_proj.*",
-            "model.visual.*down_proj.*",
+            ".*attn.qkv.*",
+            ".*attn.proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
             # Projector
-            "model.visual.merger.mlp\.[02].*",
+            ".*merger.mlp\.[02].*",
         ]
     elif model.config.model_type == "qwen3_vl":
         target_modules = [
@@ -202,8 +204,9 @@ def get_lora_target_modules(model):
             "model.language_model.*k_proj.*",
             "model.language_model.*v_proj.*",
             "model.language_model.*o_proj.*",
-            "model.language_model.*gate_up_proj.*",
-            "model.language_model.*down_proj.*",
+            "model.language_model.*mlp.experts",
+            # Fleet Language Model
+            "model.language_model.*mlp.grouped_gemm_experts",
             # Vision
             "model.visual.blocks.*attn.qkv.*",
             "model.visual.blocks.*attn.proj.*",
@@ -237,6 +240,7 @@ def get_lora_target_modules(model):
             ".*k_proj.*",
             ".*v_proj.*",
             ".*o_proj.*",
+            ".*mlp.grouped_gemm_experts",
             ".*gate_proj.*",
             ".*up_proj.*",
             ".*down_proj.*",
@@ -400,6 +404,21 @@ def get_lora_target_modules(model):
             "model.visual.*down_proj.*",
             # alinger
             "model.visual.merger.mlp\.[02].*",
+        ]
+    elif model.config.model_type == "glm_ocr":
+        target_modules = [
+            "model.language_model.*q_proj.*",
+            "model.language_model.*k_proj.*",
+            "model.language_model.*v_proj.*",
+            "model.language_model.*o_proj.*",
+            "model.language_model.*gate_up_proj.*",
+            "model.language_model.*down_proj.*",
+            # vision
+            "model.visual.blocks.*attn.qkv.*",
+            "model.visual.blocks.*attn.proj.*",
+            "model.visual.blocks.*mlp.gate_proj.*",
+            "model.visual.blocks.*mlp.up_proj.*",
+            "model.visual.blocks.*mlp.down_proj.*",
         ]
     else:
         raise ValueError(f"Unknown base_model_prefix: {model.config.model_type}.")

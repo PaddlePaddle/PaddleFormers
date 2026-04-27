@@ -20,13 +20,14 @@ import hashlib
 import io
 import os
 import random
+import sys
 import threading
 import uuid
 from pathlib import Path
 
 import numpy as np
+import paddle
 import requests
-from decord import VideoReader, cpu
 from PIL import Image, ImageDraw, ImageFont
 from PIL.ExifTags import TAGS
 
@@ -69,8 +70,6 @@ def file_download(url, download_dir, save_to_disk=False, retry=0, retry_interval
     """
 
     if isinstance(url, Image.Image):
-        return url
-    elif isinstance(url, VideoReader):
         return url
     elif url.startswith("http"):
         response = requests.get(url)
@@ -184,22 +183,41 @@ def get_downloadable_image(download_path, need_exif_info, retry_max_time=0, retr
     return pil_image.convert("RGB"), exif_info
 
 
-def read_video_decord(video_path, save_to_disk):
-    """get reader and meta by decord"""
+def _load_paddlecodec_decoder(video_src):
+    """Load a paddlecodec VideoDecoder, handling the Paddle proxy import."""
+    try:
+        del sys.modules["torchcodec"]
+        paddle.enable_compat(scope={"torchcodec"})
+        from torchcodec.decoders import VideoDecoder
+
+        sys.modules["torchcodec"] = None
+    except (ImportError, RuntimeError) as e:
+        logger.error(
+            f"Failed to load 'torchcodec' backend via Paddle proxy.\n"
+            f"  - Recommended Fix Steps:\n"
+            f"    1. Install dependencies: `conda install ffmpeg -c conda-forge`\n"
+            f"    2. Reinstall packages: `pip install paddlecodec --force-reinstall`\n"
+            f"  - Original Error: {e}"
+        )
+        raise
+    PADDLECODEC_NUM_THREADS = int(os.environ.get("PADDLECODEC_NUM_THREADS", 0))
+    decoder = VideoDecoder(video_src, num_ffmpeg_threads=PADDLECODEC_NUM_THREADS)
+    return decoder
+
+
+def read_video_paddlecodec(video_path, save_to_disk):
+    """get reader and meta using paddlecodec (replaces decord backend)"""
     video_path = get_downloadable(video_path, save_to_disk=save_to_disk)
-    if isinstance(video_path, VideoReader):
-        video_reader = video_path
-    else:
-        if isinstance(video_path, bytes):
-            video_path = io.BytesIO(video_path)
-        video_reader = VideoReader(video_path, ctx=cpu(0), num_threads=1)
-    vlen = len(video_reader)
-    fps = video_reader.get_avg_fps()
-    duration = vlen / float(fps)
+    if isinstance(video_path, bytes):
+        video_path = io.BytesIO(video_path)
+    decoder = _load_paddlecodec_decoder(video_path)
+    total_frames = decoder.metadata.num_frames
+    fps = decoder.metadata.average_fps
+    duration = decoder.metadata.duration_seconds
 
-    video_meta = {"fps": fps, "duration": duration, "num_of_frame": vlen}
+    video_meta = {"fps": fps, "duration": duration, "num_of_frame": total_frames}
 
-    return video_reader, video_meta, video_path
+    return decoder, video_meta, video_path
 
 
 def get_frame_indices(
@@ -268,7 +286,7 @@ def get_frame_indices(
     return frame_indices
 
 
-def read_frames_decord(
+def read_frames_paddlecodec(
     video_path,
     video_reader,
     video_meta,
@@ -279,7 +297,7 @@ def read_frames_decord(
     frame_indices=None,
     tol=10,
 ):
-    """get frames by decord"""
+    """get frames using paddlecodec"""
 
     if frame_indices is None:
         frame_indices = get_frame_indices(
@@ -293,17 +311,18 @@ def read_frames_decord(
 
     frames = []
     try:
-        frames = video_reader.get_batch(frame_indices).asnumpy()
-        video_reader.seek(0)
-    except Exception:
-        logger.info(f"get {frame_indices} frames error")
+        tensor = video_reader.get_frames_at(indices=list(frame_indices)).data.contiguous()
+        # tensor: [N, C, H, W] uint8 on CPU; convert to [N, H, W, C] numpy
+        frames = tensor.cpu().numpy().transpose(0, 2, 3, 1)
+        paddle.disable_compat()
+    except Exception as exc:
+        logger.info(f"get {frame_indices} frames error: {exc}")
 
     assert len(frames) == len(frame_indices), f"len(frames): {len(frames)} != len(frame_indices): {len(frame_indices)}"
 
     ret = []
-    for idx, frame in enumerate(frames):
-        tmp = Image.fromarray(frame, "RGB")
-        ret.append(tmp)
+    for frame in frames:
+        ret.append(Image.fromarray(frame, "RGB"))
 
     time_stamps = [frame_idx * video_meta["duration"] / video_meta["num_of_frame"] for frame_idx in frame_indices]
 

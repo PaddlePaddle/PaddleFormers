@@ -5,9 +5,7 @@ stage: ernie_pretrain
 dataset_type: pretrain
 input_dir: "0.4 ./demo_data/data-1-part0 0.6 ./demo_data/data-1-part0"
 split: "998,1,1"
-data_load_process_num: 40
 max_seq_len: 4096
-base_seq_length: 4096
 dataloader_num_workers: 8
 prefetch_factor: 32
 ignore_data_skip: 0
@@ -15,7 +13,7 @@ ignore_data_skip: 0
 # model
 model_name_or_path: model_configs/ERNIE-4.5-21B-A3B/
 tokenizer_name_or_path: examples/experiments/ernie_pretrain/ernie/src/tokenizers/tokenizer_model
-moe_use_aux_free_update_coef: 0.001
+moe_router_bias_update_rate: 0.001
 moe_with_send_router_loss: False
 moe_group: ep
 use_moe: true
@@ -23,7 +21,6 @@ use_moe: true
 # train
 output_dir: ./output/
 num_consecutive: 32
-enable_global_training_logs: False
 global_logging_interval: 1
 enable_mtp_magic_send: True
 do_train: True
@@ -51,9 +48,8 @@ bf16: True
 fp16_opt_level: "O2"
 scale_loss: 4096
 seed: 42
-use_train_part_sharding: 1
 pre_alloc_memory: 60
-offload_optim: true
+tensorwise_offload_optimizer: true
 use_expert_parallel: True
 expert_model_parallel_size: 8
 sharding: "stage1"
@@ -61,11 +57,8 @@ sharding_parallel_size: 8
 amp_master_grad: 1
 report_to: none
 global_batch_size: 128
-from_scratch: 1
 use_ortho_loss_callback: true
 same_data: True
-enable_timer: 1
-skip_load_data_seq_cache: 1
 
 # sharding_parallel_config
 split_param: true
@@ -76,7 +69,6 @@ skip_profile_timer: False
 load_sharded_model: True
 save_sharded_model: True
 ignore_load_lr_and_optim: False
-enable_optimizer_timer: False
 gc_interval: 100000
 
 # ernie_model_config
@@ -86,7 +78,7 @@ ernie_model_config:
     use_rms_qkv_recompute: true
     moe_logging: true
     use_recompute: false
-    multi_token_pred_depth: 1
+    num_nextn_predict_layers: 1
     use_fp8_mlp: true
     num_hidden_layers: 28
     num_empty_layers_add_in_tail: 0

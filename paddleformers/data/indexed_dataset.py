@@ -53,7 +53,7 @@ def get_available_dataset_impl():
     return ["lazy", "mmap"]
 
 
-def make_dataset(path, impl, skip_warmup=False):
+def make_dataset(path, impl, skip_warmup=False, warmup_only_rank0=False):
     if CompatibleIndexedDataset.exists(path):
         print("Using old dataset (.npy & .npz)")
         return CompatibleIndexedDataset(path)
@@ -64,18 +64,18 @@ def make_dataset(path, impl, skip_warmup=False):
     elif impl == "lazy" and IndexedDataset.exists(path):
         return IndexedDataset(path)
     elif impl == "mmap" and MMapIndexedDataset.exists(path):
-        return MMapIndexedDataset(path, skip_warmup)
+        return MMapIndexedDataset(path, skip_warmup, warmup_only_rank0)
     print(f"Unknown dataset implementation: {impl}")
     return None
 
 
-def make_sft_dataset(path, dataclass, skip_warmup=False, impl="mmap"):
+def make_sft_dataset(path, dataclass, skip_warmup=False, impl="mmap", warmup_only_rank0=False):
     if impl != "mmap":
         raise ValueError("SFT Indexed Dataset only support mmap memory-mapped method temporarily")
 
     print_rank_0(" > building dataset index ...")
     start_time = time.time()
-    sft_indexed_dataset = SFTMMapIndexedDataset(path, dataclass, skip_warmup)
+    sft_indexed_dataset = SFTMMapIndexedDataset(path, dataclass, skip_warmup, warmup_only_rank0)
     print_rank_0(" > finished creating SFT indexed dataset in {:4f} " "seconds".format(time.time() - start_time))
     print_rank_0("    number of samples: {}".format(len(sft_indexed_dataset.doc_idx) - 1))
 
@@ -285,7 +285,7 @@ class IndexedDatasetBuilder(object):
     }
 
     def __init__(self, out_file, dtype=np.int32):
-        self.out_file = open(out_file, "wb")
+        self.out_file = open(out_file, "ab")
         self.dtype = dtype
         self.data_offsets = [0]
         self.dim_offsets = [0]
@@ -407,7 +407,7 @@ class MMapIndexedDataset(paddle.io.Dataset):
 
             return _Writer()
 
-        def __init__(self, path, skip_warmup=False):
+        def __init__(self, path, skip_warmup=False, warmup_only_rank0=False):
             with open(path, "rb") as stream:
                 magic_test = stream.read(9)
                 assert self._HDR_MAGIC == magic_test, (
@@ -426,8 +426,14 @@ class MMapIndexedDataset(paddle.io.Dataset):
                 offset = stream.tell()
 
             if not skip_warmup:
-                print_rank_0("    warming up index mmap file...")
-                _warmup_mmap_file(path)
+                if warmup_only_rank0:
+                    if paddle.distributed.get_rank() % 8 == 0:
+                        print_rank_0("    warming up index mmap file...")
+                        _warmup_mmap_file(path)
+                    paddle.distributed.barrier()
+                else:
+                    print_rank_0("    warming up index mmap file...")
+                    _warmup_mmap_file(path)
 
             self._buffer_mmap = np.memmap(path, mode="r", order="C")
             self._buffer = memoryview(self._buffer_mmap)
@@ -468,7 +474,7 @@ class MMapIndexedDataset(paddle.io.Dataset):
         def __len__(self):
             return self._len
 
-    def __init__(self, path, skip_warmup=False):
+    def __init__(self, path, skip_warmup=False, warmup_only_rank0=False):
         super().__init__()
 
         self._path = None
@@ -476,7 +482,7 @@ class MMapIndexedDataset(paddle.io.Dataset):
         self._bin_buffer = None
         self._loss_mask_buffer = None
 
-        self._do_init(path, skip_warmup)
+        self._do_init(path, skip_warmup, warmup_only_rank0=warmup_only_rank0)
 
     def __getstate__(self):
         return self._path
@@ -484,17 +490,23 @@ class MMapIndexedDataset(paddle.io.Dataset):
     def __setstate__(self, state):
         self._do_init(state, skip_warmup=True)
 
-    def _do_init(self, path, skip_warmup):
+    def _do_init(self, path, skip_warmup, warmup_only_rank0=False):
         self._path = path
 
         if not self.exists(path):
             raise ValueError("Missing file, %s" % (path))
 
-        self._index = self.Index(index_file_path(self._path), skip_warmup)
+        self._index = self.Index(index_file_path(self._path), skip_warmup, warmup_only_rank0=warmup_only_rank0)
 
         if not skip_warmup:
-            print_rank_0("    warming up data mmap file...")
-            _warmup_mmap_file(data_file_path(self._path))
+            if warmup_only_rank0:
+                if paddle.distributed.get_rank() % 8 == 0:
+                    print_rank_0("    warming up data mmap file...")
+                    _warmup_mmap_file(data_file_path(self._path))
+                paddle.distributed.barrier()
+            else:
+                print_rank_0("    warming up data mmap file...")
+                _warmup_mmap_file(data_file_path(self._path))
         print_rank_0("    creating numpy buffer of mmap...")
         self._bin_buffer_mmap = np.memmap(data_file_path(self._path), mode="r", order="C")
         if os.path.exists(loss_mask_file_path(self._path)):
@@ -621,7 +633,7 @@ class SFTMMapIndexedDataset(paddle.io.Dataset):
 
             return _Writer()
 
-        def __init__(self, path, skip_warmup=False):
+        def __init__(self, path, skip_warmup=False, warmup_only_rank0=False):
             with open(path, "rb") as stream:
                 magic_test = stream.read(9)
                 assert self._HDR_MAGIC == magic_test, (
@@ -640,8 +652,14 @@ class SFTMMapIndexedDataset(paddle.io.Dataset):
                 offset = stream.tell()
 
             if not skip_warmup:
-                print_rank_0("    warming up index mmap file...")
-                _warmup_mmap_file(path)
+                if warmup_only_rank0:
+                    if paddle.distributed.get_rank() % 8 == 0:
+                        print_rank_0("    warming up index mmap file...")
+                        _warmup_mmap_file(path)
+                    paddle.distributed.barrier()
+                else:
+                    print_rank_0("    warming up index mmap file...")
+                    _warmup_mmap_file(path)
 
             self._buffer_mmap = np.memmap(path, mode="r", order="C")
             self._buffer = memoryview(self._buffer_mmap)
@@ -682,14 +700,14 @@ class SFTMMapIndexedDataset(paddle.io.Dataset):
         def __len__(self):
             return self._doc_count - 1
 
-    def __init__(self, path, dataclass, skip_warmup=False):
+    def __init__(self, path, dataclass, skip_warmup=False, warmup_only_rank0=False):
         super().__init__()
         self._dataclass = dataclass
         self._path = None
         self._index = None
         self._bin_buffer = None
 
-        self._do_init(path, skip_warmup)
+        self._do_init(path, skip_warmup, warmup_only_rank0=warmup_only_rank0)
 
     def __getstate__(self):
         return self._path
@@ -697,16 +715,23 @@ class SFTMMapIndexedDataset(paddle.io.Dataset):
     def __setstate__(self, state):
         self._do_init(state, skip_warmup=True)
 
-    def _do_init(self, path, skip_warmup):
+    def _do_init(self, path, skip_warmup, warmup_only_rank0=False):
         self._path = path
         if not self.exists(path, self._dataclass):
             raise ValueError("Missing file, %s" % (path))
 
-        self._index = self.Index(sft_index_file_path(self._path), skip_warmup)
+        self._index = self.Index(sft_index_file_path(self._path), skip_warmup, warmup_only_rank0=warmup_only_rank0)
         if not skip_warmup:
-            print_rank_0("    warming up data mmap file...")
-            for data_file in sft_data_file_path(self._path, self._dataclass):
-                _warmup_mmap_file(data_file)
+            if warmup_only_rank0:
+                if paddle.distributed.get_rank() % 8 == 0:
+                    print_rank_0("    warming up data mmap file...")
+                    for data_file in sft_data_file_path(self._path, self._dataclass):
+                        _warmup_mmap_file(data_file)
+                paddle.distributed.barrier()
+            else:
+                print_rank_0("    warming up data mmap file...")
+                for data_file in sft_data_file_path(self._path, self._dataclass):
+                    _warmup_mmap_file(data_file)
         print_rank_0("    creating numpy buffer of mmap...")
 
         self._bin_buffer_mmap_dict = {}
@@ -799,14 +824,21 @@ def make_builder(out_file, impl, save_dtype, loss_mask_file=None):
 
 
 class SFTMMapIndexedDatasetBuilder(object):
-    def __init__(self, output_file_dict, dtype):
+    def __init__(self, output_file_dict, dtype, index_file=None):
         self._data_file_dict = {}
         for key, filename in output_file_dict.items():
-            self._data_file_dict[key] = open(filename, "wb")
+            self._data_file_dict[key] = open(filename, "ab", buffering=4 * 1024 * 1024)
         self.output_file_dict = output_file_dict
         self._dtype = dtype
-        self._sizes = []
-        self._doc_idx = [0]
+        self._write_buf = {key: [] for key in output_file_dict}
+
+        if index_file is not None and os.path.exists(index_file):
+            existing = SFTMMapIndexedDataset.Index(index_file, skip_warmup=True)
+            self._sizes = existing._sizes.tolist()
+            self._doc_idx = existing._doc_idx.tolist()
+        else:
+            self._sizes = []
+            self._doc_idx = [0]
 
     def add_item(self, sequence):
         add_sequence_len = False
@@ -817,7 +849,19 @@ class SFTMMapIndexedDatasetBuilder(object):
                 add_sequence_len = True
             self._data_file_dict[key].write(tensor.tobytes(order="C"))
 
+    def add_item_bytes(self, serialized):
+        add_sequence_len = False
+        for key, data, size in serialized:
+            if size > 1 and not add_sequence_len:
+                self._sizes.append(size)
+                add_sequence_len = True
+            self._write_buf[key].append(data)
+
     def end_document(self):
+        for key, buf in self._write_buf.items():
+            if buf:
+                self._data_file_dict[key].write(b"".join(buf))
+                buf.clear()
         self._doc_idx.append(len(self._sizes))
 
     def finalize(self, index_file):
@@ -829,10 +873,10 @@ class SFTMMapIndexedDatasetBuilder(object):
 
 class MMapIndexedDatasetBuilder(object):
     def __init__(self, out_file, dtype, loss_mask_file=None):
-        self._data_file = open(out_file, "wb")
+        self._data_file = open(out_file, "ab")
         self._loss_mask_file = None
         if loss_mask_file is not None:
-            self._loss_mask_file = open(loss_mask_file, "wb")
+            self._loss_mask_file = open(loss_mask_file, "ab")
         self._dtype = dtype
         self._sizes = []
         self._doc_idx = [0]
@@ -881,12 +925,12 @@ class MMapIndexedDatasetBuilder(object):
         print("Average tokens per document: %.2f" % (sum(self._sizes) / (len(self._doc_idx) - 1)))
 
 
-def get_indexed_dataset_(data_prefix, data_impl, skip_warmup):
+def get_indexed_dataset_(data_prefix, data_impl, skip_warmup, warmup_only_rank0=False):
 
     print_rank_0(" > building dataset index ...")
 
     start_time = time.time()
-    indexed_dataset = make_dataset(data_prefix, data_impl, skip_warmup)
+    indexed_dataset = make_dataset(data_prefix, data_impl, skip_warmup, warmup_only_rank0)
     assert indexed_dataset.sizes.shape[0] == indexed_dataset.doc_idx[-1]
     print_rank_0(" > finished creating indexed dataset in {:4f} " "seconds".format(time.time() - start_time))
 

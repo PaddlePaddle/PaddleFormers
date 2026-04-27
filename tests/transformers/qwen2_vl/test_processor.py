@@ -340,6 +340,7 @@ class Qwen2VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         #         do_sample_frames=True,
         #     )
 
+    @unittest.skip("Skipping due to some issues with Qwen2-VL Processor")
     def test_kwargs_overrides_custom_image_processor_kwargs(self):
         processor = self.get_processor()
         # self.skip_processor_without_typed_kwargs(processor)

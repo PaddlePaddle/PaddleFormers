@@ -15,8 +15,6 @@
 from __future__ import annotations
 
 import copy
-import gc
-import shutil
 import tempfile
 import unittest
 from io import BytesIO
@@ -413,11 +411,9 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
             else:
                 self.assertTrue(output_generate[0].shape[1] == self.max_new_tokens + inputs_dict["input_ids"].shape[1])
 
-    @unittest.skip("TODO: Temporarily skipped")
     def test_save_load_flex_checkpoint(self):
         for model_class in self.all_model_classes:
-            tmpdirname = tempfile.mkdtemp()
-            try:
+            with tempfile.TemporaryDirectory() as tmpdirname:
                 tiny_vision_config = {
                     "hidden_size": 144,
                     "num_attention_heads": 4,
@@ -444,9 +440,6 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                 model = model_class(config)
                 model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
 
-                model = None
-                gc.collect()
-
                 model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True, load_checkpoint_format="")
 
                 model2 = model_class.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
@@ -458,9 +451,6 @@ class PaddleOCRVLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Tes
                     md51 = v._md5sum()
                     md52 = model_state_2[k]._md5sum()
                     assert md51 == md52
-
-            finally:
-                shutil.rmtree(tmpdirname, ignore_errors=True)
 
 
 class PaddleOCRVLIntegrationTest(unittest.TestCase):

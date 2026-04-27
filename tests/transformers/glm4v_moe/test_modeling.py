@@ -30,7 +30,7 @@ from paddleformers.transformers import (
 )
 from paddleformers.transformers.video_utils import load_video
 from paddleformers.utils.log import logger
-from tests.testing_utils import require_package
+from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -381,6 +381,7 @@ class Glm4vMoeModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
     all_model_classes = (Glm4vMoeModel, Glm4vMoeForConditionalGeneration)
     all_generative_model_classes = {Glm4vMoeForConditionalGeneration: {Glm4vMoeModel, "glm4v_moe"}}
 
+    @gpu_device_initializer(log_prefix="Glm4vMoeModelTest")
     def setUp(self):
         super().setUp()
         self.model_tester = Glm4vMoeModelTester(self)
@@ -483,7 +484,12 @@ class Glm4vMoeIntegrationTest(unittest.TestCase):
     image_url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_images/example1.jpg"
     video_url = "https://paddlenlp.bj.bcebos.com/datasets/paddlemix/demo_video/example_video.mp4"
 
+    @gpu_device_initializer(log_prefix="Glm4vMoeIntegrationTest")
     def setUp(self):
+        pass
+
+    @classmethod
+    def setUpClass(self):
         self.model = Glm4vMoeForConditionalGeneration.from_pretrained(
             self.model_path, download_hub="aistudio", convert_from_hf=True, dtype=self.test_dtype
         )
@@ -512,8 +518,10 @@ class Glm4vMoeIntegrationTest(unittest.TestCase):
                 ],
             }
         ]
-        self.video = load_video(self.video_url, video_backend="decord")[0][
-            :3, ::4, ::4
+        # load_video with paddlecodec returns [N, C, H, W]; take first 3 frames
+        # and spatially downsample H/W dims (dim 2 and 3), keeping all 3 channels
+        self.video = load_video(self.video_url, video_backend="paddlecodec")[0][
+            :3, :, ::4, ::4
         ]  # Only the first 3 frames for testing
 
     def test_inference_no_attention(self):
