@@ -33,9 +33,9 @@ EXPECTED_NO_TEMPLATE = {
 }
 
 EXPECTED_WITH_TEMPLATE = {
-    "input": "[gMASK]<sop><|user|>\n针对产品发布提出五种营销策略。<|assistant|>\n<think></think>\n1. 社交媒体活动。\n2. 电子邮件营销。\n3. 在线和离线广告。\n4. 推荐和评论。\n5. 合作名人推销。<|user|>",
+    "input": "[gMASK]<sop>[gMASK]<sop><|user|>\n针对产品发布提出五种营销策略。<|assistant|>\n<think></think>\n1. 社交媒体活动。\n2. 电子邮件营销。\n3. 在线和离线广告。\n4. 推荐和评论。\n5. 合作名人推销。<|user|>",
     "label": "<think></think>\n1. 社交媒体活动。\n2. 电子邮件营销。\n3. 在线和离线广告。\n4. 推荐和评论。\n5. 合作名人推销。<|user|>",
-    "position_ids": list(range(0, 54)),
+    "position_ids": list(range(0, 56)),
 }
 
 MODEL_NAME_OR_PATH = "/home/models/PaddleFormers/tiny-random-glm4moe-bf16/"
