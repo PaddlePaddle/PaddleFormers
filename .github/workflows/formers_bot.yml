@@ -32,6 +32,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+      - name: Debug node path
+        run: |
+            which node || echo "not in PATH"
+            find /usr /home /opt -name "node" 2>/dev/null
+            echo $PATH
       - name: Extract @formers comment and run bot
         env:
           COMMENT_BODY: ${{ github.event.comment.body }}
@@ -39,6 +44,7 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
         run: |
+          export NVM_DIR="$HOME/.nvm"
           cd /home/paddle-1/
           if [[ "$COMMENT_BODY" == *"@formers"* ]]; then
             python formers_bot.py --prompt "$COMMENT_BODY"
