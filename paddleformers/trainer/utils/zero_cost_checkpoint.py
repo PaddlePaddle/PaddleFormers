@@ -224,13 +224,9 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
         index += 1
 
     if is_muon:
-        sharding_rank = optimizer._sharding_rank
-        local_2d_params = list(optimizer._rank2params_2d.get(sharding_rank, []))
-        if optimizer._moe_sharding_world_size > 1:
-            local_2d_moe = list(optimizer._rank2params_2d_moe.get(optimizer._moe_sharding_rank, []))
-        else:
-            local_2d_moe = list(optimizer._rank2params_2d_moe.get(0, []))
-        local_2d_params.extend(local_2d_moe)
+        local_2d_params = []
+        for param in optimizer._local_2d:
+            local_2d_params.extend(param)
 
         local_2d_name_to_param = {p.name: p for p in local_2d_params}
 
@@ -697,11 +693,8 @@ class ZeroCostCheckpointCallback(TrainerCallback):
         sharding_rank = optimizer._sharding_rank
 
         local_2d_names = set()
-        for p in optimizer._rank2params_2d.get(sharding_rank, []):
-            local_2d_names.add(p.name)
-        moe_rank = optimizer._moe_sharding_rank if optimizer._moe_sharding_world_size > 1 else 0
-        for p in optimizer._rank2params_2d_moe.get(moe_rank, []):
-            local_2d_names.add(p.name)
+        for param in optimizer._local_2d:
+            local_2d_names.add(param.name)
 
         all_2d_names = set()
         for color_params in optimizer._params_2d_by_color.values():
@@ -1865,13 +1858,9 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
     def _muon_manipulate_sharded_state_dict(self, model, optimizer):
         sharded_state_dict = dict(sorted(model.sharded_state_dict().items()))
         sharding_rank = optimizer._sharding_rank
-
         local_2d_names = set()
-        for p in optimizer._rank2params_2d.get(sharding_rank, []):
-            local_2d_names.add(p.name)
-        moe_rank = optimizer._moe_sharding_rank if optimizer._moe_sharding_world_size > 1 else 0
-        for p in optimizer._rank2params_2d_moe.get(moe_rank, []):
-            local_2d_names.add(p.name)
+        for param in optimizer._local_2d:
+            local_2d_names.add(param.name)
 
         all_2d_names = set()
         for color_params in optimizer._params_2d_by_color.values():
