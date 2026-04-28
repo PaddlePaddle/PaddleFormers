@@ -19,7 +19,10 @@ from typing import Callable, Optional, cast
 import paddle
 from paddle import nn
 from paddle.distributed.fleet.utils import recompute
-from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
+from paddle.distributed.fleet.utils.sequence_parallel_utils import (
+    ScatterOp,
+    mark_as_sequence_parallel_parameter,
+)
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
@@ -27,7 +30,6 @@ from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
-from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
@@ -36,6 +38,32 @@ from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import Olmo2Config
+
+
+class Olmo2RMSNorm(nn.Layer):
+    """OLMo2 RMSNorm matching the HF implementation.
+
+    HF casts hidden states to fp32, computes variance/rsqrt in fp32, then casts
+    the final result back to the original input dtype.
+    """
+
+    def __init__(self, hidden_size: int, eps: float = 1e-6, input_is_parallel: bool = False):
+        super().__init__()
+        self.weight = paddle.create_parameter(
+            shape=[hidden_size],
+            dtype=paddle.get_default_dtype(),
+            default_initializer=nn.initializer.Constant(1.0),
+        )
+        self.variance_epsilon = eps
+        if input_is_parallel:
+            mark_as_sequence_parallel_parameter(self.weight)
+
+    def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
+        input_dtype = hidden_states.dtype
+        hidden_states_fp32 = hidden_states.astype("float32")
+        variance = hidden_states_fp32.pow(2).mean(-1, keepdim=True)
+        hidden_states_fp32 = hidden_states_fp32 * paddle.rsqrt(variance + self.variance_epsilon)
+        return (self.weight.astype("float32") * hidden_states_fp32).astype(input_dtype)
 
 
 def rotate_half(x: paddle.Tensor) -> paddle.Tensor:
@@ -120,20 +148,14 @@ class Olmo2Attention(nn.Layer):
         )
 
         # QK-Norm: RMSNorm applied to Q and K before RoPE
-        self.q_norm = GeneralNorm.create(
-            config=config,
-            norm_type="rms_norm",
-            hidden_size=q_hidden_size,
-            has_bias=False,
-            norm_eps=config.rms_norm_eps,
+        self.q_norm = Olmo2RMSNorm(
+            q_hidden_size,
+            eps=config.rms_norm_eps,
             input_is_parallel=config.sequence_parallel,
         )
-        self.k_norm = GeneralNorm.create(
-            config=config,
-            norm_type="rms_norm",
-            hidden_size=kv_hidden_size,
-            has_bias=False,
-            norm_eps=config.rms_norm_eps,
+        self.k_norm = Olmo2RMSNorm(
+            kv_hidden_size,
+            eps=config.rms_norm_eps,
             input_is_parallel=config.sequence_parallel,
         )
 
@@ -201,20 +223,14 @@ class Olmo2DecoderLayer(nn.Layer):
         self.mlp = MLP(config)
 
         # OLMo2 uses POST-norm: norm is applied AFTER attention and AFTER FFN
-        self.post_attention_layernorm = GeneralNorm.create(
-            config=config,
-            norm_type="rms_norm",
-            hidden_size=config.hidden_size,
-            has_bias=False,
-            norm_eps=config.rms_norm_eps,
+        self.post_attention_layernorm = Olmo2RMSNorm(
+            config.hidden_size,
+            eps=config.rms_norm_eps,
             input_is_parallel=config.sequence_parallel,
         )
-        self.post_feedforward_layernorm = GeneralNorm.create(
-            config=config,
-            norm_type="rms_norm",
-            hidden_size=config.hidden_size,
-            has_bias=False,
-            norm_eps=config.rms_norm_eps,
+        self.post_feedforward_layernorm = Olmo2RMSNorm(
+            config.hidden_size,
+            eps=config.rms_norm_eps,
             input_is_parallel=config.sequence_parallel,
         )
 
@@ -400,17 +416,17 @@ class Olmo2Model(Olmo2PretrainedModel):
             config=config,
             num_embeddings=self.vocab_size,
             embedding_dim=self.hidden_size,
-            padding_idx=self.padding_idx,
+            # HF/PyTorch Embedding returns the loaded weight row for padding_idx
+            # during forward; Paddle masks padding_idx to zeros. Do not pass it
+            # here, otherwise token id == pad_token_id diverges after migration.
+            padding_idx=None,
         )
         self.layers = nn.LayerList(
             [Olmo2DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
-        self.norm = GeneralNorm.create(
-            config=config,
-            norm_type="rms_norm",
-            hidden_size=config.hidden_size,
-            has_bias=False,
-            norm_eps=config.rms_norm_eps,
+        self.norm = Olmo2RMSNorm(
+            config.hidden_size,
+            eps=config.rms_norm_eps,
             input_is_parallel=config.sequence_parallel,
         )
         self.rotary_emb = Olmo2RotaryEmbedding(config=config)
