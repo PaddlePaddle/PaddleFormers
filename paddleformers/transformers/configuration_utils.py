@@ -766,6 +766,7 @@ class PretrainedConfig:
         > Parameters for general components
 
         _attn_implementation (`str`, defaults to `eager`)
+        flashmask_use_varlen (`bool`, defaults to `False`)
 
         > Parameters linked to the tokenizer
 
@@ -840,6 +841,7 @@ class PretrainedConfig:
         self._unsavable_keys = set(LlmMetaConfig._get_unsavable_keys())
         self._unsavable_keys.discard("tensor_model_parallel_size")
         self._unsavable_keys.add("_attn_implementation")
+        self._unsavable_keys.add("flashmask_use_varlen")
 
         kwargs = set_expected_keys(self, llm_meta, kwargs)
         if self.sequence_parallel:
@@ -863,6 +865,7 @@ class PretrainedConfig:
 
         # for general components
         self._attn_implementation = kwargs.pop("_attn_implementation", "eager")
+        self.flashmask_use_varlen = kwargs.pop("flashmask_use_varlen", False)
 
         if "quantization_config" in kwargs and isinstance(kwargs["quantization_config"], Dict):
             kwargs["quantization_config"] = QuantizationConfig.from_dict(kwargs["quantization_config"])
