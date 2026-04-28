@@ -3209,6 +3209,29 @@ class Trainer:
 
             optimizer_cls = AdamWCustom
             optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.MUON:
+            assert (
+                args.save_checkpoint_format == "flex_checkpoint" and args.load_checkpoint_format == "flex_checkpoint"
+            ), (
+                "Muon optimizer only supports flex_checkpoint. "
+                "Please set --save_checkpoint_format flex_checkpoint --load_checkpoint_format flex_checkpoint."
+            )
+            from paddle.optimizer import Muon
+
+            logger.info("Creating Muon optimizer")
+            muon_kwargs = {
+                **adam_kwargs,
+                "momentum": args.muon_momentum,
+                "muon_version": args.muon_version,
+                "muon_exclude_patterns": args.muon_exclude_patterns,
+                "muon_qkv_update_mode": args.muon_qkv_update_mode,
+                "muon_ffn_split": args.muon_ffn_split,
+                "muon_extra_scale_factor": args.muon_extra_scale_factor,
+                "ns_steps": args.muon_ns_steps,
+                "ns_coeff_type": args.muon_ns_coeff_type,
+            }
+            optimizer_cls = Muon
+            optimizer_kwargs.update(muon_kwargs)
         else:
             raise ValueError(f"Trainer cannot instantiate unsupported optimizer: {args.optim}")
 
@@ -3452,7 +3475,7 @@ class Trainer:
             else:
 
                 def _prepare_pipeline_inputs_func(inputs):
-                    first_stage_keys = ["input_ids", "attention_mask", "position_ids"]
+                    first_stage_keys = ["input_ids", "attention_mask", "position_ids", "labels"]
                     last_stage_keys = ["labels"]
 
                     def get_expected_keys(inputs, keys):
@@ -3471,7 +3494,7 @@ class Trainer:
                     inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
                     if is_paddlefleet_available() and self.using_fleet_model:
                         first_stage_inputs_batch = inputs_batch
-                        last_stage_inputs = first_stage_inputs_batch.pop("labels")
+                        last_stage_inputs = first_stage_inputs_batch.get("labels")
                         outputs = (
                             first_stage_inputs_batch,
                             last_stage_inputs,

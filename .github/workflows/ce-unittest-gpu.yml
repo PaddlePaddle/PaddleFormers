@@ -2,131 +2,163 @@ name: Unittest GPU CE
 
 on:
   schedule:
-    - cron: "0 1 * * *"     # every day at 09:00 Beijing time (UTC+8)
+    - cron: "0 16 * * *"     # every day at 00:00 Beijing time (UTC+8)
   workflow_dispatch:        # allow to manually trigger the workflow
-    inputs:
-      paddle_whl:
-        description: "paddle_whl"
-        required: false
-        default: "https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda126-Cudnn95-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl"
-        type: string
-      repo_branch:
-        description: "repo_branch"
-        required: false
-        type: string
 
-concurrency:
-  group: unittest-ce-${{ github.workflow }}
-  cancel-in-progress: true
+# concurrency:
+#   group: unittest-ce-${{ github.workflow }}
+#   cancel-in-progress: true
 
 env:
-  COMMIT_ID: ${{ github.event.pull_request.head.sha }}
+  COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
+  PR_ID: ${{ github.event.pull_request.number || '0' }}
   TASK: PaddleFormers-CE-unittest-gpu
   ce_scripts: workspace/PaddleFormers/scripts/unit_test
   BRANCH: ${{ github.event.pull_request.base.ref }}
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
   CE_name: unittest-gpu-ce
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
+  PYTEST_EXECUTE_FLAG_FILE: ${{ github.workspace }}/../../../PYTEST_EXECUTE_FLAG_FILE/${{ github.event.pull_request.number || '0' }}/${{ github.event.pull_request.head.sha || github.sha }}/pytest_execute.flag
+  PYTEST_EXECUTE_FLAG: false
 
 defaults:
   run:
     shell: bash
 
 jobs:
+  check_skip:
+    name: Check skip-unittest-ce label
+    runs-on: ubuntu-latest
+
+    outputs:
+      skip: ${{ steps.check_skip.outputs.skip }}
+
+    steps:
+      - name: Check skip-unittest-ce label
+        id: check_skip
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
+            echo "PR labels: $labels"
+
+            if echo "$labels" | grep -q "skip-unittest-ce"; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip CE but mark success
+        if: steps.check_skip.outputs.skip == 'true'
+        run: |
+          echo "skip-unittest-ce label found"
+          echo "Downstream GPU jobs will be skipped"
+
   unittest-gpu-ce:
+    needs: check_skip
+    if: needs.check_skip.outputs.skip == 'false'
     name: unittest-gpu-ce
-    runs-on: [self-hosted, ernie-8gpu, distribute]
+    runs-on: ${{ inputs.runner || 'ernie-unittest' || 'distrbute' }}
+    outputs:  
+      pytest_execute_flag: ${{ steps.set_pytest_flag.outputs.pytest_execute_flag }}
     steps:
       - name: Determine Image Name
         run: |
           echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda126-dev-latest" >> "$GITHUB_ENV"
-
+      - name: Determine the runner
+        run: |
+          gpu_id=$(( $(echo $PWD | awk -F'/' '{print $4}' | awk -F'_' '{print $2}') ))
+          echo $PWD
+          echo GPU_DEVICES="$gpu_id" >> $GITHUB_ENV
       - name: Run Container
         env:
           work_dir: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
           python_version: "3.10"
-          paddle_whl: ${{ github.event.inputs.paddle_whl || 'https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda126-Cudnn95-Trt105-Py310-Compile/latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl' }}
-          repo_branch: ${{ github.event.inputs.repo_branch || '' }}
+          PIP_CACHE_DIR: /root/.cache/pip
+          GPU_DEVICES: ${{ env.GPU_DEVICES }}
+          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.6-Cudnn9.5-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse//latest/paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
+          echo "GPU_DEVICES=$GPU_DEVICES"
           echo "container_name=${container_name}" >> "$GITHUB_ENV"
           echo "Workspace path: ${{ github.workspace }}"
-          DOCKER_VER=$(docker version --format '{{.Server.Version}}' | cut -d. -f1,2)
-          if (( $(echo "$DOCKER_VER < 19.03" | bc -l) )); then
-            GPU_OPTION="--runtime=nvidia"
-          else
-            GPU_OPTION="--gpus all"
-          fi
-          echo "DOCKER_VER=${DOCKER_VER}"
-          echo "GPU_OPTION=${GPU_OPTION}"
-          docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
+          docker run -d -t --name ${container_name} --gpus device=${GPU_DEVICES} --runtime=nvidia --net=host -v /dev/shm:/dev/shm --shm-size=32G \
             -v $work_dir/../../..:$work_dir/../../.. \
-            -v $work_dir:workspace/ \
-            -v /home/.cache/pip:/home/.cache/pip \
+            -v $work_dir:/workspace \
+            -v /home/.cache/:/root/.cache/ \
             -v /home/paddle-1/models/:/home/models/ \
             -e PF_HOME=/home/models/ \
-            -e BRANCH \
-            -e AGILE_COMPILE_BRANCH \
-            -e COMMIT_ID \
-            -e work_dir \
-            -e ce_scripts \
-            -e no_proxy \
-            -e CE_name \
-            -e paddle_whl \
-            -e repo_branch \
-            -e FLAGS_dynamic_static_unified_comm \
-            -e python_version \
-            -e HF_PROXY_PATH=$work_dir/../../../proxy_huggingface \
-            -e AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio \
+            -e "BRANCH=$BRANCH" \
+            -e "AGILE_COMPILE_BRANCH=$AGILE_COMPILE_BRANCH" \
+            -e "PR_ID=$PR_ID" \
+            -e CUDA_VISIBLE_DEVICES=${GPU_DEVICES} \
+            -e NVIDIA_VISIBLE_DEVICES=${GPU_DEVICES} \
+            -e "COMMIT_ID=$COMMIT_ID" \
+            -e "work_dir=$work_dir" \
+            -e "ce_scripts=$ce_scripts" \
+            -e "PYTEST_EXECUTE_FLAG_FILE=$PYTEST_EXECUTE_FLAG_FILE" \
+            -e "no_proxy=$no_proxy" \
+            -e "CE_JOB_NAME=$CE_JOB_NAME" \
+            -e "paddle_whl=$paddle_whl" \
+            -e "FLAGS_dynamic_static_unified_comm=$FLAGS_dynamic_static_unified_comm" \
+            -e "python_version=$python_version" \
+            -e "HF_PROXY_PATH=$work_dir/../../../proxy_huggingface" \
+            -e "AISTUDIO_PROXY_PATH=$work_dir/../../../proxy_aistudio" \
             -e "HF_DATASETS_CACHE=$work_dir/../../../paddlenlp/huggingface/datasets" \
             -e "TRANSFORMERS_CACHE=$work_dir/../../../paddlenlp/huggingface" \
-            -w workspace/ ${GPU_OPTION} --privileged $IMAGE_NAME
-            
+            -e PIP_CACHE_DIR \
+            -w /workspace --privileged $IMAGE_NAME
+      - name: Check GPU
+        run: |
+          docker exec $container_name nvidia-smi
       - name: Download Code
         run: |
           docker exec -t $container_name /bin/bash -c '
-          rm -rf * .[^.]*
-          echo "Downloading PaddleFormers.tar"
-          wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
-          echo "Extracting PaddleFormers.tar"
-          tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
-          source $work_dir/../../../proxy
-          cd PaddleFormers
-          git config --global user.name "PaddleCE"
-          git config --global user.email "paddle_ce@example.com"
-          if [ -n "$repo_branch" ]; then
-            echo "Switching to branch: $repo_branch"
-            git fetch origin $repo_branch
-            git checkout $repo_branch || git checkout -b $repo_branch origin/$repo_branch
+            rm -rf * .[^.]*
+            echo "Downloading PaddleFormers.tar"
+            wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFormers.tar --no-check-certificate
+            echo "Extracting PaddleFormers.tar"
+            rm -rf PaddleFormers
+            tar xf PaddleFormers.tar && rm -rf PaddleFormers.tar
+            source $work_dir/../../../proxy
+            cd PaddleFormers
+            git config --global user.name "PaddleCI"
+            git config --global user.email "paddle_ci@example.com"
             git pull
-          else
-            echo "No repo_branch provided, just pulling latest changes"
-            git pull
-          fi
-          git submodule update --init --recursive --force
-          git log --pretty=oneline -10
-          '
+            git submodule update --init --recursive --force
+            if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
+              git fetch origin pull/${PR_ID}/head
+              git checkout -b PR_${PR_ID} FETCH_HEAD
+              git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
+              git fetch upstream ${BRANCH}:${BRANCH}
+              git merge ${BRANCH} --no-edit
+              git diff --numstat ${BRANCH} -- | awk "{print \$NF}"
+            else
+              echo "Not in a pull_request event. Skipping PR-specific operations."
+            fi
+            git log --pretty=oneline -10
+            '
 
       - name: Test
         run: |
           docker exec -t $container_name /bin/bash -c '
           ldconfig
-          pip config set global.cache-dir "/home/.cache/pip"
+          mkdir -p /root/.cache/pip
+          pip cache dir
           set -e
           rm -rf /root/.cache/aistudio/
-          cd workspace/PaddleFormers && git config --global --add safe.directory $PWD
+          cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
           source $work_dir/../../../proxy
           source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
           echo "work_dir = ${work_dir}"
-          cp -r ${work_dir}/../../../models ./models
-          echo "Check whether the local model file exists:"
-          ls -l ./models
-          bash scripts/unit_test/ci_unittest.sh ${paddle_whl} true
+          bash -x scripts/unit_test/ci_unittest.sh ${paddle_whl} true ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
           '
           
-      - name: Upload Allure-reports & Logs
-        if: always()
+      - name: Upload Products
         env:
           home_path: ${{ github.workspace }}/../../..
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
@@ -142,11 +174,20 @@ jobs:
           #   wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
           #   unzip -q ${{ env.home_path }}/allure-2.19.0.zip
           # fi
-          bos_prefix="schedule/github-ce-$(date +%Y%m%d)"
-          # # coverage.xml
-          # cd /workspace/PaddleFormers
-          # python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-          # echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml"
+          if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
+            bos_prefix="${PR_ID}/${COMMIT_ID}"
+          else
+            bos_prefix="schedule/github-ce-$(date +%Y%m%d)"
+          fi
+          # coverage.xml
+          if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
+            echo "PYTEST_EXECUTE_FLAG_FILE found, uploading coverage.xml."
+            cd /workspace/PaddleFormers
+            python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
+            echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml"
+          else
+            echo "PYTEST_EXECUTE_FLAG_FILE not found, skipping coverage.xml upload."
+          fi
           # logs
           cd /workspace/PaddleFormers/unittest_logs
           for FILE in /workspace/PaddleFormers/unittest_logs/*; do
@@ -154,14 +195,91 @@ jobs:
             python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/$file"
           done
+          # allure
           # cd /workspace/PaddleFormers/
           # ${{ env.allure_file }} generate result -o report
-          # tar -czf products.tar.gz report unittest_logs
-          # python ${{ env.bos_file }} products.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-          # echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/products.tar.gz"
+          # tar -czf report.tar.gz report
+          # python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
+          # echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/report.tar.gz"
           '
+      - name: Set pytest execute flag output
+        id: set_pytest_flag  # 专门设置输出的步骤
+        run: |
+          # 检查标志文件是否存在，并设置作业输出
+          if [ -f "${{ env.PYTEST_EXECUTE_FLAG_FILE }}" ]; then
+            echo "pytest_execute_flag=true" >> $GITHUB_OUTPUT
+            echo "PYTEST_EXECUTE_FLAG_FILE exists, setting flag to true"
+          else
+            echo "pytest_execute_flag=false" >> $GITHUB_OUTPUT
+            echo "PYTEST_EXECUTE_FLAG_FILE does not exist, setting flag to false"
+          fi
 
       - name: Terminate And Delete the Container
         if: always()
         run: |
           docker rm -f $container_name 2>/dev/null || true
+          
+  upload-coverage:
+    name: upload-coverage
+    needs: [unittest-gpu-ce]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if should upload coverage
+        id: flag_check
+        run: |
+          echo "needs.unittest-gpu-ce.outputs.pytest_execute_flag = ${{ needs.unittest-gpu-ce.outputs.pytest_execute_flag }}"
+          if [ "${{ needs.unittest-gpu-ce.outputs.pytest_execute_flag }}" = "true" ]; then
+            echo "pytest_execute_flag is true, proceeding to upload coverage."
+            echo "should_upload=true" >> $GITHUB_OUTPUT
+          else
+            echo "pytest_execute_flag is false, skipping coverage upload."
+            echo "should_upload=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download coverage.xml
+        if: steps.flag_check.outputs.should_upload == 'true'
+        env:
+          PR_ID: ${{ github.event.pull_request.number || '0' }}
+          COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
+            bos_prefix="${PR_ID}/${COMMIT_ID}"
+          else
+            bos_prefix="schedule/$(date +%Y%m%d)"
+          fi
+          echo "bos_prefix=${bos_prefix}"
+          wget -q --no-proxy \
+            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml \
+            --no-check-certificate -O coverage.xml
+
+      - name: Fix coverage.xml paths
+        if: steps.flag_check.outputs.should_upload == 'true'
+        run: |
+          echo "Before fix:"
+          head -n 10 coverage.xml || true
+
+          old_source=$(grep -oPm1 '(?<=<source>).*?(?=</source>)' coverage.xml || true)
+          if [ -n "$old_source" ]; then
+            echo "Replacing source '$old_source' with 'paddleformers'"
+            sed -i "s|<source>$old_source</source>|<source>paddleformers</source>|g" coverage.xml
+          else
+            echo "No <source> found, injecting <source>paddleformers</source>"
+            sed -i 's|<sources>|<sources>\n        <source>paddleformers</source>|' coverage.xml
+          fi
+
+          echo "After fix:"
+          head -n 10 coverage.xml || true
+
+      - name: Upload coverage to Codecov
+        if: steps.flag_check.outputs.should_upload == 'true'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
