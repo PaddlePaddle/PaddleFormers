@@ -45,9 +45,14 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding
     DygraphShardingOptimizer,
     DygraphShardingOptimizerV2,
 )
-from paddle.distributed.fleet.meta_optimizers.muon_sharding_optimizer import (
-    MuonShardingOptimizer,
-)
+
+try:
+    from paddle.distributed.fleet.meta_optimizers.muon_sharding_optimizer import (
+        MuonShardingOptimizer,
+    )
+except (ImportError, ModuleNotFoundError):
+    MuonShardingOptimizer = None
+
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_stage2 import (
     GroupShardedOptimizerStage2,
