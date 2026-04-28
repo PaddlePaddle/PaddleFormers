@@ -9,9 +9,12 @@ on:
     types: [opened, assigned]
   pull_request_review:
     types: [submitted]
-
+  pull_request:
+    branches:
+      - develop
+      - release/**
 jobs:
-  claude:
+  formers:
     if: |
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@formers')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@formers')) ||

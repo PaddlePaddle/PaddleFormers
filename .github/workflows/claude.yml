@@ -17,10 +17,10 @@ on:
 jobs:
   claude:
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@formers')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@formers')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@formers')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@formers') || contains(github.event.issue.title, '@formers')))
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: paddle-bot
     permissions:
       contents: read
@@ -63,6 +63,6 @@ jobs:
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
           claude_args: '--print'
-          trigger_phrase: '@formers'
-          bot_name: formers[bot]
-          label_trigger: formers
+          trigger_phrase: '@claude'
+          bot_name: claude[bot]
+          label_trigger: claude
