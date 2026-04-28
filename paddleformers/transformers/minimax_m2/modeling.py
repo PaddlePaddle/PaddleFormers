@@ -136,6 +136,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         num_key_value_groups = num_attention_head // num_key_value_heads
         use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
         moe_grouped_gemm = getattr(config, "moe_grouped_gemm", False)
+        use_gated_attn = getattr(config, "use_gated_attn", False)
 
         # Get Muon configuration from muon_configs
         muon_qkv_update_mode = muon_configs.get("muon_qkv_update_mode", "split_head")
@@ -223,6 +224,13 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         "axis": 1,
                         "head_split_sizes": [config.qk_nope_head_dim, config.v_head_dim],
                     },
+                )
+
+            # Gated Attn
+            if use_gated_attn and mla_slice_fn is not None:
+                slice_config[f"{prefix}.self_attn.gate_proj.weight"] = (
+                    mla_slice_fn,
+                    {"head_num": num_attention_head, "axis": 1},
                 )
 
         # Main layers
