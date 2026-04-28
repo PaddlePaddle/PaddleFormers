@@ -175,6 +175,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 # Fused experts
                 param_name = f"{prefix}.mlp.experts.up_gate_proj.weight"
                 slice_config[param_name] = (ffn_slice_fn, {"intermediate_size": moe_intermediate_size})
+                param_name = f"{prefix}.mlp.grouped_gemm_experts.weight1"
+                slice_config[param_name] = (
+                    ffn_slice_fn,
+                    {"intermediate_size": moe_intermediate_size},
+                )
 
                 # Shared experts
                 slice_config[f"{prefix}.mlp.shared_experts.up_gate_proj.weight"] = (
@@ -193,6 +198,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             # Fused MoE weights (grouped_gemm)
             if moe_grouped_gemm and fused_moe_fn is not None:
                 slice_config[f"{prefix}.mlp.experts.down_proj.weight"] = (fused_moe_fn, {})
+                slice_config[f"{prefix}.mlp.grouped_gemm_experts.weight2"] = (fused_moe_fn, {})
 
             # MLA weights
             if use_mla and mla_slice_fn is not None:
