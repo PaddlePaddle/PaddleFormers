@@ -382,6 +382,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
             ]
 
+            if config.use_gated_attn:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.self_attn.gate_proj.weight^T -> {prefix_offset}.self_attn.gate_proj.weight",
+                ]
+
             if config.q_lora_rank:
                 # MLA attention
                 aoa_config["aoa_statements"] += [
@@ -423,6 +428,12 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix}.block_sparse_moe.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
                 f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight",
             ]
+            if config.use_latent_moe:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.block_sparse_moe.fc1_latent_proj.weight^T -> {prefix_offset}.mlp.fc1_latent_proj.weight",
+                    f"{prefix}.block_sparse_moe.fc2_latent_proj.weight^T -> {prefix_offset}.mlp.fc2_latent_proj.weight",
+                ]
+
             if using_sonic_moe:
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.block_sparse_moe.experts.$EXPERT_ID.w2.weight -> {prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight",
@@ -552,6 +563,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.self_attn.o_proj.weight^T -> {prefix}.self_attn.o_proj.weight",
             ]
 
+            if config.use_gated_attn:
+                aoa_statements += [
+                    f"{prefix_offset}.self_attn.gate_proj.weight^T -> {prefix}.self_attn.gate_proj.weight",
+                ]
+
             if config.q_lora_rank:
                 # MLA attention
                 aoa_statements += [
@@ -627,11 +643,15 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 ]
 
             aoa_statements += [
-                # do cast
                 f"{prefix_offset}.mlp.gate.weight -> {prefix}.block_sparse_moe.gate.weight",
-                # do transpose
                 f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.block_sparse_moe.e_score_correction_bias",
             ]
+
+            if config.use_latent_moe:
+                aoa_statements += [
+                    f"{prefix_offset}.mlp.fc1_latent_proj.weight^T -> {prefix}.block_sparse_moe.fc1_latent_proj.weight ",
+                    f"{prefix_offset}.mlp.fc2_latent_proj.weight^T -> {prefix}.block_sparse_moe.fc2_latent_proj.weight",
+                ]
 
             if using_sonic_moe:
                 aoa_statements += [
