@@ -18,12 +18,14 @@ import os
 import re
 from abc import ABC
 from functools import partial
+from io import BytesIO
 from typing import Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
+import requests
 from paddle.vision import transforms
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from tqdm import tqdm
@@ -946,14 +948,14 @@ def _build_sam(
 
 
 def load_image(image_path):
-
     try:
-        image = Image.open(image_path)
-
-        corrected_image = ImageOps.exif_transpose(image)
-
-        return corrected_image
-
+        if isinstance(image_path, str) and image_path.startswith(("http://", "https://")):
+            response = requests.get(image_path, timeout=10)
+            response.raise_for_status()
+            image = Image.open(BytesIO(response.content))
+        else:
+            image = Image.open(image_path)
+        return ImageOps.exif_transpose(image)
     except Exception as e:
         print(f"error: {e}")
         try:
