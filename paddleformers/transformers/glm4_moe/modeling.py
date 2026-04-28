@@ -842,7 +842,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
             ]
             if config.tie_word_embeddings:
-                aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}shared_head.weight"]
+                aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}lm_head.weight"]
             else:
                 aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}lm_head.weight"]
         else:
@@ -995,7 +995,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 "model.embedding.embed_tokens.weight -> model.embed_tokens.weight",
             ]
             if config.tie_word_embeddings:
-                aoa_statements += [f"{model_prefix}shared_head.weight -> _"]
+                aoa_statements += [f"{model_prefix}lm_head.weight -> _"]
             else:
                 aoa_statements += [f"{model_prefix}lm_head.weight -> lm_head.weight"]
         else:
