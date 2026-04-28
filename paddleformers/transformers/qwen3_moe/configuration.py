@@ -219,9 +219,7 @@ class Qwen3MoeConfig(PretrainedConfig):
         self.mlp_only_layers = [] if mlp_only_layers is None else mlp_only_layers
         self.moe_subbatch_token_num_before_dispatch = moe_subbatch_token_num_before_dispatch
 
-        if kwargs.get("pad_token_id", None) is None and kwargs.get(
-            "bos_token_id", None
-        ) is not None:
+        if kwargs.get("pad_token_id", None) is None and kwargs.get("bos_token_id", None) is not None:
             kwargs["pad_token_id"] = kwargs["bos_token_id"]
 
         super().__init__(
