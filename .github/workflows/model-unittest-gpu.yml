@@ -84,7 +84,7 @@ jobs:
     needs: check_skip
     if: needs.check_skip.outputs.skip == 'false'
     name: model-unittest-gpu-ci
-    runs-on: ${{ inputs.runner || 'ernie-8gpu-3' || 'distrbute' }}
+    runs-on: ${{ inputs.runner || 'ernie-8gpu-1' || 'distrbute' }}
     steps:
       - name: Determine Image Name
         env:
