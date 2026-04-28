@@ -218,14 +218,17 @@ jobs:
           python --version
           DOCKER_EOF
       - name: Test
+        env:
+          work_dir: ${{ github.workspace }}
+          python_version: "3.12"
         run: |
           # Use step outputs from previous step instead of env vars
           MODE="${{ steps.trigger_mode.outputs.mode }}"
           UPDATE_BASELINE_MODELS="${{ steps.trigger_mode.outputs.update_baseline_models }}"
           PR_NUMBER="${{ steps.trigger_mode.outputs.pr_number }}"
           BRANCH="${{ github.event.pull_request.base.ref || github.ref_name }}"
-          work_dir="${{ github.workspace }}"
           docker exec -i \
+            -e python_version="$python_version" \
             -e work_dir="$work_dir" \
             -e MODE="$MODE" \
             -e UPDATE_BASELINE_MODELS="$UPDATE_BASELINE_MODELS" \
