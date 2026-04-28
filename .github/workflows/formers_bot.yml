@@ -1,4 +1,4 @@
-name: Claude Code
+name: PaddleFormers Bot
 
 on:
   issue_comment:
