@@ -186,6 +186,8 @@ jobs:
           allure_file: ${{ github.workspace }}/../../../allure-2.19.0/bin/allure
         run: |
           docker exec -t $container_name /bin/bash -c '
+          source ${work_dir}/../../../proxy_huggingface
+          python -m pip install bce-python-sdk==0.8.74 -i https://pypi.org/simple
           if [ ! -f "${{ env.bos_file }}" ]; then
             wget -q --no-proxy -O ${{ env.home_path }}/bos_new.tar.gz https://xly-devops.bj.bcebos.com/home/bos_new.tar.gz --no-check-certificate
             mkdir ${{ env.home_path }}/bos
@@ -247,7 +249,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -272,7 +274,7 @@ jobs:
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
-            bos_prefix="schedule/$(date +%Y%m%d)"
+            bos_prefix="schedule/github-ce-$(date +%Y%m%d)"
           fi
           echo "bos_prefix=${bos_prefix}"
           wget -q --no-proxy \
