@@ -1,0 +1,46 @@
+name: Claude Code
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@formers')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@formers')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@formers')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@formers') || contains(github.event.issue.title, '@formers')))
+    runs-on: paddle-bot
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Extract @formers comment and run bot
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          REVIEW_BODY: ${{ github.event.review.body }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: |
+          cd /home/paddle-1/
+          if [[ "$COMMENT_BODY" == *"@formers"* ]]; then
+            python formers_bot.py --prompt "$COMMENT_BODY"
+          elif [[ "$REVIEW_BODY" == *"@formers"* ]]; then
+            python formers_bot.py --prompt "$REVIEW_BODY"
+          elif [[ "$ISSUE_BODY" == *"@formers"* ]] || [[ "$ISSUE_TITLE" == *"@formers"* ]]; then
+            python formers_bot.py --prompt "$ISSUE_BODY $ISSUE_TITLE"
+          fi 
