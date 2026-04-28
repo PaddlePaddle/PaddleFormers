@@ -95,8 +95,10 @@ from ..data import (
     DataCollator,
     DataCollatorWithPadding,
     DistDataLoader,
+    StreamDistDataLoader,
     default_data_collator,
     init_dataloader_comm_group,
+    init_stream_data_group,
 )
 from ..peft import LoRAModel
 from ..peft.lora import QuantizationLoRABaseLinear
@@ -188,7 +190,11 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     TrainerMemoryTracker,
     TrainOutput,
     _exec_mode_guard,
+    _get_muon_2d_param_names,
     _insert_sync,
+    _is_muon_sharding_optimizer,
+    _restore_master_weights_single,
+    _unwrap_muon_sharding_optimizer,
     download_recovery_ckpt_from_pdc,
     find_batch_size,
     get_last_checkpoint,
@@ -590,6 +596,10 @@ class Trainer:
         self._pp_data_group = None
         if self.args.pipeline_model_parallel_size > 1 and self.args.distributed_dataloader:
             self._pp_data_group = init_dataloader_comm_group()
+
+        self._stream_data_group = None
+        if self.args.distributed_dataloader:
+            self._stream_data_group, _ = init_stream_data_group()
 
         default_label_names = (
             ["start_positions", "end_positions"]
@@ -1218,8 +1228,12 @@ class Trainer:
         enable_bf16_opt = (
             not isinstance(self.model, LoRAModel)
             and self.args.bf16
-            and isinstance(self.optimizer._inner_opt, DygraphShardingOptimizerV2)
+            and (
+                isinstance(self.optimizer._inner_opt, DygraphShardingOptimizerV2)
+                or _is_muon_sharding_optimizer(self.optimizer)
+            )
         )
+
         logger.debug(f"sharded_model_from_ema: {self.args.sharded_model_from_ema}")
         logger.debug(f"enable_bf16_opt: {enable_bf16_opt}")
 
@@ -1261,47 +1275,82 @@ class Trainer:
         if enable_bf16_opt:
             opt_state_dict = self.optimizer.state_dict()
 
-            def recover_params_from_master_weight(opt_state_dict, group):
-                master_weights = opt_state_dict["master_weights"]
-                tmp = OrderedDict()
-                master_weights, tmp = (tmp, master_weights)
-                # cast to before
-                for k, v in tmp.items():
-                    name = v.name
-                    master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
-                    master_weights[k].name = name
-
-                structure_name_map = {k: v.name for (k, v) in self.model.state_dict().items()}
-                node_model_state = reshard_util.NodeModelState(group=group)
-                node_model_state_tmp = reshard_util.NodeModelState(group=group)
-                node_model_state_tmp.add_master_weights(master_weights)
-                node_model_state_tmp.pack_keys(structure_name_map)
-                node_model_state.merge_from(node_model_state_tmp, max(group.rank, 0))
-                del node_model_state_tmp
-                sharding_strategy = reshard_util.get_sharding_strategy(self.optimizer)
-                logger.debug(f"sharding_strategy: {sharding_strategy}")
-                restore_func = (
-                    reshard_util.sharding_v1.restore
-                    if sharding_strategy == SHARDING_STRATEGY_V1
-                    else reshard_util.sharding_v2.restore
-                )
-                node_model_state = restore_func(node_model_state, self.model, self.optimizer)
-                node_model_state.unpack_keys()
-                master_weights = node_model_state.master_weights
-
-                master_weights = reshard_util.all_gather_state_dict(master_weights, lambda x: True, group)
-
+            def _assign_master_weights_to_model(master_weights):
                 model_state_dict = self.model.state_dict()
                 for key, param in model_state_dict.items():
                     if param.name in master_weights and param.dtype == paddle.bfloat16:
                         logger.debug(
-                            f"key {key}, convert master weights {param.name} shape {master_weights[param.name].shape} to param {param.name} shape{param.shape}"
+                            f"key {key}, convert master weights {param.name} "
+                            f"shape {master_weights[param.name].shape} to param "
+                            f"{param.name} shape{param.shape}"
                         )
                         assert (
                             param.shape == master_weights[param.name].shape
                         ), f"got {param.shape} vs {master_weights[param.name].shape}"
                         master_weight = paddle.reshape(master_weights[param.name], param.shape)
                         paddle.assign(paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key])
+
+            def recover_params_from_master_weight(opt_state_dict, group):
+                master_weights = opt_state_dict["master_weights"]
+                tmp = OrderedDict()
+                master_weights, tmp = (tmp, master_weights)
+                # cast to bf16 and move to cpu
+                for k, v in tmp.items():
+                    name = v.name
+                    master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
+                    master_weights[k].name = name
+
+                structure_name_map = {k: v.name for (k, v) in self.model.state_dict().items()}
+
+                muon_opt = _unwrap_muon_sharding_optimizer(self.optimizer)
+                if muon_opt is not None:
+                    param_2d_names = _get_muon_2d_param_names(muon_opt)
+                    logger.debug(f"Muon recovery: {len(param_2d_names)} 2D params detected")
+
+                    mw_2d = OrderedDict()
+                    mw_1d = OrderedDict()
+                    for k, v in master_weights.items():
+                        if k in param_2d_names:
+                            mw_2d[k] = v
+                        else:
+                            mw_1d[k] = v
+
+                    all_master_weights = OrderedDict()
+                    if mw_2d:
+                        restored_2d = _restore_master_weights_single(
+                            mw_2d,
+                            self.model,
+                            self.optimizer,
+                            group,
+                            structure_name_map,
+                            reshard_util.sharding_v1.restore,
+                        )
+                        all_master_weights.update(restored_2d)
+                    if mw_1d:
+                        restored_1d = _restore_master_weights_single(
+                            mw_1d,
+                            self.model,
+                            self.optimizer,
+                            group,
+                            structure_name_map,
+                            reshard_util.sharding_v2.restore,
+                        )
+                        all_master_weights.update(restored_1d)
+
+                    master_weights = all_master_weights
+                else:
+                    sharding_strategy = reshard_util.get_sharding_strategy(self.optimizer)
+                    logger.debug(f"sharding_strategy: {sharding_strategy}")
+                    restore_func = (
+                        reshard_util.sharding_v1.restore
+                        if sharding_strategy == SHARDING_STRATEGY_V1
+                        else reshard_util.sharding_v2.restore
+                    )
+                    master_weights = _restore_master_weights_single(
+                        master_weights, self.model, self.optimizer, group, structure_name_map, restore_func
+                    )
+
+                _assign_master_weights_to_model(master_weights)
 
             with paddle.no_grad():
                 if paddle.distributed.is_initialized():
@@ -1777,6 +1826,16 @@ class Trainer:
         return global_micro_batchs
 
     def optimizer_step(self, args, model, parameters_list=None):
+        # When freeze_training is enabled, skip optimizer step and lr scheduler step
+        # to keep both model parameters and optimizer state unchanged
+        if args.freeze_training:
+            logger.warning(
+                "freeze_training is enabled! Model parameters and optimizer state will NOT be updated. "
+                "This is intended for debugging/profiling only."
+            )
+            self.optimizer.clear_grad()
+            return
+
         if parameters_list is None:
             parameters_list = []
 
@@ -2726,35 +2785,48 @@ class Trainer:
         if is_iterable_dataset:  # For iterable dataset
             total_batch_size = self.args.per_device_train_batch_size
 
-            # For auto_parallel mode, skip IterableDatasetShard to avoid double sharding
-            # DataLoader and dist.shard_dataloader will handle the sharding
-            if not self.args.enable_auto_parallel:
-                if self.args.dataset_world_size > 1 and train_dataset is not None:
-                    train_dataset = IterableDatasetShard(
-                        train_dataset,
-                        batch_size=total_batch_size,
-                        drop_last=self.args.dataloader_drop_last,
-                        num_processes=self.args.dataset_world_size,
-                        process_index=self.args.dataset_rank,
-                    )
+            if self.args.distributed_dataloader and self._stream_data_group is not None:
+                # StreamDistDataLoader: only rank 0 reads, scatter to dataset ranks
+                logger.info("Training using StreamDistDataLoader for iterable dataset.")
+                train_dataloader = StreamDistDataLoader(
+                    dataset=train_dataset,
+                    batch_size=total_batch_size,
+                    collate_fn=self.data_collator,
+                    num_workers=self.args.dataloader_num_workers,
+                    prefetch_factor=self.args.prefetch_factor,
+                    persistent_workers=self.args.dataloader_num_workers > 0,
+                    reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
+                    stream_data_group=self._stream_data_group,
+                    pp_data_group=self._pp_data_group,
+                )
             else:
-                # For auto_parallel, set batch_size to be divisible by dp_world_size
-                # so that DataLoader's internal sharding works correctly
-                total_batch_size = self.args.per_device_train_batch_size * self.args.dataset_world_size
+                if not self.args.enable_auto_parallel:
+                    if self.args.dataset_world_size > 1 and train_dataset is not None:
+                        train_dataset = IterableDatasetShard(
+                            train_dataset,
+                            batch_size=total_batch_size,
+                            drop_last=self.args.dataloader_drop_last,
+                            num_processes=self.args.dataset_world_size,
+                            process_index=self.args.dataset_rank,
+                        )
+                else:
+                    # For auto_parallel, set batch_size to be divisible by dp_world_size
+                    # so that DataLoader's internal sharding works correctly
+                    total_batch_size = self.args.per_device_train_batch_size * self.args.dataset_world_size
 
-            if self.args.distributed_dataloader:
-                logger.info("Training using DistDataLoader.")
-                additional_configs = {"is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
-            train_dataloader = _DataLoader(
-                train_dataset,
-                batch_size=total_batch_size,
-                collate_fn=self.data_collator,
-                num_workers=self.args.dataloader_num_workers,
-                persistent_workers=self.args.dataloader_num_workers > 0,
-                prefetch_factor=self.args.prefetch_factor,
-                reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
-                **additional_configs,
-            )
+                if self.args.distributed_dataloader:
+                    logger.info("Training using DistDataLoader.")
+                    additional_configs = {"is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
+                train_dataloader = _DataLoader(
+                    train_dataset,
+                    batch_size=total_batch_size,
+                    collate_fn=self.data_collator,
+                    num_workers=self.args.dataloader_num_workers,
+                    persistent_workers=self.args.dataloader_num_workers > 0,
+                    prefetch_factor=self.args.prefetch_factor,
+                    reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
+                    **additional_configs,
+                )
         else:
             train_sampler = self._get_train_sampler()
             if self.args.distributed_dataloader:
@@ -2856,27 +2928,43 @@ class Trainer:
 
         additional_configs = {}
         if is_iterable_dataset:
-            if (
-                self.args.dataset_world_size > 1 or self.args.pipeline_model_parallel_size > 1
-            ) and eval_dataset is not None:
-                eval_dataset = IterableDatasetShard(
+            if self.args.distributed_dataloader and self._stream_data_group is not None:
+                logger.info("Eval using StreamDistDataLoader for iterable dataset.")
+                return StreamDistDataLoader(
+                    dataset=eval_dataset,
+                    batch_size=self.args.per_device_eval_batch_size,
+                    collate_fn=self.data_collator,
+                    num_workers=0,
+                    stream_data_group=self._stream_data_group,
+                    pp_data_group=self._pp_data_group,
+                    eval=True,
+                )
+            else:
+                if (
+                    self.args.dataset_world_size > 1 or self.args.pipeline_model_parallel_size > 1
+                ) and eval_dataset is not None:
+                    eval_dataset = IterableDatasetShard(
+                        eval_dataset,
+                        batch_size=self.args.per_device_eval_batch_size,
+                        drop_last=self.args.dataloader_drop_last,
+                        num_processes=self.args.dataset_world_size,
+                        process_index=self.args.dataset_rank,
+                    )
+
+                if self.args.distributed_dataloader:
+                    logger.info("Eval using DistDataLoader.")
+                    additional_configs = {
+                        "eval": True,
+                        "is_iterable_dataset": True,
+                        "pp_data_group": self._pp_data_group,
+                    }
+                return _DataLoader(
                     eval_dataset,
                     batch_size=self.args.per_device_eval_batch_size,
-                    drop_last=self.args.dataloader_drop_last,
-                    num_processes=self.args.dataset_world_size,
-                    process_index=self.args.dataset_rank,
+                    collate_fn=self.data_collator,
+                    num_workers=0,
+                    **additional_configs,
                 )
-
-            if self.args.distributed_dataloader:
-                logger.info("Eval using DistDataLoader.")
-                additional_configs = {"eval": True, "is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
-            return _DataLoader(
-                eval_dataset,
-                batch_size=self.args.per_device_eval_batch_size,
-                collate_fn=self.data_collator,
-                num_workers=0,
-                **additional_configs,
-            )
         else:
             eval_sampler = self._get_eval_sampler(eval_dataset)
             if self.args.distributed_dataloader:
@@ -2919,28 +3007,47 @@ class Trainer:
 
         additional_config = {}
         if is_iterable_dataset:
-            if self.args.dataset_world_size > 1 and test_dataset is not None:
-                test_dataset = IterableDatasetShard(
-                    test_dataset,
+            if self.args.distributed_dataloader and self._stream_data_group is not None:
+                logger.info("Test using StreamDistDataLoader for iterable dataset.")
+                return StreamDistDataLoader(
+                    dataset=test_dataset,
                     batch_size=self.args.per_device_eval_batch_size,
-                    drop_last=self.args.dataloader_drop_last,
-                    num_processes=self.args.dataset_world_size,
-                    process_index=self.args.dataset_rank,
+                    collate_fn=self.data_collator,
+                    num_workers=self.args.dataloader_num_workers,
+                    prefetch_factor=self.args.prefetch_factor,
+                    persistent_workers=self.args.dataloader_num_workers > 0,
+                    reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
+                    stream_data_group=self._stream_data_group,
+                    pp_data_group=self._pp_data_group,
+                    eval=True,
                 )
+            else:
+                if self.args.dataset_world_size > 1 and test_dataset is not None:
+                    test_dataset = IterableDatasetShard(
+                        test_dataset,
+                        batch_size=self.args.per_device_eval_batch_size,
+                        drop_last=self.args.dataloader_drop_last,
+                        num_processes=self.args.dataset_world_size,
+                        process_index=self.args.dataset_rank,
+                    )
 
-            if self.args.distributed_dataloader:
-                logger.info("Test using DistDataLoader.")
-                additional_config = {"eval": True, "is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
-            return _DataLoader(
-                test_dataset,
-                batch_size=self.args.per_device_eval_batch_size * self.world_size,
-                collate_fn=self.data_collator,
-                num_workers=self.args.dataloader_num_workers,
-                persistent_workers=self.args.dataloader_num_workers > 0,
-                prefetch_factor=self.args.prefetch_factor,
-                reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
-                **additional_config,
-            )
+                if self.args.distributed_dataloader:
+                    logger.info("Test using DistDataLoader.")
+                    additional_config = {
+                        "eval": True,
+                        "is_iterable_dataset": True,
+                        "pp_data_group": self._pp_data_group,
+                    }
+                return _DataLoader(
+                    test_dataset,
+                    batch_size=self.args.per_device_eval_batch_size * self.world_size,
+                    collate_fn=self.data_collator,
+                    num_workers=self.args.dataloader_num_workers,
+                    persistent_workers=self.args.dataloader_num_workers > 0,
+                    prefetch_factor=self.args.prefetch_factor,
+                    reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
+                    **additional_config,
+                )
         else:
             test_sampler = self._get_eval_sampler(test_dataset)
             if self.args.distributed_dataloader:
@@ -3102,6 +3209,29 @@ class Trainer:
 
             optimizer_cls = AdamWCustom
             optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.MUON:
+            assert (
+                args.save_checkpoint_format == "flex_checkpoint" and args.load_checkpoint_format == "flex_checkpoint"
+            ), (
+                "Muon optimizer only supports flex_checkpoint. "
+                "Please set --save_checkpoint_format flex_checkpoint --load_checkpoint_format flex_checkpoint."
+            )
+            from paddle.optimizer import Muon
+
+            logger.info("Creating Muon optimizer")
+            muon_kwargs = {
+                **adam_kwargs,
+                "momentum": args.muon_momentum,
+                "muon_version": args.muon_version,
+                "muon_exclude_patterns": args.muon_exclude_patterns,
+                "muon_qkv_update_mode": args.muon_qkv_update_mode,
+                "muon_ffn_split": args.muon_ffn_split,
+                "muon_extra_scale_factor": args.muon_extra_scale_factor,
+                "ns_steps": args.muon_ns_steps,
+                "ns_coeff_type": args.muon_ns_coeff_type,
+            }
+            optimizer_cls = Muon
+            optimizer_kwargs.update(muon_kwargs)
         else:
             raise ValueError(f"Trainer cannot instantiate unsupported optimizer: {args.optim}")
 
@@ -3123,16 +3253,28 @@ class Trainer:
             decay_steps = self.args.decay_steps
 
         if self.lr_scheduler is None:
-            self.lr_scheduler = get_scheduler(
-                self.args.lr_scheduler_type,
-                learning_rate=self.args.learning_rate,
-                num_warmup_steps=warmup,
-                num_training_steps=decay_steps,
-                num_cycles=self.args.num_cycles,
-                lr_end=self.args.lr_end,
-                power=self.args.power,
-                min_lr=self.args.min_lr,
-            )
+            # When freeze_training is enabled, use constant scheduler with lr=0
+            # to ensure learning rate stays 0 throughout training
+            if self.args.freeze_training:
+                logger.warning(
+                    "WARNING: freeze_training is enabled! "
+                    "Learning rate is set to 0 and model parameters will NOT be updated. "
+                    "This mode is intended for debugging/profiling only, NOT for actual training."
+                )
+                from .trainer_utils import get_constant_schedule
+
+                self.lr_scheduler = get_constant_schedule(learning_rate=0.0)
+            else:
+                self.lr_scheduler = get_scheduler(
+                    self.args.lr_scheduler_type,
+                    learning_rate=self.args.learning_rate,
+                    num_warmup_steps=warmup,
+                    num_training_steps=decay_steps,
+                    num_cycles=self.args.num_cycles,
+                    lr_end=self.args.lr_end,
+                    power=self.args.power,
+                    min_lr=self.args.min_lr,
+                )
 
         return self.lr_scheduler
 
@@ -3333,7 +3475,7 @@ class Trainer:
             else:
 
                 def _prepare_pipeline_inputs_func(inputs):
-                    first_stage_keys = ["input_ids", "attention_mask", "position_ids"]
+                    first_stage_keys = ["input_ids", "attention_mask", "position_ids", "labels"]
                     last_stage_keys = ["labels"]
 
                     def get_expected_keys(inputs, keys):
@@ -3352,7 +3494,7 @@ class Trainer:
                     inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
                     if is_paddlefleet_available() and self.using_fleet_model:
                         first_stage_inputs_batch = inputs_batch
-                        last_stage_inputs = first_stage_inputs_batch.pop("labels")
+                        last_stage_inputs = first_stage_inputs_batch.get("labels")
                         outputs = (
                             first_stage_inputs_batch,
                             last_stage_inputs,
@@ -4621,6 +4763,8 @@ class Trainer:
             batch_size = dataloader._batch_sampler.batch_size
             # alias for inner dataloader
             dataloader.dataset = dataloader._dataset
+        elif isinstance(dataloader, StreamDistDataLoader):
+            batch_size = dataloader._batch_size
         else:
             raise ValueError("Only support for paddle.io.DataLoader")
 

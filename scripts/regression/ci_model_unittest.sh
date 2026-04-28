@@ -180,7 +180,7 @@ if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];the
     python -m pytest -s -v --models=${models} --update-baseline=${update_baseline_models} scripts/regression/test_models.py > ${log_path}/model_unittest.log 2>&1
     exit_code=$?
     print_info $exit_code model_unittest
-    if [[ $exit_code -eq 0 ]]; then
+    if [[ $exit_code -eq 0 ]] && [[ "$update_baseline_models" != "false" ]] && [[ "$update_baseline_models" != "False" ]]; then
         upload_baseline   
     else
         echo " fix error, first"
