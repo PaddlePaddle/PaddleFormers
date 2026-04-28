@@ -1,4 +1,4 @@
-name: Claude Code
+name: PaddleFormers Bot
 
 on:
   issue_comment:
@@ -21,6 +21,8 @@ jobs:
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@formers')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@formers') || contains(github.event.issue.title, '@formers')))
     runs-on: paddle-bot
+    env:
+      PATH: /home/paddle-1/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     permissions:
       contents: read
       pull-requests: read
@@ -44,7 +46,6 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
         run: |
-          export NVM_DIR="$HOME/.nvm"
           cd /home/paddle-1/
           if [[ "$COMMENT_BODY" == *"@formers"* ]]; then
             python formers_bot.py --prompt "$COMMENT_BODY"
