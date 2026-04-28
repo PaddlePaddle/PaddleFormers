@@ -29,7 +29,7 @@ do_train: true
 do_eval: true
 per_device_eval_batch_size: 8
 per_device_train_batch_size: 8
-num_train_epochs: 2
+num_train_epochs: 1
 max_steps: -1
 max_estimate_samples: 500
 eval_steps: 400
@@ -37,8 +37,8 @@ evaluation_strategy: steps
 save_steps: 400
 save_strategy: steps
 logging_steps: 1
-gradient_accumulation_steps: 8
-logging_dir: ./Deepseek-OCR2-Bengali/visualdl_logs/
+gradient_accumulation_steps: 1
+logging_dir: ./Deepseek-OCR2-SFT-Bengali/visualdl_logs/
 output_dir: ./Deepseek-OCR2-SFT-Bengali
 disable_tqdm: true
 eval_accumulation_steps: 16
@@ -64,7 +64,8 @@ recompute_method: uniform
 recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
-# pre_alloc_memory: 42
+pre_alloc_memory: 52
+freeze_config: freeze_vision | freeze_aligner
 
 # save
 unified_checkpoint: False
