@@ -448,7 +448,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         f"{prefix}.block_sparse_moe.experts.{expert_id}.w1.weight^T, {prefix}.block_sparse_moe.experts.{expert_id}.w3.weight^T -> {prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight, axis=1",
                     ]
 
-            if (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
+            if config.moe_grouped_gemm or using_sonic_moe:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(num_experts):
@@ -592,7 +592,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 # for mtp
                 prefix_offset += ".transformer_layer"
 
-            if (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
+            if config.moe_grouped_gemm or using_sonic_moe:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
