@@ -32,7 +32,7 @@
 @formers 这个 Issue 的 CI 日志有什么问题？
 ```
 
-注意 需要加上PR 或者Github Action 链接
+注意 需要加上 PR 或者 Github Action 链接
 
 Bot 会在几分钟内自动回复分析报告：
 
