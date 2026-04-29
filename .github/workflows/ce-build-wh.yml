@@ -40,7 +40,6 @@ jobs:
             -e BRANCH \
             -e COMMIT_ID \
             -e work_dir \
-            -e ce_scripts \
             -e no_proxy \
             -e CE_name \
             -e paddle \
