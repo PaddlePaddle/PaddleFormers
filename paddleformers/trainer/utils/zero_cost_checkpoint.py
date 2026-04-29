@@ -382,6 +382,8 @@ class ZeroCostCheckpointEMAProcessor:
                 shape = tensor_meta["shape"]
                 name = tensor_meta["name"]
                 buffer_index = tensor_meta["buffer_index"]
+                if buffer_index not in self.ema_buffer_model_params:
+                    continue  # non fp32 has no `self.ema_buffer_model_params`
                 if buffer_index.startswith("unshard_"):
                     # unshard_ type tensors use the entire buffer directly
                     tensor = self.ema_buffer_model_params[buffer_index].clone()
@@ -389,8 +391,6 @@ class ZeroCostCheckpointEMAProcessor:
                     tensor.name = name
                     ema_state_dict[k] = tensor
                     continue
-                if buffer_index not in self.ema_buffer_model_params:
-                    continue  # non fp32 has no `self.ema_buffer_model_params`
                 start = tensor_meta["start"]
                 end = tensor_meta["end"]
                 cpu_buffer = self.ema_buffer_model_params[buffer_index]
@@ -412,6 +412,8 @@ class ZeroCostCheckpointEMAProcessor:
     def load_ema_state_dict(self, state_dict):
         for k, tensor_meta in self.param_fusion_storage_helper.model_weights_metas.items():
             logger.info(f"[ZCC EMA] load model weight key={k}")
+            if tensor_meta["buffer_index"] not in self.ema_buffer_model_params:
+                continue  # non fp32 has no `self.ema_buffer_model_params`
             if tensor_meta["buffer_index"].startswith("unshard_"):
                 # unshard_ type tensors use the entire buffer directly
                 if k in state_dict:
@@ -419,8 +421,6 @@ class ZeroCostCheckpointEMAProcessor:
                 continue
             start = tensor_meta["start"]
             end = tensor_meta["end"]
-            if tensor_meta["buffer_index"] not in self.ema_buffer_model_params:
-                continue  # non fp32 has no `self.ema_buffer_model_params`
             if k in state_dict:
                 cpu_buffer = self.ema_buffer_model_params[tensor_meta["buffer_index"]]
                 tensor = state_dict[k].flatten()
@@ -490,6 +490,17 @@ class ParamFusionStorageHelper:
         return (cuda_buffer, cpu_buffer)
 
     @imperative_base.no_grad()
+    def sync_unshard_buffers(self):
+        synced_buffer_indices = set()
+        for tensor_meta in self.model_weights_metas.values():
+            buffer_index = tensor_meta["buffer_index"]
+            if not buffer_index.startswith("unshard_") or buffer_index in synced_buffer_indices:
+                continue
+            cuda_buffer, cpu_buffer = self.inited_buffers[buffer_index]
+            cpu_buffer.set_value(cuda_buffer.cpu())
+            synced_buffer_indices.add(buffer_index)
+
+    @imperative_base.no_grad()
     def sync_partial_param(self, numel_to_sync):
         assert (
             self.current_offloaded_numel + numel_to_sync <= self.all_param_numel
@@ -533,6 +544,7 @@ class ParamFusionStorageHelper:
 
     def wait_all(self):
         if len(self.tasks) == 0:
+            self.sync_unshard_buffers()
             return
         last_task = self.tasks.pop(-1)
         while len(self.tasks) > 0:
@@ -542,6 +554,7 @@ class ParamFusionStorageHelper:
             else:
                 task.cuda_wait()
         last_task.cpu_wait()
+        self.sync_unshard_buffers()
         self.current_offloaded_numel = 0
 
     def state_dict(self):
