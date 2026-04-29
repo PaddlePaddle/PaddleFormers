@@ -439,7 +439,7 @@ class DeepseekV2MoE(MoELayer):
 
         super().__init__(
             config=config,
-            moe_num_experts=config.n_routed_experts,
+            n_routed_experts=config.n_routed_experts,
             expert_class=DeepseekV2MLPClass,
             expert_kwargs={
                 "config": config,

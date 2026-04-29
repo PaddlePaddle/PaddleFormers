@@ -132,7 +132,12 @@ def _test_llama():
 
 
 def _test_qwen2():
+    from paddlefleet.tensor_parallel import random
+
     from paddleformers.transformers import Qwen2Config, Qwen2ForCausalLM
+
+    # 初始化 tensor parallel RNG
+    random.model_parallel_cuda_manual_seed(23)
 
     config = Qwen2Config()
     config = prepare_config(config)

@@ -69,7 +69,7 @@ python -u  -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7" run_pretrain
 python -u -m paddle.distributed.launch --devices "0,1,2,3,4,5,6,7"  --master=<master_ip>:<port> --nnodes=256  run_pretrain.py ./config/pretrain_argument.json
 ```
 
-- 注：以上单机多机配置需每卡至少 80G 显存，配置中默认开启`offload_optim`，会对性能造成影
+- 注：以上单机多机配置需每卡至少 80G 显存，配置中默认开启`tensorwise_offload_optimizer`，会对性能造成影
 - 更详细的分布式启动命令请参考[这里](https://www.paddlepaddle.org.cn/documentation/docs/zh/2.6/api/paddle/distributed/launch_cn.html#launch)。
 
 ## 3. 注意事项

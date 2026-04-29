@@ -12,7 +12,7 @@ mix_strategy: concat
 
 truncate_packing: true
 dataloader_shuffle: false
-dataloader_num_workers: 24
+dataloader_num_workers: 4
 prefetch_factor: 24
 
 ### model

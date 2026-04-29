@@ -218,7 +218,7 @@ def run_dpo(
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
+    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
 
     logger.info("Loading model & tokenizer successfully !")
 
@@ -279,6 +279,8 @@ def run_dpo(
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
         "use_filtered_label_loss": model_config.use_filtered_label_loss,
+        "binpacking": data_args.binpacking,
+        "packing_interval": data_args.packing_interval,
     }
 
     dataset_config.update(
@@ -362,7 +364,7 @@ def run_dpo(
     logger.info(f"callbacks: {callbacks}")
     # padding to the maximum seq length in batch data when max_seq_len is None
     max_seq_len = (
-        data_args.max_seq_len + model_config.num_nextn_predict_layers
+        data_args.max_seq_len
         if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
         else None
     )

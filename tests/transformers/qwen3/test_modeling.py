@@ -20,9 +20,9 @@ import unittest
 import numpy as np
 import paddle
 
+from paddleformers.transformers import Qwen3Config
+from paddleformers.transformers import Qwen3ForCausalLMDeprecated as Qwen3ForCausalLM
 from paddleformers.transformers import (
-    Qwen3Config,
-    Qwen3ForCausalLM,
     Qwen3ForSequenceClassification,
     Qwen3ForTokenClassification,
     Qwen3Model,
@@ -440,7 +440,9 @@ class Qwen3CompatibilityTest(unittest.TestCase):
         torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
         # 3. forward the paddle model
-        from paddleformers.transformers import Qwen3ForCausalLM
+        from paddleformers.transformers import (
+            Qwen3ForCausalLMDeprecated as Qwen3ForCausalLM,
+        )
 
         paddle_model = Qwen3ForCausalLM.from_pretrained(
             self.torch_model_path, dtype="float32", load_checkpoint_format="flex_checkpoint"
@@ -474,7 +476,10 @@ class Qwen3CompatibilityTest(unittest.TestCase):
             torch_logit = torch_model(torch.tensor(input_ids), return_dict=False)[0]
 
             # 3. forward the paddle model with fc
-            from paddleformers.transformers import Qwen3Config, Qwen3ForCausalLM
+            from paddleformers.transformers import Qwen3Config
+            from paddleformers.transformers import (
+                Qwen3ForCausalLMDeprecated as Qwen3ForCausalLM,
+            )
 
             paddle_model = Qwen3ForCausalLM.from_pretrained(
                 tempdir, dtype="float32", load_checkpoint_format="flex_checkpoint"

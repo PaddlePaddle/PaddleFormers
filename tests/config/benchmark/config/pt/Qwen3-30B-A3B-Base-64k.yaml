@@ -82,14 +82,12 @@ moe_router_force_load_balancing: false
 router_aux_loss_coef: 1e-3
 
 # pp
-pp_delay_scale_loss: true
 overlap_p2p_comm: true
 variable_seq_lengths: true
 pp_release_grads: true
 sd_release_grads: true
 best_unbalanced_scheduler: true
 
-tp_delay_scale_loss: True
 
 # fp8: "e4m3"
 

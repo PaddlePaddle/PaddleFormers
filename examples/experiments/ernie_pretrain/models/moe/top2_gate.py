@@ -218,21 +218,21 @@ class Top2Gate(nn.Layer):
 
         self.use_correction_bias = config.moe_use_aux_free
 
-        if config.moe_gate_act == "softmax":
+        if config.scoring_func == "softmax":
             self.act = partial(F.softmax, axis=-1)
-        elif config.moe_gate_act == "sigmoid":
+        elif config.scoring_func == "sigmoid":
             self.act = F.sigmoid
         else:
-            raise ValueError(f"{config.moe_gate_act} is not supported.")
+            raise ValueError(f"{config.scoring_func} is not supported.")
 
         self.expert_drop = False
         self.norm_gate_logits = config.moe_norm_gate_logits
         self.one = paddle.ones([], dtype="float32")
 
-        self.moe_aux_loss_lambda = paddle.to_tensor(config.moe_aux_loss_lambda, dtype="float32")
+        self.router_aux_loss_coef = paddle.to_tensor(config.router_aux_loss_coef, dtype="float32")
         self.moe_orthogonal_loss_lambda = paddle.to_tensor(config.moe_orthogonal_loss_lambda, dtype="float32")
-        if self.moe_aux_loss_lambda.ndim == 0:
-            self.moe_aux_loss_lambda = self.moe_aux_loss_lambda.unsqueeze(0)
+        if self.router_aux_loss_coef.ndim == 0:
+            self.router_aux_loss_coef = self.router_aux_loss_coef.unsqueeze(0)
         if self.moe_orthogonal_loss_lambda.ndim == 0:
             self.moe_orthogonal_loss_lambda = self.moe_orthogonal_loss_lambda.unsqueeze(0)
 
@@ -285,7 +285,7 @@ class Top2Gate(nn.Layer):
                 l_aux,
             ) = self.top2_gating(logits, correction_bias=correction_bias)
             orthogonal_loss = self._cal_orthogonal_loss()
-            router_loss = l_aux * self.moe_aux_loss_lambda + orthogonal_loss * self.moe_orthogonal_loss_lambda
+            router_loss = l_aux * self.router_aux_loss_coef + orthogonal_loss * self.moe_orthogonal_loss_lambda
             router_loss.stop_gradient = False
 
         combine_weights = combine_weights.cast(orig_dtype)

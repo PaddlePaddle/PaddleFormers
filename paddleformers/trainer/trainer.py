@@ -45,6 +45,7 @@ import psutil
 from packaging import version
 from paddle import framework
 from paddle.base import core
+from paddle.distributed import ShardedWeight
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
 from paddle.distributed.fleet.meta_parallel import PipelineLayer
 
@@ -79,6 +80,7 @@ from paddle.distributed.fleet.meta_parallel.sharding.group_sharded_optimizer_sta
 from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     obtain_optimizer_parameters_list,
 )
+from paddle.distributed.fsdp.fully_shard import fully_shard
 
 _obtain_optimizer_parameters_list = obtain_optimizer_parameters_list
 
@@ -159,7 +161,7 @@ from ..utils.env import (
 from ..utils.import_utils import is_datasets_available, is_paddle_cuda_available
 from ..utils.log import MetricsDumper, logger
 from ..utils.pdc_sdk import FLASH_DEVICE
-from ..utils.tools import get_env_device, paddle_device
+from ..utils.tools import paddle_device
 from .argparser import strtobool
 from .integrations import get_reporting_integration_callbacks
 from .plugins.timer import RuntimeTimer, get_timers, set_timers
@@ -186,7 +188,11 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     TrainerMemoryTracker,
     TrainOutput,
     _exec_mode_guard,
+    _get_muon_2d_param_names,
     _insert_sync,
+    _is_muon_sharding_optimizer,
+    _restore_master_weights_single,
+    _unwrap_muon_sharding_optimizer,
     download_recovery_ckpt_from_pdc,
     find_batch_size,
     get_last_checkpoint,
@@ -205,6 +211,7 @@ from .unified_checkpoint import UnifiedCheckpointHandler
 from .utils import reshard as reshard_util
 from .utils.async_save import AsyncSaver
 from .utils.ckpt_converter import CheckpointConverter
+from .utils.offload_optimizer import offload
 from .utils.reshard import SHARDING_STRATEGY_V1, split_opt_state
 from .utils.sharding_io import GroupGetter, to_device
 
@@ -424,6 +431,10 @@ class Trainer:
         if not args.skip_profile_timer:
             set_timers()
         self.timers = get_timers()
+        if is_paddlefleet_available():
+            from paddlefleet.training.global_vars import set_profile_timers
+
+            set_profile_timers(self.timers)
         self.runtime_timer = RuntimeTimer("RuntimeTimer")
 
         self.model_wrapped = model
@@ -855,8 +866,6 @@ class Trainer:
                     if k not in old_state_dict or id(v) != id(old_state_dict[k]):
                         new_state_dict[k] = v
                 self.model.set_state_dict(new_state_dict)
-                if self.args.offload_optim:
-                    self._offload_optimizer()
             else:
                 if resume_from_checkpoint is not None and (
                     self.args.dataset_rank == 0 or self.args.use_expert_parallel
@@ -924,7 +933,7 @@ class Trainer:
 
     def _create_zcc_manager_instance(self, unwrapped_model, zcc_worker_class):
         """Create ZCC manager instance with appropriate configuration."""
-        if isinstance(self.model, PipelineLayer):
+        if isinstance(self.model, PipelineLayer) and self.args.pipeline_model_parallel_size > 1:
             pipeline_hooks_capacity = (
                 unwrapped_model.forward_pipeline_parallel_hook_capacity
                 + unwrapped_model.backward_pipeline_parallel_hook_capacity
@@ -1018,7 +1027,7 @@ class Trainer:
         self.zcc_manager = self._create_zcc_manager_instance(unwrapped_model, zcc_worker_class)
 
         # Register pipeline hooks if using pipeline parallelism
-        if isinstance(self.model, PipelineLayer):
+        if isinstance(self.model, PipelineLayer) and self.args.pipeline_model_parallel_size > 1:
             self._register_pipeline_hooks(unwrapped_model)
 
         # Add callback and handle checkpoint resumption
@@ -1044,6 +1053,10 @@ class Trainer:
 
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
+        for key, sharded_weight in model_sharded_state_dict.items():
+            # NOTE(Waynezee): Only Tensor in Parameter will be used in FlexCheckpoint Save Scenario.
+            if isinstance(sharded_weight, ShardedWeight):
+                sharded_weight.local_tensor = paddle.Tensor(sharded_weight.local_tensor)
         model_state_dict_path = os.path.join(output_dir, MODEL_STATE_DIC)
         os.makedirs(model_state_dict_path, exist_ok=True)
         dist.save_state_dict(
@@ -1200,13 +1213,19 @@ class Trainer:
 
             if self.args.tensorwise_offload_optimizer:
                 logger.info("Offloading optimizer state for FC...")
-                self._offload_optimizer()
+                for k, v in optimizer_sharded_state_dict.items():
+                    offload(v.local_tensor)
+                del opt_states, master_weights, optimizer_sharded_state_dict
 
         enable_bf16_opt = (
             not isinstance(self.model, LoRAModel)
             and self.args.bf16
-            and isinstance(self.optimizer._inner_opt, DygraphShardingOptimizerV2)
+            and (
+                isinstance(self.optimizer._inner_opt, DygraphShardingOptimizerV2)
+                or _is_muon_sharding_optimizer(self.optimizer)
+            )
         )
+
         logger.debug(f"sharded_model_from_ema: {self.args.sharded_model_from_ema}")
         logger.debug(f"enable_bf16_opt: {enable_bf16_opt}")
 
@@ -1248,47 +1267,82 @@ class Trainer:
         if enable_bf16_opt:
             opt_state_dict = self.optimizer.state_dict()
 
-            def recover_params_from_master_weight(opt_state_dict, group):
-                master_weights = opt_state_dict["master_weights"]
-                tmp = OrderedDict()
-                (master_weights, tmp) = (tmp, master_weights)
-                # cast to before
-                for (k, v) in tmp.items():
-                    name = v.name
-                    master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
-                    master_weights[k].name = name
-
-                structure_name_map = {k: v.name for (k, v) in self.model.state_dict().items()}
-                node_model_state = reshard_util.NodeModelState(group=group)
-                node_model_state_tmp = reshard_util.NodeModelState(group=group)
-                node_model_state_tmp.add_master_weights(master_weights)
-                node_model_state_tmp.pack_keys(structure_name_map)
-                node_model_state.merge_from(node_model_state_tmp, max(group.rank, 0))
-                del node_model_state_tmp
-                sharding_strategy = reshard_util.get_sharding_strategy(self.optimizer)
-                logger.debug(f"sharding_strategy: {sharding_strategy}")
-                restore_func = (
-                    reshard_util.sharding_v1.restore
-                    if sharding_strategy == SHARDING_STRATEGY_V1
-                    else reshard_util.sharding_v2.restore
-                )
-                node_model_state = restore_func(node_model_state, self.model, self.optimizer)
-                node_model_state.unpack_keys()
-                master_weights = node_model_state.master_weights
-
-                master_weights = reshard_util.all_gather_state_dict(master_weights, lambda x: True, group)
-
+            def _assign_master_weights_to_model(master_weights):
                 model_state_dict = self.model.state_dict()
                 for key, param in model_state_dict.items():
                     if param.name in master_weights and param.dtype == paddle.bfloat16:
                         logger.debug(
-                            f"key {key}, convert master weights {param.name} shape {master_weights[param.name].shape} to param {param.name} shape{param.shape}"
+                            f"key {key}, convert master weights {param.name} "
+                            f"shape {master_weights[param.name].shape} to param "
+                            f"{param.name} shape{param.shape}"
                         )
                         assert (
                             param.shape == master_weights[param.name].shape
                         ), f"got {param.shape} vs {master_weights[param.name].shape}"
                         master_weight = paddle.reshape(master_weights[param.name], param.shape)
                         paddle.assign(paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key])
+
+            def recover_params_from_master_weight(opt_state_dict, group):
+                master_weights = opt_state_dict["master_weights"]
+                tmp = OrderedDict()
+                master_weights, tmp = (tmp, master_weights)
+                # cast to bf16 and move to cpu
+                for k, v in tmp.items():
+                    name = v.name
+                    master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
+                    master_weights[k].name = name
+
+                structure_name_map = {k: v.name for (k, v) in self.model.state_dict().items()}
+
+                muon_opt = _unwrap_muon_sharding_optimizer(self.optimizer)
+                if muon_opt is not None:
+                    param_2d_names = _get_muon_2d_param_names(muon_opt)
+                    logger.debug(f"Muon recovery: {len(param_2d_names)} 2D params detected")
+
+                    mw_2d = OrderedDict()
+                    mw_1d = OrderedDict()
+                    for k, v in master_weights.items():
+                        if k in param_2d_names:
+                            mw_2d[k] = v
+                        else:
+                            mw_1d[k] = v
+
+                    all_master_weights = OrderedDict()
+                    if mw_2d:
+                        restored_2d = _restore_master_weights_single(
+                            mw_2d,
+                            self.model,
+                            self.optimizer,
+                            group,
+                            structure_name_map,
+                            reshard_util.sharding_v1.restore,
+                        )
+                        all_master_weights.update(restored_2d)
+                    if mw_1d:
+                        restored_1d = _restore_master_weights_single(
+                            mw_1d,
+                            self.model,
+                            self.optimizer,
+                            group,
+                            structure_name_map,
+                            reshard_util.sharding_v2.restore,
+                        )
+                        all_master_weights.update(restored_1d)
+
+                    master_weights = all_master_weights
+                else:
+                    sharding_strategy = reshard_util.get_sharding_strategy(self.optimizer)
+                    logger.debug(f"sharding_strategy: {sharding_strategy}")
+                    restore_func = (
+                        reshard_util.sharding_v1.restore
+                        if sharding_strategy == SHARDING_STRATEGY_V1
+                        else reshard_util.sharding_v2.restore
+                    )
+                    master_weights = _restore_master_weights_single(
+                        master_weights, self.model, self.optimizer, group, structure_name_map, restore_func
+                    )
+
+                _assign_master_weights_to_model(master_weights)
 
             with paddle.no_grad():
                 if paddle.distributed.is_initialized():
@@ -1402,10 +1456,6 @@ class Trainer:
         # Do nothing when not in auto parallel mode.
         if not self.args.enable_auto_parallel:
             return
-        self.optimizer = parallelize.parallelize_optimizer(
-            self.optimizer,
-            config=self.auto_dist_config,
-        )
         if hasattr(self.optimizer, "_enable_tensor_fusion") and self.args.tensor_fusion:
             self.optimizer._enable_tensor_fusion()
         if hasattr(self.optimizer, "_enable_sharding_overlap") and self.args.overlap:
@@ -1436,6 +1486,8 @@ class Trainer:
                 A list of keys in the output of your model (if it is a dictionary) that should be ignored when
                 gathering predictions for evaluation during the training.
         """
+        if self.args.enable_auto_parallel:
+            dist.enable_auto_dp()
         args = self.args
         self.is_in_train = True
 
@@ -1489,6 +1541,9 @@ class Trainer:
 
             if self.args.fp16 or self.args.bf16:
                 self._wrap_amp_model(self.args, model)
+
+            # use FSDP in auto_parallel
+            model = fully_shard(model, mesh=self.global_mesh)
 
         if model is not self.model:
             self.model_wrapped = model
@@ -1576,7 +1631,7 @@ class Trainer:
             per_device_trainable_numel = 0
             for p in model.parameters():
                 if not p.stop_gradient:
-                    per_device_trainable_numel += np.prod(p._local_shape) if p.is_dist() else np.prod(p.shape)
+                    per_device_trainable_numel += np.prod(p.shape)
         else:
             per_device_trainable_numel = sum(np.prod(p.shape) for p in model.parameters() if not p.stop_gradient)
         logger.debug(f"  Number of trainable parameters = {per_device_trainable_numel:,} (per device)")
@@ -1738,9 +1793,6 @@ class Trainer:
             parameters_list = []
 
         optimizer_was_run = True
-        if not args.enable_auto_parallel and self.args.offload_optim:
-            self._reload_optimizer()
-
         if self.do_grad_scaling:
             scale_before = paddle.assign(self.scaler._scale)
             self.scaler.step(self.optimizer)
@@ -1761,9 +1813,6 @@ class Trainer:
             self.optimizer._step(parameters_list)
         else:
             self.optimizer.step()
-
-        if not args.enable_auto_parallel and self.args.offload_optim:
-            self._offload_optimizer()
 
         if optimizer_was_run:
             self.lr_scheduler.step()
@@ -1789,7 +1838,6 @@ class Trainer:
     def _get_inputs_list(self, inputs):
         inputs_list = [inputs]
         if self.args.enable_auto_parallel:
-            inputs_list = self._split_batches_for_accumulation(inputs)
             for inputs in inputs_list:
                 if self.args.sep_parallel_size > 1 and self.args.split_inputs_sequence_dim:
                     inputs = auto_split_inputs_sequence_dim(inputs)
@@ -1844,9 +1892,12 @@ class Trainer:
             and distributed_isfile(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))
             and not self.args.ignore_load_lr_and_optim
         ):
-            self.state = TrainerState.load_from_json(
-                distributed_file(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))
-            )
+            state_path = distributed_file(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))
+            # 根据文件扩展名判断使用哪种加载方法
+            if state_path.endswith(".json"):
+                self.state = TrainerState.load_from_json(state_path)
+            else:
+                self.state = TrainerState.load(state_path)
             if self.args.world_size > 1:
                 global_step_list = []
                 paddle.distributed.all_gather(
@@ -2128,12 +2179,6 @@ class Trainer:
                         and (step + 1) == steps_in_epoch
                         or disable_accumulation
                     ):
-                        if self._enable_delay_scale_loss():
-                            if self.args.enable_auto_parallel and self.args.gradient_accumulation_steps > 1:
-                                tr_loss /= self.args.gradient_accumulation_steps
-                            if not self.args.enable_auto_parallel and self.args.pipeline_model_parallel_size <= 1:
-                                tr_loss /= self.args.gradient_accumulation_steps
-
                         # assert if loss is invalid
                         self._check_loss_valid(tr_loss)
 
@@ -2188,20 +2233,18 @@ class Trainer:
                             self.timers and self.timers("all-reduce").stop()
                             self.timers and self.timers("optimizer-step").start()
 
-                        if (
-                            not args.enable_auto_parallel
-                            and self.args.gradient_accumulation_steps > 1
-                            and self._enable_delay_scale_loss()
-                        ):
+                        if not args.enable_auto_parallel and self.args.gradient_accumulation_steps > 1:
                             paddle.device.synchronize()
-                            for p in model._layers.parameters():
+                            parameters = (
+                                model._layers.parameters() if hasattr(model, "_layers") else model.parameters()
+                            )
+                            for p in parameters:
                                 with paddle.no_grad():
                                     if hasattr(p, "main_grad") and p.main_grad is not None:
                                         assert p.grad is None
                                         p.main_grad.scale_(1.0 / self.args.gradient_accumulation_steps)
                                     elif p.grad is not None:
                                         p.grad.scale_(1.0 / self.args.gradient_accumulation_steps)
-
                         # Optimizer step
                         self.callback_handler.on_optimizer_begin(
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
@@ -2449,6 +2492,7 @@ class Trainer:
             return loss
 
     def _maybe_log_save_evaluate(self, tr_loss, model, epoch, ignore_keys_for_eval, **kwargs):
+        flag_log = self.control.should_log
         if self.control.should_log:
 
             logs: Dict[str, float] = {}
@@ -2513,6 +2557,20 @@ class Trainer:
                     )
                 )
             logs.update(self.global_training_logs)
+
+            # Add MTP loss metrics if available
+            try:
+                from paddlefleet.models.common.language_loss.language_loss import (
+                    LanguageLoss,
+                )
+
+                if LanguageLoss.mtp_loss_tracker:
+                    logs.update(
+                        {k: v.item() if hasattr(v, "item") else v for k, v in LanguageLoss.mtp_loss_tracker.items()}
+                    )
+            except (ImportError, AttributeError):
+                pass
+
             self._total_loss_scalar += tr_loss_scalar
             self._globalstep_last_logged = self.state.global_step
             self._globalstep_last_start_time = time.time()
@@ -2532,7 +2590,6 @@ class Trainer:
                             "gpu_max_memory_reserved": paddle_device.max_memory_reserved() >> 20,
                         }
                     )
-
             self.log(logs, **kwargs)
 
         metrics = None
@@ -2555,6 +2612,9 @@ class Trainer:
                 paddle.device.synchronize()
 
             self._save_checkpoint(model, metrics=metrics)
+            if flag_log:
+                logs = {"global_save_step": self.state.global_step}
+                self.log(logs, **kwargs)
             logger.info(f"{self.runtime_timer.log()}")
             self.control = self.callback_handler.on_save(self.args, self.state, self.control)
             self.log_trained_tokens()
@@ -2565,16 +2625,22 @@ class Trainer:
                 run_dir = self.args.output_dir
                 checkpoint_folder = f"{PREFIX_HF_CHECKPOINT_DIR}-{self.state.global_step}"
                 ckpt_path = os.path.join(run_dir, checkpoint_folder)
+                # Convert user-configured GB value to bytes for HFFormatFullParamSaver
+                memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
                 if isinstance(self.model, LoRAModel):
                     self.model.save_pretrained(
                         ckpt_path,
                         merge_tensor_parallel=True,
                         variant=self.args.weight_name_suffix,
                         save_checkpoint_format=self.args.save_checkpoint_format,
+                        memory_growth_threshold=memory_growth_threshold_bytes,
                     )
                 else:
                     self.model.save_pretrained(
-                        ckpt_path, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
+                        ckpt_path,
+                        is_main_process,
+                        save_checkpoint_format=self.args.save_checkpoint_format,
+                        memory_growth_threshold=memory_growth_threshold_bytes,
                     )
                 if self.tokenizer is not None and self.args.save_tokenizer:
                     self.tokenizer.save_pretrained(ckpt_path)
@@ -2630,10 +2696,13 @@ class Trainer:
 
         additional_configs = {}
         if is_iterable_dataset:  # For iterable dataset
+            total_batch_size = self.args.per_device_train_batch_size
+            if self.args.enable_auto_parallel:
+                total_batch_size = total_batch_size * self.args.dataset_world_size
             if self.args.dataset_world_size > 1 and train_dataset is not None:
                 train_dataset = IterableDatasetShard(
                     train_dataset,
-                    batch_size=self.args.per_device_train_batch_size,
+                    batch_size=total_batch_size,
                     drop_last=self.args.dataloader_drop_last,
                     num_processes=self.args.dataset_world_size,
                     process_index=self.args.dataset_rank,
@@ -2644,7 +2713,7 @@ class Trainer:
                 additional_configs = {"is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
             train_dataloader = _DataLoader(
                 train_dataset,
-                batch_size=self.args.per_device_train_batch_size,
+                batch_size=total_batch_size,
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
                 persistent_workers=self.args.dataloader_num_workers > 0,
@@ -2864,9 +2933,11 @@ class Trainer:
                 params = self.optimizer_grouped_parameters
                 apply_decay_param_fun = None
             else:
-                params = self.model.parameters()
+                params = [p for p in self.model.parameters() if not p.stop_gradient]
                 decay_parameters = [
-                    p.name for n, p in self.model.named_parameters() if not any(nd in n for nd in ["bias", "norm"])
+                    p.name
+                    for n, p in self.model.named_parameters()
+                    if not p.stop_gradient and not any(nd in n for nd in ["bias", "norm"])
                 ]
 
                 def apply_decay_param_fun(x):
@@ -2894,41 +2965,6 @@ class Trainer:
                 mock_offload_optimizer()
 
         return self.optimizer
-
-    def _apply_to_optimizer(self, action):
-        attributes = [
-            ("_accumulators", "_moment1_acc_str"),
-            ("_accumulators", "_moment2_acc_str"),
-            ("_master_weights",),
-            ("_accumulators_holder",),
-        ]
-        for attr in attributes:
-            if all(hasattr(self.optimizer, a) for a in attr):
-                target_attr = getattr(self.optimizer, attr[0])
-                if len(attr) == 2:
-                    target_attr = target_attr[getattr(self.optimizer, attr[1])]
-
-                for key, value in target_attr.items():
-                    if get_env_device() == "gpu":
-                        target_attr[key] = getattr(value, action)()
-                    elif get_env_device() == "xpu" and action in ["cpu", "pin_memory"]:
-                        target_attr[key] = getattr(value, action)()
-                    else:
-                        target_attr[key] = getattr(value, "to")(action)
-
-    def _offload_optimizer(self):
-        if get_env_device() == "gpu":
-            self._apply_to_optimizer("pin_memory")
-        elif get_env_device() == "xpu":
-            self._apply_to_optimizer("pin_memory")
-        else:
-            self._apply_to_optimizer("cpu")
-
-    def _reload_optimizer(self):
-        if get_env_device() == "gpu":
-            self._apply_to_optimizer("cuda")
-        else:
-            self._apply_to_optimizer(get_env_device())
 
     def _load_rng_state(self, checkpoint):
         # Load RNG states from `checkpoint`
@@ -3109,6 +3145,8 @@ class Trainer:
             global_norm_func = gradclip._global_norm
             training_logs = self.global_training_logs
 
+            train_mtp_only = self.args.train_mtp_only
+
             @paddle.no_grad()
             def new_global_norm_func(
                 self,
@@ -3116,6 +3154,10 @@ class Trainer:
                 global_norm_var_not_dist,
                 *args,
             ):
+                if train_mtp_only:
+                    logger.info("GRAD NORM calculation in MTP-only training is not support for now.")
+                    return
+
                 if len(args) > 0:
                     global_norm_func(global_norm_var_dist, global_norm_var_not_dist, *args)
                     global_norm_var_dist_moe, global_norm_var_not_dist_moe = args
@@ -3522,17 +3564,6 @@ class Trainer:
 
         return (loss, outputs) if return_outputs else loss
 
-    def _enable_delay_scale_loss(self):
-        if in_auto_parallel_align_mode():
-            return True
-
-        if self.args.pipeline_model_parallel_size > 1:
-            return self.args.pp_delay_scale_loss
-        elif self.args.tensor_model_parallel_size > 1:
-            return self.args.tp_delay_scale_loss
-        else:
-            return False
-
     def training_step(
         self, model: nn.Layer, inputs: Dict[str, Union[paddle.Tensor, Any]], step_control=0
     ) -> paddle.Tensor:
@@ -3563,18 +3594,20 @@ class Trainer:
         if self.args.pipeline_model_parallel_size > 1:
             return self.training_pipeline_step(model, inputs)
 
+        if hasattr(model, "_prepare_unified_non_pp_data") and model._prepare_unified_non_pp_data is not None:
+            model._prepare_unified_non_pp_data(inputs)
+
         model.train()
         inputs = self._prepare_inputs(inputs)
         with self.autocast_smart_context_manager():
             loss = self.compute_loss(model, inputs)
 
-        if self.args.gradient_accumulation_steps > 1 and not self._enable_delay_scale_loss():
-            loss = loss / self.args.gradient_accumulation_steps
-
         if self.do_grad_scaling:
             self.scaler.scale(loss).backward()
         else:
             loss.backward()
+        if self.args.gradient_accumulation_steps > 1:
+            loss = loss / self.args.gradient_accumulation_steps
 
         if not self.args.enable_auto_parallel:
             return loss.detach()
@@ -3819,7 +3852,7 @@ class Trainer:
 
         # Save the Trainer state
         if self.args.should_save:
-            self.state.save_to_json(os.path.join(output_dir, TRAINER_STATE_NAME))
+            self.state.save(os.path.join(output_dir, TRAINER_STATE_NAME))
 
         if self.args.save_rng_states:
             # Save RNG state in non-distributed training
@@ -3850,9 +3883,6 @@ class Trainer:
             if not self.args.ignore_save_lr_and_optim:
                 optimizer_name = _add_variant(PADDLE_OPTIMIZER_NAME, self.args.optimizer_name_suffix)
                 saved_signal_path = os.path.join(output_dir, f"saved_signal_{dist.get_rank()}")
-
-                if self.args.unified_checkpoint and self.args.offload_optim:
-                    self._reload_optimizer()
 
                 if self.args.use_hybrid_parallel:
                     if self.dp_group.rank <= 0 or self.args.use_expert_parallel:
@@ -3955,10 +3985,6 @@ class Trainer:
                                     global_rank, os.path.join(signal_dir, f".master_weight.done.{global_rank}")
                                 )
 
-                if self.args.save_checkpoint_format == "unified_checkpoint" and (
-                    self.args.offload_optim or self.args.tensorwise_offload_optimizer
-                ):
-                    self._offload_optimizer()
             self.runtime_timer.stop()
 
             # Maybe delete some older checkpoints.
@@ -4136,16 +4162,22 @@ class Trainer:
             if self.args.save_checkpoint_format == "flex_checkpoint":
                 if last_fc_to_hf:
                     is_main_process = paddle.distributed.get_rank() == 0
+                    # Convert user-configured GB value to bytes for HFFormatFullParamSaver
+                    memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
                     if isinstance(self.model, LoRAModel):
                         self.model.save_pretrained(
                             output_dir,
                             merge_tensor_parallel=merge_tensor_parallel,
                             variant=self.args.weight_name_suffix,
                             save_checkpoint_format=self.args.save_checkpoint_format,
+                            memory_growth_threshold=memory_growth_threshold_bytes,
                         )
                     else:
                         self.model.save_pretrained(
-                            output_dir, is_main_process, save_checkpoint_format=self.args.save_checkpoint_format
+                            output_dir,
+                            is_main_process,
+                            save_checkpoint_format=self.args.save_checkpoint_format,
+                            memory_growth_threshold=memory_growth_threshold_bytes,
                         )
                 else:
                     self._save_flex_model_state(output_dir)
@@ -4348,10 +4380,6 @@ class Trainer:
         empty_device_cache()
 
         self._load_scheduler(checkpoint)
-
-        if self.args.offload_optim:
-            logger.info("Offloading optimizer state...")
-            self._offload_optimizer()
 
         self.runtime_timer.stop()
 
@@ -4919,8 +4947,9 @@ class Trainer:
 
         if len(tensor.shape) < 2:
             return tensor
-        # Gather all sizes
-        size = paddle.to_tensor(tensor.shape)[None]
+        # Gather all sizes - convert shape to list of Python ints for NumPy 2.x compatibility
+        tensor_shape_list = [int(dim) for dim in tensor.shape]
+        size = paddle.to_tensor(tensor_shape_list)[None]
         sizes = self._nested_gather(size).cpu()
 
         max_size = max(s[1] for s in sizes)

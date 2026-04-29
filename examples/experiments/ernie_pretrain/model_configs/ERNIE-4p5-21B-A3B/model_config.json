@@ -46,7 +46,7 @@
   "moe_gate_scale": false,
   "moe_gate_detach": 1.0,
   "moe_k": 6,
-  "moe_aux_loss_lambda": 1e-5,
+  "router_aux_loss_coef": 1e-5,
   "moe_group_orthogonal_loss": true,
   "moe_orthogonal_loss_lambda": 1e-3,
   "moe_layer_interval": 1,

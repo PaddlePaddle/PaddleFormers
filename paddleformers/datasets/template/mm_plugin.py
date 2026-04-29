@@ -51,6 +51,8 @@ from .augment_utils import (
 IMAGE_PLACEHOLDER = os.getenv("IMAGE_PLACEHOLDER", "<image>")
 VIDEO_PLACEHOLDER = os.getenv("VIDEO_PLACEHOLDER", "<video>")
 AUDIO_PLACEHOLDER = os.getenv("AUDIO_PLACEHOLDER", "<audio>")
+os.environ["https_proxy"] = os.environ.get("HTTPS_PROXY", "")
+os.environ["http_proxy"] = os.environ.get("HTTP_PROXY", "")
 
 
 def _make_batched_images(images, imglens: list[int]):
@@ -143,13 +145,12 @@ class MMPluginMixin:
             )
 
     def _file_download(self, url: str) -> bytes:
-        os.environ["https_proxy"] = os.environ.get("HTTPS_PROXY", "")
-        os.environ["http_proxy"] = os.environ.get("HTTP_PROXY", "")
         if url.startswith("http"):
             response = requests.get(url)
             bytes_data = response.content
         elif os.path.isfile(url):
-            bytes_data = open(url, "rb").read()
+            with open(url, "rb") as f:
+                bytes_data = f.read()
         else:
             raise ValueError(f"{url} is not a valid url or file path.")
         bytes_content = io.BytesIO(bytes_data)
@@ -591,7 +592,7 @@ class ErnieVLPlugin(BasePlugin):
                 frame = Image.fromarray(frame, "RGB")
                 try:
                     frame = processor.render_frame_timestamp(frame, time_stamp)
-                except:
+                except Exception:
                     rendered_frames = frames
                     break
                 rendered_frames.append(np.array(frame.convert("RGB")))
@@ -733,7 +734,7 @@ class Qwen2VLPlugin(BasePlugin):
 
                 try:
                     fps_per_video.append(video_reader.get_avg_fps())
-                except:
+                except Exception:
                     fps_per_video.append(kwargs.get("video_fps", 2.0))
 
             if len(frames) % 2 != 0:

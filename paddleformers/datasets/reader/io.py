@@ -13,46 +13,55 @@
 # limitations under the License.
 
 import csv
-import json
+import os
+import time
 
+import orjson
 import pyarrow.parquet as pq
 
 
 def load_json(file_path):
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
+    """load json file"""
+    print(f"json file path: {file_path}")
+    if not os.path.exists(file_path):
         raise FileNotFoundError(f"file {file_path} not exists")
-    except json.JSONDecodeError:
-        pass  # fallback to JSONL
+
+    t_start = time.perf_counter()
+    count = 0
 
     try:
-        res = []
-        with open(file_path, "r", encoding="utf-8") as file:
-            for line in file:
-                res.append(json.loads(line))
-            return res
-    except FileNotFoundError:
-        raise FileNotFoundError(f"file {file_path} not exists")
-    except json.JSONDecodeError as e:
-        raise json.JSONDecodeError(f"JSON parse error: {e.msg}", e.doc, e.pos)
+        with open(file_path, "rb") as file:
+            for i, line in enumerate(file, 1):
+                if not line.strip():
+                    continue
+                try:
+                    yield orjson.loads(line)
+                    count += 1
+                except orjson.JSONDecodeError as e:
+                    raise ValueError(f"JSONL parse error at line {i}: {e}")
+    finally:
+        elapsed = time.perf_counter() - t_start
+        print(f"[load json] done. total: {count} lines, elapsed: {elapsed:.2f}s")
 
 
 def load_txt(file_path):
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             return f.read()
-    except Exception:
-        raise ValueError(f"file {file_path} load failed")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"file {file_path} not exists")
+    except IOError as e:
+        raise ValueError(f"file {file_path} load failed: {e}")
 
 
 def load_csv(file_path):
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             return list(csv.reader(f))
-    except Exception:
-        raise ValueError(f"file {file_path} load failed")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"file {file_path} not exists")
+    except (IOError, csv.Error) as e:
+        raise ValueError(f"file {file_path} load failed: {e}")
 
 
 def load_parquet(file_path):
@@ -60,5 +69,7 @@ def load_parquet(file_path):
         table = pq.read_table(file_path)
         df = table.to_pandas()
         return df
-    except Exception:
-        raise ValueError(f"file {file_path} load failed")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"file {file_path} not exists")
+    except Exception as e:
+        raise ValueError(f"file {file_path} load failed: {e}")

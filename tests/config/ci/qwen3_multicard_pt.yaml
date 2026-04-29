@@ -16,7 +16,7 @@ mix_strategy: concat
 
 truncate_packing: true
 dataloader_shuffle: false
-dataloader_num_workers: 24
+dataloader_num_workers: 4
 prefetch_factor: 24
 
 
@@ -77,7 +77,6 @@ use_expert_parallel: true
 expert_model_parallel_size: 8
 
 
-tp_delay_scale_loss: True
 
 optim: adamw
 bf16: true

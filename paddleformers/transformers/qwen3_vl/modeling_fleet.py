@@ -68,6 +68,14 @@ from .modeling import (
 )
 
 
+def safe_repeat_interleave_values(values, repeats):
+    max_repeats = paddle.max(repeats)
+    mask = paddle.arange(max_repeats).unsqueeze(0) < repeats.unsqueeze(1)
+    expanded_values = values.unsqueeze(1).expand([values.shape[0], max_repeats])
+    result = paddle.masked_select(expanded_values, mask)
+    return result
+
+
 def get_layer_spec(is_vit, normalization) -> LayerSpec:
     """Transformer Layer Spec."""
     attn_mask_type = AttnMaskType.no_mask if is_vit else AttnMaskType.causal
@@ -138,6 +146,9 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
         # runners in the cuda graph manager
         dict_args.pop("dynamic_inference_decode_only", None)
         dict_args.pop("position_ids", None)
+        deepstack_visual_emb = dict_args.get("deepstack_visual_emb", None)
+        visual_pos_masks = dict_args.get("visual_pos_masks", None)
+
         if self.full_recompute:
             hidden_states = dict_args["hidden_states"]
             attention_mask = dict_args.get("attention_mask", None)
@@ -149,24 +160,8 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
             rotary_pos_sin = dict_args.get("rotary_pos_sin", None)
             attention_bias = dict_args.get("attention_bias", None)
             packed_seq_params = dict_args.get("packed_seq_params", None)
-            deepstack_visual_emb = dict_args.get("deepstack_visual_emb", None)
-            visual_pos_masks = dict_args.get("visual_pos_masks", None)
 
             assert (rotary_pos_sin is None) == (rotary_pos_cos is None)
-
-            if rotary_pos_cos is not None and rotary_pos_sin is not None:
-                rotary_pos_cos = rotary_pos_cos.clone()
-                rotary_pos_sin = rotary_pos_sin.clone()
-                if self.config.apply_rope_fusion:
-                    rotary_pos_cos = rotary_pos_cos[0, ...]
-                    rotary_pos_sin = rotary_pos_sin[0, ...]
-                    if rotary_pos_cos.ndim == 2:
-                        rotary_pos_cos = rotary_pos_cos.reshape(
-                            [1, rotary_pos_cos.shape[0], 1, rotary_pos_cos.shape[1]]
-                        )
-                        rotary_pos_sin = rotary_pos_sin.reshape(
-                            [1, rotary_pos_sin.shape[0], 1, rotary_pos_sin.shape[1]]
-                        )
 
             outputs = recompute(
                 self._forward_impl,
@@ -178,12 +173,10 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
                 context=context,
                 context_mask=context_mask,
                 rotary_pos_emb=rotary_pos_emb.clone() if rotary_pos_emb is not None else None,  # Clone is necessary!
-                rotary_pos_cos=rotary_pos_cos,
-                rotary_pos_sin=rotary_pos_sin,
+                rotary_pos_cos=rotary_pos_cos.clone() if rotary_pos_cos is not None else None,
+                rotary_pos_sin=rotary_pos_sin.clone() if rotary_pos_sin is not None else None,
                 attention_bias=attention_bias,
                 packed_seq_params=packed_seq_params,
-                deepstack_visual_emb=deepstack_visual_emb,
-                visual_pos_masks=visual_pos_masks,
             )
         else:
             outputs = self._forward_impl(**dict_args)
@@ -192,6 +185,15 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
             output, context = outputs[0], outputs[1]
         else:
             output, context = outputs, None
+
+        # Apply deepstack visual embedding outside of recompute to avoid issues
+        # with recompute not properly handling list-of-tensors (deepstack_visual_emb)
+        if deepstack_visual_emb and self.layer_number in range(len(deepstack_visual_emb)):
+            output = self._deepstack_process(
+                hidden_states=output,
+                visual_embeds=deepstack_visual_emb[self.layer_number],
+                visual_pos_masks=visual_pos_masks,
+            )
 
         rst = OrderedDict()
         rst = {"hidden_states": output}
@@ -212,9 +214,15 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
         rotary_pos_sin: paddle.Tensor = None,
         attention_bias: paddle.Tensor = None,
         packed_seq_params: PackedSeqParams = None,
-        deepstack_visual_emb: list[paddle.Tensor] = None,
-        visual_pos_masks: paddle.Tensor = None,
+        **kwargs,
     ):
+        # Fix for mRoPE + apply_rope_fusion: ensure sin/cos have correct 4D shape
+        if self.config.apply_rope_fusion and rotary_pos_cos is not None and rotary_pos_sin is not None:
+            if rotary_pos_cos.ndim == 2 or rotary_pos_cos.ndim == 3:
+                # We need to reshape to [1, seq_len, 1, head_dim] (4D) for fused_rotary_position_embedding
+                rotary_pos_cos = rotary_pos_cos.reshape([1, -1, 1, rotary_pos_cos.shape[-1]])
+                rotary_pos_sin = rotary_pos_sin.reshape([1, -1, 1, rotary_pos_sin.shape[-1]])
+
         hidden_states, context = self._forward_attention(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
@@ -228,13 +236,6 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
             packed_seq_params=packed_seq_params,
         )
         hidden_states = self._forward_mlp(hidden_states)
-        if deepstack_visual_emb and self.layer_number in range(len(deepstack_visual_emb)):
-            # print("process _deepstack_process ",hidden_states.shape,visual_pos_masks.shape,deepstack_visual_emb[self.layer_number].shape)
-            hidden_states = self._deepstack_process(
-                hidden_states=hidden_states,
-                visual_embeds=deepstack_visual_emb[self.layer_number],
-                visual_pos_masks=visual_pos_masks,
-            )
         if context is not None:
             return hidden_states, context
         return hidden_states
@@ -301,8 +302,8 @@ class Qwen3VLTextTransformerLayer(TransformerLayer):
                 visual_embeds = visual_embeds[:, start_col:end_col]
 
         hidden_states = hidden_states.clone()
-        local_this = hidden_states[visual_pos_masks, :] + visual_embeds
-        hidden_states[visual_pos_masks, :] = local_this  # 这个操作可能会导致paddle转静态图或推理时出问题，建议使用 scatter
+        update_indices = paddle.nonzero(visual_pos_masks)
+        hidden_states = paddle.scatter_nd_add(hidden_states, update_indices, visual_embeds)
 
         # [Supplement 3] Restore original shape [B*S, D] -> [B, S, D] if necessary
         if len(original_shape) > 2:
@@ -331,6 +332,7 @@ class Qwen3VLTextProvider(GPTModelProvider):
     rms_norm_eps: float = 1e-6
     rotary_base: float = 1000000.0
     position_embedding_type: str = "rope"
+    bias_activation_fusion: bool = True
     use_qk_norm: bool = True
     specific_layer: type = Qwen3VLTextTransformerLayer
     max_sequence_length: int = 262144
@@ -600,109 +602,147 @@ class Qwen3VLVisionModel(VisionLayer):
             post_process=True,
         )
 
-    def rot_pos_emb(self, grid_thw):
-        pos_ids = []
-        for t, h, w in grid_thw:
-            hpos_ids = paddle.arange(h).unsqueeze(1).expand([-1, w])
-            hpos_ids = hpos_ids.reshape(
-                [
-                    h // self.spatial_merge_size,
-                    self.spatial_merge_size,
-                    w // self.spatial_merge_size,
-                    self.spatial_merge_size,
-                ]
-            )
-            hpos_ids = hpos_ids.transpose(perm=[0, 2, 1, 3])
-            hpos_ids = hpos_ids.flatten()
+    def _build_token_image_mapping(self, grid_thw):
+        """Build token-to-image mapping, shared by rot_pos_emb and fast_pos_embed_interpolate"""
+        heights = grid_thw[:, 1]
+        widths = grid_thw[:, 2]
+        frames = grid_thw[:, 0]
 
-            wpos_ids = paddle.arange(w).unsqueeze(0).expand([h, -1])
-            wpos_ids = wpos_ids.reshape(
-                [
-                    h // self.spatial_merge_size,
-                    self.spatial_merge_size,
-                    w // self.spatial_merge_size,
-                    self.spatial_merge_size,
-                ]
-            )
-            wpos_ids = wpos_ids.transpose([0, 2, 1, 3])
-            wpos_ids = wpos_ids.flatten()
-            pos_ids.append(paddle.stack(x=[hpos_ids, wpos_ids], axis=-1).tile(repeat_times=[t, 1]))
-        pos_ids = paddle.cat(x=pos_ids, axis=0)
-        max_grid_size = grid_thw[:, 1:].max()
-        rotary_pos_emb_full = self.rotary_pos_emb(max_grid_size)
-        rotary_pos_emb = rotary_pos_emb_full[pos_ids].flatten(start_axis=1)
-        return rotary_pos_emb
+        num_tokens = frames * heights * widths  # [N]
 
-    def fast_pos_embed_interpolate(self, grid_thw):
-        grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
-        device = paddle.get_device()
+        total_tokens = num_tokens.sum().item()  # 1 D2H
+        max_hw = paddle.max(paddle.maximum(heights, widths)).item()  # 1 D2H
 
-        idx_list = [[] for _ in range(4)]
-        weight_list = [[] for _ in range(4)]
+        # token-to-image mapping: image_id[j] = i, where cu_tokens[i] <= j < cu_tokens[i+1]
+        cu_tokens = paddle.concat([paddle.zeros([1], dtype="int64"), num_tokens.cumsum(0)])
+        global_idx = paddle.arange(total_tokens, dtype="int64")
+        image_id = (global_idx.unsqueeze(-1) >= cu_tokens[:-1].unsqueeze(0)).astype("int64").sum(-1) - 1
 
-        for t, h, w in zip(grid_ts, grid_hs, grid_ws):
-            h_idxs = paddle.linspace(0, self.num_grid_per_side - 1, h)
-            w_idxs = paddle.linspace(0, self.num_grid_per_side - 1, w)
+        local_idx = global_idx - cu_tokens[image_id]
 
-            h_idxs_floor = h_idxs.int()
-            w_idxs_floor = w_idxs.int()
-            h_idxs_ceil = (h_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
-            w_idxs_ceil = (w_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
+        # frame-local index
+        token_hw = (heights * widths)[image_id]
+        frame_local_idx = local_idx % token_hw
 
-            dh = h_idxs - h_idxs_floor.astype("float32")
-            dw = w_idxs - w_idxs_floor.astype("float32")
+        return image_id, frame_local_idx, total_tokens, max_hw
 
-            base_h = h_idxs_floor * self.num_grid_per_side
-            base_h_ceil = h_idxs_ceil * self.num_grid_per_side
+    def rot_pos_emb(self, grid_thw, image_id=None, frame_local_idx=None, total_tokens=None, max_hw=None):
+        m = self.spatial_merge_size
+        widths = grid_thw[:, 2]
+        merged_w = widths // m
 
-            indices = [
-                (base_h[None].T + w_idxs_floor[None]).flatten(),
-                (base_h[None].T + w_idxs_ceil[None]).flatten(),
-                (base_h_ceil[None].T + w_idxs_floor[None]).flatten(),
-                (base_h_ceil[None].T + w_idxs_ceil[None]).flatten(),
+        if image_id is None:
+            image_id, frame_local_idx, total_tokens, max_hw = self._build_token_image_mapping(grid_thw)
+
+        freq_table = self.rotary_pos_emb(max_hw)
+
+        token_mw = merged_w[image_id]  # [total_tokens]
+
+        # Decompose linear index to coordinates: layout [merged_h, merged_w, m, m]
+        mm = m * m
+        mw_mm = token_mw * mm
+        block_row = frame_local_idx // mw_mm
+        r1 = frame_local_idx % mw_mm
+        block_col = r1 // mm
+        r2 = r1 % mm
+        intra_row = r2 // m
+        intra_col = r2 % m
+
+        row_idx = block_row * m + intra_row
+        col_idx = block_col * m + intra_col
+
+        pos_ids = paddle.stack([row_idx, col_idx], axis=-1)  # [total_tokens, 2]
+
+        embeddings = freq_table[pos_ids]
+        embeddings = embeddings.flatten(start_axis=1)
+        return embeddings
+
+    def fast_pos_embed_interpolate(
+        self, grid_thw, image_id=None, frame_local_idx=None, total_tokens=None, max_hw=None
+    ):
+        N = self.num_grid_per_side
+        m = self.spatial_merge_size
+        heights = grid_thw[:, 1]
+        widths = grid_thw[:, 2]
+        merged_w = widths // m
+
+        if image_id is None:
+            image_id, frame_local_idx, total_tokens, max_hw = self._build_token_image_mapping(grid_thw)
+
+        token_mw = merged_w[image_id]
+
+        # Decompose linear index to coordinates (same layout as rot_pos_emb)
+        mm = m * m
+        mw_mm = token_mw * mm
+        block_row = frame_local_idx // mw_mm
+        r1 = frame_local_idx % mw_mm
+        block_col = r1 // mm
+        r2 = r1 % mm
+        intra_row = r2 // m
+        intra_col = r2 % m
+
+        # Pixel coordinates
+        j_h = (block_row * m + intra_row).astype("float32")
+        j_w = (block_col * m + intra_col).astype("float32")
+
+        # Bilinear interpolation: h_idx = j_h * (N-1) / (h-1)
+        token_h = heights[image_id].astype("float32")
+        token_w = widths[image_id].astype("float32")
+        h_denom = (token_h - 1).clip(min=1.0)
+        w_denom = (token_w - 1).clip(min=1.0)
+        h_idx = j_h * (N - 1) / h_denom
+        w_idx = j_w * (N - 1) / w_denom
+
+        h_floor = h_idx.astype("int32")
+        w_floor = w_idx.astype("int32")
+        h_ceil = (h_floor + 1).clip(max=N - 1)
+        w_ceil = (w_floor + 1).clip(max=N - 1)
+
+        dh = h_idx - h_floor.astype("float32")
+        dw = w_idx - w_floor.astype("float32")
+
+        base_h = h_floor * N
+        base_h_ceil = h_ceil * N
+
+        idx_tensor = paddle.stack(
+            [
+                (base_h + w_floor).astype("int64"),
+                (base_h + w_ceil).astype("int64"),
+                (base_h_ceil + w_floor).astype("int64"),
+                (base_h_ceil + w_ceil).astype("int64"),
             ]
+        )  # [4, total_tokens]
 
-            weights = [
-                ((1 - dh)[None].T * (1 - dw)[None]).flatten(),
-                ((1 - dh)[None].T * dw[None]).flatten(),
-                (dh[None].T * (1 - dw)[None]).flatten(),
-                (dh[None].T * dw[None]).flatten(),
-            ]
+        weight_tensor = paddle.stack([(1 - dh) * (1 - dw), (1 - dh) * dw, dh * (1 - dw), dh * dw]).astype(
+            self.pos_embed.weight.dtype
+        )  # [4, total_tokens]
 
-            for i in range(4):
-                idx_list[i].extend(indices[i].tolist())
-                weight_list[i].extend(weights[i].tolist())
-
-        idx_tensor = paddle.tensor(idx_list, dtype=paddle.long, device=device)
-        weight_tensor = paddle.tensor(weight_list, dtype=self.pos_embed.weight.dtype)
         pos_embeds = self.pos_embed(idx_tensor) * weight_tensor[:, :, None]
         patch_pos_embeds = pos_embeds[0] + pos_embeds[1] + pos_embeds[2] + pos_embeds[3]
-
-        patch_pos_embeds = patch_pos_embeds.split([h * w for h, w in zip(grid_hs, grid_ws)])
-
-        patch_pos_embeds_permute = []
-        merge_size = self.spatial_merge_size
-        for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
-            pos_embed = pos_embed.repeat([t, 1])
-            pos_embed = (
-                pos_embed.view([t, h // merge_size, merge_size, w // merge_size, merge_size, -1])
-                .permute(0, 1, 3, 2, 4, 5)
-                .flatten(0, 4)
-            )
-            patch_pos_embeds_permute.append(pos_embed)
-        patch_pos_embeds = paddle.cat(patch_pos_embeds_permute)
+        # Already in (block_h, block_w, intra_h, intra_w) order, no merge_reshape needed
         return patch_pos_embeds
 
     def get_packed_seq_params(
         self,
         grid_thw: paddle.Tensor,
     ):
-        seqlens = paddle.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).contiguous()
-        cu_seqlens = seqlens.cumsum(dim=0, dtype=paddle.int32)
-        cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0).contiguous()
-        cu_seqlens = cu_seqlens.squeeze().contiguous()
+        hw = grid_thw[:, 1] * grid_thw[:, 2]
+        frames = grid_thw[:, 0]
 
-        max_seqlen = seqlens.max().item()
+        # Build seqlens: repeat hw[i] by frames[i]
+        total_seqs = frames.sum().item()  # 1 D2H
+        cu_frames = paddle.concat([paddle.zeros([1], dtype="int64"), frames.cumsum(0)])
+        seq_idx = paddle.arange(total_seqs, dtype="int64")
+        seq_image_id = (seq_idx.unsqueeze(-1) >= cu_frames[:-1].unsqueeze(0)).astype("int64").sum(-1) - 1
+        seqlens = hw[seq_image_id]
+
+        cu_seqlens = paddle.concat(
+            [
+                paddle.zeros([1], dtype="int32"),
+                seqlens.cumsum(0).astype("int32"),
+            ]
+        )
+        max_seqlen = seqlens.max().item()  # 1 D2H (flash attention requires Python int)
 
         return PackedSeqParams(
             cu_seqlens_q=cu_seqlens,
@@ -721,20 +761,33 @@ class Qwen3VLVisionModel(VisionLayer):
     ) -> paddle.Tensor:
         # Pathed embedding
         hidden_states = self.patch_embed(hidden_states).view(-1, self.embed_dim)
-        pos_embeds = self.fast_pos_embed_interpolate(grid_thw)
+
+        # Share token-to-image mapping to avoid redundant computation
+        image_id, frame_local_idx, total_tokens, max_hw = self._build_token_image_mapping(grid_thw)
+
+        pos_embeds = self.fast_pos_embed_interpolate(
+            grid_thw, image_id=image_id, frame_local_idx=frame_local_idx, total_tokens=total_tokens, max_hw=max_hw
+        )
         hidden_states = hidden_states + pos_embeds
 
         seq_len, _ = hidden_states.size()
         hidden_states = hidden_states.reshape([seq_len, -1])
         hidden_states = hidden_states.unsqueeze(0)
 
-        rotary_pos_emb = self.rot_pos_emb(grid_thw)
+        rotary_pos_emb = self.rot_pos_emb(
+            grid_thw, image_id=image_id, frame_local_idx=frame_local_idx, total_tokens=total_tokens, max_hw=max_hw
+        )
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
-        rotary_pos_emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        rotary_pos_cos = rotary_pos_emb.cos()
-        rotary_pos_sin = rotary_pos_emb.sin()
+        rotary_pos_emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), axis=-1)
+        # Cast freqs to float32 and compute cos/sin inside auto_cast(False) to match the
+        # precision of _apply_rotary_pos_emb_bshd_fp32, which computes cos/sin on the same
+        # bf16 freqs but under auto_cast(False) using a float32 kernel.
+        with paddle.amp.auto_cast(False):
+            _freqs_f32 = rotary_pos_emb.astype("float32")
+            rotary_pos_cos = paddle.cos(_freqs_f32)
+            rotary_pos_sin = paddle.sin(_freqs_f32)
         rotary_pos_emb = rotary_pos_emb[:, None, None, :]
-        rotary_pos_emb = rotary_pos_emb.transpose([1, 0])
+        rotary_pos_emb = rotary_pos_emb.transpose([1, 0, 2, 3])
 
         packed_seq_params = self.get_packed_seq_params(grid_thw)
 
@@ -785,13 +838,14 @@ class Qwen3VLProvider(TransformerConfig):
     language_model_from_pretrained: str | None = None
     vision_model_from_pretrained: str | None = None
 
-    freeze_langurage_model: bool = False
-    freeze_vision_model: bool = True
+    freeze_language_model: bool = False
+    freeze_vision_model: bool = False
     freeze_vision_projection: bool = False
 
-    def provide(self, tokenizer=None, vp_stage: int | None = None) -> "Qwen3VLModelDist":
+    def provide(self, tokenizer=None, vp_stage: int | None = None, loss_fn=None) -> "Qwen3VLModelDist":
         self.text_config.scatter_embedding_sequence_parallel = False
         self.text_config.tensor_model_parallel_size = self.tensor_model_parallel_size
+        self.text_config.tensor_parallel_output = self.tensor_parallel_output
         self.text_config.sequence_parallel = self.sequence_parallel
         self.text_config.context_parallel_size = self.context_parallel_size
         self.vision_config.tensor_model_parallel_size = self.tensor_model_parallel_size
@@ -844,6 +898,7 @@ class Qwen3VLProvider(TransformerConfig):
             or parallel_state.get_pipeline_model_parallel_rank() >= self.encoder_pipeline_model_parallel_size,
             drop_vision_class_token=self.drop_vision_class_token,
             vp_stage=vp_stage,
+            criterion=loss_fn,
         )
 
         return model
@@ -930,7 +985,7 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
             self._drop_vision_class_token = drop_vision_class_token
 
         self.freeze(
-            freeze_language_model=config.freeze_langurage_model,
+            freeze_language_model=config.freeze_language_model,
             freeze_vision_model=config.freeze_vision_model,
             freeze_vision_projection=config.freeze_vision_projection,
         )
@@ -1085,22 +1140,58 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
         assert loss_mask is None, "loss_mask is not supported yet"
         image_embeds, video_embeds, deepstack_image_embeds, deepstack_video_embeds = (None for _ in range(4))
         if self.add_encoder and pixel_values is not None:
-            pixel_values = pixel_values.to(self.vision_model.parameters()[0].dtype)
-            if self.config.freeze_vision_model:
-                with paddle.no_grad():
+            # Handle list[paddle.Tensor] input (from RL training pipeline)
+            if isinstance(pixel_values, list):
+                # Filter out None and concatenate tensors
+                tensor_list = [elem for elem in pixel_values if elem is not None]
+                if tensor_list:
+                    pixel_values = paddle.concat(tensor_list, axis=0)
+                else:
+                    pixel_values = None
+            if pixel_values is not None:
+                pixel_values = pixel_values.to(self.vision_model.parameters()[0].dtype)
+                # Handle list[paddle.Tensor] for image_grid_thw
+                if image_grid_thw is not None:
+                    if isinstance(image_grid_thw, list):
+                        tensor_list = [elem for elem in image_grid_thw if elem is not None]
+                        if tensor_list:
+                            image_grid_thw = paddle.concat(tensor_list, axis=0)
+                        else:
+                            image_grid_thw = None
+                if self.config.freeze_vision_model:
+                    with paddle.no_grad():
+                        image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
+                else:
                     image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
-            else:
-                image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
-            image_embeds = paddle.cat(image_embeds, dim=0)
+                image_embeds = paddle.cat(image_embeds, dim=0)
 
         if self.add_encoder and pixel_values_videos is not None:
-            pixel_values_videos = pixel_values_videos.to(self.vision_model.parameters()[0].dtype)
-            if self.config.freeze_vision_model:
-                with paddle.no_grad():
+            # Handle list[paddle.Tensor] input (from RL training pipeline)
+            if isinstance(pixel_values_videos, list):
+                # Filter out None and concatenate tensors
+                tensor_list = [elem for elem in pixel_values_videos if elem is not None]
+                if tensor_list:
+                    pixel_values_videos = paddle.concat(tensor_list, axis=0)
+                else:
+                    pixel_values_videos = None
+            if pixel_values_videos is not None:
+                pixel_values_videos = pixel_values_videos.to(self.vision_model.parameters()[0].dtype)
+                # Handle list[paddle.Tensor] for video_grid_thw
+                if video_grid_thw is not None:
+                    if isinstance(video_grid_thw, list):
+                        tensor_list = [elem for elem in video_grid_thw if elem is not None]
+                        if tensor_list:
+                            video_grid_thw = paddle.concat(tensor_list, axis=0)
+                        else:
+                            video_grid_thw = None
+                if self.config.freeze_vision_model:
+                    with paddle.no_grad():
+                        video_embeds, deepstack_video_embeds = self.get_video_features(
+                            pixel_values_videos, video_grid_thw
+                        )
+                else:
                     video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
-            else:
-                video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
-            video_embeds = paddle.cat(video_embeds, axis=0)
+                video_embeds = paddle.cat(video_embeds, axis=0)
 
         if position_ids is None:
             if self.rope_deltas is None or cache_position is None or cache_position[0] == 0:
@@ -1122,7 +1213,10 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
                 delta = delta.repeat_interleave(batch_size // delta.shape[0], axis=1)
                 position_ids = position_ids + delta
         else:
-            if position_ids.shape == input_ids.shape:
+            # Handle position_ids with mrope format [batch_size, seq_len, 3] -> [3, batch_size, seq_len]
+            if position_ids.ndim == 3 and position_ids.shape[-1] == 3:
+                position_ids = position_ids.transpose([2, 0, 1])
+            elif position_ids.shape == input_ids.shape:
                 position_ids = position_ids.expand(3, position_ids.shape[0], -1)
 
         input_dict = {
@@ -1146,7 +1240,7 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
             # print("qwenvl output loss  ",self.criterion(output, labels))
             return self.criterion(output, labels)
         else:
-            output
+            return output
 
     def set_input_tensor(self, input_tensor) -> None:
         """Set model chunk input tensor."""
@@ -1204,6 +1298,12 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             "aoa_statements": [
                 f"model.language_model.embed_tokens.weight -> {llm_prefix}embedding.embed_tokens.weight",
                 f"model.language_model.norm.weight -> {llm_prefix}norm.weight",
+                f"model.language_model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
+                f"model.language_model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {llm_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
+                f"model.language_model.layers.$LAYER_ID.input_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.input_layernorm.weight",
+                f"model.language_model.layers.$LAYER_ID.post_attention_layernorm.weight -> {llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"model.language_model.layers.$LAYER_ID.self_attn.q_norm.weight -> {llm_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"model.language_model.layers.$LAYER_ID.self_attn.k_norm.weight -> {llm_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
             ]
         }
 
@@ -1294,6 +1394,12 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             "aoa_statements": [
                 f"{llm_prefix}embedding.embed_tokens.weight -> model.language_model.embed_tokens.weight",
                 f"{llm_prefix}norm.weight -> model.language_model.norm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.mlp.down_proj.weight^T -> model.language_model.layers.$LAYER_ID.mlp.down_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.language_model.layers.$LAYER_ID.self_attn.o_proj.weight",
+                f"{llm_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.language_model.layers.$LAYER_ID.input_layernorm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.language_model.layers.$LAYER_ID.post_attention_layernorm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.language_model.layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"{llm_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.language_model.layers.$LAYER_ID.self_attn.k_norm.weight",
             ]
         }
 
@@ -1367,7 +1473,7 @@ class Qwen3VLPretrainedModelFleet(PretrainedModel):
             for layer_id in range(config.text_config.num_hidden_layers)
         ]
         aoa_config["aoa_statements"] += [
-            f"{llm_prefix}layers.{layer_id}.mlp.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.mlp.{x}_proj.weight"
+            f"model.language_model.layers.{layer_id}.mlp.{x}_proj.weight^T -> model.language_model.layers.{layer_id}.mlp.{x}_proj.weight"
             for layer_id in range(config.text_config.num_hidden_layers)
             for x in ("gate", "up")
         ]

@@ -359,8 +359,8 @@ class LlmMetaConfig:
         (
             "moe_router_bias_update_rate",
             float,
-            0.01,
-            "Update rate for MoE router biases (only effective if `moe_router_enable_expert_bias=True`). Controls the magnitude of bias adjustments to prevent unstable updates. Defaults to 0.01.",
+            0.001,
+            "Update rate for MoE router biases (only effective if `moe_router_enable_expert_bias=True`). Controls the magnitude of bias adjustments to prevent unstable updates. Defaults to 0.001.",
         ),
         (
             "moe_shared_expert_overlap",
@@ -399,6 +399,12 @@ class LlmMetaConfig:
             "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
         ),
         (
+            "moe_deep_gemm",
+            bool,
+            False,
+            "Whether to enable deep GEMM for MoE experts. Defaults to False. Effective only after the moe_grouped_gemm is set. ",
+        ),
+        (
             "moe_ep_barrier",
             bool,
             True,
@@ -410,21 +416,18 @@ class LlmMetaConfig:
             False,
             "Whether to use SonicMoE as the computation backend for the moelayer.",
         ),
-        (
-            "moe_use_pfcc_deepep",
-            bool,
-            False,
-            "Whether to use PFCC DeepEP for MoE for the moelayer.",
-        ),
     ]
 
     mtp_attributes = [
+        ("train_mtp_only", int, 0, "Whether to train MTP only."),
+        ("mtp_distillation_loss", bool, False, "Whether to use distillation MTP loss."),
         ("num_nextn_predict_layers", int, 0, "Number of nextn predict layers."),
+        ("mtp_num_layers", int, 0, "Whether to use Autoregressive MTP Training, activate if > 1."),
         (
             "mtp_loss_scaling_factor",
             float,
-            1.0,
-            "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues).",
+            0.1,
+            "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 0.1.",
         ),
     ]
 

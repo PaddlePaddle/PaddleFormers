@@ -26,11 +26,10 @@ def convert_dpo_txt_data(data):
             f"Data format error. src length must be tgt length + 1. "
             f"But got src_length:{len(data['src'])} tgt_length:{len(data['tgt'])}"
         )
-    if (len(data["response"]) != 2) or (len(data["response"]) != len(data["sort"])):
-        raise ValueError(
-            f"Response and sort length must be 2. "
-            f"But got response_length:{len(data['response'])} sort_length:{len(data['sort'])}."
-        )
+    if len(data["response"]) != 2:
+        raise ValueError(f"Response length must be 2. " f"But got response_length:{len(data['response'])}.")
+    if len(data["sort"]) != 2:
+        raise ValueError(f"Sort length must be 2. " f"But got sort_length:{len(data['sort'])}.")
     if data["sort"][0] == data["sort"][1]:
         raise ValueError(f"Sort field must be different." f" But got 'sort':{data['sort']}")
     if isinstance(data["response"][0], str) and isinstance(data["response"][1], str):
@@ -39,7 +38,7 @@ def convert_dpo_txt_data(data):
         if not isinstance(response, list):
             raise ValueError(f"Session level response should be List[List[str]], but got List of {type(response)}")
         if len(response) % 2 != 1:
-            raise ValueError("The number of responses should be even, but an odd number of responses were obtained.")
+            raise ValueError("The number of responses should be odd, but an even number of responses were obtained.")
         for r in response:
             if len(r.strip()) < 1:
                 raise ValueError(f"Response field must be longer than 1." f" But got 'response':{data['response']}.")
@@ -101,12 +100,10 @@ def convert_txt_data(item):
     # data check
     if len(item["src"]) == 0 or len(item["tgt"]) == 0:
         raise ValueError("Ignore example with empty src or empty tgt.")
-        return None
 
     for item_str in item["src"] + item["tgt"]:
         if len(item_str.strip()) == 0:
             raise ValueError("Ignore example with empty string in str / tgt field.")
-            return None
 
     if "label" not in item:
         item["label"] = [1] * len(item["src"])
@@ -115,7 +112,6 @@ def convert_txt_data(item):
         raise ValueError(
             f"The length of src & tgt & label must be equal, but get len(item['src']) : {len(item['src'])}, ' len(item['tgt']) : {len(item['tgt'])}, ' len(item['label']) : {len(item['label'])}"
         )
-        return None
 
     if "is_system" not in item:
         # If is_system is 1, it indicates that the sample includes system settings

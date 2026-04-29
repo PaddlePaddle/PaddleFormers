@@ -111,10 +111,10 @@ class Qwen3VLVisionPatchEmbed(nn.Layer):
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
         target_dtype = self.proj.weight.dtype
-        hidden_states = hidden_states.view(
+        hidden_states = hidden_states.reshape(
             -1, self.in_channels, self.temporal_patch_size, self.patch_size, self.patch_size
         )
-        hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).view(-1, self.embed_dim)
+        hidden_states = self.proj(hidden_states.to(dtype=target_dtype)).reshape(-1, self.embed_dim)
         return hidden_states
 
 

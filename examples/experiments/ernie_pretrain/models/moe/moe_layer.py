@@ -461,7 +461,7 @@ class MOELayer(nn.Layer):
         self.use_correction_bias = moe_statics is not None
         self.moe_statics = moe_statics
         if self.use_correction_bias:
-            logger.info(f"using correction bias, aux-coef:{self.gate.config.moe_aux_loss_lambda}")
+            logger.info(f"using correction bias, aux-coef:{self.gate.config.router_aux_loss_coef}")
             assert self.gate.config.moe_use_aux_free
 
         self.is_mp_moe = (
@@ -803,7 +803,7 @@ class MOELayer(nn.Layer):
         prefix="",
     ):
         router_loss, l_aux, orthogonal_loss = 0.0, None, None
-        if self.gate.config.moe_aux_loss_lambda:
+        if self.gate.config.router_aux_loss_coef:
             l_aux = self.gate._cal_aux_loss(
                 gate_prob,
                 dispatch_mask,
@@ -812,7 +812,7 @@ class MOELayer(nn.Layer):
                 tokens_type_mask,
                 dispatch_tokens_mask,
             )
-            router_loss += self.gate.moe_aux_loss_lambda[token_type or 0] * l_aux
+            router_loss += self.gate.router_aux_loss_coef[token_type or 0] * l_aux
         else:
             router_loss += self.zero * gate_prob[0, 0]
         if self.gate.config.moe_orthogonal_loss_lambda:

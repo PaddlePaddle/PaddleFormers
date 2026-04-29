@@ -44,7 +44,7 @@ def _training_function(config: dict[str, Any]) -> None:
 
     if "VL" in model_args.stage or model_args.stage == "dsv3_pretrain":
         pass
-    elif data_args.dataset_type != "pretrain":
+    elif data_args.dataset_type != "pretrain" and data_args.dataset_type != "offline":
         check_path(data_args.train_dataset_path)
         check_path(data_args.eval_dataset_path)
 

@@ -1430,8 +1430,8 @@ class Qwen3MoeForCausalLMPipeDeprecated(GeneralModelForCausalLMPipe):
     _rotary_emb_cls = Qwen3MoeRotaryEmbedding
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = Qwen3MoeModel.transpose_weight_keys
-    _gen_aoa_config = Qwen3MoeForCausalLM._gen_aoa_config
-    _gen_inv_aoa_config = Qwen3MoeForCausalLM._gen_inv_aoa_config
+    _gen_aoa_config = Qwen3MoeForCausalLMDeprecated._gen_aoa_config
+    _gen_inv_aoa_config = Qwen3MoeForCausalLMDeprecated._gen_inv_aoa_config
 
 
 __all__ = [

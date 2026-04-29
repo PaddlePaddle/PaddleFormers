@@ -31,7 +31,7 @@ evaluation_strategy: steps
 save_steps: 10
 save_strategy: steps
 logging_steps: 1
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 2
 logging_dir: ./vdl_log
 output_dir: ./checkpoints/qwen3-vl-sft-full
 disable_tqdm: true
@@ -74,14 +74,12 @@ sharding: stage1
 # fuse_optimizer_states: true
 
 # pp
-pp_delay_scale_loss: true
 overlap_p2p_comm: true
 variable_seq_lengths: true
 best_unbalanced_scheduler: true
 # pp_release_grads: true
 
 # tp
-tp_delay_scale_loss: True
 tp_sync_param: true
 sync_grad: true
 
@@ -97,8 +95,7 @@ dataloader_shuffle: false
 
 benchmark: false
 report_to: none
-dataloader_num_workers: 8
-prefetch_factor: 8
+dataloader_num_workers: 0
 
 # profile: true
 # profile_step_start: 1
@@ -106,3 +103,4 @@ prefetch_factor: 8
 # num_hidden_layers: 38
 freeze_config: freeze_vision freeze_aligner
 tensorwise_offload_optimizer: true
+processor_use_fast: false

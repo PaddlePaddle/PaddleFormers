@@ -505,6 +505,14 @@ class TrainingArguments:
     lr_end: float = field(default=1e-7, metadata={"help": "The end LR in the polynomial scheduler."})
     power: float = field(default=1.0, metadata={"help": "The power factor in the polynomial scheduler."})
     min_lr: float = field(default=0.0, metadata={"help": "The minimum learning rate in cosine scheduler."})
+    moe_router_bias_update_rate: float = field(
+        default=0.0,
+        metadata={
+            "help": """The expert bias is updated based on the number of assigned tokens to each expert
+        in a global batch, where the bias is increased for the experts with less assigned tokens
+        and decreased for the experts with more assigned tokens."""
+        },
+    )
 
     log_on_each_node: bool = field(
         default=True,
@@ -1094,10 +1102,6 @@ class TrainingArguments:
         default=None,
         metadata={"help": "The intervals to skip, pass start global step and end global step at each interval"},
     )
-    offload_optim: Optional[bool] = field(
-        default=False,
-        metadata={"help": "Offload optimizer after optimizer.step()"},
-    )
     tensorwise_offload_optimizer: Optional[bool] = field(
         default=False,
         metadata={
@@ -1204,6 +1208,11 @@ class TrainingArguments:
         metadata={"help": "pre allocate memory size GB"},
     )
     num_nextn_predict_layers: int = field(default=0, metadata={"help": "Number of nextn predict layers."})
+    train_mtp_only: bool = field(default=False, metadata={"help": "Whether to train MTP only."})
+    mtp_distillation_loss: bool = field(default=False, metadata={"help": "Whether to use distillation MTP loss."})
+    mtp_num_layers: int = field(
+        default=0, metadata={"help": "Whether to use Autoregressive MTP Training, activate if > 1."}
+    )
     profile: bool = field(default=False, metadata={"help": "Enable nsys profiling."})
     profile_step_start: int = field(default=10, metadata={"help": "Step to start nsys profiling."})
     profile_step_end: int = field(default=12, metadata={"help": "Step to end nsys profiling."})
@@ -1246,6 +1255,21 @@ class TrainingArguments:
     )
 
     save_hf_steps: int = field(default=-1, metadata={"help": "Save huggingface checkpoint every X updates steps."})
+
+    save_last_step: Optional[bool] = field(
+        default=False,
+        metadata={"help": "If True, saves the last step of the training process."},
+    )
+
+    save_hf_memory_growth_threshold: int = field(
+        default=8,
+        metadata={
+            "help": (
+                "Memory growth threshold (in GB) for HFFormatFullParamSaver when saving HF-format checkpoints. "
+                "Controls the maximum memory growth allowed during full-param checkpoint assembly. Default is 8 (GB)."
+            )
+        },
+    )
 
     hybrid_parallel_expert_grad_scale: Optional[float] = field(
         default=None,
@@ -1309,12 +1333,6 @@ class TrainingArguments:
             "help": "Whether to support dynamic input shapes (variable sequence lengths). Critical for LLM inference with varying prompt lengths. Defaults to True (standard for LLM pipelines)."
         },
     )
-    mtp_loss_scaling_factor: float = field(
-        default=1.0,
-        metadata={
-            "help": "Loss scaling factor for MTP (Mixture of Token-Parallel) training. Adjusts for imbalanced token distributions. Defaults to 1.0 (no scaling; tune for MTP-specific stability issues)."
-        },
-    )
     dp_allreduce_avg_in_gradinent_scale: bool = field(
         default=False,
         metadata={
@@ -1351,14 +1369,8 @@ class TrainingArguments:
             "help": "Support fused_linear_param_grad_add in ColumnParallelLinear (requires cuda >= 11.6). Only works when mp_async_allreduce is True. Can accelerate model parallel further."
         },
     )
-    tp_delay_scale_loss: bool = field(
-        default=False,
-        metadata={
-            "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
-        },
-    )
     pp_delay_scale_loss: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
         },
@@ -1543,21 +1555,15 @@ class TrainingArguments:
             "help": "Whether to overlap sharding parallelism (SP) communication with computation. Reduces latency for sharded models. Defaults to True."
         },
     )
-    fa_version: int = field(
-        default=2, metadata={"help": "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."}
+    fa_version: Optional[int] = field(
+        default=None,
+        metadata={"help": "FlashAttention or FlashMask version (2, 3, or 4). If None, version is auto-selected."},
     )
 
     using_sonic_moe: bool = field(
         default=False,
         metadata={
             "help": "When enabled, the computation part of the moelayer will use the implementation provided by SonicMoE."
-        },
-    )
-
-    moe_use_pfcc_deepep: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether to use PFCC DeepEP for MoE, by default uses paddle DeepEP. Only works when moe_token_dispatcher_type == 'deepep'."
         },
     )
 
@@ -1579,20 +1585,41 @@ class TrainingArguments:
             os.environ["FLAGS_cudnn_deterministic"] = "1"
             os.environ["FLAGS_embedding_deterministic"] = "1"
 
-        if self.fa_version == 2 or self.fa_version == 3:
+        if self.fa_version is not None:
             if paddle.base.core.is_compiled_with_cuda():
+                assert self.fa_version in (
+                    2,
+                    3,
+                    4,
+                ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2, 3, and 4."
+            else:
+                assert (
+                    self.fa_version == 2
+                ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2 on non-CUDA devices."
+        else:
+            if paddle.base.core.is_compiled_with_cuda():
+                is_sm100 = paddle_device.get_device_capability()[0] == 10
                 is_sm90 = (
                     paddle_device.get_device_capability()[0] == 9 and paddle_device.get_device_capability()[1] == 0
                 )
-                if is_sm90:
-                    paddle.set_flags({"FLAGS_flash_attn_version": 3})
+                if is_sm100:
+                    self.fa_version = 4
+                elif is_sm90:
                     self.fa_version = 3
-                    warnings.warn("sm90 automatic set fa_version to fa3")
                 else:
-                    paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
-                    logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
+                    # Note(umiswing): always fallback to FA2
+                    self.fa_version = 2
+            else:
+                self.fa_version = 2
+        if paddle.base.core.is_compiled_with_cuda():
+            paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
         else:
-            raise ValueError(f"--fa_version should be 2 or 3, but got {self.fa_version}")
+            try:
+                paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
+            except Exception:
+                logger.warning("Flag FLAGS_flash_attn_version cannot set its value through this function.")
+
+        logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
 
         env_local_rank = int(os.environ.get("PADDLE_RANK_IN_NODE", -1))
         if env_local_rank != -1 and env_local_rank != self.local_rank and paddle.distributed.get_world_size() > 1:
@@ -1818,7 +1845,7 @@ class TrainingArguments:
                         )
 
                     dygraph_pp_configs = {
-                        "delay_scale_loss": self.pp_delay_scale_loss,
+                        "delay_scale_loss": True,  # TODO[Waynezee]: remove this config in the future
                         "dp_comm_overlap": enable_dp_comm_overlap,
                         "sharding_comm_overlap": self.enable_sharding_comm_overlap,
                         "enable_timer": self.timer,
@@ -2672,6 +2699,12 @@ class TrainingArguments:
                 self.context_parallel_size = -1
                 self.expert_model_parallel_size = -1
                 self.expert_tensor_model_parallel_size = -1
+
+        # NOTE(Waynezee): when moe_grouped_gemm is true and sharding_parallel_size = 1,  checkpoint will fail to save
+        if hasattr(self, "moe_grouped_gemm") and self.moe_grouped_gemm and self.world_size > 1:
+            assert (
+                self.sharding_parallel_size > 1
+            ), "Checkpoint will fail to save when moe_grouped_gemm is true and sharding_parallel_size = 1, please set moe_grouped_gemm to false"
 
         if self.hybrid_parallel_topo_order is None:
             self.hybrid_parallel_topo_order = "sharding_first"

@@ -182,6 +182,8 @@ import_structure = {
         "Qwen2ForSequenceClassification",
         "Qwen2ForTokenClassification",
         "Qwen2SentenceEmbedding",
+        "Qwen2ForCausalLMDeprecated",
+        "Qwen2ForCausalLMPipeDeprecated",
     ],
     "qwen2.tokenizer": ["Qwen2Tokenizer"],
     "qwen2.tokenizer_fast": ["Qwen2TokenizerFast"],
@@ -193,6 +195,8 @@ import_structure = {
         "Qwen2_5_VLTextModel",
     ],
     "qwen2_5_vl.processor": ["Qwen2_5_VLProcessor"],
+    "qwen3_5.configuration": ["Qwen3_5VisionConfig"],
+    "qwen3_5.modeling": ["Qwen3_5VisionModel"],
     "qwen3_vl.configuration": ["Qwen3VLConfig", "Qwen3VLTextConfig"],
     "qwen3_vl.modeling": [
         "Qwen3VLForConditionalGeneration",
@@ -221,6 +225,8 @@ import_structure = {
         "Qwen2MoeForCausalLM",
         "Qwen2MoeForCausalLMPipe",
         "Qwen2MoePretrainingCriterion",
+        "Qwen2MoeForCausalLMDeprecated",
+        "Qwen2MoeForCausalLMPipeDeprecated",
     ],
     "qwen2_vl.image_processor": ["Qwen2VLImageProcessor"],
     "qwen2_vl.image_processor_fast": ["Qwen2VLImageProcessorFast"],
@@ -237,6 +243,8 @@ import_structure = {
         "Qwen3ForSequenceClassification",
         "Qwen3ForTokenClassification",
         "Qwen3SentenceEmbedding",
+        "Qwen3ForCausalLMDeprecated",
+        "Qwen3ForCausalLMPipeDeprecated",
     ],
     "qwen3_moe.configuration": ["Qwen3MoeConfig"],
     "qwen3_moe.modeling": [
@@ -265,6 +273,7 @@ import_structure = {
     "paddleocr_vl": [],
     "qwen2_5_vl": [],
     "qwen3_vl": [],
+    "qwen3_5": [],
     "qwen3_vl_moe": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
@@ -343,6 +352,7 @@ if TYPE_CHECKING:
     from .qwen3_moe import *
     from .qwen3_next import *
     from .qwen3_vl import *
+    from .qwen3_5 import *
     from .qwen3_vl_moe import *
     from .glm4_moe import *
     from .glm4v_moe import *

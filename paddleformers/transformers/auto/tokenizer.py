@@ -224,7 +224,7 @@ class AutoTokenizer(hf.AutoTokenizer):
         config = kwargs.pop("config", None)
         kwargs["_from_auto"] = True
 
-        use_fast = kwargs.pop("use_fast", True)
+        use_fast = True
         tokenizer_type = kwargs.pop("tokenizer_type", None)
         trust_remote_code = kwargs.pop("trust_remote_code", None)
         gguf_file = kwargs.get("gguf_file")

@@ -276,6 +276,7 @@ class PaddleOCRVLImageProcessor(BaseImageProcessor):
             resized_width // self.patch_size,
         )
 
+        assert self.temporal_patch_size == 1
         patches = patches.reshape(
             grid_t,
             self.temporal_patch_size,
@@ -286,7 +287,6 @@ class PaddleOCRVLImageProcessor(BaseImageProcessor):
             self.patch_size,
         )
         patches = patches.transpose(0, 3, 5, 2, 1, 4, 6)
-        assert self.temporal_patch_size == 1
         flatten_patches = patches.reshape(grid_t * grid_h * grid_w, channel, self.patch_size, self.patch_size)
         return flatten_patches, (grid_t, grid_h, grid_w)
 

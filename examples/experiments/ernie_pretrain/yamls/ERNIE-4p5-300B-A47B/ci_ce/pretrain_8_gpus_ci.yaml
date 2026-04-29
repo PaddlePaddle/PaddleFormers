@@ -13,7 +13,7 @@ model_args:
     num_consecutive: 32
 
     enable_global_training_logs: False
-    moe_use_aux_free_update_coef: 0.001
+    moe_router_bias_update_rate: 0.001
     global_logging_interval: 10
     enable_mtp_magic_send: True
 
@@ -23,7 +23,7 @@ model_args:
         moe_k: 4
         moe_capacity: [4,4,4]
 
-        multi_token_pred_depth: 1
+        num_nextn_predict_layers: 1
         use_ep_comm_overlap: false
         use_combine_before_a2a: true
         use_quant_before_a2a: true
@@ -93,7 +93,7 @@ trainer_args:
     scale_loss: 4096
     seed: 666
     use_train_part_sharding: 1
-    offload_optim: True
+    tensorwise_offload_optimizer: True
 
     pipeline_model_parallel_size: 2
     tensor_model_parallel_size: 1
@@ -105,7 +105,6 @@ trainer_args:
     amp_master_grad: 1
 
     # pipeline_parallel_config
-    pp_delay_scale_loss: true
     overlap_p2p_comm: true
     best_unbalanced_scheduler: true
     

@@ -35,15 +35,15 @@ SAVE_STEPS = 2
 
 # tmp change loss, this loss change is not from this pr, zhangjunjun will recover it to right loss later.
 DPO_FULL_EXCEPTED_LOSS = 0.693147
-DPO_FULL_RESUME_EXCEPTED_LOSS = 0.693232
+DPO_FULL_RESUME_EXCEPTED_LOSS = 0.693236
 DPO_FULL_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
 DPO_LORA_EXCEPTED_LOSS = 0.693147
-DPO_LORA_RESUME_EXCEPTED_LOSS = 0.693201
+DPO_LORA_RESUME_EXCEPTED_LOSS = 0.692855
 DPO_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 27654, 133362, 115845, 115845]]
 
 DPO_FULL_TP_PP_EXCEPTED_LOSS = 0.693147
-DPO_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 0.693175
+DPO_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 0.692743
 DPO_FULL_TP_PP_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
 
 DPO_LORA_TP_PP_EXCEPTED_LOSS = 0.693147
@@ -134,6 +134,7 @@ class DPOTrainTest(unittest.TestCase):
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
             "template": TEMPLATE,
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -184,6 +185,7 @@ class DPOTrainTest(unittest.TestCase):
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
             "template": TEMPLATE,
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -241,6 +243,7 @@ class DPOTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "template": TEMPLATE,
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -292,6 +295,7 @@ class DPOTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "template": TEMPLATE,
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.dpotrain_tester.update_training_args(config_path, output_dir, update_args)

@@ -23,15 +23,14 @@ cd $root_dir/glm45_fleet
 export cur_dir=$(pwd)
 
 # prepare dpo data
-wget https://paddle-qa.bj.bcebos.com/fleet/fleet_dpo.tar
-tar -xf fleet_dpo.tar
+export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/dpo
 
 config_dpo_yaml=$root_dir/PaddleFormers/tests/config/ci/glm45_dpo_lora.yaml
 
 config_json=$CACHE_DIR/glm45/GLM-4.5-Air/config.json
 
-yq '.train_dataset_path = strenv(cur_dir) + "/dpo_data/dpo_train.jsonl"
-    | .eval_dataset_path = strenv(cur_dir) + "/dpo_data/dpo_eval.jsonl"
+yq '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
+    | .eval_dataset_path = strenv(data_dir) + "/eval.jsonl"
     | .model_name_or_path = strenv(CACHE_DIR) + "/zai-org/GLM-4.5-Air-Base"
     | .logging_dir = strenv(cur_dir) + "/glm_full_dpo_lora_vdl_log"
     | .output_dir = strenv(cur_dir) + "/checkpoints/glm_full_dpo_lora_ckpts"' \
@@ -78,7 +77,7 @@ export REPO_NAME=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
 # if [[ "${PF}" == rel* ]]; then
 #   export pfpatch="rel"
 # fi
-wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}_latest/${gt_loss_file}
+wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}_latest/${gt_loss_file}
 if [ $? -ne 0 ]; then
   echo "To request precision checks for new models, please contact swgu98."
   exit 1

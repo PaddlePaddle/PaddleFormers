@@ -542,8 +542,6 @@ def get_template_and_fix_tokenizer(dataset_config) -> "Template":
     if dataset_config["default_system"] is not None:
         template.default_system = dataset_config["default_system"]
 
-    template.fix_special_tokens(tokenizer)
-
     if not template.suffix:
         template.suffix = [tokenizer.eos_token]
         logger.warning("suffix is not specified, using eos token as suffix.")

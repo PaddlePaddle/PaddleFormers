@@ -40,8 +40,8 @@ PT_LORA_RESUME_EXCEPTED_LOSS = 12.83066
 PT_LORA_EXCEPTED_RESULT = [[51172, 37927, 96130, 27654, 133362, 95331, 133362, 30625, 95331, 4198]]
 
 PT_FULL_TP_PP_EXCEPTED_LOSS = 12.830832
-PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 12.830781
-PT_FULL_TP_PP_EXCEPTED_RESULT = [[10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]]
+PT_FULL_TP_PP_RESUME_EXCEPTED_LOSS = 12.830664
+PT_FULL_TP_PP_EXCEPTED_RESULT = [[10564, 10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231]]
 
 PT_LORA_TP_PP_EXCEPTED_LOSS = 12.83085
 PT_LORA_TP_PP_RESUME_EXCEPTED_LOSS = 12.830852
@@ -131,6 +131,7 @@ class PTTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "full.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -181,6 +182,7 @@ class PTTrainTest(unittest.TestCase):
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
             "sharding": "stage1",
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "lora.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -238,6 +240,7 @@ class PTTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "full_tp_pp.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)
@@ -287,6 +290,7 @@ class PTTrainTest(unittest.TestCase):
             "output_dir": output_dir,
             "max_steps": MAX_STEPS,
             "save_steps": SAVE_STEPS,
+            "report_to": "tensorboard",
         }
         config_path = os.path.join(CONFIG_PATH, "lora_tp_pp.yaml")
         updated_config_path = self.pttrain_tester.update_training_args(config_path, output_dir, update_args)

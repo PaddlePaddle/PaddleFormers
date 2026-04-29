@@ -549,6 +549,7 @@ class LoRAModel(nn.Layer):
         save_model_config = kwargs.get("save_model_config", True)
         save_checkpoint_format = kwargs.get("save_checkpoint_format", "flex_checkpoint")
         max_shard_size = kwargs.get("max_shard_size", "4GB")
+        memory_growth_threshold = kwargs.get("memory_growth_threshold", 8 * (2**30))
 
         safetensors = False
         if save_checkpoint_format == "flex_checkpoint":
@@ -630,9 +631,9 @@ class LoRAModel(nn.Layer):
             if hasattr(self.model, "_gen_lora_inv_aoa_config"):
                 aoa_config["aoa_statements"] += self.model._gen_lora_inv_aoa_config(self.model.config)
 
-            HFFormatFullParamSaver(model_to_save, aoa_config).save_checkpoint(
-                save_directory, max_shard_size, save_peft=True
-            )
+            HFFormatFullParamSaver(
+                model_to_save, aoa_config, memory_growth_threshold=memory_growth_threshold
+            ).save_checkpoint(save_directory, max_shard_size, save_peft=True)
 
         else:
             if reverse_key_mapping:

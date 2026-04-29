@@ -1712,35 +1712,93 @@ class HFFormatFullParamSaver:
         return total_saved_size
 
 
+def _is_muon_sharding_optimizer(optimizer):
+    opt = optimizer
+    while opt is not None:
+        if type(opt).__name__ == "MuonShardingOptimizer":
+            return True
+        opt = getattr(opt, "_inner_opt", None)
+    return False
+
+
+def _unwrap_muon_sharding_optimizer(optimizer):
+    opt = optimizer
+    while opt is not None:
+        if type(opt).__name__ == "MuonShardingOptimizer":
+            return opt
+        opt = getattr(opt, "_inner_opt", None)
+    return None
+
+
+def _get_muon_2d_param_names(muon_opt):
+    names = set()
+    for _color_key, params in muon_opt._params_2d_by_color.items():
+        for p in params:
+            names.add(p.name)
+    return names
+
+
+def _restore_master_weights_single(master_weights, model, optimizer, group, structure_name_map, restore_func):
+    nms = reshard_util.NodeModelState(group=group)
+    nms_tmp = reshard_util.NodeModelState(group=group)
+    nms_tmp.add_master_weights(master_weights)
+    nms_tmp.pack_keys(structure_name_map)
+    nms.merge_from(nms_tmp, max(group.rank, 0))
+    del nms_tmp
+    nms = restore_func(nms, model, optimizer)
+    nms.unpack_keys()
+    return reshard_util.all_gather_state_dict(nms.master_weights, lambda x: True, group)
+
+
 def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
     master_weights = ema_state_dict["master_weights"]
     tmp = OrderedDict()
     (master_weights, tmp) = (tmp, master_weights)
-    # cast to before
+    # cast to bf16 and move to cpu
     for (k, v) in tmp.items():
         name = v.name
         master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
         master_weights[k].name = name
 
     structure_name_map = {k: v.name for (k, v) in model.state_dict().items()}
-    node_model_state = reshard_util.NodeModelState(group=group)
-    node_model_state_tmp = reshard_util.NodeModelState(group=group)
-    node_model_state_tmp.add_master_weights(master_weights)
-    node_model_state_tmp.pack_keys(structure_name_map)
-    node_model_state.merge_from(node_model_state_tmp, max(group.rank, 0))
-    del node_model_state_tmp
-    sharding_strategy = reshard_util.get_sharding_strategy(optimizer)
-    logger.debug(f"sharding_strategy: {sharding_strategy}")
-    restore_func = (
-        reshard_util.sharding_v1.restore
-        if sharding_strategy == SHARDING_STRATEGY_V1
-        else reshard_util.sharding_v2.restore
-    )
-    node_model_state = restore_func(node_model_state, model, optimizer)
-    node_model_state.unpack_keys()
-    master_weights = node_model_state.master_weights
 
-    master_weights = reshard_util.all_gather_state_dict(master_weights, lambda x: True, group)
+    muon_opt = _unwrap_muon_sharding_optimizer(optimizer)
+    if muon_opt is not None:
+        param_2d_names = _get_muon_2d_param_names(muon_opt)
+        logger.debug(f"Muon EMA recovery: {len(param_2d_names)} 2D params detected")
+
+        mw_2d = OrderedDict()
+        mw_1d = OrderedDict()
+        for k, v in master_weights.items():
+            if k in param_2d_names:
+                mw_2d[k] = v
+            else:
+                mw_1d[k] = v
+
+        all_master_weights = OrderedDict()
+        if mw_2d:
+            restored_2d = _restore_master_weights_single(
+                mw_2d, model, optimizer, group, structure_name_map, reshard_util.sharding_v1.restore
+            )
+            all_master_weights.update(restored_2d)
+        if mw_1d:
+            restored_1d = _restore_master_weights_single(
+                mw_1d, model, optimizer, group, structure_name_map, reshard_util.sharding_v2.restore
+            )
+            all_master_weights.update(restored_1d)
+
+        master_weights = all_master_weights
+    else:
+        sharding_strategy = reshard_util.get_sharding_strategy(optimizer)
+        logger.debug(f"sharding_strategy: {sharding_strategy}")
+        restore_func = (
+            reshard_util.sharding_v1.restore
+            if sharding_strategy == SHARDING_STRATEGY_V1
+            else reshard_util.sharding_v2.restore
+        )
+        master_weights = _restore_master_weights_single(
+            master_weights, model, optimizer, group, structure_name_map, restore_func
+        )
 
     model_state_dict = model.state_dict()
     ema_param_state_dict = OrderedDict()
@@ -1773,11 +1831,13 @@ class EMAStateAssembler:
         model,
         optimizer,
         start_step,
+        memory_growth_threshold=8 * (2**30),
     ):
         self.output_dir = Path(output_dir)
         self.save_checkpoint_format = save_checkpoint_format
         self.save_hf_steps = save_hf_steps
         self.save_steps = save_steps
+        self.memory_growth_threshold = memory_growth_threshold
         if save_hf_steps > 0 and save_hf_steps % save_steps != 0:
             raise ValueError("[EMAStateAssembler] save_hf_steps must be a multiple of save_steps.")
 
@@ -1788,6 +1848,7 @@ class EMAStateAssembler:
         self.model = model
         self.optimizer = optimizer
         self.model_sharded_state_dict = self.model.sharded_state_dict()
+        n_routed_experts = self.model.config.n_routed_experts
 
         hcg = paddle.distributed.fleet.get_hybrid_communicate_group()
         try:
@@ -1797,34 +1858,30 @@ class EMAStateAssembler:
         except Exception:
             raise RuntimeError("[EMAStateAssembler] Only support when pp_group is not None.")
 
-        try:
+        if n_routed_experts == 0:
+            tp_group = hcg.get_model_parallel_group()
+            sharding_group = hcg.get_sharding_parallel_group()
+            sharding_rank = hcg.get_sharding_parallel_rank()
+            self.sharding_group = sharding_group
+            self.h_group = tp_group
+            self.v_group = pp_group
+            self.num_splits = sharding_group.nranks
+            self.shard_idx = sharding_rank
+            self.expert_id_offset = -1
+        else:
             moe_group = hcg.get_expert_parallel_group()
-            if moe_group is None or moe_group.nranks < 1:
-                raise NotImplementedError("[EMAStateAssembler] Only support when moe_group is not None.")
-        except Exception:
-            raise RuntimeError("[EMAStateAssembler] Only support when moe_group is not None.")
-
-        try:
             moe_sharding_group = hcg.get_moe_sharding_parallel_group()
-            if moe_sharding_group is None:
-                raise NotImplementedError("[EMAStateAssembler] Only support when moe_sharding_group is not None.")
-        except Exception:
-            raise RuntimeError("[EMAStateAssembler] Only support when moe_sharding_group is not None.")
+            moe_sharding_rank = hcg.get_moe_sharding_parallel_rank()
+            self.sharding_group = moe_sharding_group
+            assert (
+                n_routed_experts % moe_group.nranks == 0
+            ), "[EMAStateAssembler] n_routed_experts must be divisible by moe_group size."
+            self.h_group = moe_group
+            self.v_group = pp_group
+            self.num_splits = moe_sharding_group.nranks
+            self.shard_idx = moe_sharding_rank
+            self.expert_id_offset = (n_routed_experts // moe_group.nranks) * moe_group.rank
 
-        moe_sharding_rank = hcg.get_moe_sharding_parallel_rank()
-
-        self.moe_sharding_group = moe_sharding_group
-
-        n_routed_experts = self.model.config.n_routed_experts
-        assert (
-            n_routed_experts % moe_group.nranks == 0
-        ), "[EMAStateAssembler] n_routed_experts must be divisible by moe_group size."
-
-        self.h_group = moe_group
-        self.v_group = pp_group
-        self.num_splits = moe_sharding_group.nranks
-        self.shard_idx = moe_sharding_rank
-        self.expert_id_offset = (n_routed_experts // moe_group.nranks) * moe_group.rank
         self._set_latest_processed_checkpoint_step(start_step)
         self.expected_next_save_ckpt_step = self.latest_processed_checkpoint_step + save_steps
 
@@ -2045,6 +2102,9 @@ class EMAStateAssembler:
 
         def _rename(key, add_mode=True):
             if ".experts." in key:
+                assert (
+                    self.expert_id_offset != -1
+                ), f"Your n_routed_experts is {self.model.config.n_routed_experts}, but you have param name:{key}, please check!"
                 key = _update_expert_number(key, self.expert_id_offset, add_mode)
             elif "_layer_" in key:
                 key = _remove_layer_suffix(key)
@@ -2058,14 +2118,14 @@ class EMAStateAssembler:
 
         ema_state_dict.pop("master_weights")
         del ema_params_recovered
-        if self.moe_sharding_group.nranks > 1:
+        if self.sharding_group.nranks > 1:
             extra_params = {}
             extra_params_meta_info = {}
             for k, v in ema_state_dict.items():
                 extra_params_meta_info[k] = {"shape": tuple(v.shape), "dtype": v.dtype, "src": self.rank}
 
             extra_params_meta_infos = []
-            dist.all_gather_object(extra_params_meta_infos, extra_params_meta_info, group=self.moe_sharding_group)
+            dist.all_gather_object(extra_params_meta_infos, extra_params_meta_info, group=self.sharding_group)
             extra_params_meta_info = {k: info for infos in extra_params_meta_infos for k, info in infos.items()}
 
             for k, v in extra_params_meta_info.items():
@@ -2073,7 +2133,7 @@ class EMAStateAssembler:
                     buffer = ema_state_dict[k]
                 else:
                     buffer = paddle.zeros(v["shape"], dtype=v["dtype"])
-                dist.broadcast(buffer, src=v["src"], group=self.moe_sharding_group)
+                dist.broadcast(buffer, src=v["src"], group=self.sharding_group)
                 extra_params[k] = buffer
         else:
             extra_params = ema_state_dict
@@ -2097,6 +2157,7 @@ class EMAStateAssembler:
             v_group=self.v_group,
             num_splits=self.num_splits,
             shard_idx=self.shard_idx,
+            memory_growth_threshold=self.memory_growth_threshold,
         )
         saver.save_checkpoint(str(save_path))
 
@@ -2137,7 +2198,7 @@ def select_flex_ckpt_comm_method():
         hcg = dist.fleet.get_hybrid_communicate_group()
         try:
             pp_group = hcg.get_pipe_parallel_group()
-            if pp_group is None or pp_group.nranks < 1:
+            if pp_group is None or pp_group.nranks <= 1:
                 logger.info(
                     "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
                     "because the current pipeline_parallel_group is empty"
@@ -2152,7 +2213,7 @@ def select_flex_ckpt_comm_method():
 
         try:
             moe_group = hcg.get_expert_parallel_group()
-            if moe_group is None or moe_group.nranks < 1:
+            if moe_group is None or moe_group.nranks <= 1:
                 logger.info(
                     "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
                     "because the current expert_parallel_group is empty"
@@ -2167,21 +2228,28 @@ def select_flex_ckpt_comm_method():
 
         try:
             moe_sharding_group = hcg.get_moe_sharding_parallel_group()
+            if moe_sharding_group is None or moe_sharding_group.nranks <= 1:
+                logger.info(
+                    "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
+                    "because the current moe_sharding_group is empty"
+                )
+                comm_method = _BROADCAST
         except Exception:
-            moe_sharding_group = None
-
-        if moe_sharding_group is None:
-            total_size = pp_group.nranks * moe_group.nranks
-        else:
-            total_size = pp_group.nranks * moe_group.nranks * moe_sharding_group.nranks
-
-        if total_size != world_size:
             logger.info(
                 "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
-                f"because the total_size of the selected communication groups: "
-                f"{total_size} does not equal 'world_size':{world_size}"
+                "because the current moe_sharding_group is empty"
             )
             comm_method = _BROADCAST
+
+        if comm_method == _PARALLEL_BROADCAST:
+            total_size = pp_group.nranks * moe_group.nranks * moe_sharding_group.nranks
+            if total_size != world_size:
+                logger.info(
+                    "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
+                    f"because the total_size of the selected communication groups: "
+                    f"{total_size} does not equal 'world_size':{world_size}"
+                )
+                comm_method = _BROADCAST
 
     all_rank_comm_method = []
     if world_size > 1:

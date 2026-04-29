@@ -7,7 +7,7 @@ on:
         description: "Build Images"
         required: true
         type: string
-        default: "registry.baidubce.com/device/paddle-xpu:ubuntu20-x86_64-gcc84-py310"
+        default: "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddleqa:xpu-ubuntu2204-x86_64-gcc123-py310"
       PADDLEFORMERS_ARCHIVE_URL:
         description: "URL of the compressed PaddleFormers code archive."
         required: true
@@ -43,7 +43,8 @@ jobs:
             FULL_REPO="${{ github.repository }}"
             REPO_NAME="${FULL_REPO##*/}"
             BASE_BRANCH="${{ github.base_ref }}"
-            docker pull ${docker_image}
+            # 由于ci机器网络问题 暂时屏蔽pull命令
+            # docker pull ${docker_image}
             # Clean the repository directory before starting
             docker run --rm --net=host -v $(pwd):/workspace -w /workspace \
             -e "REPO_NAME=${REPO_NAME}" \
@@ -115,7 +116,7 @@ jobs:
           # 针对不同分支和tag使用不同的PaddlePaddle安装包
           python -m pip uninstall paddlepaddle-xpu paddleformers -y
           python -m pip uninstall librosa -y
-          python -m pip install --pre paddlepaddle-xpu -i https://www.paddlepaddle.org.cn/packages/nightly/xpu-p800/          
+          python -m pip install https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Xpu-P800-SelfBuiltPypiUse/latest/paddlepaddle_xpu-0.0.0-cp310-cp310-linux_x86_64.whl          
           echo "安装PaddleFormers..."
           python -m pip install -e .
           echo "============================安装测试依赖============================"

@@ -68,6 +68,10 @@ unset http_proxy https_proxy
 log_file=qwen3vl_sft_${machine}_${step}_multi_card.txt
 gt_loss_file=qwen3vl_sft_${machine}_${step}_multi_card_gt_loss.txt
 
+if [[ "$step" == "moe" && "$machine" == "h20" ]]; then
+    gt_loss_file=qwen3vl_sft_release_${machine}_${step}_multi_card_gt_loss.txt
+fi
+
 set +e
 NNODES=1 MASTER_ADDR=$master MASTER_PORT=$port coverage run $(which paddleformers-cli) train $config_yaml 2>&1 | tee ./${log_file}
 
@@ -95,7 +99,7 @@ export REPO_NAME=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
 # if [[ "${PF}" == rel* ]]; then
 #   export pfpatch="rel"
 # fi
-wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}_latest/${gt_loss_file}
+wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}_latest/${gt_loss_file}
 if [ $? -ne 0 ]; then
   echo "To request precision checks for new models, please contact swgu98."
   exit 1
