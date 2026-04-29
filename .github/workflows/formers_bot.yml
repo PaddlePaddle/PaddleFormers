@@ -30,10 +30,6 @@ jobs:
       id-token: write
       actions: read
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
       - name: Extract @formers comment and run bot
         env:
           COMMENT_BODY: ${{ github.event.comment.body }}
