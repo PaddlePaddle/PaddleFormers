@@ -39,6 +39,8 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
         ("paddleocr_vl", "PaddleOCRVLConfig"),
         ("llama", "LlamaConfig"),
+        ("llavaonevision1_5", "Llavaonevision1_5Config"),
+        ("llavaonevision1_5_text", "LLaVAOneVision1_5TextConfig"),
         ("kimi_k2", "KimiK2Config"),
         ("qwen2", "Qwen2Config"),
         ("qwen2_5_vl", "Qwen2_5_VLConfig"),
@@ -75,6 +77,8 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("paddleocr_vl", "PaddleOCRVLForConditionalGeneration"),
         ("llama", "Llama"),
+        ("llavaonevision1_5", "LLaVAOneVision1_5"),
+        ("llavaonevision1_5_text", "LLaVAOneVision1_5"),
         ("qwen2", "Qwen2"),
         ("qwen2_5_vl", "Qwen2_5_VL"),
         ("qwen2_5_vl_text", "Qwen2_5_VL"),
@@ -100,6 +104,7 @@ MULTI_MODELS_MAPPING = OrderedDict(
 SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
     [
         ("qwen2_5_vl_text", "qwen2_5_vl"),
+        ("llavaonevision1_5_text", "llavaonevision1_5"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
     ]

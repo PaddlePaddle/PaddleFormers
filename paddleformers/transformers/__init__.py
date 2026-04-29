@@ -172,6 +172,8 @@ import_structure = {
     "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe", "LlamaRotaryEmbedding"],
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
+    "llavaonevision1_5.configuration": ["Llavaonevision1_5Config", "LLaVAOneVision1_5TextConfig", "RiceConfig"],
+    "llavaonevision1_5.modeling": ["LLaVAOneVision1_5PretrainedModel", "RiceTransformerPretrainedModel"],
     "optimization": [
         "LinearDecayWithWarmup",
         "ConstScheduleWithWarmup",
@@ -299,6 +301,7 @@ import_structure = {
     "qwen2_vl": [],
     "qwen3_moe": [],
     "qwen3_next": [],
+    "llavaonevision1_5": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
     "whisper.processor": ["WhisperFeatureExtractor"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
@@ -390,6 +393,7 @@ if TYPE_CHECKING:
     from .kimi_k2 import *
     from .paddleocr_vl import *
     from .llama import *
+    from .llavaonevision1_5 import *
     from .optimization import *
     from .qwen2 import *
     from .qwen2_5_vl import *
