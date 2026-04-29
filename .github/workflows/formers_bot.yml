@@ -38,6 +38,7 @@ jobs:
           ISSUE_TITLE: ${{ github.event.issue.title }}
         run: |
           cd /home/paddle-1/
+          rm -rf /tmp/bot_result.md 
           if [[ "$COMMENT_BODY" == *"@formers"* ]]; then
             python formers_bot.py --prompt "$COMMENT_BODY"
           elif [[ "$REVIEW_BODY" == *"@formers"* ]]; then
