@@ -1667,6 +1667,13 @@ class TrainingArguments:
         },
     )
 
+    enable_token_weighted_acc_loss: bool = field(
+        default=False,
+        metadata={
+            "help": "When enabled, the loss for gradient accumulation steps will be weighted based on the number of tokens in each step, instead of simply averaging them."
+        },
+    )
+
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
         if in_auto_parallel_align_mode():

@@ -3772,29 +3772,93 @@ class Trainer:
         if hasattr(model, "_prepare_unified_non_pp_data") and model._prepare_unified_non_pp_data is not None:
             model._prepare_unified_non_pp_data(inputs)
 
-        model.train()
-        inputs = self._prepare_inputs(inputs)
-        with self.autocast_smart_context_manager():
-            loss = self.compute_loss(model, inputs)
+        # Buffer micro-batch data for token-weighted accumulation loss.
+        # Then compute total tokens and process all micro-batches with token-weighted loss.
+        if self.args.enable_token_weighted_acc_loss and self.args.gradient_accumulation_steps > 1:
+            if not hasattr(self, "_acc_data_buffer"):
+                self._acc_data_buffer = []
+            self._acc_data_buffer.append(inputs)
 
-        if self.do_grad_scaling:
-            self.scaler.scale(loss).backward()
+            if len(self._acc_data_buffer) < self.args.gradient_accumulation_steps:
+                # Not all micro-batches collected yet, return 0 (no forward/backward)
+                return paddle.to_tensor(0.0)
+
+            # All micro-batches collected, process them with token-weighted loss
+            buffered_inputs = self._acc_data_buffer
+            self._acc_data_buffer = []
+
+            # Prepare all inputs and count valid tokens per micro-batch
+            prepared_list = []
+            token_counts = []
+            for inp in buffered_inputs:
+                prepared = self._prepare_inputs(inp)
+                prepared_list.append(prepared)
+                if "labels" in prepared:
+                    try:
+                        token_counts.append(int((prepared["labels"] != -100).sum().item()))
+                    except (TypeError, AttributeError):
+                        token_counts.append(0)
+                else:
+                    token_counts.append(0)
+
+            total_tokens = sum(token_counts)
+
+            # Forward-backward each micro-batch with token-weighted loss
+            model.train()
+            weighted_loss_sum = paddle.to_tensor(0.0)
+            for i, (prepared, tokens_i) in enumerate(zip(prepared_list, token_counts)):
+                with self.autocast_smart_context_manager():
+                    loss = self.compute_loss(model, prepared)
+
+                if total_tokens > 0 and tokens_i > 0:
+                    weight = tokens_i / total_tokens
+                    weighted_loss = loss * weight
+                else:
+                    weighted_loss = loss / self.args.gradient_accumulation_steps
+
+                if self.do_grad_scaling:
+                    self.scaler.scale(weighted_loss).backward()
+                else:
+                    weighted_loss.backward()
+
+                weighted_loss_sum += weighted_loss.detach()
+
+            if not self.args.enable_auto_parallel:
+                return weighted_loss_sum
+            if isinstance(weighted_loss_sum, paddle.Tensor):
+                return weighted_loss_sum.detach() if weighted_loss_sum._is_initialized() else float(0.0)
+            elif isinstance(weighted_loss_sum, np.ndarray):
+                return np.sum(weighted_loss_sum)
+            elif weighted_loss_sum is None:
+                return float(0.0)
+            else:
+                return float(weighted_loss_sum)
+
+        # Normal average accumulation loss
         else:
-            loss.backward()
-        if self.args.gradient_accumulation_steps > 1:
-            loss = loss / self.args.gradient_accumulation_steps
+            model.train()
+            inputs = self._prepare_inputs(inputs)
+            with self.autocast_smart_context_manager():
+                loss = self.compute_loss(model, inputs)
 
-        if not self.args.enable_auto_parallel:
-            return loss.detach()
+            if self.do_grad_scaling:
+                self.scaler.scale(loss).backward()
+            else:
+                loss.backward()
+            if self.args.gradient_accumulation_steps > 1:
+                loss = loss / self.args.gradient_accumulation_steps
 
-        if isinstance(loss, paddle.Tensor):
-            return loss.detach() if loss._is_initialized() else float(0.0)
-        elif isinstance(loss, np.ndarray):
-            return np.sum(loss)
-        elif loss is None:
-            return float(0.0)
-        else:
-            return float(loss)
+            if not self.args.enable_auto_parallel:
+                return loss.detach()
+
+            if isinstance(loss, paddle.Tensor):
+                return loss.detach() if loss._is_initialized() else float(0.0)
+            elif isinstance(loss, np.ndarray):
+                return np.sum(loss)
+            elif loss is None:
+                return float(0.0)
+            else:
+                return float(loss)
 
     def training_pipeline_step(
         self, model: nn.Layer, inputs: Dict[str, Union[paddle.Tensor, Any]], data_buffer_prepared=False
