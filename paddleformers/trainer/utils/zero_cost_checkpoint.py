@@ -1040,7 +1040,6 @@ class ZeroCostCheckpointWorker:
         self.optimizer_states_name_path = dynamic_objecs["optimizer_states_name_path"]
         self.model_states_name_path = dynamic_objecs["model_states_name_path"]
         self.build_fusion_storage_helper(optimizer_states_meta, model_states_meta)
-        self.grouped_gemm_params = dynamic_objecs.get("grouped_gemm_params", set())
 
         self.model_config_content = static_objects["model_config"]
         self.training_args_content = static_objects["training_args"]
@@ -2123,6 +2122,7 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
         self.opt_state_filter = dynamic_objecs["opt_state_filter"]
         self.master_weight_ckpt_meta = dynamic_objecs["master_weight_ckpt_meta"]
         self.master_weights_filter = dynamic_objecs["master_weights_filter"]
+        self.grouped_gemm_params = dynamic_objecs["grouped_gemm_params"]
 
         self.unified_name_mapping = dynamic_objecs["unified_name_mapping"]
         self.param_slice_info = dynamic_objecs["param_slice_info"]
