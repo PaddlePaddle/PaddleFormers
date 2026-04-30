@@ -2173,7 +2173,12 @@ class EMAStateAssembler:
                 ema_tensor = ema_params_recovered[_rename(k, False)]
                 expected_shape = v.local_shape
                 # Handle grouped_gemm_experts: reshape 3D [num_experts, hidden, intermediate] to 2D [num_experts*hidden, intermediate]
-                if "grouped_gemm_experts" in k:
+                group_gemm_param_name_pattern = [
+                    "grouped_gemm_experts",
+                    "experts.up_gate_proj.weight",
+                    "experts.down_proj.weight",
+                ]
+                if any(pattern in k for pattern in group_gemm_param_name_pattern):
                     ema_tensor = paddle.reshape(ema_tensor, expected_shape)
                 ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, ema_tensor, v)
 

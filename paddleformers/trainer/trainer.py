@@ -1137,7 +1137,10 @@ class Trainer:
             except Exception:
                 moe_sharding_group = None
 
-            worker_groups = [moe_group, pp_group, moe_sharding_group]
+            if pp_group.nranks > 1 and moe_group.nranks > 1:
+                worker_groups = [moe_group, pp_group, moe_sharding_group]
+            else:
+                worker_groups = [moe_group, moe_sharding_group, pp_group]
         else:
             worker_groups = None
 
