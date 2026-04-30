@@ -39,6 +39,7 @@ class Olmo2Config(PretrainedConfig):
         attention_dropout=0.0,
         tie_word_embeddings=False,
         head_dim=None,
+        rope_theta=10000.0,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -60,7 +61,7 @@ class Olmo2Config(PretrainedConfig):
         self.attention_dropout = attention_dropout
         self.head_dim = head_dim if head_dim is not None else self.hidden_size // self.num_attention_heads
 
-        self.rope_theta = kwargs.get("rope_theta", 10000.0)
+        self.rope_theta = rope_theta
         self.rope_scaling = kwargs.pop("rope_scaling", None)
         if self.rope_scaling is not None and "type" in self.rope_scaling:
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]

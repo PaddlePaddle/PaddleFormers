@@ -192,9 +192,7 @@ class Olmo2Attention(nn.Layer):
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
-        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS["sdpa"]
-        if self.config._attn_implementation != "sdpa":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -263,11 +261,7 @@ class Olmo2DecoderLayer(nn.Layer):
         hidden_states = self.post_feedforward_layernorm(hidden_states)
         hidden_states = residual + hidden_states
 
-        outputs = (hidden_states,)
-        if len(outputs) == 1 and isinstance(outputs, tuple):
-            outputs = outputs[0]
-
-        return outputs
+        return hidden_states
 
 
 class Olmo2RotaryEmbedding(nn.Layer):
