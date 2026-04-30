@@ -295,6 +295,7 @@ TOOLS = {
     "ernie": ERNIEToolUtils(),
     "ernie_vl": ERNIEVLToolUtils(),
     "qwen": QwenToolUtils(),
+    "qwen3_5": QwenToolUtils(),
     "glm4": GLM4ToolUtils(),
     "glm4_moe": GLM4MOEToolUtils(),
     "llama3": Llama3ToolUtils(),
