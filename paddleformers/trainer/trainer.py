@@ -956,7 +956,7 @@ class Trainer:
             use_expert_parallel=self.args.use_expert_parallel,
             ema_coef=self.args.zcc_save_ema_coef,
             zcc_worker_class=zcc_worker_class,
-            save_hf_steps=self.args.save_hf_steps,
+            save_hf_steps=self.args.save_hf_steps if self.args.online_merge_ema else -1,
         )
 
     def _register_pipeline_hooks(self, unwrapped_model):
@@ -1116,7 +1116,11 @@ class Trainer:
         model_states_path = os.path.join(resume_from_checkpoint, MODEL_STATE_DIC)
 
         hcg = dist.fleet.get_hybrid_communicate_group()
-        flex_ckpt_comm_method = select_flex_ckpt_comm_method()
+        flex_ckpt_comm_method = (
+            select_flex_ckpt_comm_method()
+            if self.args.flex_ckpt_comm_method is None
+            else self.args.flex_ckpt_comm_method
+        )
         if flex_ckpt_comm_method == "parallel_broadcast":
             try:
                 pp_group = hcg.get_pipe_parallel_group()

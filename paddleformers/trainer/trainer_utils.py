@@ -2237,6 +2237,8 @@ def select_flex_ckpt_comm_method():
     _BROADCAST = "broadcast"
     _PARALLEL_BROADCAST = "parallel_broadcast"
 
+    return _BROADCAST
+
     comm_method = _PARALLEL_BROADCAST
 
     def func_supports_parallel_broadcast(func):
@@ -2269,19 +2271,8 @@ def select_flex_ckpt_comm_method():
         hcg = dist.fleet.get_hybrid_communicate_group()
         try:
             pp_group = hcg.get_pipe_parallel_group()
-            if pp_group is None or pp_group.nranks <= 1:
-                logger.info(
-                    "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
-                    "because the current pipeline_parallel_group is empty"
-                )
-                comm_method = _BROADCAST
         except Exception:
-            logger.info(
-                "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
-                "because failed to get pipeline_parallel_group"
-            )
-            comm_method = _BROADCAST
-
+            pp_group = None
         try:
             moe_group = hcg.get_expert_parallel_group()
             if moe_group is None or moe_group.nranks <= 1:
@@ -2313,7 +2304,8 @@ def select_flex_ckpt_comm_method():
             comm_method = _BROADCAST
 
         if comm_method == _PARALLEL_BROADCAST:
-            total_size = pp_group.nranks * moe_group.nranks * moe_sharding_group.nranks
+            pp_size = pp_group.nranks if pp_group is not None else 1
+            total_size = pp_size * moe_group.nranks * moe_sharding_group.nranks
             if total_size != world_size:
                 logger.info(
                     "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
