@@ -2237,8 +2237,6 @@ def select_flex_ckpt_comm_method():
     _BROADCAST = "broadcast"
     _PARALLEL_BROADCAST = "parallel_broadcast"
 
-    return _BROADCAST
-
     comm_method = _PARALLEL_BROADCAST
 
     def func_supports_parallel_broadcast(func):
