@@ -1197,7 +1197,6 @@ class Trainer:
             init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
 
             optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
-
             opt_states = {}
             master_weights = {}
             for k, v in optimizer_sharded_state_dict.items():
@@ -1298,7 +1297,7 @@ class Trainer:
                         paddle.assign(paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key])
 
             def recover_params_from_master_weight(opt_state_dict, group):
-                master_weights = opt_state_dict["master_weights"]
+                master_weights = opt_state_dict.get("master_weights", {})
                 tmp = OrderedDict()
                 master_weights, tmp = (tmp, master_weights)
                 # cast to bf16 and move to cpu
@@ -1323,26 +1322,25 @@ class Trainer:
                             mw_1d[k] = v
 
                     all_master_weights = OrderedDict()
-                    if mw_2d:
-                        restored_2d = _restore_master_weights_single(
-                            mw_2d,
-                            self.model,
-                            self.optimizer,
-                            group,
-                            structure_name_map,
-                            reshard_util.sharding_v1.restore,
-                        )
-                        all_master_weights.update(restored_2d)
-                    if mw_1d:
-                        restored_1d = _restore_master_weights_single(
-                            mw_1d,
-                            self.model,
-                            self.optimizer,
-                            group,
-                            structure_name_map,
-                            reshard_util.sharding_v2.restore,
-                        )
-                        all_master_weights.update(restored_1d)
+                    restored_2d = _restore_master_weights_single(
+                        mw_2d,
+                        self.model,
+                        self.optimizer,
+                        group,
+                        structure_name_map,
+                        reshard_util.sharding_v1.restore,
+                    )
+                    all_master_weights.update(restored_2d)
+
+                    restored_1d = _restore_master_weights_single(
+                        mw_1d,
+                        self.model,
+                        self.optimizer,
+                        group,
+                        structure_name_map,
+                        reshard_util.sharding_v2.restore,
+                    )
+                    all_master_weights.update(restored_1d)
 
                     master_weights = all_master_weights
                 else:
@@ -1364,7 +1362,7 @@ class Trainer:
                     group_getter = GroupGetter(self.model)
                     opt_state_dict = split_opt_state(opt_state_dict, group_getter)
                     for gid in group_getter.get_group_ids():
-                        sub_opt_state_dict = opt_state_dict[gid]
+                        sub_opt_state_dict = opt_state_dict.get(gid, {})
                         group = group_getter.get_group_by_id(gid)
                         if self.args.bf16:
                             recover_params_from_master_weight(sub_opt_state_dict, group)

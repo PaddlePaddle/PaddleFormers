@@ -1806,7 +1806,7 @@ def _restore_master_weights_single(master_weights, model, optimizer, group, stru
 
 
 def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
-    master_weights = ema_state_dict["master_weights"]
+    master_weights = ema_state_dict.get("master_weights", {})
     tmp = OrderedDict()
     (master_weights, tmp) = (tmp, master_weights)
     # cast to bf16 and move to cpu
@@ -1831,16 +1831,15 @@ def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
                 mw_1d[k] = v
 
         all_master_weights = OrderedDict()
-        if mw_2d:
-            restored_2d = _restore_master_weights_single(
-                mw_2d, model, optimizer, group, structure_name_map, reshard_util.sharding_v1.restore
-            )
-            all_master_weights.update(restored_2d)
-        if mw_1d:
-            restored_1d = _restore_master_weights_single(
-                mw_1d, model, optimizer, group, structure_name_map, reshard_util.sharding_v2.restore
-            )
-            all_master_weights.update(restored_1d)
+        restored_2d = _restore_master_weights_single(
+            mw_2d, model, optimizer, group, structure_name_map, reshard_util.sharding_v1.restore
+        )
+        all_master_weights.update(restored_2d)
+
+        restored_1d = _restore_master_weights_single(
+            mw_1d, model, optimizer, group, structure_name_map, reshard_util.sharding_v2.restore
+        )
+        all_master_weights.update(restored_1d)
 
         master_weights = all_master_weights
     else:
@@ -2134,7 +2133,7 @@ class EMAStateAssembler:
         ema_state_dict_grouped = split_opt_state(ema_state_dict, group_getter)
         ema_params_recovered = {}
         for gid in group_getter.get_group_ids():
-            sub_ema_state_dict = ema_state_dict_grouped[gid]
+            sub_ema_state_dict = ema_state_dict_grouped.get(gid, {})
             group = group_getter.get_group_by_id(gid)
             recovered = recover_params_from_master_weight(sub_ema_state_dict, self.model, self.optimizer, group)
             ema_params_recovered.update(recovered)
