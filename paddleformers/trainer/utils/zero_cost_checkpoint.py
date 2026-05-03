@@ -1739,6 +1739,9 @@ def saved_ckptmeta(state_dict, ckpt_file_name, process_group=None, replicate_sav
             is_flattened = val.is_flattened
             flattened_range = val.flattened_range
 
+            if (flattened_range is not None) and (flattened_range.stop - flattened_range.start <= 0):
+                continue
+
             local_tensor_dtype = str(local_tensor.dtype).split(".")[1]
             if flattened_range is not None:
                 flattened_range = (flattened_range.start, flattened_range.stop)
@@ -1892,7 +1895,7 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
             elif static_name in all_1d_names:
                 filtered[k] = sw
             else:
-                if sharding_rank == 0:
+                if sharding_rank == 0 or self.args.replicate_saved_into_local:
                     filtered[k] = sw
 
         inner_opt = optimizer._inner_opt
@@ -2167,14 +2170,21 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
     def _slice_padded_tensor(static_dict, param_slice_info):
         new_static_dict = {}
         for k, v in static_dict.items():
-            if k in param_slice_info:
+            if k in param_slice_info and v._numel() > 1:
                 logger.info(f"[ZCC worker] Slice padded tensor of {k}")
                 flattened_range = param_slice_info[k]
+                flattened_end = flattened_range.stop
+                flattened_start = flattened_range.start
+                if flattened_end - flattened_start <= 0:
+                    logger.info(
+                        f"[ZCC worker] Empty padded tensor slice | tensor={k} | range=({flattened_start}, {flattened_end}), will be skipped."
+                    )
+                    continue
                 new_static_dict[k] = paddle.slice(
                     v,
                     axes=[0],
                     starts=[0],
-                    ends=[flattened_range.stop - flattened_range.start],
+                    ends=[flattened_end - flattened_start],
                 )
             else:
                 new_static_dict[k] = v
