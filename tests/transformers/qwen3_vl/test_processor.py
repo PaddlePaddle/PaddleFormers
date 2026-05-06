@@ -201,7 +201,7 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
 
         # Test that with modality URLs and `return_dict=True`, we get modality inputs in the dict
         for idx, url in enumerate(input_data[:batch_size]):
-            batch_messages[idx][0]["content"] = [batch_messages[idx][0]["content"][0], {"type": modality, "url": url}]
+            batch_messages[idx]["content"] = [batch_messages[idx][0]["content"][0], {"type": modality, "url": url}]
 
         out_dict = processor.apply_chat_template(
             batch_messages,
