@@ -9,9 +9,6 @@ on:
       workflow_run_url:
         required: true
         type: string
-    secrets:
-      token:
-        required: true
 
 jobs:
   paddleformers-bot-log-analysis:
