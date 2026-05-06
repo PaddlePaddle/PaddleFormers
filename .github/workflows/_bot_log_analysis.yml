@@ -10,7 +10,7 @@ on:
         required: true
         type: string
     secrets:
-      github_token:
+      token:
         required: true
 
 jobs:
@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: Run formers bot
         env:
-          GITHUB_TOKEN: ${{ secrets.github_token }}
+          GITHUB_TOKEN: ${{ secrets.token }}
           WORKFLOW_RUN_URL: ${{ inputs.workflow_run_url }}
           TASK_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |

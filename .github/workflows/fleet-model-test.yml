@@ -756,4 +756,4 @@ jobs:
       ci_result: "failure"
       workflow_run_url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
     secrets:
-      github_token: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.token }}
