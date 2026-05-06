@@ -263,8 +263,7 @@ jobs:
     with:
       ci_result: ${{ needs['unittest-gpu-ci'].result }}
       workflow_run_url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.token }}
+    secrets: inherit
 
   upload-coverage:
     name: upload-coverage
