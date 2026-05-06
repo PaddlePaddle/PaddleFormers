@@ -20,10 +20,6 @@ jobs:
     runs-on: paddle-bot
     env:
       PATH: /home/paddle-1/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-    permissions:
-      contents: read
-      id-token: write
-      actions: read
     steps:
       - name: Run formers bot
         env:
