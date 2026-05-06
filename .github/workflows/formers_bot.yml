@@ -9,10 +9,6 @@ on:
     types: [opened, assigned]
   pull_request_review:
     types: [submitted]
-  pull_request:
-    branches:
-      - develop
-      - release/**
 jobs:
   formers:
     if: |
