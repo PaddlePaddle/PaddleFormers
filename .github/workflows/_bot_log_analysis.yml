@@ -9,7 +9,6 @@ on:
 
 jobs:
   paddleformers-bot:
-    name: faild log analysis
     if: "always() && inputs.ci_result == 'failure'"
     runs-on: paddle-bot
     env:

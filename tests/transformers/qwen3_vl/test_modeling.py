@@ -972,7 +972,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
             # 3. compare the result between paddle and torch
             self.assertTrue(
                 np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
+                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("bfloat16").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
                     atol=1e-2,
                     rtol=1e-2,

@@ -196,7 +196,7 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             return_tensors=return_tensors,
         )
         self.assertTrue(all(key in out_dict_text for key in ["input_ids", "attention_mask"]))
-        self.assertEqual(len(out_dict_text["input_ids"]), batch_size + 1)
+        self.assertEqual(len(out_dict_text["input_ids"]), batch_size)
         self.assertEqual(len(out_dict_text["attention_mask"]), batch_size)
 
         # Test that with modality URLs and `return_dict=True`, we get modality inputs in the dict
