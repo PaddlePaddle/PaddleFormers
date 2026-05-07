@@ -43,7 +43,7 @@ jobs:
   #     FASTDEPLOY_WHEEL_URL: ${{ needs.xpu_build_test.outputs.wheel_path }}
   #     MODEL_PATH: /ssd3/model
 
-  paddleformers-bot:
+  formers-bot:
     needs: [xpu_test]
     if: "always() && needs.xpu_test.result == 'failure'"
     uses: ./.github/workflows/_bot_log_analysis.yml

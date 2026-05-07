@@ -531,7 +531,7 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                     vision_config=tiny_vision_config,
                 )
                 model = model_class(config)
-                model.save_pretrained(tmpdirname, save_checkpoint_format="unified_checkpoint")
+                model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
 
                 model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
 
