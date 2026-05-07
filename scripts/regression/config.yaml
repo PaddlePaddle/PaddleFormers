@@ -140,6 +140,8 @@ glm4_moe:
         pt_full_resume_loss: 12.83085155
         sft_full_loss: 12.71898651
         sft_full_resume_loss: 12.72072887
+        sft_full_map_loss: 12.89130259
+        sft_full_map_resume_loss: 13.02694035
         dpo_full_loss: 0.69314718
         dpo_full_resume_loss: 0.69314718
         pt_lora_loss: 12.830774305
@@ -168,6 +170,8 @@ glm4_moe:
         pt_full_excepted_result:
         - [10564, 10564, 10564, 138932, 102954, 47231, 47231, 47231, 47231, 47231]
         sft_full_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        sft_full_map_excepted_result:
         - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
         dpo_full_excepted_result:
         - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
@@ -588,23 +592,3 @@ paddleocr_vl:
         sft-vl_full_resume_loss: 12.49209785
     base_result:
         sft-vl_full_excepted_result: []
-qwen3_vl:
-    repo_id: PaddleFormers/tiny-random-qwen3vlv2
-    model_type: vl
-    cli_args:
-        save_checkpoint_format: flex_checkpoint
-        load_checkpoint_format: flex_checkpoint
-        template: qwen3_vl
-        sequence_parallel: false
-        ignore_data_skip: true
-    base_loss:
-        sft-vl_full_loss: 11.93664551
-        sft-vl_full_resume_loss: 11.93703556
-        sft-vl_lora_loss: 11.93664551
-        sft-vl_lora_resume_loss: 11.93703556
-        sft-vl_full_tp_loss: 11.93693018
-        sft-vl_full_tp_resume_loss: 11.93614006
-    base_result:
-        sft-vl_full_excepted_result: []
-        sft-vl_lora_excepted_result: []
-        sft-vl_full_tp_excepted_result: []

@@ -593,17 +593,17 @@ class BaseTrainingTest:
         # Update baseline if needed
         if should_update:
             new_result = result[0] if result else None
-            if new_result is not None:
-                self.tester.update_baseline(
-                    model_key=model_key,
-                    train_type=train_type,
-                    test_type=test_type,
-                    new_loss=actual_loss,
-                    new_resume_loss=actual_resume_loss,
-                    new_result=new_result,
-                )
-            else:
-                print(f"[SKIP] Skipping baseline update for {model_key} (generation test skipped)")
+            if new_result is None:
+                print(f"[WARN] Generation test skipped for {model_key}, updating loss only")
+                new_result = [[]]  # Use empty list as placeholder for skipped generation
+            self.tester.update_baseline(
+                model_key=model_key,
+                train_type=train_type,
+                test_type=test_type,
+                new_loss=actual_loss,
+                new_resume_loss=actual_resume_loss,
+                new_result=new_result,
+            )
 
         if errors:
             raise AssertionError(errors)
@@ -718,6 +718,30 @@ class TestTrain:
             train_type=train_type,
             test_type="full",
             config_subpath=f"{train_type}/full.yaml",
+            model_cfg=model_cfg,
+            should_update=should_update,
+            requires_export=False,
+        )
+
+    @pytest.mark.model_type("text")
+    @pytest.mark.parametrize("train_type", ["sft"])
+    def test_full_map(self, train_type: str, model_key: str, request) -> None:
+        """Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        """
+        model_cfg = self.train_tester.load_model_config(model_key)
+        print(f"\n[INFO] Testing model={model_key}, train_type=sft_full_map")
+        should_update = self._should_update_baseline(request, model_key)
+
+        self.workflow.execute_training_workflow(
+            model_key=model_key,
+            train_type=train_type,
+            test_type="full_map",
+            config_subpath=f"{train_type}/full_map.yaml",
             model_cfg=model_cfg,
             should_update=should_update,
             requires_export=False,

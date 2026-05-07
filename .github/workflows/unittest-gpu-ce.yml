@@ -1,30 +1,22 @@
-name: Unittest GPU CI
+name: Unittest GPU CE
 
 on:
-  pull_request:
   schedule:
-    - cron: "0 18 * * *"
-  workflow_call:
-    inputs:
-      runner:
-        required: false
-        type: string
-      image_name:
-        required: false
-        type: string
+    - cron: "0 16 * * *"     # every day at 00:00 Beijing time (UTC+8)
+  workflow_dispatch:        # allow to manually trigger the workflow
 
-concurrency:
-  group: unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+# concurrency:
+#   group: unittest-ce-${{ github.workflow }}
+#   cancel-in-progress: true
 
 env:
-  PR_ID: ${{ github.event.pull_request.number || '0' }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
-  TASK: PaddleFormers-CI-${{ github.event.pull_request.number }}-unittest-gpu
-  ci_scripts: /workspace/PaddleFormers/scripts/unit_test
-  BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
+  PR_ID: ${{ github.event.pull_request.number || '0' }}
+  TASK: PaddleFormers-CE-unittest-gpu
+  ce_scripts: workspace/PaddleFormers/scripts/unit_test
+  BRANCH: ${{ github.event.pull_request.base.ref }}
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
-  CI_name: unittest-gpu-ci
+  CE_name: unittest-gpu-ce
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
   PYTEST_EXECUTE_FLAG_FILE: ${{ github.workspace }}/../../../PYTEST_EXECUTE_FLAG_FILE/${{ github.event.pull_request.number || '0' }}/${{ github.event.pull_request.head.sha || github.sha }}/pytest_execute.flag
   PYTEST_EXECUTE_FLAG: false
@@ -35,14 +27,14 @@ defaults:
 
 jobs:
   check_skip:
-    name: Check skip-unittest-ci label
+    name: Check skip-unittest-ce label
     runs-on: ubuntu-latest
 
     outputs:
       skip: ${{ steps.check_skip.outputs.skip }}
 
     steps:
-      - name: Check skip-unittest-ci label
+      - name: Check skip-unittest-ce label
         id: check_skip
         shell: bash
         run: |
@@ -50,7 +42,7 @@ jobs:
             labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
             echo "PR labels: $labels"
 
-            if echo "$labels" | grep -q "skip-unittest-ci"; then
+            if echo "$labels" | grep -q "skip-unittest-ce"; then
               echo "skip=true" >> "$GITHUB_OUTPUT"
             else
               echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -59,29 +51,23 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Skip CI but mark success
+      - name: Skip CE but mark success
         if: steps.check_skip.outputs.skip == 'true'
         run: |
-          echo "skip-unittest-ci label found"
+          echo "skip-unittest-ce label found"
           echo "Downstream GPU jobs will be skipped"
 
-  unittest-gpu-ci:
+  unittest-gpu-ce:
     needs: check_skip
     if: needs.check_skip.outputs.skip == 'false'
-    name: unittest-gpu-ci
+    name: unittest-gpu-ce
     runs-on: ${{ inputs.runner || 'ernie-unittest' || 'distrbute' }}
     outputs:  
       pytest_execute_flag: ${{ steps.set_pytest_flag.outputs.pytest_execute_flag }}
     steps:
       - name: Determine Image Name
-        env:
-          IMAGE_NAME: ${{ inputs.image_name }}
         run: |
-          if [[ -n "${IMAGE_NAME}" ]]; then
-            echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
-          else
-            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda129-dev" >> "$GITHUB_ENV"
-          fi
+          echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda129-dev" >> "$GITHUB_ENV"
       - name: Determine the runner
         run: |
           gpu_id=$(( $(echo $PWD | awk -F'/' '{print $4}' | awk -F'_' '{print $2}') ))
@@ -94,7 +80,7 @@ jobs:
           python_version: "3.12"
           PIP_CACHE_DIR: /root/.cache/pip
           GPU_DEVICES: ${{ env.GPU_DEVICES }}
-          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
+          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "GPU_DEVICES=$GPU_DEVICES"
@@ -113,10 +99,10 @@ jobs:
             -e NVIDIA_VISIBLE_DEVICES=${GPU_DEVICES} \
             -e "COMMIT_ID=$COMMIT_ID" \
             -e "work_dir=$work_dir" \
-            -e "ci_scripts=$ci_scripts" \
+            -e "ce_scripts=$ce_scripts" \
             -e "PYTEST_EXECUTE_FLAG_FILE=$PYTEST_EXECUTE_FLAG_FILE" \
             -e "no_proxy=$no_proxy" \
-            -e "CI_JOB_NAME=$CI_JOB_NAME" \
+            -e "CE_JOB_NAME=$CE_JOB_NAME" \
             -e "paddle_whl=$paddle_whl" \
             -e "FLAGS_dynamic_static_unified_comm=$FLAGS_dynamic_static_unified_comm" \
             -e "python_version=$python_version" \
@@ -190,7 +176,7 @@ jobs:
           source $work_dir/../../../proxy
           source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
           echo "work_dir = ${work_dir}"
-          bash -x scripts/unit_test/ci_unittest.sh ${paddle_whl} false ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
+          bash -x scripts/unit_test/ci_unittest.sh ${paddle_whl} true ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
           '
           
       - name: Upload Products
@@ -214,7 +200,7 @@ jobs:
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
-            bos_prefix="schedule/github-ci-$(date +%Y%m%d)"
+            bos_prefix="schedule/github-ce-$(date +%Y%m%d)"
           fi
           # coverage.xml
           if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
@@ -258,7 +244,7 @@ jobs:
           
   upload-coverage:
     name: upload-coverage
-    needs: [unittest-gpu-ci]
+    needs: [unittest-gpu-ce]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -270,8 +256,8 @@ jobs:
       - name: Check if should upload coverage
         id: flag_check
         run: |
-          echo "needs.unittest-gpu-ci.outputs.pytest_execute_flag = ${{ needs.unittest-gpu-ci.outputs.pytest_execute_flag }}"
-          if [ "${{ needs.unittest-gpu-ci.outputs.pytest_execute_flag }}" = "true" ]; then
+          echo "needs.unittest-gpu-ce.outputs.pytest_execute_flag = ${{ needs.unittest-gpu-ce.outputs.pytest_execute_flag }}"
+          if [ "${{ needs.unittest-gpu-ce.outputs.pytest_execute_flag }}" = "true" ]; then
             echo "pytest_execute_flag is true, proceeding to upload coverage."
             echo "should_upload=true" >> $GITHUB_OUTPUT
           else
@@ -288,7 +274,7 @@ jobs:
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
-            bos_prefix="schedule/github-ci-$(date +%Y%m%d)"
+            bos_prefix="schedule/github-ce-$(date +%Y%m%d)"
           fi
           echo "bos_prefix=${bos_prefix}"
           wget -q --no-proxy \

@@ -956,7 +956,7 @@ class Trainer:
             use_expert_parallel=self.args.use_expert_parallel,
             ema_coef=self.args.zcc_save_ema_coef,
             zcc_worker_class=zcc_worker_class,
-            save_hf_steps=self.args.save_hf_steps,
+            save_hf_steps=self.args.save_hf_steps if self.args.online_merge_ema else -1,
         )
 
     def _register_pipeline_hooks(self, unwrapped_model):
@@ -1116,7 +1116,11 @@ class Trainer:
         model_states_path = os.path.join(resume_from_checkpoint, MODEL_STATE_DIC)
 
         hcg = dist.fleet.get_hybrid_communicate_group()
-        flex_ckpt_comm_method = select_flex_ckpt_comm_method()
+        flex_ckpt_comm_method = (
+            select_flex_ckpt_comm_method()
+            if self.args.flex_ckpt_comm_method is None
+            else self.args.flex_ckpt_comm_method
+        )
         if flex_ckpt_comm_method == "parallel_broadcast":
             try:
                 pp_group = hcg.get_pipe_parallel_group()
@@ -1137,7 +1141,10 @@ class Trainer:
             except Exception:
                 moe_sharding_group = None
 
-            worker_groups = [moe_group, pp_group, moe_sharding_group]
+            if pp_group.nranks > 1:
+                worker_groups = [moe_group, pp_group, moe_sharding_group]
+            else:
+                worker_groups = [moe_group, moe_sharding_group, pp_group]
         else:
             worker_groups = None
 
@@ -1190,7 +1197,6 @@ class Trainer:
             init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
 
             optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
-
             opt_states = {}
             master_weights = {}
             for k, v in optimizer_sharded_state_dict.items():
@@ -1291,7 +1297,7 @@ class Trainer:
                         paddle.assign(paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key])
 
             def recover_params_from_master_weight(opt_state_dict, group):
-                master_weights = opt_state_dict["master_weights"]
+                master_weights = opt_state_dict.get("master_weights", {})
                 tmp = OrderedDict()
                 master_weights, tmp = (tmp, master_weights)
                 # cast to bf16 and move to cpu
@@ -1316,26 +1322,25 @@ class Trainer:
                             mw_1d[k] = v
 
                     all_master_weights = OrderedDict()
-                    if mw_2d:
-                        restored_2d = _restore_master_weights_single(
-                            mw_2d,
-                            self.model,
-                            self.optimizer,
-                            group,
-                            structure_name_map,
-                            reshard_util.sharding_v1.restore,
-                        )
-                        all_master_weights.update(restored_2d)
-                    if mw_1d:
-                        restored_1d = _restore_master_weights_single(
-                            mw_1d,
-                            self.model,
-                            self.optimizer,
-                            group,
-                            structure_name_map,
-                            reshard_util.sharding_v2.restore,
-                        )
-                        all_master_weights.update(restored_1d)
+                    restored_2d = _restore_master_weights_single(
+                        mw_2d,
+                        self.model,
+                        self.optimizer,
+                        group,
+                        structure_name_map,
+                        reshard_util.sharding_v1.restore,
+                    )
+                    all_master_weights.update(restored_2d)
+
+                    restored_1d = _restore_master_weights_single(
+                        mw_1d,
+                        self.model,
+                        self.optimizer,
+                        group,
+                        structure_name_map,
+                        reshard_util.sharding_v2.restore,
+                    )
+                    all_master_weights.update(restored_1d)
 
                     master_weights = all_master_weights
                 else:
@@ -1357,7 +1362,7 @@ class Trainer:
                     group_getter = GroupGetter(self.model)
                     opt_state_dict = split_opt_state(opt_state_dict, group_getter)
                     for gid in group_getter.get_group_ids():
-                        sub_opt_state_dict = opt_state_dict[gid]
+                        sub_opt_state_dict = opt_state_dict.get(gid, {})
                         group = group_getter.get_group_by_id(gid)
                         if self.args.bf16:
                             recover_params_from_master_weight(sub_opt_state_dict, group)
@@ -1826,6 +1831,16 @@ class Trainer:
         return global_micro_batchs
 
     def optimizer_step(self, args, model, parameters_list=None):
+        # When freeze_training is enabled, skip optimizer step and lr scheduler step
+        # to keep both model parameters and optimizer state unchanged
+        if args.freeze_training:
+            logger.warning(
+                "freeze_training is enabled! Model parameters and optimizer state will NOT be updated. "
+                "This is intended for debugging/profiling only."
+            )
+            self.optimizer.clear_grad()
+            return
+
         if parameters_list is None:
             parameters_list = []
 
@@ -3199,6 +3214,29 @@ class Trainer:
 
             optimizer_cls = AdamWCustom
             optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.MUON:
+            assert (
+                args.save_checkpoint_format == "flex_checkpoint" and args.load_checkpoint_format == "flex_checkpoint"
+            ), (
+                "Muon optimizer only supports flex_checkpoint. "
+                "Please set --save_checkpoint_format flex_checkpoint --load_checkpoint_format flex_checkpoint."
+            )
+            from paddle.optimizer import Muon
+
+            logger.info("Creating Muon optimizer")
+            muon_kwargs = {
+                **adam_kwargs,
+                "momentum": args.muon_momentum,
+                "muon_version": args.muon_version,
+                "muon_exclude_patterns": args.muon_exclude_patterns,
+                "muon_qkv_update_mode": args.muon_qkv_update_mode,
+                "muon_ffn_split": args.muon_ffn_split,
+                "muon_extra_scale_factor": args.muon_extra_scale_factor,
+                "ns_steps": args.muon_ns_steps,
+                "ns_coeff_type": args.muon_ns_coeff_type,
+            }
+            optimizer_cls = Muon
+            optimizer_kwargs.update(muon_kwargs)
         else:
             raise ValueError(f"Trainer cannot instantiate unsupported optimizer: {args.optim}")
 
@@ -3220,16 +3258,28 @@ class Trainer:
             decay_steps = self.args.decay_steps
 
         if self.lr_scheduler is None:
-            self.lr_scheduler = get_scheduler(
-                self.args.lr_scheduler_type,
-                learning_rate=self.args.learning_rate,
-                num_warmup_steps=warmup,
-                num_training_steps=decay_steps,
-                num_cycles=self.args.num_cycles,
-                lr_end=self.args.lr_end,
-                power=self.args.power,
-                min_lr=self.args.min_lr,
-            )
+            # When freeze_training is enabled, use constant scheduler with lr=0
+            # to ensure learning rate stays 0 throughout training
+            if self.args.freeze_training:
+                logger.warning(
+                    "WARNING: freeze_training is enabled! "
+                    "Learning rate is set to 0 and model parameters will NOT be updated. "
+                    "This mode is intended for debugging/profiling only, NOT for actual training."
+                )
+                from .trainer_utils import get_constant_schedule
+
+                self.lr_scheduler = get_constant_schedule(learning_rate=0.0)
+            else:
+                self.lr_scheduler = get_scheduler(
+                    self.args.lr_scheduler_type,
+                    learning_rate=self.args.learning_rate,
+                    num_warmup_steps=warmup,
+                    num_training_steps=decay_steps,
+                    num_cycles=self.args.num_cycles,
+                    lr_end=self.args.lr_end,
+                    power=self.args.power,
+                    min_lr=self.args.min_lr,
+                )
 
         return self.lr_scheduler
 
@@ -3430,7 +3480,7 @@ class Trainer:
             else:
 
                 def _prepare_pipeline_inputs_func(inputs):
-                    first_stage_keys = ["input_ids", "attention_mask", "position_ids"]
+                    first_stage_keys = ["input_ids", "attention_mask", "position_ids", "labels"]
                     last_stage_keys = ["labels"]
 
                     def get_expected_keys(inputs, keys):
@@ -3449,7 +3499,7 @@ class Trainer:
                     inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
                     if is_paddlefleet_available() and self.using_fleet_model:
                         first_stage_inputs_batch = inputs_batch
-                        last_stage_inputs = first_stage_inputs_batch.pop("labels")
+                        last_stage_inputs = first_stage_inputs_batch.get("labels")
                         outputs = (
                             first_stage_inputs_batch,
                             last_stage_inputs,

@@ -50,6 +50,7 @@ from paddlefleet.gpt_builders import gpt_builder
 
 from paddleformers.transformers.model_utils import PretrainedModel
 
+from .auto.configuration import AutoConfig
 from .model_provider import ModelProviderMixin
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,10 @@ class GPTModel(FleetGPTModel, PretrainedModel):
     GPTModel class that inherits from FleetGPTModel.
     This class requires paddlefleet to be installed.
     """
+
+    # Mark PaddleFleet GPT models as config-backed so VisualDL/TensorBoard can
+    # emit `model_config` text summaries for provider-based pipeline models.
+    config_class = AutoConfig
 
     def get_input_embeddings(self):
         """获取 embedding.embed_tokens 层"""
@@ -211,9 +216,11 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
         """
 
         with model_init_device_context():
-            fleet_model = gpt_builder(
-                self, num_stages=pp_size, seg_method="layer:TransformerLayer|EmptyLayer", loss_fn=loss_fn
-            )
+            seg_method = "layer:TransformerLayer|EmptyLayer"
+            if self.separate_mtp_headloss:
+                seg_method = "layer:TransformerLayer|EmptyLayer|MultiTokenPredictionLayer"
+
+            fleet_model = gpt_builder(self, num_stages=pp_size, seg_method=seg_method, loss_fn=loss_fn)
             # Convert original FleetGPTModel to our GPTModel to correctly inherit PretrainedModel methods
             model = GPTModel.__new__(GPTModel)
             # Manually copy all attributes
