@@ -291,6 +291,7 @@ jobs:
         env:
           home_path: ${{ github.workspace }}/../../..
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
+          java_file: ${{ github.workspace }}/../../../jdk1.8.0_351
           allure_file: ${{ github.workspace }}/../../../allure-2.19.0/bin/allure
         run: |
           docker exec -t $container_name /bin/bash -c '
@@ -315,8 +316,11 @@ jobs:
           done
           # allure
           cd /workspace/PaddleFormers/
-          ${{ env.allure_file }} generate result -o report
-          sleep 1h
+          export JAVA_HOME="${{ env.java_file }}"
+          export JRE_HOME="${JAVA_HOME}/jre"
+          export CLASSPATH="${JAVA_HOME}/lib"
+          export PATH="${JAVA_HOME}/bin:${PATH}"
+          ${{ env.allure_file }} generate result -o report        
           tar -czf report.tar.gz report
           python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
           echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/report.tar.gz"
