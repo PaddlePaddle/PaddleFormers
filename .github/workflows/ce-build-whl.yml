@@ -20,7 +20,7 @@ defaults:
 jobs:
   build-ce:
     name: build-ce
-    runs-on: [self-hosted, paddleformers]
+    runs-on: [self-hosted, ernie-cpu-01]
     steps:
       - name: Determine Image Name
         run: |
