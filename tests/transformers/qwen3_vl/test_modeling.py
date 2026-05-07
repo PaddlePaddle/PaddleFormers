@@ -531,7 +531,7 @@ class Qwen3VLModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                     vision_config=tiny_vision_config,
                 )
                 model = model_class(config)
-                model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+                model.save_pretrained(tmpdirname, save_checkpoint_format="unified_checkpoint")
 
                 model1 = model_class.from_pretrained(tmpdirname, convert_from_hf=True)
 
@@ -972,7 +972,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
             # 3. compare the result between paddle and torch
             self.assertTrue(
                 np.allclose(
-                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("bfloat16").numpy(),
+                    paddle_logit.detach().cpu().reshape([-1])[:9].astype("float32").numpy(),
                     torch_logit.detach().cpu().reshape([-1])[:9].float().numpy(),
                     atol=1e-2,
                     rtol=1e-2,

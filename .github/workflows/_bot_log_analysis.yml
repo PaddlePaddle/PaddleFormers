@@ -8,7 +8,7 @@ on:
         type: string
 
 jobs:
-  paddleformers-bot:
+  faild-log-analysis:
     if: "always() && inputs.ci_result == 'failure'"
     runs-on: paddle-bot
     env:

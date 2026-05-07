@@ -256,7 +256,7 @@ jobs:
         run: |
           docker rm -f $container_name 2>/dev/null || true
   
-  paddleformers-bot-log-analysis:
+  paddleformers-bot:
     needs: [check_skip, unittest-gpu-ci]
     if: "always() && needs.check_skip.outputs.skip == 'false' && needs['unittest-gpu-ci'].result == 'failure'"
     uses: ./.github/workflows/_bot_log_analysis.yml
