@@ -316,6 +316,7 @@ jobs:
           # allure
           cd /workspace/PaddleFormers/
           ${{ env.allure_file }} generate result -o report
+          sleep 1h
           tar -czf report.tar.gz report
           python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
           echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/report.tar.gz"
