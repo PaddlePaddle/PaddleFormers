@@ -6,9 +6,6 @@ on:
       ci_result:
         required: true
         type: string
-      workflow_run_url:
-        required: true
-        type: string
 
 jobs:
   paddleformers-bot:
