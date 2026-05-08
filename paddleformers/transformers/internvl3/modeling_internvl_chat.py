@@ -46,7 +46,9 @@ class InternVLChatModel(PretrainedModel):
         self.num_image_token = int((image_size // patch_size) ** 2 * (config.downsample_ratio**2))
         self.downsample_ratio = config.downsample_ratio
         self.ps_version = config.ps_version
-        config.vision_config.use_flash_attn = bool(use_flash_attn and getattr(config.vision_config, "use_flash_attn", False))
+        config.vision_config.use_flash_attn = bool(
+            use_flash_attn and getattr(config.vision_config, "use_flash_attn", False)
+        )
 
         logger.info(f"num_image_token: {self.num_image_token}")
         logger.info(f"ps_version: {self.ps_version}")
@@ -152,7 +154,9 @@ class InternVLChatModel(PretrainedModel):
 
     def pixel_shuffle(self, hidden_states, scale_factor=0.5):
         batch_size, width, height, channels = hidden_states.shape
-        hidden_states = hidden_states.reshape([batch_size, width, int(height * scale_factor), int(channels / scale_factor)])
+        hidden_states = hidden_states.reshape(
+            [batch_size, width, int(height * scale_factor), int(channels / scale_factor)]
+        )
         hidden_states = hidden_states.transpose([0, 2, 1, 3])
         hidden_states = hidden_states.reshape(
             [
@@ -172,9 +176,13 @@ class InternVLChatModel(PretrainedModel):
 
     def extract_feature(self, pixel_values):
         if self.select_layer == -1:
-            vit_embeds = self.vision_model(pixel_values=pixel_values, output_hidden_states=False, return_dict=True).last_hidden_state
+            vit_embeds = self.vision_model(
+                pixel_values=pixel_values, output_hidden_states=False, return_dict=True
+            ).last_hidden_state
         else:
-            vit_embeds = self.vision_model(pixel_values=pixel_values, output_hidden_states=True, return_dict=True).hidden_states[self.select_layer]
+            vit_embeds = self.vision_model(
+                pixel_values=pixel_values, output_hidden_states=True, return_dict=True
+            ).hidden_states[self.select_layer]
         vit_embeds = vit_embeds[:, 1:, :]
 
         height = width = int(vit_embeds.shape[1] ** 0.5)
@@ -205,7 +213,9 @@ class InternVLChatModel(PretrainedModel):
         position_ids = paddle.cumsum(attention_mask.astype("int64"), axis=-1) - 1
         return paddle.where(attention_mask > 0, position_ids, paddle.zeros_like(position_ids))
 
-    def _apply_repetition_penalty(self, logits: paddle.Tensor, token_ids: paddle.Tensor, penalty: float) -> paddle.Tensor:
+    def _apply_repetition_penalty(
+        self, logits: paddle.Tensor, token_ids: paddle.Tensor, penalty: float
+    ) -> paddle.Tensor:
         if penalty == 1.0:
             return logits
 
@@ -355,7 +365,9 @@ class InternVLChatModel(PretrainedModel):
             elif len(questions) == 1:
                 num_patches_list = [pixel_values.shape[0]]
             else:
-                raise ValueError("batch_chat requires `num_patches_list` when `pixel_values` contains multiple samples.")
+                raise ValueError(
+                    "batch_chat requires `num_patches_list` when `pixel_values` contains multiple samples."
+                )
         self.img_context_token_id = tokenizer.convert_tokens_to_ids(IMG_CONTEXT_TOKEN)
 
         queries = []
@@ -458,13 +470,17 @@ class InternVLChatModel(PretrainedModel):
         if input_ids is None:
             raise ValueError("input_ids must be provided for generation.")
         if self.img_context_token_id is None:
-            raise ValueError("img_context_token_id is not initialized. Please call chat()/batch_chat() or set it manually.")
+            raise ValueError(
+                "img_context_token_id is not initialized. Please call chat()/batch_chat() or set it manually."
+            )
 
         generation_config = generation_config or {}
         max_new_tokens = int(generation_config.get("max_new_tokens", generate_kwargs.pop("max_new_tokens", 128)))
         eos_token_id = generation_config.get("eos_token_id", generate_kwargs.pop("eos_token_id", None))
         do_sample = generation_config.get("do_sample", generate_kwargs.pop("do_sample", False))
-        repetition_penalty = float(generation_config.get("repetition_penalty", generate_kwargs.pop("repetition_penalty", 1.0)))
+        repetition_penalty = float(
+            generation_config.get("repetition_penalty", generate_kwargs.pop("repetition_penalty", 1.0))
+        )
         top_k = generation_config.get("top_k", generate_kwargs.pop("top_k", None))
         top_p = generation_config.get("top_p", generate_kwargs.pop("top_p", None))
         temperature = generation_config.get("temperature", generate_kwargs.pop("temperature", None))

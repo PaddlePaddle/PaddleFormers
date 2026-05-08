@@ -18,6 +18,7 @@ import paddle
 import paddle.nn.functional as F
 from paddle import nn
 from paddle.distributed.fleet.utils import recompute
+
 from ..activations import ACT2FN
 from ..model_outputs import BaseModelOutput, BaseModelOutputWithPooling
 from ..model_utils import PretrainedModel
@@ -128,9 +129,7 @@ class InternAttention(nn.Layer):
         self.num_heads = config.num_attention_heads
         self.head_dim = self.embed_dim // self.num_heads
         if self.head_dim * self.num_heads != self.embed_dim:
-            raise ValueError(
-                f"embed_dim must be divisible by num_heads (got {self.embed_dim} and {self.num_heads})."
-            )
+            raise ValueError(f"embed_dim must be divisible by num_heads (got {self.embed_dim} and {self.num_heads}).")
 
         self.scale = self.head_dim**-0.5
         self.qkv = nn.Linear(self.embed_dim, 3 * self.embed_dim, bias_attr=config.qkv_bias)
@@ -202,8 +201,12 @@ class InternVisionEncoderLayer(nn.Layer):
         self.drop_path2 = DropPath(drop_path_rate) if drop_path_rate > 0.0 else nn.Identity()
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
-        hidden_states = hidden_states + self.drop_path1(self.attn(self.norm1(hidden_states).astype(hidden_states.dtype)) * self.ls1)
-        hidden_states = hidden_states + self.drop_path2(self.mlp(self.norm2(hidden_states).astype(hidden_states.dtype)) * self.ls2)
+        hidden_states = hidden_states + self.drop_path1(
+            self.attn(self.norm1(hidden_states).astype(hidden_states.dtype)) * self.ls1
+        )
+        hidden_states = hidden_states + self.drop_path2(
+            self.mlp(self.norm2(hidden_states).astype(hidden_states.dtype)) * self.ls2
+        )
         return hidden_states
 
 
@@ -241,7 +244,9 @@ class InternVisionEncoder(nn.Layer):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, BaseModelOutput]:
-        output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         encoder_states = () if output_hidden_states else None
@@ -285,12 +290,13 @@ class InternVisionModel(PretrainedModel):
         self.embeddings = InternVisionEmbeddings(config)
         self.encoder = InternVisionEncoder(config)
 
-
     def resize_pos_embeddings(self, old_size, new_size, patch_size):
         pos_emb = self.embeddings.position_embedding
         _, _, embed_dim = pos_emb.shape
         cls_emb = pos_emb[:, :1, :]
-        pos_emb = pos_emb[:, 1:, :].reshape([1, old_size // patch_size, old_size // patch_size, -1]).transpose([0, 3, 1, 2])
+        pos_emb = (
+            pos_emb[:, 1:, :].reshape([1, old_size // patch_size, old_size // patch_size, -1]).transpose([0, 3, 1, 2])
+        )
         pos_emb = F.interpolate(
             pos_emb.astype("float32"),
             size=(new_size // patch_size, new_size // patch_size),
@@ -315,7 +321,9 @@ class InternVisionModel(PretrainedModel):
         return_dict: Optional[bool] = None,
         pixel_embeds: Optional[paddle.Tensor] = None,
     ) -> Union[Tuple, BaseModelOutputWithPooling]:
-        output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if pixel_values is None and pixel_embeds is None:

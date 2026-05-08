@@ -12,7 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from . import configuration, configuration_intern_vit, configuration_internvl_chat, modeling, modeling_intern_vit, modeling_internvl_chat, processing, processor
+from . import (
+    configuration,
+    configuration_intern_vit,
+    configuration_internvl_chat,
+    modeling,
+    modeling_intern_vit,
+    modeling_internvl_chat,
+    processing,
+    processor,
+)
 from .configuration import *
 from .configuration_intern_vit import *
 from .configuration_internvl_chat import *
