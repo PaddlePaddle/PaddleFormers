@@ -2,6 +2,8 @@ name: Model Unittest GPU CI
 
 on:
   pull_request:
+  schedule:
+    - cron: '0 16 * * *'  # 毎日凌晨1:00 JST
   workflow_dispatch:
     inputs:
       update_baseline_models:
