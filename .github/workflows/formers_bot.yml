@@ -9,7 +9,6 @@ on:
     types: [opened, assigned]
   pull_request_review:
     types: [submitted]
-
 jobs:
   formers:
     if: |

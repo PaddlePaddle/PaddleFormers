@@ -414,9 +414,13 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     f"{prefix}.self_attn.q_b_proj.weight^T -> {prefix_offset}.self_attn.q_b_proj.weight",
                     f"{prefix}.self_attn.kv_a_proj_with_mqa.weight^T -> {prefix_offset}.self_attn.kv_a_proj_with_mqa.weight",
                     f"{prefix}.self_attn.kv_b_proj.weight^T -> {prefix_offset}.self_attn.kv_b_proj.weight",
-                    f"{prefix}.self_attn.q_a_layernorm.weight -> {prefix_offset}.self_attn.q_a_layernorm.weight",
-                    f"{prefix}.self_attn.kv_a_layernorm.weight -> {prefix_offset}.self_attn.kv_a_layernorm.weight",
                 ]
+                if config.use_qk_norm:
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.self_attn.q_a_layernorm.weight -> {prefix_offset}.self_attn.q_a_layernorm.weight",
+                        f"{prefix}.self_attn.kv_a_layernorm.weight -> {prefix_offset}.self_attn.kv_a_layernorm.weight",
+                    ]
+
             else:
                 if config.use_qk_norm:
                     aoa_config["aoa_statements"] += [
@@ -482,8 +486,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(num_experts):
-                    ep_weight1.append(f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight")
-                    ep_weight2.append(f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight")
+                    ep_weight1.append(f"{prefix}.mlp.experts.{expert_id}.up_gate_proj.weight")
+                    ep_weight2.append(f"{prefix}.mlp.experts.{expert_id}.down_proj.weight")
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 aoa_config["aoa_statements"] += [
@@ -595,9 +599,12 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     f"{prefix_offset}.self_attn.q_b_proj.weight^T -> {prefix}.self_attn.q_b_proj.weight",
                     f"{prefix_offset}.self_attn.kv_a_proj_with_mqa.weight^T -> {prefix}.self_attn.kv_a_proj_with_mqa.weight",
                     f"{prefix_offset}.self_attn.kv_b_proj.weight^T -> {prefix}.self_attn.kv_b_proj.weight",
-                    f"{prefix_offset}.self_attn.q_a_layernorm.weight -> {prefix}.self_attn.q_a_layernorm.weight",
-                    f"{prefix_offset}.self_attn.kv_a_layernorm.weight -> {prefix}.self_attn.kv_a_layernorm.weight",
                 ]
+                if config.use_qk_norm:
+                    aoa_statements += [
+                        f"{prefix_offset}.self_attn.q_a_layernorm.weight -> {prefix}.self_attn.q_a_layernorm.weight",
+                        f"{prefix_offset}.self_attn.kv_a_layernorm.weight -> {prefix}.self_attn.kv_a_layernorm.weight",
+                    ]
             else:
                 if config.use_qk_norm:
                     aoa_statements += [
@@ -631,8 +638,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
-                    ep_weight1.append(f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight")
-                    ep_weight2.append(f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight")
+                    ep_weight1.append(f"{prefix}.mlp.experts.{expert_id}.up_gate_proj.weight")
+                    ep_weight2.append(f"{prefix}.mlp.experts.{expert_id}.down_proj.weight")
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 aoa_statements += [

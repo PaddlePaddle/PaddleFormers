@@ -68,7 +68,7 @@ class KimiK2PretrainedModel(PretrainedModel):
         # layer 0 config.first_k_dense_replace
         aoa_config["aoa_statements"] += [
             "model.layers.0.mlp.down_proj.weight^T -> model.layers.0.mlp.down_proj.weight",
-            "model.layers.0.mlp.gate_proj.weight^T ,model.layers.0.mlp.up_proj.weight^T ->  model.layers.0.mlp.up_gate_proj.weight, axis=1",
+            "model.layers.0.mlp.gate_proj.weight^T ,model.layers.0.mlp.up_proj.weight^T ->  model.layers.0.mlp.up_gate_proj.weight, fused_ffn",
         ]
 
         # layer 1 -> num_hidden_layers

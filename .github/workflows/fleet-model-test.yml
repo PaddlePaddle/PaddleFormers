@@ -748,3 +748,10 @@ jobs:
           set +e
           docker exec -t ${{ env.container_name }} /bin/bash -c 'rm -rf * .[^.]*'
           docker rm -f ${{ env.container_name }}
+  formers-bot:
+    needs: [check-bypass, check_documents_type, integration-test-H20-single-card, integration-test-H20-multi-card, integration-test-a100]
+    if: "always() && needs['check-bypass'].outputs.can-skip == 'false' && needs.check_documents_type.outputs.is_md_only == 'false' && (needs['integration-test-H20-single-card'].result == 'failure' || needs['integration-test-H20-multi-card'].result == 'failure' || needs['integration-test-a100'].result == 'failure')"
+    uses: ./.github/workflows/_bot_log_analysis.yml
+    with:
+      ci_result: "failure"
+    secrets: inherit

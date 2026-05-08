@@ -20,6 +20,7 @@ import json
 import multiprocessing
 import os
 import random
+import re
 import time
 from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
@@ -224,13 +225,9 @@ def get_fused_param_mappings(optimizer, manipulated_state_dict):
         index += 1
 
     if is_muon:
-        sharding_rank = optimizer._sharding_rank
-        local_2d_params = list(optimizer._rank2params_2d.get(sharding_rank, []))
-        if optimizer._moe_sharding_world_size > 1:
-            local_2d_moe = list(optimizer._rank2params_2d_moe.get(optimizer._moe_sharding_rank, []))
-        else:
-            local_2d_moe = list(optimizer._rank2params_2d_moe.get(0, []))
-        local_2d_params.extend(local_2d_moe)
+        local_2d_params = []
+        for param in optimizer._local_2d:
+            local_2d_params.extend(param)
 
         local_2d_name_to_param = {p.name: p for p in local_2d_params}
 
@@ -386,6 +383,8 @@ class ZeroCostCheckpointEMAProcessor:
                 shape = tensor_meta["shape"]
                 name = tensor_meta["name"]
                 buffer_index = tensor_meta["buffer_index"]
+                if buffer_index not in self.ema_buffer_model_params:
+                    continue  # non fp32 has no `self.ema_buffer_model_params`
                 if buffer_index.startswith("unshard_"):
                     # unshard_ type tensors use the entire buffer directly
                     tensor = self.ema_buffer_model_params[buffer_index].clone()
@@ -393,8 +392,6 @@ class ZeroCostCheckpointEMAProcessor:
                     tensor.name = name
                     ema_state_dict[k] = tensor
                     continue
-                if buffer_index not in self.ema_buffer_model_params:
-                    continue  # non fp32 has no `self.ema_buffer_model_params`
                 start = tensor_meta["start"]
                 end = tensor_meta["end"]
                 cpu_buffer = self.ema_buffer_model_params[buffer_index]
@@ -416,6 +413,8 @@ class ZeroCostCheckpointEMAProcessor:
     def load_ema_state_dict(self, state_dict):
         for k, tensor_meta in self.param_fusion_storage_helper.model_weights_metas.items():
             logger.info(f"[ZCC EMA] load model weight key={k}")
+            if tensor_meta["buffer_index"] not in self.ema_buffer_model_params:
+                continue  # non fp32 has no `self.ema_buffer_model_params`
             if tensor_meta["buffer_index"].startswith("unshard_"):
                 # unshard_ type tensors use the entire buffer directly
                 if k in state_dict:
@@ -423,8 +422,6 @@ class ZeroCostCheckpointEMAProcessor:
                 continue
             start = tensor_meta["start"]
             end = tensor_meta["end"]
-            if tensor_meta["buffer_index"] not in self.ema_buffer_model_params:
-                continue  # non fp32 has no `self.ema_buffer_model_params`
             if k in state_dict:
                 cpu_buffer = self.ema_buffer_model_params[tensor_meta["buffer_index"]]
                 tensor = state_dict[k].flatten()
@@ -494,6 +491,17 @@ class ParamFusionStorageHelper:
         return (cuda_buffer, cpu_buffer)
 
     @imperative_base.no_grad()
+    def sync_unshard_buffers(self):
+        synced_buffer_indices = set()
+        for tensor_meta in self.model_weights_metas.values():
+            buffer_index = tensor_meta["buffer_index"]
+            if not buffer_index.startswith("unshard_") or buffer_index in synced_buffer_indices:
+                continue
+            cuda_buffer, cpu_buffer = self.inited_buffers[buffer_index]
+            cpu_buffer.set_value(cuda_buffer.cpu())
+            synced_buffer_indices.add(buffer_index)
+
+    @imperative_base.no_grad()
     def sync_partial_param(self, numel_to_sync):
         assert (
             self.current_offloaded_numel + numel_to_sync <= self.all_param_numel
@@ -537,6 +545,7 @@ class ParamFusionStorageHelper:
 
     def wait_all(self):
         if len(self.tasks) == 0:
+            self.sync_unshard_buffers()
             return
         last_task = self.tasks.pop(-1)
         while len(self.tasks) > 0:
@@ -546,6 +555,7 @@ class ParamFusionStorageHelper:
             else:
                 task.cuda_wait()
         last_task.cpu_wait()
+        self.sync_unshard_buffers()
         self.current_offloaded_numel = 0
 
     def state_dict(self):
@@ -697,11 +707,8 @@ class ZeroCostCheckpointCallback(TrainerCallback):
         sharding_rank = optimizer._sharding_rank
 
         local_2d_names = set()
-        for p in optimizer._rank2params_2d.get(sharding_rank, []):
-            local_2d_names.add(p.name)
-        moe_rank = optimizer._moe_sharding_rank if optimizer._moe_sharding_world_size > 1 else 0
-        for p in optimizer._rank2params_2d_moe.get(moe_rank, []):
-            local_2d_names.add(p.name)
+        for param in optimizer._local_2d:
+            local_2d_names.add(param.name)
 
         all_2d_names = set()
         for color_params in optimizer._params_2d_by_color.values():
@@ -1732,6 +1739,9 @@ def saved_ckptmeta(state_dict, ckpt_file_name, process_group=None, replicate_sav
             is_flattened = val.is_flattened
             flattened_range = val.flattened_range
 
+            if (flattened_range is not None) and (flattened_range.stop - flattened_range.start <= 0):
+                continue
+
             local_tensor_dtype = str(local_tensor.dtype).split(".")[1]
             if flattened_range is not None:
                 flattened_range = (flattened_range.start, flattened_range.stop)
@@ -1865,13 +1875,9 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
     def _muon_manipulate_sharded_state_dict(self, model, optimizer):
         sharded_state_dict = dict(sorted(model.sharded_state_dict().items()))
         sharding_rank = optimizer._sharding_rank
-
         local_2d_names = set()
-        for p in optimizer._rank2params_2d.get(sharding_rank, []):
-            local_2d_names.add(p.name)
-        moe_rank = optimizer._moe_sharding_rank if optimizer._moe_sharding_world_size > 1 else 0
-        for p in optimizer._rank2params_2d_moe.get(moe_rank, []):
-            local_2d_names.add(p.name)
+        for param in optimizer._local_2d:
+            local_2d_names.add(param.name)
 
         all_2d_names = set()
         for color_params in optimizer._params_2d_by_color.values():
@@ -1889,7 +1895,7 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
             elif static_name in all_1d_names:
                 filtered[k] = sw
             else:
-                if sharding_rank == 0:
+                if sharding_rank == 0 or self.args.replicate_saved_into_local:
                     filtered[k] = sw
 
         inner_opt = optimizer._inner_opt
@@ -1951,8 +1957,16 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
             replicate_saved_into_local=self.args.replicate_saved_into_local,
         )
 
+        grouped_gemm_params = set()
+        model_sharded_state_dict = model.sharded_state_dict()
+        for k, v in model_sharded_state_dict.items():
+            if getattr(v, "grouped_gemm_param", False):
+                grouped_gemm_params.add(k)
+
+        self.grouped_gemm_params = grouped_gemm_params if _is_muon_sharding_optimizer(optimizer) else set()
+
         # opt state dict ckpt meta and filter
-        opt_state_dict_tmp = optimizer.sharded_state_dict(model.sharded_state_dict())
+        opt_state_dict_tmp = optimizer.sharded_state_dict(model_sharded_state_dict)
 
         opt_state_dict = {}
         master_weights = {}
@@ -2070,6 +2084,7 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
 
         dynamic_objecs["unified_name_mapping"] = self.unified_name_mapping
         dynamic_objecs["param_slice_info"] = self.param_slice_info
+        dynamic_objecs["grouped_gemm_params"] = self.grouped_gemm_params
 
         return dynamic_objecs
 
@@ -2110,6 +2125,7 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
         self.opt_state_filter = dynamic_objecs["opt_state_filter"]
         self.master_weight_ckpt_meta = dynamic_objecs["master_weight_ckpt_meta"]
         self.master_weights_filter = dynamic_objecs["master_weights_filter"]
+        self.grouped_gemm_params = dynamic_objecs["grouped_gemm_params"]
 
         self.unified_name_mapping = dynamic_objecs["unified_name_mapping"]
         self.param_slice_info = dynamic_objecs["param_slice_info"]
@@ -2154,14 +2170,21 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
     def _slice_padded_tensor(static_dict, param_slice_info):
         new_static_dict = {}
         for k, v in static_dict.items():
-            if k in param_slice_info:
+            if k in param_slice_info and v._numel() > 1:
                 logger.info(f"[ZCC worker] Slice padded tensor of {k}")
                 flattened_range = param_slice_info[k]
+                flattened_end = flattened_range.stop
+                flattened_start = flattened_range.start
+                if flattened_end - flattened_start <= 0:
+                    logger.info(
+                        f"[ZCC worker] Empty padded tensor slice | tensor={k} | range=({flattened_start}, {flattened_end}), will be skipped."
+                    )
+                    continue
                 new_static_dict[k] = paddle.slice(
                     v,
                     axes=[0],
                     starts=[0],
-                    ends=[flattened_range.stop - flattened_range.start],
+                    ends=[flattened_end - flattened_start],
                 )
             else:
                 new_static_dict[k] = v
@@ -2215,6 +2238,20 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
             logger.info("[ZCC worker] opt state dict filter by opt_state_filter complete.")
             master_weights = self._filter_state_dict(master_weights, self.master_weights_filter)
             logger.info("[ZCC worker] master weights dict filter by master_weights_filter complete.")
+
+            def _extract_struct_name(key):
+                match = re.match(r"^(.*)\.(moment1_0|moment2_0)$", key)
+                return match.group(1) if match else None
+
+            if self.grouped_gemm_params and len(self.grouped_gemm_params) > 0:
+                for k, v in opt_state_dict.items():
+                    struct_name = _extract_struct_name(k)
+                    if struct_name is not None and struct_name in self.grouped_gemm_params:
+                        origin_shape = v.shape
+                        opt_state_dict[k] = v.reshape((-1, v.shape[-1]))
+                        logger.info(
+                            f"[ZCC worker] {k} with shape {origin_shape} is reshaped to {opt_state_dict[k].shape}."
+                        )
 
             logger.debug(f"opt states length is {len(opt_state_dict)}")
             logger.debug(f"master weights length is {len(master_weights)}")
