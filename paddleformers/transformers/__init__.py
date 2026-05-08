@@ -299,6 +299,7 @@ import_structure = {
     "qwen2_vl": [],
     "qwen3_moe": [],
     "qwen3_next": [],
+    "internvl3": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
     "whisper.processor": ["WhisperFeatureExtractor"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
@@ -329,6 +330,10 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "internvl3.configuration": ["InternVisionConfig", "InternVLChatConfig"],
+    "internvl3.modeling": ["InternVisionModel", "InternVLChatModel", "InternVLChatForConditionalGeneration"],
+    "internvl3.processor": ["InternVLProcessor"],
+    "internvl3.processing": ["InternVLProcessor"],
 }
 
 if TYPE_CHECKING:
@@ -404,6 +409,7 @@ if TYPE_CHECKING:
     from .phi3 import *
     from .gemma3_text import *
     from .glm_ocr import *
+    from .internvl3 import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
