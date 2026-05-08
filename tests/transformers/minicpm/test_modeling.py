@@ -14,15 +14,11 @@
 # limitations under the License.
 from __future__ import annotations
 
-import tempfile
 import unittest
 
-import numpy as np
 import paddle
-from parameterized import parameterized
 
 from paddleformers.transformers import MiniCPMConfig, MiniCPMForCausalLM, MiniCPMModel
-from tests.testing_utils import require_package
 
 # from tests.testing_utils import slow
 from tests.transformers.test_configuration_common import ConfigTester
@@ -30,7 +26,6 @@ from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
     GenerationD2STestMixin,
     ModelTesterMixin,
-    ModelTesterPretrainedMixin,
     ids_tensor,
     random_attention_mask,
 )
@@ -328,7 +323,6 @@ class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_model_attention_mask(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_model_attention_mask(*config_and_inputs)
-     
 
     def test_model_position_ids(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
@@ -344,8 +338,6 @@ class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_MiniCPM_gqa_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_gqa_model(*config_and_inputs)
-
-
 
 
 class MiniCPMGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):

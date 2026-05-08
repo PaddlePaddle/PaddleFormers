@@ -61,7 +61,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("glm_ocr", "GlmOcrConfig"),
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
-        ("minicpm", "MiniCPMConfig")
+        ("minicpm", "MiniCPMConfig"),
     ]
 )
 
