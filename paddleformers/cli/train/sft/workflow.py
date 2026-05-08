@@ -65,7 +65,6 @@ from paddleformers.transformers.configuration_utils import (
     LlmMetaConfig,
     QuantizationConfig,
 )
-from paddleformers.utils.import_utils import is_paddlefleet_available
 from paddleformers.utils.log import logger
 
 from .make_data_utils import DataGenerator
@@ -214,9 +213,6 @@ def run_sft(
     training_args.model_name_or_path = model_args.model_name_or_path
     training_args.download_hub = model_args.download_hub
     training_args.copy_custom_file_list = model_args.copy_custom_file_list
-    if is_paddlefleet_available() and model_args.lora and training_args.moe_token_dispatcher_type == "deepep":
-        logger.warning("For PaddleFleet, moe_use_fusion_node should False when using LoRA.")
-        training_args.moe_use_fusion_node = False
 
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
@@ -295,11 +291,6 @@ def run_sft(
     # (Liuting) Not support acc calculation now due to MTP.
     if "DeepseekV3" in str(model_config.architectures):
         training_args.prediction_loss_only = True
-
-    if "qwen3_vl" in model_config.model_type and not model_args.lora:
-        if training_args.sequence_parallel:
-            logger.warning("Qwen3VL model do not support `sequence_parallel` yet, temporarily set to False")
-        training_args.sequence_parallel = False
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
@@ -446,15 +437,17 @@ def run_sft(
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
         "dataset_type": data_args.dataset_type,
-        "truncation_strategy": data_args.truncation_strategy,
         "dtype": compute_type,
         "dataset_num_proc": finetuning_args.dataset_num_proc,
         "binpacking": data_args.binpacking,
         "packing_interval": data_args.packing_interval,
+        "packed_idx_cache_dir": data_args.packed_idx_cache_dir,
         "dataloader_num_workers": training_args.dataloader_num_workers,
         "template": data_args.template,
         "tool_format": None,
         "default_system": None,
+        "truncation_strategy": data_args.truncation_strategy,
+        "skip_warmup": data_args.skip_warmup,
     }
 
     if dataset_config["template_backend"] == "custom":
@@ -585,10 +578,18 @@ def run_sft(
         )
     elif data_args.dataset_type == "offline":
         train_file_path = os.path.join(data_args.input_dir, "train")
-        train_dataset = create_indexed_dataset(data_file_prefix=train_file_path)
+        train_dataset = create_indexed_dataset(
+            data_file_prefix=train_file_path,
+            skip_warmup=data_args.skip_warmup,
+            warmup_only_rank0=data_args.warmup_only_rank0,
+        )
         if training_args.do_eval:
             eval_file_path = os.path.join(data_args.input_dir, "eval")
-            eval_dataset = create_indexed_dataset(data_file_prefix=eval_file_path)
+            eval_dataset = create_indexed_dataset(
+                data_file_prefix=eval_file_path,
+                skip_warmup=data_args.skip_warmup,
+                warmup_only_rank0=data_args.warmup_only_rank0,
+            )
     else:
         if training_args.should_load_dataset:
             train_dataset = create_dataset_sft(

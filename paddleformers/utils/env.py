@@ -81,7 +81,7 @@ GENERATION_CONFIG_NAME = "generation_config.json"
 
 # Name of the files used for checkpointing
 TRAINING_ARGS_NAME = "training_args.bin"
-TRAINER_STATE_NAME = "trainer_state.json"
+TRAINER_STATE_NAME = "trainer_state.bin"
 MODEL_META_NAME = "model_meta.json"
 SCHEDULER_NAME = "scheduler.pdparams"
 SCALER_NAME = "scaler.pdparams"

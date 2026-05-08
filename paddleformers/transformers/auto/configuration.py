@@ -51,6 +51,8 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("qwen3_vl_moe", "Qwen3VLMoeConfig"),
         ("qwen3_vl_moe_text", "Qwen3VLMoeTextConfig"),
         ("glm4_moe", "Glm4MoeConfig"),
+        ("glm_moe_dsa", "GlmMoeDsaConfig"),
+        ("minimax_m2", "MiniMaxM2Config"),
         ("gpt_oss", "GptOssConfig"),
         ("phi3", "Phi3Config"),
         ("gemma3_text", "Gemma3TextConfig"),
@@ -60,6 +62,8 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("internvl_vision", "InternVLVisionConfig"),
         ("intern_vit_6b", "InternVisionConfig"),
         ("internvl_chat", "InternVLChatConfig"),
+        ("qwen3_5", "Qwen3_5Config"),
+        ("qwen3_5_moe", "Qwen3_5MoEConfig"),
     ]
 )
 
@@ -90,6 +94,8 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("internvl_vision", "InternVLVisionModel"),
         ("intern_vit_6b", "InternVisionModel"),
         ("internvl_chat", "InternVLChatModel"),
+        ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
+        ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
     ]
 )
 

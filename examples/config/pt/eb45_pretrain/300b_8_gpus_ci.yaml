@@ -5,9 +5,7 @@ stage: ernie_pretrain
 dataset_type: pretrain
 input_dir: "0.4 ./demo_data/data-1-part0 0.6 ./demo_data/data-1-part0"
 split: "998,1,1"
-data_load_process_num: 40
 max_seq_len: 4096
-base_seq_length: 4096
 dataloader_num_workers: 8
 prefetch_factor: 32
 ignore_data_skip: 0
@@ -23,10 +21,8 @@ use_moe: true
 # train
 output_dir: ./output/
 num_consecutive: 32
-enable_global_training_logs: False
 global_logging_interval: 10
 enable_mtp_magic_send: True
-use_sp_callback: true
 moe_gate_lr_ratio: 0.01
 do_train: True
 overwrite_output_dir: 1
@@ -56,12 +52,10 @@ fp16_opt_level: "O2"
 use_fp8: False
 scale_loss: 4096
 seed: 666
-use_train_part_sharding: 1
 tensorwise_offload_optimizer: True
 pipeline_model_parallel_size: 2
 tensor_model_parallel_size: 1
 virtual_pipeline_model_parallel_size: 1
-data_parallel_size: 1
 use_expert_parallel: True
 expert_model_parallel_size: 4
 sharding: "stage1"
@@ -88,7 +82,6 @@ save_sharded_model: True
 ignore_load_lr_and_optim: False
 metrics_output_path: ./output/paddle_distributed_logs/
 log_global_grad_norm: True
-enable_optimizer_timer: False
 gc_interval: 100000
 
 # ernie_model_config

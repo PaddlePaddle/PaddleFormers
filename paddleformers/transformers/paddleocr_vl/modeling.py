@@ -235,6 +235,10 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
         self.position_embedding = GeneralEmbedding.create(
             config=config, num_embeddings=self.num_positions, embedding_dim=self.embed_dim
         )
+        # revert packing_position_embedding for vLLM inference compatibility
+        self.packing_position_embedding = GeneralEmbedding.create(
+            config=config, num_embeddings=32768, embedding_dim=self.embed_dim
+        )
 
         self.register_buffer(
             "position_ids",
@@ -1354,6 +1358,7 @@ class Ernie4_5PretrainedModel(PretrainedModel):
             f"visual.vision_model.embeddings.patch_embedding.weight -> {visual_prefix}embeddings.patch_embedding.weight",
             f"visual.vision_model.embeddings.patch_embedding.bias -> {visual_prefix}embeddings.patch_embedding.bias",
             f"visual.vision_model.embeddings.position_embedding.weight -> {visual_prefix}embeddings.position_embedding.weight",
+            f"visual.vision_model.embeddings.packing_position_embedding.weight -> {visual_prefix}embeddings.packing_position_embedding.weight",
             f"visual.vision_model.encoder.layers.$LAYER_ID.self_attn.out_proj.weight^T -> {visual_prefix}encoder.layers.$LAYER_ID.self_attn.out_proj.weight",
             f"visual.vision_model.encoder.layers.$LAYER_ID.self_attn.out_proj.bias -> {visual_prefix}encoder.layers.$LAYER_ID.self_attn.out_proj.bias",
             f"visual.vision_model.encoder.layers.$LAYER_ID.layer_norm1.weight -> {visual_prefix}encoder.layers.$LAYER_ID.layer_norm1.weight",
@@ -1436,6 +1441,7 @@ class Ernie4_5PretrainedModel(PretrainedModel):
             f"{visual_prefix}embeddings.patch_embedding.weight -> visual.vision_model.embeddings.patch_embedding.weight",
             f"{visual_prefix}embeddings.patch_embedding.bias -> visual.vision_model.embeddings.patch_embedding.bias",
             f"{visual_prefix}embeddings.position_embedding.weight -> visual.vision_model.embeddings.position_embedding.weight",
+            f"{visual_prefix}embeddings.packing_position_embedding.weight -> visual.vision_model.embeddings.packing_position_embedding.weight",
             f"{visual_prefix}encoder.layers.$LAYER_ID.self_attn.out_proj.weight^T -> visual.vision_model.encoder.layers.$LAYER_ID.self_attn.out_proj.weight",
             f"{visual_prefix}encoder.layers.$LAYER_ID.self_attn.out_proj.bias -> visual.vision_model.encoder.layers.$LAYER_ID.self_attn.out_proj.bias",
             f"{visual_prefix}encoder.layers.$LAYER_ID.layer_norm1.weight -> visual.vision_model.encoder.layers.$LAYER_ID.layer_norm1.weight",

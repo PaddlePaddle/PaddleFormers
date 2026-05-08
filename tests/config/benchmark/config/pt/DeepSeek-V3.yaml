@@ -25,7 +25,7 @@ max_steps: 10
 per_device_train_batch_size: 1
 per_device_eval_batch_size: 1
 gradient_accumulation_steps: 16
-global_batch_size: 512
+global_batch_size: 32
 learning_rate: 0.000022
 min_lr: 0.00000073333
 warmup_steps: 30
@@ -42,11 +42,11 @@ amp_master_grad: true
 
 ### parallel
 tensor_model_parallel_size: 1
-pipeline_model_parallel_size: 2
+pipeline_model_parallel_size: 4
 virtual_pipeline_model_parallel_size: 1
 sharding: stage1
-sharding_parallel_size: 32
-expert_model_parallel_size: 32
+sharding_parallel_size: 2
+expert_model_parallel_size: 2
 sequence_parallel: 0
 data_parallel_size: 1
 

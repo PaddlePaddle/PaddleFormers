@@ -4,7 +4,11 @@ on:
   pull_request:
     types: [opened, synchronize]
     branches: [develop, release/**]
-permissions: read-all
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  id-token: write
 
 concurrency:
   group: ${{ github.event.pull_request.number }}-${{ github.workflow }}
@@ -113,4 +117,10 @@ jobs:
           python -m pytest -v -s --tb=short scripts/iluvatar_ci/
           echo "============================All tests passed============================"
           rm -rf baidu/
-          
+  formers-bot:
+    needs: [iluvatar_test]
+    if: "always() && needs.iluvatar_test.result == 'failure'"
+    uses: ./.github/workflows/_bot_log_analysis.yml
+    with:
+      ci_result: ${{ needs.iluvatar_test.result }}
+    secrets: inherit

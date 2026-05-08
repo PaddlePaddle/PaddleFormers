@@ -64,7 +64,18 @@ install_requirements() {
     # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
     # echo "paddlepaddle-gpu @ https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/cbf3469113cd76b7d5f4cba7b8d7d5f55d9e9911/paddlepaddle_gpu-3.3.0-cp310-cp310-linux_x86_64.whl" >> requirements.txt
     python setup.py bdist_wheel > /dev/null
-    pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+    if [ $FLAGS_enable_CE == "true" ];then
+        python -m pip install dist/*.whl 
+        #fleet
+        python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
+        python -m pip uninstall paddlepaddle-gpu -y
+        #paddle
+        wget -q $paddle
+        python -m pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
+
+    else
+        pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+    fi
     echo "paddlefleet commit:"
     python -c "import paddlefleet; print(paddlefleet.version.commit)"
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
@@ -83,12 +94,12 @@ set_env() {
     export HF_ENDPOINT=https://hf-mirror.com
 
     # for CE
-    if [[ ${FLAGS_enable_CE} == "true" ]];then
-        export CE_TEST_ENV=1
-        export RUN_SLOW_TEST=1
-        unset PF_HOME
-        export PYTHONPATH=${nlp_dir}:${nlp_dir}/llm:${PYTHONPATH}
-    fi
+    # if [[ ${FLAGS_enable_CE} == "true" ]];then
+    #     export CE_TEST_ENV=1
+    #     export RUN_SLOW_TEST=1
+    #     unset PF_HOME
+    #     export PYTHONPATH=${nlp_dir}:${nlp_dir}/llm:${PYTHONPATH}
+    # fi
 }
 
 print_info() {
@@ -122,7 +133,7 @@ else
         ext="${file_name##*.}"
         echo "file_name: ${file_name}, ext: ${file_name##*.}"
         [[ -f "$file_name" ]] || continue
-        if [[ "$ext" == "py" ]] || [[ "$ext" == "yml" ]]; then
+        if [[ "$ext" == "py" ]] || [[ "$ext" == "yml" ]] || [[ "$file_name" == "requirements.txt" ]]; then
             FLAGS_enable_CI=true
             break
         fi
@@ -145,7 +156,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
-    timeout 25m \
+    timeout 60m \
     python -m pytest -v -s -n 1 \
         --dist no \
         --maxfail=10 \

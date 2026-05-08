@@ -42,7 +42,7 @@ router_aux_loss_coef: 0.001
 # parallel
 tensor_model_parallel_size: 4
 pipeline_model_parallel_size: 1
-sequence_parallel: true
+sequence_parallel: false
 sharding: stage1
 # performance
 recompute_granularity: full
@@ -91,3 +91,4 @@ prefetch_factor: 8
 # num_hidden_layers: 38
 freeze_config: freeze_vision freeze_aligner
 tensorwise_offload_optimizer: true
+high_precision_rope: true
