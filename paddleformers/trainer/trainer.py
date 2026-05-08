@@ -2103,6 +2103,10 @@ class Trainer:
 
                     if not self.args.enable_auto_parallel:
                         with sync_context:
+                            # Update CURRENT_STEP in qwen2_moe modeling so the h1_normed_grad
+                            # hook reads/writes the correct per-step sync directory.
+                            from paddleformers.transformers.qwen2_moe import modeling as _qwen2_moe_modeling
+                            _qwen2_moe_modeling.CURRENT_STEP = self.state.global_step + 1
                             if "step_control" in inspect.signature(self.training_step).parameters:
                                 tr_loss_step = self.training_step(model, inputs, step_control=step_control)
                             else:
