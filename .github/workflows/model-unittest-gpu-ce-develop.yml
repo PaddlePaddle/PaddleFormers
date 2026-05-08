@@ -49,6 +49,11 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 # concurrency:
 #   group: model-unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
 #   cancel-in-progress: true
@@ -344,7 +349,7 @@ jobs:
             bos_prefix="schedule/$(date +%Y%m%d)"
           fi
           echo "bos_prefix=${bos_prefix}"
-          wget --no-proxy \
+          wget -q --no-proxy \
             https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/report.tar.gz \
             --no-check-certificate
           tar -xzf report.tar.gz
