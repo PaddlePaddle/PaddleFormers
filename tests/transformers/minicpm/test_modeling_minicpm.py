@@ -317,63 +317,27 @@ class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         return config, input_ids, attention_mask, max_length
 
     def test_model(self):
-        pass
-        # config_and_inputs = self.model_tester.prepare_config_and_inputs()
-        # self.model_tester.create_and_check_model(*config_and_inputs)
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_model(*config_and_inputs)
 
     def test_model_attention_mask(self):
-        # config_and_inputs = self.model_tester.prepare_config_and_inputs()
-        # self.model_tester.create_and_check_model_attention_mask(*config_and_inputs)
-        pass
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_model_attention_mask(*config_and_inputs)
 
     def test_model_position_ids(self):
-        pass
-        # config_and_inputs = self.model_tester.prepare_config_and_inputs()
-        # self.model_tester.check_model_position_ids(*config_and_inputs)
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.check_model_position_ids(*config_and_inputs)
 
     def test_generate_without_input_ids(self):
-        # this requires 4-D attention mask logic, which is not supported yet
         pass
-
     def test_MiniCPM_lm_head_model(self):
-        pass
-        # config_and_inputs = self.model_tester.prepare_config_and_inputs()
-        # self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
 
     def test_MiniCPM_gqa_model(self):
-        pass
-        # config_and_inputs = self.model_tester.prepare_config_and_inputs()
-        # self.model_tester.create_and_check_gqa_model(*config_and_inputs)
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_gqa_model(*config_and_inputs)
 
-    def test_attention_outputs(self):
-        pass
-
-    def test_beam_search_generate(self):
-        pass
-
-    def test_greedy_generate(self):
-        pass
-
-    def test_group_beam_search_generate(self):
-        pass
-
-    def test_resize_tokens_embeddings(self):
-        pass
-
-    def test_sample_generate(self):
-        pass
-
-    def test_determinism(self):
-        pass
-
-    def test_model_name_list(self):
-        pass
-
-    def test_save_load(self):
-        pass
-
-    def test_hidden_states_output(self):
-        pass
 
 
 class MiniCPMGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
