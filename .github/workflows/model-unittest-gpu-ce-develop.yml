@@ -344,7 +344,7 @@ jobs:
             bos_prefix="schedule/$(date +%Y%m%d)"
           fi
           echo "bos_prefix=${bos_prefix}"
-          wget -q --no-proxy \
+          wget --no-proxy \
             https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/report.tar.gz \
             --no-check-certificate
           tar -xzf report.tar.gz -C /workspace/PaddleFormers/
