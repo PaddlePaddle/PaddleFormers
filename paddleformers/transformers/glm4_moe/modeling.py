@@ -62,6 +62,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     bias_activation_fusion: bool = True
 
     transform_rules = {
+        **GPTModelProvider.transform_rules,
         "dtype": "params_dtype",
     }
 
