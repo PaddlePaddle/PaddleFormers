@@ -282,6 +282,13 @@ import_structure = {
         "Qwen3NextForCausalLMPipe",
         "Qwen3NextPretrainingCriterion",
     ],
+    "molmo.configuration": ["MolmoConfig"],
+    "molmo.modeling": [
+        "MolmoModel",
+        "MolmoPretrainedModel",
+        "MolmoForCausalLM",
+        "MolmoForCausalLMPipe",
+    ],
     "llama": [],
     "qwen2": [],
     "glm_ocr": [],
@@ -295,6 +302,7 @@ import_structure = {
     "qwen3_vl": [],
     "qwen3_5": [],
     "qwen3_vl_moe": [],
+    "molmo": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
@@ -410,6 +418,7 @@ if TYPE_CHECKING:
     from .phi3 import *
     from .gemma3_text import *
     from .glm_ocr import *
+    from .molmo import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
