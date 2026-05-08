@@ -330,6 +330,7 @@ class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 
     def test_generate_without_input_ids(self):
         pass
+
     def test_MiniCPM_lm_head_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
@@ -337,7 +338,6 @@ class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_MiniCPM_gqa_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_gqa_model(*config_and_inputs)
-
 
 
 class MiniCPMGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
