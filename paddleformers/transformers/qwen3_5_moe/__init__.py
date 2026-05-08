@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "configuration": ["Qwen3_5VisionConfig", "Qwen3_5Config"],
-    "modeling": ["Qwen3_5VisionModel", "Qwen3_5ForConditionalGeneration"],
+    "configuration": ["Qwen3_5MoEVisionConfig"],
+    "modeling": ["Qwen3_5MoEForConditionalGeneration"],
 }
 
 if TYPE_CHECKING:

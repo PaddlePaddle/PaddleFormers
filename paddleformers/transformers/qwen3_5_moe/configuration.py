@@ -21,8 +21,8 @@ from ..configuration_utils import PretrainedConfig, layer_type_validation
 from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 
-class Qwen3_5VisionConfig(PretrainedConfig):
-    model_type = "qwen3_5"
+class Qwen3_5MoEVisionConfig(PretrainedConfig):
+    model_type = "qwen3_5_moe"
     base_config_key = "vision_config"
 
     def __init__(
@@ -57,7 +57,7 @@ class Qwen3_5VisionConfig(PretrainedConfig):
         self.initializer_range = initializer_range
 
 
-class Qwen3_5TextConfig(PretrainedConfig):
+class Qwen3_5MoETextConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`Qwen3_5TextModel`]. It is used to instantiate a
     Qwen3-VL model according to the specified arguments, defining the model architecture.
@@ -231,7 +231,7 @@ class Qwen3_5TextConfig(PretrainedConfig):
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
 
-class Qwen3_5Config(PretrainedConfig):
+class Qwen3_5MoEConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`Qwen3VLMoeModel`]. It is used to instantiate a
     Qwen3-VL model according to the specified arguments, defining the model architecture.
@@ -263,8 +263,8 @@ class Qwen3_5Config(PretrainedConfig):
     >>> configuration = model.config
     ```"""
 
-    model_type = "qwen3_5"
-    sub_configs = {"vision_config": Qwen3_5VisionConfig, "text_config": Qwen3_5TextConfig}
+    model_type = "qwen3_5_moe"
+    sub_configs = {"vision_config": Qwen3_5MoEVisionConfig, "text_config": Qwen3_5MoETextConfig}
     keys_to_ignore_at_inference = ["past_key_values"]
 
     def __init__(
@@ -322,4 +322,4 @@ class Qwen3_5Config(PretrainedConfig):
         return super().__getattribute__(key)
 
 
-__all__ = ["Qwen3_5VisionConfig", "Qwen3_5TextConfig", "Qwen3_5Config"]
+__all__ = ["Qwen3_5MoEVisionConfig", "Qwen3_5MoETextConfig", "Qwen3_5MoEConfig"]
