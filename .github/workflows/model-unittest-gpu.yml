@@ -27,6 +27,7 @@ on:
           - 'qwen3_vl'
           - 'qwen3_vl_moe'
           - 'qwen2_5_vl' 
+          - 'deepseek_v3'
   workflow_call:
     inputs:
       runner:
