@@ -3234,6 +3234,7 @@ class Trainer:
                 "muon_extra_scale_factor": args.muon_extra_scale_factor,
                 "ns_steps": args.muon_ns_steps,
                 "ns_coeff_type": args.muon_ns_coeff_type,
+                "ns_coeffs": args.muon_ns_coeffs,
             }
             optimizer_cls = Muon
             optimizer_kwargs.update(muon_kwargs)

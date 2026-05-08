@@ -1643,8 +1643,20 @@ class TrainingArguments:
         metadata={
             "help": (
                 "Coefficient type for Newton-Schulz iteration in Muon optimizer. "
-                "Options: 'simple', 'quintic', 'polar_express', 'aol'. "
-                "Default: 'simple'. Only used when optim=muon."
+                "Options: 'simple', 'quintic', 'polar_express', 'aol', 'deepseekv4', 'custom'. "
+                "Ignored when muon_ns_coeffs is provided. "
+                "Default: 'quintic'. Only used when optim=muon."
+            )
+        },
+    )
+    muon_ns_coeffs: Optional[List[List[float]]] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Custom Newton-Schulz coefficient list for Muon optimizer. "
+                "Each element is a list/tuple of [a, b, c]. "
+                "Example: [[3.4445, -4.7750, 2.0315], [2.5, -2.0, 0.8]]. "
+                "Default: None. Only used when optim=muon, muon_ns_coeff_type='custom'."
             )
         },
     )
