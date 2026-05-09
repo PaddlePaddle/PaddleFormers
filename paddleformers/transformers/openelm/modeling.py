@@ -861,6 +861,120 @@ class OpenELMForCausalLM(OpenELMPreTrainedModel):
         )
         return model_inputs
 
+    @classmethod
+    def _gen_aoa_config(cls, config: OpenELMConfig):
+        """Generate AOA (Auto-Optimized Architecture) config for flex_checkpoint loading.
+
+        Maps HuggingFace safetensors weight names to PaddlePaddle weight names.
+        Since OpenELM uses the same naming convention in both frameworks
+        (base_model_prefix='transformer'), the source and target keys are identical.
+        The ^T suffix indicates weights that need transposition (Linear layer weights).
+
+        Args:
+            config: OpenELMConfig instance.
+
+        Returns:
+            Dict with 'aoa_statements' list of mapping strings.
+        """
+        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+
+        aoa_statements = [
+            # Embedding and final norm
+            f"transformer.token_embeddings.weight -> {model_prefix}token_embeddings.weight",
+            f"transformer.norm.weight -> {model_prefix}norm.weight",
+            # Layer norms
+            f"transformer.layers.$LAYER_ID.attn_norm.weight -> {model_prefix}layers.$LAYER_ID.attn_norm.weight",
+            f"transformer.layers.$LAYER_ID.ffn_norm.weight -> {model_prefix}layers.$LAYER_ID.ffn_norm.weight",
+        ]
+
+        # Attention projections (need transposition for Linear weights)
+        aoa_statements.extend(
+            [
+                f"transformer.layers.$LAYER_ID.attn.{proj_name}.weight^T -> {model_prefix}layers.$LAYER_ID.attn.{proj_name}.weight"
+                for proj_name in ["qkv_proj", "out_proj"]
+            ]
+        )
+
+        # Optional Q/K normalization (normalize_qk_projections=True for OpenELM-1_1B)
+        if config.normalize_qk_projections:
+            aoa_statements.extend(
+                [
+                    f"transformer.layers.$LAYER_ID.attn.{norm_name}.weight -> {model_prefix}layers.$LAYER_ID.attn.{norm_name}.weight"
+                    for norm_name in ["q_norm", "k_norm"]
+                ]
+            )
+
+        # FFN projections (need transposition for Linear weights)
+        aoa_statements.extend(
+            [
+                f"transformer.layers.$LAYER_ID.ffn.{proj_name}.weight^T -> {model_prefix}layers.$LAYER_ID.ffn.{proj_name}.weight"
+                for proj_name in ["proj_1", "proj_2"]
+            ]
+        )
+
+        # LM head or tied embeddings
+        if cls != cls.base_model_class:
+            if config.share_input_output_layers:
+                aoa_statements.append("transformer.token_embeddings.weight -> lm_head.weight")
+            else:
+                aoa_statements.append("lm_head.weight -> lm_head.weight")
+
+        return {"aoa_statements": aoa_statements}
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: OpenELMConfig):
+        """Generate inverse AOA config for saving PaddlePaddle weights to HuggingFace format.
+
+        This is the reverse mapping of _gen_aoa_config.
+
+        Args:
+            config: OpenELMConfig instance.
+
+        Returns:
+            Dict with 'aoa_statements' list of mapping strings.
+        """
+        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+
+        aoa_statements = [
+            # Embedding and final norm
+            f"{model_prefix}token_embeddings.weight -> transformer.token_embeddings.weight",
+            f"{model_prefix}norm.weight -> transformer.norm.weight",
+            # Layer norms
+            f"{model_prefix}layers.$LAYER_ID.attn_norm.weight -> transformer.layers.$LAYER_ID.attn_norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.ffn_norm.weight -> transformer.layers.$LAYER_ID.ffn_norm.weight",
+        ]
+
+        # Attention projections (need transposition)
+        aoa_statements.extend(
+            [
+                f"{model_prefix}layers.$LAYER_ID.attn.{proj_name}.weight^T -> transformer.layers.$LAYER_ID.attn.{proj_name}.weight"
+                for proj_name in ["qkv_proj", "out_proj"]
+            ]
+        )
+
+        # Optional Q/K normalization
+        if config.normalize_qk_projections:
+            aoa_statements.extend(
+                [
+                    f"{model_prefix}layers.$LAYER_ID.attn.{norm_name}.weight -> transformer.layers.$LAYER_ID.attn.{norm_name}.weight"
+                    for norm_name in ["q_norm", "k_norm"]
+                ]
+            )
+
+        # FFN projections (need transposition)
+        aoa_statements.extend(
+            [
+                f"{model_prefix}layers.$LAYER_ID.ffn.{proj_name}.weight^T -> transformer.layers.$LAYER_ID.ffn.{proj_name}.weight"
+                for proj_name in ["proj_1", "proj_2"]
+            ]
+        )
+
+        # LM head or tied embeddings
+        if not config.share_input_output_layers and cls != cls.base_model_class:
+            aoa_statements.append("lm_head.weight -> lm_head.weight")
+
+        return {"aoa_statements": aoa_statements}
+
     @staticmethod
     def _reorder_cache(past_key_values, beam_idx):
         """Reorder cache for beam search."""
