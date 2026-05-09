@@ -772,8 +772,7 @@ class MiniCPMAttention(nn.Layer):
         if self.config.pretraining_tp > 1:
             key_value_slicing = (self.num_key_value_heads * self.head_dim) // self.config.pretraining_tp
             query_slices = _split_tensor(
-                self.q_proj.weight,
-                (self.num_heads * self.head_dim) // self.config.pretraining_tp, dim=0
+                self.q_proj.weight, (self.num_heads * self.head_dim) // self.config.pretraining_tp, dim=0
             )
             key_slices = _split_tensor(self.k_proj.weight, key_value_slicing, dim=0)
             value_slices = _split_tensor(self.v_proj.weight, key_value_slicing, dim=0)
