@@ -1,7 +1,6 @@
 name: Model Unittest GPU CE Develop
 
 on:
-  pull_request: ##for test
   schedule:
     - cron: "0 9 * * 0-4"
     - cron: "0 10 * * 0-4"
@@ -371,21 +370,10 @@ jobs:
             echo "ERROR: report directory not found!"
             exit 1
           fi
-      - name: Generate Summary
+      - name: Deploy to GitHub Pages
         if: always()
-        run: |
-          echo "### 📊 Allure Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "报告已上传到百度 BOS，请使用以下方式查看：" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "1. 在 BOS 中找到最新的 report.tar.gz" >> $GITHUB_STEP_SUMMARY
-          echo "2. 下载后本地解压: \`tar -xzf report.tar.gz\`" >> $GITHUB_STEP_SUMMARY
-          echo "3. 浏览器打开: \`report/index.html\`" >> $GITHUB_STEP_SUMMARY
-      - name: Upload report as artifact
-        if: always()
-        uses: actions/upload-artifact@v4
+        uses: peaceiris/actions-gh-pages@v3
         with:
-          name: allure-report
-          path: ./report
-          retention-days: 90
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./report
       
