@@ -42,6 +42,7 @@ jobs:
               "nepeplwu",
               "lugimzzz",
               "zjjlivein"
+              "From00"
             ];
 
             const { data: reviews } = await github.rest.pulls.listReviews({

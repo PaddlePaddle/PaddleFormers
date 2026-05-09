@@ -21,12 +21,14 @@ from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding
     DygraphShardingOptimizer,
     DygraphShardingOptimizerV2,
 )
+
 try:
     from paddle.distributed.fleet.meta_optimizers.muon_sharding_optimizer import (
         MuonShardingOptimizer,
     )
-except ImportError:
+except (ImportError, ModuleNotFoundError):
     MuonShardingOptimizer = None
+
 from paddle.distributed.fleet.utils.log_util import logger
 
 from paddleformers.utils.tools import get_env_device

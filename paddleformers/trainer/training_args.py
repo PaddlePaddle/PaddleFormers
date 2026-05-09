@@ -441,6 +441,11 @@ class TrainingArguments:
             If set to True, replicas will be stored locally on each node/machine.
             Defaults to False.
 
+        online_merge_ema (`bool`, *optional*, defaults to `True`):
+            Whether to enable online merge EMA during training. Default is `True`.
+
+        flex_ckpt_comm_method (str, None):
+            Communication method used in FlexCheckpoint reshard. One of "broadcast" and "parallel_broadcast". Default is None.
     """
 
     output_dir: str = field(
@@ -1664,6 +1669,17 @@ class TrainingArguments:
         default=False,
         metadata={
             "help": "When enabled, the computation part of the moelayer will use the implementation provided by SonicMoE."
+        },
+    )
+
+    online_merge_ema: bool = field(
+        default=True, metadata={"help": "Whether to perform online merge of the EMA parameters during training. "}
+    )
+
+    flex_ckpt_comm_method: str = field(
+        default=None,
+        metadata={
+            "help": "Communication method for FlexCheckpoint reshard. Options: 'auto', 'broadcast', 'parallel_broadcast'. Default: 'auto'."
         },
     )
 

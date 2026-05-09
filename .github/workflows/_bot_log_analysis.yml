@@ -1,0 +1,63 @@
+name: PaddleFormers Bot Log Analysis
+
+on:
+  workflow_call:
+    inputs:
+      ci_result:
+        required: true
+        type: string
+
+jobs:
+  faild-log-analysis:
+    if: "always() && inputs.ci_result == 'failure'"
+    runs-on: paddle-bot
+    env:
+      PATH: /home/paddle-1/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Get failed job URLs
+        id: get_failed_jobs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          failed_job_urls=$(curl -s \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/actions/runs/${RUN_ID}/jobs" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          failed = [
+              j['html_url'] for j in data['jobs']
+              if j['conclusion'] == 'failure' and 'failed log analysis' not in j['name']
+          ]
+          print(' '.join(failed))
+          ")
+          echo "failed_job_urls=${failed_job_urls}" >> $GITHUB_OUTPUT
+          echo "Failed job URLs: ${failed_job_urls}"
+
+      - name: Run formers bot
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FAILED_JOB_URLS: ${{ steps.get_failed_jobs.outputs.failed_job_urls }}
+          TASK_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          echo "TASK_ID=$TASK_ID" >> $GITHUB_ENV
+          cd /home/paddle-1/
+          PROMPT="Please analyze the failed CI job logs from these URLs: ${FAILED_JOB_URLS}"
+          python formers_bot.py --prompt "$PROMPT" --task-id "$TASK_ID"
+
+      - name: Upload analysis result
+        if: always()
+        run: |
+          if [ -f /tmp/bot_results/bot_result_${TASK_ID}.md ]; then
+            echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            cat /tmp/bot_results/bot_result_${TASK_ID}.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
+            echo "No analysis result generated." >> $GITHUB_STEP_SUMMARY
+          fi

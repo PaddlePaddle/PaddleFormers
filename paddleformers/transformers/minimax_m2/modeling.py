@@ -136,6 +136,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         num_key_value_groups = num_attention_head // num_key_value_heads
         use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
         moe_grouped_gemm = getattr(config, "moe_grouped_gemm", False)
+        use_gated_attn = getattr(config, "use_gated_attn", False)
 
         # Get Muon configuration from muon_configs
         muon_qkv_update_mode = muon_configs.get("muon_qkv_update_mode", "split_head")
@@ -170,6 +171,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             # FFN gate_up weights
             if ffn_slice_fn is not None:
                 moe_intermediate_size = config.moe_intermediate_size
+                intermediate_size = config.intermediate_size
 
                 # Fused experts
                 param_name = f"{prefix}.mlp.experts.up_gate_proj.weight"
@@ -180,6 +182,13 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     ffn_slice_fn,
                     {"intermediate_size": moe_intermediate_size},
                 )
+                slice_config[f"{prefix}.mlp.grouped_gemm_experts.weight1"] = (
+                    ffn_slice_fn,
+                    {"intermediate_size": moe_intermediate_size},
+                )
+                # Common experts
+                param_name = f"{prefix}.mlp.up_gate_proj.weight"
+                slice_config[param_name] = (ffn_slice_fn, {"intermediate_size": intermediate_size})
 
                 # Routed experts (per-expert)
                 if hasattr(config, "n_routed_experts") and config.n_routed_experts > 0:
@@ -192,6 +201,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             # Fused MoE weights (grouped_gemm)
             if moe_grouped_gemm and fused_moe_fn is not None:
                 slice_config[f"{prefix}.mlp.experts.down_proj.weight"] = (fused_moe_fn, {})
+                slice_config[f"{prefix}.mlp.grouped_gemm_experts.weight2"] = (fused_moe_fn, {})
 
             # MLA weights
             if use_mla and mla_slice_fn is not None:
@@ -225,6 +235,13 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     },
                 )
 
+            # Gated Attn
+            if use_gated_attn and mla_slice_fn is not None:
+                slice_config[f"{prefix}.self_attn.gate_proj.weight"] = (
+                    mla_slice_fn,
+                    {"head_num": num_attention_head, "axis": 1},
+                )
+
         # Main layers
         for layer_idx in range(num_hidden_layers):
             _add_layer_slice_config(f"model.layers.{layer_idx}")
@@ -236,6 +253,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
         for layer_idx in range(num_nextn_predict_layers):
             _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}")
+        for layer_idx in range(num_nextn_predict_layers):
+            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer")
 
         return slice_config
 
@@ -325,10 +344,10 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         aoa_config["aoa_statements"] += [
             f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
         ]
-        if config.tie_word_embeddings:
-            aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}lm_head.weight"]
-        else:
-            aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}lm_head.weight"]
+        # if config.tie_word_embeddings:
+        #     aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}lm_head.weight"]
+        # else:
+        #     aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}lm_head.weight"]
 
         num_hidden_layers = config.num_hidden_layers
         num_head_empty_layers = (
@@ -382,6 +401,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
             ]
 
+            if config.use_gated_attn:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.self_attn.gate_proj.weight^T -> {prefix_offset}.self_attn.gate_proj.weight",
+                ]
+
             if config.q_lora_rank:
                 # MLA attention
                 aoa_config["aoa_statements"] += [
@@ -390,9 +414,13 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     f"{prefix}.self_attn.q_b_proj.weight^T -> {prefix_offset}.self_attn.q_b_proj.weight",
                     f"{prefix}.self_attn.kv_a_proj_with_mqa.weight^T -> {prefix_offset}.self_attn.kv_a_proj_with_mqa.weight",
                     f"{prefix}.self_attn.kv_b_proj.weight^T -> {prefix_offset}.self_attn.kv_b_proj.weight",
-                    f"{prefix}.self_attn.q_a_layernorm.weight -> {prefix_offset}.self_attn.q_a_layernorm.weight",
-                    f"{prefix}.self_attn.kv_a_layernorm.weight -> {prefix_offset}.self_attn.kv_a_layernorm.weight",
                 ]
+                if config.use_qk_norm:
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.self_attn.q_a_layernorm.weight -> {prefix_offset}.self_attn.q_a_layernorm.weight",
+                        f"{prefix}.self_attn.kv_a_layernorm.weight -> {prefix_offset}.self_attn.kv_a_layernorm.weight",
+                    ]
+
             else:
                 if config.use_qk_norm:
                     aoa_config["aoa_statements"] += [
@@ -423,6 +451,12 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix}.block_sparse_moe.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
                 f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight",
             ]
+            if config.use_latent_moe:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.block_sparse_moe.fc1_latent_proj.weight^T -> {prefix_offset}.mlp.fc1_latent_proj.weight",
+                    f"{prefix}.block_sparse_moe.fc2_latent_proj.weight^T -> {prefix_offset}.mlp.fc2_latent_proj.weight",
+                ]
+
             if using_sonic_moe:
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.block_sparse_moe.experts.$EXPERT_ID.w2.weight -> {prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight",
@@ -448,12 +482,12 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         f"{prefix}.block_sparse_moe.experts.{expert_id}.w1.weight^T, {prefix}.block_sparse_moe.experts.{expert_id}.w3.weight^T -> {prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight, axis=1",
                     ]
 
-            if (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
+            if config.moe_grouped_gemm or using_sonic_moe:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(num_experts):
-                    ep_weight1.append(f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight")
-                    ep_weight2.append(f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight")
+                    ep_weight1.append(f"{prefix}.mlp.experts.{expert_id}.up_gate_proj.weight")
+                    ep_weight2.append(f"{prefix}.mlp.experts.{expert_id}.down_proj.weight")
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 aoa_config["aoa_statements"] += [
@@ -492,10 +526,10 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         aoa_statements += [
             "model.embedding.embed_tokens.weight -> model.embed_tokens.weight",
         ]
-        if config.tie_word_embeddings:
-            aoa_statements += [f"{model_prefix}lm_head.weight -> _"]
-        else:
-            aoa_statements += [f"{model_prefix}lm_head.weight -> lm_head.weight"]
+        # if config.tie_word_embeddings:
+        #     aoa_statements += [f"{model_prefix}lm_head.weight -> _"]
+        # else:
+        #     aoa_statements += [f"{model_prefix}lm_head.weight -> lm_head.weight"]
 
         num_hidden_layers = config.num_hidden_layers
         num_head_empty_layers = (
@@ -552,6 +586,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.self_attn.o_proj.weight^T -> {prefix}.self_attn.o_proj.weight",
             ]
 
+            if config.use_gated_attn:
+                aoa_statements += [
+                    f"{prefix_offset}.self_attn.gate_proj.weight^T -> {prefix}.self_attn.gate_proj.weight",
+                ]
+
             if config.q_lora_rank:
                 # MLA attention
                 aoa_statements += [
@@ -560,9 +599,12 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     f"{prefix_offset}.self_attn.q_b_proj.weight^T -> {prefix}.self_attn.q_b_proj.weight",
                     f"{prefix_offset}.self_attn.kv_a_proj_with_mqa.weight^T -> {prefix}.self_attn.kv_a_proj_with_mqa.weight",
                     f"{prefix_offset}.self_attn.kv_b_proj.weight^T -> {prefix}.self_attn.kv_b_proj.weight",
-                    f"{prefix_offset}.self_attn.q_a_layernorm.weight -> {prefix}.self_attn.q_a_layernorm.weight",
-                    f"{prefix_offset}.self_attn.kv_a_layernorm.weight -> {prefix}.self_attn.kv_a_layernorm.weight",
                 ]
+                if config.use_qk_norm:
+                    aoa_statements += [
+                        f"{prefix_offset}.self_attn.q_a_layernorm.weight -> {prefix}.self_attn.q_a_layernorm.weight",
+                        f"{prefix_offset}.self_attn.kv_a_layernorm.weight -> {prefix}.self_attn.kv_a_layernorm.weight",
+                    ]
             else:
                 if config.use_qk_norm:
                     aoa_statements += [
@@ -592,12 +634,12 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 # for mtp
                 prefix_offset += ".transformer_layer"
 
-            if (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
+            if config.moe_grouped_gemm or using_sonic_moe:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
-                    ep_weight1.append(f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight")
-                    ep_weight2.append(f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight")
+                    ep_weight1.append(f"{prefix}.mlp.experts.{expert_id}.up_gate_proj.weight")
+                    ep_weight2.append(f"{prefix}.mlp.experts.{expert_id}.down_proj.weight")
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 aoa_statements += [
@@ -627,11 +669,15 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 ]
 
             aoa_statements += [
-                # do cast
                 f"{prefix_offset}.mlp.gate.weight -> {prefix}.block_sparse_moe.gate.weight",
-                # do transpose
                 f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.block_sparse_moe.e_score_correction_bias",
             ]
+
+            if config.use_latent_moe:
+                aoa_statements += [
+                    f"{prefix_offset}.mlp.fc1_latent_proj.weight^T -> {prefix}.block_sparse_moe.fc1_latent_proj.weight ",
+                    f"{prefix_offset}.mlp.fc2_latent_proj.weight^T -> {prefix}.block_sparse_moe.fc2_latent_proj.weight",
+                ]
 
             if using_sonic_moe:
                 aoa_statements += [

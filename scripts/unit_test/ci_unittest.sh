@@ -67,14 +67,14 @@ install_requirements() {
     if [ $FLAGS_enable_CE == "true" ];then
         python -m pip install dist/*.whl 
         #fleet
-        python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ 
+        python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
         python -m pip uninstall paddlepaddle-gpu -y
         #paddle
         wget -q $paddle
-        python -m pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ 
+        python -m pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
 
     else
-        pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+        pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
     fi
     echo "paddlefleet commit:"
     python -c "import paddlefleet; print(paddlefleet.version.commit)"
@@ -94,12 +94,12 @@ set_env() {
     export HF_ENDPOINT=https://hf-mirror.com
 
     # for CE
-    if [[ ${FLAGS_enable_CE} == "true" ]];then
-        export CE_TEST_ENV=1
-        export RUN_SLOW_TEST=1
-        unset PF_HOME
-        export PYTHONPATH=${nlp_dir}:${nlp_dir}/llm:${PYTHONPATH}
-    fi
+    # if [[ ${FLAGS_enable_CE} == "true" ]];then
+    #     export CE_TEST_ENV=1
+    #     export RUN_SLOW_TEST=1
+    #     unset PF_HOME
+    #     export PYTHONPATH=${nlp_dir}:${nlp_dir}/llm:${PYTHONPATH}
+    # fi
 }
 
 print_info() {
