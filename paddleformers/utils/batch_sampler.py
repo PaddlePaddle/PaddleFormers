@@ -16,7 +16,113 @@ from __future__ import division, print_function
 
 import paddle
 
-__all__ = ["DistributedBatchSampler"]
+__all__ = ["MappingBatchSampler", "MappingDistributedBatchSampler", "DistributedBatchSampler"]
+
+
+class RandomSamplerWithSeed(paddle.io.RandomSampler):
+    def __init__(self, data_source, replacement=False, num_samples=None, generator=None, data_seed=None) -> None:
+        super().__init__(data_source, replacement=replacement, num_samples=num_samples, generator=generator)
+        self.base_seed = data_seed or 0
+        self.epoch = 0
+
+    def set_epoch(self, epoch=0):
+        self.epoch = epoch
+
+    def __iter__(self):
+        n = len(self.data_source)
+        # Aligned with ms-swift: use base_seed + epoch as seed
+        paddle.seed(self.base_seed + self.epoch)
+        for index in paddle.randperm(n).tolist():
+            yield index
+
+
+class MappingBatchSampler(paddle.io.BatchSampler):
+    def __init__(self, dataset, batch_size, shuffle=False, drop_last=False, consumed_samples=0, data_seed=None):
+
+        if shuffle:
+            sampler = RandomSamplerWithSeed(dataset, data_seed=data_seed)
+        else:
+            sampler = paddle.io.SequenceSampler(dataset)
+
+        super().__init__(sampler=sampler, batch_size=batch_size, drop_last=drop_last)
+        self.consumed_samples = consumed_samples
+
+    def set_epoch(self, epoch=0, consumed_samples=0):
+        self.epoch = epoch
+        self.consumed_samples = consumed_samples
+        if isinstance(self.sampler, RandomSamplerWithSeed):
+            self.sampler.set_epoch(epoch=epoch)
+
+    def __iter__(self):
+
+        # Yield in batches
+        local_batch_size = self.batch_size * self._acc_steps
+        batch_indices = []
+        for idx in self.sampler:
+            # Skip consumed samples for resume
+            if self.consumed_samples > 0:
+                self.consumed_samples -= 1
+                continue
+            batch_indices.append(idx)
+            if len(batch_indices) == local_batch_size:
+                yield batch_indices
+                batch_indices = []
+        if not self.drop_last and len(batch_indices) > 0:
+            yield batch_indices
+
+
+class MappingDistributedBatchSampler(paddle.io.DistributedBatchSampler):
+    def __init__(
+        self,
+        dataset,
+        batch_size,
+        num_replicas=None,
+        rank=None,
+        shuffle=False,
+        drop_last=False,
+        consumed_samples=0,
+        data_seed=None,
+    ):
+        super().__init__(
+            dataset, batch_size, num_replicas=num_replicas, rank=rank, shuffle=shuffle, drop_last=drop_last
+        )
+        self.consumed_samples = consumed_samples
+        self.base_seed = data_seed or 0
+        self.total_size = len(self.dataset) // self.nranks * self.nranks  # floor truncate, no padding
+
+    def set_epoch(self, epoch=0, consumed_samples=0):
+        self.epoch = epoch
+        self.consumed_samples = consumed_samples
+
+    def __iter__(self):
+        if self.shuffle:
+            paddle.seed(self.base_seed + self.epoch)  # global seed, todo
+            total_idx = paddle.randperm(self.total_size).tolist()
+            total_idx = total_idx[self.local_rank :: self.nranks]  # Interleaved sharding
+        else:
+            total_idx = list(range(self.local_rank, self.total_size, self.nranks))
+
+        assert (
+            self.consumed_samples % self.nranks == 0
+        ), "The consumed_samples should be divided by nranks. consumed_samples=%d, nranks=%s" % (
+            self.consumed_samples,
+            self.nranks,
+        )
+
+        # Skip consumed samples for resume (per-rank)
+        consumed_per_rank = self.consumed_samples // self.nranks
+        total_idx = total_idx[consumed_per_rank:]
+
+        # Yield in batches
+        local_batch_size = self.batch_size * self._acc_steps
+        batch_indices = []
+        for idx in total_idx:
+            batch_indices.append(idx)
+            if len(batch_indices) == local_batch_size:
+                yield batch_indices
+                batch_indices = []
+        if not self.drop_last and len(batch_indices) > 0:
+            yield batch_indices
 
 
 class DistributedBatchSampler(paddle.io.BatchSampler):

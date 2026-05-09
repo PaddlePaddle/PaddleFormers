@@ -139,10 +139,10 @@ def resize(
         if interpolation == "nearest":
             # uint8 dtype can be included for cpu and cuda input if nearest mode
             acceptable_dtypes.append(paddle.uint8)
-        # NOTE: Paddle currently does not support uint8 resize on CPU. Uncomment this when supported.
-        # elif image.place.is_cpu_place():
-        #     if _should_use_native_uint8_kernel(interpolation):
-        #         acceptable_dtypes.append(paddle.uint8)
+        # NOTE: Paddle currently support uint8 resize on CPU, but may have minor diffs compared with PyTorch.
+        elif image.place.is_cpu_place():
+            if _should_use_native_uint8_kernel(interpolation):
+                acceptable_dtypes.append(paddle.uint8)
 
         image = image.reshape(-1, num_channels, old_height, old_width)
         strides = image.stride()

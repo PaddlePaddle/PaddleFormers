@@ -13,7 +13,7 @@ template: qwen3_vl
 
 ### model
 model_name_or_path: ./model_30B_A3B
-attn_impl: flashmask
+_attn_implementation: flashmask
 
 ### finetuning
 # base
@@ -57,14 +57,14 @@ recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
 
-fuse_attention_qkv: true
-fuse_attention_ffn: true
+# fuse_attention_qkv: true
+# fuse_attention_ffn: true
 
 moe_grouped_gemm: true
-moe_deep_gemm: true
+# moe_deep_gemm: true
 
 apply_rope_fusion: False
-fuse_rms_norm: true
+# fuse_rms_norm: true
 # moe_router_force_load_balancing: true
 
 # sharding
@@ -74,14 +74,12 @@ sharding: stage1
 # fuse_optimizer_states: true
 
 # pp
-pp_delay_scale_loss: true
 overlap_p2p_comm: true
 variable_seq_lengths: true
 best_unbalanced_scheduler: true
 # pp_release_grads: true
 
 # tp
-tp_delay_scale_loss: True
 tp_sync_param: true
 sync_grad: true
 
@@ -106,3 +104,4 @@ dataloader_num_workers: 0
 freeze_config: freeze_vision freeze_aligner
 tensorwise_offload_optimizer: true
 processor_use_fast: false
+high_precision_rope: true

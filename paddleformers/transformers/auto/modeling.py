@@ -59,6 +59,7 @@ MAPPING_NAMES = OrderedDict(
         ("Ernie4_5_VLMoe", "ernie4_5_moe_vl"),
         ("PaddleOCRVL", "paddleocr_vl"),
         ("Llama", "llama"),
+        ("KimiK2", "kimi_k2"),
         ("Qwen2", "qwen2"),
         ("Qwen2_5_VL", "qwen2_5_vl"),
         ("Qwen2Moe", "qwen2_moe"),
@@ -67,11 +68,16 @@ MAPPING_NAMES = OrderedDict(
         ("Qwen3Next", "qwen3_next"),
         ("Qwen3VL", "qwen3_vl"),
         ("Qwen3VLMoe", "qwen3_vl_moe"),
+        ("Qwen3_5Moe", "qwen3_5"),
+        ("Qwen3_5", "qwen3_5"),
         ("Glm4Moe", "glm4_moe"),
+        ("GlmMoeDsa", "glm_moe_dsa"),
+        ("MiniMaxM2", "minimax_m2"),
         ("GptOss", "gpt_oss"),
         ("Phi3", "phi3"),
         ("Gemma3", "gemma3_text"),
         ("Glm4vMoe", "glm4v_moe"),
+        ("GlmOcr", "glm_ocr"),
     ]
 )
 
@@ -194,54 +200,29 @@ class _BaseAutoModelClass:
         init_class = cls._name_mapping[model_name + "_Import_Class"]
         class_name = cls._name_mapping[init_class]
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
-        if is_lora and class_name in ["qwen3_vl_moe"]:
+        try:
+            model_class = getattr(import_class, init_class)
+            return model_class
+        except AttributeError:
+            model_class = getattr(import_class, init_class + "Deprecated")
+            return model_class
+        except AttributeError as err:
             try:
-                model_class = getattr(import_class, init_class + "Deprecated")
+                new_import_class = importlib.import_module(f"paddleformers.transformers.{class_name}")
+                model_class = getattr(new_import_class, init_class)
                 return model_class
             except AttributeError:
-                model_class = getattr(import_class, init_class)
-                return model_class
-            except AttributeError as err:
-                try:
-                    new_import_class = importlib.import_module(f"paddleformers.transformers.{class_name}")
-                    model_class = getattr(new_import_class, init_class)
-                    return model_class
-                except AttributeError:
-                    logger.error(err)
-                    all_model_classes = import_class.__all__
-                    all_tasks = {get_task_name(m) for m in all_model_classes if get_task_name(m) is not None}
-                    raise AttributeError(
-                        f"module '{import_class.__name__}' only supports the following classes: "
-                        + ", ".join(m for m in all_model_classes)
-                        + "\n"
-                        "Hint: you can use interface "
-                        + " or ".join(task + ".from_pretrained" for task in all_tasks)
-                        + f" to load '{pretrained_model_name_or_path}'\n"
-                    )
-        else:
-            try:
-                model_class = getattr(import_class, init_class)
-                return model_class
-            except AttributeError:
-                model_class = getattr(import_class, init_class + "Deprecated")
-                return model_class
-            except AttributeError as err:
-                try:
-                    new_import_class = importlib.import_module(f"paddleformers.transformers.{class_name}")
-                    model_class = getattr(new_import_class, init_class)
-                    return model_class
-                except AttributeError:
-                    logger.error(err)
-                    all_model_classes = import_class.__all__
-                    all_tasks = {get_task_name(m) for m in all_model_classes if get_task_name(m) is not None}
-                    raise AttributeError(
-                        f"module '{import_class.__name__}' only supports the following classes: "
-                        + ", ".join(m for m in all_model_classes)
-                        + "\n"
-                        "Hint: you can use interface "
-                        + " or ".join(task + ".from_pretrained" for task in all_tasks)
-                        + f" to load '{pretrained_model_name_or_path}'\n"
-                    )
+                logger.error(err)
+                all_model_classes = import_class.__all__
+                all_tasks = {get_task_name(m) for m in all_model_classes if get_task_name(m) is not None}
+                raise AttributeError(
+                    f"module '{import_class.__name__}' only supports the following classes: "
+                    + ", ".join(m for m in all_model_classes)
+                    + "\n"
+                    "Hint: you can use interface "
+                    + " or ".join(task + ".from_pretrained" for task in all_tasks)
+                    + f" to load '{pretrained_model_name_or_path}'\n"
+                )
 
     @classmethod
     def from_config(cls, config, **kwargs):

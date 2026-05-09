@@ -77,7 +77,6 @@ use_expert_parallel: true
 expert_model_parallel_size: 8
 
 
-tp_delay_scale_loss: True
 
 optim: adamw
 bf16: true
@@ -86,8 +85,8 @@ amp_master_grad: true
 
 
 fuse_swiglu: true
-fuse_linear: true
-use_paddlefleet: true
+# fuse_linear: true
+# use_paddlefleet: true
 
 # unified_checkpoint: false
 save_checkpoint_format: "flex_checkpoint"

@@ -161,7 +161,7 @@ class SFTTrainingArguments(TrainingArguments):
         metadata={"help": "Maximum number of samples used in estimation."},
     )
     estimation_output_file: str = field(
-        default=None, metadata={"help": "The output file of max_steps estimation result"}
+        default="estimation_output.json", metadata={"help": "The output file of max_steps estimation result"}
     )
 
 
@@ -331,6 +331,10 @@ class FinetuningArguments(
             }
         elif self.compute_type == "nf4":
             self.weight_quantize_algo = {"nf4": DEFAULT_QUANTIZE_LAYERS}
+        elif self.compute_type == "float32":
+            self.bf16 = False
+            self.fp16 = False
+            self.weight_quantize_algo = None
         else:
             raise ValueError(f"Unknown compute_type: {self.compute_type}")
 

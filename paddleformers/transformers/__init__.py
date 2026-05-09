@@ -54,6 +54,7 @@ import_structure = {
     "image_processing_utils": ["PaddleImageProcessingMixin", "ImageProcessingMixin", "BaseImageProcessor"],
     "image_processing_utils_fast": ["BaseImageProcessorFast"],
     "video_processing_utils": ["BaseVideoProcessor"],
+    "audio_processing_utils": ["SequenceFeatureExtractor"],
     "moe_gate": ["PretrainedMoEGate", "MoEGateMixin"],
     "token_dispatcher": ["_DispatchManager"],
     "moe_layer": [
@@ -93,6 +94,7 @@ import_structure = {
     "auto.processing": ["AutoProcessor"],
     "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
+    "auto.feature_extraction": ["AutoFeatureExtractor"],
     "deepseek_v3.configuration": ["DeepseekV3Config"],
     "deepseek_v3.modeling": [
         "masked_fill",
@@ -161,6 +163,9 @@ import_structure = {
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
     "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
+    "kimi_k2.configuration": ["KimiK2Config"],
+    "kimi_k2.modeling": ["KimiK2ForCausalLM", "KimiK2ForCausalLMPipe"],
+    "kimi_k2.tokenizer": ["KimiK2TikTokenTokenizer"],
     "llama.configuration": [
         "LlamaConfig",
     ],
@@ -185,6 +190,8 @@ import_structure = {
         "Qwen2ForSequenceClassification",
         "Qwen2ForTokenClassification",
         "Qwen2SentenceEmbedding",
+        "Qwen2ForCausalLMDeprecated",
+        "Qwen2ForCausalLMPipeDeprecated",
     ],
     "qwen2.tokenizer": ["Qwen2Tokenizer"],
     "qwen2.tokenizer_fast": ["Qwen2TokenizerFast"],
@@ -219,6 +226,17 @@ import_structure = {
         "Qwen3VLMoePretrainedModel",
         "Qwen3VLMoeTextModel",
     ],
+    "qwen3_omni_moe.configuration": ["Qwen3OmniMoeConfig", "Qwen3OmniMoeThinkerConfig", "Qwen3OmniMoeTextConfig"],
+    "qwen3_omni_moe.modeling": [
+        "Qwen3OmniMoeForConditionalGeneration",
+        "Qwen3OmniMoeThinkerForConditionalGeneration",
+        "Qwen3OmniMoePreTrainedModel",
+        "Qwen3OmniMoeThinkerTextPreTrainedModel",
+        "Qwen3OmniMoeThinkerTextModel",
+        "Qwen3OmniMoeTalkerModel",
+    ],
+    "qwen3_omni_moe.processor": ["Qwen3OmniMoeProcessor"],
+    "qwen3_omni_moe.feature_extractor": ["WhisperFeatureExtractor"],
     "qwen2_moe.configuration": ["Qwen2MoeConfig"],
     "qwen2_moe.modeling": [
         "Qwen2MoeModel",
@@ -226,6 +244,8 @@ import_structure = {
         "Qwen2MoeForCausalLM",
         "Qwen2MoeForCausalLMPipe",
         "Qwen2MoePretrainingCriterion",
+        "Qwen2MoeForCausalLMDeprecated",
+        "Qwen2MoeForCausalLMPipeDeprecated",
     ],
     "qwen2_vl.image_processor": ["Qwen2VLImageProcessor"],
     "qwen2_vl.image_processor_fast": ["Qwen2VLImageProcessorFast"],
@@ -242,6 +262,8 @@ import_structure = {
         "Qwen3ForSequenceClassification",
         "Qwen3ForTokenClassification",
         "Qwen3SentenceEmbedding",
+        "Qwen3ForCausalLMDeprecated",
+        "Qwen3ForCausalLMPipeDeprecated",
     ],
     "qwen3_moe.configuration": ["Qwen3MoeConfig"],
     "qwen3_moe.modeling": [
@@ -262,6 +284,7 @@ import_structure = {
     ],
     "llama": [],
     "qwen2": [],
+    "glm_ocr": [],
     "qwen3": [],
     "deepseek_v3": [],
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
@@ -277,7 +300,12 @@ import_structure = {
     "qwen3_moe": [],
     "qwen3_next": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
+    "whisper.processor": ["WhisperFeatureExtractor"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
+    "glm_moe_dsa.configuration": ["GlmMoeDsaConfig"],
+    "glm_moe_dsa": ["GlmMoeDsaForCausalLMPipe", "GlmMoeDsaForCausalLM"],
+    "minimax_m2.configuration": ["MiniMaxM2Config"],
+    "minimax_m2": ["MiniMaxM2ForCausalLMPipe", "MiniMaxM2ForCausalLM"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
     "glm4v_moe.image_processor_fast": ["Glm4vImageProcessorFast"],
     "auto": ["AutoModelForCausalLM"],
@@ -297,6 +325,14 @@ import_structure = {
     "glm4v_moe.processor": ["Glm4vProcessor"],
     "glm4v_moe.video_processor": ["Glm4vVideoProcessor"],
     "glm4v_moe": [],
+    "glm_ocr.configuration": ["GlmOcrConfig", "GlmOcrTextConfig", "GlmOcrVisionConfig"],
+    "glm_ocr.modeling": [
+        "GlmOcrForConditionalGeneration",
+        "GlmOcrModel",
+        "GlmOcrPreTrainedModel",
+    ],
+    "glm_ocr.processor": ["Glm46VProcessor"],
+    "glm_ocr.image_processor": ["Glm46VImageProcessor"],
 }
 
 if TYPE_CHECKING:
@@ -317,6 +353,7 @@ if TYPE_CHECKING:
     )
     from .processing_utils import ProcessorMixin
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
+    from .audio_processing_utils import SequenceFeatureExtractor
     from .image_processing_utils import PaddleImageProcessingMixin, ImageProcessingMixin, BaseImageProcessor
     from .image_processing_utils_fast import BaseImageProcessorFast
     from .video_processing_utils import BaseVideoProcessor
@@ -349,6 +386,8 @@ if TYPE_CHECKING:
     from .ernie4_5 import *
     from .ernie4_5_moe import *
     from .ernie4_5_moe_vl import *
+    from .kimi_k25 import *
+    from .kimi_k2 import *
     from .paddleocr_vl import *
     from .llama import *
     from .optimization import *
@@ -362,12 +401,15 @@ if TYPE_CHECKING:
     from .qwen3_vl import *
     from .qwen3_5 import *
     from .qwen3_vl_moe import *
+    from .qwen3_omni_moe import *
     from .glm4_moe import *
     from .glm4v_moe import *
+    from .glm_moe_dsa import *
+    from .minimax_m2 import *
     from .gpt_oss import *
-    from .kimi_k25 import *
     from .phi3 import *
     from .gemma3_text import *
+    from .glm_ocr import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

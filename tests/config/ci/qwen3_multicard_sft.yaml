@@ -77,14 +77,12 @@ expert_model_parallel_size: 4
 
 
 # pp
-pp_delay_scale_loss: true
 overlap_p2p_comm: true
 variable_seq_lengths: true
 best_unbalanced_scheduler: true
 pp_release_grads: true
 
 # tp
-tp_delay_scale_loss: true
 
 
 optim: adamw
@@ -92,8 +90,8 @@ bf16: true
 fp16_opt_level: O2
 amp_master_grad: true
 fuse_swiglu: true
-fuse_linear: true
-use_paddlefleet: true
+# fuse_linear: true
+# use_paddlefleet: true
 use_qk_norm: true
 fp32_residual_connection: false
 

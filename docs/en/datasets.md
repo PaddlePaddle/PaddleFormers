@@ -5,7 +5,8 @@
 - **CLI**: Modify the following fields in the YAML configuration file:
   - `input_dir` specify the prefix of the dataset, for example: dataset `data-1-part0.bin` need to be set to `input_dir: "1.0 ./data-1-part0"`，`1.0` is the dataset prob
   - `split` specify `train/eval` distribution ratio, such as: `split: "998,2"`, `train` is the training set, `eval` for the evaluation set
-  - `dataset_type` specify as`pretrain`, such as: `dataset_type: "pretrain"`
+  - `dataset_type` specify as`pretrain`, such as: `dataset_type: "pretrain"`. For offline SFT data, set to `offline`
+  - `skip_warmup` whether to skip the warmup process of mmap files, default is `True`
 
 - Example:
 ```yaml

@@ -399,6 +399,12 @@ class LlmMetaConfig:
             "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
         ),
         (
+            "moe_deep_gemm",
+            bool,
+            False,
+            "Whether to enable deep GEMM for MoE experts. Defaults to False. Effective only after the moe_grouped_gemm is set. ",
+        ),
+        (
             "moe_ep_barrier",
             bool,
             True,
@@ -413,7 +419,10 @@ class LlmMetaConfig:
     ]
 
     mtp_attributes = [
+        ("train_mtp_only", int, 0, "Whether to train MTP only."),
+        ("mtp_distillation_loss", bool, False, "Whether to use distillation MTP loss."),
         ("num_nextn_predict_layers", int, 0, "Number of nextn predict layers."),
+        ("mtp_num_layers", int, 0, "Whether to use Autoregressive MTP Training, activate if > 1."),
         (
             "mtp_loss_scaling_factor",
             float,
@@ -467,6 +476,12 @@ class LlmMetaConfig:
             str,
             "rope",
             "Type of position embedding. Defaults to RoPE (Rotary Position Embedding).",
+        ),
+        (
+            "high_precision_rope",
+            bool,
+            False,
+            "Whether to use high precision ROPEs.",
         ),
         (
             "gated_linear_unit",
@@ -751,6 +766,7 @@ class PretrainedConfig:
         > Parameters for general components
 
         _attn_implementation (`str`, defaults to `eager`)
+        flashmask_use_varlen (`bool`, defaults to `False`)
 
         > Parameters linked to the tokenizer
 
@@ -796,8 +812,7 @@ class PretrainedConfig:
 
     _auto_class: Optional[str] = None
 
-    # Fix me, it is global for all config
-    _unsavable_keys = set()
+    _unsavable_keys = set()  # class-level default; each instance gets its own copy in __init__
 
     def __setattr__(self, key, value):
         if key in super().__getattribute__("attribute_map"):
@@ -823,9 +838,10 @@ class PretrainedConfig:
         kwargs = attribute_map(self, kwargs=kwargs)
         kwargs.pop("transformers_version", None)
         llm_meta = LlmMetaConfig._get_init()
-        self._unsavable_keys.update(LlmMetaConfig._get_unsavable_keys())
-        self._unsavable_keys.remove("tensor_model_parallel_size")
+        self._unsavable_keys = set(LlmMetaConfig._get_unsavable_keys())
+        self._unsavable_keys.discard("tensor_model_parallel_size")
         self._unsavable_keys.add("_attn_implementation")
+        self._unsavable_keys.add("flashmask_use_varlen")
 
         kwargs = set_expected_keys(self, llm_meta, kwargs)
         if self.sequence_parallel:
@@ -849,6 +865,7 @@ class PretrainedConfig:
 
         # for general components
         self._attn_implementation = kwargs.pop("_attn_implementation", "eager")
+        self.flashmask_use_varlen = kwargs.pop("flashmask_use_varlen", False)
 
         if "quantization_config" in kwargs and isinstance(kwargs["quantization_config"], Dict):
             kwargs["quantization_config"] = QuantizationConfig.from_dict(kwargs["quantization_config"])
@@ -1355,6 +1372,8 @@ class PretrainedConfig:
 
         self._remove_keys_not_serialized(serializable_config_dict, saving_file)
 
+        serializable_config_dict.pop("_unsavable_keys", None)
+
         return serializable_config_dict
 
     def register_unsavable_keys(self, keys):
@@ -1380,6 +1399,8 @@ class PretrainedConfig:
             del output["_auto_class"]
         if "moe_group" in output:
             del output["moe_group"]
+        if "_unsavable_keys" in output:
+            del output["_unsavable_keys"]
         if self._save_to_hf and "dtype" in output:
             output["torch_dtype"] = str(output["dtype"])
             del output["dtype"]
@@ -1694,6 +1715,7 @@ def recursive_diff_dict(dict_a, dict_b, config_obj=None):
 ALLOWED_LAYER_TYPES = (
     "full_attention",
     "sliding_attention",
+    "linear_attention",
 )
 
 

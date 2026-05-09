@@ -58,7 +58,7 @@ scale_loss: 4096
 seed: 666
 use_train_part_sharding: 1
 pre_alloc_memory: 60
-offload_optim: True
+tensorwise_offload_optimizer: True
 pipeline_model_parallel_size: 12
 tensor_model_parallel_size: 1
 virtual_pipeline_model_parallel_size: 1
@@ -70,7 +70,6 @@ sharding_parallel_size: 8
 amp_master_grad: 1
 
 # pipeline_parallel_config
-pp_delay_scale_loss: true
 overlap_p2p_comm: true
 best_unbalanced_scheduler: true
 

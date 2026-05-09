@@ -29,11 +29,11 @@ from paddle.nn import functional as F
 
 from paddleformers.transformers.gpt_provider import GPTModelProvider
 
-from ...nn.activation import ACT2FN
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.attention.utils import repeat_kv
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
+from ...nn.experts import MoeExperts
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Glm4MoeMLP
@@ -381,66 +381,21 @@ class Glm4MoeTopkRouter(nn.Layer):
         return topk_indices, topk_weights
 
 
-class GLm4MoeNaiveMoe(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.num_experts = config.n_routed_experts
-        self.intermediate_size = config.moe_intermediate_size
-        self.hidden_size = config.hidden_size
-        self.act_fn = ACT2FN[config.hidden_act]
-
-        self.up_gate_proj = self.create_parameter(
-            shape=[self.num_experts, self.hidden_size, 2 * self.intermediate_size],
-            dtype=paddle.get_default_dtype(),
-            is_bias=False,
-        )
-        self.down_proj = self.create_parameter(
-            shape=[self.num_experts, self.intermediate_size, self.hidden_size],
-            dtype=paddle.get_default_dtype(),
-            is_bias=False,
-        )
-
+class GLm4MoeNaiveMoe(MoeExperts):
     def sharded_state_dict(
         self,
         structured_name_prefix: str = "",
     ):
         state_dict = self.state_dict(structured_name_prefix="")
-        w1 = state_dict["up_gate_proj"].reshape(-1, self.up_gate_proj.shape[-1])
+        w1 = state_dict["gate_up_proj"].reshape(-1, self.gate_up_proj.shape[-1])
         w2 = state_dict["down_proj"].reshape(-1, self.down_proj.shape[-1])
-        state_dict["up_gate_proj"] = w1
+        state_dict["gate_up_proj"] = w1
         state_dict["down_proj"] = w2
         sharded_dict = {}
 
         sharded_dict = build_sharded_state_dict(state_dict, None, structured_name_prefix)
 
         return sharded_dict
-
-    def forward(
-        self,
-        hidden_states: paddle.Tensor,
-        top_k_index: paddle.Tensor,
-        top_k_weights: paddle.Tensor,
-    ) -> paddle.Tensor:
-        final_hidden_states = paddle.zeros_like(hidden_states)
-
-        with paddle.no_grad():
-            expert_mask = paddle.nn.functional.one_hot(top_k_index, num_classes=self.num_experts)
-            expert_mask = expert_mask.permute(2, 1, 0)
-            expert_hit = paddle.greater(expert_mask.sum(dim=(-1, -2)), paddle.to_tensor(0)).nonzero()
-
-        for expert_idx in expert_hit:
-            expert_idx = expert_idx[0]
-            if expert_idx == self.num_experts:
-                continue
-            top_k_pos, token_idx = paddle.where(expert_mask[expert_idx])
-            current_state = hidden_states[token_idx]
-            gate, up = nn.functional.linear(current_state, self.up_gate_proj[expert_idx]).chunk(2, dim=-1)
-            current_hidden_states = self.act_fn(gate) * up
-            current_hidden_states = nn.functional.linear(current_hidden_states, self.down_proj[expert_idx])
-            current_hidden_states = current_hidden_states * top_k_weights[token_idx, top_k_pos, None]
-            final_hidden_states.index_add_(0, token_idx, current_hidden_states.to(final_hidden_states.dtype))
-
-        return final_hidden_states
 
 
 class Glm4MoeMoE(nn.Layer):
@@ -902,16 +857,18 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             if hasattr(config, "num_empty_layers_add_in_head") and config.num_empty_layers_add_in_head
             else 0
         )
+        for layer_idx in range(config.first_k_dense_replace):
+            aoa_config["aoa_statements"] += [
+                f"model.layers.{layer_idx}.mlp.down_proj.weight^T -> {model_prefix}layers.{layer_idx + num_head_empty_layers}.mlp.down_proj.weight"
+            ]
+            aoa_config["aoa_statements"] += [
+                f"model.layers.{layer_idx}.mlp.gate_proj.weight^T, model.layers.{layer_idx}.mlp.up_proj.weight^T -> {model_prefix}layers.{layer_idx + num_head_empty_layers}.mlp.up_gate_proj.weight, fused_ffn",
+            ]
 
-        # layer 0
-        aoa_config["aoa_statements"] += [
-            f"model.layers.0.mlp.down_proj.weight^T -> {model_prefix}layers.{num_head_empty_layers}.mlp.down_proj.weight"
-        ]
-        aoa_config["aoa_statements"] += [
-            f"model.layers.0.mlp.gate_proj.weight^T, model.layers.0.mlp.up_proj.weight^T -> {model_prefix}layers.{num_head_empty_layers}.mlp.up_gate_proj.weight, fused_ffn",
-        ]
-
-        num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
+        if config.mtp_num_layers > 0:
+            num_nextn_predict_layers = config.mtp_num_layers
+        else:
+            num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
 
         for layer_idx in reversed(range(num_hidden_layers, num_hidden_layers + num_nextn_predict_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
@@ -937,6 +894,12 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 f"{prefix}.post_attention_layernorm.weight -> {prefix_offset}.post_attention_layernorm.weight",
                 f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
             ]
+            if config.use_qk_norm:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.self_attn.q_norm.weight -> {prefix_offset}.self_attn.q_norm.weight",
+                    f"{prefix}.self_attn.k_norm.weight -> {prefix_offset}.self_attn.k_norm.weight",
+                ]
+
             # attention qkv
             aoa_config["aoa_statements"] += [
                 f"{prefix}.self_attn.q_proj.weight^T, {prefix}.self_attn.k_proj.weight^T, {prefix}.self_attn.v_proj.weight^T -> {prefix_offset}.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
@@ -946,7 +909,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     f"{prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias -> {prefix_offset}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
                 ]
         # layer1 - layer_num_hidden_layers
-        for layer_idx in reversed(range(1, num_hidden_layers + num_nextn_predict_layers)):
+        for layer_idx in reversed(range(config.first_k_dense_replace, num_hidden_layers + num_nextn_predict_layers)):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix = f"model.layers.{layer_idx}"
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
@@ -1008,7 +971,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     group1 = ",".join(ep_weight1)
                     group2 = ",".join(ep_weight2)
                     aoa_config["aoa_statements"] += [
-                        f"{group1} -> {prefix_offset}.mlp.experts.up_gate_proj, axis=0"
+                        f"{group1} -> {prefix_offset}.mlp.experts.gate_up_proj, axis=0"
                         f"{group2} -> {prefix_offset}.mlp.experts.down_proj, axis=0"
                     ]
 
@@ -1048,14 +1011,15 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         )
 
         # layer 0
-        aoa_statements += [
-            f"{model_prefix}layers.{num_head_empty_layers}.mlp.down_proj.weight^T -> model.layers.0.mlp.down_proj.weight",
-        ]
-        aoa_statements += [
-            f"{model_prefix}layers.{num_head_empty_layers}.mlp.up_gate_proj.weight -> model.layers.{num_head_empty_layers}.mlp.gate_proj.weight, model.layers.{num_head_empty_layers}.mlp.up_proj.weight, fused_ffn",
-            f"model.layers.{num_head_empty_layers}.mlp.gate_proj.weight^T -> model.layers.0.mlp.gate_proj.weight",
-            f"model.layers.{num_head_empty_layers}.mlp.up_proj.weight^T -> model.layers.0.mlp.up_proj.weight",
-        ]
+        for layer_idx in range(config.first_k_dense_replace):
+            aoa_statements += [
+                f"{model_prefix}layers.{num_head_empty_layers+layer_idx}.mlp.down_proj.weight^T -> model.layers.{layer_idx}.mlp.down_proj.weight",
+            ]
+            aoa_statements += [
+                f"{model_prefix}layers.{num_head_empty_layers+layer_idx}.mlp.up_gate_proj.weight -> model.layers.{num_head_empty_layers+layer_idx}.mlp.gate_proj.weight, model.layers.{num_head_empty_layers+layer_idx}.mlp.up_proj.weight, fused_ffn",
+                f"model.layers.{num_head_empty_layers+layer_idx}.mlp.gate_proj.weight^T -> model.layers.{layer_idx}.mlp.gate_proj.weight",
+                f"model.layers.{num_head_empty_layers+layer_idx}.mlp.up_proj.weight^T -> model.layers.{layer_idx}.mlp.up_proj.weight",
+            ]
 
         num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
 
@@ -1079,6 +1043,12 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 # for mtp
                 prefix_offset += ".transformer_layer"
 
+            if config.use_qk_norm:
+                aoa_statements += [
+                    f"{prefix_offset}.self_attn.q_norm.weight -> {prefix}.self_attn.q_norm.weight",
+                    f"{prefix_offset}.self_attn.k_norm.weight -> {prefix}.self_attn.k_norm.weight",
+                ]
+
             aoa_statements += [
                 f"{prefix_offset}.input_layernorm.weight -> {prefix}.input_layernorm.weight",
                 f"{prefix_offset}.post_attention_layernorm.weight -> {prefix}.post_attention_layernorm.weight",
@@ -1096,7 +1066,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 ]
 
         # layer 1 -> layer num_hidden_layers-1
-        for layer_idx in range(1, num_hidden_layers + num_nextn_predict_layers):
+        for layer_idx in range(config.first_k_dense_replace, num_hidden_layers + num_nextn_predict_layers):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
             prefix = f"model.layers.{layer_idx}"
@@ -1126,7 +1096,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     group1 = ",".join(ep_weight1)
                     group2 = ",".join(ep_weight2)
                     aoa_statements += [
-                        f"{prefix_offset}.mlp.experts.up_gate_proj -> {group1}, axis=0"
+                        f"{prefix_offset}.mlp.experts.gate_up_proj -> {group1}, axis=0"
                         f"{prefix_offset}.mlp.experts.down_proj -> {group2}, axis=0"
                     ]
 

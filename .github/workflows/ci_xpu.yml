@@ -42,3 +42,11 @@ jobs:
   #     DOCKER_IMAGE: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/fastdeploy-xpu:ci
   #     FASTDEPLOY_WHEEL_URL: ${{ needs.xpu_build_test.outputs.wheel_path }}
   #     MODEL_PATH: /ssd3/model
+
+  formers-bot:
+    needs: [xpu_test]
+    if: "always() && needs.xpu_test.result == 'failure'"
+    uses: ./.github/workflows/_bot_log_analysis.yml
+    with:
+      ci_result: ${{ needs.xpu_test.result }}
+    secrets: inherit

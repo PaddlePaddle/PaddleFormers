@@ -58,20 +58,31 @@ install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
-    python -m pip install -U --no-cache-dir transformers
+    python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple  > /dev/null
+    cd /home/models/my_packages && dpkg -i *.deb > /dev/null
+    cd -
     # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
     # echo "paddlepaddle-gpu @ https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/cbf3469113cd76b7d5f4cba7b8d7d5f55d9e9911/paddlepaddle_gpu-3.3.0-cp310-cp310-linux_x86_64.whl" >> requirements.txt
     python setup.py bdist_wheel > /dev/null
-    uv cache clean paddlefleet
-    export UV_SKIP_WHEEL_FILENAME_CHECK=1
-    uv pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" --system --prerelease=allow -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --index-strategy unsafe-best-match
+    if [ $FLAGS_enable_CE == "true" ];then
+        python -m pip install dist/*.whl 
+        #fleet
+        python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
+        python -m pip uninstall paddlepaddle-gpu -y
+        #paddle
+        wget -q $paddle
+        python -m pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
+
+    else
+        pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+    fi
     echo "paddlefleet commit:"
     python -c "import paddlefleet; print(paddlefleet.version.commit)"
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
-    uv pip install -r tests/requirements.txt --system -i https://pypi.tuna.tsinghua.edu.cn/simple --index-strategy unsafe-best-match
+    pip install -r tests/requirements.txt -i https://pypi.org/simple 
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
-    python -m pip list >> ${log_path}/commit_info.txt
+    python -m pip list >> ${log_path}/commit_info.txt 
     end_ts=$(date +%s)
     echo -e "\033[32m install requirements cost $((end_ts - start_ts))s \033[0m"
 }
@@ -83,12 +94,12 @@ set_env() {
     export HF_ENDPOINT=https://hf-mirror.com
 
     # for CE
-    if [[ ${FLAGS_enable_CE} == "true" ]];then
-        export CE_TEST_ENV=1
-        export RUN_SLOW_TEST=1
-        unset PF_HOME
-        export PYTHONPATH=${nlp_dir}:${nlp_dir}/llm:${PYTHONPATH}
-    fi
+    # if [[ ${FLAGS_enable_CE} == "true" ]];then
+    #     export CE_TEST_ENV=1
+    #     export RUN_SLOW_TEST=1
+    #     unset PF_HOME
+    #     export PYTHONPATH=${nlp_dir}:${nlp_dir}/llm:${PYTHONPATH}
+    # fi
 }
 
 print_info() {
@@ -122,7 +133,7 @@ else
         ext="${file_name##*.}"
         echo "file_name: ${file_name}, ext: ${file_name##*.}"
         [[ -f "$file_name" ]] || continue
-        if [[ "$ext" == "py" ]]; then
+        if [[ "$ext" == "py" ]] || [[ "$ext" == "yml" ]] || [[ "$file_name" == "requirements.txt" ]]; then
             FLAGS_enable_CI=true
             break
         fi
@@ -138,13 +149,15 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     cd ${nlp_dir}
     echo ' Testing all unittest cases '
     unset http_proxy && unset https_proxy
+    export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}
     set +e
     export PYTHONFAULTHANDLER=1
+    
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
-    timeout 10m \
-    python -m pytest -v -s -n 4 \
+    timeout 60m \
+    python -m pytest -v -s -n 1 \
         --dist no \
         --maxfail=10 \
         --retries 3 --retry-delay 1 \

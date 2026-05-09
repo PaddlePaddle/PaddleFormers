@@ -54,7 +54,6 @@ sequence_parallel: true
 use_expert_parallel: true
 
 # tp
-tp_delay_scale_loss: true
 
 # sharding
 sharding: stage1

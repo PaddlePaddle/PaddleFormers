@@ -25,11 +25,13 @@ from paddleformers.transformers.model_utils import unwrap_model
 from paddleformers.utils import infohub
 from paddleformers.utils.import_utils import is_paddlefleet_available
 
-# Conditionally import paddlefleet modules
 if is_paddlefleet_available():
-    import paddlefleet.distributed.model as paddlefleet_dist_model
-    from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
-    from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
+    from paddlefleet.models.gpt import GPTModel as FleetGPTModel
+else:
+
+    class FleetGPTModel:
+        pass
+
 
 DPO_INFO_KEYS = [
     "reference_chosen_logps",
@@ -205,6 +207,8 @@ class DPOTrainer(Trainer):
 
     def _wrap_ref_model(self, model):
         """Wrap reference model."""
+        if model is None:
+            return None
         if unwrap_model(model) is not model:
             return model
         self.amp_dtype = "float16" if self.args.fp16 else "bfloat16"
@@ -213,8 +217,8 @@ class DPOTrainer(Trainer):
             level=self.args.fp16_opt_level,
             dtype=self.amp_dtype,
         )
-        if is_paddlefleet_available() and isinstance(model, PaddleFleetPipelineLayer):
-            model = paddlefleet_dist_model.distributed_model(model)
+        if self.using_fleet_model:
+            model = fleet.distributed_model(model)
             model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
             return model
 
@@ -226,10 +230,7 @@ class DPOTrainer(Trainer):
 
     def _wrap_model(self, model, training=True):
         """Wrap model."""
-        if is_paddlefleet_available() and (
-            isinstance(model, PaddleFleetPipelineLayer)
-            or (isinstance(model, LoRAModel) and isinstance(model.model, PaddleFleetPipelineLayer))
-        ):
+        if self.using_fleet_model:
             if isinstance(model, LoRAModel):
                 model.model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
             else:
@@ -244,7 +245,7 @@ class DPOTrainer(Trainer):
 
     def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
         """evaluate"""
-        if is_paddlefleet_available() and isinstance(self.ref_model_wrapped, PaddleFleetParallelBase):
+        if self.using_fleet_model:
             self.ref_model_wrapped = self._wrap_ref_model(self.ref_model_wrapped)
         self.model_wrapped = self._wrap_ref_model(self.model_wrapped)
         return super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
@@ -252,7 +253,7 @@ class DPOTrainer(Trainer):
     def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None, step=-1):
 
         """prediction_step"""
-        if is_paddlefleet_available() and isinstance(model, PaddleFleetParallelBase):
+        if self.using_fleet_model:
             inputs = self._prepare_inputs(inputs)
             return self.fleet_prediction_pipeline_step(self.ref_model_wrapped, self.model_wrapped, inputs, step)
 
@@ -372,7 +373,7 @@ class DPOTrainer(Trainer):
             reference_rejected_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
 
         if model.is_pipeline_last_stage(ignore_virtual=model._layers._num_virtual_pipeline_stages > 1):
-            if is_paddlefleet_available() and isinstance(model, PaddleFleetParallelBase):
+            if self.using_fleet_model:
                 labels = fleet_merge_dpo_labels(labels, (reference_chosen_logps, reference_rejected_logps))
             else:
                 labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)
@@ -591,7 +592,7 @@ class DPOTrainer(Trainer):
             reference_chosen_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
             reference_rejected_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
         if model.is_pipeline_last_stage(ignore_virtual=model._layers._num_virtual_pipeline_stages > 1):
-            if is_paddlefleet_available() and isinstance(model, PaddleFleetParallelBase):
+            if self.using_fleet_model:
                 labels = fleet_merge_dpo_labels(labels, (reference_chosen_logps, reference_rejected_logps))
             else:
                 labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)
@@ -650,7 +651,8 @@ class DPOTrainer(Trainer):
                         tensor = paddle.zeros([1])
                     else:
                         tensor = paddle.cat(getattr(infohub, key), axis=0).detach()
-                    tensor_shape = paddle.to_tensor(tensor.shape, dtype="int64")
+                    # Convert shape to list of Python ints for NumPy 2.x compatibility
+                    tensor_shape = paddle.to_tensor([int(dim) for dim in tensor.shape], dtype="int64")
                     paddle.distributed.broadcast(
                         tensor_shape, src=self.model_wrapped.global_rank, group=self.model_wrapped.pp_group
                     )
@@ -669,7 +671,11 @@ class DPOTrainer(Trainer):
                         src=self.model_wrapped._hcg.get_rank_from_stage(self.model_wrapped.num_stages - 1),
                         group=self.model_wrapped.pp_group,
                     )
-                    tensor = paddle.zeros(tensor_shape, "float32")
+                    # Convert to Python int and validate for NumPy 2.x compatibility
+                    actual_shape = int(tensor_shape[0])
+                    if actual_shape < 0:
+                        actual_shape = 1  # Fallback to valid shape
+                    tensor = paddle.zeros([actual_shape], "float32")
                 else:
                     raise ValueError(f"Invalid key: {key}")
                 paddle.distributed.broadcast(

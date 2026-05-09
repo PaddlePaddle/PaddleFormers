@@ -65,7 +65,6 @@ fp32_residual_connection: false
 
 
 # tp
-tp_delay_scale_loss: true
 
 # bf16
 amp_master_grad: true

@@ -232,7 +232,7 @@ class Glm4vMoeProcessorTest(ProcessorTesterMixin, unittest.TestCase):
             self.assertIsInstance(out_dict[k], return_tensor_to_type[return_tensors])
 
     def test_apply_chat_template_video_frame_sampling(self):
-        processor = self.get_processor(video_backend="decord")
+        processor = self.get_processor(video_backend="paddlecodec")
         if processor.chat_template is None:
             self.skipTest("Processor has no chat template")
 

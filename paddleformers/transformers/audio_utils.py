@@ -17,9 +17,12 @@ Audio processing functions to extract features from audio waveforms. This code i
 and remove unnecessary dependencies.
 """
 import warnings
-from typing import Optional, Union
+from typing import Optional, Sequence, Union
 
 import numpy as np
+import paddle
+
+AudioInput = Union[np.ndarray, "paddle.Tensor", Sequence[np.ndarray], Sequence["paddle.Tensor"]]
 
 
 def hertz_to_mel(freq: Union[float, np.ndarray], mel_scale: str = "htk") -> Union[float, np.ndarray]:

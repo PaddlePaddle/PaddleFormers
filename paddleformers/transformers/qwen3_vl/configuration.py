@@ -291,26 +291,62 @@ class Qwen3VLConfig(PretrainedConfig):
         self.vision_start_token_id = vision_start_token_id
         self.vision_end_token_id = vision_end_token_id
 
+    # Attributes that should be synced to both text_config and vision_config
+    _sync_to_both_configs = {"high_precision_rope"}
+
     def __setattr__(self, key, value):
-        if (
-            (text_config := super().__getattribute__("__dict__").get("text_config")) is not None
-            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
-            and key in text_config.__dict__
-        ):
+        # Attributes that should not be forwarded to sub-configs
+        _excluded_keys = ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+
+        if key in _excluded_keys:
+            super().__setattr__(key, value)
+            return
+
+        __dict__ = super().__getattribute__("__dict__")
+        text_config = __dict__.get("text_config")
+        vision_config = __dict__.get("vision_config")
+
+        # Check if the attribute exists in sub-configs
+        in_text = text_config is not None and key in text_config.__dict__
+        in_vision = vision_config is not None and key in vision_config.__dict__
+
+        # Only sync to both configs if explicitly whitelisted
+        if in_text and in_vision and key in self._sync_to_both_configs:
             setattr(text_config, key, value)
+            setattr(vision_config, key, value)
+        elif in_text:
+            setattr(text_config, key, value)
+        elif in_vision:
+            # Vision-only attributes: store at top level, don't sync
+            super().__setattr__(key, value)
         else:
             super().__setattr__(key, value)
 
     def __getattribute__(self, key):
-        if "text_config" in super().__getattribute__("__dict__") and key not in [
-            "_name_or_path",
-            "model_type",
-            "dtype",
-            "_attn_implementation_internal",
-        ]:
-            text_config = super().__getattribute__("text_config")
-            if key in text_config.__dict__:
+        # Attributes that should not be forwarded to sub-configs
+        _excluded_keys = ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+
+        if key in _excluded_keys:
+            return super().__getattribute__(key)
+
+        __dict__ = super().__getattribute__("__dict__")
+
+        # Check text_config first (maintains original priority)
+        if "text_config" in __dict__:
+            text_config = __dict__["text_config"]
+            if text_config is not None and key in text_config.__dict__:
                 return getattr(text_config, key)
+
+        # For vision-only attributes, read from top level first (user override),
+        # then fall back to vision_config default
+        if "vision_config" in __dict__:
+            vision_config = __dict__["vision_config"]
+            if vision_config is not None and key in vision_config.__dict__:
+                # Check if user has set a top-level override
+                try:
+                    return super().__getattribute__(key)
+                except AttributeError:
+                    return getattr(vision_config, key)
 
         return super().__getattribute__(key)
 
