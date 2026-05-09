@@ -59,35 +59,32 @@ except:
 from functools import lru_cache, partial
 
 
-def _Tensor_max(self, *args, **kwargs):
+def _tensor_max(tensor, *args, **kwargs):
     if "other" in kwargs:
         kwargs["y"] = kwargs.pop("other")
-        ret = paddle.maximum(self, *args, **kwargs)
+        ret = paddle.maximum(tensor, *args, **kwargs)
     elif len(args) == 1 and isinstance(args[0], paddle.Tensor):
-        ret = paddle.maximum(self, *args, **kwargs)
+        ret = paddle.maximum(tensor, *args, **kwargs)
     else:
         if "dim" in kwargs:
             kwargs["axis"] = kwargs.pop("dim")
 
         if "axis" in kwargs or len(args) >= 1:
-            ret = paddle.max(self, *args, **kwargs), paddle.argmax(self, *args, **kwargs)
+            ret = paddle.max(tensor, *args, **kwargs), paddle.argmax(tensor, *args, **kwargs)
         else:
-            ret = paddle.max(self, *args, **kwargs)
+            ret = paddle.max(tensor, *args, **kwargs)
 
     return ret
 
 
-setattr(paddle.Tensor, "_max", _Tensor_max)
-
-
-def _Tensor_split(self, split_size, dim=0):
-    if isinstance(split_size, int):
-        return paddle.split(self, self.shape[dim] // split_size, dim)
-    else:
-        return paddle.split(self, split_size, dim)
-
-
-setattr(paddle.Tensor, "split", _Tensor_split)
+def _split_tensor(tensor, split_size_or_sections, dim=0):
+    if isinstance(split_size_or_sections, int):
+        dim_size = tensor.shape[dim]
+        sections = [split_size_or_sections] * (dim_size // split_size_or_sections)
+        if dim_size % split_size_or_sections:
+            sections.append(dim_size % split_size_or_sections)
+        split_size_or_sections = sections
+    return paddle.split(tensor, split_size_or_sections, axis=dim)
 
 
 def _convert_head_mask_to_5d(head_mask, num_hidden_layers):
@@ -443,7 +440,7 @@ _CONFIG_FOR_DOC = "MiniCPMConfig"
 def _get_unpad_data(attention_mask):
     seqlens_in_batch = attention_mask.sum(dim=-1, dtype=paddle.int32)
     indices = paddle.nonzero(attention_mask.flatten(), as_tuple=False).flatten()
-    max_seqlen_in_batch = seqlens_in_batch._max().item()
+    max_seqlen_in_batch = _tensor_max(seqlens_in_batch).item()
     cu_seqlens = nn.functional.pad(paddle.cumsum(seqlens_in_batch, dim=0, dtype=paddle.paddle.int32), (1, 0))
     return indices, cu_seqlens, max_seqlen_in_batch
 
@@ -774,11 +771,12 @@ class MiniCPMAttention(nn.Layer):
 
         if self.config.pretraining_tp > 1:
             key_value_slicing = (self.num_key_value_heads * self.head_dim) // self.config.pretraining_tp
-            query_slices = self.q_proj.weight.split(
+            query_slices = _split_tensor(
+                self.q_proj.weight,
                 (self.num_heads * self.head_dim) // self.config.pretraining_tp, dim=0
             )
-            key_slices = self.k_proj.weight.split(key_value_slicing, dim=0)
-            value_slices = self.v_proj.weight.split(key_value_slicing, dim=0)
+            key_slices = _split_tensor(self.k_proj.weight, key_value_slicing, dim=0)
+            value_slices = _split_tensor(self.v_proj.weight, key_value_slicing, dim=0)
             query_states = [
                 nn.functional.linear(hidden_states, query_slices[i]) for i in range(self.config.pretraining_tp)
             ]
@@ -862,7 +860,7 @@ class MiniCPMSdpaAttention(MiniCPMAttention):
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-        kv_seq_len = position_ids._max().item() + 1
+        kv_seq_len = _tensor_max(position_ids).item() + 1
         cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
         if past_key_value is not None:
@@ -1568,8 +1566,8 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
     def forward(
         self,
         input_ids=None,
-        attention_mask=None,
         position_ids=None,
+        attention_mask=None,
         past_key_values=None,
         inputs_embeds=None,
         labels=None,
@@ -1625,7 +1623,7 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
         hidden_states = hidden_states[:, slice_indices, :].contiguous()
         if self.config.pretraining_tp > 1:
-            lm_head_slices = self.lm_head.weight.split(self.vocab_size // self.config.pretraining_tp, dim=0)
+            lm_head_slices = _split_tensor(self.lm_head.weight, self.vocab_size // self.config.pretraining_tp, dim=0)
             logits = [
                 nn.functional.linear(hidden_states, lm_head_slices[i]) for i in range(self.config.pretraining_tp)
             ]
