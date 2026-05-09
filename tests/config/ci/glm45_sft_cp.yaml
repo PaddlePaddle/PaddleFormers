@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
-train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/wangyuwen/upload_env/PaddleFormers/tests/fixtures/dummy/sft/train.jsonl
+train_dataset_path: ./data/sft/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/wangyuwen/upload_env/PaddleFormers/tests/fixtures/dummy/sft/eval.jsonl
+eval_dataset_path: ./data/sft/dev.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: true
@@ -13,7 +13,7 @@ dataloader_shuffle: false
 dataloader_num_workers: 4
 prefetch_factor: 24
 ### model
-model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/wangyuwen/upload_env/glm45_fleet/checkpoints/pretrain
+model_name_or_path: ./zai-org/GLM-4.5-Air
 _attn_implementation: flashmask
 lora: true
 lora_rank: 8
@@ -34,8 +34,8 @@ save_steps: 50
 save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
-logging_dir: /root/paddlejob/share-storage/gpfs/system-public/wangyuwen/upload_env/glm45_fleet/glm_full_pp_cp_vdl_log
-output_dir: /root/paddlejob/share-storage/gpfs/system-public/wangyuwen/upload_env/glm45_fleet/checkpoints/glm_full_pp_cp_ckpts
+logging_dir: ./glm_full_pp_cp_vdl_log
+output_dir: ./checkpoints/glm_full_pp_cp_ckpts
 disable_tqdm: true
 eval_accumulation_steps: 16
 # args
