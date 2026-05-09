@@ -71,7 +71,9 @@ SPECIAL_PROCESSOR_TYPE_TO_MODULE_NAME = {
 def processor_class_from_name(class_name: str):
     for module_name, extractors in PROCESSOR_MAPPING_NAMES.items():
         if class_name in extractors:
-            module_name = SPECIAL_PROCESSOR_TYPE_TO_MODULE_NAME.get(module_name, model_type_to_module_name(module_name))
+            module_name = SPECIAL_PROCESSOR_TYPE_TO_MODULE_NAME.get(
+                module_name, model_type_to_module_name(module_name)
+            )
 
             try:
                 module = importlib.import_module(f".{module_name}", "paddleformers.transformers")
