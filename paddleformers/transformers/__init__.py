@@ -333,6 +333,10 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "internvl3.configuration": ["InternVisionConfig", "InternVLChatConfig"],
+    "internvl3.modeling": ["InternVisionModel", "InternVLChatModel", "InternVLChatForConditionalGeneration"],
+    "internvl3.processing": ["InternVL3Processor", "InternVLProcessor"],
+    "internvl3.processor": ["InternVL3Processor", "InternVLProcessor"],
 }
 
 if TYPE_CHECKING:
@@ -410,6 +414,7 @@ if TYPE_CHECKING:
     from .phi3 import *
     from .gemma3_text import *
     from .glm_ocr import *
+    from .internvl3 import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

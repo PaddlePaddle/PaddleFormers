@@ -61,6 +61,8 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("glm_ocr", "GlmOcrConfig"),
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
+        ("intern_vit_6b", "InternVisionConfig"),
+        ("internvl_chat", "InternVLChatConfig"),
     ]
 )
 
@@ -89,6 +91,8 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
+        ("intern_vit_6b", "InternVisionModel"),
+        ("internvl_chat", "InternVLChatModel"),
     ]
 )
 
@@ -102,6 +106,8 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
         ("qwen2_5_vl_text", "qwen2_5_vl"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
+        ("intern_vit_6b", "internvl3"),
+        ("internvl_chat", "internvl3"),
     ]
 )
 
