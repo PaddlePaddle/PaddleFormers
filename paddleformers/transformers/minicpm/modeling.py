@@ -118,18 +118,6 @@ def _get_head_mask(
 
 setattr(paddleformers.transformers.model_utils.PretrainedModel, "get_head_mask", _get_head_mask)
 
-original_generate = paddleformers.generation.utils.GenerationMixin.generate
-
-
-def _generate(self, input_ids=None, *args, **kwargs):
-    ids, scores = original_generate(self, input_ids, *args, **kwargs)
-    if input_ids is not None:
-        ids = paddle.concat((input_ids, ids), axis=-1)
-    return ids, scores
-
-
-setattr(paddleformers.generation.utils.GenerationMixin, "generate", _generate)
-
 setattr(paddleformers.transformers.model_utils.PretrainedModel, "device", None)
 
 
@@ -1770,7 +1758,9 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
         history_str = tokenizer.apply_chat_template(history, tokenize=False, add_generation_prompt=False)
         inputs = tokenizer(history_str, return_tensors="pt").to(self.device)
         outputs = self.generate(**inputs, **gen_kwargs)
-        outputs = outputs.tolist()[0][len(inputs["input_ids"][0]) : -1]
+        if isinstance(outputs, (tuple, list)):
+            outputs = outputs[0]
+        outputs = outputs.tolist()[0][:-1]
         response = tokenizer.decode(outputs)
         pattern = re.compile(".*?(?=<AI>|<用户>)", re.DOTALL)
         matches = pattern.findall(response)
