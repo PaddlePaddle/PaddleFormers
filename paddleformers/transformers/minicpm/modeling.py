@@ -121,8 +121,11 @@ setattr(paddleformers.transformers.model_utils.PretrainedModel, "get_head_mask",
 original_generate = paddleformers.generation.utils.GenerationMixin.generate
 
 
-def _generate(self, input_ids, *args, **kwargs):
-    return paddle.concat((input_ids, original_generate(self, input_ids, *args, **kwargs)[0]), axis=-1)
+def _generate(self, input_ids=None, *args, **kwargs):
+    ids, scores = original_generate(self, input_ids, *args, **kwargs)
+    if input_ids is not None:
+        ids = paddle.concat((input_ids, ids), axis=-1)
+    return ids, scores
 
 
 setattr(paddleformers.generation.utils.GenerationMixin, "generate", _generate)
