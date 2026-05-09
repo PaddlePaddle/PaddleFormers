@@ -177,6 +177,6 @@ jobs:
       - name: Deploy index to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
-          github_token: ${{ secrets.ALLURE_TOKEN }}
+          github_token: ${{ secrets.PAT_TOKEN }}
           publish_dir: .
           keep_files: true

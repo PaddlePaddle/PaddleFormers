@@ -374,6 +374,6 @@ jobs:
         if: always()
         uses: peaceiris/actions-gh-pages@v3
         with:
-          github_token: ${{ secrets.ALLURE_TOKEN }}
+          github_token: ${{ secrets.PAT_TOKEN }}
           publish_dir: ./report
           destination_dir: ${{ steps.download_report.outputs.destination_dir }}
