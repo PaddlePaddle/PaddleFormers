@@ -14,8 +14,11 @@
 # limitations under the License.
 from __future__ import annotations
 
+import inspect
+import tempfile
 import unittest
 
+import numpy as np
 import paddle
 
 from paddleformers.transformers import (
@@ -383,7 +386,9 @@ class InternVL3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         config, _ = self.model_tester.prepare_config_and_inputs_for_common()
         for model_class in self.all_model_classes:
             model = self._make_model_instance(config, model_class)
-            self.assertEqual(next(iter(model.forward.__signature__.parameters), "pixel_values"), "pixel_values")
+            signature = inspect.signature(model.forward)
+            arg_names = [*signature.parameters.keys()]
+            self.assertEqual(next(iter(arg_names), "pixel_values"), "pixel_values")
 
     def test_beam_search_generate(self):
         self.skipTest("InternVLChatModel.generate currently only supports greedy decoding.")
@@ -393,6 +398,52 @@ class InternVL3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
 
     def test_sample_generate(self):
         self.skipTest("InternVLChatModel.generate currently only supports greedy decoding.")
+
+    def test_greedy_generate(self):
+        self.skipTest(
+            "InternVLChatForConditionalGeneration.generate takes pixel_values as the first positional argument, "
+            "which is incompatible with GenerationTesterMixin._greedy_generate."
+        )
+
+    def test_hidden_states_output(self):
+        self.skipTest("InternVLChatModel.forward does not propagate hidden_states from sub-modules.")
+
+    def test_resize_tokens_embeddings(self):
+        self.skipTest("InternVLChatConfig has no top-level vocab_size; text vocab lives in llm_config.")
+
+    def test_resize_embeddings_untied(self):
+        self.skipTest("InternVLChatConfig has no top-level vocab_size; text vocab lives in llm_config.")
+
+    def test_save_load(self):
+        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+
+        def check_save_load(out1, out2):
+            out_2 = out2.numpy()
+            out_2[np.isnan(out_2)] = 0
+            out_1 = out1.numpy()
+            out_1[np.isnan(out_1)] = 0
+            max_diff = np.amax(np.abs(out_1 - out_2))
+            self.assertLessEqual(max_diff, 1e-5)
+
+        for model_class in self.all_model_classes:
+            model = self._make_model_instance(config, model_class)
+            model.eval()
+            with paddle.no_grad():
+                first = model(**self._prepare_for_class(inputs_dict, model_class))[0]
+
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                model.save_pretrained(tmpdirname, save_to_hf=False, save_checkpoint_format="")
+                model = model_class.from_pretrained(tmpdirname, convert_from_hf=False, load_checkpoint_format="")
+                model.img_context_token_id = self.model_tester.image_token_id
+                model.eval()
+                with paddle.no_grad():
+                    second = model(**self._prepare_for_class(inputs_dict, model_class))[0]
+
+            if isinstance(first, tuple) and isinstance(second, tuple):
+                for tensor1, tensor2 in zip(first, second):
+                    check_save_load(tensor1, tensor2)
+            else:
+                check_save_load(first, second)
 
     def test_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
