@@ -2252,6 +2252,14 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
                         logger.info(
                             f"[ZCC worker] {k} with shape {origin_shape} is reshaped to {opt_state_dict[k].shape}."
                         )
+                for k, v in master_weights.items():
+                    struct_name = _extract_struct_name(k)
+                    if struct_name is not None and struct_name in self.grouped_gemm_params:
+                        origin_shape = v.shape
+                        master_weights[k] = v.reshape((-1, v.shape[-1]))
+                        logger.info(
+                            f"[ZCC worker] {k} with shape {origin_shape} is reshaped to {master_weights[k].shape}."
+                        )
 
             logger.debug(f"opt states length is {len(opt_state_dict)}")
             logger.debug(f"master weights length is {len(master_weights)}")
