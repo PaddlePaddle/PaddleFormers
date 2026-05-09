@@ -315,14 +315,14 @@ class TestOpenELMToken(unittest.TestCase):
     def test_tokenizer_load(self):
         from paddleformers.transformers import OpenELMTokenizer
 
-        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID)
+        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID, download_hub="huggingface")
         self.assertIsNotNone(tokenizer)
 
     @require_package("transformers")
     def test_tokenizer_encode_decode(self):
         from paddleformers.transformers import OpenELMTokenizer
 
-        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID)
+        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID, download_hub="huggingface")
 
         text = "Hello, how are you today?"
         encoded = tokenizer.encode(text)
@@ -336,7 +336,7 @@ class TestOpenELMToken(unittest.TestCase):
     def test_tokenizer_batch_encode(self):
         from paddleformers.transformers import OpenELMTokenizer
 
-        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID)
+        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID, download_hub="huggingface")
 
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -357,7 +357,7 @@ class TestOpenELMToken(unittest.TestCase):
             OpenELMTokenizer,
         )
 
-        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID)
+        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID, download_hub="huggingface")
 
         config_dict = dict(SMALL_CONFIG)
         config_dict["vocab_size"] = 32000
@@ -429,7 +429,7 @@ class TestOpenELMPaddleInference(unittest.TestCase):
         paddle.seed(_SEED)
         paddle.set_device("gpu")
 
-        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID)
+        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID, download_hub="huggingface")
 
         model = OpenELMForCausalLM.from_pretrained(
             _MODEL_HF_ID,
@@ -521,7 +521,7 @@ class TestOpenELMDiffAlignment(unittest.TestCase):
         torch_model = torch_model.float().to(torch_device)
         torch_model.eval()
 
-        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID)
+        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID, download_hub="huggingface")
         inputs = tokenizer(_PROMPT_DIFF, return_tensors="np")
         input_ids_np = np.array(inputs["input_ids"], dtype=np.int64)
         input_ids_list = input_ids_np[0].tolist()
