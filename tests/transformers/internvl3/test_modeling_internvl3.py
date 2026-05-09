@@ -18,7 +18,11 @@ import unittest
 
 import paddle
 
-from paddleformers.transformers import InternVLChatConfig, InternVLChatForConditionalGeneration, InternVLChatModel
+from paddleformers.transformers import (
+    InternVLChatConfig,
+    InternVLChatForConditionalGeneration,
+    InternVLChatModel,
+)
 
 # from tests.testing_utils import slow
 from tests.transformers.test_configuration_common import ConfigTester
@@ -163,7 +167,14 @@ class InternVL3ModelTester:
         )
 
     def create_and_check_model(
-        self, config: InternVLChatConfig, pixel_values, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self,
+        config: InternVLChatConfig,
+        pixel_values,
+        input_ids,
+        input_mask,
+        sequence_labels,
+        token_labels,
+        choice_labels,
     ):
         model = InternVLChatModel(config)
         model.img_context_token_id = self.image_token_id
@@ -172,7 +183,14 @@ class InternVL3ModelTester:
         self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
     def create_and_check_model_attention_mask(
-        self, config: InternVLChatConfig, pixel_values, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+        self,
+        config: InternVLChatConfig,
+        pixel_values,
+        input_ids,
+        input_mask,
+        sequence_labels,
+        token_labels,
+        choice_labels,
     ):
         model = InternVLChatModel(config)
         model.img_context_token_id = self.image_token_id

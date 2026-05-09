@@ -13,7 +13,10 @@
 # limitations under the License.
 
 from .modeling_intern_vit import InternVisionModel
-from .modeling_internvl_chat import InternVLChatForConditionalGeneration, InternVLChatModel
+from .modeling_internvl_chat import (
+    InternVLChatForConditionalGeneration,
+    InternVLChatModel,
+)
 
 __all__ = [
     "InternVisionModel",
