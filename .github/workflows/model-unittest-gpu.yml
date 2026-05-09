@@ -252,7 +252,11 @@ jobs:
           echo "Update baseline: ${UPDATE_BASELINE_MODELS}"
           echo "BRANCH: ${BRANCH}"
           echo "PR number: ${PR_NUMBER}"
-          bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
+          if [[ "$MODE" == "pr" ]]; then
+            bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
+          else
+            bash -x scripts/regression/ci_model_unittest.sh True True "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
+          fi
           DOCKER_EOF
       - name: Upload Products
         if: always()
