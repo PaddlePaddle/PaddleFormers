@@ -26,7 +26,7 @@ from tests.testing_utils import require_package, slow
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 _MODEL_HF_ID = "apple/OpenELM-1_1B-Instruct"
-_TOKENIZER_ID = "hf-internal-testing/llama-tokenizer"
+_TOKENIZER_ID = "PaddleNLP/Llama-2-7b"
 _PROMPT_DIFF = "Hello, how are you today?"
 _PROMPT_QUESTION = "What is the capital of China?"
 _SEED = 42
@@ -315,14 +315,14 @@ class TestOpenELMToken(unittest.TestCase):
     def test_tokenizer_load(self):
         from paddleformers.transformers import OpenELMTokenizer
 
-        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID, download_hub="huggingface")
+        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID)
         self.assertIsNotNone(tokenizer)
 
     @require_package("transformers")
     def test_tokenizer_encode_decode(self):
         from paddleformers.transformers import OpenELMTokenizer
 
-        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID, download_hub="huggingface")
+        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID)
 
         text = "Hello, how are you today?"
         encoded = tokenizer.encode(text)
@@ -336,7 +336,7 @@ class TestOpenELMToken(unittest.TestCase):
     def test_tokenizer_batch_encode(self):
         from paddleformers.transformers import OpenELMTokenizer
 
-        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID, download_hub="huggingface")
+        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID)
 
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -357,7 +357,7 @@ class TestOpenELMToken(unittest.TestCase):
             OpenELMTokenizer,
         )
 
-        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID, download_hub="huggingface")
+        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID)
 
         config_dict = dict(SMALL_CONFIG)
         config_dict["vocab_size"] = 32000
@@ -429,13 +429,13 @@ class TestOpenELMPaddleInference(unittest.TestCase):
         paddle.seed(_SEED)
         paddle.set_device("gpu")
 
-        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID, download_hub="huggingface")
+        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID)
 
         model = OpenELMForCausalLM.from_pretrained(
             _MODEL_HF_ID,
             convert_from_hf=True,
             load_checkpoint_format="",
-            download_hub="huggingface",
+            download_hub="modelscope",
             dtype="float32",
         )
         model.eval()
@@ -521,7 +521,7 @@ class TestOpenELMDiffAlignment(unittest.TestCase):
         torch_model = torch_model.float().to(torch_device)
         torch_model.eval()
 
-        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID, download_hub="huggingface")
+        tokenizer = OpenELMTokenizer.from_pretrained(_TOKENIZER_ID)
         inputs = tokenizer(_PROMPT_DIFF, return_tensors="np")
         input_ids_np = np.array(inputs["input_ids"], dtype=np.int64)
         input_ids_list = input_ids_np[0].tolist()
@@ -556,7 +556,7 @@ class TestOpenELMDiffAlignment(unittest.TestCase):
             _MODEL_HF_ID,
             convert_from_hf=True,
             load_checkpoint_format="",
-            download_hub="huggingface",
+            download_hub="modelscope",
             dtype="float32",
         )
         paddle_model.eval()
