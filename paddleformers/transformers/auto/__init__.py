@@ -63,16 +63,16 @@ import_structure = {
 
 if TYPE_CHECKING:
     from .configuration import *
+    from .diff_transformer import (
+        DiffTransformerConfig,
+        DiffTransformerForCausalLM,
+        DiffTransformerModel,
+        DiffTransformerPreTrainedModel,
+    )
     from .image_processing import *
     from .modeling import *
     from .tokenizer import *
     from .video_processing import *
-    from .diff_transformer import (  
-        DiffTransformerConfig,
-        DiffTransformerModel,
-        DiffTransformerForCausalLM,
-        DiffTransformerPreTrainedModel,
-    )
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

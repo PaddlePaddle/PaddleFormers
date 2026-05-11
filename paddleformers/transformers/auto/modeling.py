@@ -54,7 +54,7 @@ __all__ = [
 MAPPING_NAMES = OrderedDict(
     [
         ("DeepseekV3", "deepseek_v3"),
-        ("DiffTransformer", "diff_transformer"), 
+        ("DiffTransformer", "diff_transformer"),
         ("Ernie4_5", "ernie4_5"),
         ("Ernie4_5_Moe", "ernie4_5_moe"),
         ("Ernie4_5_VLMoe", "ernie4_5_moe_vl"),

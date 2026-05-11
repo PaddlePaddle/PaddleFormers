@@ -90,8 +90,9 @@ class DiffTransformerBlock(nn.Layer):
         self.norm2 = RMSNorm(config.hidden_size)
         # 修改：添加 bias_attr=False
         self.mlp = nn.Sequential(
-            nn.Linear(config.hidden_size, config.intermediate_size, bias_attr=False),              nn.Silu(),
-            nn.Linear(config.intermediate_size, config.hidden_size, bias_attr=False),  
+            nn.Linear(config.hidden_size, config.intermediate_size, bias_attr=False),
+            nn.Silu(),
+            nn.Linear(config.intermediate_size, config.hidden_size, bias_attr=False),
         )
 
     def forward(self, x, attention_mask=None, **kwargs):
@@ -145,7 +146,7 @@ class DiffTransformerForCausalLM(DiffTransformerPreTrainedModel):
         aoa_statements = [
             "model.embed_tokens.weight -> model.embed_tokens.weight",
             "model.norm.weight -> model.norm.weight",
-            "lm_head.weight^T -> lm_head.weight", 
+            "lm_head.weight^T -> lm_head.weight",
             "model.layers.$LAYER_ID.norm1.weight -> model.layers.$LAYER_ID.norm1.weight",
             "model.layers.$LAYER_ID.norm2.weight -> model.layers.$LAYER_ID.norm2.weight",
             "model.layers.$LAYER_ID.attn.q_proj.weight^T -> model.layers.$LAYER_ID.attn.q_proj.weight",  # ^T
