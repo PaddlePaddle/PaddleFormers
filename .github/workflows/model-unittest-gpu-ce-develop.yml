@@ -1,6 +1,7 @@
 name: Model Unittest GPU CE Develop
 
 on:
+  pull_request: ##for test
   schedule:
     - cron: "0 9 * * 0-4"
     - cron: "0 10 * * 0-4"
@@ -345,16 +346,37 @@ jobs:
         with:
           repository: PaddlePaddle/PaddleFormers
           ref: develop
+      - name: Determine FLAGS_enable_CE
+        id: determine
+        run: |
+          schedule_time="${{ github.event.schedule || '' }}"
+          if [[ "$schedule_time" == "0 9 "* ]]; then
+            echo "FLAGS_enable_CE=CE_Develop_cu130_py313" >> $GITHUB_OUTPUT
+          elif [[ "$schedule_time" == "0 10 "* ]]; then
+            echo "FLAGS_enable_CE=CE_Develop_cu130_py312" >> $GITHUB_OUTPUT
+          else
+            echo "FLAGS_enable_CE=${{ github.event.inputs.FLAGS_enable_CE || 'CE_Develop_cu130_py313' }}" >> $GITHUB_OUTPUT
+          fi
       - name: Download report
         id: download_report
+        env:
+          FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
         run: |
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
+            destination_dir="${FLAGS_enable_CE}/${PR_ID}/${COMMIT_ID}"
+            REPORT_DESC="${FLAGS_enable_CE} PR #${PR_ID}"
           else
             bos_prefix="schedule/$(date +%Y%m%d)"
+            destination_dir="${FLAGS_enable_CE}/schedule/$(date +%Y%m%d)"
+            REPORT_DESC="${FLAGS_enable_CE} 定时任务 $(date +%Y%m%d)"
           fi
-          echo "bos_prefix=${bos_prefix}"
           echo "bos_prefix=${bos_prefix}" >> "$GITHUB_OUTPUT"
+          echo "destination_dir=${destination_dir}" >> "$GITHUB_OUTPUT"
+          echo "report_desc=${REPORT_DESC}" >> "$GITHUB_OUTPUT"
+          echo "workflow_name=Model Unittest GPU CE Develop" >> "$GITHUB_OUTPUT"
+          echo "PAGES_URL=https://paddlepaddle.github.io/PaddleFormers/${destination_dir}/"
+
           wget -q --no-proxy \
             https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/report.tar.gz \
             --no-check-certificate
@@ -376,4 +398,31 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./report
+          destination_dir: ${{ steps.download_report.outputs.destination_dir }}
+
+      - name: Display GitHub Pages URL
+        if: always()
+        run: |
+          DESTINATION_DIR="${{ steps.download_report.outputs.destination_dir }}"
+          REPORT_DESC="${{ steps.download_report.outputs.report_desc }}"
+          WORKFLOW_NAME="${{ steps.download_report.outputs.workflow_name }}"
+
+          # GitHub Pages URL
+          PAGES_URL="https://paddlepaddle.github.io/PaddleFormers/${DESTINATION_DIR}/"
+
+          echo "========================================"
+          echo "  📊 Allure Report (GitHub Pages)"
+          echo "========================================"
+          echo "Workflow: ${WORKFLOW_NAME}"
+          echo "描述: ${REPORT_DESC}"
+          echo "GitHub Pages URL: ${PAGES_URL}"
+          echo "========================================"
+
+          echo "::notice::📊 Allure Report: ${PAGES_URL}"
+
+          echo "### 📊 Allure Report - ${WORKFLOW_NAME}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Workflow | 描述 | 报告链接 |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ${WORKFLOW_NAME} | ${REPORT_DESC} | [查看报告](${PAGES_URL}) |" >> $GITHUB_STEP_SUMMARY
       
