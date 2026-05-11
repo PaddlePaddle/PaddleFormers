@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import itertools
+import os
 from dataclasses import dataclass
 
 import paddle
@@ -28,6 +30,7 @@ from paddlefleet.models.common.empty_layer import EmptyLayer
 from paddlefleet.models.gpt.gpt_embedding import GPTEmbedding
 from paddlefleet.models.gpt.gpt_layer_specs import (
     get_gpt_layer_local_spec,
+    get_gpt_mtp_layers_spec,
     get_gpt_spec,
 )
 from paddlefleet.models.gpt.lm_head import GPTLMHead
@@ -46,6 +49,7 @@ from ..gpt_provider import GPTModelProvider
 class Qwen3_5VisionProvider(TransformerConfig):
     transform_rules = {
         "num_heads": "num_attention_heads",
+        "depth": "num_hidden_layers",
     }
     patch_size: int = 16
     use_bias: bool = True
@@ -129,6 +133,22 @@ class Qwen3_5TextModelProvider(GPTModelProvider):
             self.n_routed_experts = None
             self.n_shared_experts = 0
             self.moe_shared_expert_gate = False
+        # Unify MTP layer configuration
+        # "config" source: mtp_num_hidden_layers (from model's config.json)
+        # "yaml" source: num_nextn_predict_layers (from training yaml)
+        # Priority: yaml > config > default (0 = no MTP)
+        config_mtp = getattr(self, "mtp_num_hidden_layers", 0) or 0
+        yaml_mtp = self.num_nextn_predict_layers or 0
+
+        if yaml_mtp > 0:
+            self.mtp_num_layers = yaml_mtp
+            self.num_nextn_predict_layers = yaml_mtp
+        elif config_mtp > 0:
+            self.mtp_num_layers = config_mtp
+            self.num_nextn_predict_layers = config_mtp
+        else:
+            self.mtp_num_layers = 0
+            self.num_nextn_predict_layers = 0
 
     moe_grouped_gemm: bool = True
     moe_router_load_balancing_type: str = "aux_loss"
@@ -144,6 +164,25 @@ class Qwen3_5TextModelProvider(GPTModelProvider):
     n_shared_experts: int = 1
     moe_shared_expert_gate: bool = True
     multimodal_embedding: bool = False
+
+
+def _build_mtp_layers_spec(config, transformer_layers_spec):
+    """Build MTP layer specs with moe_grouped_gemm disabled for qwen3.5.
+
+    The AOA engine cannot handle concat+reshape with EP sharding for per-expert
+    2D HF keys, so MTP layers use per-expert storage instead of grouped_gemm.
+    """
+    mtp_cfg = copy.copy(config)
+    mtp_cfg.moe_grouped_gemm = False
+    # Create a new spec identical to the last decoder layer but with mtp_cfg
+    # embedded, so MoELayer inside TransformerLayer uses per-expert weights.
+    base_spec = transformer_layers_spec[-1]
+    mtp_transformer_spec = LayerSpec(
+        layer=base_spec.layer,
+        sublayers_spec=base_spec.sublayers_spec,
+        extra_kwargs={**base_spec.extra_kwargs, "config": mtp_cfg},
+    )
+    return get_gpt_mtp_layers_spec(mtp_cfg, [mtp_transformer_spec])
 
 
 def get_qwen3_5_language_spec(config):
@@ -196,7 +235,7 @@ def get_qwen3_5_language_spec(config):
     full_spec = get_gpt_spec(
         config=config,
         transformer_layers_spec=transformer_layers_spec,
-        mtp_layers_spec=None,
+        mtp_layers_spec=_build_mtp_layers_spec(config, transformer_layers_spec) if config.mtp_num_layers > 0 else None,
         vocab_size=config.vocab_size,
         max_sequence_length=config.max_sequence_length,
         head_empty_layers_spec=head_empty_layers,
@@ -573,7 +612,29 @@ class Qwen3_5Model(FleetLayer):
                 mm_token_type_ids=mm_token_type_ids,
             )
 
-        if self.config.sequence_parallel:
+        num_nextn = getattr(self.config, "num_nextn_predict_layers", 0) or 0
+
+        if num_nextn > 0 and not getattr(self.config, "mtp_load_weight_only", False):
+            seq_len = inputs_embeds.shape[1]
+            base_len = seq_len - num_nextn
+            main_embeds = inputs_embeds[:, :base_len, :]
+            mtp_parts = []
+            for depth in range(num_nextn):
+                shifted = inputs_embeds[:, (depth + 1) : (depth + 1 + base_len), :]
+                mtp_parts.append(shifted)
+
+            if self.config.sequence_parallel:
+                main_embeds = main_embeds.transpose([1, 0, 2]).contiguous()
+                main_embeds = scatter_to_sequence_parallel_region(main_embeds, group=self.tp_group)
+                mtp_scattered = []
+                for mtp in mtp_parts:
+                    mtp = mtp.transpose([1, 0, 2]).contiguous()
+                    mtp = scatter_to_sequence_parallel_region(mtp, group=self.tp_group)
+                    mtp_scattered.append(mtp)
+                inputs_embeds = paddle.concat([main_embeds] + mtp_scattered, axis=0)
+            else:
+                inputs_embeds = paddle.concat([main_embeds] + mtp_parts, axis=0)
+        elif self.config.sequence_parallel:
             inputs_embeds = inputs_embeds.transpose([1, 0, 2]).contiguous()
             inputs_embeds = scatter_to_sequence_parallel_region(inputs_embeds, group=self.tp_group)
 
@@ -604,7 +665,12 @@ class FleetQwen3_5ForConditionalGeneration(FleetLayer):
             dict_args = kwargs
         labels = dict_args.get("labels", None)
         logits = self.model(dict_args)
-        loss = self.criterion(logits, labels)
+        if isinstance(logits, list):
+            mtp_logits = logits[1:]
+            logits = logits[0]
+            loss = self.criterion(logits, labels, mtp_logits=mtp_logits)
+        else:
+            loss = self.criterion(logits, labels)
         return loss
 
     def sharded_state_dict(self, structured_name_prefix: str = ""):
@@ -654,3 +720,46 @@ class FleetQwen3_5ForConditionalGeneration(FleetLayer):
             sharded_state_dict.update(criterion_sharded)
 
         return sharded_state_dict
+
+    def save_pretrained(
+        self,
+        save_dir,
+        is_main_process=True,
+        *args,
+        **kwargs,
+    ):
+        """Save model weights in flex_checkpoint format.
+
+        Uses sharded_state_dict + dist.save_state_dict to save the model
+        in flex_checkpoint format, which can be loaded back for resuming training.
+        """
+        import paddle.distributed as dist
+        from paddle.distributed import ShardedWeight
+
+        save_checkpoint_format = kwargs.get("save_checkpoint_format", "flex_checkpoint")
+
+        os.makedirs(save_dir, exist_ok=True)
+
+        if save_checkpoint_format == "flex_checkpoint":
+            model_sharded_state_dict = self.sharded_state_dict()
+            for key, sharded_weight in model_sharded_state_dict.items():
+                if isinstance(sharded_weight, ShardedWeight):
+                    sharded_weight.local_tensor = paddle.Tensor(sharded_weight.local_tensor)
+            model_state_dict_path = os.path.join(save_dir, "model_state")
+            os.makedirs(model_state_dict_path, exist_ok=True)
+            dist.save_state_dict(
+                model_sharded_state_dict,
+                model_state_dict_path,
+            )
+
+            # Save model config
+            config_to_save = getattr(self, "config_to_save", None)
+            if config_to_save is None:
+                config_to_save = copy.deepcopy(self.config)
+            if is_main_process and hasattr(config_to_save, "save_pretrained"):
+                config_to_save.save_pretrained(save_dir)
+        else:
+            raise NotImplementedError(
+                f"save_checkpoint_format={save_checkpoint_format} is not supported by "
+                f"FleetQwen3_5ForConditionalGeneration. Use 'flex_checkpoint'."
+            )

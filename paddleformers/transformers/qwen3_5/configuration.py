@@ -39,6 +39,7 @@ class Qwen3_5VisionConfig(PretrainedConfig):
         out_hidden_size=3584,
         num_position_embeddings=2304,
         initializer_range=0.02,
+        normalization="LayerNorm",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -55,6 +56,7 @@ class Qwen3_5VisionConfig(PretrainedConfig):
         self.out_hidden_size = out_hidden_size
         self.num_position_embeddings = num_position_embeddings
         self.initializer_range = initializer_range
+        self.normalization = normalization
 
 
 class Qwen3_5TextConfig(PretrainedConfig):
