@@ -88,10 +88,10 @@ class DiffTransformerBlock(nn.Layer):
         self.norm1 = RMSNorm(config.hidden_size)
         self.attn = DiffAttn(config, layer_idx)
         self.norm2 = RMSNorm(config.hidden_size)
+        # 修改：添加 bias_attr=False
         self.mlp = nn.Sequential(
-            nn.Linear(config.hidden_size, config.intermediate_size),
-            nn.Silu(),
-            nn.Linear(config.intermediate_size, config.hidden_size),
+            nn.Linear(config.hidden_size, config.intermediate_size, bias_attr=False),              nn.Silu(),
+            nn.Linear(config.intermediate_size, config.hidden_size, bias_attr=False),  
         )
 
     def forward(self, x, attention_mask=None, **kwargs):
@@ -138,3 +138,26 @@ class DiffTransformerForCausalLM(DiffTransformerPreTrainedModel):
         if loss is not None:
             return loss, logits
         return logits
+
+    @classmethod
+    def _gen_aoa_config(cls, config):
+        """AOA checkpoint conversion config. Linear weights need transpose (PyTorch [out,in] -> Paddle [in,out])."""
+        aoa_statements = [
+            "model.embed_tokens.weight -> model.embed_tokens.weight",
+            "model.norm.weight -> model.norm.weight",
+            "lm_head.weight^T -> lm_head.weight", 
+            "model.layers.$LAYER_ID.norm1.weight -> model.layers.$LAYER_ID.norm1.weight",
+            "model.layers.$LAYER_ID.norm2.weight -> model.layers.$LAYER_ID.norm2.weight",
+            "model.layers.$LAYER_ID.attn.q_proj.weight^T -> model.layers.$LAYER_ID.attn.q_proj.weight",  # ^T
+            "model.layers.$LAYER_ID.attn.k_proj.weight^T -> model.layers.$LAYER_ID.attn.k_proj.weight",  # ^T
+            "model.layers.$LAYER_ID.attn.v_proj.weight^T -> model.layers.$LAYER_ID.attn.v_proj.weight",  # ^T
+            "model.layers.$LAYER_ID.attn.o_proj.weight^T -> model.layers.$LAYER_ID.attn.o_proj.weight",  # ^T
+            "model.layers.$LAYER_ID.attn.lambda_q1 -> model.layers.$LAYER_ID.attn.lambda_q1",
+            "model.layers.$LAYER_ID.attn.lambda_k1 -> model.layers.$LAYER_ID.attn.lambda_k1",
+            "model.layers.$LAYER_ID.attn.lambda_q2 -> model.layers.$LAYER_ID.attn.lambda_q2",
+            "model.layers.$LAYER_ID.attn.lambda_k2 -> model.layers.$LAYER_ID.attn.lambda_k2",
+            "model.layers.$LAYER_ID.attn.subln.weight -> model.layers.$LAYER_ID.attn.subln.weight",
+            "model.layers.$LAYER_ID.mlp.0.weight^T -> model.layers.$LAYER_ID.mlp.0.weight",  # ^T
+            "model.layers.$LAYER_ID.mlp.2.weight^T -> model.layers.$LAYER_ID.mlp.2.weight",  # ^T
+        ]
+        return {"aoa_statements": aoa_statements}

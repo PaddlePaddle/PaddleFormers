@@ -53,6 +53,12 @@ import_structure = {
     "image_processing": ["get_image_processor_config", "AutoImageProcessor", "IMAGE_PROCESSOR_MAPPING"],
     "processing": ["AutoProcessor", "PROCESSOR_MAPPING"],
     "video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
+    "diff_transformer": [
+        "DiffTransformerConfig",
+        "DiffTransformerModel",
+        "DiffTransformerForCausalLM",
+        "DiffTransformerPreTrainedModel",
+    ],
 }
 
 if TYPE_CHECKING:
@@ -61,6 +67,12 @@ if TYPE_CHECKING:
     from .modeling import *
     from .tokenizer import *
     from .video_processing import *
+    from .diff_transformer import (  
+        DiffTransformerConfig,
+        DiffTransformerModel,
+        DiffTransformerForCausalLM,
+        DiffTransformerPreTrainedModel,
+    )
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
