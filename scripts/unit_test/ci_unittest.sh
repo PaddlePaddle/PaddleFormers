@@ -58,7 +58,7 @@ install_requirements() {
     python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
     python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
-    python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple  > /dev/null
+    python -m pip install -U --no-cache-dir transformers   > /dev/null
     cd /home/models/my_packages && dpkg -i *.deb > /dev/null
     cd -
     # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
@@ -74,12 +74,12 @@ install_requirements() {
         python -m pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
 
     else
-        pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+        pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]"  --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
     fi
     echo "paddlefleet commit:"
     python -c "import paddlefleet; print(paddlefleet.version.commit)"
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
-    pip install -r tests/requirements.txt -i https://pypi.org/simple 
+    pip install -r tests/requirements.txt  
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
     python -m pip list >> ${log_path}/commit_info.txt 

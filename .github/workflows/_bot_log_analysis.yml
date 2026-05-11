@@ -52,6 +52,7 @@ jobs:
 
       - name: Upload analysis result
         if: always()
+        id: analysis 
         run: |
           if [ -f /tmp/bot_results/bot_result_${TASK_ID}.md ]; then
             echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
