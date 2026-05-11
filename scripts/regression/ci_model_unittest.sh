@@ -161,7 +161,7 @@ if [[ "$update_baseline_models" != "false" ]] && [[ "$update_baseline_models" !=
 elif [[ ${FLAGS_enable_CI} == "True" ]];then
     get_diff_TO_case
 elif [[ ${FLAGS_enable_CE} != "False" ]];then
-    models="paddleocr_vl"  ## for test  org-all
+    models="all"
 fi
 
 if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];then

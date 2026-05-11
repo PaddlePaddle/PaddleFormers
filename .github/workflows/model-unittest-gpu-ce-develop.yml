@@ -1,7 +1,6 @@
 name: Model Unittest GPU CE Develop
 
 on:
-  pull_request: ##for test
   schedule:
     - cron: "0 9 * * 0-4"
     - cron: "0 10 * * 0-4"
@@ -312,12 +311,20 @@ jobs:
           else
             bos_prefix="schedule/$(date +%Y%m%d)"
           fi
+          if [ ! -f "${{ env.java_file }}" ]; then
+            wget -q --no-proxy -O ${{ env.home_path }}/java_linux.tar.gz https://paddle-qa.bj.bcebos.com/java/java_linux.tar.gz --no-check-certificate
+            tar xf ${{ env.home_path }}/java_linux.tar.gz
+          fi
+          if [ ! -f "${{ env.allure_file }}" ]; then
+            wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
+            unzip -q ${{ env.home_path }}/allure-2.19.0.zip
+          fi
           # logs
           cd /workspace/PaddleFormers/model_unittest_logs
           for FILE in /workspace/PaddleFormers/model_unittest_logs/*; do
             file=$(basename "$FILE")
-            python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
-            echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/$file"
+            python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/model-unittest-gpu/develop/${bos_prefix}/logs
+            echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/develop/${bos_prefix}/logs/$file"
           done
           # allure
           cd /workspace/PaddleFormers/
@@ -327,8 +334,8 @@ jobs:
           export PATH="${JAVA_HOME}/bin:${PATH}"
           ${{ env.allure_file }} generate result -o report        
           tar -czf report.tar.gz report
-          python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
-          echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/report.tar.gz"
+          python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/model-unittest-gpu/develop/${bos_prefix}/logs
+          echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/develop/${bos_prefix}/logs/report.tar.gz"
           '
       - name: Terminate And Delete the Container
         if: always()
@@ -346,6 +353,12 @@ jobs:
         with:
           repository: PaddlePaddle/PaddleFormers
           ref: develop
+      - name: Checkout gh-pages
+        uses: actions/checkout@v5
+        with:
+          ref: gh-pages
+          path: gh-pages
+        continue-on-error: true
       - name: Determine FLAGS_enable_CE
         id: determine
         run: |
@@ -357,6 +370,14 @@ jobs:
           else
             echo "FLAGS_enable_CE=${{ github.event.inputs.FLAGS_enable_CE || 'CE_Develop_cu130_py313' }}" >> $GITHUB_OUTPUT
           fi
+      - name: Restore history
+        env:
+          FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
+        run: |          
+          if [ -d "gh-pages/model_${FLAGS_enable_CE}/history" ]; then
+            mkdir -p result
+            cp -r gh-pages/model_${FLAGS_enable_CE}/history result/history
+          fi
       - name: Download report
         id: download_report
         env:
@@ -364,21 +385,13 @@ jobs:
         run: |
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
-            destination_dir="${FLAGS_enable_CE}/${PR_ID}/${COMMIT_ID}"
-            REPORT_DESC="${FLAGS_enable_CE} PR #${PR_ID}"
           else
             bos_prefix="schedule/$(date +%Y%m%d)"
-            destination_dir="${FLAGS_enable_CE}/schedule/$(date +%Y%m%d)"
-            REPORT_DESC="${FLAGS_enable_CE} 定时任务 $(date +%Y%m%d)"
           fi
           echo "bos_prefix=${bos_prefix}" >> "$GITHUB_OUTPUT"
-          echo "destination_dir=${destination_dir}" >> "$GITHUB_OUTPUT"
-          echo "report_desc=${REPORT_DESC}" >> "$GITHUB_OUTPUT"
-          echo "workflow_name=Model Unittest GPU CE Develop" >> "$GITHUB_OUTPUT"
-          echo "PAGES_URL=https://paddlepaddle.github.io/PaddleFormers/${destination_dir}/"
 
           wget -q --no-proxy \
-            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/report.tar.gz \
+            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/develop/${bos_prefix}/logs/report.tar.gz \
             --no-check-certificate
           echo "Current directory: $(pwd)"
           echo "Files after download:"
@@ -398,31 +411,18 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./report
-          destination_dir: ${{ steps.download_report.outputs.destination_dir }}
-
+          destination_dir: model_${FLAGS_enable_CE}
       - name: Display GitHub Pages URL
         if: always()
         run: |
-          DESTINATION_DIR="${{ steps.download_report.outputs.destination_dir }}"
-          REPORT_DESC="${{ steps.download_report.outputs.report_desc }}"
-          WORKFLOW_NAME="${{ steps.download_report.outputs.workflow_name }}"
-
           # GitHub Pages URL
-          PAGES_URL="https://paddlepaddle.github.io/PaddleFormers/${DESTINATION_DIR}/"
+          PAGES_URL="https://paddlepaddle.github.io/PaddleFormers/model_${FLAGS_enable_CE}/"
+          echo "GitHub Allure Pages URL: ${PAGES_URL}"
 
-          echo "========================================"
-          echo "  📊 Allure Report (GitHub Pages)"
-          echo "========================================"
-          echo "Workflow: ${WORKFLOW_NAME}"
-          echo "描述: ${REPORT_DESC}"
-          echo "GitHub Pages URL: ${PAGES_URL}"
-          echo "========================================"
-
-          echo "::notice::📊 Allure Report: ${PAGES_URL}"
-
-          echo "### 📊 Allure Report - ${WORKFLOW_NAME}" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Allure Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Workflow | 描述 | 报告链接 |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| ${WORKFLOW_NAME} | ${REPORT_DESC} | [查看报告](${PAGES_URL}) |" >> $GITHUB_STEP_SUMMARY
-      
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Workflow | ${{ github.workflow }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| CE Mode | $FLAGS_enable_CE |" >> $GITHUB_STEP_SUMMARY
+          echo "| Report | [Open Report](${PAGES_URL}) |" >> $GITHUB_STEP_SUMMARY
