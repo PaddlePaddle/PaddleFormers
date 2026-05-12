@@ -70,6 +70,7 @@ jobs:
         if: always()
         env:
             MONITOR_URL: ${{ secrets.MONITOR_URL }}
+            FAILED_JOB_URLS: ${{ steps.get_failed_jobs.outputs.failed_job_urls }}
         run: |
             summary=$(head -c 500 /tmp/bot_results/bot_result_${TASK_ID}.md)
             jq -n --rawfile summary /tmp/bot_results/bot_result_${TASK_ID}.md '
@@ -78,8 +79,8 @@ jobs:
             wf_type: "ci_unit",
             pr_number: '${{ github.event.issue.number || 0 }}',
             verdict: "block",
-            summary: ($summary[:500]),
-            root_cause: "见 GitHub Actions Summary",
+            summary: ($summary[:2000]),
+            root_cause: "详细见 GitHub Actions Summary: {FAILED_JOB_URLS}",
             fix_steps: []
             }' > report.json
 
