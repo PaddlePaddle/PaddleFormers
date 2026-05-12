@@ -71,17 +71,20 @@ jobs:
         env:
             MONITOR_URL: ${{ secrets.MONITOR_URL }}
         run: |
-            jq -n \
-            --arg summary "${{ steps.analysis.outputs.summary }}" \
-            '{
-                run_id: '${{ github.run_id }}',
-                wf_type: "ci_unit",
-                pr_number: '${{ github.event.issue.number || 0 }}',
-                verdict: "block",
-                summary: $summary,
-                root_cause: "见 GitHub Actions Summary",
-                fix_steps: []
+            summary=$(head -c 500 /tmp/bot_results/bot_result_${TASK_ID}.md)
+s
+            jq -n --rawfile summary /tmp/bot_results/bot_result_${TASK_ID}.md '
+            {
+            run_id: '${{ github.run_id }}',
+            wf_type: "ci_unit",
+            pr_number: '${{ github.event.issue.number || 0 }}',
+            verdict: "block",
+            summary: ($summary[:500]),
+            root_cause: "见 GitHub Actions Summary",
+            fix_steps: []
             }' > report.json
+
+            cat report.json
 
             curl -s -X POST "${MONITOR_URL}/api/bot" \
             -H 'Content-Type: application/json' \
