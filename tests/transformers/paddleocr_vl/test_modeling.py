@@ -457,7 +457,7 @@ class PaddleOCRVLIntegrationTest(unittest.TestCase):
     @gpu_device_initializer(log_prefix="PaddleOCRVLIntegrationTest")
     def setUp(self):
         self.model = PaddleOCRVLForConditionalGeneration.from_pretrained(
-            "PaddleFormers/tiny-random-paddleocr-vl-bf16",
+            "PaddleFormers/tiny-random-paddleocr-vl",
             dtype="float32",
             load_checkpoint_format="flex_checkpoint",
         )
