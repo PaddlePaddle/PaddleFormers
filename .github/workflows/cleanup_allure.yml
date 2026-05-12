@@ -1,0 +1,49 @@
+name: Cleanup PR Allure Reports
+
+on:
+  pull_request:
+    types:
+      - closed
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout gh-pages
+        uses: actions/checkout@v5
+        with:
+          ref: gh-pages
+          path: gh-pages
+          fetch-depth: 1
+
+      - name: Remove PR Allure Reports
+        run: |
+          PR_ID=${{ github.event.pull_request.number }}
+
+          echo "Cleaning PR reports for PR_${PR_ID}"
+
+          # unittest-gpu
+          rm -rf gh-pages/unittest_ci/PR_${PR_ID}
+
+          # model-unittest-gpu
+          rm -rf gh-pages/model_unittest_ci/PR_${PR_ID}
+
+          echo "Remaining reports:"
+          find gh-pages -maxdepth 3 -type d | sort
+
+      - name: Commit and Push
+        run: |
+          cd gh-pages
+
+          git config user.name "PaddleCI"
+          git config user.email "paddle_ci@example.com"
+
+          git add .
+
+          git commit -m "cleanup allure reports for PR_${{ github.event.pull_request.number }}" || echo "No changes to commit"
+
+          git push

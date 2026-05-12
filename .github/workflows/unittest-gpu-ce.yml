@@ -345,7 +345,7 @@ jobs:
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
-            bos_prefix="schedule/$(date +%Y%m%d)"
+            bos_prefix="schedule/github-ce-$(date +%Y%m%d)"
           fi
           echo "bos_prefix=${bos_prefix}" >> "$GITHUB_OUTPUT"
 
@@ -383,5 +383,4 @@ jobs:
           echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Workflow | ${{ github.workflow }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| CE Mode | unittest-gpu |" >> $GITHUB_STEP_SUMMARY
           echo "| Report | [Open Report](${PAGES_URL}) |" >> $GITHUB_STEP_SUMMARY
