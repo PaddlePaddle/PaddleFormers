@@ -1,6 +1,6 @@
 # README
 
-目录中是使用 PaddleFormers 复用模型的 skills，可直接加载到 Claude Code 中使用，或可作为参考信息。
+目录中是使用 PaddleFormers 复现模型的 skills，可直接加载到 Claude Code 中使用，或可作为参考信息。
 
 ## 加载方法
 
