@@ -159,7 +159,11 @@ if [[ "$update_baseline_models" != "false" ]] && [[ "$update_baseline_models" !=
     echo "Update baseline models: $update_baseline_models"
     models=$update_baseline_models
 elif [[ ${FLAGS_enable_CI} == "True" ]];then
-    get_diff_TO_case
+    if [[ "$PR_NUMBER" == "0" ]]; then
+        models="all"
+    else
+        get_diff_TO_case
+    fi
 elif [[ ${FLAGS_enable_CE} != "False" ]];then
     models="all"
 fi
