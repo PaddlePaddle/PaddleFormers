@@ -19,7 +19,7 @@ import paddle
 from ..hparams import get_train_args, read_args
 from .auto_parallel import run_auto_parallel
 from .dpo import run_dpo
-from .sft import run_sft
+from .sft import run_sft, run_sft_v2
 
 
 def check_path(path):
@@ -51,6 +51,9 @@ def _training_function(config: dict[str, Any]) -> None:
     if model_args.stage in ["SFT", "PT", "VL-SFT", "VL-PT"]:
         with paddle.amp.auto_cast(enable=False):
             run_sft(model_args, data_args, generating_args, finetuning_args)
+    elif model_args.stage in ["SFT-V2", "PT-V2"]:
+        with paddle.amp.auto_cast(enable=False):
+            run_sft_v2(model_args, data_args, generating_args, finetuning_args)
     elif model_args.stage == "DPO" or model_args.stage == "VL-DPO":
         with paddle.amp.auto_cast(enable=False):
             run_dpo(model_args, data_args, generating_args, finetuning_args)
