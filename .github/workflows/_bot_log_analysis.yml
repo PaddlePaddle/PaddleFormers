@@ -52,12 +52,33 @@ jobs:
 
       - name: Upload analysis result
         if: always()
+        id: analysis 
         run: |
           if [ -f /tmp/bot_results/bot_result_${TASK_ID}.md ]; then
             echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             cat /tmp/bot_results/bot_result_${TASK_ID}.md >> $GITHUB_STEP_SUMMARY
+            summary=$(head -c 500 /tmp/bot_results/bot_result_${TASK_ID}.md | tr '\n' ' ' | tr '"' "'")
+            echo "summary=${summary}" >> $GITHUB_OUTPUT
           else
             echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
             echo "No analysis result generated." >> $GITHUB_STEP_SUMMARY
+            echo "summary=Bot分析未生成结果" >> $GITHUB_OUTPUT
           fi
+        
+      - name: Report to monitor
+        if: always()
+        env:
+            MONITOR_URL: ${{ secrets.MONITOR_URL }}
+        run: |
+            curl -s -X POST "${MONITOR_URL}/api/bot" \
+            -H 'Content-Type: application/json' \
+            -d "{
+                \"run_id\": ${{ github.run_id }},
+                \"wf_type\": \"ci_unit\",
+                \"pr_number\": ${{ github.event.issue.number || 0 }},
+                \"verdict\": \"block\",
+                \"summary\": \"${{ steps.analysis.outputs.summary }}\",
+                \"root_cause\": \"见 GitHub Actions Summary\",
+                \"fix_steps\": []
+            }"

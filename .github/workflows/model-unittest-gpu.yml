@@ -181,6 +181,10 @@ jobs:
             MODE="manual"
             UPDATE_BASELINE_MODELS="${{ github.event.inputs.update_baseline_models }}"
             PR_NUMBER="manual"
+          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+            MODE="schedule"
+            UPDATE_BASELINE_MODELS="${{ github.event.inputs.update_baseline_models }}"
+            PR_NUMBER=0 
           elif [[ "${{ github.event_name }}" == "issue_comment" ]]; then
             # Parse comment for [update-baseline: models]
             if grep -qE '\[update-baseline:[[:space:]]*[a-zA-Z0-9_,]+\]' <<< "$COMMENT_BODY"; then
@@ -254,8 +258,8 @@ jobs:
           echo "PR number: ${PR_NUMBER}"
           if [[ "$MODE" == "pr" ]]; then
             bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
-          else
-            bash -x scripts/regression/ci_model_unittest.sh True True "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
+          elif [[ "$MODE" == "schedule" ]]; then
+            bash -x scripts/regression/ci_model_unittest.sh False True "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
           fi
           DOCKER_EOF
       - name: Upload Products

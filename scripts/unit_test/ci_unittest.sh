@@ -19,6 +19,7 @@ export paddle=$1
 export FLAGS_enable_CE=${2-false}
 export nlp_dir=/workspace/PaddleFormers
 export log_path=/workspace/PaddleFormers/unittest_logs
+unset http_proxy && unset https_proxy
 cd $nlp_dir
 if [ ! -d "unittest_logs" ];then
     mkdir unittest_logs
@@ -32,26 +33,6 @@ fi
 dir_name=$(dirname "${PYTEST_EXECUTE_FLAG_FILE}")
 mkdir -p "${dir_name}"
 AGILE_COMPILE_BRANCH=$4
-
-kill_process() {
-    echo -e "\033[32m===== print python / pytest / xdist processes =====\033[0m"
-
-    ps -o pid,ppid,tty,stat,etime,cmd -C python | \
-      grep -E 'pytest|exec\(eval|paddleformers|launcher\.py' || true
-
-    echo -e "\033[32m===== kill python / pytest / xdist processes =====\033[0m"
-
-    TTY=$(tty | sed 's#/dev/##')
-
-    # kill pytest + xdist on current tty
-    ps -o pid=,tty=,cmd= -C python | \
-      awk -v tty="$TTY" '$2==tty && $3 ~ /pytest|exec\(eval/ {print $1}' | \
-      xargs -r kill -9 || true
-
-    # kill paddleformers launcher (distributed training)
-    pkill -9 -f paddleformers/cli/launcher.py || true
-}
-
 
 install_requirements() {
     start_ts=$(date +%s)
@@ -144,11 +125,9 @@ fi
 get_diff_TO_case
 set_env
 if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
-    kill_process
     install_requirements
     cd ${nlp_dir}
     echo ' Testing all unittest cases '
-    unset http_proxy && unset https_proxy
     export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}
     set +e
     export PYTHONFAULTHANDLER=1
@@ -172,7 +151,6 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
         cd ${nlp_dir}
         echo -e "\033[35m ---- Generate Allure Report  \033[0m"
-        unset http_proxy && unset https_proxy
         cp scripts/unit_test/gen_allure_report.py ./
         python gen_allure_report.py > /dev/null
         echo -e "\033[35m ---- Report: https://xly.bce.baidu.com/ipipe/ipipe-report/report/${AGILE_JOB_BUILD_ID}/report/  \033[0m"
