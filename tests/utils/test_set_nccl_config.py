@@ -53,7 +53,7 @@ class TestNcclConfig(unittest.TestCase):
         # paddle version does not match
         if create_nccl_config is None:
             return
-        args_dict = {"output_dir": self.output_path, "nccl_comm_group_config": self.nccl_config_path}
+        args_dict = {"output_dir": self.output_path, "nccl_comm_group_config": self.nccl_config_path, "bf16": True}
 
         parser = PdArgumentParser((TrainingArguments,))
         (args,) = parser.parse_dict(args_dict)
