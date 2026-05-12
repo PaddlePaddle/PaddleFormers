@@ -72,7 +72,6 @@ jobs:
             MONITOR_URL: ${{ secrets.MONITOR_URL }}
         run: |
             summary=$(head -c 500 /tmp/bot_results/bot_result_${TASK_ID}.md)
-s
             jq -n --rawfile summary /tmp/bot_results/bot_result_${TASK_ID}.md '
             {
             run_id: '${{ github.run_id }}',
