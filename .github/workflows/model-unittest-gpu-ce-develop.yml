@@ -63,7 +63,7 @@ env:
   TASK: PaddleFormers-CE-${{ github.event.pull_request.number }}-model-unittest-gpu
   BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
-  CE_JOB_NAME: model-unittest-gpu-cE
+  CE_JOB_NAME: model-unittest-gpu-ce-develop
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
 
 defaults:
@@ -299,7 +299,7 @@ jobs:
           allure_file: ${{ github.workspace }}/../../../allure-2.19.0/bin/allure
           FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
         run: |
-          docker exec -t $container_name /bin/bash -c '
+          docker exec -t $container_name -e FLAGS_enable_CE="$FLAGS_enable_CE" /bin/bash -c '
           source ${work_dir}/../../../proxy_huggingface
           python -m pip install bce-python-sdk==0.8.74 -i https://pypi.org/simple
           if [ ! -f "${{ env.bos_file }}" ]; then
@@ -408,6 +408,8 @@ jobs:
           fi
       - name: Deploy to GitHub Pages
         if: always()
+        env:
+          FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -415,6 +417,8 @@ jobs:
           destination_dir: model_${FLAGS_enable_CE}
       - name: Display GitHub Pages URL
         if: always()
+        env:
+          FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
         run: |
           # GitHub Pages URL
           PAGES_URL="https://paddlepaddle.github.io/PaddleFormers/model_${FLAGS_enable_CE}/"
