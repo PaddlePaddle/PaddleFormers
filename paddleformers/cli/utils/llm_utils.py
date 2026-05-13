@@ -89,6 +89,16 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*gate_up_fused_proj.*",
         ]
+    elif model.config.model_type in ["olmo2", "olmo3"]:
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
     elif model.config.model_type == "opt":
         target_modules = [
             ".*project_in.*",

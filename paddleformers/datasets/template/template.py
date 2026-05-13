@@ -922,6 +922,18 @@ register_template(
     template_class=Template,
 )
 
+# Llama-2 chat template, used by OpenELM and other Llama-2-based models
+# Format: <s>[INST] question [/INST] answer </s>
+register_template(
+    name="llama2",
+    format_user=StringFormatter(slots=["[INST] {{content}} [/INST]"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<<SYS>>\n{{content}}\n<</SYS>>\n\n"]),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    suffix=["</s>"],
+    efficient_eos=True,
+)
+
 register_template(
     name="llama3",
     format_user=StringFormatter(

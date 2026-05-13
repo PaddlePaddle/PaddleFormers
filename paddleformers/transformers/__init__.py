@@ -333,6 +333,20 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "olmo2.configuration": ["Olmo2Config"],
+    "olmo2.modeling": [
+        "Olmo2Model",
+        "Olmo2PretrainedModel",
+        "Olmo2ForCausalLM",
+        "Olmo2ForCausalLMPipe",
+    ],
+    "olmo3.configuration": ["Olmo3Config"],
+    "olmo3.modeling": [
+        "Olmo3Model",
+        "Olmo3PretrainedModel",
+        "Olmo3ForCausalLM",
+        "Olmo3ForCausalLMPipe",
+    ],
 }
 
 if TYPE_CHECKING:
