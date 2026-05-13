@@ -154,3 +154,27 @@ jobs:
               res = gh("POST", f"{base}/issues/{pr_number}/comments", {"body": comment})
               print(f"Created: {res.get('html_url')}")
           PYEOF
+
+      - name: Report to monitor
+        if: always()
+        env:
+            MONITOR_URL: ${{ secrets.MONITOR_URL }}
+            PR_NUMBER: ${{ github.event.pull_request.number }}
+            RUN_ID: ${{ github.run_id }}
+        run: |
+            RESULT_FILE="/tmp/bot_results/bot_result_${TASK_ID}.md"
+            jq -n \
+            --arg run_id    "$RUN_ID" \
+            --arg pr_number "$PR_NUMBER" \
+            --rawfile summary "$RESULT_FILE" \
+            '{
+                run_id:    $run_id,
+                pr_number: $pr_number,
+                summary:   $summary[:1000]
+            }' > report.json
+
+            cat report.json
+
+            curl -s -X POST "${MONITOR_URL}/api/bot" \
+            -H 'Content-Type: application/json' \
+            -d @report.json
