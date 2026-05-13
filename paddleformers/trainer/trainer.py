@@ -3107,6 +3107,17 @@ class Trainer:
             if hasattr(optimizer_cls, "_create_master_weight") and self.args.fp16_opt_level == "O2":
                 optimizer_kwargs["multi_precision"] = True
 
+            if self.args.optim == OptimizerNames.MUON and hasattr(self.model, "build_muon_param_info_map"):
+                self.model.config.muon_configs = {
+                    "muon_qkv_update_mode": self.args.muon_qkv_update_mode,
+                    "muon_ffn_split": self.args.muon_ffn_split,
+                    "muon_exclude_patterns": self.args.muon_exclude_patterns,
+                }
+                optimizer_kwargs["muon_param_info_map"] = self.model.build_muon_param_info_map(
+                    self.model, self.model.config
+                )
+                logger.info(f"muon_param_info_map: {optimizer_kwargs['muon_param_info_map']}")
+
             self.optimizer = optimizer_cls(
                 learning_rate=self.lr_scheduler if lr_scheduler is None else lr_scheduler,
                 apply_decay_param_fun=apply_decay_param_fun,
