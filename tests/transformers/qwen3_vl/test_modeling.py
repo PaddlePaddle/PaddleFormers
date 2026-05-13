@@ -771,7 +771,7 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
                 0.01830968,
             ]
         )
-        self.assertTrue(paddle.allclose(output[0, 500, 10002:10030], EXPECTED_SLICE_1, atol=1e-3, rtol=1e-3))
+        self.assertTrue(paddle.allclose(output[0, 500, 10000:10030], EXPECTED_SLICE_1, atol=1e-3, rtol=1e-3))
         self.assertTrue(paddle.allclose(output[1, 500, 10000:10030], EXPECTED_SLICE_2, atol=1e-3, rtol=1e-3))
 
     def test_model_tiny_logits_with_video(self):
