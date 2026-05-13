@@ -750,27 +750,22 @@ def run_sft(
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         if model_args.neftune:
             neft_post_hook_handle.remove()
-        if training_args.benchmark:
-            total_tokens = (
-                data_args.max_seq_len
-                * training_args.per_device_train_batch_size
-                * training_args.dataset_world_size
-                * training_args.gradient_accumulation_steps
-                * training_args.max_steps
-            )
-            total_tokens_per_second_per_gpu = (
-                total_tokens / train_result.metrics["train_runtime"] / training_args.world_size
-            )
-            logger.info(f"Total_Tokens_per_second_per_gpu: {total_tokens_per_second_per_gpu} ")
-            logger.info("Benchmark done.")
-        else:
-            if not training_args.autotuner_benchmark:
-                trainer.save_model(
-                    merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True
-                )
-                trainer.log_metrics("train", train_result.metrics)
-                trainer.save_metrics("train", train_result.metrics)
-                trainer.save_state()
+        total_tokens = (
+            data_args.max_seq_len
+            * training_args.per_device_train_batch_size
+            * training_args.dataset_world_size
+            * training_args.gradient_accumulation_steps
+            * training_args.max_steps
+        )
+        total_tokens_per_second_per_gpu = (
+            total_tokens / train_result.metrics["train_runtime"] / training_args.world_size
+        )
+        logger.info(f"Total_Tokens_per_second_per_gpu: {total_tokens_per_second_per_gpu} ")
+        if not training_args.autotuner_benchmark:
+            trainer.save_model(merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True)
+            trainer.log_metrics("train", train_result.metrics)
+            trainer.save_metrics("train", train_result.metrics)
+            trainer.save_state()
 
 
 def create_peft_model(model_args, training_args, dtype, model):
