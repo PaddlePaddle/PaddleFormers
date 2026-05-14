@@ -89,14 +89,14 @@ class TestSplitInputsSequenceDimLoadBalance(unittest.TestCase):
 class TestAutoSplitSequenceDimLoadBalance(unittest.TestCase):
     """Tests for auto_split_sequence_dim_load_balance function."""
 
-    @patch("paddleformers.transformers.context_parallel_utils.shard_seq_load_balance")
+    @patch("paddle.distributed.auto_parallel.ring_attention.shard_seq_load_balance")
     def test_tensor_input(self, mock_shard):
         mock_shard.return_value = paddle.randn([2, 4])
         tensor = paddle.randn([2, 8])
         auto_split_sequence_dim_load_balance(tensor)
         mock_shard.assert_called_once_with(tensor, 1)
 
-    @patch("paddleformers.transformers.context_parallel_utils.shard_seq_load_balance")
+    @patch("paddle.distributed.auto_parallel.ring_attention.shard_seq_load_balance")
     def test_dict_input(self, mock_shard):
         mock_shard.return_value = paddle.randn([2, 4])
         tensor1 = paddle.randn([2, 8])
@@ -106,7 +106,7 @@ class TestAutoSplitSequenceDimLoadBalance(unittest.TestCase):
         self.assertIsInstance(result, dict)
         self.assertEqual(mock_shard.call_count, 2)
 
-    @patch("paddleformers.transformers.context_parallel_utils.shard_seq_load_balance")
+    @patch("paddle.distributed.auto_parallel.ring_attention.shard_seq_load_balance")
     def test_list_input(self, mock_shard):
         mock_shard.return_value = paddle.randn([2, 4])
         tensor1 = paddle.randn([2, 8])

@@ -92,21 +92,21 @@ class TestIsNeedMasterWeight(unittest.TestCase):
 
     def test_multi_precision_fp16(self):
         """Test that _multi_precision with fp16 returns True."""
-        optimizer = MagicMock()
+        optimizer = MagicMock(spec=["_multi_precision"])
         optimizer._multi_precision = True
         result = is_need_master_weight(optimizer, is_fp16_or_bp16=True)
         self.assertTrue(result)
 
     def test_multi_precision_fp32(self):
         """Test that _multi_precision without fp16 returns False."""
-        optimizer = MagicMock()
+        optimizer = MagicMock(spec=["_multi_precision"])
         optimizer._multi_precision = True
         result = is_need_master_weight(optimizer, is_fp16_or_bp16=False)
         self.assertFalse(result)
 
     def test_multi_precision_false(self):
         """Test that _multi_precision=False returns False."""
-        optimizer = MagicMock()
+        optimizer = MagicMock(spec=["_multi_precision"])
         optimizer._multi_precision = False
         result = is_need_master_weight(optimizer, is_fp16_or_bp16=True)
         self.assertFalse(result)

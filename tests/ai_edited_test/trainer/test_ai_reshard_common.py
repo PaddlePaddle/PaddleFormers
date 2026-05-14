@@ -38,8 +38,7 @@ class TestIsShardingOpt(unittest.TestCase):
 
     def test_non_sharding_optimizer_returns_false(self):
         """Test that a regular optimizer returns False."""
-        optimizer = MagicMock()
-        # Make unwrap_optimizer return None for all checks
+        optimizer = MagicMock(spec=[])
         with patch("paddleformers.trainer.utils.reshard.common.unwrap_optimizer", return_value=None):
             result = is_sharding_opt(optimizer)
             self.assertFalse(result)
