@@ -216,7 +216,9 @@ class Olmo3TokenizerTest(unittest.TestCase):
     def test_tokenizer_encode_decode(self):
         from transformers import AutoTokenizer
 
-        tokenizer = AutoTokenizer.from_pretrained("allenai/OLMo-3-7B-Instruct", trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(
+            "allenai/OLMo-3-7B-Instruct", trust_remote_code=True, download_hub="modelscope"
+        )
         text = "Hello, world!"
         tokens = tokenizer.encode(text)
         decoded = tokenizer.decode(tokens)
@@ -227,7 +229,9 @@ class Olmo3TokenizerTest(unittest.TestCase):
     def test_tokenizer_special_tokens(self):
         from transformers import AutoTokenizer
 
-        tokenizer = AutoTokenizer.from_pretrained("allenai/OLMo-3-7B-Instruct", trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(
+            "allenai/OLMo-3-7B-Instruct", trust_remote_code=True, download_hub="modelscope"
+        )
         self.assertIsNotNone(tokenizer.eos_token)
         self.assertIsNotNone(tokenizer.pad_token)
 
@@ -244,15 +248,12 @@ class Olmo3GenerationTest(unittest.TestCase):
     def test_generation_capital_of_china(self):
         from transformers import AutoTokenizer as HFAutoTokenizer
 
-        tokenizer = HFAutoTokenizer.from_pretrained(
-            self._MODEL_ID,
-            trust_remote_code=True,
-        )
+        tokenizer = HFAutoTokenizer.from_pretrained(self._MODEL_ID, trust_remote_code=True, download_hub="modelscope")
 
         model = Olmo3ForCausalLM.from_pretrained(
             self._MODEL_ID,
             dtype="bfloat16",
-            download_hub="huggingface",
+            download_hub="modelscope",
             load_via_cpu=True,  # 通过 CPU 加载权重避免 GPU OOM
         )
         model.eval()
@@ -408,7 +409,7 @@ def _prepare_pt_layout_pd_checkpoint(src_model_path: str) -> str:
             dtype="bfloat16",
             load_checkpoint_format="flex_checkpoint",
             _attn_implementation="eager",
-            download_hub="huggingface",
+            download_hub="modelscope",
             load_via_cpu=True,
         )
         paddle.save(model.state_dict(), pd_weight_path)
@@ -450,7 +451,7 @@ class Olmo3DiffTest(unittest.TestCase):
             dtype="bfloat16",
             load_checkpoint_format="flex_checkpoint",
             _attn_implementation="eager",
-            download_hub="huggingface",
+            download_hub="modelscope",
             load_via_cpu=True,
         )
         pd_model.eval()
@@ -486,7 +487,7 @@ class Olmo3DiffTest(unittest.TestCase):
             dtype="bfloat16",
             load_checkpoint_format="flex_checkpoint",
             _attn_implementation="eager",
-            download_hub="huggingface",
+            download_hub="modelscope",
             load_via_cpu=True,
         )
         pd_model.eval()
