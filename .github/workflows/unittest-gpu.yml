@@ -12,7 +12,12 @@ on:
       image_name:
         required: false
         type: string
-
+permissions: 
+    pull-requests: write
+    contents: read
+    actions: read
+    checks: read
+    
 concurrency:
   group: unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
