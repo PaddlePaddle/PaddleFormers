@@ -15,25 +15,17 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-import paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils as seed_utils_mod
 from paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils import set_seed
 
 
 class TestSetSeed(unittest.TestCase):
     """Tests for set_seed function."""
 
-    def setUp(self):
-        self._mock_tracker = MagicMock()
-        self._original_get_rng_state_tracker = seed_utils_mod.get_rng_state_tracker
-        seed_utils_mod.get_rng_state_tracker = lambda: self._mock_tracker
-
-    def tearDown(self):
-        seed_utils_mod.get_rng_state_tracker = self._original_get_rng_state_tracker
-
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.fleet")
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.dist")
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.paddle")
-    def test_set_seed_without_hcg(self, mock_paddle, mock_dist, mock_fleet):
+    @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.get_rng_state_tracker")
+    def test_set_seed_without_hcg(self, mock_tracker, mock_paddle, mock_dist, mock_fleet):
         """Test set_seed when fleet has no _hcg attribute."""
         mock_fleet._hcg = None
         type(mock_fleet).__contains__ = lambda self, item: False
@@ -43,12 +35,14 @@ class TestSetSeed(unittest.TestCase):
 
         set_seed(42)
 
-        self._mock_tracker.add.assert_called()
+        mock_tracker.assert_called_once()
+        mock_tracker.return_value.add.assert_called()
         mock_paddle.seed.assert_called()
 
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.fleet")
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.paddle")
-    def test_set_seed_with_hcg(self, mock_paddle, mock_fleet):
+    @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.get_rng_state_tracker")
+    def test_set_seed_with_hcg(self, mock_tracker, mock_paddle, mock_fleet):
         """Test set_seed when fleet has _hcg attribute."""
         mock_hcg = MagicMock()
         mock_hcg.get_model_parallel_rank.return_value = 0
@@ -64,13 +58,15 @@ class TestSetSeed(unittest.TestCase):
 
         set_seed(123)
 
-        self._mock_tracker.add.assert_called()
+        mock_tracker.assert_called_once()
+        mock_tracker.return_value.add.assert_called()
         mock_paddle.seed.assert_called()
 
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.fleet")
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.dist")
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.paddle")
-    def test_set_seed_different_seeds_for_different_ranks(self, mock_paddle, mock_dist, mock_fleet):
+    @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.get_rng_state_tracker")
+    def test_set_seed_different_seeds_for_different_ranks(self, mock_tracker, mock_paddle, mock_dist, mock_fleet):
         """Test that different ranks get different seeds."""
         mock_fleet._hcg = None
         mock_dist.get_rank.return_value = 0
