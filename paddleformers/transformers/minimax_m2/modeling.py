@@ -408,12 +408,15 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
             ]
 
-            if config.use_gated_attn:
+            use_mla = bool(getattr(config, "multi_latent_attention", False))
+
+            if config.use_gated_attn and use_mla:
+                # MLA mode: gate_proj is a separate parameter
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.self_attn.gate_proj.weight^T -> {prefix_offset}.self_attn.gate_proj.weight",
                 ]
 
-            if config.q_lora_rank:
+            if use_mla:
                 # MLA attention
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.self_attn.q_a_proj.weight^T -> {prefix_offset}.self_attn.q_a_proj.weight",
@@ -435,9 +438,43 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     ]
 
                 # attention qkv
-                aoa_config["aoa_statements"] += [
-                    f"{prefix}.self_attn.q_proj.weight^T, {prefix}.self_attn.k_proj.weight^T, {prefix}.self_attn.v_proj.weight^T -> {prefix_offset}.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
-                ]
+                if config.use_gated_attn:
+                    # Non-MLA gated attention: gate is fused in qkv_proj
+                    # Fleet layout per group: [Q_heads(hpg*hd), Gate_heads(hpg*hd), K(hd), V(hd)]
+                    # HF q_proj layout: [Q_h0(hd), G_h0(hd), Q_h1(hd), G_h1(hd), ...]
+                    num_heads = config.num_attention_heads
+                    num_kv_heads = config.num_key_value_heads
+                    heads_per_group = num_heads // num_kv_heads
+                    n_chunks = 2 * num_heads  # Q + Gate interleaved
+                    qg_names = [f"{prefix}.self_attn.q_proj._qg{c}" for c in range(n_chunks)]
+                    aoa_config["aoa_statements"].append(
+                        f"{prefix}.self_attn.q_proj.weight -> {','.join(qg_names)}, axis=0"
+                    )
+                    k_names = [f"{prefix}.self_attn.k_proj._kh{c}" for c in range(num_kv_heads)]
+                    v_names = [f"{prefix}.self_attn.v_proj._vh{c}" for c in range(num_kv_heads)]
+                    aoa_config["aoa_statements"].append(
+                        f"{prefix}.self_attn.k_proj.weight -> {','.join(k_names)}, axis=0"
+                    )
+                    aoa_config["aoa_statements"].append(
+                        f"{prefix}.self_attn.v_proj.weight -> {','.join(v_names)}, axis=0"
+                    )
+                    # Reassemble per-group in fleet order: Q_heads, Gate_heads, K, V
+                    ordered = []
+                    for g in range(num_kv_heads):
+                        base = g * heads_per_group * 2
+                        for h in range(heads_per_group):
+                            ordered.append(qg_names[base + h * 2])  # Q heads
+                        for h in range(heads_per_group):
+                            ordered.append(qg_names[base + h * 2 + 1])  # Gate heads
+                        ordered.append(k_names[g])
+                        ordered.append(v_names[g])
+                    fused_tmp = f"{prefix}.self_attn.qkv_fused_tmp"
+                    aoa_config["aoa_statements"].append(f"{','.join(ordered)} -> {fused_tmp}, axis=0")
+                    aoa_config["aoa_statements"].append(f"{fused_tmp}^T -> {prefix_offset}.self_attn.qkv_proj.weight")
+                else:
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.self_attn.q_proj.weight^T, {prefix}.self_attn.k_proj.weight^T, {prefix}.self_attn.v_proj.weight^T -> {prefix_offset}.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
+                    ]
                 if config.attention_bias:
                     aoa_config["aoa_statements"] += [
                         f"{prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias -> {prefix_offset}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
@@ -599,12 +636,15 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.self_attn.o_proj.weight^T -> {prefix}.self_attn.o_proj.weight",
             ]
 
-            if config.use_gated_attn:
+            use_mla = bool(getattr(config, "multi_latent_attention", False))
+
+            if config.use_gated_attn and use_mla:
+                # MLA mode: gate_proj is a separate parameter
                 aoa_statements += [
                     f"{prefix_offset}.self_attn.gate_proj.weight^T -> {prefix}.self_attn.gate_proj.weight",
                 ]
 
-            if config.q_lora_rank:
+            if use_mla:
                 # MLA attention
                 aoa_statements += [
                     f"{prefix_offset}.self_attn.q_a_proj.weight^T -> {prefix}.self_attn.q_a_proj.weight",
@@ -624,13 +664,53 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         f"{prefix_offset}.self_attn.k_norm.weight -> {prefix}.self_attn.k_norm.weight",
                     ]
 
-                aoa_statements += [
-                    f"{prefix_offset}.self_attn.qkv_proj.weight -> {prefix}.self_attn.q_proj.weight, {prefix}.self_attn.k_proj.weight, {prefix}.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
-                ]
-                aoa_statements += [
-                    f"{prefix}.self_attn.{x}_proj.weight^T -> {prefix}.self_attn.{x}_proj.weight"
-                    for x in ("q", "k", "v")
-                ]
+                if config.use_gated_attn:
+                    # Non-MLA gated attention: gate is fused in qkv_proj
+                    # Fleet layout per group: [Q_heads(hpg*hd), Gate_heads(hpg*hd), K(hd), V(hd)]
+                    # Need to split and reassemble to HF format
+                    num_heads = config.num_attention_heads
+                    num_kv_heads = config.num_key_value_heads
+                    heads_per_group = num_heads // num_kv_heads
+                    fleet_key = f"{prefix_offset}.self_attn.qkv_proj.weight"
+                    fused_tmp = f"{prefix}.self_attn.qkv_fused_tmp"
+
+                    # Step 1: Transpose fleet weight
+                    aoa_statements.append(f"{fleet_key}^T -> {fused_tmp}")
+
+                    # Step 2: Split into per-group chunks along axis=0
+                    chunk_names = []
+                    for g in range(num_kv_heads):
+                        for h in range(heads_per_group):
+                            chunk_names.append(f"{prefix}.self_attn._q_g{g}_h{h}")
+                        for h in range(heads_per_group):
+                            chunk_names.append(f"{prefix}.self_attn._gate_g{g}_h{h}")
+                        chunk_names.append(f"{prefix}.self_attn._k_g{g}")
+                        chunk_names.append(f"{prefix}.self_attn._v_g{g}")
+                    aoa_statements.append(f"{fused_tmp} -> {','.join(chunk_names)}, axis=0")
+
+                    # Step 3: Reassemble q_proj (interleaved Q+Gate)
+                    q_ordered = []
+                    for g in range(num_kv_heads):
+                        for h in range(heads_per_group):
+                            q_ordered.append(f"{prefix}.self_attn._q_g{g}_h{h}")
+                            q_ordered.append(f"{prefix}.self_attn._gate_g{g}_h{h}")
+                    aoa_statements.append(f"{','.join(q_ordered)} -> {prefix}.self_attn.q_proj.weight, axis=0")
+
+                    # k_proj
+                    k_ordered = [f"{prefix}.self_attn._k_g{g}" for g in range(num_kv_heads)]
+                    aoa_statements.append(f"{','.join(k_ordered)} -> {prefix}.self_attn.k_proj.weight, axis=0")
+
+                    # v_proj
+                    v_ordered = [f"{prefix}.self_attn._v_g{g}" for g in range(num_kv_heads)]
+                    aoa_statements.append(f"{','.join(v_ordered)} -> {prefix}.self_attn.v_proj.weight, axis=0")
+                else:
+                    aoa_statements += [
+                        f"{prefix_offset}.self_attn.qkv_proj.weight -> {prefix}.self_attn.q_proj.weight, {prefix}.self_attn.k_proj.weight, {prefix}.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
+                    ]
+                    aoa_statements += [
+                        f"{prefix}.self_attn.{x}_proj.weight^T -> {prefix}.self_attn.{x}_proj.weight"
+                        for x in ("q", "k", "v")
+                    ]
                 if config.attention_bias:
                     aoa_statements += [
                         f"{prefix_offset}.self_attn.qkv_proj.bias -> {prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
