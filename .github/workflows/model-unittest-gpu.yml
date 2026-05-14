@@ -223,6 +223,7 @@ jobs:
           . /opt/conda/etc/profile.d/conda.sh
           conda activate py_$python_version
           python --version
+          sleep 1d
           DOCKER_EOF
       - name: Test
         env:
