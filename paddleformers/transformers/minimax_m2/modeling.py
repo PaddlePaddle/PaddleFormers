@@ -416,7 +416,6 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             if config.q_lora_rank:
                 # MLA attention
                 aoa_config["aoa_statements"] += [
-                    f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
                     f"{prefix}.self_attn.q_a_proj.weight^T -> {prefix_offset}.self_attn.q_a_proj.weight",
                     f"{prefix}.self_attn.q_b_proj.weight^T -> {prefix_offset}.self_attn.q_b_proj.weight",
                     f"{prefix}.self_attn.kv_a_proj_with_mqa.weight^T -> {prefix_offset}.self_attn.kv_a_proj_with_mqa.weight",
@@ -608,7 +607,6 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             if config.q_lora_rank:
                 # MLA attention
                 aoa_statements += [
-                    f"{prefix_offset}.self_attn.o_proj.weight^T -> {prefix}.self_attn.o_proj.weight",
                     f"{prefix_offset}.self_attn.q_a_proj.weight^T -> {prefix}.self_attn.q_a_proj.weight",
                     f"{prefix_offset}.self_attn.q_b_proj.weight^T -> {prefix}.self_attn.q_b_proj.weight",
                     f"{prefix_offset}.self_attn.kv_a_proj_with_mqa.weight^T -> {prefix}.self_attn.kv_a_proj_with_mqa.weight",
