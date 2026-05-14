@@ -56,23 +56,17 @@ jobs:
           PR_NUMBER: ${{ steps.get_pr.outputs.pr_number }}
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          # workflow 名作为 marker 的一部分，避免多个 workflow 互相覆盖
-          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
         run: |
           python3 - <<'PYEOF'
           import json, os, urllib.request
 
-          token         = os.environ['GITHUB_TOKEN']
-          repo          = os.environ['REPO']
-          pr_number     = os.environ['PR_NUMBER']
-          run_id        = os.environ['RUN_ID']
-          run_attempt   = os.environ['RUN_ATTEMPT']
-          workflow_name = os.environ['WORKFLOW_NAME']
+          token       = os.environ['GITHUB_TOKEN']
+          repo        = os.environ['REPO']
+          pr_number   = os.environ['PR_NUMBER']
+          run_id      = os.environ['RUN_ID']
+          run_attempt = os.environ['RUN_ATTEMPT']
+          marker      = "<!-- bot-log-analysis -->"  # 所有 workflow 共用，直接覆盖
 
-          # 每个 workflow 独立 marker，互不覆盖
-          marker = f"<!-- bot-log-analysis-{workflow_name.lower().replace(' ', '-')} -->"
-
-          # 文件名与上传时对齐：bot_result_{run_id}-{run_attempt}.md
           result_file = f"bot_result_{run_id}-{run_attempt}.md"
           if os.path.isfile(result_file):
               body = open(result_file).read()
@@ -82,7 +76,7 @@ jobs:
           run_url = f"https://github.com/{repo}/actions/runs/{run_id}"
           comment = (
               f"{marker}\n"
-              f"## 🤖 [{workflow_name}] PaddleFormers Bot Log Analysis\n\n"
+              f"## 🤖 PaddleFormers Bot Log Analysis\n\n"
               f"> Run [`#{run_id}`]({run_url}) · Attempt `{run_attempt}`\n\n"
               f"{body}\n\n"
               f"---\n"
