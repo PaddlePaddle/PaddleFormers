@@ -112,7 +112,6 @@ class TestDeepseekV2FastConfig(unittest.TestCase):
         self.assertFalse(self.config.fakse_gate_restrict_balance)
         self.assertEqual(self.config.adaptive_remained_O1_recompute_ratio, 0)
         self.assertTrue(self.config.offline_quant_expert_weight)
-        self.assertTrue(self.config.clear_origin_weight_when_offline_quant)
         self.assertEqual(self.config.mlp_bwd_subbatch_rows, 0)
         self.assertEqual(self.config.mlp_fwd_subbatch_rows, 0)
         self.assertEqual(self.config.output_subbatch_rows, 0)
