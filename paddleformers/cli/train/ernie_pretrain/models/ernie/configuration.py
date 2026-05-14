@@ -161,7 +161,7 @@ class ErnieMoEConfig(PretrainedConfig):
         moe_fuse_experts: bool = False,
         moe_all_to_all_dropout: float = 0.0,
         moe_k=2,
-        moe_use_aux_free: bool = False,
+        topk_method: str = "greedy",
         moe_group_experts: bool = False,
         enable_delay_scale_loss: bool = True,
         num_acc_steps: Optional[int] = None,
@@ -364,7 +364,7 @@ class ErnieMoEConfig(PretrainedConfig):
         self.moe_layer_end_index = self.num_hidden_layers - 1 if moe_layer_end_index == -1 else moe_layer_end_index
         self.scoring_func = scoring_func
         self.moe_norm_gate_logits = moe_norm_gate_logits
-        self.moe_use_aux_free = moe_use_aux_free
+        self.topk_method = topk_method
         self.fuse_gate_detach_matmul = fuse_gate_detach_matmul
         if insert_empty_layer is not None:
             assert isinstance(insert_empty_layer, list), "insert_empty_layer should be a list"

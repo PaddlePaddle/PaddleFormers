@@ -78,7 +78,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         moe_norm_gate_logits=True,
         moe_all_to_all_dropout: float = 0.0,
         moe_k=2,
-        moe_use_aux_free: bool = True,
+        topk_method: str = "noaux_tc",
         moe_group_experts: bool = False,
         moe_group_orthogonal_loss: bool = True,
         enable_delay_scale_loss: bool = True,
@@ -147,7 +147,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
             moe_norm_gate_logits: Whether to normalize gate logits
             moe_all_to_all_dropout: Dropout for all-to-all communication
             moe_k: Number of experts to route to
-            moe_use_aux_free: Whether to use auxiliary-free routing
+            topk_method: Top-k routing method. ``noaux_tc`` enables auxiliary-free routing
             moe_group_experts: Whether to group experts (requires hard gating)
             moe_group_orthogonal_loss: Whether to use group orthogonal loss
             enable_delay_scale_loss: Whether to enable delayed loss scaling
@@ -217,7 +217,7 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
         self.moe_layer_end_index = self.num_hidden_layers - 1 if moe_layer_end_index == -1 else moe_layer_end_index
         self.scoring_func = scoring_func
         self.moe_norm_gate_logits = moe_norm_gate_logits
-        self.moe_use_aux_free = moe_use_aux_free
+        self.topk_method = topk_method
         self.fuse_gate_detach_matmul = fuse_gate_detach_matmul
         self.moe_use_hard_gate = moe_use_hard_gate
         self.moe_multimodal_dispatch_use_allgather = moe_multimodal_dispatch_use_allgather
@@ -252,7 +252,6 @@ class Ernie4_5_MoeConfig(PretrainedConfig):
                 "enable_delay_scale_loss",
                 "enable_mtp_magic_send",
                 "moe_dropout_prob",
-                "moe_use_aux_free",
                 "router_aux_loss_coef",
                 "scoring_func",
                 "moe_group_experts",

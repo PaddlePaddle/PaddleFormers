@@ -142,7 +142,7 @@ class TestMOEAlltoAllLayerInit(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.01
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.config.moe_use_hard_gate = False
         mock_gate.config.moe_orthogonal_loss_lambda = 0.0
         mock_gate.config.router_z_loss_coef = 0.0
@@ -184,7 +184,7 @@ class TestMOEAlltoAllLayerInit(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.01
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.parameters.return_value = []
 
         experts = nn.LayerList([nn.Linear(4, 4), nn.Linear(4, 4)])
@@ -213,7 +213,7 @@ class TestMOEAlltoAllLayerInit(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.parameters.return_value = []
 
         experts = nn.LayerList([nn.Linear(4, 4), nn.Linear(4, 4), nn.Linear(4, 4), nn.Linear(4, 4)])
@@ -240,7 +240,7 @@ class TestMOEAlltoAllLayerInit(unittest.TestCase):
         gate = nn.Linear(8, 4)
         gate.config = MagicMock()
         gate.config.router_aux_loss_coef = 0.0
-        gate.config.moe_use_aux_free = True
+        gate.config.topk_method = "noaux_tc"
 
         experts = nn.LayerList([nn.Linear(4, 4), nn.Linear(4, 4)])
         for p in experts.parameters():
@@ -261,7 +261,7 @@ class TestMOEAlltoAllLayerInit(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.parameters.return_value = []
 
         experts = nn.LayerList([nn.Linear(4, 4)])
@@ -283,7 +283,7 @@ class TestMOEAlltoAllLayerInit(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.parameters.return_value = []
 
         experts = nn.LayerList([nn.Linear(4, 4)])
@@ -304,7 +304,7 @@ class TestMOEAlltoAllLayerInit(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.parameters.return_value = []
 
         experts = nn.LayerList([nn.Linear(4, 4)])
@@ -326,7 +326,7 @@ class TestMOEAlltoAllLayerInit(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.parameters.return_value = []
 
         experts = nn.LayerList([nn.Linear(4, 4), nn.Linear(4, 4)])
@@ -352,7 +352,7 @@ class TestMOEAlltoAllLayerCalcRouterLoss(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = aux_loss_coef
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.config.moe_orthogonal_loss_lambda = 0.0
         mock_gate.config.router_z_loss_coef = 0.0
         mock_gate.config.moe_use_hard_gate = False
@@ -434,7 +434,7 @@ class TestMOEAlltoAllLayerCombineExpertOutput(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.config.moe_use_hard_gate = False
         mock_gate.config.norm_gate_logits = False
         mock_gate.parameters.return_value = []
@@ -466,7 +466,7 @@ class TestMOEAlltoAllLayerCombineExpertOutput(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.config.moe_use_hard_gate = False
         mock_gate.config.norm_gate_logits = False
         mock_gate.parameters.return_value = []
@@ -502,7 +502,7 @@ class TestMOEAlltoAllLayerForwardExperts(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.parameters.return_value = []
 
         expert1 = nn.Linear(8, 8)
@@ -532,7 +532,7 @@ class TestMOEAlltoAllLayerForwardExperts(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.parameters.return_value = []
 
         # Fused experts must support len(), subscripting, and be callable
@@ -576,7 +576,7 @@ class TestMOEAlltoAllLayerFusedGateLogitsProcess(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.config.moe_use_hard_gate = False
         mock_gate.config.norm_gate_logits = False
         mock_gate.act = paddle.nn.functional.softmax
@@ -639,7 +639,7 @@ class TestMOEAlltoAllLayerForwardSingleStage(unittest.TestCase):
         mock_gate = MagicMock()
         mock_gate.config = MagicMock()
         mock_gate.config.router_aux_loss_coef = 0.0
-        mock_gate.config.moe_use_aux_free = True
+        mock_gate.config.topk_method = "noaux_tc"
         mock_gate.parameters.return_value = []
 
         experts = nn.LayerList([nn.Linear(4, 4), nn.Linear(4, 4)])

@@ -613,7 +613,7 @@ class Ernie4_5_DecoderLayer(nn.Layer):
             lm_gate, lm_experts = None, None
 
         # for AuxLoss Free Router:
-        if cfg.moe_use_aux_free:
+        if cfg.topk_method == "noaux_tc":
             moe_statics = MoEStatics(cfg, layer_idx)
         else:
             moe_statics = None

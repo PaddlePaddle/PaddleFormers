@@ -41,6 +41,7 @@
   "moe_intermediate_size": 3584,
   "moe_capacity": [8,8,8],
   "moe_gate": "top2_fused",
+  "topk_method": "noaux_tc",
   "moe_gate_scale": false,
   "moe_gate_detach": 1.0,
   "moe_k": 8,

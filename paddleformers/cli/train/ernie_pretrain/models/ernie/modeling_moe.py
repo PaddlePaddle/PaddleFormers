@@ -1110,7 +1110,7 @@ class ErnieDecoderLayer(nn.Layer):
         else:
             fc = [(cfg.moe_num_experts, fc_cls(cfg))]
         gate, experts, lm_gate, lm_experts = get_gate(self.config, fc, layer_idx)
-        if cfg.moe_use_aux_free:
+        if cfg.topk_method == "noaux_tc":
             moe_statics = MoEStatics(cfg, layer_idx)
         else:
             moe_statics = None

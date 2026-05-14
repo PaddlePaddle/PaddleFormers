@@ -45,7 +45,7 @@ class FakeGateConfig:
         self.global_aux_loss = False
         self.sinkhorn_2gate = False
         self.sinkhorn_temp = 1.0
-        self.moe_use_aux_free = False
+        self.topk_method = "greedy"
         self.router_aux_loss_coef = 0.01
         self.router_z_loss_coef = 0.0
         self.moe_orthogonal_loss_lambda = 0.0
@@ -419,7 +419,7 @@ class TestTopKGateCalAuxLoss(unittest.TestCase):
     @patch("paddleformers.nn.moe.topk_gate.dist.get_rank", return_value=0)
     def test_aux_loss_with_correction_bias_no_tokens_mask(self, mock_rank):
         """Test aux loss with correction_bias but no tokens_mask."""
-        config = FakeGateConfig(moe_use_aux_free=True, moe_k=2)
+        config = FakeGateConfig(topk_method="noaux_tc", moe_k=2)
         gate = self.TopKGate(config, layer_idx=0, group=_make_fake_group())
         gate_prob = F.softmax(_randn([8, 8]))
         dispatch_mask = paddle.randint(0, 8, [8])

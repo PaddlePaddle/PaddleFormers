@@ -71,7 +71,10 @@ class ErniePretrainArgument:
     moe_num_experts: Union[int, list] = 0
     moe_k: int = field(default=2, metadata={"help": "Number of keys per experts"})
     moe_capacity = ()
-    moe_use_aux_free: bool = field(default=False, metadata={"help": "Whether to use aux free"})
+    topk_method: Optional[str] = field(
+        default=None,
+        metadata={"help": "MoE top-k method; noaux_tc enables aux-free routing"},
+    )
     moe_gate: str = field(default="top2_fused", metadata={"help": "MoE gate type"})
     transpose_split_quant: bool = field(default=False, metadata={"help": "Whether to use transpose split quant"})
 
@@ -178,12 +181,11 @@ class ModelArguments:
             "routing strategy is used instead of a learned gating network."
         },
     )
-    moe_use_aux_free: Optional[bool] = field(
+    topk_method: Optional[str] = field(
         default=None,
         metadata={
-            "help": "Whether to use auxiliary‑loss‑free routing. If True, "
-            "load balancing (using expert bias adjustments) is used instead "
-            "of traditional auxiliary loss for MoE."
+            "help": "MoE top-k routing method. Set to noaux_tc to enable "
+            "load balancing with expert bias adjustments instead of traditional auxiliary loss."
         },
     )
 

@@ -147,7 +147,7 @@ class TestModelArguments(unittest.TestCase):
         self.assertFalse(args.moe_group_experts)
         self.assertEqual(args.moe_orthogonal_loss_lambda, 0.0)
         self.assertFalse(args.moe_use_hard_gate)
-        self.assertIsNone(args.moe_use_aux_free)
+        self.assertIsNone(args.topk_method)
 
     def test_pp_seg_method(self):
         args = ModelArguments()
