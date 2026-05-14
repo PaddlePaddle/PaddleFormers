@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for OLMo3 model.
-"""
+"""Unit tests for OLMo3 model."""
 
 from __future__ import annotations
 
@@ -26,7 +25,12 @@ import unittest
 import numpy as np
 import paddle
 
-from paddleformers.transformers import AutoTokenizer, Olmo3Config, Olmo3ForCausalLM, Olmo3Model
+from paddleformers.transformers import (
+    AutoTokenizer,
+    Olmo3Config,
+    Olmo3ForCausalLM,
+    Olmo3Model,
+)
 from tests.testing_utils import require_package, slow
 from tests.transformers.test_modeling_common import (
     ModelTesterMixin,
