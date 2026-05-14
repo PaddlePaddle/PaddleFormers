@@ -15,11 +15,20 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
+import paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils as seed_utils_mod
 from paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils import set_seed
 
 
 class TestSetSeed(unittest.TestCase):
     """Tests for set_seed function."""
+
+    def setUp(self):
+        self._mock_tracker = MagicMock()
+        self._original_get_rng_state_tracker = seed_utils_mod.get_rng_state_tracker
+        seed_utils_mod.get_rng_state_tracker = lambda: self._mock_tracker
+
+    def tearDown(self):
+        seed_utils_mod.get_rng_state_tracker = self._original_get_rng_state_tracker
 
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.fleet")
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.dist")
@@ -27,21 +36,14 @@ class TestSetSeed(unittest.TestCase):
     def test_set_seed_without_hcg(self, mock_paddle, mock_dist, mock_fleet):
         """Test set_seed when fleet has no _hcg attribute."""
         mock_fleet._hcg = None
-        # Simulate: hasattr(fleet, "_hcg") returns False
         type(mock_fleet).__contains__ = lambda self, item: False
         mock_dist.get_rank.return_value = 0
         mock_dist.get_world_size.return_value = 1
         mock_paddle.distributed.get_world_size.return_value = 1
 
-        mock_tracker = MagicMock()
-        with patch(
-            "paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.get_rng_state_tracker",
-            return_value=mock_tracker,
-        ):
-            set_seed(42)
+        set_seed(42)
 
-        # Check that random seeds were set
-        mock_tracker.add.assert_called()
+        self._mock_tracker.add.assert_called()
         mock_paddle.seed.assert_called()
 
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.fleet")
@@ -60,14 +62,9 @@ class TestSetSeed(unittest.TestCase):
         mock_fleet.get_hybrid_communicate_group.return_value = mock_hcg
         mock_paddle.distributed.get_world_size.return_value = 1
 
-        mock_tracker = MagicMock()
-        with patch(
-            "paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.get_rng_state_tracker",
-            return_value=mock_tracker,
-        ):
-            set_seed(123)
+        set_seed(123)
 
-        mock_tracker.add.assert_called()
+        self._mock_tracker.add.assert_called()
         mock_paddle.seed.assert_called()
 
     @patch("paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.fleet")
@@ -80,14 +77,8 @@ class TestSetSeed(unittest.TestCase):
         mock_dist.get_world_size.return_value = 2
         mock_paddle.distributed.get_world_size.return_value = 2
 
-        mock_tracker = MagicMock()
-        with patch(
-            "paddleformers.cli.train.ernie_pretrain.src.utils.seed_utils.get_rng_state_tracker",
-            return_value=mock_tracker,
-        ):
-            set_seed(42)
+        set_seed(42)
 
-        # Verify seeds were set with proper offsets
         mock_paddle.seed.assert_called()
 
 

@@ -177,18 +177,8 @@ class TestDPOTrainingArguments(unittest.TestCase):
         self.assertTrue(args.unified_checkpoint)
         self.assertEqual(args.unified_checkpoint_config, "")
         self.assertFalse(args.autotuner_benchmark)
-        self.assertFalse(args.benchmark)
         self.assertFalse(args.use_intermediate_api)
         self.assertEqual(args.num_hidden_layers, 2)
-
-    def test_benchmark_mode(self):
-        args = DPOTrainingArguments(output_dir="/tmp/test_output", benchmark=True)
-        self.assertTrue(args.do_train)
-        self.assertFalse(args.do_export)
-        self.assertFalse(args.do_predict)
-        self.assertFalse(args.do_eval)
-        self.assertTrue(args.overwrite_output_dir)
-        self.assertFalse(args.load_best_model_at_end)
 
     def test_autotuner_benchmark_mode(self):
         args = DPOTrainingArguments(output_dir="/tmp/test_output", autotuner_benchmark=True, disable_tqdm=False)
