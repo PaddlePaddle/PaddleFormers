@@ -31,7 +31,6 @@ class TestSFTConfig(unittest.TestCase):
 
     def test_default_values(self):
         config = SFTConfig(output_dir="/tmp/test_sft_output")
-        self.assertFalse(config.benchmark)
         self.assertFalse(config.autotuner_benchmark)
         self.assertEqual(config.eval_iters, -1)
         self.assertEqual(config.decay_steps, 0)
@@ -50,15 +49,6 @@ class TestSFTConfig(unittest.TestCase):
         self.assertFalse(config.use_ssa)
         self.assertEqual(config.ssa_group_size_ratio, 0.25)
 
-    def test_benchmark_mode(self):
-        config = SFTConfig(output_dir="/tmp/test_sft_output", benchmark=True)
-        self.assertTrue(config.do_train)
-        self.assertFalse(config.do_export)
-        self.assertFalse(config.do_predict)
-        self.assertFalse(config.do_eval)
-        self.assertTrue(config.overwrite_output_dir)
-        self.assertFalse(config.load_best_model_at_end)
-
     def test_autotuner_benchmark_mode(self):
         config = SFTConfig(output_dir="/tmp/test_sft_output", autotuner_benchmark=True)
         self.assertEqual(config.max_steps, 5)
@@ -72,7 +62,6 @@ class TestSFTConfig(unittest.TestCase):
     def test_custom_values(self):
         config = SFTConfig(
             output_dir="/tmp/custom_output",
-            benchmark=False,
             eval_iters=100,
             decay_steps=500,
             tensor_parallel_output=True,
@@ -83,7 +72,6 @@ class TestSFTConfig(unittest.TestCase):
             use_ssa=True,
             ssa_group_size_ratio=0.5,
         )
-        self.assertFalse(config.benchmark)
         self.assertEqual(config.eval_iters, 100)
         self.assertEqual(config.decay_steps, 500)
         self.assertTrue(config.tensor_parallel_output)

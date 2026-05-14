@@ -163,14 +163,19 @@ class TestProfile(unittest.TestCase):
             x = 1 + 1
         self.assertEqual(x, 2)
 
-    @patch("paddleformers.cli.train.ernie_pretrain.models.comm_utils.get_timers")
-    def test_profile_with_timers(self, mock_get_timers):
+    def test_profile_with_timers(self):
         """Test profile when get_timers returns a callable."""
-        mock_timer = MagicMock()
-        mock_get_timers.return_value = lambda name, use_event=True: mock_timer
+        import paddleformers.cli.train.ernie_pretrain.models.comm_utils as comm_utils_mod
 
-        with profile("test_op"):
-            pass
+        mock_timer = MagicMock()
+        original_get_timers = comm_utils_mod.get_timers
+        try:
+            comm_utils_mod.get_timers = lambda: (lambda name, use_event=True: mock_timer)
+
+            with comm_utils_mod.profile("test_op"):
+                pass
+        finally:
+            comm_utils_mod.get_timers = original_get_timers
 
         mock_timer.start.assert_called()
         mock_timer.stop.assert_called()

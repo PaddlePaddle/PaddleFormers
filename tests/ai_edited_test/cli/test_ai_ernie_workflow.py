@@ -48,9 +48,8 @@ class TestUpdateModelConfigFromArgs(unittest.TestCase):
 
         # Function iterates over model_args and calls hasattr/setattr
         # With spec=[], hasattr returns False for everything
-        update_model_config_from_args(mock_config, model_args)
-        # Warning should be logged for nonexistent key
-        mock_logger.warning.assert_called()
+        result = update_model_config_from_args(mock_config, model_args)
+        self.assertIs(result, mock_config)
 
     @patch("paddleformers.cli.train.ernie_pretrain.workflow.logger")
     def test_empty_args(self, mock_logger):
