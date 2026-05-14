@@ -16,6 +16,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      checks: read
       pull-requests: write
     steps:
       - name: Get failed job URLs across all workflows on this PR
