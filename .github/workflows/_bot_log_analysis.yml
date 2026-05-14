@@ -16,12 +16,13 @@ jobs:
     permissions:
       contents: read
       actions: read
+      checks: read
       pull-requests: write
     steps:
       - name: Get failed job URLs across all workflows on this PR
         id: get_failed_jobs
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.BOT_TOKEN }}
           REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
@@ -63,7 +64,7 @@ jobs:
 
       - name: Run formers bot
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.BOT_TOKEN }}
           FAILED_JOB_URLS: ${{ steps.get_failed_jobs.outputs.failed_job_urls }}
           TASK_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
@@ -90,7 +91,7 @@ jobs:
       - name: Post or update PR comment
         if: always() && github.event_name == 'pull_request'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.BOT_TOKEN }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           RUN_ID: ${{ github.run_id }}
