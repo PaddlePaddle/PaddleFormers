@@ -196,7 +196,6 @@ jobs:
 
           print("comment updated")
           PY
-
       - name: Add PR check annotation
         if: always()
         run: |
