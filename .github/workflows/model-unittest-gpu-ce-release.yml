@@ -312,7 +312,7 @@ jobs:
           allure_file: ${{ github.workspace }}/../../../allure-2.19.0/bin/allure
           FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
         run: |
-          docker exec -t $container_name  -e FLAGS_enable_CE="$FLAGS_enable_CE" /bin/bash -c '
+          docker exec -t -e FLAGS_enable_CE="$FLAGS_enable_CE" $container_name /bin/bash -c '
           source ${work_dir}/../../../proxy_huggingface
           python -m pip install bce-python-sdk==0.8.74 -i https://pypi.org/simple
           if [ ! -f "${{ env.bos_file }}" ]; then
