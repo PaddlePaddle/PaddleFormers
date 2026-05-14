@@ -413,7 +413,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     f"{prefix}.self_attn.gate_proj.weight^T -> {prefix_offset}.self_attn.gate_proj.weight",
                 ]
 
-            if config.q_lora_rank:
+            if getattr(config, "multi_latent_attention", False):
                 # MLA attention
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
@@ -605,7 +605,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     f"{prefix_offset}.self_attn.gate_proj.weight^T -> {prefix}.self_attn.gate_proj.weight",
                 ]
 
-            if config.q_lora_rank:
+            if getattr(config, "multi_latent_attention", False):
                 # MLA attention
                 aoa_statements += [
                     f"{prefix_offset}.self_attn.o_proj.weight^T -> {prefix}.self_attn.o_proj.weight",
