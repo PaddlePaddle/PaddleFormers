@@ -437,7 +437,7 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./report
-          destination_dir: model_${FLAGS_enable_CE}
+          destination_dir: model_${{ env.FLAGS_enable_CE }}
       - name: Display GitHub Pages URL
         if: always()
         env:
