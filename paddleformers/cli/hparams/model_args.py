@@ -40,7 +40,6 @@ class FP8MemConfigs:
     recompute_fwd_gate_up: Union[bool, List[int]] = False
     dequant_input: bool = False
     offline_quant_expert_weight: bool = False
-    clear_origin_weight_when_offline_quant: bool = False
 
 
 @dataclass

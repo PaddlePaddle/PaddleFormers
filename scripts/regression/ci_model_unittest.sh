@@ -19,6 +19,7 @@ export FLAGS_enable_CI=${1-False}
 export FLAGS_enable_CE=${2-False}
 export update_baseline_models=${3-False}
 export BRANCH=${4-develop}
+export PR_NUMBER=${5-0000}
 
 export nlp_dir=/workspace/PaddleFormers
 export log_path=/workspace/PaddleFormers/model_unittest_logs
