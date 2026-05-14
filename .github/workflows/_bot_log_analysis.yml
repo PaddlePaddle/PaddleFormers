@@ -6,124 +6,151 @@ on:
       ci_result:
         required: true
         type: string
+      pr_number:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
 
 jobs:
   faild-log-analysis:
-    if: "always() && inputs.ci_result == 'failure'"
+    if: always() && inputs.ci_result == 'failure'
     runs-on: paddle-bot
-    env:
-      PATH: /home/paddle-1/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
     permissions:
       contents: read
       actions: read
       pull-requests: write
+      issues: write
+
+    env:
+      PATH: /home/paddle-1/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
     steps:
-      - name: Get failed job URLs across all workflows on this PR
+
+      - name: Collect failed jobs
         id: get_failed_jobs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ inputs.head_sha }}
         run: |
-          failed_job_urls=$(python3 - <<'PYEOF'
-          import json, sys, urllib.request, os
+          failed_job_urls=$(python3 <<'PY'
+          import json, urllib.request, os
 
-          token    = os.environ['GITHUB_TOKEN']
-          repo     = os.environ['REPO']
-          head_sha = os.environ['HEAD_SHA']
-          headers  = {
+          token = os.environ['GITHUB_TOKEN']
+          repo = os.environ['REPO']
+          sha = os.environ['HEAD_SHA']
+
+          headers = {
               "Authorization": f"Bearer {token}",
               "Accept": "application/vnd.github+json",
           }
 
-          def gh_get(url):
-              req = urllib.request.Request(url, headers=headers)
-              with urllib.request.urlopen(req) as r:
-                  return json.loads(r.read())
-
-          # 1. 拿到该 commit 上所有 check runs（即所有 workflow 的所有 job）
-          data = gh_get(
-              f"https://api.github.com/repos/{repo}/commits/{head_sha}/check-runs?per_page=100"
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{repo}/commits/{sha}/check-runs?per_page=100",
+              headers=headers,
           )
 
-          # 2. 过滤失败的，排除分析 job 自身
-          skip_keywords = ["failed log analysis", "faild-log-analysis", "formers-bot", "bot log analysis"]
-          failed_urls = [
-              r["html_url"]
-              for r in data.get("check_runs", [])
-              if r["conclusion"] == "failure"
-              and not any(kw in r["name"].lower() for kw in skip_keywords)
+          with urllib.request.urlopen(req) as r:
+              data = json.loads(r.read())
+
+          skip = ["failed log analysis", "formers bot", "bot log analysis"]
+
+          urls = [
+              c["html_url"]
+              for c in data.get("check_runs", [])
+              if c.get("conclusion") == "failure"
+              and not any(k in c["name"].lower() for k in skip)
           ]
 
-          print(" ".join(failed_urls))
-          PYEOF
+          print(" ".join(urls))
+          PY
           )
-          echo "failed_job_urls=${failed_job_urls}" >> $GITHUB_OUTPUT
-          echo "Failed job URLs: ${failed_job_urls}"
 
-      - name: Run formers bot
+          echo "failed_job_urls=${failed_job_urls}" >> $GITHUB_OUTPUT
+
+      - name: Run bot
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FAILED_JOB_URLS: ${{ steps.get_failed_jobs.outputs.failed_job_urls }}
           TASK_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           echo "TASK_ID=$TASK_ID" >> $GITHUB_ENV
-          cd /home/paddle-1/
-          PROMPT="Please analyze the failed CI job logs from these URLs: ${FAILED_JOB_URLS}"
-          python formers_bot.py --prompt "$PROMPT" --task-id "$TASK_ID"
 
-      - name: Upload analysis result
+          cd /home/paddle-1/
+
+          PROMPT="Analyze failed CI logs: ${FAILED_JOB_URLS}"
+
+          python formers_bot.py \
+            --prompt "$PROMPT" \
+            --task-id "$TASK_ID"
+
+      - name: Upload summary
+        id: summary
         if: always()
-        id: analysis
         run: |
-          if [ -f /tmp/bot_results/bot_result_${TASK_ID}.md ]; then
-            echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            cat /tmp/bot_results/bot_result_${TASK_ID}.md >> $GITHUB_STEP_SUMMARY
+          RESULT_FILE=/tmp/bot_results/bot_result_${TASK_ID}.md
+
+          echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "$RESULT_FILE" ]; then
+            cat "$RESULT_FILE" >> $GITHUB_STEP_SUMMARY
             echo "has_result=true" >> $GITHUB_OUTPUT
           else
-            echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
-            echo "No analysis result generated." >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ No analysis result generated." >> $GITHUB_STEP_SUMMARY
             echo "has_result=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Post or update PR comment
-        if: always() && github.event_name == 'pull_request'
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> 💡 See PR comment for continuously updated history" >> $GITHUB_STEP_SUMMARY
+
+      - name: Update PR comment
+        if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ inputs.pr_number }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
-          HAS_RESULT: ${{ steps.analysis.outputs.has_result }}
+          HAS_RESULT: ${{ steps.summary.outputs.has_result }}
         run: |
-          python3 - <<'PYEOF'
-          import json, os, urllib.request
+          python3 <<'PY'
+          import os, json, urllib.request, urllib.error
 
-          token       = os.environ['GITHUB_TOKEN']
-          repo        = os.environ['REPO']
-          pr_number   = os.environ['PR_NUMBER']
-          run_id      = os.environ['RUN_ID']
-          run_attempt = os.environ['RUN_ATTEMPT']
-          has_result  = os.environ['HAS_RESULT'] == 'true'
-          task_id     = f"{run_id}-{run_attempt}"
-          marker      = "<!-- bot-log-analysis -->"
+          token = os.environ["GITHUB_TOKEN"]
+          repo = os.environ["REPO"]
+          pr = os.environ["PR_NUMBER"]
+          run_id = os.environ["RUN_ID"]
+          attempt = os.environ["RUN_ATTEMPT"]
+          has_result = os.environ["HAS_RESULT"] == "true"
 
+          marker = "<!-- paddleformers-bot-analysis -->"
+
+          task_id = f"{run_id}-{attempt}"
           result_file = f"/tmp/bot_results/bot_result_{task_id}.md"
-          if has_result and os.path.isfile(result_file):
+
+          if has_result and os.path.exists(result_file):
               body = open(result_file).read()
           else:
-              body = "⚠️ 未生成分析结果，请手动查看 Action 日志。"
+              body = "⚠️ No analysis result generated."
 
           run_url = f"https://github.com/{repo}/actions/runs/{run_id}"
-          comment = (
-              f"{marker}\n"
-              f"## PaddleFormers Bot Log Analysis\n\n"
-              f"> Run [`#{run_id}`]({run_url}) · Attempt `{run_attempt}`\n\n"
-              f"{body}\n\n"
-              f"---\n"
-              f"<sub>🔄 每次 Re-run 后自动更新</sub>"
-          )
+
+          comment = f"""{marker}
+
+          ## PaddleFormers Bot Log Analysis
+
+          > Run #{run_id} · Attempt {attempt}
+
+          🔗 {run_url}
+
+          {body}
+
+          ---
+          <sub>Auto-updated on rerun</sub>
+          """
 
           headers = {
               "Authorization": f"Bearer {token}",
@@ -131,51 +158,46 @@ jobs:
               "Content-Type": "application/json",
           }
 
-          def gh(method, url, payload=None):
+          def request(method, url, payload=None):
               req = urllib.request.Request(
                   url,
                   data=json.dumps(payload).encode() if payload else None,
                   headers=headers,
                   method=method,
               )
+
               with urllib.request.urlopen(req) as r:
                   return json.loads(r.read())
 
           base = f"https://api.github.com/repos/{repo}"
-          comments = gh("GET", f"{base}/issues/{pr_number}/comments?per_page=100")
-          existing_id = next(
-              (c["id"] for c in comments if marker in c.get("body", "")), None
+
+          comments = request(
+              "GET",
+              f"{base}/issues/{pr}/comments?per_page=100"
           )
 
-          if existing_id:
-              res = gh("PATCH", f"{base}/issues/comments/{existing_id}", {"body": comment})
-              print(f"Updated: {res.get('html_url')}")
+          existing = next(
+              (c["id"] for c in comments if marker in c["body"]),
+              None
+          )
+
+          if existing:
+              request(
+                  "PATCH",
+                  f"{base}/issues/comments/{existing}",
+                  {"body": comment}
+              )
           else:
-              res = gh("POST", f"{base}/issues/{pr_number}/comments", {"body": comment})
-              print(f"Created: {res.get('html_url')}")
-          PYEOF
+              request(
+                  "POST",
+                  f"{base}/issues/{pr}/comments",
+                  {"body": comment}
+              )
 
-      - name: Report to monitor
+          print("comment updated")
+          PY
+
+      - name: Add PR check annotation
         if: always()
-        env:
-            MONITOR_URL: ${{ secrets.MONITOR_URL }}
-            PR_NUMBER: ${{ github.event.pull_request.number }}
-            RUN_ID: ${{ github.run_id }}
         run: |
-            RESULT_FILE="/tmp/bot_results/bot_result_${TASK_ID}.md"
-            jq -n \
-            --arg run_id    "$RUN_ID" \
-            --arg pr_number "$PR_NUMBER" \
-            --rawfile summary "$RESULT_FILE" \
-            '{
-                run_id:    $run_id,
-                pr_number: $pr_number,
-                summary:   $summary[:1000],
-                root_cause: "见 GitHub Actions Summary",
-            }' > report.json
-
-            cat report.json
-
-            curl -s -X POST "${MONITOR_URL}/api/bot" \
-            -H 'Content-Type: application/json' \
-            -d @report.json
+          echo "::notice title=PaddleFormers Bot::Click Summary tab to view log analysis."
