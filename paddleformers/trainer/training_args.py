@@ -35,7 +35,7 @@ from ..utils.env import PREFIX_CHECKPOINT_DIR
 from ..utils.import_utils import is_paddlefleet_available
 from ..utils.log import logger
 from ..utils.pdc_sdk import FLASH_DEVICE
-from ..utils.tools import paddle_device
+from ..utils.tools import get_env_device, paddle_device
 from .trainer_utils import (
     IntervalStrategy,
     OptimizerNames,
@@ -1972,7 +1972,7 @@ class TrainingArguments:
                         "delay_scale_loss": True,  # TODO[Waynezee]: remove this config in the future
                         "dp_comm_overlap": enable_dp_comm_overlap,
                         "sharding_comm_overlap": self.enable_sharding_comm_overlap,
-                        "enable_timer": True,
+                        "enable_timer": get_env_device() != "xpu",
                         "release_gradients": self.pp_release_grads or self.release_grads,
                         "overlap_p2p_comm": self.overlap_p2p_comm,
                         "clear_every_step_cache": self.clear_every_step_cache,
