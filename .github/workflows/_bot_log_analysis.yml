@@ -158,9 +158,9 @@ jobs:
       - name: Report to monitor
         if: always()
         env:
-            MONITOR_URL: ${{ secrets.MONITOR_URL }} 
+            MONITOR_URL: ${{ secrets.MONITOR_URL }}
             PR_NUMBER: ${{ github.event.pull_request.number }}
-            RUN_ID: ${{ github.run_id }}         
+            RUN_ID: ${{ github.run_id }}
         run: |
             RESULT_FILE="/tmp/bot_results/bot_result_${TASK_ID}.md"
             jq -n \
