@@ -48,6 +48,11 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 # concurrency:
 #   group: model-unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
 #   cancel-in-progress: true
@@ -58,7 +63,7 @@ env:
   TASK: PaddleFormers-CE-${{ github.event.pull_request.number }}-model-unittest-gpu
   BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
-  CE_JOB_NAME: model-unittest-gpu-cE
+  CE_JOB_NAME: model-unittest-gpu-ce-develop
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
 
 defaults:
@@ -290,8 +295,11 @@ jobs:
         env:
           home_path: ${{ github.workspace }}/../../..
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
+          java_file: ${{ github.workspace }}/../../../jdk1.8.0_351
+          allure_file: ${{ github.workspace }}/../../../allure-2.19.0/bin/allure
+          FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
         run: |
-          docker exec -t $container_name /bin/bash -c '
+          docker exec -t -e FLAGS_enable_CE="$FLAGS_enable_CE" $container_name /bin/bash -c '
           source ${work_dir}/../../../proxy_huggingface
           python -m pip install bce-python-sdk==0.8.74 -i https://pypi.org/simple
           if [ ! -f "${{ env.bos_file }}" ]; then
@@ -299,10 +307,18 @@ jobs:
             mkdir ${{ env.home_path }}/bos
             tar xf ${{ env.home_path }}/bos_new.tar.gz -C ${{ env.home_path }}/bos
           fi
+          if [ ! -f "${{ env.java_file }}" ]; then
+            wget -q --no-proxy -O ${{ env.home_path }}/java_linux.tar.gz https://paddle-qa.bj.bcebos.com/java/java_linux.tar.gz --no-check-certificate
+            tar xf ${{ env.home_path }}/java_linux.tar.gz
+          fi
+          if [ ! -f "${{ env.allure_file }}" ]; then
+            wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
+            unzip -q ${{ env.home_path }}/allure-2.19.0.zip
+          fi
           if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
-            bos_prefix="schedule/$(date +%Y%m%d)"
+            bos_prefix="schedule_${FLAGS_enable_CE}/$(date +%Y%m%d)"
           fi
           # logs
           cd /workspace/PaddleFormers/model_unittest_logs
@@ -311,8 +327,107 @@ jobs:
             python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
             echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/$file"
           done
+          # allure
+          cd /workspace/PaddleFormers/
+          export JAVA_HOME="${{ env.java_file }}"
+          export JRE_HOME="${JAVA_HOME}/jre"
+          export CLASSPATH="${JAVA_HOME}/lib"
+          export PATH="${JAVA_HOME}/bin:${PATH}"
+          ${{ env.allure_file }} generate result -o report        
+          tar -czf report.tar.gz report
+          python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs
+          echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/report.tar.gz"
           '
       - name: Terminate And Delete the Container
         if: always()
         run: |
           docker rm -f $container_name 2>/dev/null || true
+
+  upload-allure:
+    name: upload-allure
+    needs: [model-unittest-gpu-ce-develop]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          repository: PaddlePaddle/PaddleFormers
+          ref: develop
+      - name: Checkout gh-pages
+        uses: actions/checkout@v5
+        with:
+          ref: gh-pages
+          path: gh-pages
+        continue-on-error: true
+      - name: Determine FLAGS_enable_CE
+        id: determine
+        run: |
+          schedule_time="${{ github.event.schedule || '' }}"
+          if [[ "$schedule_time" == "0 9 "* ]]; then
+            echo "FLAGS_enable_CE=CE_Develop_cu130_py313" >> $GITHUB_OUTPUT
+          elif [[ "$schedule_time" == "0 10 "* ]]; then
+            echo "FLAGS_enable_CE=CE_Develop_cu130_py312" >> $GITHUB_OUTPUT
+          else
+            echo "FLAGS_enable_CE=${{ github.event.inputs.FLAGS_enable_CE || 'CE_Develop_cu130_py313' }}" >> $GITHUB_OUTPUT
+          fi
+      - name: Restore history
+        env:
+          FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
+        run: |          
+          if [ -d "gh-pages/model_${FLAGS_enable_CE}/history" ]; then
+            mkdir -p result
+            cp -r gh-pages/model_${FLAGS_enable_CE}/history result/history
+          fi
+      - name: Download report
+        id: download_report
+        env:
+          FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
+        run: |
+          if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
+            bos_prefix="${PR_ID}/${COMMIT_ID}"
+          else
+            bos_prefix="schedule_${FLAGS_enable_CE}/$(date +%Y%m%d)"
+          fi
+          echo "bos_prefix=${bos_prefix}" >> "$GITHUB_OUTPUT"
+
+          wget -q --no-proxy \
+            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/model-unittest-gpu/${bos_prefix}/logs/report.tar.gz \
+            --no-check-certificate
+          echo "Current directory: $(pwd)"
+          echo "Files after download:"
+          ls -la
+          tar -xzf report.tar.gz
+          echo "Files after extraction:"
+          ls -la
+          if [ -d "report" ]; then
+            echo "report directory exists"
+          else
+            echo "ERROR: report directory not found!"
+            exit 1
+          fi
+      - name: Deploy to GitHub Pages
+        if: always()
+        env:
+          FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./report
+          destination_dir: model_${{ env.FLAGS_enable_CE }}
+      - name: Display GitHub Pages URL
+        if: always()
+        env:
+          FLAGS_enable_CE: ${{ steps.determine.outputs.FLAGS_enable_CE }}
+        run: |
+          # GitHub Pages URL
+          PAGES_URL="https://paddlepaddle.github.io/PaddleFormers/model_${FLAGS_enable_CE}/"
+          echo "GitHub Allure Pages URL: ${PAGES_URL}"
+
+          echo "## 🚀 Allure Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Workflow | ${{ github.workflow }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| CE Mode | $FLAGS_enable_CE |" >> $GITHUB_STEP_SUMMARY
+          echo "| Report | [Open Report](${PAGES_URL}) |" >> $GITHUB_STEP_SUMMARY

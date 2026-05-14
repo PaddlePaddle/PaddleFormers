@@ -331,7 +331,10 @@ def run_sft(
 
     # Sync arguments to MLLM sub_config
     if getattr(model_config, "text_config", None) is not None:
+        LlmMetaConfig.set_llm_config(model_config.text_config, training_args)
         model_config.text_config.max_sequence_length = data_args.max_seq_len
+        if hasattr(model_config.text_config, "mtp_num_hidden_layers"):
+            model_config.text_config.mtp_num_hidden_layers = getattr(training_args, "num_nextn_predict_layers", 0)
     if getattr(model_config, "vision_config", None) is not None:
         model_config.vision_config._attn_implementation = model_args._attn_implementation
         model_config.vision_config.recompute_granularity = model_config.recompute_granularity

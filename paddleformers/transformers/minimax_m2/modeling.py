@@ -344,10 +344,17 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         aoa_config["aoa_statements"] += [
             f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
         ]
-        # if config.tie_word_embeddings:
-        #     aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}lm_head.weight"]
-        # else:
-        #     aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}lm_head.weight"]
+
+        assert not (
+            config.tie_word_embeddings and getattr(config, "separate_mtp_headloss", False)
+        ), "tie_word_embeddings and separate_mtp_headloss cannot be enabled simultaneously in aoa"
+        if config.tie_word_embeddings:
+            aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}lm_head.weight"]
+        elif getattr(config, "separate_mtp_headloss", False):
+            aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}shared_mtp_lm_head.weight"]
+            aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}shared_head.weight"]
+        else:
+            aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}lm_head.weight"]
 
         num_hidden_layers = config.num_hidden_layers
         num_head_empty_layers = (
@@ -409,7 +416,6 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             if config.q_lora_rank:
                 # MLA attention
                 aoa_config["aoa_statements"] += [
-                    f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
                     f"{prefix}.self_attn.q_a_proj.weight^T -> {prefix_offset}.self_attn.q_a_proj.weight",
                     f"{prefix}.self_attn.q_b_proj.weight^T -> {prefix_offset}.self_attn.q_b_proj.weight",
                     f"{prefix}.self_attn.kv_a_proj_with_mqa.weight^T -> {prefix_offset}.self_attn.kv_a_proj_with_mqa.weight",
@@ -526,10 +532,17 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         aoa_statements += [
             "model.embedding.embed_tokens.weight -> model.embed_tokens.weight",
         ]
-        # if config.tie_word_embeddings:
-        #     aoa_statements += [f"{model_prefix}lm_head.weight -> _"]
-        # else:
-        #     aoa_statements += [f"{model_prefix}lm_head.weight -> lm_head.weight"]
+
+        assert not (
+            config.tie_word_embeddings and getattr(config, "separate_mtp_headloss", False)
+        ), "tie_word_embeddings and separate_mtp_headloss cannot be enabled simultaneously in aoa"
+        if config.tie_word_embeddings:
+            aoa_statements += [f"{model_prefix}lm_head.weight -> _"]
+        elif getattr(config, "separate_mtp_headloss", False):
+            aoa_statements += [f"{model_prefix}shared_mtp_lm_head.weight -> lm_head.weight"]
+            aoa_statements += [f"{model_prefix}shared_head.weight -> _"]
+        else:
+            aoa_statements += [f"{model_prefix}lm_head.weight -> lm_head.weight"]
 
         num_hidden_layers = config.num_hidden_layers
         num_head_empty_layers = (
@@ -594,7 +607,6 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             if config.q_lora_rank:
                 # MLA attention
                 aoa_statements += [
-                    f"{prefix_offset}.self_attn.o_proj.weight^T -> {prefix}.self_attn.o_proj.weight",
                     f"{prefix_offset}.self_attn.q_a_proj.weight^T -> {prefix}.self_attn.q_a_proj.weight",
                     f"{prefix_offset}.self_attn.q_b_proj.weight^T -> {prefix}.self_attn.q_b_proj.weight",
                     f"{prefix_offset}.self_attn.kv_a_proj_with_mqa.weight^T -> {prefix}.self_attn.kv_a_proj_with_mqa.weight",

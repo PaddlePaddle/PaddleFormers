@@ -28,6 +28,7 @@ class MLLMModelMapping:
     qwen2_5_vl = "qwen2_5_vl"
     qwen3_vl = "qwen3_vl"
     qwen3_vl_moe = "qwen3_vl_moe"
+    qwen3_5_moe = "qwen3_5_moe"
     paddleocr_vl = "paddleocr_vl"
     ernie4_5_moe_vl = "ernie4_5_moe_vl"
     glm4v_moe = "glm4v_moe"
@@ -219,6 +220,15 @@ register_multimodel_keys(
         ],
         llm=["model.language_model", "lm_head"],
         vision=["model.visual", "model.vision_model"],
+    )
+)
+
+register_multimodel_keys(
+    MultiModelKeys(
+        model_dtype=MLLMModelMapping.qwen3_5_moe,
+        aligner="model.vision_model.merger",
+        llm=["model.language_model", "lm_head"],
+        vision="model.vision_model",
     )
 )
 
