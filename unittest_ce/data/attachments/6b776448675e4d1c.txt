@@ -1,1 +1,0 @@
-WARNING  paddleformers.transformers.whisper.processor:processor.py:250 It is strongly recommended to pass the `sampling_rate` argument to `WhisperFeatureExtractor()`. Failing to do so can result in silent errors that might be hard to debug.

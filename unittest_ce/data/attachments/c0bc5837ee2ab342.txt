@@ -1,1 +1,0 @@
-INFO     paddlefleet.transformer.moe.moe_layer:moe_layer.py:258 deepep/hybridep in paddlepaddle does not support compute capability < 9.0, fallback to alltoall token dispatcher.
