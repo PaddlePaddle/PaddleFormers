@@ -13,14 +13,12 @@
 # limitations under the License.
 
 import unittest
-from unittest.mock import MagicMock
 
 import numpy as np
 import paddle
 
 from paddleformers.datasets.rlhf_datasets.protocol import (
     DataProto,
-    DataProtoItem,
     TensorDict,
     list_of_dict_to_dict_of_list,
     pad_dataproto_to_divisor,

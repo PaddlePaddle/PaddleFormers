@@ -14,7 +14,7 @@
 
 import math
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from paddleformers.transformers.vocab_utils import (
     _calculate_padded_vocab_size_cached,

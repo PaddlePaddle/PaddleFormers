@@ -2,9 +2,7 @@
 """Tests for trainer/unified_checkpoint/unified_checkpoint.py"""
 
 import unittest
-from unittest.mock import MagicMock, patch
-
-import paddle
+from unittest.mock import MagicMock
 
 from paddleformers.trainer.unified_checkpoint.unified_checkpoint import (
     UnifiedCheckpointHandler,

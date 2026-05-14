@@ -2,20 +2,10 @@
 """Tests for quantization/unified_checkpoint_quantization.py"""
 
 import unittest
-from unittest.mock import patch
 
 import numpy as np
 import paddle
 
-from paddleformers.quantization.checkpoint_quantization_utils import (
-    cal_abs_max_channel,
-    cal_abs_min_max_channel,
-    cal_ratio,
-    group_wise_quant_dequant,
-    merge_int4,
-    qdq_weight,
-    split_int8,
-)
 from paddleformers.quantization.unified_checkpoint_quantization import (
     dequant_unified_optimizer,
     quant_unified_optimizer,
