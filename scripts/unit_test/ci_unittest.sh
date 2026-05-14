@@ -52,7 +52,7 @@ install_requirements() {
         python -m pip uninstall paddlepaddle-gpu -y
         #paddle
         wget -q $paddle
-        python -m pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
+        python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
 
     else
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
@@ -139,7 +139,6 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     python -m pytest -v -s -n 1 \
         --dist no \
         --maxfail=10 \
-        --retries 3 --retry-delay 1 \
         --timeout 200 --durations 20 \
         --alluredir=result \
         --cov=paddleformers \

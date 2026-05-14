@@ -55,10 +55,8 @@ def get_sm_num():
     return 112
 
 
-def set_parameter_color(
-    parameters, color, group=None, offline_quant_expert_weight=True, clear_origin_weight_when_offline_quant=True
-):
-    if offline_quant_expert_weight and clear_origin_weight_when_offline_quant:
+def set_parameter_color(parameters, color, group=None, offline_quant_expert_weight=True):
+    if offline_quant_expert_weight:
         if group is None:
             for p in parameters:
                 if hasattr(p, "color") and p.color is not None:

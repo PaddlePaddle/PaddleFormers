@@ -438,6 +438,87 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
                 for i in range(text_config.num_hidden_layers)
             ]
 
+        # ── MTP (Multi-Token Prediction) layers ──
+        mtp_num_layers = getattr(text_config, "mtp_num_hidden_layers", 0)
+        if is_moe and mtp_num_layers > 0:
+            num_hidden = text_config.num_hidden_layers
+            for m in range(mtp_num_layers):
+                fleet_layer_id = num_hidden + m
+                hf_mtp_pre = f"mtp.layers.{m}"
+                fleet_mtp_pre = f"{llm_prefix}layers.{fleet_layer_id}"
+
+                # MTP special layers (enorm, hnorm, eh_proj, norm)
+                aoa_config["aoa_statements"] += [
+                    f"mtp.pre_fc_norm_embedding.weight -> {fleet_mtp_pre}.enorm.weight",
+                    f"mtp.pre_fc_norm_hidden.weight -> {fleet_mtp_pre}.hnorm.weight",
+                    f"mtp.fc.weight^T -> {fleet_mtp_pre}.eh_proj.weight",
+                    f"mtp.norm.weight -> {fleet_mtp_pre}.norm.weight",
+                ]
+
+                # MTP transformer layer — layer norms
+                aoa_config["aoa_statements"] += [
+                    f"{hf_mtp_pre}.input_layernorm.weight -> {fleet_mtp_pre}.transformer_layer.input_layernorm.weight",
+                    f"{hf_mtp_pre}.post_attention_layernorm.weight -> {fleet_mtp_pre}.transformer_layer.post_attention_layernorm.weight",
+                ]
+
+                # MTP transformer layer — attention (gated QKV, same as full_attention)
+                if gated_attention:
+                    hf_pre = f"{hf_mtp_pre}.self_attn"
+                    n_chunks = 2 * num_heads
+                    qg_names = [f"{hf_pre}.q_proj._qg{c}" for c in range(n_chunks)]
+                    aoa_config["aoa_statements"].append(f"{hf_pre}.q_proj.weight -> {','.join(qg_names)}, axis=0")
+                    k_names = [f"{hf_pre}.k_proj._kh{c}" for c in range(num_kv_heads)]
+                    v_names = [f"{hf_pre}.v_proj._vh{c}" for c in range(num_kv_heads)]
+                    aoa_config["aoa_statements"].append(f"{hf_pre}.k_proj.weight -> {','.join(k_names)}, axis=0")
+                    aoa_config["aoa_statements"].append(f"{hf_pre}.v_proj.weight -> {','.join(v_names)}, axis=0")
+                    ordered = []
+                    for g in range(num_kv_heads):
+                        base = g * heads_per_group * 2
+                        for h in range(heads_per_group):
+                            ordered.append(qg_names[base + h * 2])
+                        for h in range(heads_per_group):
+                            ordered.append(qg_names[base + h * 2 + 1])
+                        ordered.append(k_names[g])
+                        ordered.append(v_names[g])
+                    fused_tmp = f"{hf_pre}.qkv_fused_tmp"
+                    aoa_config["aoa_statements"].append(f"{','.join(ordered)} -> {fused_tmp}, axis=0")
+                    aoa_config["aoa_statements"].append(
+                        f"{fused_tmp}^T -> {fleet_mtp_pre}.transformer_layer.self_attn.qkv_proj.weight"
+                    )
+                else:
+                    aoa_config["aoa_statements"].append(
+                        f"{hf_mtp_pre}.self_attn.q_proj.weight^T, {hf_mtp_pre}.self_attn.k_proj.weight^T, {hf_mtp_pre}.self_attn.v_proj.weight^T -> {fleet_mtp_pre}.transformer_layer.self_attn.qkv_proj.weight, fused_qkv, num_heads={num_heads}, num_key_value_groups={num_kv_heads}"
+                    )
+
+                # MTP transformer layer — o_proj, q/k norms
+                aoa_config["aoa_statements"] += [
+                    f"{hf_mtp_pre}.self_attn.o_proj.weight^T -> {fleet_mtp_pre}.transformer_layer.self_attn.o_proj.weight",
+                    f"{hf_mtp_pre}.self_attn.q_norm.weight -> {fleet_mtp_pre}.transformer_layer.self_attn.q_norm.weight",
+                    f"{hf_mtp_pre}.self_attn.k_norm.weight -> {fleet_mtp_pre}.transformer_layer.self_attn.k_norm.weight",
+                ]
+
+                # MTP transformer layer — MoE router
+                aoa_config["aoa_statements"].append(
+                    f"{hf_mtp_pre}.mlp.gate.weight -> {fleet_mtp_pre}.transformer_layer.mlp.gate.weight, dtype='float32'"
+                )
+
+                # MTP transformer layer — MoE routed experts
+                # MTP always uses per-expert storage (non-grouped_gemm) because the AOA engine
+                # cannot handle concat+reshape with EP sharding for per-expert 2D HF keys.
+                for N in range(num_experts):
+                    aoa_config["aoa_statements"] += [
+                        f"{hf_mtp_pre}.mlp.experts.{N}.gate_proj.weight^T, {hf_mtp_pre}.mlp.experts.{N}.up_proj.weight^T -> {fleet_mtp_pre}.transformer_layer.mlp.experts.{N}.up_gate_proj.weight, axis=1",
+                        f"{hf_mtp_pre}.mlp.experts.{N}.down_proj.weight^T -> {fleet_mtp_pre}.transformer_layer.mlp.experts.{N}.down_proj.weight",
+                    ]
+
+                # MTP transformer layer — shared expert
+                if shared_expert_intermediate_size and shared_expert_intermediate_size > 0:
+                    aoa_config["aoa_statements"] += [
+                        f"{hf_mtp_pre}.mlp.shared_expert.gate_proj.weight^T, {hf_mtp_pre}.mlp.shared_expert.up_proj.weight^T -> {fleet_mtp_pre}.transformer_layer.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
+                        f"{hf_mtp_pre}.mlp.shared_expert.down_proj.weight^T -> {fleet_mtp_pre}.transformer_layer.mlp.shared_experts.down_proj.weight",
+                        f"{hf_mtp_pre}.mlp.shared_expert_gate.weight^T -> {fleet_mtp_pre}.transformer_layer.mlp.shared_experts.gate_weight",
+                    ]
+
         # ── visual model — attention qkv ──
         # Fleet sharded_state_dict uses: model.vision_model.layers.{i} (NOT decoder.layers)
         # LayerNorm is remapped: input_layernorm -> self_attn.qkv_proj.layer_norm_*
@@ -526,20 +607,71 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         ]
 
         # ── full_attention layers: inverse fused QKV, o_proj, qk norms ──
-        aoa_config["aoa_statements"] += [
-            f"{llm_prefix}layers.{i}.self_attn.qkv_proj.weight -> model.language_model.layers.{i}.self_attn.q_proj.weight, model.language_model.layers.{i}.self_attn.k_proj.weight, model.language_model.layers.{i}.self_attn.v_proj.weight, fused_qkv, num_heads={text_config.num_attention_heads}, num_key_value_groups={text_config.num_key_value_heads}"
-            for i in full_attn_layers
-        ]
-        if getattr(text_config, "attention_bias", False):
+        gated_attention = getattr(text_config, "attn_output_gate", False)
+        num_heads = text_config.num_attention_heads
+        num_kv_heads = text_config.num_key_value_heads
+        heads_per_group = num_heads // num_kv_heads
+
+        if gated_attention:
+            # Fleet qkv_proj layout per group: [Q_heads(hpg*hd), Gate_heads(hpg*hd), K(hd), V(hd)]
+            # HF q_proj layout (dim-0): [Q_h0(hd), G_h0(hd), Q_h1(hd), G_h1(hd), ...]
+            # Total chunks per group: hpg + hpg + 1 + 1 = 2*hpg + 2
+            for i in full_attn_layers:
+                hf_pre = f"model.language_model.layers.{i}.self_attn"
+                fleet_key = f"{llm_prefix}layers.{i}.self_attn.qkv_proj.weight"
+                fused_tmp = f"{hf_pre}.qkv_fused_tmp"
+
+                # Step 1: Transpose fleet weight [in, out] -> [out, in]
+                aoa_config["aoa_statements"].append(f"{fleet_key}^T -> {fused_tmp}")
+
+                # Step 2: Split into per-group chunks along axis=0
+                # Each group has: Q(hpg chunks) + Gate(hpg chunks) + K(1 chunk) + V(1 chunk)
+                # Total chunks = num_kv_heads * (2*hpg + 2)
+                chunk_names = []
+                for g in range(num_kv_heads):
+                    # Q heads for this group
+                    for h in range(heads_per_group):
+                        chunk_names.append(f"{hf_pre}._q_g{g}_h{h}")
+                    # Gate heads for this group
+                    for h in range(heads_per_group):
+                        chunk_names.append(f"{hf_pre}._gate_g{g}_h{h}")
+                    # K and V for this group
+                    chunk_names.append(f"{hf_pre}._k_g{g}")
+                    chunk_names.append(f"{hf_pre}._v_g{g}")
+
+                aoa_config["aoa_statements"].append(f"{fused_tmp} -> {','.join(chunk_names)}, axis=0")
+
+                # Step 3: Reassemble into HF format
+                # q_proj = interleaved [Q_h0, G_h0, Q_h1, G_h1, ...] for all groups
+                q_ordered = []
+                for g in range(num_kv_heads):
+                    for h in range(heads_per_group):
+                        q_ordered.append(f"{hf_pre}._q_g{g}_h{h}")
+                        q_ordered.append(f"{hf_pre}._gate_g{g}_h{h}")
+                aoa_config["aoa_statements"].append(f"{','.join(q_ordered)} -> {hf_pre}.q_proj.weight, axis=0")
+
+                # k_proj = all K heads concatenated
+                k_ordered = [f"{hf_pre}._k_g{g}" for g in range(num_kv_heads)]
+                aoa_config["aoa_statements"].append(f"{','.join(k_ordered)} -> {hf_pre}.k_proj.weight, axis=0")
+
+                # v_proj = all V heads concatenated
+                v_ordered = [f"{hf_pre}._v_g{g}" for g in range(num_kv_heads)]
+                aoa_config["aoa_statements"].append(f"{','.join(v_ordered)} -> {hf_pre}.v_proj.weight, axis=0")
+        else:
             aoa_config["aoa_statements"] += [
-                f"{llm_prefix}layers.{i}.self_attn.qkv_proj.bias -> model.language_model.layers.{i}.self_attn.q_proj.bias, model.language_model.layers.{i}.self_attn.k_proj.bias, model.language_model.layers.{i}.self_attn.v_proj.bias, fused_qkv, num_heads={text_config.num_attention_heads}, num_key_value_groups={text_config.num_key_value_heads}"
+                f"{llm_prefix}layers.{i}.self_attn.qkv_proj.weight -> model.language_model.layers.{i}.self_attn.q_proj.weight, model.language_model.layers.{i}.self_attn.k_proj.weight, model.language_model.layers.{i}.self_attn.v_proj.weight, fused_qkv, num_heads={text_config.num_attention_heads}, num_key_value_groups={text_config.num_key_value_heads}"
                 for i in full_attn_layers
             ]
-        aoa_config["aoa_statements"] += [
-            f"{llm_prefix}layers.{i}.self_attn.{x}_proj.weight^T -> model.language_model.layers.{i}.self_attn.{x}_proj.weight"
-            for i in full_attn_layers
-            for x in ("q", "k", "v")
-        ]
+            if getattr(text_config, "attention_bias", False):
+                aoa_config["aoa_statements"] += [
+                    f"{llm_prefix}layers.{i}.self_attn.qkv_proj.bias -> model.language_model.layers.{i}.self_attn.q_proj.bias, model.language_model.layers.{i}.self_attn.k_proj.bias, model.language_model.layers.{i}.self_attn.v_proj.bias, fused_qkv, num_heads={text_config.num_attention_heads}, num_key_value_groups={text_config.num_key_value_heads}"
+                    for i in full_attn_layers
+                ]
+            aoa_config["aoa_statements"] += [
+                f"{llm_prefix}layers.{i}.self_attn.{x}_proj.weight^T -> model.language_model.layers.{i}.self_attn.{x}_proj.weight"
+                for i in full_attn_layers
+                for x in ("q", "k", "v")
+            ]
         aoa_config["aoa_statements"] += [
             f"{llm_prefix}layers.{i}.self_attn.o_proj.weight^T -> model.language_model.layers.{i}.self_attn.o_proj.weight"
             for i in full_attn_layers
@@ -551,21 +683,103 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         ]
 
         # ── linear_attention layers: inverse fused in_proj, conv1d, dt_bias, A_log, out_norm, out_proj ──
-        # Fleet fused in_proj -> split back to HF's 4 separate projections
-        # Fleet split order: [qkv, z(gate), beta, alpha]
-        # Step 1: transpose fleet in_proj -> intermediate
-        # Step 2: split intermediate along axis=0 into 4 HF weights
+        # The forward fused_in_proj macro interleaves sources per TP rank:
+        #   [src0_r0, src1_r0, ..., srcN_r0, src0_r1, ..., srcN_r1]
+        # After full() gathers the ColumnParallelLinear tensor and we transpose,
+        # we see this interleaved layout. We de-interleave using chunk-based split.
+        from functools import reduce
+        from math import gcd
+
+        tp_degree = max(config.tensor_model_parallel_size, 1)
+        lin_num_key_heads = getattr(text_config, "linear_num_key_heads", num_heads)
+        lin_num_value_heads = getattr(text_config, "linear_num_value_heads", num_heads)
+        head_dim = text_config.hidden_size // num_heads
+
+        # Source sizes for in_proj: [q, k, v, z, b, a]
+        q_dim = lin_num_key_heads * head_dim
+        k_dim = lin_num_key_heads * head_dim
+        v_dim = lin_num_value_heads * head_dim
+        z_dim = lin_num_value_heads * head_dim
+        b_dim = lin_num_value_heads
+        a_dim = lin_num_value_heads
+        in_proj_src_sizes = [q_dim, k_dim, v_dim, z_dim, b_dim, a_dim]
+
+        # Source sizes for conv1d: [q_conv, k_conv, v_conv]
+        conv_src_sizes = [q_dim, k_dim, v_dim]
+
+        def gen_inv_fused_in_proj_stmts(layer_idx, src_key, dst_keys, src_sizes, prefix, transpose_first=True):
+            """Generate AOA statements to reverse fused_in_proj interleaving.
+
+            Uses chunk-based equal split to handle unequal source sizes:
+            1. Split the full tensor into N equal chunks (N = total / unit_size)
+            2. Reassemble chunks into destinations by known layout offsets
+            """
+            stmts = []
+            per_rank_sizes = [s // tp_degree for s in src_sizes]
+            unit_size = reduce(gcd, per_rank_sizes)
+            total_dim = sum(src_sizes)
+            n_chunks = total_dim // unit_size
+
+            fused_var = f"{prefix}.inv_fused_tmp"
+            chunk_names = [f"{prefix}._c{c}" for c in range(n_chunks)]
+
+            if transpose_first:
+                stmts.append(f"{src_key}^T -> {fused_var}")
+            else:
+                fused_var = src_key
+
+            stmts.append(f"{fused_var} -> {','.join(chunk_names)}, axis=0")
+
+            chunks_per_rank = n_chunks // tp_degree
+            for dst_idx, (dst_key, src_size) in enumerate(zip(dst_keys, src_sizes)):
+                n_chunks_for_src = (src_size // tp_degree) // unit_size
+                rank_chunks = []
+                for r in range(tp_degree):
+                    rank_offset = r * chunks_per_rank
+                    src_offset_in_rank = sum(per_rank_sizes[:dst_idx]) // unit_size
+                    start = rank_offset + src_offset_in_rank
+                    rank_chunks.extend(chunk_names[start : start + n_chunks_for_src])
+                stmts.append(f"{','.join(rank_chunks)} -> {dst_key}, axis=0")
+
+            return stmts
+
         for i in linear_attn_layers:
             hf_pre = f"model.language_model.layers.{i}.linear_attn"
-            fused_tmp = f"model.language_model.layers.{i}.linear_attn.in_proj_fused_tmp"
-            aoa_config["aoa_statements"] += [
-                f"{llm_prefix}layers.{i}.self_attn.in_proj.weight^T -> {fused_tmp}",
-                f"{fused_tmp} -> {hf_pre}.in_proj_qkv.weight, {hf_pre}.in_proj_z.weight, {hf_pre}.in_proj_b.weight, {hf_pre}.in_proj_a.weight, axis=0",
+            fleet_in_proj = f"{llm_prefix}layers.{i}.self_attn.in_proj.weight"
+
+            q_var = f"{hf_pre}.in_proj._q"
+            k_var = f"{hf_pre}.in_proj._k"
+            v_var = f"{hf_pre}.in_proj._v"
+            dst_keys = [
+                q_var,
+                k_var,
+                v_var,
+                f"{hf_pre}.in_proj_z.weight",
+                f"{hf_pre}.in_proj_b.weight",
+                f"{hf_pre}.in_proj_a.weight",
             ]
-        aoa_config["aoa_statements"] += [
-            f"{llm_prefix}layers.{i}.self_attn.conv1d.weight -> model.language_model.layers.{i}.linear_attn.conv1d.weight"
-            for i in linear_attn_layers
-        ]
+
+            stmts = gen_inv_fused_in_proj_stmts(
+                i, fleet_in_proj, dst_keys, in_proj_src_sizes, prefix=f"{hf_pre}.in_proj", transpose_first=True
+            )
+            aoa_config["aoa_statements"] += stmts
+            aoa_config["aoa_statements"].append(f"{q_var},{k_var},{v_var} -> {hf_pre}.in_proj_qkv.weight, axis=0")
+
+        for i in linear_attn_layers:
+            hf_pre = f"model.language_model.layers.{i}.linear_attn"
+            fleet_conv = f"{llm_prefix}layers.{i}.self_attn.conv1d.weight"
+
+            q_conv = f"{hf_pre}.conv1d._q"
+            k_conv = f"{hf_pre}.conv1d._k"
+            v_conv = f"{hf_pre}.conv1d._v"
+            dst_keys = [q_conv, k_conv, v_conv]
+
+            stmts = gen_inv_fused_in_proj_stmts(
+                i, fleet_conv, dst_keys, conv_src_sizes, prefix=f"{hf_pre}.conv1d", transpose_first=False
+            )
+            aoa_config["aoa_statements"] += stmts
+            aoa_config["aoa_statements"].append(f"{q_conv},{k_conv},{v_conv} -> {hf_pre}.conv1d.weight, axis=0")
+
         aoa_config["aoa_statements"] += [
             f"{llm_prefix}layers.{i}.self_attn.dt_bias -> model.language_model.layers.{i}.linear_attn.dt_bias"
             for i in linear_attn_layers
@@ -603,15 +817,118 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
         # ── MoE — shared experts (all layers) ──
         shared_expert_intermediate_size = getattr(text_config, "shared_expert_intermediate_size", 0)
         if shared_expert_intermediate_size and shared_expert_intermediate_size > 0:
+            # Fleet has fused up_gate_proj; split back to separate gate_proj and up_proj
             aoa_config["aoa_statements"] += [
-                f"{llm_prefix}layers.{i}.mlp.shared_experts.{x}_proj.weight^T -> model.language_model.layers.{i}.mlp.shared_expert.{x}_proj.weight"
+                f"{llm_prefix}layers.{i}.mlp.shared_experts.up_gate_proj.weight -> model.language_model.layers.{i}.mlp.shared_expert.gate_proj.weight, model.language_model.layers.{i}.mlp.shared_expert.up_proj.weight, fused_ffn"
                 for i in range(text_config.num_hidden_layers)
-                for x in ("gate", "up", "down")
+            ]
+            aoa_config["aoa_statements"] += [
+                f"model.language_model.layers.{i}.mlp.shared_expert.{x}_proj.weight^T -> model.language_model.layers.{i}.mlp.shared_expert.{x}_proj.weight"
+                for i in range(text_config.num_hidden_layers)
+                for x in ("gate", "up")
+            ]
+            aoa_config["aoa_statements"] += [
+                f"{llm_prefix}layers.{i}.mlp.shared_experts.down_proj.weight^T -> model.language_model.layers.{i}.mlp.shared_expert.down_proj.weight"
+                for i in range(text_config.num_hidden_layers)
             ]
             aoa_config["aoa_statements"] += [
                 f"{llm_prefix}layers.{i}.mlp.shared_experts.gate_weight^T -> model.language_model.layers.{i}.mlp.shared_expert_gate.weight"
                 for i in range(text_config.num_hidden_layers)
             ]
+
+        # ── MTP (Multi-Token Prediction) layers ──
+        mtp_num_layers = getattr(text_config, "mtp_num_hidden_layers", 0)
+        num_experts = getattr(text_config, "num_experts", 0) or getattr(text_config, "n_routed_experts", 0)
+        if mtp_num_layers > 0:
+            num_hidden = text_config.num_hidden_layers
+            for m in range(mtp_num_layers):
+                fleet_layer_id = num_hidden + m
+                hf_mtp_pre = f"mtp.layers.{m}"
+                fleet_mtp_pre = f"{llm_prefix}layers.{fleet_layer_id}"
+
+                # MTP special layers (enorm, hnorm, eh_proj, norm)
+                aoa_config["aoa_statements"] += [
+                    f"{fleet_mtp_pre}.enorm.weight -> mtp.pre_fc_norm_embedding.weight",
+                    f"{fleet_mtp_pre}.hnorm.weight -> mtp.pre_fc_norm_hidden.weight",
+                    f"{fleet_mtp_pre}.eh_proj.weight^T -> mtp.fc.weight",
+                    f"{fleet_mtp_pre}.norm.weight -> mtp.norm.weight",
+                ]
+
+                # MTP transformer layer — layer norms
+                aoa_config["aoa_statements"] += [
+                    f"{fleet_mtp_pre}.transformer_layer.input_layernorm.weight -> {hf_mtp_pre}.input_layernorm.weight",
+                    f"{fleet_mtp_pre}.transformer_layer.post_attention_layernorm.weight -> {hf_mtp_pre}.post_attention_layernorm.weight",
+                ]
+
+                # MTP transformer layer — attention (inverse gated QKV)
+                if gated_attention:
+                    hf_pre = f"{hf_mtp_pre}.self_attn"
+                    fleet_key = f"{fleet_mtp_pre}.transformer_layer.self_attn.qkv_proj.weight"
+                    fused_tmp = f"{hf_pre}.qkv_fused_tmp"
+
+                    aoa_config["aoa_statements"].append(f"{fleet_key}^T -> {fused_tmp}")
+
+                    chunk_names = []
+                    for g in range(num_kv_heads):
+                        for h in range(heads_per_group):
+                            chunk_names.append(f"{hf_pre}._q_g{g}_h{h}")
+                        for h in range(heads_per_group):
+                            chunk_names.append(f"{hf_pre}._gate_g{g}_h{h}")
+                        chunk_names.append(f"{hf_pre}._k_g{g}")
+                        chunk_names.append(f"{hf_pre}._v_g{g}")
+                    aoa_config["aoa_statements"].append(f"{fused_tmp} -> {','.join(chunk_names)}, axis=0")
+
+                    q_ordered = []
+                    for g in range(num_kv_heads):
+                        for h in range(heads_per_group):
+                            q_ordered.append(f"{hf_pre}._q_g{g}_h{h}")
+                            q_ordered.append(f"{hf_pre}._gate_g{g}_h{h}")
+                    aoa_config["aoa_statements"].append(f"{','.join(q_ordered)} -> {hf_pre}.q_proj.weight, axis=0")
+
+                    k_ordered = [f"{hf_pre}._k_g{g}" for g in range(num_kv_heads)]
+                    aoa_config["aoa_statements"].append(f"{','.join(k_ordered)} -> {hf_pre}.k_proj.weight, axis=0")
+                    v_ordered = [f"{hf_pre}._v_g{g}" for g in range(num_kv_heads)]
+                    aoa_config["aoa_statements"].append(f"{','.join(v_ordered)} -> {hf_pre}.v_proj.weight, axis=0")
+                else:
+                    aoa_config["aoa_statements"].append(
+                        f"{fleet_mtp_pre}.transformer_layer.self_attn.qkv_proj.weight -> {hf_mtp_pre}.self_attn.q_proj.weight, {hf_mtp_pre}.self_attn.k_proj.weight, {hf_mtp_pre}.self_attn.v_proj.weight, fused_qkv, num_heads={num_heads}, num_key_value_groups={num_kv_heads}"
+                    )
+                    aoa_config["aoa_statements"] += [
+                        f"{hf_mtp_pre}.self_attn.{x}_proj.weight^T -> {hf_mtp_pre}.self_attn.{x}_proj.weight"
+                        for x in ("q", "k", "v")
+                    ]
+
+                # MTP transformer layer — o_proj, q/k norms
+                aoa_config["aoa_statements"] += [
+                    f"{fleet_mtp_pre}.transformer_layer.self_attn.o_proj.weight^T -> {hf_mtp_pre}.self_attn.o_proj.weight",
+                    f"{fleet_mtp_pre}.transformer_layer.self_attn.q_norm.weight -> {hf_mtp_pre}.self_attn.q_norm.weight",
+                    f"{fleet_mtp_pre}.transformer_layer.self_attn.k_norm.weight -> {hf_mtp_pre}.self_attn.k_norm.weight",
+                ]
+
+                # MTP transformer layer — MoE router
+                aoa_config["aoa_statements"].append(
+                    f"{fleet_mtp_pre}.transformer_layer.mlp.gate.weight -> {hf_mtp_pre}.mlp.gate.weight, dtype='bfloat16'"
+                )
+
+                # MTP transformer layer — MoE routed experts
+                # MTP uses per-expert storage (non-grouped_gemm)
+                for N in range(num_experts):
+                    aoa_config["aoa_statements"] += [
+                        f"{fleet_mtp_pre}.transformer_layer.mlp.experts.{N}.up_gate_proj.weight -> {hf_mtp_pre}.mlp.experts.{N}.gate_proj._t, {hf_mtp_pre}.mlp.experts.{N}.up_proj._t, axis=1",
+                        f"{hf_mtp_pre}.mlp.experts.{N}.gate_proj._t^T -> {hf_mtp_pre}.mlp.experts.{N}.gate_proj.weight",
+                        f"{hf_mtp_pre}.mlp.experts.{N}.up_proj._t^T -> {hf_mtp_pre}.mlp.experts.{N}.up_proj.weight",
+                        f"{fleet_mtp_pre}.transformer_layer.mlp.experts.{N}.down_proj.weight^T -> {hf_mtp_pre}.mlp.experts.{N}.down_proj.weight",
+                    ]
+
+                # MTP transformer layer — shared expert
+                if shared_expert_intermediate_size and shared_expert_intermediate_size > 0:
+                    aoa_config["aoa_statements"] += [
+                        f"{fleet_mtp_pre}.transformer_layer.mlp.shared_experts.up_gate_proj.weight -> {hf_mtp_pre}.mlp.shared_expert.gate_proj.weight, {hf_mtp_pre}.mlp.shared_expert.up_proj.weight, fused_ffn",
+                        f"{hf_mtp_pre}.mlp.shared_expert.gate_proj.weight^T -> {hf_mtp_pre}.mlp.shared_expert.gate_proj.weight",
+                        f"{hf_mtp_pre}.mlp.shared_expert.up_proj.weight^T -> {hf_mtp_pre}.mlp.shared_expert.up_proj.weight",
+                        f"{fleet_mtp_pre}.transformer_layer.mlp.shared_experts.down_proj.weight^T -> {hf_mtp_pre}.mlp.shared_expert.down_proj.weight",
+                        f"{fleet_mtp_pre}.transformer_layer.mlp.shared_experts.gate_weight^T -> {hf_mtp_pre}.mlp.shared_expert_gate.weight",
+                    ]
 
         # ── visual model — attention qkv ──
         # Fleet sharded_state_dict uses: model.vision_model.layers.{i} (NOT decoder.layers)

@@ -259,7 +259,7 @@ jobs:
           if [[ "$MODE" == "pr" ]]; then
             bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
           elif [[ "$MODE" == "schedule" ]]; then
-            bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
+            bash -x scripts/regression/ci_model_unittest.sh True False False develop 0
           fi
           DOCKER_EOF
       - name: Upload Products

@@ -1,6 +1,6 @@
 name: Codestyle Check
 
-on: [push, pull_request]
+on: [pull_request]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -97,3 +97,11 @@ jobs:
         if: always()
         run: |
           docker rm -f $container_name 2>/dev/null || true
+
+  formers-bot:
+      needs: [Lint]
+      if: "always() && needs.Lint.result == 'failure'"
+      uses: ./.github/workflows/_bot_log_analysis.yml
+      with:
+        ci_result: ${{ needs.Lint.result }}
+      secrets: inherit

@@ -16,26 +16,48 @@ jobs:
     permissions:
       contents: read
       actions: read
+      pull-requests: write
     steps:
-      - name: Get failed job URLs
+      - name: Get failed job URLs across all workflows on this PR
         id: get_failed_jobs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          failed_job_urls=$(curl -s \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${REPO}/actions/runs/${RUN_ID}/jobs" | python3 -c "
-          import json, sys
-          data = json.load(sys.stdin)
-          failed = [
-              j['html_url'] for j in data['jobs']
-              if j['conclusion'] == 'failure' and 'failed log analysis' not in j['name']
+          failed_job_urls=$(python3 - <<'PYEOF'
+          import json, sys, urllib.request, os
+
+          token    = os.environ['GITHUB_TOKEN']
+          repo     = os.environ['REPO']
+          head_sha = os.environ['HEAD_SHA']
+          headers  = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+          }
+
+          def gh_get(url):
+              req = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(req) as r:
+                  return json.loads(r.read())
+
+          # 1. 拿到该 commit 上所有 check runs（即所有 workflow 的所有 job）
+          data = gh_get(
+              f"https://api.github.com/repos/{repo}/commits/{head_sha}/check-runs?per_page=100"
+          )
+
+          # 2. 过滤失败的，排除分析 job 自身
+          skip_keywords = ["failed log analysis", "faild-log-analysis", "formers-bot", "bot log analysis"]
+          failed_urls = [
+              r["html_url"]
+              for r in data.get("check_runs", [])
+              if r["conclusion"] == "failure"
+              and not any(kw in r["name"].lower() for kw in skip_keywords)
           ]
-          print(' '.join(failed))
-          ")
+
+          print(" ".join(failed_urls))
+          PYEOF
+          )
           echo "failed_job_urls=${failed_job_urls}" >> $GITHUB_OUTPUT
           echo "Failed job URLs: ${failed_job_urls}"
 
@@ -52,36 +74,107 @@ jobs:
 
       - name: Upload analysis result
         if: always()
-        id: analysis 
+        id: analysis
         run: |
           if [ -f /tmp/bot_results/bot_result_${TASK_ID}.md ]; then
             echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             cat /tmp/bot_results/bot_result_${TASK_ID}.md >> $GITHUB_STEP_SUMMARY
-            summary=$(head -c 500 /tmp/bot_results/bot_result_${TASK_ID}.md | tr '\n' ' ' | tr '"' "'")
-            echo "summary=${summary}" >> $GITHUB_OUTPUT
+            echo "has_result=true" >> $GITHUB_OUTPUT
           else
             echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
             echo "No analysis result generated." >> $GITHUB_STEP_SUMMARY
-            echo "summary=Bot分析未生成结果" >> $GITHUB_OUTPUT
+            echo "has_result=false" >> $GITHUB_OUTPUT
           fi
-        
+
+      - name: Post or update PR comment
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          HAS_RESULT: ${{ steps.analysis.outputs.has_result }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, urllib.request
+
+          token       = os.environ['GITHUB_TOKEN']
+          repo        = os.environ['REPO']
+          pr_number   = os.environ['PR_NUMBER']
+          run_id      = os.environ['RUN_ID']
+          run_attempt = os.environ['RUN_ATTEMPT']
+          has_result  = os.environ['HAS_RESULT'] == 'true'
+          task_id     = f"{run_id}-{run_attempt}"
+          marker      = "<!-- bot-log-analysis -->"
+
+          result_file = f"/tmp/bot_results/bot_result_{task_id}.md"
+          if has_result and os.path.isfile(result_file):
+              body = open(result_file).read()
+          else:
+              body = "⚠️ 未生成分析结果，请手动查看 Action 日志。"
+
+          run_url = f"https://github.com/{repo}/actions/runs/{run_id}"
+          comment = (
+              f"{marker}\n"
+              f"## PaddleFormers Bot Log Analysis\n\n"
+              f"> Run [`#{run_id}`]({run_url}) · Attempt `{run_attempt}`\n\n"
+              f"{body}\n\n"
+              f"---\n"
+              f"<sub>🔄 每次 Re-run 后自动更新</sub>"
+          )
+
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "Content-Type": "application/json",
+          }
+
+          def gh(method, url, payload=None):
+              req = urllib.request.Request(
+                  url,
+                  data=json.dumps(payload).encode() if payload else None,
+                  headers=headers,
+                  method=method,
+              )
+              with urllib.request.urlopen(req) as r:
+                  return json.loads(r.read())
+
+          base = f"https://api.github.com/repos/{repo}"
+          comments = gh("GET", f"{base}/issues/{pr_number}/comments?per_page=100")
+          existing_id = next(
+              (c["id"] for c in comments if marker in c.get("body", "")), None
+          )
+
+          if existing_id:
+              res = gh("PATCH", f"{base}/issues/comments/{existing_id}", {"body": comment})
+              print(f"Updated: {res.get('html_url')}")
+          else:
+              res = gh("POST", f"{base}/issues/{pr_number}/comments", {"body": comment})
+              print(f"Created: {res.get('html_url')}")
+          PYEOF
+
       - name: Report to monitor
         if: always()
         env:
             MONITOR_URL: ${{ secrets.MONITOR_URL }}
+            PR_NUMBER: ${{ github.event.pull_request.number }}
+            RUN_ID: ${{ github.run_id }}
         run: |
+            RESULT_FILE="/tmp/bot_results/bot_result_${TASK_ID}.md"
             jq -n \
-            --arg summary "${{ steps.analysis.outputs.summary }}" \
+            --arg run_id    "$RUN_ID" \
+            --arg pr_number "$PR_NUMBER" \
+            --rawfile summary "$RESULT_FILE" \
             '{
-                run_id: '${{ github.run_id }}',
-                wf_type: "ci_unit",
-                pr_number: '${{ github.event.issue.number || 0 }}',
-                verdict: "block",
-                summary: $summary,
+                run_id:    $run_id,
+                pr_number: $pr_number,
+                summary:   $summary[:1000],
                 root_cause: "见 GitHub Actions Summary",
-                fix_steps: []
             }' > report.json
+
+            cat report.json
 
             curl -s -X POST "${MONITOR_URL}/api/bot" \
             -H 'Content-Type: application/json' \
