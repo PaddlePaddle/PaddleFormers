@@ -6,7 +6,7 @@ on:
     branches: [develop, release/**]
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: read
   actions: read
   id-token: write
 

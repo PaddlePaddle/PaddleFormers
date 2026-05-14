@@ -5,7 +5,7 @@ on:
     types: [opened, synchronize]
     branches: [develop, release/**]
 permissions: 
-    pull-requests: write
+    pull-requests: read
     contents: read
     actions: read
     checks: read
