@@ -265,7 +265,7 @@ class InternVLChatModel(PretrainedModel):
 
     def forward(
         self,
-        pixel_values: Optional[paddle.Tensor],
+        pixel_values: Optional[paddle.Tensor] = None,
         input_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
@@ -297,11 +297,12 @@ class InternVLChatModel(PretrainedModel):
             self.img_context_token_id = inferred_token_id
 
         input_embeds = self.language_model.get_input_embeddings()(input_ids).clone()
-        vit_embeds = self.extract_feature(pixel_values)
-        if image_flags is not None:
-            image_flags = image_flags.squeeze(-1)
-            vit_embeds = vit_embeds[image_flags == 1]
-        input_embeds = self._merge_input_embeds_with_vision_features(input_ids, input_embeds, vit_embeds)
+        if pixel_values is not None:
+            vit_embeds = self.extract_feature(pixel_values)
+            if image_flags is not None:
+                image_flags = image_flags.squeeze(-1)
+                vit_embeds = vit_embeds[image_flags == 1]
+            input_embeds = self._merge_input_embeds_with_vision_features(input_ids, input_embeds, vit_embeds)
 
         outputs = self.language_model(
             input_ids=None,
