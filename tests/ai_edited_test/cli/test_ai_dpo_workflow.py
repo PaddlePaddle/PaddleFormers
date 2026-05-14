@@ -15,15 +15,13 @@
 import sys
 import types
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # Mock the missing transformers module to avoid import errors
 if "transformers.tokenization_utils_tokenizers" not in sys.modules:
     _mock_mod = types.ModuleType("transformers.tokenization_utils_tokenizers")
     _mock_mod.TokenizersBackend = type("TokenizersBackend", (), {})
     sys.modules["transformers.tokenization_utils_tokenizers"] = _mock_mod
-
-from paddleformers.cli.train.dpo.workflow import run_dpo
 
 
 class TestRunDPOValidation(unittest.TestCase):

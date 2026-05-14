@@ -208,7 +208,7 @@ class TestDeepepManagerIndicesToMultihot(unittest.TestCase):
 
         routing_map, multihot_probs = manager._indices_to_multihot(indices, probs)
         self.assertEqual(routing_map.shape, [1, 4])
-        self.assertTrue(paddle.all(routing_map == False))
+        self.assertTrue(paddle.all(not routing_map))
 
 
 if __name__ == "__main__":

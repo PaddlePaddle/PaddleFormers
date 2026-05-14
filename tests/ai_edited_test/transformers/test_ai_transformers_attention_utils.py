@@ -12,13 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 import unittest
-from unittest.mock import patch
 
 import numpy as np
 import paddle
-import paddle.nn as nn
 
 from paddleformers.transformers.attention_utils import (
     Attention,

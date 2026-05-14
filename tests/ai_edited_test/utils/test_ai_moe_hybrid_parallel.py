@@ -15,10 +15,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from paddleformers.utils.moe_hybrid_parallel_optimizer import (
-    MoEHybridParallelClipGrad,
-    MoEHybridParallelOptimizer,
-)
+from paddleformers.utils.moe_hybrid_parallel_optimizer import MoEHybridParallelClipGrad
 
 
 class TestMoEHybridParallelClipGradInit(unittest.TestCase):
@@ -60,7 +57,7 @@ class TestMoEHybridParallelClipGradInit(unittest.TestCase):
 
         clip_grad = MoEHybridParallelClipGrad(mock_clip, mock_hcg)
         with patch.object(clip_grad, "_dygraph_clip", return_value=[]) as mock_dygraph:
-            result = clip_grad([("param", "grad")])
+            clip_grad([("param", "grad")])
             mock_dygraph.assert_called_once_with([("param", "grad")])
 
 

@@ -16,14 +16,6 @@ import json
 import unittest
 
 from paddleformers.datasets.template.tool_utils import (
-    DEFAULT_TOOL_PROMPT,
-    ERNIE_TOOL_PROMPT,
-    ERNIE_VL_TOOL_PROMPT,
-    GLM4_MOE_TOOL_PROMPT,
-    GLM4_TOOL_PROMPT,
-    GLM_5_TOOL_PROMPT,
-    LLAMA3_TOOL_PROMPT,
-    QWEN_TOOL_PROMPT,
     DefaultToolUtils,
     ERNIEToolUtils,
     ERNIEVLToolUtils,

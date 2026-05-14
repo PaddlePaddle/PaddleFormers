@@ -104,7 +104,7 @@ class TestTensorBoardCallback(unittest.TestCase):
         # Need to mock SummaryWriter import
         with patch("paddleformers.cli.train.ernie_pretrain.src.callbacks.tensorboard_callback.importlib"):
             try:
-                callback = TensorBoardCallback(args, mock_model)
+                TensorBoardCallback(args, mock_model)
             except Exception:
                 # The import of torch.utils.tensorboard will fail, but that's OK
                 # We're testing the class can be instantiated

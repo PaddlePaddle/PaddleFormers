@@ -16,9 +16,7 @@ import os
 import unittest
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import paddle
-import paddle.nn as nn
 
 
 class TestKtoPreprocessInputs(unittest.TestCase):

@@ -158,7 +158,7 @@ class TestDocParserCall(unittest.TestCase):
     def test_call_delegates_to_parse(self):
         parser = DocParser()
         with patch.object(parser, "parse", return_value={"doc": "test"}) as mock_parse:
-            result = parser(doc={"doc": "test"})
+            parser(doc={"doc": "test"})
             mock_parse.assert_called_once_with(doc={"doc": "test"})
 
 

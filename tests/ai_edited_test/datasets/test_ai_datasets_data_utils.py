@@ -15,9 +15,6 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-import numpy as np
-import paddle
-
 from paddleformers.datasets.data_utils import (
     calculate_matched_group,
     convert_to_input_ids,

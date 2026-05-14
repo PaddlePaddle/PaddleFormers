@@ -15,10 +15,7 @@
 import sys
 import types
 import unittest
-from collections import OrderedDict
 from unittest.mock import MagicMock, patch
-
-import numpy as np
 
 # Mock the missing transformers module to avoid import errors
 if "transformers.tokenization_utils_tokenizers" not in sys.modules:
@@ -163,13 +160,14 @@ class TestDPOEstimateTraining(unittest.TestCase):
             mock_data_args.max_prompt_len = 1024
             mock_data_args.num_samples_each_epoch = 6000000
 
-            mock_dataset_config = {"key": "value"}
+            mock_dataset_config = {"stage": "dpo"}
 
             training_args, res = dpo_estimate_training(
                 tokenizer=None,
                 data_args=mock_data_args,
                 training_args=mock_training_args,
                 dataset_config=mock_dataset_config,
+                train_dataset=mock_train_dataset,
             )
 
             self.assertEqual(res["max_steps"], 0)

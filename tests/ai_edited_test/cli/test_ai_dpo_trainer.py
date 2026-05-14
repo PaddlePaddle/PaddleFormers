@@ -15,8 +15,8 @@
 import sys
 import types
 import unittest
-from collections import OrderedDict, defaultdict
-from unittest.mock import MagicMock, patch
+from collections import OrderedDict
+from unittest.mock import MagicMock
 
 import paddle
 
@@ -28,12 +28,10 @@ if "transformers.tokenization_utils_tokenizers" not in sys.modules:
 
 from paddleformers.cli.train.dpo.dpo_trainer import (
     DPO_INFO_KEYS,
-    DPOTrainer,
     disable_dropout_in_model,
     fleet_merge_dpo_labels,
     prepare_pipeline_dpo_inputs_func,
 )
-from paddleformers.trainer import Trainer
 
 
 class TestDPOInfoKeys(unittest.TestCase):
@@ -232,7 +230,6 @@ class TestDPOTrainerInit(unittest.TestCase):
     def test_lora_mode_no_ref_needed(self):
         """Test that LoRA mode does not need ref_model even if not reference_free."""
         lora = True
-        reference_free = False
         ref_model = None
         self.assertTrue(lora)
         # LoRA mode allows no ref_model

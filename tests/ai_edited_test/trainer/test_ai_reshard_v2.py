@@ -2,9 +2,7 @@
 """Tests for trainer/utils/reshard/sharding_v2.py"""
 
 import unittest
-from unittest.mock import MagicMock, patch
 
-import numpy as np
 import paddle
 
 from paddleformers.trainer.utils.reshard.sharding_v2 import (

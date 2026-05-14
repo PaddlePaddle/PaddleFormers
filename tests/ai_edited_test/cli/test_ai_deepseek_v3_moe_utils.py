@@ -19,7 +19,6 @@ import types
 import unittest
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import paddle
 
 # Direct import to avoid __init__.py triggering workflow.py which requires AutoTokenizer

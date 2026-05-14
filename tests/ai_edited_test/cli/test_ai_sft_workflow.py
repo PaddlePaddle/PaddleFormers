@@ -15,7 +15,7 @@
 import sys
 import types
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # Mock the missing transformers module to avoid import errors
 if "transformers.tokenization_utils_tokenizers" not in sys.modules:

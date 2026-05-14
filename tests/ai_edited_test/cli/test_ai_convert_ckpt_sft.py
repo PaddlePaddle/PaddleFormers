@@ -328,7 +328,6 @@ class TestPrepareTensorConvertCkpt(unittest.TestCase):
 
     def test_two_key_return(self):
         """Test with a name that maps to two HF names (gate/up split)."""
-        import paddle
 
         # mlp.w1 maps to gate_proj and up_proj
         # prepare_tensor in convert_ckpt_to_sft uses torch API (dim=0)

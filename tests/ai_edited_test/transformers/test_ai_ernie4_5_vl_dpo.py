@@ -17,7 +17,6 @@ from unittest.mock import MagicMock, patch
 
 import paddle
 import paddle.nn as nn
-import paddle.nn.functional as F
 
 from paddleformers.transformers.ernie4_5_moe_vl.model.loss.dpo import ErnieDPOCriterion
 

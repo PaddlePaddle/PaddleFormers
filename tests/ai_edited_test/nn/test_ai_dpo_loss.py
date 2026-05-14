@@ -13,11 +13,10 @@
 # limitations under the License.
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import paddle
-import paddle.nn as nn
 
 
 def _make_mock_self(
@@ -122,7 +121,7 @@ class TestLossImpl(unittest.TestCase):
 
         logits = paddle.randn([2, 4, 8], dtype="float16")
         labels = paddle.randint(0, 8, [2, 4])
-        loss = loss_impl(mock_self, logits, labels)
+        loss_impl(mock_self, logits, labels)
 
         mock_self.loss_func.assert_called_once()
         # Check logits were cast to float32

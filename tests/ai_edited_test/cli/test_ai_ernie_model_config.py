@@ -103,7 +103,7 @@ class TestModelConfig(unittest.TestCase):
 
     def test_all_fields_have_defaults(self):
         """Test that all fields have default values so constructor works without args."""
-        config = ModelConfig()
+        ModelConfig()
         for f in fields(ModelConfig):
             self.assertTrue(
                 f.default is not None or f.default_factory is not None or f.default is False or f.default == 0,

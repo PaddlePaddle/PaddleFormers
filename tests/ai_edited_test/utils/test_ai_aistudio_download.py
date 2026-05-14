@@ -15,10 +15,9 @@
 import os
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from paddleformers.utils.download.aistudio_hub_download import (
-    AISTUDIO_HUB_CACHE,
     DEFAULT_REVISION,
     REGEX_COMMIT_HASH,
     REPO_TYPE_MODEL,

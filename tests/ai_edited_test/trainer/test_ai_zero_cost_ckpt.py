@@ -3,9 +3,8 @@
 
 import hashlib
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import numpy as np
 import paddle
 
 from paddleformers.trainer.utils.zero_cost_checkpoint import (

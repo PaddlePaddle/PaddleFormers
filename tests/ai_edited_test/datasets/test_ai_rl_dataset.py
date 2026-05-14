@@ -12,14 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
-import os
-import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import paddle
 
 from paddleformers.datasets.rlhf_datasets.rl_dataset import (
     RLHFDataset,
@@ -150,8 +146,8 @@ class TestRLHFDataset(unittest.TestCase):
             dataset_name_or_path="/tmp/test_data.json",
             tokenizer=tokenizer,
         )
-        item1 = dataset[0]
-        item2 = dataset[0]
+        dataset[0]
+        dataset[0]
         # Second access should use cached data, not call tokenize again
         self.assertEqual(tokenizer.call_count, 1)
 

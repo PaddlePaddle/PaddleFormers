@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import unittest
-from unittest.mock import MagicMock, patch
 
 from paddleformers.cli.train.ernie_pretrain.models.moe.moe_layer import (
     GateOutput,

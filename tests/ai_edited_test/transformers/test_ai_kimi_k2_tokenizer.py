@@ -12,11 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 import tempfile
 import unittest
-from unittest.mock import MagicMock
 
 from paddleformers.transformers.kimi_k2.tokenizer import KimiK2TikTokenTokenizer
 
@@ -160,7 +158,7 @@ class TestKimiK2TikTokenTokenizer(unittest.TestCase):
         """Test encode with extra kwargs calls super().encode."""
         tokenizer = self._make_tokenizer()
         try:
-            result = tokenizer.encode("abc", add_special_tokens=True)
+            tokenizer.encode("abc", add_special_tokens=True)
         except Exception:
             pass  # May fail due to mock, but should call super()
 
@@ -168,7 +166,7 @@ class TestKimiK2TikTokenTokenizer(unittest.TestCase):
         """Test decode with extra kwargs calls super().decode."""
         tokenizer = self._make_tokenizer()
         try:
-            result = tokenizer.decode([0, 1, 2], skip_special_tokens=True)
+            tokenizer.decode([0, 1, 2], skip_special_tokens=True)
         except Exception:
             pass  # May fail due to mock, but should call super()
 

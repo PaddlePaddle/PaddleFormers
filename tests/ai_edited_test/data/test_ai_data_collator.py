@@ -20,7 +20,6 @@ import paddle
 
 from paddleformers.data.data_collator import (
     DataCollatorMixin,
-    DataCollatorWithPadding,
     DefaultDataCollator,
     _numpy_collate_batch,
     _paddle_collate_batch,

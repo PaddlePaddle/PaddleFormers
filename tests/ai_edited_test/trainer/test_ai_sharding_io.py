@@ -5,12 +5,9 @@ import unittest
 from collections import OrderedDict
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import paddle
-import paddle.nn as nn
 
 from paddleformers.trainer.utils.sharding_io import (
-    GroupGetter,
     ParameterNameRemapper,
     ShardingIO,
     filter_sharded_params,

@@ -13,9 +13,8 @@
 # limitations under the License.
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import numpy as np
 import paddle
 
 from paddleformers.cli.train.ernie_pretrain.src.utils.misc import (

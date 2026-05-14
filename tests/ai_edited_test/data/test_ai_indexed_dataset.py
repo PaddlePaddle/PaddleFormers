@@ -18,7 +18,6 @@ import tempfile
 import unittest
 
 import numpy as np
-import paddle
 
 import paddleformers.data.indexed_dataset as _idx_mod
 from paddleformers.data.indexed_dataset import (

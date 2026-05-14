@@ -252,7 +252,7 @@ class TestRunTuner(unittest.TestCase):
     def test_run_tuner_with_none_args(self):
         """Test run_tuner with None args delegates to read_args."""
         with patch.object(self.tuner_mod, "read_args", return_value={}) as mock_read_args:
-            with patch.object(self.tuner_mod, "_training_function") as mock_training_func:
+            with patch.object(self.tuner_mod, "_training_function"):
                 self.tuner_mod.run_tuner(None)
                 mock_read_args.assert_called_once_with(None)
 

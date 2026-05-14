@@ -2,9 +2,8 @@
 """Tests for peft/lora/loraga_utils.py"""
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import numpy as np
 import paddle
 import paddle.nn as nn
 

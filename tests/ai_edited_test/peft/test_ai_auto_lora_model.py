@@ -1,11 +1,8 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 """Tests for peft/lora/auto_lora_model.py"""
 
-import tempfile
 import unittest
 
-import numpy as np
-import paddle
 import paddle.nn as nn
 
 from paddleformers.peft.lora.auto_lora_model import (
@@ -138,7 +135,6 @@ class TestLoRAAutoModel(unittest.TestCase):
         """Test _generate_auto_dist_config with no parallelism enabled."""
         # We can only test the structure of the method since it needs a real model.
         # Test with a simple mock approach.
-        pass
 
 
 class TestLoRAAutoModelSaveLoad(unittest.TestCase):
@@ -148,7 +144,6 @@ class TestLoRAAutoModelSaveLoad(unittest.TestCase):
         """Test get_trainable_state_dict without loraga config."""
         # This tests the basic structure - real model instantiation would need
         # a pretrained model path which we don't have in unit tests.
-        pass
 
 
 if __name__ == "__main__":

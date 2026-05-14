@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
 import unittest
 
 from paddleformers.cli.train.ernie_pretrain.src.lr_schedulers.wsd_lr import (

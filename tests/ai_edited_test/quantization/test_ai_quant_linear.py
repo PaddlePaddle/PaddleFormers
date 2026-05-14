@@ -2,16 +2,12 @@
 """Tests for quantization/quantization_linear.py"""
 
 import unittest
-from unittest.mock import MagicMock, patch
 
-import numpy as np
 import paddle
-import paddle.nn as nn
 
 from paddleformers.quantization.quantization_linear import (
     QuantizationLinear,
     QuantMapping,
-    dequant_weight,
 )
 
 

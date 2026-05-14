@@ -3,11 +3,9 @@
 
 import types
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import numpy as np
 import paddle
-import paddle.nn as nn
 
 from paddleformers.trainer.plugins.npu_plugin import (
     _optimizer_step_with_flatten_param_grads,

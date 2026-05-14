@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import paddle
 
@@ -93,7 +93,7 @@ class TestAutoSplitSequenceDimLoadBalance(unittest.TestCase):
     def test_tensor_input(self, mock_shard):
         mock_shard.return_value = paddle.randn([2, 4])
         tensor = paddle.randn([2, 8])
-        result = auto_split_sequence_dim_load_balance(tensor)
+        auto_split_sequence_dim_load_balance(tensor)
         mock_shard.assert_called_once_with(tensor, 1)
 
     @patch("paddleformers.transformers.context_parallel_utils.shard_seq_load_balance")

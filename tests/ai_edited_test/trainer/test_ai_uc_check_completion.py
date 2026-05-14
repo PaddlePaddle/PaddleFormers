@@ -1,13 +1,8 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 """Tests for trainer/unified_checkpoint/check_completion.py"""
 
-import json
-import os
-import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
-
-import paddle
 
 from paddleformers.trainer.unified_checkpoint.check_completion import (
     check_unified_checkpoint,

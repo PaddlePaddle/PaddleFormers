@@ -24,7 +24,6 @@ from paddleformers.cli.train.ernie_pretrain.models.utils import (
     detach_and_requires_grad_,
     get_global_training_logs,
     global_training_logs_enabled,
-    inplace_offload,
     manual_backward,
 )
 

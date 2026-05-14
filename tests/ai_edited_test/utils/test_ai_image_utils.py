@@ -32,7 +32,6 @@ from paddleformers.utils.image_utils import (
     img2base64,
     np2base64,
     pil2base64,
-    ppocr2example,
     two_dimension_sort_box,
     two_dimension_sort_layout,
 )

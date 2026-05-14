@@ -2,14 +2,12 @@
 """Tests for quantization/qat_utils.py"""
 
 import unittest
-from unittest.mock import MagicMock, patch
 
 import paddle
 
 from paddleformers.quantization.qat_utils import (
     QMIN_QMAX_MAPPING,
     dequantize,
-    int8_backward,
     int8_forward,
     quantize,
 )

@@ -15,7 +15,7 @@
 import sys
 import types
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 # Mock the missing transformers module to avoid import errors
 if "transformers.tokenization_utils_tokenizers" not in sys.modules:
@@ -35,7 +35,7 @@ class TestSFTTrainerInit(unittest.TestCase):
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            with patch.object(SFTTrainer, "__init__", return_value=None) as mock_init:
+            with patch.object(SFTTrainer, "__init__", return_value=None):
                 # We just verify the class is importable and callable
                 self.assertTrue(callable(SFTTrainer))
 

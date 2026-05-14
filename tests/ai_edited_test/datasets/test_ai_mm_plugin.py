@@ -16,8 +16,6 @@ import io
 import unittest
 from unittest.mock import MagicMock, patch
 
-import numpy as np
-
 from paddleformers.datasets.template.mm_plugin import (
     MMPluginMixin,
     _check_video_is_nested_images,

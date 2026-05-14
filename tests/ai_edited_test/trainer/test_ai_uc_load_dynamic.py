@@ -2,9 +2,6 @@
 """Tests for trainer/unified_checkpoint/load_dynamic.py"""
 
 import unittest
-from unittest.mock import MagicMock, patch
-
-import paddle
 
 from paddleformers.trainer.unified_checkpoint.load_dynamic import (
     create_dispatch_table,

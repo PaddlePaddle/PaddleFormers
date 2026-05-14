@@ -2,10 +2,7 @@
 """Tests for trainer/unified_checkpoint/utils.py"""
 
 import unittest
-from unittest.mock import MagicMock, patch
-
-import paddle
-import paddle.nn as nn
+from unittest.mock import MagicMock
 
 from paddleformers.trainer.unified_checkpoint.utils import (
     FP32_MASTER,

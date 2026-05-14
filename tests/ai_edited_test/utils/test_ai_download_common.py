@@ -17,7 +17,7 @@ import tempfile
 import unittest
 import warnings
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from paddleformers.utils.download.common import (
     DEFALUT_LOCAL_DIR_AUTO_SYMLINK_THRESHOLD,
@@ -29,14 +29,12 @@ from paddleformers.utils.download.common import (
     SoftTemporaryDirectory,
     _cache_commit_hash_for_specific_revision,
     _check_disk_space,
-    _chmod_and_replace,
     _create_symlink,
     _get_pointer_path,
     _is_true,
     _normalize_etag,
     _to_local_dir,
     are_symlinks_supported,
-    http_get,
     raise_for_status,
     repo_folder_name,
     reset_sessions,

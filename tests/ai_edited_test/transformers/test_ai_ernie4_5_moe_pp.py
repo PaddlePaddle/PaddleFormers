@@ -150,7 +150,7 @@ class TestCreateSkipConfigForRefinedRecompute(unittest.TestCase):
         config.recompute_modules = {"attn": 2}
         config.skip_recompute_ops = {}
 
-        result = create_skip_config_for_refined_recompute(0, config)
+        create_skip_config_for_refined_recompute(0, config)
         self.assertIn(0, config.skip_recompute_ops)
         self.assertEqual(config.skip_recompute_ops[0], {})
 
@@ -172,7 +172,7 @@ class TestCreateSkipConfigForRefinedRecompute(unittest.TestCase):
         config.recompute_modules = {}
         config.skip_recompute_ops = {}
 
-        result = create_skip_config_for_refined_recompute(0, config)
+        create_skip_config_for_refined_recompute(0, config)
         self.assertIn(0, config.skip_recompute_ops)
         self.assertEqual(config.skip_recompute_ops[0], {})
 
@@ -184,7 +184,7 @@ class TestCreateSkipConfigForRefinedRecompute(unittest.TestCase):
         config.recompute_modules = "not_a_dict"
         config.skip_recompute_ops = {}
 
-        result = create_skip_config_for_refined_recompute(0, config)
+        create_skip_config_for_refined_recompute(0, config)
         self.assertIn(0, config.skip_recompute_ops)
         self.assertEqual(config.skip_recompute_ops[0], {})
 
@@ -196,7 +196,7 @@ class TestCreateSkipConfigForRefinedRecompute(unittest.TestCase):
         config.recompute_modules = {"attn": 2}
         config.skip_recompute_ops = {}
 
-        result = create_skip_config_for_refined_recompute(0, config)
+        create_skip_config_for_refined_recompute(0, config)
         self.assertIn(0, config.skip_recompute_ops)
         self.assertEqual(config.skip_recompute_ops[0], {})
 

@@ -2,9 +2,6 @@
 """Tests for trainer/utils/ckpt_converter.py"""
 
 import unittest
-from unittest.mock import MagicMock, patch
-
-import paddle
 
 from paddleformers.trainer.utils.ckpt_converter import (
     MODEL_STATE_FILE_MIN_SIZE,

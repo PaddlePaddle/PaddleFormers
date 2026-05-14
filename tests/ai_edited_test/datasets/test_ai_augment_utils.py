@@ -15,7 +15,6 @@
 import unittest
 from unittest.mock import MagicMock
 
-import numpy as np
 from PIL import Image
 
 from paddleformers.datasets.template.augment_utils import (
@@ -34,7 +33,7 @@ class TestRandomApply(unittest.TestCase):
         transform = MagicMock(return_value=MagicMock())
         ra = RandomApply([transform], p=1.0)
         img = Image.new("RGB", (100, 100))
-        result = ra(img)
+        ra(img)
         transform.assert_called_once_with(img)
 
     def test_apply_with_probability_zero(self):
@@ -50,7 +49,7 @@ class TestRandomApply(unittest.TestCase):
         t2 = MagicMock(side_effect=lambda x: x)
         ra = RandomApply([t1, t2], p=1.0)
         img = Image.new("RGB", (100, 100))
-        result = ra(img)
+        ra(img)
         t1.assert_called_once()
         t2.assert_called_once()
 

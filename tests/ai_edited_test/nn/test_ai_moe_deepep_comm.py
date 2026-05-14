@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import unittest
-from unittest.mock import MagicMock, patch
 
 import paddle
 import paddle.nn as nn

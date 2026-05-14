@@ -4,8 +4,6 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-import paddle
-
 from paddleformers.trainer.unified_checkpoint.load_local import (
     load_unified_checkpoint_locally,
     load_unified_optimizer_locally,

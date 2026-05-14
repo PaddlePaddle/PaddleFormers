@@ -36,9 +36,6 @@ class TestQwen3_5MoEForConditionalGeneration(unittest.TestCase):
 
     def test_new_method(self):
         """Test that __new__ works correctly."""
-        from paddleformers.transformers.qwen3_5 import (
-            Qwen3_5ForConditionalGeneration as Qwen3_5,
-        )
 
         # Qwen3_5MoEForConditionalGeneration uses __new__ to pass have_criterion
         # Can't fully instantiate without a real config, but test the class structure

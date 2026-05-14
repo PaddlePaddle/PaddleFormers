@@ -17,7 +17,7 @@ import os
 import sys
 import types
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import paddle
 
@@ -173,7 +173,6 @@ class TestMoELayerDummyMode(unittest.TestCase):
 
     def test_dummy_moe_initialization(self):
         """Test MoELayer initializes in dummy mode when dist is not available."""
-        import paddle.distributed as dist
 
         # When fleet is not initialized, it should fall back to dummy mode
         config = self._create_dummy_config()
@@ -232,8 +231,8 @@ class TestMoELayerDummyMode(unittest.TestCase):
 
     def test_parse_moe_expert_parallel_integration(self):
         """Test that _parse_moe_expert_parallel works in integration."""
-        config = self._create_dummy_config()
-        gate = self._create_dummy_gate()
+        self._create_dummy_config()
+        self._create_dummy_gate()
 
         # Test with 8 experts and parallel size 2
         result = MoELayer._parse_moe_expert_parallel(None, 8, 2)

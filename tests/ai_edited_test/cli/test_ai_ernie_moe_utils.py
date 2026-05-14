@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import unittest
-import warnings
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -25,8 +24,6 @@ from paddleformers.cli.train.ernie_pretrain.models.moe.token_dispatcher.moe_util
     inplace_offload,
     inplace_offload_if_needed,
     permute,
-    topk_to_permuted_indices,
-    topk_to_permuted_indices_single,
     unpermute,
 )
 

@@ -34,8 +34,21 @@ def _can_import_triton():
         return False
 
 
-_TRITON_AVAILABLE = _can_import_triton()
+def _triton_supports_fp8e4nv():
+    """Check if triton supports fp8e4nv on the current GPU architecture."""
+    try:
+        import triton
 
+        device = triton.runtime.driver.active.get_current_device()
+        cc = triton.runtime.driver.active.get_device_properties(device)["cc"]
+        # fp8e4nv requires sm89+ (Ada Lovelace or newer)
+        return cc >= 89
+    except Exception:
+        return False
+
+
+_TRITON_AVAILABLE = _can_import_triton()
+_TRITON_FP8E4NV_AVAILABLE = _triton_supports_fp8e4nv()
 
 # Direct import to avoid __init__.py triggering workflow.py which requires AutoTokenizer
 _MODULE_DIR = os.path.join(
@@ -91,6 +104,9 @@ class TestKernelModule(unittest.TestCase):
 
 
 @unittest.skipIf(not _TRITON_AVAILABLE, "Triton GPU driver not available")
+@unittest.skipIf(
+    not _TRITON_FP8E4NV_AVAILABLE, "Triton fp8e4nv not supported on this GPU architecture (requires sm89+)"
+)
 class TestActQuant(unittest.TestCase):
     """Test act_quant function."""
 
@@ -122,6 +138,9 @@ class TestActQuant(unittest.TestCase):
 
 
 @unittest.skipIf(not _TRITON_AVAILABLE, "Triton GPU driver not available")
+@unittest.skipIf(
+    not _TRITON_FP8E4NV_AVAILABLE, "Triton fp8e4nv not supported on this GPU architecture (requires sm89+)"
+)
 class TestWeightDequant(unittest.TestCase):
     """Test weight_dequant function."""
 

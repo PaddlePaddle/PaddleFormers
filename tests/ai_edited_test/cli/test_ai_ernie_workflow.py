@@ -38,7 +38,7 @@ class TestUpdateModelConfigFromArgs(unittest.TestCase):
         result = update_model_config_from_args(mock_config, model_args)
         self.assertIs(result, mock_config)
         # Check setattr was called
-        calls = mock_config.__setattr__.call_args_list if hasattr(mock_config.__setattr__, "call_args_list") else []
+        mock_config.__setattr__.call_args_list if hasattr(mock_config.__setattr__, "call_args_list") else []
 
     @patch("paddleformers.cli.train.ernie_pretrain.workflow.logger")
     def test_update_with_nonexistent_keys(self, mock_logger):

@@ -21,7 +21,7 @@ class TestAdamWTritonImport(unittest.TestCase):
     def test_import_or_skip(self):
         # The module requires triton, which may not be available
         try:
-            from paddleformers.utils.adamw_triton import DTYPE_MAPPING, adamw_triton
+            from paddleformers.utils.adamw_triton import DTYPE_MAPPING
 
             self.assertIsInstance(DTYPE_MAPPING, dict)
         except (ImportError, RuntimeError):

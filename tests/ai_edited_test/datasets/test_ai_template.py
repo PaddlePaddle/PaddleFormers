@@ -13,18 +13,16 @@
 # limitations under the License.
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from paddleformers.datasets.template.formatter import (
     EmptyFormatter,
     FunctionFormatter,
     StringFormatter,
-    ThinkingFormatter,
     ToolFormatter,
 )
 from paddleformers.datasets.template.template import (
     GLM5ReasoningTemplate,
-    Llama2Template,
     ReasoningTemplate,
     Role,
     Template,
@@ -264,7 +262,7 @@ class TestGLM5ReasoningTemplate(unittest.TestCase):
             mm_plugin=MagicMock(),
             grounding_plugin=MagicMock(),
         )
-        result = template.get_thought_word_ids(tokenizer)
+        template.get_thought_word_ids(tokenizer)
         # Should only encode the closing tag
         tokenizer.encode.assert_called_with("\n</think\n", add_special_tokens=False)
 
@@ -289,7 +287,7 @@ class TestGetTemplateAndFixTokenizer(unittest.TestCase):
         # This will call parse_template which has complex logic, just ensure it doesn't crash
         # with a simple chat_template string
         try:
-            result = get_template_and_fix_tokenizer(config)
+            get_template_and_fix_tokenizer(config)
         except Exception:
             pass  # parse_template may fail with simple template
 

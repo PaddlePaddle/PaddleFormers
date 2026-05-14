@@ -1,16 +1,13 @@
 # Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
 """Tests for quantization/quantization_utils.py"""
 
-import re
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import paddle
 import paddle.nn as nn
 
-from paddleformers.quantization.quantization_linear import QuantMapping
 from paddleformers.quantization.quantization_utils import (
-    LINEAR_CLASSES,
     convert_to_quantize_dequantize_state_dict,
     convert_to_quantize_state_dict,
     parse_weight_quantize_algo,

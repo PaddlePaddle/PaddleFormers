@@ -13,13 +13,11 @@
 # limitations under the License.
 
 import unittest
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import paddle
 
 from paddleformers.cli.train.ernie_pretrain.models.moe.top2_gate import (
-    cal_aux_loss_func,
     cal_orthogonal_loss_opt_each_weight_func,
     cast_if_needed,
     compute_optimal_transport,
