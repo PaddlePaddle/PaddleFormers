@@ -166,6 +166,14 @@ import_structure = {
     "kimi_k2.configuration": ["KimiK2Config"],
     "kimi_k2.modeling": ["KimiK2ForCausalLM", "KimiK2ForCausalLMPipe"],
     "kimi_k2.tokenizer": ["KimiK2TikTokenTokenizer"],
+    "minicpm4.configuration": ["MiniCPMConfig"],
+    "minicpm4.modeling": [
+        "MiniCPMDecoderLayer",
+        "MiniCPMModel",
+        "MiniCPMForCausalLM",
+        "MiniCPMForCausalLMPipe",
+        "MiniCPMForSequenceClassification",
+    ],
     "llama.configuration": [
         "LlamaConfig",
     ],
@@ -290,6 +298,13 @@ import_structure = {
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
     "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
     "ernie4_5_moe_vl": [],
+    "minicpm4": [
+        "MiniCPMDecoderLayer",
+        "MiniCPMModel",
+        "MiniCPMForCausalLM",
+        "MiniCPMForCausalLMPipe",
+        "MiniCPMForSequenceClassification",
+    ],
     "paddleocr_vl": [],
     "qwen2_5_vl": [],
     "qwen3_vl": [],
@@ -388,6 +403,7 @@ if TYPE_CHECKING:
     from .ernie4_5_moe_vl import *
     from .kimi_k25 import *
     from .kimi_k2 import *
+    from .minicpm4 import *
     from .paddleocr_vl import *
     from .llama import *
     from .optimization import *

@@ -60,6 +60,7 @@ MAPPING_NAMES = OrderedDict(
         ("PaddleOCRVL", "paddleocr_vl"),
         ("Llama", "llama"),
         ("KimiK2", "kimi_k2"),
+        ("MiniCPM", "minicpm4"),
         ("Qwen2", "qwen2"),
         ("Qwen2_5_VL", "qwen2_5_vl"),
         ("Qwen2Moe", "qwen2_moe"),
