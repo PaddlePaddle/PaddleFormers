@@ -14,7 +14,6 @@
 
 import copy
 import itertools
-import os
 from dataclasses import dataclass
 
 import paddle
@@ -43,6 +42,7 @@ from paddlefleet.transformer.transformer_config import TransformerConfig
 from paddlefleet.utils import get_tensor_model_parallel_group_if_none
 
 from ..gpt_provider import GPTModelProvider
+from ..model_utils import PretrainedModel
 
 
 @dataclass
@@ -654,7 +654,12 @@ class Qwen3_5Model(FleetLayer):
         return lm_dict_args
 
 
-class FleetQwen3_5ForConditionalGeneration(FleetLayer):
+class FleetQwen3_5ForConditionalGeneration(FleetLayer, PretrainedModel):
+    config_class = None
+
+    def _post_init(self, original_init, *args, **kwargs):
+        pass
+
     def __init__(self, config, model, criterion):
         super().__init__(config)
         self.model = model
@@ -695,8 +700,6 @@ class FleetQwen3_5ForConditionalGeneration(FleetLayer):
 
         # Get sharded state dict from language model (GPTModel wrapped in NoPipelineParallel)
         if self.model.language_model is not None:
-            # Access the underlying PipelineLayer (GPTModel) directly
-            # GPTModel.sharded_state_dict handles the model.language_model. prefix internally
             language_model = self.model.language_model._layers
             if hasattr(language_model, "sharded_state_dict"):
                 lm_sharded = language_model.sharded_state_dict(structured_name_prefix="")
@@ -704,9 +707,6 @@ class FleetQwen3_5ForConditionalGeneration(FleetLayer):
 
         # Get sharded state dict from vision model (Qwen3_5VisionModel wrapped in NoPipelineParallel)
         if self.model.visual is not None:
-            # Access the underlying Qwen3_5VisionModel (TransformerEncoder) directly
-            # TransformerEncoder.sharded_state_dict handles the model.vision_model. prefix
-            # via _pp_to_single_mapping (since modal="vision_model")
             vision_model = self.model.visual._layers
             if hasattr(vision_model, "sharded_state_dict"):
                 vm_sharded = vision_model.sharded_state_dict(structured_name_prefix="")
@@ -720,46 +720,3 @@ class FleetQwen3_5ForConditionalGeneration(FleetLayer):
             sharded_state_dict.update(criterion_sharded)
 
         return sharded_state_dict
-
-    def save_pretrained(
-        self,
-        save_dir,
-        is_main_process=True,
-        *args,
-        **kwargs,
-    ):
-        """Save model weights in flex_checkpoint format.
-
-        Uses sharded_state_dict + dist.save_state_dict to save the model
-        in flex_checkpoint format, which can be loaded back for resuming training.
-        """
-        import paddle.distributed as dist
-        from paddle.distributed import ShardedWeight
-
-        save_checkpoint_format = kwargs.get("save_checkpoint_format", "flex_checkpoint")
-
-        os.makedirs(save_dir, exist_ok=True)
-
-        if save_checkpoint_format == "flex_checkpoint":
-            model_sharded_state_dict = self.sharded_state_dict()
-            for key, sharded_weight in model_sharded_state_dict.items():
-                if isinstance(sharded_weight, ShardedWeight):
-                    sharded_weight.local_tensor = paddle.Tensor(sharded_weight.local_tensor)
-            model_state_dict_path = os.path.join(save_dir, "model_state")
-            os.makedirs(model_state_dict_path, exist_ok=True)
-            dist.save_state_dict(
-                model_sharded_state_dict,
-                model_state_dict_path,
-            )
-
-            # Save model config
-            config_to_save = getattr(self, "config_to_save", None)
-            if config_to_save is None:
-                config_to_save = copy.deepcopy(self.config)
-            if is_main_process and hasattr(config_to_save, "save_pretrained"):
-                config_to_save.save_pretrained(save_dir)
-        else:
-            raise NotImplementedError(
-                f"save_checkpoint_format={save_checkpoint_format} is not supported by "
-                f"FleetQwen3_5ForConditionalGeneration. Use 'flex_checkpoint'."
-            )

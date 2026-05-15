@@ -1,0 +1,152 @@
+name: Post Analysis Comment
+
+on:
+  workflow_run:
+    workflows:
+      - "Unittest GPU CI"   
+      - "Model Unittest GPU CI"
+      - "CI_ILUVATAR"
+      - "Fleet Model Test"
+      - "Codestyle Check"
+      - "CI_XPU"
+    types:
+      - completed
+
+permissions:
+  pull-requests: write
+  actions: read
+
+jobs:
+  post-comment:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get PR number
+        id: get_pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          pr_number=$(curl -s \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/actions/runs/${RUN_ID}" \
+            | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          prs = data.get('pull_requests', [])
+          print(prs[0]['number'] if prs else '')
+          ")
+          echo "pr_number=${pr_number}" >> $GITHUB_OUTPUT
+
+      - name: Download analysis artifact
+        if: steps.get_pr.outputs.pr_number != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: bot-result-${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+        continue-on-error: true
+
+      - name: Post or update PR comment
+        if: steps.get_pr.outputs.pr_number != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.get_pr.outputs.pr_number }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, urllib.request
+
+          token       = os.environ['GITHUB_TOKEN']
+          repo        = os.environ['REPO']
+          pr_number   = os.environ['PR_NUMBER']
+          run_id      = os.environ['RUN_ID']
+          run_attempt = os.environ['RUN_ATTEMPT']
+          marker      = "<!-- bot-log-analysis -->"  # 所有 workflow 共用，直接覆盖
+
+          result_file = f"bot_result_{run_id}-{run_attempt}.md"
+          if os.path.isfile(result_file):
+              body = open(result_file).read()
+          else:
+              body = "⚠️ 未生成分析结果，请手动查看 Action 日志。"
+
+          run_url = f"https://github.com/{repo}/actions/runs/{run_id}"
+          comment = (
+              f"{marker}\n"
+              f"## 🤖 PaddleFormers Bot Log Analysis\n\n"
+              f"> Run [`#{run_id}`]({run_url}) · Attempt `{run_attempt}`\n\n"
+              f"{body}\n\n"
+              f"---\n"
+              f"<sub>🔄 每次 Re-run 后自动更新</sub>"
+          )
+
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "Content-Type": "application/json",
+          }
+
+          def gh(method, url, payload=None):
+              req = urllib.request.Request(
+                  url,
+                  data=json.dumps(payload).encode() if payload else None,
+                  headers=headers,
+                  method=method,
+              )
+              with urllib.request.urlopen(req) as r:
+                  return json.loads(r.read())
+
+          base = f"https://api.github.com/repos/{repo}"
+          comments = gh("GET", f"{base}/issues/{pr_number}/comments?per_page=100")
+          existing_id = next(
+              (c["id"] for c in comments if marker in c.get("body", "")), None
+          )
+
+          if existing_id:
+              res = gh("PATCH", f"{base}/issues/comments/{existing_id}", {"body": comment})
+              print(f"Updated: {res.get('html_url')}")
+          else:
+              res = gh("POST", f"{base}/issues/{pr_number}/comments", {"body": comment})
+              print(f"Created: {res.get('html_url')}")
+          PYEOF
+
+      - name: Report to monitor
+        if: steps.get_pr.outputs.pr_number != ''
+        env:
+          MONITOR_URL: ${{ secrets.MONITOR_URL }}
+          PR_NUMBER: ${{ steps.get_pr.outputs.pr_number }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          if [ -z "${MONITOR_URL}" ]; then
+            echo "MONITOR_URL not set, skipping."
+            exit 0
+          fi
+
+          # 文件名与上传时对齐
+          result_file="bot_result_${RUN_ID}-${RUN_ATTEMPT}.md"
+          if [ ! -f "$result_file" ]; then
+            echo "No result file, skipping."
+            exit 0
+          fi
+
+          jq -n \
+            --arg run_id    "$RUN_ID" \
+            --arg pr_number "$PR_NUMBER" \
+            --rawfile summary "$result_file" \
+          '{
+            run_id:    $run_id,
+            pr_number: $pr_number,
+            summary:   $summary[:1000],
+            root_cause: "见 GitHub Actions Summary"
+          }' > report.json
+
+          cat report.json
+
+          curl -s -X POST "${MONITOR_URL}/api/bot" \
+            -H 'Content-Type: application/json' \
+            -d @report.json

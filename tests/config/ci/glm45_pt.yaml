@@ -79,7 +79,6 @@ continue_training: false
 # args
 router_aux_loss_coef: 0.001
 
-benchmark: false
 moe_router_force_load_balancing: true
 moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true
