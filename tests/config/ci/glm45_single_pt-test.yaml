@@ -64,7 +64,6 @@ save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
 continue_training: false
 
-benchmark: true
 moe_router_force_load_balancing: true
 moe_token_dispatcher_type: "deepep"
 gated_linear_unit: true

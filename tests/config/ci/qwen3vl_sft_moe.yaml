@@ -93,7 +93,6 @@ load_checkpoint_format: flex_checkpoint
 continue_training: True
 dataloader_shuffle: false
 
-benchmark: false
 report_to: none
 dataloader_num_workers: 0
 

@@ -36,6 +36,11 @@ on:
       image_name:
         required: false
         type: string
+permissions: 
+    pull-requests: read
+    contents: read
+    actions: read
+    checks: read
 
 concurrency:
   group: model-unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}

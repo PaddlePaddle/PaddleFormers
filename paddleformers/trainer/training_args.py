@@ -968,7 +968,7 @@ class TrainingArguments:
     device: Optional[str] = field(default="gpu", metadata={"help": "select cpu, gpu, xpu, npu devices."})
 
     disable_tqdm: Optional[bool] = field(
-        default=None, metadata={"help": "Whether or not to disable the tqdm progress bars."}
+        default=True, metadata={"help": "Whether or not to disable the tqdm progress bars."}
     )
 
     remove_unused_columns: Optional[bool] = field(
@@ -1779,7 +1779,7 @@ class TrainingArguments:
             self.output_signal_dir = os.path.expanduser(self.output_signal_dir)
 
         if self.disable_tqdm is None:
-            self.disable_tqdm = False  # logger.getEffectiveLevel() > logging.WARN
+            self.disable_tqdm = True
 
         # XPU Device Data Loading Strategy:
         # - XPU does not support concurrent access from multiple threads on the same device.
