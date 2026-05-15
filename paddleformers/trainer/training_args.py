@@ -689,7 +689,14 @@ class TrainingArguments:
             )
         },
     )
-
+    sharding_comm_group_call_opt: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Whether to enable the group-call communication optimization for sharding broadcast and reduce operations. This only takes effect when using the Muon optimizer."
+            )
+        },
+    )
     sharding_offload_opt_buffersize_GB: int = field(
         default=-1,
         metadata={
@@ -2234,6 +2241,12 @@ class TrainingArguments:
                             strategy.hybrid_configs["sharding_configs"].offload_opt_buffer_size = int(
                                 self.sharding_offload_opt_buffersize_GB
                             )
+
+                        if self.sharding_comm_group_call_opt:
+                            assert (
+                                self.optim == OptimizerNames.MUON
+                            ), "sharding_comm_group_call_opt only supports Muon optimizer."
+                            strategy.hybrid_configs["sharding_configs"].comm_group_call_opt = True
 
                         if self.split_param:
                             strategy.hybrid_configs["sharding_configs"].split_param = True
