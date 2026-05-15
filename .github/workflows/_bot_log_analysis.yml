@@ -98,6 +98,14 @@ jobs:
             echo "No analysis result generated." >> $GITHUB_STEP_SUMMARY
             echo "has_result=false" >> $GITHUB_OUTPUT
           fi
+      - name: Report to monitor
+        if: always()
+        env:
+            PR_NUMBER: ${{ github.event.pull_request.number }}
+            GITHUB_RUN_ID: ${{ github.run_id }}
+            TASK_ID: ${{ env.TASK_ID }}
+        run: |
+            python /home/paddle-1/formers_bot/report_monitor.py "$TASK_ID"
 
       - name: Upload result as artifact
         if: always()
