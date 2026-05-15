@@ -77,6 +77,14 @@ jobs:
               if name not in latest or r['run_number'] > latest[name]['run_number']:
                   latest[name] = r
 
+          # 1. 没有任何 watched workflow 有记录 → skip
+          if not latest:
+              print("No watched workflows found for this commit, skipping.")
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write("skip=true\n")
+              exit(0)
+
+          # 2. 还有 pending → skip
           pending = [name for name, r in latest.items() if r['status'] != 'completed']
           if pending:
               print(f"Still pending: {pending}, skipping this trigger.")
@@ -84,14 +92,19 @@ jobs:
                   f.write("skip=true\n")
               exit(0)
 
-          # 全部完成，收集所有失败的 run_id
+          # 3. 全部完成但没有失败 → skip
           failed_run_ids = [
               str(r['id']) for r in latest.values()
               if r['conclusion'] == 'failure'
           ]
+          if not failed_run_ids:
+              print("All watched workflows passed, no comment needed.")
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write("skip=true\n")
+              exit(0)
 
+          # 4. 全部完成且有失败 → 触发
           print(f"All done. PR #{pr_number}, failed runs: {failed_run_ids}")
-
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write("skip=false\n")
               f.write(f"pr_number={pr_number}\n")
@@ -109,7 +122,6 @@ jobs:
           mkdir -p /tmp/artifacts
           for RID in $FAILED_RUN_IDS; do
             echo "Trying to download artifact for run $RID..."
-            # 找到该 run 下名为 bot-result-{RID} 的 artifact id
             ARTIFACT_ID=$(curl -s \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
               -H "Accept: application/vnd.github+json" \
@@ -228,7 +240,6 @@ jobs:
             exit 0
           fi
 
-          # 取第一个有效的分析结果文件
           result_file=""
           for RID in $FAILED_RUN_IDS; do
             f=$(ls /tmp/artifacts/bot-result-${RID}/bot_result_${RID}-*.md 2>/dev/null | head -1)
