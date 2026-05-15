@@ -91,3 +91,4 @@ prefetch_factor: 8
 # num_hidden_layers: 38
 freeze_config: freeze_vision freeze_aligner
 tensorwise_offload_optimizer: true
+high_precision_rope: true
