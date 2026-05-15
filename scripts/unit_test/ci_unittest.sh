@@ -49,6 +49,8 @@ install_requirements() {
         python -m pip install dist/*.whl 
         #fleet
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
+        #paddlefleet_ops
+        python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
         python -m pip uninstall paddlepaddle-gpu -y
         #paddle
         wget -q $paddle
