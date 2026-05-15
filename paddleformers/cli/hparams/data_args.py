@@ -190,3 +190,7 @@ class DataArguments:
             )
         },
     )
+    mm_plugin: str = field(
+        default=None,
+        metadata={"help": "Multimodal plugin name (e.g. 'qwen2_vl'). Auto-detect from model type if None."},
+    )

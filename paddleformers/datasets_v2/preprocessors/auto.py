@@ -12,10 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""AutoPreprocessor: automatically selects the right preprocessor based on dataset columns.
-
-Corresponds to ms-swift's AutoPreprocessor (preprocessor/core.py:531).
-"""
+"""AutoPreprocessor: automatically selects the right preprocessor based on dataset columns."""
 
 from typing import Dict, Optional
 

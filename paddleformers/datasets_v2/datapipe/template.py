@@ -423,4 +423,5 @@ register_template(
     "empty",
     user=["{{content}}"],
     assistant=["{{content}}"],
+    efficient_eos=False,
 )

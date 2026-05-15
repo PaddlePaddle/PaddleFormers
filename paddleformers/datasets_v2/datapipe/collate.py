@@ -20,7 +20,7 @@ block-diagonal attention mask) modes.
 Output format is compatible with PaddleFormers' existing Trainer.
 """
 
-from typing import Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 
@@ -197,3 +197,110 @@ def _build_startend_packed(
         if offset < max_seq_len:
             indices[i, 0, offset:, 0] = np.arange(offset, max_seq_len)
     return indices
+
+
+# ---------------------------------------------------------------------------
+# VL (Vision-Language) collation
+# ---------------------------------------------------------------------------
+
+
+def collate_vl_sft(
+    batch: List[Any],
+    pad_token_id: int,
+    max_seq_len: int,
+    get_rope_func: Optional[Callable] = None,
+    use_attn_mask_startend_row_indices: bool = False,
+) -> Dict[str, Any]:
+    """Collate a batch of VLEncodedSamples into training-ready arrays.
+
+    Handles pixel_values concatenation and 3D position_ids via get_rope_func.
+
+    Args:
+        batch: List of VLEncodedSample from DataLoader.
+        pad_token_id: Tokenizer's pad token ID.
+        max_seq_len: Maximum sequence length for padding.
+        get_rope_func: Model's get_rope_index method for 3D position_ids.
+            If None, falls back to simple 1D position_ids.
+        use_attn_mask_startend_row_indices: If True, use compact flashmask format.
+
+    Returns:
+        Dict with numpy/tensor arrays:
+            - input_ids, labels, position_ids, attention_mask (same as collate_sft)
+            - pixel_values: concatenated vision features
+            - image_grid_thw: stacked grid dimensions
+    """
+    import paddle
+
+    batch_size = len(batch)
+    pad_len = min(max_seq_len, max(s.seq_len for s in batch))
+
+    input_ids = np.full((batch_size, pad_len), pad_token_id, dtype=np.int64)
+    labels = np.full((batch_size, pad_len), -100, dtype=np.int64)
+
+    for i, sample in enumerate(batch):
+        seq_len = min(sample.seq_len, pad_len)
+        input_ids[i, :seq_len] = sample.input_ids[:seq_len]
+        labels[i, :seq_len] = sample.labels[:seq_len]
+
+    # Collect vision inputs
+    all_pixel_values = []
+    all_image_grid_thw = []
+
+    for sample in batch:
+        mm = sample.mm_inputs
+        if "pixel_values" in mm and mm["pixel_values"] is not None:
+            pv = mm["pixel_values"]
+            if not isinstance(pv, paddle.Tensor):
+                pv = paddle.to_tensor(pv)
+            all_pixel_values.append(pv)
+        if "image_grid_thw" in mm and mm["image_grid_thw"] is not None:
+            grid = mm["image_grid_thw"]
+            if not isinstance(grid, paddle.Tensor):
+                grid = paddle.to_tensor(grid, dtype="int64")
+            all_image_grid_thw.append(grid)
+
+    pixel_values = paddle.concat(all_pixel_values, axis=0) if all_pixel_values else None
+    image_grid_thw = paddle.concat(all_image_grid_thw, axis=0) if all_image_grid_thw else None
+
+    # Compute position_ids
+    if get_rope_func is not None and image_grid_thw is not None:
+        input_ids_tensor = paddle.to_tensor(input_ids, dtype="int64")
+        attention_mask_tensor = paddle.ones_like(input_ids_tensor)
+        for i, sample in enumerate(batch):
+            seq_len = min(sample.seq_len, pad_len)
+            attention_mask_tensor[i, seq_len:] = 0
+
+        position_ids, rope_deltas = get_rope_func(
+            input_ids=input_ids_tensor,
+            image_grid_thw=image_grid_thw,
+            video_grid_thw=None,
+            attention_mask=attention_mask_tensor,
+        )
+        position_ids = position_ids.numpy()
+    else:
+        position_ids = np.zeros((batch_size, pad_len), dtype=np.int64)
+        for i, sample in enumerate(batch):
+            seq_len = min(sample.seq_len, pad_len)
+            position_ids[i, :seq_len] = np.arange(seq_len)
+
+    result: Dict[str, Any] = {
+        "input_ids": input_ids,
+        "labels": labels,
+        "position_ids": position_ids,
+    }
+
+    if pixel_values is not None:
+        result["pixel_values"] = pixel_values
+    if image_grid_thw is not None:
+        result["image_grid_thw"] = image_grid_thw
+
+    if use_attn_mask_startend_row_indices:
+        result["attn_mask_startend_row_indices"] = _build_startend_simple(batch, pad_len)
+    else:
+        attention_mask = np.zeros((batch_size, 1, pad_len, pad_len), dtype=np.float32)
+        for i, sample in enumerate(batch):
+            seq_len = min(sample.seq_len, pad_len)
+            attention_mask[i, 0, :seq_len, :seq_len] = np.tril(np.ones((seq_len, seq_len)))
+        result["attention_mask"] = attention_mask
+
+    return result

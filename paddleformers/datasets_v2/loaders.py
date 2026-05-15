@@ -20,8 +20,6 @@ Provides a unified load_dataset() entry point that handles:
 - HuggingFace Hub datasets (by repo_id)
 - Streaming mode (IterableDataset)
 - Automatic preprocessing via registry metadata
-
-Corresponds to ms-swift's dataset/loader.py.
 """
 
 import logging

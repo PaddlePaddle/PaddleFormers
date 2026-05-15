@@ -14,7 +14,6 @@
 
 """Base preprocessor for datasets_v2.
 
-Corresponds to ms-swift's RowPreprocessor (preprocessor/core.py:25).
 Designed to work with HuggingFace Dataset.map().
 """
 

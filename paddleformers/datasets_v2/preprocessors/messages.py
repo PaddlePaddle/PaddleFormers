@@ -14,7 +14,6 @@
 
 """MessagesPreprocessor: handles datasets already in conversation format.
 
-Corresponds to ms-swift's MessagesPreprocessor (preprocessor/core.py:421).
 Supports: standard messages, ShareGPT format, various key naming conventions.
 """
 

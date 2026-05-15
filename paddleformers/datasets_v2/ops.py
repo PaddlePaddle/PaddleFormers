@@ -16,8 +16,6 @@
 
 Thin wrappers over HuggingFace datasets utilities with added support
 for oversampling, streaming (IterableDataset), and unified API.
-
-Corresponds to ms-swift's dataset/utils.py + dataset/dataset_meta.py.
 """
 
 from typing import List, Optional, Tuple

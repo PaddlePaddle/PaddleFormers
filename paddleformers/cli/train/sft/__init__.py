@@ -14,5 +14,6 @@
 
 from .workflow import run_sft
 from .workflow2 import run_sft_v2
+from .workflow_vl_v2 import run_vl_sft_v2
 
-__all__ = ["run_sft", "run_sft_v2"]
+__all__ = ["run_sft", "run_sft_v2", "run_vl_sft_v2"]

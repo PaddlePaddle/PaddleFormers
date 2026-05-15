@@ -16,8 +16,6 @@
 
 Provides a central registry for known datasets, enabling lookup by name
 and bulk registration from JSON configuration files.
-
-Corresponds to ms-swift's dataset/register.py + dataset/dataset_meta.py.
 """
 
 import json

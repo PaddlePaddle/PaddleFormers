@@ -14,7 +14,6 @@
 
 """ResponsePreprocessor: handles query/response format datasets.
 
-Corresponds to ms-swift's ResponsePreprocessor (preprocessor/core.py:356).
 Supports: query + response + optional history + optional system.
 """
 

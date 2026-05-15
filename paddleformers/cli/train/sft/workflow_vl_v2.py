@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""SFT workflow using datasets_v2 pipeline.
+"""VL-SFT workflow using datasets_v2 pipeline.
 
-Simplified version of workflow.py that uses the new datasets_v2 module
-for data loading, encoding, and collation. Supports packing + flashmask.
+Adds multimodal (image) support on top of the datasets_v2 architecture,
+reusing the existing mm_plugin system for model-agnostic vision processing.
 """
 
 import logging
@@ -35,15 +35,11 @@ from paddleformers.cli.hparams import (
     ModelArguments,
 )
 from paddleformers.cli.utils.process import add_new_special_tokens
-from paddleformers.datasets_v2 import (
-    EncodeConfig,
-    LazyEncodeDataset,
-    encode_pt,
-    encode_sft,
-    get_template,
-)
+from paddleformers.datasets.template.mm_plugin import get_mm_plugin
+from paddleformers.datasets_v2 import EncodeConfig, LazyEncodeDataset, get_template
 from paddleformers.datasets_v2 import load_dataset as v2_load_dataset
-from paddleformers.datasets_v2.datapipe.collate import collate_sft
+from paddleformers.datasets_v2.datapipe.collate import collate_vl_sft
+from paddleformers.datasets_v2.datapipe.encode import encode_vl_sft
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (
@@ -52,7 +48,12 @@ from paddleformers.trainer import (
     set_random_seed,
     set_seed,
 )
-from paddleformers.transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+from paddleformers.transformers import (
+    AutoConfig,
+    AutoModelForConditionalGeneration,
+    AutoProcessor,
+    AutoTokenizer,
+)
 from paddleformers.transformers.configuration_utils import (
     LlmMetaConfig,
     QuantizationConfig,
@@ -64,6 +65,36 @@ from .sft_trainer import SFTTrainer
 os.environ["USE_CASUAL_MASK"] = "False"
 
 
+_MM_PLUGIN_MAP = {
+    "qwen2_vl": "qwen2_vl",
+    "qwen2_5_vl": "qwen2_vl",
+    "qwen3_vl": "qwen3_vl",
+    "qwen3_vl_moe": "qwen3_vl",
+    "ernie4_5_moe_vl": "ernie_vl",
+    "paddleocr_vl": "paddleocr_vl",
+    "glm4v_moe": "glm4v",
+    "glm_ocr": "glm_ocr",
+}
+
+
+def _detect_mm_plugin_name(model_config, data_args) -> str:
+    """Auto-detect mm_plugin name from model architecture or config."""
+    if getattr(data_args, "mm_plugin", None):
+        return data_args.mm_plugin
+
+    model_type = getattr(model_config, "model_type", "").lower()
+    return _MM_PLUGIN_MAP.get(model_type, "base")
+
+
+def _get_rope_func(model):
+    """Extract get_rope_index from model for 3D position_ids."""
+    if hasattr(model, "get_rope_index"):
+        return model.get_rope_index
+    if hasattr(model, "model") and hasattr(model.model, "get_rope_index"):
+        return model.model.get_rope_index
+    return None
+
+
 def _detect_template(tokenizer, data_args) -> str:
     """Detect which template to use based on config and tokenizer."""
     if hasattr(data_args, "use_template") and not data_args.use_template:
@@ -72,7 +103,6 @@ def _detect_template(tokenizer, data_args) -> str:
     if data_args.template:
         return data_args.template
 
-    # Auto-detect from model name
     model_path = getattr(data_args, "_model_name_or_path", "")
     model_lower = model_path.lower()
     if "qwen" in model_lower:
@@ -84,19 +114,18 @@ def _detect_template(tokenizer, data_args) -> str:
     elif "glm" in model_lower:
         return "chatml"
 
-    # Default: use jinja if tokenizer has chat_template, else chatml
     if tokenizer.chat_template is not None:
         return "__jinja__"
     return "chatml"
 
 
-def run_sft_v2(
+def run_vl_sft_v2(
     model_args: "ModelArguments",
     data_args: "DataArguments",
     generating_args: "GeneratingArguments",
     finetuning_args: "FinetuningArguments",
 ):
-    """Run SFT training using datasets_v2 pipeline."""
+    """Run VL-SFT training using datasets_v2 pipeline with multimodal support."""
 
     training_args = finetuning_args
     training_args.max_seq_len = data_args.max_seq_len
@@ -157,6 +186,16 @@ def run_sft_v2(
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
 
+    # Sync VL-specific config
+    if hasattr(model_config, "text_config"):
+        model_config.text_config.max_sequence_length = data_args.max_seq_len
+    if hasattr(model_config, "vision_config"):
+        model_config.vision_config._attn_implementation = model_args._attn_implementation
+        if hasattr(training_args, "recompute_granularity"):
+            model_config.vision_config.recompute_granularity = training_args.recompute_granularity
+            model_config.vision_config.recompute_method = training_args.recompute_method
+            model_config.vision_config.recompute_num_layers = training_args.recompute_num_layers
+
     if hasattr(model_config, "hidden_dropout_prob"):
         model_config.hidden_dropout_prob = finetuning_args.hidden_dropout_prob
     if hasattr(model_config, "attention_probs_dropout_prob"):
@@ -176,9 +215,9 @@ def run_sft_v2(
     model_config.is_lora = model_args.lora
 
     logger.info(f"Final model config: {model_config}")
-    logger.info("Loading model...")
+    logger.info("Loading VL model...")
 
-    model_class = AutoModelForCausalLM
+    model_class = AutoModelForConditionalGeneration
     if model_args.continue_training and not training_args.autotuner_benchmark:
         model = model_class.from_pretrained(
             model_args.model_name_or_path,
@@ -190,16 +229,37 @@ def run_sft_v2(
     else:
         model = model_class.from_config(model_config, dtype=dtype)
 
-    # ====== Tokenizer ======
+    # ====== Tokenizer & Processor ======
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
     add_new_special_tokens(tokenizer, data_args.new_special_tokens_path)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    # ====== Dataset (datasets_v2) ======
-    logger.info("[datasets_v2] Loading dataset...")
+    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path)
 
-    # Stash model path for template detection
+    # ====== MM Plugin ======
+    mm_plugin_name = _detect_mm_plugin_name(model_config, data_args)
+    logger.info(f"[VL-SFT-V2] Using mm_plugin: {mm_plugin_name}")
+
+    image_token = getattr(processor, "image_token", "<image>")
+    mm_plugin = get_mm_plugin(
+        name=mm_plugin_name,
+        image_token=image_token,
+        video_token=None,
+        audio_token=None,
+    )
+
+    # ====== Freeze vision/language (optional) ======
+    freeze_config = getattr(model_args, "freeze_config", None)
+    if freeze_config:
+        from paddleformers.cli.utils.mllm_utils import freeze_model_parameters
+
+        freeze_model_parameters(model, model_config, freeze_config)
+        logger.info(f"[VL-SFT-V2] Applied freeze config: {freeze_config}")
+
+    # ====== Dataset (datasets_v2) ======
+    logger.info("[VL-SFT-V2] Loading dataset...")
+
     data_args._model_name_or_path = model_args.model_name_or_path
 
     # Determine template
@@ -208,37 +268,27 @@ def run_sft_v2(
 
     if use_jinja:
         template = None
-        logger.info("[datasets_v2] Using tokenizer's built-in chat_template (jinja)")
+        logger.info("[VL-SFT-V2] Using tokenizer's built-in chat_template (jinja)")
     else:
         template = get_template(template_name)
-        logger.info(f"[datasets_v2] Using template: {template_name}")
+        logger.info(f"[VL-SFT-V2] Using template: {template_name}")
 
-    # Encode config
     encode_config = EncodeConfig(
         max_seq_len=data_args.max_seq_len,
         truncation="right",
         label_shift=True,
     )
 
-    # Build encode function
-    is_pretraining = "pt" in model_args.stage.lower()
+    encode_fn = partial(
+        encode_vl_sft,
+        tokenizer=tokenizer,
+        template=template,
+        config=encode_config,
+        processor=processor,
+        mm_plugin=mm_plugin,
+    )
 
-    if is_pretraining:
-        encode_fn = partial(
-            encode_pt,
-            tokenizer=tokenizer,
-            config=encode_config,
-        )
-        logger.info("[datasets_v2] Pretrain mode: using encode_pt")
-    else:
-        encode_fn = partial(
-            encode_sft,
-            tokenizer=tokenizer,
-            template=template,
-            config=encode_config,
-        )
-
-    # Load train dataset (and optionally split for eval)
+    # Load train dataset
     train_dataset = None
     eval_dataset = None
     num_proc = getattr(data_args, "dataset_num_proc", 1)
@@ -246,7 +296,6 @@ def run_sft_v2(
     if training_args.do_train and training_args.should_load_dataset:
         hf_ds = v2_load_dataset(data_args.train_dataset_path, num_proc=num_proc)
 
-        # Auto-split: if eval path is same as train or not set, split from train
         need_auto_split = training_args.do_eval and (
             not data_args.eval_dataset_path or data_args.eval_dataset_path == data_args.train_dataset_path
         )
@@ -256,33 +305,25 @@ def run_sft_v2(
 
             hf_ds, hf_eval_ds = split_dataset(hf_ds, test_ratio=0.1, shuffle=True, seed=training_args.seed)
             eval_dataset = LazyEncodeDataset(hf_eval_ds, encode_fn, seed=training_args.seed)
-            logger.info(f"[datasets_v2] Auto-split: train={len(hf_ds)}, eval={len(hf_eval_ds)}")
+            logger.info(f"[VL-SFT-V2] Auto-split: train={len(hf_ds)}, eval={len(hf_eval_ds)}")
 
         train_dataset = LazyEncodeDataset(hf_ds, encode_fn, seed=training_args.seed)
-        logger.info(f"[datasets_v2] Train dataset loaded: {len(train_dataset)} samples")
+        logger.info(f"[VL-SFT-V2] Train dataset loaded: {len(train_dataset)} samples")
 
-    # Load eval dataset (only if not auto-split above)
     if training_args.do_eval and training_args.should_load_dataset and eval_dataset is None:
         hf_eval_ds = v2_load_dataset(data_args.eval_dataset_path, num_proc=num_proc)
         eval_dataset = LazyEncodeDataset(hf_eval_ds, encode_fn, seed=training_args.seed)
-        logger.info(f"[datasets_v2] Eval dataset loaded: {len(eval_dataset)} samples")
+        logger.info(f"[VL-SFT-V2] Eval dataset loaded: {len(eval_dataset)} samples")
 
     # ====== Collate Function ======
-    max_seq_len = (
-        data_args.max_seq_len
-        if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
-        else None
-    )
-    logger.info(f"[datasets_v2] max_seq_len for collate: {max_seq_len}")
-
-    # Determine whether to use flashmask compact format
     use_startend = getattr(model_args, "use_attn_mask_startend_row_indices", True)
+    get_rope_func = _get_rope_func(model)
 
     data_collator = partial(
-        collate_sft,
+        collate_vl_sft,
         pad_token_id=tokenizer.pad_token_id,
         max_seq_len=data_args.max_seq_len,
-        packing=data_args.packing,
+        get_rope_func=get_rope_func,
         use_attn_mask_startend_row_indices=use_startend,
     )
 
