@@ -31,7 +31,6 @@ jobs:
         run: |
           python3 - <<'PYEOF'
           import json, os, urllib.request
-
           token    = os.environ['GITHUB_TOKEN']
           repo     = os.environ['REPO']
           run_id   = os.environ['RUN_ID']
@@ -44,31 +43,38 @@ jobs:
               "Authorization": f"Bearer {token}",
               "Accept": "application/vnd.github+json",
           }
-
           def gh_get(url):
               req = urllib.request.Request(url, headers=headers)
               with urllib.request.urlopen(req) as r:
                   return json.loads(r.read())
 
-          # 获取关联 PR
-          run_data = gh_get(
-              f"https://api.github.com/repos/{repo}/actions/runs/{run_id}"
-          )
-          prs = run_data.get('pull_requests', [])
-          if not prs:
-              print("No associated PR, skipping.")
+          # 用 head_sha 反查 PR，不依赖 run 的 pull_requests 字段（workflow_call 不可靠）
+          pr_number = None
+          for state in ['open', 'closed']:
+              prs_data = gh_get(
+                  f"https://api.github.com/repos/{repo}/pulls"
+                  f"?state={state}&per_page=100"
+              )
+              for pr in prs_data:
+                  if pr['head']['sha'] == head_sha:
+                      pr_number = pr['number']
+                      break
+              if pr_number:
+                  break
+
+          if not pr_number:
+              print(f"No PR found for sha {head_sha}, skipping.")
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
                   f.write("skip=true\n")
               exit(0)
 
-          pr_number = prs[0]['number']
+          print(f"Found PR #{pr_number} for sha {head_sha}")
 
           # 查该 commit 上所有 watched workflow 的状态，每个只取最新一次 run
           runs = gh_get(
               f"https://api.github.com/repos/{repo}/actions/runs"
               f"?head_sha={head_sha}&per_page=100"
           ).get('workflow_runs', [])
-
           latest = {}
           for r in runs:
               name = r['name']
@@ -76,14 +82,12 @@ jobs:
                   continue
               if name not in latest or r['run_number'] > latest[name]['run_number']:
                   latest[name] = r
-
           # 1. 没有任何 watched workflow 有记录 → skip
           if not latest:
               print("No watched workflows found for this commit, skipping.")
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
                   f.write("skip=true\n")
               exit(0)
-
           # 2. 还有 pending → skip
           pending = [name for name, r in latest.items() if r['status'] != 'completed']
           if pending:
@@ -91,7 +95,6 @@ jobs:
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
                   f.write("skip=true\n")
               exit(0)
-
           # 3. 全部完成但没有失败 → skip
           failed_run_ids = [
               str(r['id']) for r in latest.values()
@@ -102,7 +105,6 @@ jobs:
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
                   f.write("skip=true\n")
               exit(0)
-
           # 4. 全部完成且有失败 → 触发
           print(f"All done. PR #{pr_number}, failed runs: {failed_run_ids}")
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
@@ -134,22 +136,18 @@ jobs:
                   print(a['id'])
                   break
           " "$RID" 2>/dev/null || true)
-
             if [ -z "$ARTIFACT_ID" ]; then
               echo "No artifact found for run $RID, skipping."
               continue
             fi
-
             echo "Downloading artifact $ARTIFACT_ID for run $RID..."
             curl -s -L \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/${REPO}/actions/artifacts/${ARTIFACT_ID}/zip" \
               -o /tmp/artifacts/bot-result-${RID}.zip
-
             unzip -q /tmp/artifacts/bot-result-${RID}.zip \
               -d /tmp/artifacts/bot-result-${RID}/ || true
-
             echo "Downloaded: $(ls /tmp/artifacts/bot-result-${RID}/)"
           done
 
@@ -165,7 +163,6 @@ jobs:
         run: |
           python3 - <<'PYEOF'
           import json, os, glob, urllib.request
-
           token          = os.environ['GITHUB_TOKEN']
           repo           = os.environ['REPO']
           pr_number      = os.environ['PR_NUMBER']
@@ -173,19 +170,20 @@ jobs:
           run_attempt    = os.environ['RUN_ATTEMPT']
           failed_run_ids = os.environ['FAILED_RUN_IDS'].split()
           marker         = "<!-- bot-log-analysis -->"
-
-          # 所有失败 run 的分析结果内容一样（都是全 PR 汇总），取第一个有效的即可
+          # 用宽泛 glob，不依赖具体文件名格式
           body = None
           for rid in failed_run_ids:
-              files = glob.glob(f"/tmp/artifacts/bot-result-{rid}/bot_result_{rid}-*.md")
+              files = glob.glob(f"/tmp/artifacts/bot-result-{rid}/*.md")
               if files:
                   body = open(files[0]).read()
                   print(f"Using result from run {rid}: {files[0]}")
                   break
-
           if not body:
+              import os as _os
+              for rid in failed_run_ids:
+                  d = f"/tmp/artifacts/bot-result-{rid}/"
+                  print(f"Dir {d}: {_os.listdir(d) if _os.path.exists(d) else 'NOT FOUND'}")
               body = "⚠️ 未生成分析结果，请手动查看 Action 日志。"
-
           run_url = f"https://github.com/{repo}/actions/runs/{run_id}"
           comment = (
               f"{marker}\n"
@@ -195,13 +193,11 @@ jobs:
               f"---\n"
               f"<sub>🔄 每次 Re-run 后自动更新</sub>"
           )
-
           headers = {
               "Authorization": f"Bearer {token}",
               "Accept": "application/vnd.github+json",
               "Content-Type": "application/json",
           }
-
           def gh(method, url, payload=None):
               req = urllib.request.Request(
                   url,
@@ -211,16 +207,22 @@ jobs:
               )
               with urllib.request.urlopen(req) as r:
                   return json.loads(r.read())
-
           base = f"https://api.github.com/repos/{repo}"
           comments = gh("GET", f"{base}/issues/{pr_number}/comments?per_page=100")
           existing_id = next(
               (c["id"] for c in comments if marker in c.get("body", "")), None
           )
-
           if existing_id:
-              res = gh("PATCH", f"{base}/issues/comments/{existing_id}", {"body": comment})
-              print(f"Updated: {res.get('html_url')}")
+              try:
+                  res = gh("PATCH", f"{base}/issues/comments/{existing_id}", {"body": comment})
+                  print(f"Updated: {res.get('html_url')}")
+              except urllib.error.HTTPError as e:
+                  if e.code == 403:
+                      print(f"Cannot patch comment {existing_id}, creating new one.")
+                      res = gh("POST", f"{base}/issues/{pr_number}/comments", {"body": comment})
+                      print(f"Created: {res.get('html_url')}")
+                  else:
+                      raise
           else:
               res = gh("POST", f"{base}/issues/{pr_number}/comments", {"body": comment})
               print(f"Created: {res.get('html_url')}")
