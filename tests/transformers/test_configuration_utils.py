@@ -150,6 +150,7 @@ class StandardConfigMappingTest(unittest.TestCase):
             # check against double appending model_name in cache_dir
             self.assertFalse(os.path.exists(os.path.join(tempdir, model_id, model_id)))
 
+    @slow
     def test_load_from_hf(self):
         """test load config from hf"""
         config = Qwen3Config.from_pretrained("Qwen/Qwen3-0.6B", download_hub="huggingface")
