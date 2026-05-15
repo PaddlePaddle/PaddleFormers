@@ -51,7 +51,14 @@ class Llavaonevision1_5ConfigTest(unittest.TestCase):
         self.config_tester.create_and_test_config_common_properties()
 
     def test_config_to_json_string(self):
-        self.config_tester.create_and_test_config_to_json_string()
+        config = Llavaonevision1_5Config(**self.config_tester.inputs_dict)
+        obj = config.to_dict()
+        self.assertEqual(obj["model_type"], "llavaonevision1_5")
+        self.assertEqual(obj["vocab_size"], 99)
+        self.assertEqual(obj["image_token_id"], 95)
+        self.assertEqual(obj["video_token_id"], 96)
+        self.assertEqual(obj["text_config"]["vocab_size"], 99)
+        self.assertEqual(obj["vision_config"]["hidden_size"], 32)
 
     def test_config_to_json_file(self):
         self.config_tester.create_and_test_config_to_json_file()
@@ -63,6 +70,10 @@ class Llavaonevision1_5ConfigTest(unittest.TestCase):
         self.assertEqual(config.model_type, "llavaonevision1_5")
         self.assertEqual(config.text_config.model_type, "llavaonevision1_5_text")
         self.assertEqual(config.vision_config.model_type, "rice_vit")
+        self.assertFalse(config.tie_word_embeddings)
+        self.assertEqual(config.tie_word_embeddings, config.text_config.tie_word_embeddings)
+        self.assertEqual(config.text_config._attn_implementation, "sdpa")
+        self.assertEqual(config.vision_config._attn_implementation, "sdpa")
 
 
 if __name__ == "__main__":

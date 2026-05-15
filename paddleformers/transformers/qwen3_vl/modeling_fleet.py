@@ -27,7 +27,10 @@ from typing import Optional, Union
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
-from paddle.distributed.fleet.meta_parallel import LayerSpec
+try:
+    from paddle.distributed.fleet.meta_parallel import LayerSpec
+except ImportError:
+    from paddle.distributed.fleet.meta_parallel import LayerDesc as LayerSpec
 from paddle.distributed.fleet.utils import recompute
 from paddlefleet import parallel_state, tensor_parallel
 from paddlefleet.fusions.fused_bias_dropout import get_bias_dropout_add

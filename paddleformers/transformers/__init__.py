@@ -173,7 +173,13 @@ import_structure = {
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
     "llavaonevision1_5.configuration": ["Llavaonevision1_5Config", "LLaVAOneVision1_5TextConfig", "RiceConfig"],
-    "llavaonevision1_5.modeling": ["LLaVAOneVision1_5PretrainedModel", "RiceTransformerPretrainedModel"],
+    "llavaonevision1_5.modeling": [
+        "LLaVAOneVision1_5ForConditionalGeneration",
+        "LLaVAOneVision1_5Model",
+        "LLaVAOneVision1_5PretrainedModel",
+        "LLaVAOneVision1_5TextModel",
+        "RiceTransformerPretrainedModel",
+    ],
     "optimization": [
         "LinearDecayWithWarmup",
         "ConstScheduleWithWarmup",

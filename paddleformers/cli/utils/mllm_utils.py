@@ -25,6 +25,7 @@ _ALL_MODULES = ["vision", "aligner", "llm"]
 
 
 class MLLMModelMapping:
+    llavaonevision1_5 = "llavaonevision1_5"
     qwen2_5_vl = "qwen2_5_vl"
     qwen3_vl = "qwen3_vl"
     qwen3_vl_moe = "qwen3_vl_moe"
@@ -186,6 +187,15 @@ def freeze_model_parameters(model, freeze_config):
             log_info.extend([f"  - {p}" for p in patterns])
         logger.info("\n".join(log_info))
 
+
+register_multimodel_keys(
+    MultiModelKeys(
+        model_dtype=MLLMModelMapping.llavaonevision1_5,
+        aligner="model.multi_modal_projector",
+        llm=["model.language_model", "lm_head"],
+        vision="model.visual",
+    )
+)
 
 register_multimodel_keys(
     MultiModelKeys(

@@ -19,11 +19,18 @@ import paddle
 import paddle.nn.functional as F
 from paddle import Tensor
 from paddle.distributed import fleet
-from paddle.distributed.fleet.meta_parallel import (
-    LayerSpec,
-    NoPipelineParallel,
-    build_spec_layer,
-)
+try:
+    from paddle.distributed.fleet.meta_parallel import (
+        LayerSpec,
+        NoPipelineParallel,
+        build_spec_layer,
+    )
+except ImportError:
+    from paddle.distributed.fleet.meta_parallel import LayerDesc as LayerSpec
+    from paddlefleet.pipeline_parallel import NoPipelineParallel
+
+    def build_spec_layer(spec, *args, **kwargs):
+        return spec.build_layer()
 from paddlefleet.models.common.empty_layer import EmptyLayer
 from paddlefleet.models.gpt.gpt_embedding import GPTEmbedding
 from paddlefleet.models.gpt.gpt_layer_specs import (

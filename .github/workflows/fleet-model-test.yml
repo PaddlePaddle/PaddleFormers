@@ -235,6 +235,36 @@ jobs:
           fi
           '
 
+      - name: LLaVA-OneVision-1.5-8k-single-card
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/llavaonevision1_5_sft_single_card.sh single
+          exit_code=$?
+          if [[ "$exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: LLaVA-OneVision-1.5-8k-single-card.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: LLaVA-OneVision-1.5-8k-single-card.\033[0m"
+          fi
+          '
+
+      - name: LLaVA-OneVision-1.5-LoRA-single-card
+        if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+        run: |
+          docker exec -t ${{ env.container_name }} /bin/bash -ce '
+          source /root/proxy
+          timeout 5m bash -x PaddleFormers/tests/integration_test/llavaonevision1_5_sft_single_card.sh lora_single
+          exit_code=$?
+          if [[ "$exit_code" != "0" ]]; then
+            echo -e "::error:: \033[31mIntegration test failed: LLaVA-OneVision-1.5-LoRA-single-card.\033[0m"
+            exit 1
+          else
+            echo -e "\033[32mIntegration test succeeded: LLaVA-OneVision-1.5-LoRA-single-card.\033[0m"
+          fi
+          '
+
 
       - name: Terminate and delete the container
         if: ${{ always() }}

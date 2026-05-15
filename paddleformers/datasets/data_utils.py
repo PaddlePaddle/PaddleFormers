@@ -19,8 +19,30 @@ import time
 from itertools import islice
 from typing import List, Tuple
 
-# https://arxiv.org/pdf/2404.10830
-import binpacking
+try:
+    # https://arxiv.org/pdf/2404.10830
+    import binpacking
+except ImportError:
+
+    class _GreedyBinpacking:
+        @staticmethod
+        def to_constant_volume(items, volume, weight_pos=1):
+            bins = []
+            current_bin = []
+            current_weight = 0
+            for item in items:
+                weight = item[weight_pos]
+                if current_bin and current_weight + weight > volume:
+                    bins.append(current_bin)
+                    current_bin = []
+                    current_weight = 0
+                current_bin.append(item)
+                current_weight += weight
+            if current_bin:
+                bins.append(current_bin)
+            return bins
+
+    binpacking = _GreedyBinpacking()
 import numpy as np
 import paddle
 

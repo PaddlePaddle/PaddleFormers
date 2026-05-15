@@ -39,9 +39,10 @@ class RiceConfig(PretrainedConfig):
         initializer_range=0.02,
         layer_norm_eps=1e-05,
         text_hidden_size=2560,
+        _attn_implementation="sdpa",
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(_attn_implementation=_attn_implementation, **kwargs)
         self.depth = depth
         self.embed_dim = embed_dim
         self.hidden_size = hidden_size
@@ -94,7 +95,7 @@ class LLaVAOneVision1_5TextConfig(PretrainedConfig):
         rms_norm_eps=1e-06,
         use_cache=True,
         tie_word_embeddings=False,
-        rope_theta=5000000.0,
+        rope_theta=1000000.0,
         attention_bias=False,
         use_sliding_window=False,
         sliding_window=None,
@@ -104,6 +105,8 @@ class LLaVAOneVision1_5TextConfig(PretrainedConfig):
         layer_types=None,
         image_token_id=None,
         video_token_id=None,
+        fuse_rms_norm=True,
+        _attn_implementation="sdpa",
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -132,6 +135,7 @@ class LLaVAOneVision1_5TextConfig(PretrainedConfig):
         self.tie_word_embeddings = tie_word_embeddings
         self.image_token_id = image_token_id
         self.video_token_id = video_token_id
+        self.fuse_rms_norm = fuse_rms_norm
 
         if self.rope_scaling is not None and "type" in self.rope_scaling:
             if self.rope_scaling["type"] == "mrope":
@@ -150,9 +154,13 @@ class LLaVAOneVision1_5TextConfig(PretrainedConfig):
         layer_type_validation(self.layer_types, self.num_hidden_layers)
 
         standardize_rope_params(self, rope_theta=rope_theta)
-        rope_config_validation(self)
+        rope_config_validation(self, ignore_keys={"mrope_section"})
 
-        super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
+        super().__init__(
+            tie_word_embeddings=tie_word_embeddings,
+            _attn_implementation=_attn_implementation,
+            **kwargs,
+        )
 
 
 class Llavaonevision1_5Config(PretrainedConfig):
@@ -168,7 +176,9 @@ class Llavaonevision1_5Config(PretrainedConfig):
         vision_config=None,
         image_token_id=151655,
         video_token_id=151656,
+        vision_start_token_id=151652,
         vocab_size=152064,
+        tie_word_embeddings=None,
         **kwargs,
     ):
         if isinstance(vision_config, dict):
@@ -187,9 +197,13 @@ class Llavaonevision1_5Config(PretrainedConfig):
 
         self.image_token_id = image_token_id
         self.video_token_id = video_token_id
+        self.vision_start_token_id = vision_start_token_id
         self.vocab_size = vocab_size
 
-        super().__init__(**kwargs)
+        if tie_word_embeddings is None:
+            tie_word_embeddings = self.text_config.tie_word_embeddings
+
+        super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
 
 __all__ = ["Llavaonevision1_5Config", "LLaVAOneVision1_5TextConfig", "RiceConfig"]

@@ -2828,7 +2828,7 @@ class TrainingArguments:
 
     def _post_init_load_checkpoint_format(self):
         if self.load_checkpoint_format:
-            valid_modes = ["unified_checkpoint", "sharding_io", "flex_checkpoint"]
+            valid_modes = ["unified_checkpoint", "sharding_io", "flex_checkpoint", "naive"]
             assert (
                 self.load_checkpoint_format in valid_modes
             ), f"Invalid load_checkpoint_format: {self.load_checkpoint_format}, Only these formats are allowed: {valid_modes}."

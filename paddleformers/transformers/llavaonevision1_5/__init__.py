@@ -19,7 +19,15 @@ from ...utils.lazy_import import _LazyModule
 
 import_structure = {
     "configuration": ["Llavaonevision1_5Config", "LLaVAOneVision1_5TextConfig", "RiceConfig"],
-    "modeling": ["LLaVAOneVision1_5PretrainedModel", "RiceTransformerPretrainedModel"],
+    "modeling": [
+        "LLaVAOneVision1_5",
+        "LLaVAOneVision1_5ForCausalLM",
+        "LLaVAOneVision1_5ForConditionalGeneration",
+        "LLaVAOneVision1_5Model",
+        "LLaVAOneVision1_5PretrainedModel",
+        "LLaVAOneVision1_5TextModel",
+        "RiceTransformerPretrainedModel",
+    ],
 }
 
 if TYPE_CHECKING:
