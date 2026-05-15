@@ -257,7 +257,7 @@ jobs:
           cp ${work_dir}/../../../Miniconda3-latest-Linux-x86_64.sh /tmp/miniconda.sh
           bash /tmp/miniconda.sh -b -p /opt/conda
           export PATH=/opt/conda/bin:$PATH
-          # source ${work_dir}/../../../proxy_huggingface
+          source ${work_dir}/../../../proxy_huggingface
           conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
           conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
           conda create -n py_$python_version python=$python_version -y
