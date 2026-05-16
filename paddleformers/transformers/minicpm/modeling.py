@@ -57,7 +57,6 @@ except:
     pass
 from functools import lru_cache, partial
 
-
 PT_RETURN_INTRODUCTION = r"""
     Returns:
         [`{full_output_type}`] or `tuple(torch.FloatTensor)`: A [`{full_output_type}`] or a tuple of
@@ -1236,9 +1235,7 @@ class MiniCPMPreTrainedModel(PretrainedModel):
 
         LAYER_ROWWISE = ["self_attn.o_proj.weight", "mlp.down_proj.weight"]
 
-        BIAS_KEYS = [
-            key.replace(".weight", ".bias") for key in LAYER_COLWISE
-        ] + [
+        BIAS_KEYS = [key.replace(".weight", ".bias") for key in LAYER_COLWISE] + [
             "self_attn.o_proj.bias",
             "mlp.down_proj.bias",
             "lm_head.bias",
