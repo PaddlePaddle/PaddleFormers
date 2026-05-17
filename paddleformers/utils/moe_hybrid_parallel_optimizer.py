@@ -352,8 +352,8 @@ class MoEHybridParallelOptimizer(HPBase):
             ), "Hybrid expert parallel only supports ShardingV2 now"
         if hcg.get_sharding_parallel_world_size() > 1:
             split_param = strategy.hybrid_configs["sharding_configs"].split_param
-            ShardingOptimizer = DygraphShardingOptimizerV2 if split_param else DygraphShardingOptimizer
-            optimizer = ShardingOptimizer(optimizer, hcg)
+            # ShardingOptimizer = DygraphShardingOptimizerV2 if split_param else DygraphShardingOptimizer
+            # optimizer = ShardingOptimizer(optimizer, hcg)
 
         self._enable_timer = strategy.hybrid_configs["enable_optimizer_timer"]
 

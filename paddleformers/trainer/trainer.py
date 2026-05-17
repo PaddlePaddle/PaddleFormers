@@ -2288,9 +2288,8 @@ class Trainer:
 
                                 if not enable_dp_comm_overlap:
                                     if self.optimizer._sharding_enable:
-                                        assert reshard_util.is_sharding_opt(self.optimizer)
-                                        self.optimizer._inner_opt.reduce_gradients(
-                                            list(parameters_list), self.optimizer._hcg
+                                        self.optimizer.shard_opt.reduce_gradients(
+                                            list(parameters_list), self.optimizer.shard_opt._hcg
                                         )
 
                                     if self.optimizer._dp_enable or getattr(self.optimizer, "_sep_enable", False):
