@@ -68,8 +68,8 @@ bf16: true
 fp16_opt_level: O2
 amp_master_grad: true
 fuse_swiglu: true
-fuse_linear: true
-use_paddlefleet: true
+# fuse_linear: true
+# use_paddlefleet: true
 use_qk_norm: true
 
 # unified_checkpoint: false
