@@ -926,6 +926,10 @@ class TrainingArguments:
         default=None, metadata={"help": "The submodules to recompute in MTP layer"}
     )
 
+    auto_subbatch_modules: Optional[Any] = field(
+        default=None, metadata={"help": "The submodules to apply auto subbatch"}
+    )
+
     scale_loss: float = field(default=2**15, metadata={"help": "The value of initial scale_loss for fp16."})
 
     minimum_eval_times: int = field(
@@ -1873,6 +1877,16 @@ class TrainingArguments:
             raise ValueError(
                 "When moe_subbatch_token_num_before_dispatch > 0, please set recompute_granularity='selective and add corresponding module name to recompute_modules"
             )
+
+        # check auto_subbatch
+        if self.auto_subbatch_modules is not None:
+            if not isinstance(self.auto_subbatch_modules, (list, dict)):
+                raise ValueError("auto_subbatch_modules must be list, dict or None")
+            if len(self.auto_subbatch_modules) > 0 and not bool(
+                *paddle.get_flags("FLAGS_use_virtual_memory_auto_growth").values()
+            ):
+                raise ValueError("auto_subbatch_modules requires FLAGS_use_virtual_memory_auto_growth is True")
+
         self._post_init_save_checkpoint_format()
         self._post_init_load_checkpoint_format()
         if self.tensorwise_offload_optimizer and self.data_parallel_size > 1:
