@@ -43,7 +43,6 @@ if is_paddlefleet_available():
         get_tensor_model_parallel_group,
         get_tensor_model_parallel_world_size,
     )
-    from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
     from paddlefleet.tensor_parallel import (
         ColumnParallelLinear as FleetColumnParallelLinear,
     )
@@ -55,9 +54,6 @@ else:
 
     def get_tensor_model_parallel_world_size():
         return 1
-
-    class PaddleFleetPipelineLayer:
-        pass
 
     class FleetColumnParallelLinear:
         pass
@@ -200,15 +196,13 @@ class LoRAModel(nn.Layer):
             self.model = self.get_lora_model(model, lora_config)
         self.is_pipelinemodel = False
         pipeline_layer_types = [PipelineLayer]
-        if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
-            pipeline_layer_types.append(PaddleFleetPipelineLayer)
         if issubclass(type(self.model), tuple(pipeline_layer_types)):
             self.is_pipelinemodel = True
             self.model._single_to_pp_mapping = None
 
         self.use_paddlefleet = False
-        if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
-            if isinstance(self.model, PaddleFleetPipelineLayer):
+        if is_paddlefleet_available():
+            if isinstance(self.model, PipelineLayer):
                 self.use_paddlefleet = True
 
         if self.lora_config.tensor_model_parallel_size != self.model.config.tensor_model_parallel_size:
@@ -250,8 +244,6 @@ class LoRAModel(nn.Layer):
 
         rename_lora_split_mapping = {}
         pipeline_layer_types = [PipelineLayer]
-        if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
-            pipeline_layer_types.append(PaddleFleetPipelineLayer)
         if issubclass(type(self.model), tuple(pipeline_layer_types)):
             # rename lora_split_mapping
             prefixes = self.model.get_sequential_name_prefixes()
@@ -296,8 +288,6 @@ class LoRAModel(nn.Layer):
                 rename_lora_split_mapping[".".join(single_name)] = self.lora_split_mapping[k]
 
         pipeline_layer_types = [PipelineLayer]
-        if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
-            pipeline_layer_types.append(PaddleFleetPipelineLayer)
 
         lora_split_mapping = (
             rename_lora_split_mapping

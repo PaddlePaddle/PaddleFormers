@@ -16,6 +16,7 @@ from collections import OrderedDict, defaultdict
 import paddle
 import paddle.nn.functional as F
 from paddle.distributed import fleet
+from paddle.distributed.fleet.meta_parallel import MetaParallelBase, PipelineLayer
 
 from paddleformers.nn.criterion import CriterionLayer
 from paddleformers.peft import LoRAModel
@@ -24,12 +25,6 @@ from paddleformers.trainer import Trainer
 from paddleformers.transformers.model_utils import unwrap_model
 from paddleformers.utils import infohub
 from paddleformers.utils.import_utils import is_paddlefleet_available
-
-# Conditionally import paddlefleet modules
-if is_paddlefleet_available():
-    import paddlefleet.distributed.model as paddlefleet_dist_model
-    from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
-    from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
 
 DPO_INFO_KEYS = [
     "reference_chosen_logps",
@@ -213,8 +208,8 @@ class DPOTrainer(Trainer):
             level=self.args.fp16_opt_level,
             dtype=self.amp_dtype,
         )
-        if is_paddlefleet_available() and isinstance(model, PaddleFleetPipelineLayer):
-            model = paddlefleet_dist_model.distributed_model(model)
+        if is_paddlefleet_available():
+            model = fleet.distributed_model(model)
             model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
             return model
 
@@ -227,8 +222,8 @@ class DPOTrainer(Trainer):
     def _wrap_model(self, model, training=True):
         """Wrap model."""
         if is_paddlefleet_available() and (
-            isinstance(model, PaddleFleetPipelineLayer)
-            or (isinstance(model, LoRAModel) and isinstance(model.model, PaddleFleetPipelineLayer))
+            isinstance(model, PipelineLayer)
+            or (isinstance(model, LoRAModel) and isinstance(model.model, PipelineLayer))
         ):
             if isinstance(model, LoRAModel):
                 model.model._prepare_pipeline_inputs_func = _prepare_pipeline_dpo_inputs_func_fleet
@@ -244,14 +239,14 @@ class DPOTrainer(Trainer):
 
     def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
         """evaluate"""
-        if is_paddlefleet_available() and isinstance(self.ref_model_wrapped, PaddleFleetParallelBase):
+        if is_paddlefleet_available() and isinstance(self.ref_model_wrapped, MetaParallelBase):
             self.ref_model_wrapped = self._wrap_ref_model(self.ref_model_wrapped)
         self.model_wrapped = self._wrap_ref_model(self.model_wrapped)
         return super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
 
     def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None):
         """prediction_step"""
-        if is_paddlefleet_available() and isinstance(model, PaddleFleetParallelBase):
+        if is_paddlefleet_available() and isinstance(model, MetaParallelBase):
             inputs = self._prepare_inputs(inputs)
             return self.fleet_prediction_pipeline_step(self.ref_model_wrapped, self.model_wrapped, inputs)
 
@@ -374,7 +369,7 @@ class DPOTrainer(Trainer):
             reference_rejected_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
 
         if model.is_pipeline_last_stage(ignore_virtual=model._layers._num_virtual_pipeline_stages > 1):
-            if is_paddlefleet_available() and isinstance(model, PaddleFleetParallelBase):
+            if is_paddlefleet_available() and isinstance(model, MetaParallelBase):
                 labels = fleet_merge_dpo_labels(labels, (reference_chosen_logps, reference_rejected_logps))
             else:
                 labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)
@@ -593,7 +588,7 @@ class DPOTrainer(Trainer):
             reference_chosen_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
             reference_rejected_logps = [paddle.zeros([1]) for _ in range(model.accumulate_steps)]
         if model.is_pipeline_last_stage(ignore_virtual=model._layers._num_virtual_pipeline_stages > 1):
-            if is_paddlefleet_available() and isinstance(model, PaddleFleetParallelBase):
+            if is_paddlefleet_available() and isinstance(model, MetaParallelBase):
                 labels = fleet_merge_dpo_labels(labels, (reference_chosen_logps, reference_rejected_logps))
             else:
                 labels = labels[:-2] + (reference_chosen_logps, reference_rejected_logps)
