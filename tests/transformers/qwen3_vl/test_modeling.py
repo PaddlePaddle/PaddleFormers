@@ -827,7 +827,7 @@ class Qwen3VLIntegrationTest(unittest.TestCase):
                 0.02927705,
             ]
         )
-        self.assertTrue(paddle.allclose(output[0, 150, 10050:10030], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
+        self.assertTrue(paddle.allclose(output[0, 150, 10000:10030], EXPECTED_SLICE, atol=1e-3, rtol=1e-3))
 
 
 class Qwen3VLCompatibilityTest(unittest.TestCase):
