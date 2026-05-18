@@ -12,10 +12,12 @@ on:
     types:
       - completed
 
+# 顶层最小权限
 permissions:
   contents: read
 
 jobs:
+  # ─── Job 1: 判断所有 watched workflows 是否完成，收集失败 job URLs ───
   check-and-collect:
     runs-on: ubuntu-latest
     permissions:
@@ -171,6 +173,7 @@ jobs:
                 f.write(f"failed_job_urls={' '.join(failed_job_urls)}\n")
             PYEOF
 
+  # ─── Job 2: paddle-bot 上跑 bot 分析，上传 artifact ───
   analyze:
     needs: check-and-collect
     if: needs.check-and-collect.outputs.skip == 'false'
@@ -182,45 +185,16 @@ jobs:
       PATH:    /home/paddle-1/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       TASK_ID: ${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - name: Fetch failed logs
-        env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-            REPO: ${{ github.repository }}
-            FAILED_JOB_URLS: ${{ needs.check-and-collect.outputs.failed_job_urls }}
-        run: |
-            mkdir -p /tmp/ci_logs
-            for URL in $FAILED_JOB_URLS; do
-                JOB_ID=$(echo "$URL" | awk -F'/' '{print $NF}')
-                RUN_ID=$(echo "$URL" | awk -F'/' '{print $(NF-2)}')
-
-                LOG_FILE="/tmp/ci_logs/job_${JOB_ID}.log"
-
-                echo "Fetching $JOB_ID -> $LOG_FILE"
-
-                {
-                    echo "=================================================="
-                    echo "FAILED JOB: $JOB_ID"
-                    echo "SOURCE: $URL"
-                    echo "=================================================="
-                    gh run view "$RUN_ID" \
-                    --repo "$REPO" \
-                    --log || true
-                } > "$LOG_FILE"
-
-                ls -lh "$LOG_FILE"
-            done
       - name: Run formers bot
         env:
           GITHUB_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
           FAILED_JOB_URLS: ${{ needs.check-and-collect.outputs.failed_job_urls }}
         run: |
           cd /home/paddle-1/
-          LOG_CONTENT=$(find /tmp/ci_logs -name "*.log" -exec cat {} \; | tail -c 500000)
-          PROMPT="Please analyze the following failed PaddleFormers CI logs.
-          Each section corresponds to one failed job. ${LOG_CONTENT}"
+          PROMPT="Please analyze the failed CI job logs from these URLs: ${FAILED_JOB_URLS}"
           python formers_bot.py --prompt "$PROMPT" --task-id "$TASK_ID"
 
-      - name: Write summary 
+      - name: Write summary
         if: always()
         run: |
           if [ -f /tmp/bot_results/bot_result_${TASK_ID}.md ]; then
@@ -247,10 +221,13 @@ jobs:
           path: /tmp/bot_results/bot_result_${{ env.TASK_ID }}.md
           retention-days: 1
 
+  # ─── Job 3: ubuntu-latest 下载 artifact，用 PAT 发评论 ───
   post-comment:
     needs: [check-and-collect, analyze]
+    # analyze 失败也要发评论（告知无结果）
     if: always() && needs.check-and-collect.outputs.skip == 'false'
     runs-on: ubuntu-latest
+    # 写评论全部走 PAT，GITHUB_TOKEN 只用于下载 artifact（只读）
     permissions:
       actions: read
     steps:
@@ -289,6 +266,7 @@ jobs:
 
       - name: Post or update PR comment
         env:
+          # ✅ 写评论专用 Classic PAT，fork PR 也有权限
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           REPO:          ${{ github.repository }}
           PR_NUMBER:     ${{ needs.check-and-collect.outputs.pr_number }}
@@ -316,7 +294,7 @@ jobs:
           run_url = f"https://github.com/{repo}/actions/runs/{run_id}"
           comment = (
               f"{marker}\n"
-              f"## PaddleFormers Bot Log Analysis\n\n"
+              f"## 🤖 PaddleFormers Bot Log Analysis\n\n"
               f"> Run [`#{run_id}`]({run_url}) · Attempt `{run_attempt}`\n\n"
               f"{body}\n\n"
               f"---\n"
