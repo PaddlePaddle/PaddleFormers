@@ -76,7 +76,7 @@ jobs:
             # GitHub workflow_run completed 后状态同步有延迟
             time.sleep(20)
 
-            # 1. 找 PR
+            # 1. find PR
             pr_number = None
             for state in ['open', 'closed']:
                 prs = gh_get(
@@ -98,7 +98,7 @@ jobs:
             if not pr_number:
                 skip(f"No PR for sha {head_sha}")
 
-            # 2. 获取当前 SHA 所有 runs
+            # 2. get SHA runs
             runs = gh_get(
                 f"https://api.github.com/repos/{repo}/actions/runs"
                 f"?head_sha={head_sha}&per_page=100"
@@ -119,7 +119,7 @@ jobs:
             if not latest:
                 skip("No watched workflows found")
 
-            # 3. 判断是否所有 watched 都完成
+            # 3. check watched status
             missing = watched - set(latest.keys())
 
             pending = [
@@ -132,7 +132,7 @@ jobs:
             if all_pending:
                 skip(f"Still pending: {all_pending}")
 
-            # 4. 收集失败 workflow
+            # 4. get all workflow
             failed_runs = [
                 r for r in latest.values()
                 if r['conclusion'] == 'failure'
@@ -141,7 +141,7 @@ jobs:
             if not failed_runs:
                 skip("All passed")
 
-            # 5. 收集失败 jobs
+            # 5. get all jobs
             failed_job_urls = []
 
             for run in failed_runs:
