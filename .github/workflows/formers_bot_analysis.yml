@@ -31,111 +31,147 @@ jobs:
       - name: Check all workflows done and collect failed job URLs
         id: check
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO:         ${{ github.repository }}
-          HEAD_SHA:     ${{ github.event.workflow_run.head_sha }}
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            REPO: ${{ github.repository }}
+            HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          python3 - <<'PYEOF'
-          import json, os, urllib.request, sys
+            python3 - <<'PYEOF'
+            import json, os, urllib.request, sys, time
 
-          token    = os.environ['GITHUB_TOKEN']
-          repo     = os.environ['REPO']
-          head_sha = os.environ['HEAD_SHA']
-          watched  = {
-              "Unittest GPU CI", "Model Unittest GPU CI",
-              "CI_ILUVATAR", "Fleet Model Test", "Codestyle Check", "CI_XPU"
-          }
-          skip_keywords = [
-              "failed log analysis", "faild-log-analysis",
-              "formers-bot", "bot log analysis", "check-and-collect",
-              "analyze", "post-comment"
-          ]
-          headers = {
-              "Authorization": f"Bearer {token}",
-              "Accept": "application/vnd.github+json",
-          }
+            token    = os.environ['GITHUB_TOKEN']
+            repo     = os.environ['REPO']
+            head_sha = os.environ['HEAD_SHA']
 
-          def gh_get(url):
-              req = urllib.request.Request(url, headers=headers)
-              try:
-                  with urllib.request.urlopen(req) as r:
-                      return json.loads(r.read())
-              except urllib.error.HTTPError as e:
-                  print(f"HTTP {e.code} {url}", file=sys.stderr)
-                  return {}
+            watched = {
+                "Unittest GPU CI", "Model Unittest GPU CI",
+                "CI_ILUVATAR", "Fleet Model Test", "Codestyle Check", "CI_XPU"
+            }
 
-          def skip(reason):
-              print(reason)
-              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write("skip=true\n")
-              sys.exit(0)
+            skip_keywords = [
+                "failed log analysis", "faild-log-analysis",
+                "formers-bot", "bot log analysis", "check-and-collect",
+                "analyze", "post-comment"
+            ]
 
-          # 1. 找 PR（PR API 直接返回数组，不是 {items:[]}）
-          pr_number = None
-          for state in ['open', 'closed']:
-              prs = gh_get(
-                  f"https://api.github.com/repos/{repo}/pulls"
-                  f"?state={state}&per_page=100"
-              )
-              # prs 是 list，gh_get 失败时返回 {}，需兼容
-              if not isinstance(prs, list):
-                  continue
-              for pr in prs:
-                  if pr.get('head', {}).get('sha') == head_sha:
-                      pr_number = pr['number']
-                      break
-              if pr_number:
-                  break
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+            }
 
-          if not pr_number:
-              skip(f"No PR for sha {head_sha}")
+            def gh_get(url):
+                req = urllib.request.Request(url, headers=headers)
+                try:
+                    with urllib.request.urlopen(req) as r:
+                        return json.loads(r.read())
+                except urllib.error.HTTPError as e:
+                    print(f"HTTP {e.code} {url}", file=sys.stderr)
+                    return {}
 
-          # 2. 取每个 watched workflow 最新一次 run
-          runs = gh_get(
-              f"https://api.github.com/repos/{repo}/actions/runs"
-              f"?head_sha={head_sha}&per_page=100"
-          ).get('workflow_runs', [])
+            def skip(reason):
+                print(reason)
+                with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                    f.write("skip=true\n")
+                sys.exit(0)
 
-          latest = {}
-          for r in runs:
-              name = r['name']
-              if name not in watched:
-                  continue
-              if name not in latest or r['run_number'] > latest[name]['run_number']:
-                  latest[name] = r
+            # GitHub workflow_run completed 后状态同步有延迟
+            time.sleep(20)
 
-          if not latest:
-              skip("No watched workflows found")
+            # 1. 找 PR
+            pr_number = None
+            for state in ['open', 'closed']:
+                prs = gh_get(
+                    f"https://api.github.com/repos/{repo}/pulls"
+                    f"?state={state}&per_page=100"
+                )
 
-          # 3. 还有未完成的 → 等待下次触发
-          pending = [n for n, r in latest.items() if r['status'] != 'completed']
-          if pending:
-              skip(f"Still pending: {pending}")
+                if not isinstance(prs, list):
+                    continue
 
-          # 4. 全部完成但没有失败
-          failed_runs = [r for r in latest.values() if r['conclusion'] == 'failure']
-          if not failed_runs:
-              skip("All passed")
+                for pr in prs:
+                    if pr.get('head', {}).get('sha') == head_sha:
+                        pr_number = pr['number']
+                        break
 
-          # 5. 收集所有失败 job URLs
-          failed_job_urls = []
-          for run in failed_runs:
-              jobs_data = gh_get(
-                  f"https://api.github.com/repos/{repo}/actions/runs"
-                  f"/{run['id']}/jobs?per_page=100"
-              )
-              for job in jobs_data.get('jobs', []):
-                  if job['conclusion'] == 'failure' and not any(
-                      kw in job['name'].lower() for kw in skip_keywords
-                  ):
-                      failed_job_urls.append(job['html_url'])
+                if pr_number:
+                    break
 
-          print(f"PR #{pr_number}, failed_job_urls: {failed_job_urls}")
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write("skip=false\n")
-              f.write(f"pr_number={pr_number}\n")
-              f.write(f"failed_job_urls={' '.join(failed_job_urls)}\n")
-          PYEOF
+            if not pr_number:
+                skip(f"No PR for sha {head_sha}")
+
+            # 2. 获取当前 SHA 所有 runs
+            runs = gh_get(
+                f"https://api.github.com/repos/{repo}/actions/runs"
+                f"?head_sha={head_sha}&per_page=100"
+            ).get('workflow_runs', [])
+
+            latest = {}
+
+            for r in runs:
+                name = r['name']
+
+                if name not in watched:
+                    continue
+
+                # rerun 时必须用 run_attempt
+                if name not in latest or r['run_attempt'] > latest[name]['run_attempt']:
+                    latest[name] = r
+
+            if not latest:
+                skip("No watched workflows found")
+
+            # 3. 判断是否所有 watched 都完成
+            missing = watched - set(latest.keys())
+
+            pending = [
+                name for name, run in latest.items()
+                if run['status'] != 'completed'
+            ]
+
+            all_pending = sorted(list(missing) + pending)
+
+            if all_pending:
+                skip(f"Still pending: {all_pending}")
+
+            # 4. 收集失败 workflow
+            failed_runs = [
+                r for r in latest.values()
+                if r['conclusion'] == 'failure'
+            ]
+
+            if not failed_runs:
+                skip("All passed")
+
+            # 5. 收集失败 jobs
+            failed_job_urls = []
+
+            for run in failed_runs:
+                jobs_data = gh_get(
+                    f"https://api.github.com/repos/{repo}/actions/runs"
+                    f"/{run['id']}/jobs?per_page=100"
+                )
+
+                for job in jobs_data.get('jobs', []):
+                    if job['conclusion'] != 'failure':
+                        continue
+
+                    if any(
+                        kw in job['name'].lower()
+                        for kw in skip_keywords
+                    ):
+                        continue
+
+                    failed_job_urls.append(job['html_url'])
+
+            # 去重
+            failed_job_urls = list(dict.fromkeys(failed_job_urls))
+
+            print(f"PR #{pr_number}, failed_job_urls: {failed_job_urls}")
+
+            with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                f.write("skip=false\n")
+                f.write(f"pr_number={pr_number}\n")
+                f.write(f"failed_job_urls={' '.join(failed_job_urls)}\n")
+            PYEOF
 
   # ─── Job 2: paddle-bot 上跑 bot 分析，上传 artifact ───
   analyze:
