@@ -90,7 +90,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
-        ("olmo2", "Olmo2"),
+        ("olmo2", "Olmo2ForCausalLM"),
     ]
 )
 

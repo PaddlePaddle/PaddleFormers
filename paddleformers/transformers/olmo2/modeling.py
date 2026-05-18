@@ -1,5 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2024 HuggingFace Inc. team. All rights reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -41,12 +40,6 @@ from .configuration import Olmo2Config
 
 
 class Olmo2RMSNorm(nn.Layer):
-    """OLMo2 RMSNorm matching the HF implementation.
-
-    HF casts hidden states to fp32, computes variance/rsqrt in fp32, then casts
-    the final result back to the original input dtype.
-    """
-
     def __init__(self, hidden_size: int, eps: float = 1e-6, input_is_parallel: bool = False):
         super().__init__()
         self.weight = paddle.create_parameter(
@@ -67,14 +60,12 @@ class Olmo2RMSNorm(nn.Layer):
 
 
 def rotate_half(x: paddle.Tensor) -> paddle.Tensor:
-    """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
     return paddle.cat((-x2, x1), axis=-1)
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
-    """Applies rotary positional embedding to query and key tensors."""
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
 
@@ -86,8 +77,6 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
 
 
 class Olmo2Attention(nn.Layer):
-    """Multi-headed attention for OLMo2 with QK-Norm."""
-
     def __init__(self, config: Olmo2Config, layer_idx: int):
         super().__init__()
         self.config = config
@@ -117,7 +106,6 @@ class Olmo2Attention(nn.Layer):
         q_hidden_size = self.head_dim * config.num_attention_heads
         kv_hidden_size = self.head_dim * config.num_key_value_heads
 
-        # OLMo2 uses separate Q/K/V projections because of QK-Norm
         self.q_proj = GeneralLinear.create(
             config.hidden_size,
             q_hidden_size,
@@ -147,7 +135,6 @@ class Olmo2Attention(nn.Layer):
             tp_plan="rowwise",
         )
 
-        # QK-Norm: RMSNorm applied to Q and K before RoPE
         self.q_norm = Olmo2RMSNorm(
             q_hidden_size,
             eps=config.rms_norm_eps,
@@ -177,7 +164,6 @@ class Olmo2Attention(nn.Layer):
         q_shape = (batch_size, seq_len, -1, self.head_dim)
         kv_shape = (batch_size, seq_len, -1, self.head_dim)
 
-        # OLMo2 key difference: apply QK-Norm BEFORE reshape and RoPE
         query_states = self.q_norm(self.q_proj(hidden_states))
         key_states = self.k_norm(self.k_proj(hidden_states))
         value_states = self.v_proj(hidden_states)
@@ -211,8 +197,6 @@ class Olmo2Attention(nn.Layer):
 
 
 class Olmo2DecoderLayer(nn.Layer):
-    """OLMo2 decoder layer with post-norm architecture."""
-
     def __init__(self, config: Olmo2Config, layer_idx: int):
         super().__init__()
         self.config = config
@@ -220,7 +204,6 @@ class Olmo2DecoderLayer(nn.Layer):
         self.self_attn = Olmo2Attention(config=config, layer_idx=layer_idx)
         self.mlp = MLP(config)
 
-        # OLMo2 uses POST-norm: norm is applied AFTER attention and AFTER FFN
         self.post_attention_layernorm = Olmo2RMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
@@ -242,7 +225,6 @@ class Olmo2DecoderLayer(nn.Layer):
         past_key_values: Cache | None = None,
         use_cache: bool = False,
     ) -> (tuple[paddle.Tensor] | tuple[paddle.Tensor, paddle.Tensor]):
-        # Post-norm: attn -> norm -> residual
         residual = hidden_states
         hidden_states, _ = self.self_attn(
             hidden_states=hidden_states,
@@ -255,7 +237,6 @@ class Olmo2DecoderLayer(nn.Layer):
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = residual + hidden_states
 
-        # Post-norm: mlp -> norm -> residual
         residual = hidden_states
         hidden_states = self.mlp(hidden_states)
         hidden_states = self.post_feedforward_layernorm(hidden_states)
@@ -332,15 +313,12 @@ class Olmo2PretrainedModel(PretrainedModel):
         aoa_statements = [
             f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
             f"model.norm.weight -> {model_prefix}norm.weight",
-            # OLMo2 has post_attention_layernorm and post_feedforward_layernorm (post-norm)
             f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
             f"model.layers.$LAYER_ID.post_feedforward_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_feedforward_layernorm.weight",
-            # OLMo2 has q_norm and k_norm (QK-Norm)
             f"model.layers.$LAYER_ID.self_attn.q_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
             f"model.layers.$LAYER_ID.self_attn.k_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
         ]
 
-        # Attention projections (Linear weights need transpose)
         aoa_statements.extend(
             [
                 f"model.layers.$LAYER_ID.self_attn.{proj_name}.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{proj_name}.weight"
@@ -348,7 +326,6 @@ class Olmo2PretrainedModel(PretrainedModel):
             ]
         )
 
-        # MLP projections (Linear weights need transpose)
         aoa_statements.extend(
             [
                 f"model.layers.$LAYER_ID.mlp.{proj_name}.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{proj_name}.weight"
@@ -410,9 +387,8 @@ class Olmo2Model(Olmo2PretrainedModel):
             config=config,
             num_embeddings=self.vocab_size,
             embedding_dim=self.hidden_size,
-            # HF/PyTorch Embedding returns the loaded weight row for padding_idx
-            # during forward; Paddle masks padding_idx to zeros. Do not pass it
-            # here, otherwise token id == pad_token_id diverges after migration.
+            # Paddle masks padding_idx to zeros during forward, so keep it unset
+            # to preserve the loaded embedding row for migrated checkpoints.
             padding_idx=None,
         )
         self.layers = nn.LayerList(

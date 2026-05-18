@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -68,9 +68,6 @@ class Olmo2Config(PretrainedConfig):
         self.rope_parameters = self.rope_scaling
         standardize_rope_params(self, rope_theta=self.rope_theta)
         rope_config_validation(self)
-
-        # OLMo2 should default to SDPA attention to match HF Transformers behavior
-        kwargs.setdefault("_attn_implementation", "sdpa")
 
         super().__init__(
             pad_token_id=pad_token_id,

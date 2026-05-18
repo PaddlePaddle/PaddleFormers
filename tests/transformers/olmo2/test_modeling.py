@@ -1,5 +1,4 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2024 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +19,12 @@ import unittest
 import numpy as np
 import paddle
 
-from paddleformers.transformers import Olmo2Config, Olmo2ForCausalLM, Olmo2Model
+from paddleformers.transformers import (
+    AutoModelForCausalLM,
+    Olmo2Config,
+    Olmo2ForCausalLM,
+    Olmo2Model,
+)
 from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_modeling_common import ModelTesterMixin, ids_tensor
@@ -170,6 +174,11 @@ class Olmo2ModelTest(ModelTesterMixin, unittest.TestCase):
     def test_model_causal_lm(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_for_causal_lm(*config_and_inputs)
+
+    def test_auto_model_for_causal_lm_from_config(self):
+        config = self.model_tester.get_config()
+        model = AutoModelForCausalLM.from_config(config)
+        self.assertIsInstance(model, Olmo2ForCausalLM)
 
     def test_model_lm_head_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
