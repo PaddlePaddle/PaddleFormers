@@ -318,10 +318,3 @@ jobs:
         if: always()
         run: |
           docker rm -f $container_name 2>/dev/null || true
-  formers-bot:
-    needs: [check_skip, model-unittest-gpu-ci]
-    if: "always() && needs.check_skip.outputs.skip == 'false' && needs['model-unittest-gpu-ci'].result == 'failure'"
-    uses: ./.github/workflows/_bot_log_analysis.yml
-    with:
-      ci_result: ${{ needs['model-unittest-gpu-ci'].result }}
-    secrets: inherit

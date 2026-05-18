@@ -1,0 +1,301 @@
+name: Post Analysis Comment
+
+on:
+  workflow_run:
+    workflows:
+      - "Unittest GPU CI"
+      - "Model Unittest GPU CI"
+      - "CI_ILUVATAR"
+      - "Fleet Model Test"
+      - "Codestyle Check"
+      - "CI_XPU"
+    types:
+      - completed
+
+# 顶层最小权限
+permissions:
+  contents: read
+
+jobs:
+  # ─── Job 1: 判断所有 watched workflows 是否完成，收集失败 job URLs ───
+  check-and-collect:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+      actions: read
+    outputs:
+      skip:            ${{ steps.check.outputs.skip }}
+      pr_number:       ${{ steps.check.outputs.pr_number }}
+      failed_job_urls: ${{ steps.check.outputs.failed_job_urls }}
+    steps:
+      - name: Check all workflows done and collect failed job URLs
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO:         ${{ github.repository }}
+          HEAD_SHA:     ${{ github.event.workflow_run.head_sha }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, urllib.request, sys
+
+          token    = os.environ['GITHUB_TOKEN']
+          repo     = os.environ['REPO']
+          head_sha = os.environ['HEAD_SHA']
+          watched  = {
+              "Unittest GPU CI", "Model Unittest GPU CI",
+              "CI_ILUVATAR", "Fleet Model Test", "Codestyle Check", "CI_XPU"
+          }
+          skip_keywords = [
+              "failed log analysis", "faild-log-analysis",
+              "formers-bot", "bot log analysis", "check-and-collect",
+              "analyze", "post-comment"
+          ]
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+          }
+
+          def gh_get(url):
+              req = urllib.request.Request(url, headers=headers)
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      return json.loads(r.read())
+              except urllib.error.HTTPError as e:
+                  print(f"HTTP {e.code} {url}", file=sys.stderr)
+                  return {}
+
+          def skip(reason):
+              print(reason)
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write("skip=true\n")
+              sys.exit(0)
+
+          # 1. 找 PR（PR API 直接返回数组，不是 {items:[]}）
+          pr_number = None
+          for state in ['open', 'closed']:
+              prs = gh_get(
+                  f"https://api.github.com/repos/{repo}/pulls"
+                  f"?state={state}&per_page=100"
+              )
+              # prs 是 list，gh_get 失败时返回 {}，需兼容
+              if not isinstance(prs, list):
+                  continue
+              for pr in prs:
+                  if pr.get('head', {}).get('sha') == head_sha:
+                      pr_number = pr['number']
+                      break
+              if pr_number:
+                  break
+
+          if not pr_number:
+              skip(f"No PR for sha {head_sha}")
+
+          # 2. 取每个 watched workflow 最新一次 run
+          runs = gh_get(
+              f"https://api.github.com/repos/{repo}/actions/runs"
+              f"?head_sha={head_sha}&per_page=100"
+          ).get('workflow_runs', [])
+
+          latest = {}
+          for r in runs:
+              name = r['name']
+              if name not in watched:
+                  continue
+              if name not in latest or r['run_number'] > latest[name]['run_number']:
+                  latest[name] = r
+
+          if not latest:
+              skip("No watched workflows found")
+
+          # 3. 还有未完成的 → 等待下次触发
+          pending = [n for n, r in latest.items() if r['status'] != 'completed']
+          if pending:
+              skip(f"Still pending: {pending}")
+
+          # 4. 全部完成但没有失败
+          failed_runs = [r for r in latest.values() if r['conclusion'] == 'failure']
+          if not failed_runs:
+              skip("All passed")
+
+          # 5. 收集所有失败 job URLs
+          failed_job_urls = []
+          for run in failed_runs:
+              jobs_data = gh_get(
+                  f"https://api.github.com/repos/{repo}/actions/runs"
+                  f"/{run['id']}/jobs?per_page=100"
+              )
+              for job in jobs_data.get('jobs', []):
+                  if job['conclusion'] == 'failure' and not any(
+                      kw in job['name'].lower() for kw in skip_keywords
+                  ):
+                      failed_job_urls.append(job['html_url'])
+
+          print(f"PR #{pr_number}, failed_job_urls: {failed_job_urls}")
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write("skip=false\n")
+              f.write(f"pr_number={pr_number}\n")
+              f.write(f"failed_job_urls={' '.join(failed_job_urls)}\n")
+          PYEOF
+
+  # ─── Job 2: paddle-bot 上跑 bot 分析，上传 artifact ───
+  analyze:
+    needs: check-and-collect
+    if: needs.check-and-collect.outputs.skip == 'false'
+    runs-on: paddle-bot
+    permissions:
+      contents: read
+      actions: read
+    env:
+      PATH:    /home/paddle-1/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      TASK_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Run formers bot
+        env:
+          GITHUB_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
+          FAILED_JOB_URLS: ${{ needs.check-and-collect.outputs.failed_job_urls }}
+        run: |
+          cd /home/paddle-1/
+          PROMPT="Please analyze the failed CI job logs from these URLs: ${FAILED_JOB_URLS}"
+          python formers_bot.py --prompt "$PROMPT" --task-id "$TASK_ID"
+
+      - name: Write summary
+        if: always()
+        run: |
+          if [ -f /tmp/bot_results/bot_result_${TASK_ID}.md ]; then
+            echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
+            cat /tmp/bot_results/bot_result_${TASK_ID}.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
+            echo "No analysis result generated." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Report to monitor
+        if: always()
+        env:
+          PR_NUMBER:     ${{ needs.check-and-collect.outputs.pr_number }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          python /home/paddle-1/formers_bot/report_monitor.py "$TASK_ID"
+
+      - name: Upload result artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot-result-${{ github.run_id }}
+          path: /tmp/bot_results/bot_result_${{ env.TASK_ID }}.md
+          retention-days: 1
+
+  # ─── Job 3: ubuntu-latest 下载 artifact，用 PAT 发评论 ───
+  post-comment:
+    needs: [check-and-collect, analyze]
+    # analyze 失败也要发评论（告知无结果）
+    if: always() && needs.check-and-collect.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    # 写评论全部走 PAT，GITHUB_TOKEN 只用于下载 artifact（只读）
+    permissions:
+      actions: read
+    steps:
+      - name: Download bot result artifact
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO:         ${{ github.repository }}
+          RUN_ID:       ${{ github.run_id }}
+        run: |
+          mkdir -p /tmp/bot_result
+
+          ARTIFACT_ID=$(curl -s \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/actions/runs/${RUN_ID}/artifacts" \
+            | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          for a in data.get('artifacts', []):
+              if a['name'] == f'bot-result-{sys.argv[1]}':
+                  print(a['id'])
+                  break
+          " "$RUN_ID" 2>/dev/null || true)
+
+          if [ -z "$ARTIFACT_ID" ]; then
+            echo "No artifact found, will post fallback comment."
+          else
+            curl -s -L \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${REPO}/actions/artifacts/${ARTIFACT_ID}/zip" \
+              -o /tmp/bot_result/result.zip
+            unzip -q /tmp/bot_result/result.zip -d /tmp/bot_result/
+            echo "Downloaded: $(ls /tmp/bot_result/)"
+          fi
+
+      - name: Post or update PR comment
+        env:
+          # ✅ 写评论专用 Classic PAT，fork PR 也有权限
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          REPO:          ${{ github.repository }}
+          PR_NUMBER:     ${{ needs.check-and-collect.outputs.pr_number }}
+          RUN_ID:        ${{ github.run_id }}
+          RUN_ATTEMPT:   ${{ github.run_attempt }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, glob, urllib.request, urllib.error, sys
+
+          token       = os.environ['BOT_TOKEN']
+          repo        = os.environ['REPO']
+          pr_number   = os.environ['PR_NUMBER']
+          run_id      = os.environ['RUN_ID']
+          run_attempt = os.environ['RUN_ATTEMPT']
+          marker      = "<!-- bot-log-analysis -->"
+
+          if not token:
+              print("ERROR: BOT_TOKEN is empty, cannot post comment.", file=sys.stderr)
+              sys.exit(1)
+
+          files = glob.glob("/tmp/bot_result/*.md")
+          body  = open(files[0]).read() if files else \
+                  "⚠️ 未生成分析结果，请手动查看 Action 日志。"
+
+          run_url = f"https://github.com/{repo}/actions/runs/{run_id}"
+          comment = (
+              f"{marker}\n"
+              f"## 🤖 PaddleFormers Bot Log Analysis\n\n"
+              f"> Run [`#{run_id}`]({run_url}) · Attempt `{run_attempt}`\n\n"
+              f"{body}\n\n"
+              f"---\n"
+              f"<sub>🔄 每次 Re-run 后自动更新</sub>"
+          )
+
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "Content-Type": "application/json",
+          }
+
+          def gh(method, url, payload=None):
+              req = urllib.request.Request(
+                  url,
+                  data=json.dumps(payload).encode() if payload else None,
+                  headers=headers,
+                  method=method,
+              )
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      return json.loads(r.read())
+              except urllib.error.HTTPError as e:
+                  body = e.read().decode()
+                  print(f"HTTP {e.code} {method} {url}: {body}", file=sys.stderr)
+                  raise
+
+          base     = f"https://api.github.com/repos/{repo}"
+          comments = gh("GET", f"{base}/issues/{pr_number}/comments?per_page=100")
+          existing = next(
+              (c["id"] for c in comments if marker in c.get("body", "")), None
+          )
+
+          if existing:
+              res = gh("PATCH", f"{base}/issues/comments/{existing}", {"body": comment})
+              print(f"Updated comment: {res.get('html_url')}")
+          else:
+              res = gh("POST", f"{base}/issues/{pr_number}/comments", {"body": comment})
+              print(f"Created comment: {res.get('html_url')}")
+          PYEOF
