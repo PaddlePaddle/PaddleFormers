@@ -12,12 +12,10 @@ on:
     types:
       - completed
 
-# 顶层最小权限
 permissions:
   contents: read
 
 jobs:
-  # ─── Job 1: 判断所有 watched workflows 是否完成，收集失败 job URLs ───
   check-and-collect:
     runs-on: ubuntu-latest
     permissions:
@@ -173,7 +171,6 @@ jobs:
                 f.write(f"failed_job_urls={' '.join(failed_job_urls)}\n")
             PYEOF
 
-  # ─── Job 2: paddle-bot 上跑 bot 分析，上传 artifact ───
   analyze:
     needs: check-and-collect
     if: needs.check-and-collect.outputs.skip == 'false'
@@ -221,13 +218,10 @@ jobs:
           path: /tmp/bot_results/bot_result_${{ env.TASK_ID }}.md
           retention-days: 1
 
-  # ─── Job 3: ubuntu-latest 下载 artifact，用 PAT 发评论 ───
   post-comment:
     needs: [check-and-collect, analyze]
-    # analyze 失败也要发评论（告知无结果）
     if: always() && needs.check-and-collect.outputs.skip == 'false'
     runs-on: ubuntu-latest
-    # 写评论全部走 PAT，GITHUB_TOKEN 只用于下载 artifact（只读）
     permissions:
       actions: read
     steps:
@@ -266,7 +260,6 @@ jobs:
 
       - name: Post or update PR comment
         env:
-          # ✅ 写评论专用 Classic PAT，fork PR 也有权限
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           REPO:          ${{ github.repository }}
           PR_NUMBER:     ${{ needs.check-and-collect.outputs.pr_number }}
