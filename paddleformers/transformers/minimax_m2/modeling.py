@@ -511,8 +511,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
             if n_shared_experts > 0:
                 aoa_config["aoa_statements"] += [
-                    f"{prefix}.block_sparse_moe.shared_experts.gate_proj.weight^T, {prefix}.block_sparse_moe.shared_experts.up_proj.weight^T -> {prefix_offset}.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
-                    f"{prefix}.block_sparse_moe.shared_experts.down_proj.weight^T -> {prefix_offset}.mlp.shared_experts.down_proj.weight",
+                    f"{prefix}.block_sparse_moe.shared_experts.w1.weight^T, {prefix}.block_sparse_moe.shared_experts.w3.weight^T -> {prefix_offset}.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
+                    f"{prefix}.block_sparse_moe.shared_experts.w2.weight^T -> {prefix_offset}.mlp.shared_experts.down_proj.weight",
                 ]
 
             for expert_id in range(config.n_routed_experts):
