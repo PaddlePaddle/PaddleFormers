@@ -50,7 +50,7 @@ install_requirements() {
         #fleet
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
         #paddlefleet_ops
-        python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir
+        python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir --force-reinstall --no-dependencies
         python -m pip uninstall paddlepaddle-gpu -y
         #paddle
         wget -q $paddle
