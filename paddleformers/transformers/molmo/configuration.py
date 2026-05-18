@@ -1,5 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2024 HuggingFace Inc. team. All rights reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -49,7 +48,7 @@ class MolmoConfig(PretrainedConfig):
         rope_theta (float): RoPE base frequency.
         max_position_embeddings (int): Maximum sequence length.
         weight_tying (bool): Whether to tie input embedding and LM head weights.
-            Maps to HF's ``tie_word_embeddings``.
+            Maps to ``tie_word_embeddings``.
         use_position_ids (bool): Whether to use position IDs for RoPE.
     """
 
@@ -83,7 +82,6 @@ class MolmoConfig(PretrainedConfig):
         eos_token_id: int = None,
         attention_dropout: float = 0.0,
         head_dim: int = None,
-        # Vision backbone fields used by Molmo-7B-O-0924.
         vision_backbone: dict | None = None,
         image_padding_embed: str | None = "pad_and_partial_pad",
         vit_layers: list | tuple | None = (-2, -9),
@@ -98,9 +96,7 @@ class MolmoConfig(PretrainedConfig):
         **kwargs,
     ):
         self.vocab_size = vocab_size
-        # embedding_size: size of the base embedding table (padded to multiple of 128)
         self.embedding_size = embedding_size if embedding_size is not None else vocab_size
-        # additional_vocab_size: number of extra tokens (e.g. image tokens) stored in new_embedding
         self.additional_vocab_size = additional_vocab_size
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
@@ -157,8 +153,6 @@ class MolmoConfig(PretrainedConfig):
         self.vision_attention_type = vision_attention_type
         self.float32_attention = float32_attention
 
-        # HF uses tie_word_embeddings; molmo ref uses weight_tying — normalize both
-        # kwargs may contain tie_word_embeddings from HF checkpoint configs
         tie_word_embeddings = kwargs.pop("tie_word_embeddings", weight_tying)
         self.weight_tying = weight_tying or tie_word_embeddings
 
@@ -170,9 +164,6 @@ class MolmoConfig(PretrainedConfig):
         self.rope_parameters = self.rope_scaling
         standardize_rope_params(self, rope_theta=self.rope_theta)
         rope_config_validation(self)
-
-        # Default to SDPA attention
-        kwargs.setdefault("_attn_implementation", "sdpa")
 
         super().__init__(
             pad_token_id=pad_token_id,

@@ -1,5 +1,4 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2024 HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +18,7 @@ import unittest
 
 import paddle
 
+from paddleformers.transformers import AutoModelForCausalLM
 from paddleformers.transformers.molmo import MolmoConfig, MolmoForCausalLM, MolmoModel
 from paddleformers.transformers.molmo.modeling import MolmoPretrainedVisionBackbone
 from tests.transformers.test_configuration_common import ConfigTester
@@ -324,6 +324,11 @@ class MolmoModelTest(ModelTesterMixin, unittest.TestCase):
     def test_for_causal_lm(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_for_causal_lm(*config_and_inputs)
+
+    def test_auto_model_for_causal_lm_from_config(self):
+        config = self.model_tester.get_config()
+        model = AutoModelForCausalLM.from_config(config)
+        self.assertIsInstance(model, MolmoForCausalLM)
 
     def test_vision_backbone(self):
         self.model_tester.create_and_check_vision_backbone()

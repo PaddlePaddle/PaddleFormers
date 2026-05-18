@@ -1,5 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2024 HuggingFace Inc. team. All rights reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,14 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Paddle Molmo model (text-only LLM backbone).
-
-Molmo is an OLMo-family model. The text backbone supports:
-- Pre-norm or post-norm (controlled by ``config.norm_after``)
-- Optional QK-Norm (``config.attention_layer_norm``)
-- Extended embedding table (``config.embedding_size >= config.vocab_size``)
-- Fused SwiGLU MLP
-"""
+"""Paddle Molmo model."""
 
 import math
 from typing import Callable, Optional, cast
@@ -47,19 +39,12 @@ from .configuration import MolmoConfig
 
 
 def rotate_half(x: paddle.Tensor) -> paddle.Tensor:
-    """Rotates half the hidden dims of the input (concat-halves style)."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
     return paddle.concat((-x2, x1), axis=-1)
 
 
 def rotate_every_two(x: paddle.Tensor) -> paddle.Tensor:
-    """Rotate every adjacent pair (interleave style).
-
-    Equivalent to Molmo reference ``rotate_every_two``:
-        view as [..., hs//2, 2], unbind last dim into (x1, x2),
-        stack (-x2, x1), view back to [..., hs].
-    """
     shape = x.shape
     x = x.reshape(shape[:-1] + [shape[-1] // 2, 2])
     x1 = x[..., 0]
@@ -69,22 +54,12 @@ def rotate_every_two(x: paddle.Tensor) -> paddle.Tensor:
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, rope_impl: str = "interleave", unsqueeze_dim: int = 1):
-    """Applies rotary positional embeddings.
-
-    Args:
-        rope_impl: "interleave" uses rotate_every_two with repeat_interleave cos/sin;
-            anything else uses rotate_half with llama-style concat cos/sin.
-
-    Note: matches Molmo reference ``rope_full_precision=True``: q/k are upcast to
-    FP32 before rotation and cast back to the original dtype afterwards.
-    """
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
 
     rotate_fn = rotate_every_two if rope_impl == "interleave" else rotate_half
 
     q_type, k_type = q.dtype, k.dtype
-    # Upcast to FP32 to match rope_full_precision=True in the reference implementation.
     q = q.astype(paddle.float32)
     k = k.astype(paddle.float32)
     q_embed = (q * cos) + (rotate_fn(q) * sin)
@@ -94,8 +69,6 @@ def apply_rotary_pos_emb(q, k, cos, sin, rope_impl: str = "interleave", unsqueez
 
 
 class MolmoRotaryEmbedding(nn.Layer):
-    """RoPE embedding for Molmo."""
-
     def __init__(self, config: MolmoConfig):
         super().__init__()
         self.max_seq_len_cached = config.max_position_embeddings
@@ -130,9 +103,6 @@ class MolmoRotaryEmbedding(nn.Layer):
     def forward(self, x, position_ids):
         with paddle.amp.auto_cast(enable=False):
             if self.rope_type == "default":
-                # Keep RoPE frequencies in full precision. Registered buffers
-                # are cast by `model.to(dtype=...)`, while the official Molmo
-                # cache is not a module buffer and remains FP32.
                 inv_freq = self._compute_default_rope_parameters(self.config)[0]
             else:
                 inv_freq = self.inv_freq.astype(paddle.float32)
@@ -140,7 +110,6 @@ class MolmoRotaryEmbedding(nn.Layer):
             position_ids_expanded = position_ids[:, None, :].float()
             freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
             if getattr(self.config, "rope_impl", "interleave") == "interleave":
-                # [B, T, head_dim]: each freq repeated: [f0,f0,f1,f1,...,fn,fn]
                 emb = freqs.repeat_interleave(2, axis=-1)
             else:
                 emb = paddle.concat((freqs, freqs), axis=-1)
@@ -150,14 +119,6 @@ class MolmoRotaryEmbedding(nn.Layer):
 
 
 class MolmoRMSNorm(nn.Layer):
-    """RMSNorm matching the official Molmo dtype order.
-
-    The reference implementation computes the variance in FP32, casts the
-    normalized activation back to the original dtype, then multiplies by the
-    affine weight. Paddle's fused RMSNorm uses a different low-precision path,
-    which is measurable in BF16 alignment.
-    """
-
     def __init__(self, hidden_size: int, eps: float):
         super().__init__()
         self.weight = paddle.create_parameter(
@@ -192,12 +153,6 @@ def _make_molmo_norm(config: MolmoConfig, hidden_size: int) -> nn.Layer:
 
 
 class MolmoAttention(nn.Layer):
-    """Multi-headed attention for Molmo.
-
-    Supports optional QK-Norm (``config.attention_layer_norm``).
-    Uses separate Q/K/V projections regardless of QK-Norm to simplify the code.
-    """
-
     def __init__(self, config: MolmoConfig, layer_idx: int):
         super().__init__()
         self.config = config
@@ -254,7 +209,6 @@ class MolmoAttention(nn.Layer):
             tp_plan="rowwise",
         )
 
-        # Optional QK-Norm (attention_layer_norm)
         self.q_norm: Optional[nn.Layer] = None
         self.k_norm: Optional[nn.Layer] = None
         if config.attention_layer_norm:
@@ -288,12 +242,10 @@ class MolmoAttention(nn.Layer):
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
 
-        # Optional QK-Norm applied before reshape and RoPE
         if self.q_norm is not None and self.k_norm is not None:
             query_states = self.q_norm(query_states)
             key_states = self.k_norm(key_states)
 
-        # Optional clip_qkv
         if self.config.clip_qkv is not None:
             query_states = paddle.clip(query_states, min=-self.config.clip_qkv, max=self.config.clip_qkv)
             key_states = paddle.clip(key_states, min=-self.config.clip_qkv, max=self.config.clip_qkv)
@@ -315,9 +267,7 @@ class MolmoAttention(nn.Layer):
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
-        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS["sdpa"]
-        if self.config._attn_implementation != "sdpa":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -336,13 +286,6 @@ class MolmoAttention(nn.Layer):
 
 
 class MolmoMLP(nn.Layer):
-    """Molmo MLP with SwiGLU activation.
-
-    The official Molmo uses one fused ``ff_proj`` whose first half is the
-    multiplicative branch and second half is the SiLU gate:
-    ``x, gate = ff_proj(hidden).chunk(2); silu(gate) * x``.
-    """
-
     def __init__(self, config: MolmoConfig):
         super().__init__()
         self.ff_proj = GeneralLinear.create(
@@ -366,19 +309,6 @@ class MolmoMLP(nn.Layer):
 
 
 class MolmoDecoderLayer(nn.Layer):
-    """Molmo decoder layer.
-
-    Supports both pre-norm (``config.norm_after=False``) and
-    post-norm (``config.norm_after=True``) architectures.
-
-    In pre-norm:  ``x = x + Attn(Norm(x))``
-    In post-norm: ``x = x + Norm(Attn(x))``
-
-    Note: the reference code names the layer norms ``attn_norm`` / ``ff_norm``
-    but applies them in a post-norm fashion when ``norm_after=True``.  We follow
-    the same naming convention here so that weight keys are compatible.
-    """
-
     def __init__(self, config: MolmoConfig, layer_idx: int):
         super().__init__()
         self.config = config
@@ -386,9 +316,7 @@ class MolmoDecoderLayer(nn.Layer):
         self.self_attn = MolmoAttention(config=config, layer_idx=layer_idx)
         self.mlp = MolmoMLP(config)
 
-        # Attention norm
         self.attn_norm = _make_molmo_norm(config, config.hidden_size)
-        # FFN norm
         self.ff_norm = _make_molmo_norm(config, config.hidden_size)
 
     def forward(
@@ -404,7 +332,6 @@ class MolmoDecoderLayer(nn.Layer):
         residual = hidden_states
 
         if not self.norm_after:
-            # Pre-norm: Norm → Attn → residual
             hidden_states = self.attn_norm(hidden_states)
 
         attn_out, _ = self.self_attn(
@@ -417,12 +344,10 @@ class MolmoDecoderLayer(nn.Layer):
         )
 
         if self.norm_after:
-            # Post-norm: Attn → Norm → residual
             attn_out = self.attn_norm(attn_out)
 
         hidden_states = residual + attn_out
 
-        # FFN
         residual = hidden_states
 
         if not self.norm_after:
@@ -737,8 +662,6 @@ class MolmoPretrainedVisionBackbone(nn.Layer):
 class MolmoPretrainedModel(PretrainedModel):
     config_class = MolmoConfig
     base_model_prefix = "model"
-    # Weight keys that need to be transposed when loading from HF safetensors
-    # (PyTorch Linear: weight shape [out, in]; Paddle Linear: weight shape [in, out])
     transpose_weight_keys = [
         "q_proj",
         "k_proj",
@@ -751,24 +674,14 @@ class MolmoPretrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_aoa_config(cls, config: MolmoConfig):
-        """Map from HF safetensors key → PaddleFormers key.
-
-        Key design notes:
-        - att_proj [Q|K|V] fused → split to q_proj/k_proj/v_proj via fused_qkv_old macro
-        - ff_proj [up_half|gate_half] fused (Molmo SwiGLU chunks first=up, second=gate)
-          → split to up_proj (first half) and gate_proj (second half) via axis=1 split
-        - All Linear weights need ^T (torch [out,in] → paddle [in,out])
-        """
         model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
         n_heads = config.num_attention_heads
         n_kv_heads = config.num_key_value_heads
         n_kv_groups = n_heads // n_kv_heads if n_kv_heads else 1
 
         aoa_statements = [
-            # Embedding — embedding_size may be > vocab_size
             f"model.transformer.wte.embedding -> {model_prefix}embed_tokens.embedding.weight",
             f"model.transformer.wte.new_embedding -> {model_prefix}embed_tokens.new_embedding.weight",
-            # Final layer norm
             f"model.transformer.ln_f.weight -> {model_prefix}norm.weight",
         ]
 
@@ -816,23 +729,17 @@ class MolmoPretrainedModel(PretrainedModel):
                     f"{src}.ffn_norm.bias -> {dst}.ffn_norm.bias",
                 ]
 
-        # Per-layer norms
         aoa_statements += [
             f"model.transformer.blocks.$LAYER_ID.attn_norm.weight -> {model_prefix}layers.$LAYER_ID.attn_norm.weight",
             f"model.transformer.blocks.$LAYER_ID.ff_norm.weight -> {model_prefix}layers.$LAYER_ID.ff_norm.weight",
         ]
 
-        # Optional QK-Norm weights
         if config.attention_layer_norm:
             aoa_statements += [
                 f"model.transformer.blocks.$LAYER_ID.q_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
                 f"model.transformer.blocks.$LAYER_ID.k_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
             ]
 
-        # Attention: fused att_proj [Q|K|V] → separate q/k/v projections
-        # att_proj.weight shape: [q_dim+2*kv_dim, hidden] (torch) → [hidden, q_dim+2*kv_dim] (paddle after ^T)
-        # For MHA (n_kv_groups=1): Q/K/V are equal size → simple 3-way axis=1 split
-        # For GQA (n_kv_groups>1): Q is larger than K/V → use fused_qkv_old for unequal split
         if n_kv_groups == 1:
             aoa_statements.append(
                 f"model.transformer.blocks.$LAYER_ID.att_proj.weight^T -> "
@@ -849,30 +756,21 @@ class MolmoPretrainedModel(PretrainedModel):
                 f"fused_qkv_old, num_heads={n_heads}, num_key_value_groups={n_kv_groups}"
             )
 
-        # o_proj ← attn_out
         aoa_statements.append(
             f"model.transformer.blocks.$LAYER_ID.attn_out.weight^T -> "
             f"{model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight"
         )
 
-        # MLP: keep Molmo fused ff_proj [up_half|gate_half].
-        # Molmo SwiGLU: out.chunk(2) → x=first_half (up), gate=second_half (gate)
         aoa_statements.append(
             f"model.transformer.blocks.$LAYER_ID.ff_proj.weight^T -> "
             f"{model_prefix}layers.$LAYER_ID.mlp.ff_proj.weight"
         )
 
-        # down_proj ← ff_out
-        # ff_out.weight (torch): [hidden, intermediate_half] — already in [out,in] order
-        # After ^T: [intermediate_half, hidden]
         aoa_statements.append(
             f"model.transformer.blocks.$LAYER_ID.ff_out.weight^T -> "
             f"{model_prefix}layers.$LAYER_ID.mlp.ff_out.weight"
         )
 
-        # LM head
-        # Molmo stores LM head as model.transformer.ff_out.weight (NOT lm_head.weight)
-        # Shape: [vocab_size, hidden_size] — same as PF GeneralLMHead, no transpose needed
         if cls != cls.base_model_class:
             if config.weight_tying or config.tie_word_embeddings:
                 aoa_statements.append("model.transformer.wte.embedding -> lm_head.weight")
@@ -883,7 +781,6 @@ class MolmoPretrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_inv_aoa_config(cls, config: MolmoConfig):
-        """Map from PaddleFormers key → HF safetensors key."""
         model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
         n_heads = config.num_attention_heads
         n_kv_heads = config.num_key_value_heads
@@ -906,21 +803,19 @@ class MolmoPretrainedModel(PretrainedModel):
                 f"{model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.transformer.blocks.$LAYER_ID.k_norm.weight",
             ]
 
-        # Merge q/k/v → att_proj (inverse of the forward split)
         if n_kv_groups == 1:
             aoa_statements.append(
-                f"{model_prefix}layers.$LAYER_ID.self_attn.q_proj.weight, "
-                f"{model_prefix}layers.$LAYER_ID.self_attn.k_proj.weight, "
-                f"{model_prefix}layers.$LAYER_ID.self_attn.v_proj.weight -> "
-                f"model.transformer.blocks.$LAYER_ID.att_proj.weight^T, axis = 1"
+                f"{model_prefix}layers.$LAYER_ID.self_attn.q_proj.weight^T, "
+                f"{model_prefix}layers.$LAYER_ID.self_attn.k_proj.weight^T, "
+                f"{model_prefix}layers.$LAYER_ID.self_attn.v_proj.weight^T -> "
+                f"model.transformer.blocks.$LAYER_ID.att_proj.weight, axis = 0"
             )
         else:
             aoa_statements.append(
-                f"{model_prefix}layers.$LAYER_ID.self_attn.q_proj.weight, "
-                f"{model_prefix}layers.$LAYER_ID.self_attn.k_proj.weight, "
-                f"{model_prefix}layers.$LAYER_ID.self_attn.v_proj.weight -> "
-                f"model.transformer.blocks.$LAYER_ID.att_proj.weight^T, "
-                f"fused_qkv_old, num_heads={n_heads}, num_key_value_groups={n_kv_groups}"
+                f"{model_prefix}layers.$LAYER_ID.self_attn.q_proj.weight^T, "
+                f"{model_prefix}layers.$LAYER_ID.self_attn.k_proj.weight^T, "
+                f"{model_prefix}layers.$LAYER_ID.self_attn.v_proj.weight^T -> "
+                f"model.transformer.blocks.$LAYER_ID.att_proj.weight, axis = 0"
             )
 
         aoa_statements.append(
@@ -945,19 +840,10 @@ class MolmoPretrainedModel(PretrainedModel):
 
 
 class MolmoExtendedEmbedding(nn.Layer):
-    """Embedding with optional extra tokens (e.g. image tokens).
-
-    The vocabulary table has ``embedding_size`` entries in total.
-    If ``embedding_size > vocab_size``, the extra entries are stored
-    separately as ``new_embedding`` (matching the Molmo reference impl).
-    """
-
     def __init__(self, config: MolmoConfig):
         super().__init__()
         self.vocab_size = config.vocab_size
         self.embedding_size = config.embedding_size
-        # additional_vocab_size: extra tokens (e.g. 128 image tokens in Molmo-7B)
-        # stored separately as new_embedding (matches Molmo reference impl).
         self.additional_vocab_size = getattr(config, "additional_vocab_size", 0) or 0
 
         if config.tensor_model_parallel_size > 1:
@@ -992,15 +878,12 @@ class MolmoExtendedEmbedding(nn.Layer):
 
     @property
     def weight(self) -> paddle.Tensor:
-        """Return the full embedding weight (for weight-tying or lm_head)."""
         if self.new_embedding is not None:
             return paddle.concat([self.embedding.weight, self.new_embedding.weight], axis=0)
         return self.embedding.weight
 
 
 class MolmoLMHead(nn.Layer):
-    """Replicated Molmo LM head used when TP collectives are unavailable."""
-
     def __init__(self, config: MolmoConfig):
         super().__init__()
         vocab_size = config.embedding_size if config.embedding_size != config.vocab_size else config.vocab_size
@@ -1023,8 +906,6 @@ class MolmoLMHead(nn.Layer):
 
 @register_base_model
 class MolmoModel(MolmoPretrainedModel):
-    """Molmo transformer body (without LM head)."""
-
     def __init__(self, config: MolmoConfig):
         super().__init__(config)
         self.config = config
@@ -1211,16 +1092,12 @@ class MolmoModel(MolmoPretrainedModel):
 
 
 class MolmoForCausalLM(MolmoPretrainedModel):
-    """Molmo with a causal language-modelling head."""
-
     _keys_to_ignore_on_load_missing = [r"lm_head.weight"]
 
     def __init__(self, config: MolmoConfig):
         super().__init__(config)
         self.config = config
         self.model = MolmoModel(config)
-        # Molmo LM head uses embedding_size (100352) not vocab_size (100278)
-        # to match the reference implementation's ff_out layer.
         lm_head_config = config
         if config.embedding_size != config.vocab_size:
             from copy import copy as _copy
@@ -1317,8 +1194,6 @@ class MolmoForCausalLM(MolmoPretrainedModel):
 
 
 class MolmoForCausalLMPipe(GeneralModelForCausalLMPipe):
-    """Pipeline-parallel variant of MolmoForCausalLM."""
-
     config_class = MolmoConfig
     _decoder_layer_cls = MolmoDecoderLayer
     _get_tensor_parallel_mappings = MolmoModel._get_tensor_parallel_mappings
