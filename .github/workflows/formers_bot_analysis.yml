@@ -182,13 +182,35 @@ jobs:
       PATH:    /home/paddle-1/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       TASK_ID: ${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Fetch failed logs
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            REPO: ${{ github.repository }}
+            FAILED_JOB_URLS: ${{ needs.check-and-collect.outputs.failed_job_urls }}
+        run: |
+            mkdir -p /tmp/ci_logs
+            > /tmp/ci_logs/all_failed_logs.txt
+
+            for URL in $FAILED_JOB_URLS; do
+            JOB_ID=$(echo "$URL" | awk -F'/' '{print $NF}')
+            RUN_ID=$(echo "$URL" | awk -F'/' '{print $(NF-2)}')
+
+            echo "===== JOB $JOB_ID =====" >> /tmp/ci_logs/all_failed_logs.txt
+
+            gh run view "$RUN_ID" \
+                --repo "${REPO}" \
+                --log >> /tmp/ci_logs/all_failed_logs.txt || true
+
+            echo "" >> /tmp/ci_logs/all_failed_logs.txt
+            done
       - name: Run formers bot
         env:
           GITHUB_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
           FAILED_JOB_URLS: ${{ needs.check-and-collect.outputs.failed_job_urls }}
         run: |
           cd /home/paddle-1/
-          PROMPT="Please analyze the failed CI job logs from these URLs: ${FAILED_JOB_URLS}"
+          LOG_CONTENT=$(tail -c 500000 /tmp/ci_logs/all_failed_logs.txt)
+          PROMPT="Please analyze the following failed PaddleFormers CI logs: ${LOG_CONTENT}"
           python formers_bot.py --prompt "$PROMPT" --task-id "$TASK_ID"
 
       - name: Write summary
@@ -287,7 +309,7 @@ jobs:
           run_url = f"https://github.com/{repo}/actions/runs/{run_id}"
           comment = (
               f"{marker}\n"
-              f"## 🤖 PaddleFormers Bot Log Analysis\n\n"
+              f"## PaddleFormers Bot Log Analysis\n\n"
               f"> Run [`#{run_id}`]({run_url}) · Attempt `{run_attempt}`\n\n"
               f"{body}\n\n"
               f"---\n"
