@@ -72,7 +72,7 @@ jobs:
                 sys.exit(0)
 
             # GitHub workflow_run completed 后状态同步有延迟
-            time.sleep(20)
+            time.sleep(10)
 
             # 1. 找 PR
             pr_number = None
