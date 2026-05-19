@@ -34,7 +34,6 @@ from ...trainer.utils.doc import (
     add_start_docstrings_to_model_forward,
 )
 from ..cache_utils import Cache, DynamicCache, DynamicLayer
-from ..doc import replace_return_docstrings
 from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import (
     BaseModelOutputWithPast,
@@ -57,6 +56,108 @@ try:
 except:
     pass
 from functools import lru_cache, partial
+
+
+_PT_RETURN_INTRODUCTION = r"""
+    Returns:
+        [`{full_output_type}`] or `tuple(torch.FloatTensor)`: A [`{full_output_type}`] or a tuple of
+        `torch.FloatTensor` (if `return_dict=False` is passed or when `config.return_dict=False`) comprising various
+        elements depending on the configuration ([`{config_class}`]) and inputs.
+
+"""
+
+
+def _get_indent(t):
+    search = re.search(r"^(\s*)\S", t)
+    return "" if search is None else search.groups()[0]
+
+
+def _convert_output_args_doc(output_args_doc):
+    indent = _get_indent(output_args_doc)
+    blocks = []
+    current_block = ""
+    for line in output_args_doc.split("\n"):
+        if _get_indent(line) == indent:
+            if len(current_block) > 0:
+                blocks.append(current_block[:-1])
+            current_block = "{}\n".format(line)
+        else:
+            current_block += "{}\n".format(line[2:])
+    blocks.append(current_block[:-1])
+
+    for i in range(len(blocks)):
+        blocks[i] = re.sub(r"^(\s+)(\S+)(\s+)", r"\1- **\2**\3", blocks[i])
+        blocks[i] = re.sub(r":\s*\n\s*(\S)", r" -- \1", blocks[i])
+
+    return "\n".join(blocks)
+
+
+def _prepare_output_docstrings(output_type, config_class, min_indent=None, add_intro=True):
+    output_docstring = output_type.__doc__
+    params_docstring = None
+    if output_docstring is not None:
+        lines = output_docstring.split("\n")
+        i = 0
+        while i < len(lines) and re.search(r"^\s*(Args|Parameters):\s*$", lines[i]) is None:
+            i += 1
+        if i < len(lines):
+            params_docstring = "\n".join(lines[(i + 1) :])
+            params_docstring = _convert_output_args_doc(params_docstring)
+        elif add_intro:
+            raise ValueError(
+                "No `Args` or `Parameters` section is found in the docstring of `{}`. Make sure it has ".format(
+                    output_type.__name__
+                )
+                + "docstring and contain either `Args` or `Parameters`."
+            )
+
+    if add_intro:
+        full_output_type = "{}.{}".format(output_type.__module__, output_type.__name__)
+        intro = _PT_RETURN_INTRODUCTION.format(full_output_type=full_output_type, config_class=config_class)
+    else:
+        full_output_type = str(output_type)
+        intro = "\nReturns:\n    `{}`".format(full_output_type)
+        if params_docstring is not None:
+            intro += ":\n"
+
+    result = intro
+    if params_docstring is not None:
+        result += params_docstring
+
+    if min_indent is not None:
+        lines = result.split("\n")
+        i = 0
+        while len(lines[i]) == 0:
+            i += 1
+        indent = len(_get_indent(lines[i]))
+        if indent < min_indent:
+            to_add = " " * (min_indent - indent)
+            lines = [("{}{}".format(to_add, line) if len(line) > 0 else line) for line in lines]
+            result = "\n".join(lines)
+
+    return result
+
+
+def replace_return_docstrings(output_type=None, config_class=None):
+    def docstring_decorator(fn):
+        func_doc = fn.__doc__
+        lines = func_doc.split("\n")
+        i = 0
+        while i < len(lines) and re.search(r"^\s*Returns?:\s*$", lines[i]) is None:
+            i += 1
+        if i < len(lines):
+            indent = len(_get_indent(lines[i]))
+            lines[i] = _prepare_output_docstrings(output_type, config_class, min_indent=indent)
+            func_doc = "\n".join(lines)
+        else:
+            raise ValueError(
+                "The function {} should have an empty 'Return:' or 'Returns:' in its docstring as placeholder, "
+                "current docstring is:\n{}".format(fn, func_doc)
+            )
+        fn.__doc__ = func_doc
+        return fn
+
+    return docstring_decorator
 
 
 def _tensor_max(tensor, *args, **kwargs):
