@@ -57,7 +57,6 @@ except:
     pass
 from functools import lru_cache, partial
 
-
 _PT_RETURN_INTRODUCTION = r"""
     Returns:
         [`{full_output_type}`] or `tuple(torch.FloatTensor)`: A [`{full_output_type}`] or a tuple of
