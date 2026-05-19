@@ -35,5 +35,5 @@
 
   - PaddlePaddle 和 PyTorch API 的映射规则，可参考[PyTorch 最新 release 与 Paddle develop API 映射表](https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/guides/model_convert/convert_from_pytorch/pytorch_api_mapping_cn.html)
   - PaddleFormers 组网的代码风格，以及fuse算子怎么实现，可参考`paddleformers/transformers/`中其他模型的实现方式
-  - AOA配置的写法可以参考文档[Flex Checkpoints 用户文档](references/aoa_doc.md)
+  - AOA配置的写法可以参考文档[Flex Checkpoints 用户文档](refs/aoa_doc.md)
   - 模型模板说明可见[Chat Template 说明](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/docs/zh/chat_template_guide.md)

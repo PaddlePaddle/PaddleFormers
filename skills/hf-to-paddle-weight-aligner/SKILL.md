@@ -20,4 +20,4 @@ PaddleFormers中，已有$0的模型代码，需要验证能否正确加载`safe
 
 ## Additional resources
 
-- AOA配置的写法可以参考文档[Flex Checkpoints 用户文档](references/aoa_doc.md)
+- AOA配置的写法可以参考文档[Flex Checkpoints 用户文档](refs/aoa_doc.md)
