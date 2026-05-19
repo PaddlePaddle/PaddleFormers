@@ -172,7 +172,7 @@ class TestDPOTrainingArguments(unittest.TestCase):
     """Tests for DPOTrainingArguments dataclass"""
 
     def test_default_values(self):
-        args = DPOTrainingArguments(output_dir="/tmp/test_output", amp_master_grad=False)
+        args = DPOTrainingArguments(output_dir="/tmp/test_output", bf16=True)
         self.assertEqual(args.num_of_gpus, -1)
         self.assertTrue(args.unified_checkpoint)
         self.assertEqual(args.unified_checkpoint_config, "")
@@ -182,7 +182,7 @@ class TestDPOTrainingArguments(unittest.TestCase):
 
     def test_autotuner_benchmark_mode(self):
         args = DPOTrainingArguments(
-            output_dir="/tmp/test_output", autotuner_benchmark=True, disable_tqdm=False, amp_master_grad=False
+            output_dir="/tmp/test_output", autotuner_benchmark=True, disable_tqdm=False, bf16=True
         )
         self.assertEqual(args.num_train_epochs, 1)
         self.assertEqual(args.max_steps, 5)
@@ -194,7 +194,7 @@ class TestDPOTrainingArguments(unittest.TestCase):
         self.assertFalse(args.load_best_model_at_end)
 
     def test_max_steps_sets_num_train_epochs(self):
-        args = DPOTrainingArguments(output_dir="/tmp/test_output", max_steps=100, amp_master_grad=False)
+        args = DPOTrainingArguments(output_dir="/tmp/test_output", max_steps=100, bf16=True)
         self.assertEqual(args.num_train_epochs, 1)
 
 

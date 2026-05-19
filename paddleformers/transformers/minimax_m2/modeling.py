@@ -494,7 +494,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix}.block_sparse_moe.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
                 f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight",
             ]
-            if config.use_latent_moe:
+            if config.moe_latent_size is not None and config.moe_latent_size > 0:
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.block_sparse_moe.fc1_latent_proj.weight^T -> {prefix_offset}.mlp.fc1_latent_proj.weight",
                     f"{prefix}.block_sparse_moe.fc2_latent_proj.weight^T -> {prefix_offset}.mlp.fc2_latent_proj.weight",
@@ -765,7 +765,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.block_sparse_moe.e_score_correction_bias",
             ]
 
-            if config.use_latent_moe:
+            if config.moe_latent_size is not None and config.moe_latent_size > 0:
                 aoa_statements += [
                     f"{prefix_offset}.mlp.fc1_latent_proj.weight^T -> {prefix}.block_sparse_moe.fc1_latent_proj.weight ",
                     f"{prefix_offset}.mlp.fc2_latent_proj.weight^T -> {prefix}.block_sparse_moe.fc2_latent_proj.weight",

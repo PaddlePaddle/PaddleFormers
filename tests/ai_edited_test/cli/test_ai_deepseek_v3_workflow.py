@@ -89,7 +89,7 @@ class TestPreTrainingArguments(unittest.TestCase):
             decay_steps=1000,
             enable_linear_fused_grad_add=True,
             autotuner_benchmark=True,
-            amp_master_grad=False,
+            bf16=True,
         )
         self.assertEqual(args.min_learning_rate, 5e-6)
         self.assertEqual(args.decay_steps, 1000)
@@ -101,7 +101,7 @@ class TestPreTrainingArguments(unittest.TestCase):
         args = PreTrainingArguments(
             output_dir="/tmp/test_output",
             autotuner_benchmark=True,
-            amp_master_grad=False,
+            bf16=True,
         )
         self.assertEqual(args.max_steps, 5)
         self.assertTrue(args.do_train)
