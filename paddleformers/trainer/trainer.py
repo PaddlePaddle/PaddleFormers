@@ -2622,7 +2622,7 @@ class Trainer:
 
             seq_length = None
             model_flops_per_token = None
-            if getattr(self, "is_pretraining", False) and hasattr(self.model, "config"):
+            if hasattr(self.model, "config"):
                 seq_length = getattr(self.model.config, "seq_length", None)
                 try:
                     model_flops_per_token = self.model.get_hardware_flops()
