@@ -1939,9 +1939,6 @@ class Trainer:
         consumed_samples = 0
         steps_trained_progress_bar = None
 
-        print("=========> MODEL ARCH <========= ")
-        print(model)
-        print("================================")
 
         # Check if continuing training from a checkpoint
         if (
