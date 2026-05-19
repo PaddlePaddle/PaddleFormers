@@ -63,7 +63,7 @@ class MoEAOAConfigParams:
     # Runtime config
     model_prefix: str = "model."
 
-    index_n_heads: int = 0 
+    index_n_heads: int = 0
 
     # Extra statements to add
     extra_statements: List[str] = field(default_factory=list)
@@ -388,7 +388,6 @@ class MoEAOAConfigGenerator:
                 f"{prefix}.self_attn.indexer.k_norm.bias ->  {prefix_offset}.self_attn.core_attention.indexer.k_norm.bias",
                 f"{prefix}.self_attn.indexer.k_norm.weight ->  {prefix_offset}.self_attn.core_attention.indexer.k_norm.weight",
             ]
-
 
         return statements
 

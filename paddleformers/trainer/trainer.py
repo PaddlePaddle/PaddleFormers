@@ -1939,7 +1939,6 @@ class Trainer:
         consumed_samples = 0
         steps_trained_progress_bar = None
 
-
         # Check if continuing training from a checkpoint
         if (
             resume_from_checkpoint is not None
