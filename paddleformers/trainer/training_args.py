@@ -1682,7 +1682,7 @@ class TrainingArguments:
         default=True, metadata={"help": "Whether to perform online merge of the EMA parameters during training. "}
     )
 
-    flex_ckpt_comm_method: str = field(
+    flex_ckpt_comm_method: Optional[str] = field(
         default=None,
         metadata={
             "help": "Communication method for FlexCheckpoint reshard. Options: 'auto', 'broadcast', 'parallel_broadcast'. Default: 'auto'."
