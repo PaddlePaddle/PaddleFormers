@@ -27,6 +27,7 @@ jobs:
       skip:            ${{ steps.check.outputs.skip }}
       pr_number:       ${{ steps.check.outputs.pr_number }}
       failed_job_urls: ${{ steps.check.outputs.failed_job_urls }}
+      failed_run_ids:  ${{ steps.check.outputs.failed_run_ids }}
     steps:
       - name: Check all workflows done and collect failed job URLs
         id: check
@@ -76,7 +77,7 @@ jobs:
             # GitHub workflow_run completed 后状态同步有延迟
             time.sleep(20)
 
-            # 1. 找 PR
+            # 1. find PR
             pr_number = None
             for state in ['open', 'closed']:
                 prs = gh_get(
@@ -98,7 +99,7 @@ jobs:
             if not pr_number:
                 skip(f"No PR for sha {head_sha}")
 
-            # 2. 获取当前 SHA 所有 runs
+            # 2. get SHA runs
             runs = gh_get(
                 f"https://api.github.com/repos/{repo}/actions/runs"
                 f"?head_sha={head_sha}&per_page=100"
@@ -119,7 +120,7 @@ jobs:
             if not latest:
                 skip("No watched workflows found")
 
-            # 3. 判断是否所有 watched 都完成
+            # 3. check watched status
             missing = watched - set(latest.keys())
 
             pending = [
@@ -132,7 +133,7 @@ jobs:
             if all_pending:
                 skip(f"Still pending: {all_pending}")
 
-            # 4. 收集失败 workflow
+            # 4. get all workflow
             failed_runs = [
                 r for r in latest.values()
                 if r['conclusion'] == 'failure'
@@ -141,7 +142,7 @@ jobs:
             if not failed_runs:
                 skip("All passed")
 
-            # 5. 收集失败 jobs
+            # 5. get all jobs
             failed_job_urls = []
 
             for run in failed_runs:
@@ -165,12 +166,18 @@ jobs:
             # 去重
             failed_job_urls = list(dict.fromkeys(failed_job_urls))
 
+            # 失败 workflow 的 run_id 列表（用于按 run_id 上报到 monitor，
+            # 让前端 Workflow Bot Panel 能按各自的 run_id 命中分析记录）
+            failed_run_ids = [str(r['id']) for r in failed_runs]
+
             print(f"PR #{pr_number}, failed_job_urls: {failed_job_urls}")
+            print(f"failed_run_ids: {failed_run_ids}")
 
             with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
                 f.write("skip=false\n")
                 f.write(f"pr_number={pr_number}\n")
                 f.write(f"failed_job_urls={' '.join(failed_job_urls)}\n")
+                f.write(f"failed_run_ids={' '.join(failed_run_ids)}\n")
             PYEOF
 
   # ─── Job 2: paddle-bot 上跑 bot 分析，上传 artifact ───
@@ -208,8 +215,9 @@ jobs:
       - name: Report to monitor
         if: always()
         env:
-          PR_NUMBER:     ${{ needs.check-and-collect.outputs.pr_number }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
+          PR_NUMBER:      ${{ needs.check-and-collect.outputs.pr_number }}
+          GITHUB_RUN_ID:  ${{ github.run_id }}
+          FAILED_RUN_IDS: ${{ needs.check-and-collect.outputs.failed_run_ids }}
         run: |
           python /home/paddle-1/formers_bot/report_monitor.py "$TASK_ID"
 
@@ -224,10 +232,8 @@ jobs:
   # ─── Job 3: ubuntu-latest 下载 artifact，用 PAT 发评论 ───
   post-comment:
     needs: [check-and-collect, analyze]
-    # analyze 失败也要发评论（告知无结果）
     if: always() && needs.check-and-collect.outputs.skip == 'false'
     runs-on: ubuntu-latest
-    # 写评论全部走 PAT，GITHUB_TOKEN 只用于下载 artifact（只读）
     permissions:
       actions: read
     steps:
@@ -266,7 +272,6 @@ jobs:
 
       - name: Post or update PR comment
         env:
-          # ✅ 写评论专用 Classic PAT，fork PR 也有权限
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           REPO:          ${{ github.repository }}
           PR_NUMBER:     ${{ needs.check-and-collect.outputs.pr_number }}
@@ -294,7 +299,7 @@ jobs:
           run_url = f"https://github.com/{repo}/actions/runs/{run_id}"
           comment = (
               f"{marker}\n"
-              f"## 🤖 PaddleFormers Bot Log Analysis\n\n"
+              f"## PaddleFormers Log Analysis\n\n"
               f"> Run [`#{run_id}`]({run_url}) · Attempt `{run_attempt}`\n\n"
               f"{body}\n\n"
               f"---\n"
