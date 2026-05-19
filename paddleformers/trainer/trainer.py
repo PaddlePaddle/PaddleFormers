@@ -1205,10 +1205,12 @@ class Trainer:
                 else:
                     opt_states[k] = v
 
+            # bridge_from_ec: use filtered AOA for master_weight (excludes FP32-only params)
+            master_weight_aoa = getattr(self.args, "aoa_config_master_weight", None) or self.args.aoa_config
             dist.load_state_dict(
                 master_weights,
                 master_weights_path,
-                aoa_config=self.args.aoa_config,
+                aoa_config=master_weight_aoa,
                 offload=self.args.load_via_cpu,
                 comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
@@ -1263,7 +1265,13 @@ class Trainer:
 
             # NOTE(xingmingyyj) When saving model states only in float32 format, we assume that users
             # will not use AOA to change the mapping relationships among these float32 weights.
-            if enable_bf16_opt:
+            if getattr(self.args, "bridge_from_ec", False):
+                # bridge_from_ec: model_state only loads params not in master_weight
+                # (params in master_weight will be cast from master_weight)
+                if enable_bf16_opt:
+                    model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
+                aoa_config = getattr(self.args, "aoa_config_model_state", None)
+            elif enable_bf16_opt:
                 model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
                 aoa_config = None
             else:
@@ -1294,7 +1302,61 @@ class Trainer:
                             param.shape == master_weights[param.name].shape
                         ), f"got {param.shape} vs {master_weights[param.name].shape}"
                         master_weight = paddle.reshape(master_weights[param.name], param.shape)
+                        # print("[sharded key info]: ", key, param.shape, param._md5sum())
+                        print("[master weight info]: ", key, master_weight.shape, master_weight._md5sum())
                         paddle.assign(paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key])
+                        # print("[after assign sharded key info]: ", key, param.shape, param._md5sum())
+
+            def _restore_opt_states_and_print(opt_state_dict, group):
+                """Restore sharded opt states (moment1, moment2) to full tensors and print MD5."""
+                structure_name_map = {k: v.name for (k, v) in self.model.state_dict().items()}
+                tname_to_structure = {v: k for k, v in structure_name_map.items()}
+                moments = OrderedDict()
+                for k, v in opt_state_dict.items():
+                    if k in ("master_weights", "LR_Scheduler"):
+                        continue
+                    if isinstance(v, paddle.Tensor):
+                        moments[k] = v.cpu()
+
+                if not moments:
+                    return
+
+                nms = reshard_util.NodeModelState(group=group)
+                nms_tmp = reshard_util.NodeModelState(group=group)
+                nms_tmp.add_opts(moments)
+                nms_tmp.pack_keys(structure_name_map)
+                nms.merge_from(nms_tmp, max(group.rank, 0))
+                del nms_tmp
+
+                sharding_strategy = reshard_util.get_sharding_strategy(self.optimizer)
+                restore_func = (
+                    reshard_util.sharding_v1.restore
+                    if sharding_strategy == SHARDING_STRATEGY_V1
+                    else reshard_util.sharding_v2.restore
+                )
+                nms = restore_func(nms, self.model, self.optimizer)
+                nms.unpack_keys()
+                restored_moments = reshard_util.all_gather_state_dict(
+                    nms.opt_state, lambda x: True, group
+                )
+
+                suffix_list = [
+                    "_fp32_master_0_moment1_0", "_fp32_master_0_moment2_0",
+                    "_moment1_0", "_moment2_0",
+                    "_fp32_master_0_beta1_pow_acc_0", "_fp32_master_0_beta2_pow_acc_0",
+                    "_beta1_pow_acc_0", "_beta2_pow_acc_0",
+                ]
+                for k in sorted(restored_moments.keys()):
+                    v = restored_moments[k]
+                    struct_name = k
+                    opt_suffix = ""
+                    for sfx in suffix_list:
+                        if k.endswith(sfx):
+                            tname = k[:-len(sfx)]
+                            if tname in tname_to_structure:
+                                struct_name = tname_to_structure[tname] + sfx
+                            break
+                    print(f"[opt state info]: {struct_name} {v.shape} {v._md5sum()}")
 
             def recover_params_from_master_weight(opt_state_dict, group):
                 master_weights = opt_state_dict.get("master_weights", {})
@@ -1356,6 +1418,7 @@ class Trainer:
                     )
 
                 _assign_master_weights_to_model(master_weights)
+                _restore_opt_states_and_print(opt_state_dict, group)
 
             with paddle.no_grad():
                 if paddle.distributed.is_initialized():
