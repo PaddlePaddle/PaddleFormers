@@ -180,9 +180,10 @@ if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];the
     echo "Regression model: ${models}, Update baseline models: ${update_baseline_models}"
     export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
     export FLAGS_tcp_store_using_libuv=0
-    PYTHONPATH=$(pwd) \
+    echo PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
     python -m pytest -s -v --alluredir=result --models=${models} --update-baseline=${update_baseline_models} scripts/regression/test_models.py > ${log_path}/model_unittest.log 2>&1
+    sleep 6h
     exit_code=$?
     print_info $exit_code model_unittest
     if [[ $exit_code -eq 0 ]] && [[ "$update_baseline_models" != "false" ]] && [[ "$update_baseline_models" != "False" ]]; then
