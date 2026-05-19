@@ -63,6 +63,8 @@ class MoEAOAConfigParams:
     # Runtime config
     model_prefix: str = "model."
 
+    index_n_heads: int = 0 
+
     # Extra statements to add
     extra_statements: List[str] = field(default_factory=list)
 
@@ -129,6 +131,7 @@ class MoEAOAConfigGenerator:
             use_qk_norm=getattr(config, "use_qk_norm", False),
             has_shared_experts=cls._has_shared_experts(config),
             model_prefix=cls._get_model_prefix(config),
+            index_n_heads=getattr(config, "index_n_heads", 0),
         )
 
     @classmethod
@@ -368,6 +371,24 @@ class MoEAOAConfigGenerator:
                     f"{prefix}.self_attn.kv_a_layernorm.weight -> {prefix_offset}.self_attn.kv_a_layernorm.weight",
                 ]
             )
+
+        if params.index_n_heads and params.index_n_heads > 0:
+            indexer_weights = [
+                "wq_b",
+                "wk",
+                "weights_proj",
+            ]
+            statements.extend(
+                [
+                    f"{prefix}.self_attn.indexer.{weight_name}.weight^T -> {prefix_offset}.self_attn.core_attention.indexer.{weight_name}.weight"
+                    for weight_name in indexer_weights
+                ]
+            )
+            statements += [
+                f"{prefix}.self_attn.indexer.k_norm.bias ->  {prefix_offset}.self_attn.core_attention.indexer.k_norm.bias",
+                f"{prefix}.self_attn.indexer.k_norm.weight ->  {prefix_offset}.self_attn.core_attention.indexer.k_norm.weight",
+            ]
+
 
         return statements
 
@@ -724,6 +745,23 @@ class MoEAOAConfigGenerator:
                     f"{prefix_offset}.self_attn.kv_a_layernorm.weight -> {prefix}.self_attn.kv_a_layernorm.weight",
                 ]
             )
+
+        if params.index_n_heads and params.index_n_heads > 0:
+            indexer_weights = [
+                "wq_b",
+                "wk",
+                "weights_proj",
+            ]
+            statements.extend(
+                [
+                    f"{prefix_offset}.self_attn.core_attention.indexer.{weight_name}.weight^T -> {prefix}.self_attn.indexer.{weight_name}.weight"
+                    for weight_name in indexer_weights
+                ]
+            )
+            statements += [
+                f"{prefix_offset}.self_attn.core_attention.indexer.k_norm.bias -> {prefix}.self_attn.indexer.k_norm.bias",
+                f"{prefix_offset}.self_attn.core_attention.indexer.k_norm.weight -> {prefix}.self_attn.indexer.k_norm.weight",
+            ]
 
         return statements
 

@@ -690,6 +690,11 @@ class TrainingArguments:
         },
     )
 
+    dsa_indexer_loss_coeff: bool = field(
+        default=0.01,
+        metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
+    )
+
     sharding_offload_opt_buffersize_GB: int = field(
         default=-1,
         metadata={
