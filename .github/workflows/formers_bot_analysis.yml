@@ -194,9 +194,8 @@ jobs:
           GITHUB_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
           FAILED_JOB_URLS: ${{ needs.check-and-collect.outputs.failed_job_urls }}
         run: |
-          cd /home/paddle-1/
           PROMPT="Please analyze the failed CI job logs from these URLs: ${FAILED_JOB_URLS}"
-          python paddle_ci_bot.py --prompt "$PROMPT" --task-id "$TASK_ID"
+          python /home/paddle-1/paddle_ci_bot/paddle_ci_bot.py --prompt "$PROMPT" --task-id "$TASK_ID"
 
       - name: Write summary
         if: always()
@@ -217,7 +216,7 @@ jobs:
           GITHUB_RUN_ID:  ${{ github.run_id }}
           FAILED_RUN_IDS: ${{ needs.check-and-collect.outputs.failed_run_ids }}
         run: |
-          python /home/paddle-1/formers_bot/report_monitor.py "$TASK_ID"
+          python /home/paddle-1/paddle_ci_bot/report_monitor.py "$TASK_ID"
 
       - name: Upload result artifact
         if: always()
