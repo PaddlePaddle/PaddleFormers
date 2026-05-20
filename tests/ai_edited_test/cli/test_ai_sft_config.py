@@ -30,7 +30,7 @@ class TestSFTConfig(unittest.TestCase):
     """Tests for SFTConfig dataclass"""
 
     def test_default_values(self):
-        config = SFTConfig(output_dir="/tmp/test_sft_output")
+        config = SFTConfig(output_dir="/tmp/test_sft_output", amp_master_grad=False)
         self.assertFalse(config.autotuner_benchmark)
         self.assertEqual(config.eval_iters, -1)
         self.assertEqual(config.decay_steps, 0)
@@ -50,7 +50,7 @@ class TestSFTConfig(unittest.TestCase):
         self.assertEqual(config.ssa_group_size_ratio, 0.25)
 
     def test_autotuner_benchmark_mode(self):
-        config = SFTConfig(output_dir="/tmp/test_sft_output", autotuner_benchmark=True)
+        config = SFTConfig(output_dir="/tmp/test_sft_output", autotuner_benchmark=True, amp_master_grad=False)
         self.assertEqual(config.max_steps, 5)
         self.assertTrue(config.do_train)
         self.assertFalse(config.do_export)
@@ -71,6 +71,7 @@ class TestSFTConfig(unittest.TestCase):
             dataset_batch_size=500,
             use_ssa=True,
             ssa_group_size_ratio=0.5,
+            amp_master_grad=False,
         )
         self.assertEqual(config.eval_iters, 100)
         self.assertEqual(config.decay_steps, 500)

@@ -85,3 +85,4 @@ gated_linear_unit: true
 num_hidden_layers: 3
 apply_rope_fusion: true
 moe_router_fusion: true
+moe_deep_gemm: false

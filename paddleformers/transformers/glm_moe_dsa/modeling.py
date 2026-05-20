@@ -164,7 +164,7 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
         num_key_value_heads = config.num_key_value_heads
         num_key_value_groups = num_attention_head // num_key_value_heads
         use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
-        moe_grouped_gemm = getattr(config, "moe_grouped_gemm", False)
+        moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         use_gated_attn = getattr(config, "use_gated_attn", False)
 
         muon_qkv_update_mode = muon_configs.get("muon_qkv_update_mode", "split_head")
@@ -181,7 +181,7 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
 
         ffn_slice_fn = _ffn_gate_up if muon_ffn_split else None
 
-        fused_moe_fn = _moe_experts if moe_grouped_gemm else None
+        fused_moe_fn = _moe_experts if moe_expert_fusion else None
 
         mla_slice_fn = None
         if use_mla and muon_qkv_update_mode == "split_head":
@@ -216,7 +216,7 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
                             {"intermediate_size": moe_intermediate_size},
                         )
 
-            if moe_grouped_gemm and fused_moe_fn is not None:
+            if moe_expert_fusion and fused_moe_fn is not None:
                 slice_config[f"{prefix}.mlp.experts.down_proj.weight"] = (fused_moe_fn, {})
                 slice_config[f"{prefix}.mlp.grouped_gemm_experts.weight2"] = (fused_moe_fn, {})
 

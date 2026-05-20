@@ -135,7 +135,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         num_key_value_heads = config.num_key_value_heads
         num_key_value_groups = num_attention_head // num_key_value_heads
         use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
-        moe_grouped_gemm = getattr(config, "moe_grouped_gemm", False)
+        moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         use_gated_attn = getattr(config, "use_gated_attn", False)
 
         # Get Muon configuration from muon_configs
@@ -156,7 +156,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         ffn_slice_fn = _ffn_gate_up if muon_ffn_split else None
 
         # Determine Fused MoE slice strategy
-        fused_moe_fn = _moe_experts if moe_grouped_gemm else None
+        fused_moe_fn = _moe_experts if moe_expert_fusion else None
 
         # Determine MLA slice strategy
         mla_slice_fn = None
@@ -199,7 +199,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         )
 
             # Fused MoE weights (grouped_gemm)
-            if moe_grouped_gemm and fused_moe_fn is not None:
+            if moe_expert_fusion and fused_moe_fn is not None:
                 slice_config[f"{prefix}.mlp.experts.down_proj.weight"] = (fused_moe_fn, {})
                 slice_config[f"{prefix}.mlp.grouped_gemm_experts.weight2"] = (fused_moe_fn, {})
 
@@ -525,7 +525,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         f"{prefix}.block_sparse_moe.experts.{expert_id}.w1.weight^T, {prefix}.block_sparse_moe.experts.{expert_id}.w3.weight^T -> {prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight, axis=1",
                     ]
 
-            if config.moe_grouped_gemm or using_sonic_moe:
+            if config.moe_expert_fusion or using_sonic_moe:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(num_experts):
@@ -726,7 +726,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 # for mtp
                 prefix_offset += ".transformer_layer"
 
-            if config.moe_grouped_gemm or using_sonic_moe:
+            if config.moe_expert_fusion or using_sonic_moe:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
