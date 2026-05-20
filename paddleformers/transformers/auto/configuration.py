@@ -33,7 +33,9 @@ __all__ = [
 
 CONFIG_MAPPING_NAMES = OrderedDict(
     [
+        ("deepseek_ocr2", "DeepseekOCR2Config"),
         ("deepseek_v3", "DeepseekV3Config"),
+        ("deepseek_vl_v2", "DeepseekOCR2Config"),
         ("ernie4_5", "Ernie4_5Config"),
         ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
@@ -70,6 +72,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
     [
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
+        ("deepseek_ocr2", "DeepseekOCR2"),
         ("ernie4_5", "Ernie4_5"),
         ("ernie4_5_moe", "Ernie4_5_Moe"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
@@ -102,6 +105,7 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
         ("qwen2_5_vl_text", "qwen2_5_vl"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
+        ("deepseek_vl_v2", "deepseek_ocr2"),
     ]
 )
 
