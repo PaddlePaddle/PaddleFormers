@@ -161,7 +161,6 @@ jobs:
 
                     failed_job_urls.append(job['html_url'])
 
-            # 去重
             failed_job_urls = list(dict.fromkeys(failed_job_urls))
 
             # 失败 workflow 的 run_id 列表（用于按 run_id 上报到 monitor，
