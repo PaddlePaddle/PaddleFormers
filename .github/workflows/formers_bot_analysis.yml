@@ -196,14 +196,15 @@ jobs:
         run: |
           cd /home/paddle-1/
           PROMPT="Please analyze the failed CI job logs from these URLs: ${FAILED_JOB_URLS}"
-          python formers_bot.py --prompt "$PROMPT" --task-id "$TASK_ID"
+          python paddle_ci_bot.py --prompt "$PROMPT" --task-id "$TASK_ID"
 
       - name: Write summary
         if: always()
         run: |
-          if [ -f /tmp/bot_results/bot_result_${TASK_ID}.md ]; then
+          RESULT_FILE="/tmp/bot_results/bot_result_paddleformers_${TASK_ID}.md"
+          if [ -f "$RESULT_FILE" ]; then
             echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
-            cat /tmp/bot_results/bot_result_${TASK_ID}.md >> $GITHUB_STEP_SUMMARY
+            cat "$RESULT_FILE" >> $GITHUB_STEP_SUMMARY
           else
             echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
             echo "No analysis result generated." >> $GITHUB_STEP_SUMMARY
@@ -223,7 +224,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bot-result-${{ github.run_id }}
-          path: /tmp/bot_results/bot_result_${{ env.TASK_ID }}.md
+          path: /tmp/bot_results/bot_result_paddleformers_${{ env.TASK_ID }}.md
           retention-days: 1
 
   post-comment:
