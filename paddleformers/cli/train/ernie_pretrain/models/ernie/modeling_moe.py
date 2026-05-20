@@ -1068,8 +1068,8 @@ class ErnieDecoderLayer(nn.Layer):
     def _init_gate_and_experts(self, layer_idx):
         cfg = deepcopy(self.config)
         fc_cls = ErnieMoeMLPFused if cfg.moe_fuse_experts and not cfg.use_fp8_mlp else ErnieMoeMLP
-        if self.config.expert_mlp_use_bias is not None:
-            cfg.use_bias = self.config.expert_mlp_use_bias
+        if self.config.moe_routed_expert_use_bias is not None:
+            cfg.use_bias = self.config.moe_routed_expert_use_bias
 
         if cfg.moe_intermediate_size:
             if isinstance(cfg.moe_intermediate_size, (tuple, list)):

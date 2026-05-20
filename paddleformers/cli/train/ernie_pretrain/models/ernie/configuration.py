@@ -96,7 +96,7 @@ class ErnieMoEConfig(PretrainedConfig):
         fuse_attn_ffn=False,
         fuse_swiglu=False,
         use_bias=False,
-        expert_mlp_use_bias=None,
+        moe_routed_expert_use_bias=None,
         rope_reorder=True,
         rope_theta=10000,
         apply_rope_fusion=False,
@@ -306,7 +306,7 @@ class ErnieMoEConfig(PretrainedConfig):
         update_nested_dict(default_fp8_configs, fp8_configs)
         self.fp8_configs = default_fp8_configs
         self.use_fp8 = use_fp8
-        self.expert_mlp_use_bias = expert_mlp_use_bias
+        self.moe_routed_expert_use_bias = moe_routed_expert_use_bias
         self.use_fp8_mlp = use_fp8_mlp
         self.use_fp8_fuse_node = use_fp8_fuse_node
         default_fp8_mem_configs = {
