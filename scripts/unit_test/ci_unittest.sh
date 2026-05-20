@@ -135,7 +135,16 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}
     set +e
     export PYTHONFAULTHANDLER=1
-    sleep 4h  ##to debug
+    DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
+    PYTHONPATH=$(pwd) \
+    COVERAGE_SOURCE=paddleformers python -m pytest tests/ai_edited_test/cli/test_ai_deepseek_v3_workflow.py::TestPreTrainingArguments::test_autotuner_benchmark_post_init
+    echo "!!!!!"
+    git checkout -b 240e9e5f37af08405bed40f21aef348bac6df62b 240e9e5f37af08405bed40f21aef348bac6df62b
+    DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
+    PYTHONPATH=$(pwd) \
+    COVERAGE_SOURCE=paddleformers python -m pytest tests/ai_edited_test/cli/test_ai_deepseek_v3_workflow.py::TestPreTrainingArguments::test_autotuner_benchmark_post_init
+    exit
+    # sleep 4h  ##to debug
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
