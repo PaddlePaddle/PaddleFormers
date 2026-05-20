@@ -61,6 +61,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("glm_ocr", "GlmOcrConfig"),
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
+        ("internlm", "InternLMConfig"),
     ]
 )
 
@@ -89,6 +90,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
+        ("internlm", "InternLMForCausalLM"),
     ]
 )
 
