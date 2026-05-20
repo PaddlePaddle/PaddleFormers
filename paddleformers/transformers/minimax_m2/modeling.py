@@ -230,8 +230,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             _add_layer_slice_config(f"model.layers.{layer_idx}")
 
         # MTP layers
-        if config.mtp_num_layers > 0:
-            num_nextn_predict_layers = config.mtp_num_layers
+        if getattr(config, "mtp_num_layers", 0) > 0:
+            num_nextn_predict_layers = getattr(config, "mtp_num_layers", 0)
         else:
             num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
         for layer_idx in range(num_nextn_predict_layers):
@@ -339,8 +339,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
         # NOTE: MiniMax-M2 has no dense layers (first_k_dense_replace=0)
 
-        if config.mtp_num_layers > 0:
-            num_nextn_predict_layers = config.mtp_num_layers
+        if getattr(config, "mtp_num_layers", 0) > 0:
+            num_nextn_predict_layers = getattr(config, "mtp_num_layers", 0)
         else:
             num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
 
@@ -361,7 +361,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             ]
 
             # transformer_layer.mlp.up_gate_proj.weight
-            if config.use_dense_mtp:
+            if getattr(config, "use_dense_mtp", False):
                 prefix_offset += ".transformer_layer"
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.mlp.gate_proj.weight^T, {prefix}.mlp.up_proj.weight^T -> {prefix_offset}.mlp.up_gate_proj.weight, fused_ffn",
@@ -382,7 +382,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
             ]
 
-            if config.q_lora_rank:
+            if getattr(config, "q_lora_rank", None):
                 # MLA attention
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
@@ -410,7 +410,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     ]
 
         moe_layer_start = config.first_k_dense_replace
-        moe_layer_end = num_hidden_layers if config.use_dense_mtp else num_hidden_layers + num_nextn_predict_layers
+        moe_layer_end = num_hidden_layers if getattr(config, "use_dense_mtp", False) else num_hidden_layers + num_nextn_predict_layers
         # All layers are MoE (first_k_dense_replace=0)
         for layer_idx in reversed(range(moe_layer_start, moe_layer_end)):
             layer_idx_offset = layer_idx + num_head_empty_layers
@@ -506,8 +506,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
         # NOTE: MiniMax-M2 has no dense layers (first_k_dense_replace=0)
 
-        if config.mtp_num_layers > 0:
-            num_nextn_predict_layers = config.mtp_num_layers
+        if getattr(config, "mtp_num_layers", 0) > 0:
+            num_nextn_predict_layers = getattr(config, "mtp_num_layers", 0)
         else:
             num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
 
@@ -528,7 +528,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             ]
 
             # dense MTP: inverse mapping for dense MLP weights
-            if config.use_dense_mtp:
+            if getattr(config, "use_dense_mtp", False):
                 prefix_offset_tf = f"{prefix_offset}.transformer_layer"
                 aoa_statements += [
                     f"{prefix_offset_tf}.mlp.up_gate_proj.weight -> {prefix}.mlp.gate_proj.weight, {prefix}.mlp.up_proj.weight, fused_ffn",
@@ -552,7 +552,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.self_attn.o_proj.weight^T -> {prefix}.self_attn.o_proj.weight",
             ]
 
-            if config.q_lora_rank:
+            if getattr(config, "q_lora_rank", None):
                 # MLA attention
                 aoa_statements += [
                     f"{prefix_offset}.self_attn.o_proj.weight^T -> {prefix}.self_attn.o_proj.weight",
@@ -583,7 +583,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     ]
 
         # All layers are MoE (first_k_dense_replace=0)
-        moe_layer_end = num_hidden_layers if config.use_dense_mtp else num_hidden_layers + num_nextn_predict_layers
+        moe_layer_end = num_hidden_layers if getattr(config, "use_dense_mtp", False) else num_hidden_layers + num_nextn_predict_layers
         for layer_idx in range(config.first_k_dense_replace, moe_layer_end):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"

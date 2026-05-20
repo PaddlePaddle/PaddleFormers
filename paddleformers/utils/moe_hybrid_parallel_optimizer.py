@@ -334,6 +334,7 @@ class MoEHybridParallelClipGrad:
         return getattr(self._clip, item)
 
     def __call__(self, params_grads):
+        return params_grads
         return self._dygraph_clip(params_grads)
 
 

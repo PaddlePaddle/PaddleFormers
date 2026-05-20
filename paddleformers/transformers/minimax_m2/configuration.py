@@ -137,6 +137,7 @@ class MiniMaxM2Config(PretrainedConfig):
         use_mtp=True,
         num_mtp_modules=3,
         mtp_transformer_layers=1,
+        use_dense_mtp=False,
         use_routing_bias=True,
         moe_layer_freq=1,
         attn_type_list=None,
@@ -188,6 +189,7 @@ class MiniMaxM2Config(PretrainedConfig):
         self.use_mtp = use_mtp
         self.num_mtp_modules = num_mtp_modules
         self.mtp_transformer_layers = mtp_transformer_layers
+        self.use_dense_mtp = use_dense_mtp
         self.use_routing_bias = use_routing_bias
         self.moe_layer_freq = moe_layer_freq
         self.attn_type_list = attn_type_list
