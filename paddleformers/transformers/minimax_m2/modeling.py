@@ -93,17 +93,9 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             """Slice FFN gate_up, orthogonalise gate and up independently."""
             import paddle
 
-            if matrix.ndim == 2:
-                gate, up = paddle.split(matrix, [intermediate_size, intermediate_size], axis=1)
-                return paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=1)
-            elif matrix.ndim == 3:
-                expert_updates = []
-                for ei in range(matrix.shape[0]):
-                    gate, up = paddle.split(matrix[ei], [intermediate_size, intermediate_size], axis=1)
-                    expert_updates.append(paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=1))
-                return paddle.stack(expert_updates, axis=0)
-            else:
-                raise ValueError(f"FFN gate_up split expects 2D or 3D tensor, got shape {matrix.shape}")
+            assert matrix.ndim == 2 or matrix.ndim == 3, "FFN gate_up split expects 2D or 3D tensor"
+            gate, up = paddle.split(matrix, [intermediate_size, intermediate_size], axis=-1)
+            return paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=-1)
 
         def _mla_per_head(matrix_2d_global, ortho_fn, head_num=None, axis=None, head_split_sizes=None):
             """Slice MLA weights by heads."""
@@ -114,18 +106,6 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             processed_groups = [ortho_fn(group) for group in groups]
             return paddle.concat(processed_groups, axis=axis)
 
-        def _moe_experts(matrix_3d_global, ortho_fn):
-            """Slice MoE weights by experts."""
-            import paddle
-
-            if matrix_3d_global.ndim != 3:
-                raise ValueError(f"MoE expert split expects 3D tensor, got shape {matrix_3d_global.shape}")
-            n_experts = matrix_3d_global.shape[0]
-            return paddle.stack(
-                [ortho_fn(matrix_3d_global[ei]) for ei in range(n_experts)],
-                axis=0,
-            )
-
         slice_config = {}
 
         muon_configs = config.muon_configs
@@ -135,7 +115,6 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         num_key_value_heads = config.num_key_value_heads
         num_key_value_groups = num_attention_head // num_key_value_heads
         use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
-        moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         use_gated_attn = getattr(config, "use_gated_attn", False)
 
         # Get Muon configuration from muon_configs
@@ -154,9 +133,6 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
         # Determine FFN slice strategy
         ffn_slice_fn = _ffn_gate_up if muon_ffn_split else None
-
-        # Determine Fused MoE slice strategy
-        fused_moe_fn = _moe_experts if moe_expert_fusion else None
 
         # Determine MLA slice strategy
         mla_slice_fn = None
@@ -197,11 +173,6 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                             ffn_slice_fn,
                             {"intermediate_size": moe_intermediate_size},
                         )
-
-            # Fused MoE weights (grouped_gemm)
-            if moe_expert_fusion and fused_moe_fn is not None:
-                slice_config[f"{prefix}.mlp.experts.down_proj.weight"] = (fused_moe_fn, {})
-                slice_config[f"{prefix}.mlp.grouped_gemm_experts.weight2"] = (fused_moe_fn, {})
 
             # MLA weights
             if use_mla and mla_slice_fn is not None:
