@@ -12,12 +12,10 @@ on:
     types:
       - completed
 
-# 顶层最小权限
 permissions:
   contents: read
 
 jobs:
-  # ─── Job 1: 判断所有 watched workflows 是否完成，收集失败 job URLs ───
   check-and-collect:
     runs-on: ubuntu-latest
     permissions:
@@ -180,7 +178,6 @@ jobs:
                 f.write(f"failed_run_ids={' '.join(failed_run_ids)}\n")
             PYEOF
 
-  # ─── Job 2: paddle-bot 上跑 bot 分析，上传 artifact ───
   analyze:
     needs: check-and-collect
     if: needs.check-and-collect.outputs.skip == 'false'
@@ -229,7 +226,6 @@ jobs:
           path: /tmp/bot_results/bot_result_${{ env.TASK_ID }}.md
           retention-days: 1
 
-  # ─── Job 3: ubuntu-latest 下载 artifact，用 PAT 发评论 ───
   post-comment:
     needs: [check-and-collect, analyze]
     if: always() && needs.check-and-collect.outputs.skip == 'false'
