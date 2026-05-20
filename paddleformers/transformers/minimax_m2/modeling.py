@@ -135,7 +135,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         num_key_value_heads = config.num_key_value_heads
         num_key_value_groups = num_attention_head // num_key_value_heads
         use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
-        moe_grouped_gemm = getattr(config, "moe_grouped_gemm", False)
+        moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         use_gated_attn = getattr(config, "use_gated_attn", False)
 
         # Get Muon configuration from muon_configs
@@ -156,7 +156,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         ffn_slice_fn = _ffn_gate_up if muon_ffn_split else None
 
         # Determine Fused MoE slice strategy
-        fused_moe_fn = _moe_experts if moe_grouped_gemm else None
+        fused_moe_fn = _moe_experts if moe_expert_fusion else None
 
         # Determine MLA slice strategy
         mla_slice_fn = None
@@ -199,7 +199,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         )
 
             # Fused MoE weights (grouped_gemm)
-            if moe_grouped_gemm and fused_moe_fn is not None:
+            if moe_expert_fusion and fused_moe_fn is not None:
                 slice_config[f"{prefix}.mlp.experts.down_proj.weight"] = (fused_moe_fn, {})
                 slice_config[f"{prefix}.mlp.grouped_gemm_experts.weight2"] = (fused_moe_fn, {})
 
@@ -344,8 +344,15 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         aoa_config["aoa_statements"] += [
             f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
         ]
+
+        assert not (
+            config.tie_word_embeddings and getattr(config, "separate_mtp_headloss", False)
+        ), "tie_word_embeddings and separate_mtp_headloss cannot be enabled simultaneously in aoa"
         if config.tie_word_embeddings:
             aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}lm_head.weight"]
+        elif getattr(config, "separate_mtp_headloss", False):
+            aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}shared_mtp_lm_head.weight"]
+            aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}shared_head.weight"]
         else:
             aoa_config["aoa_statements"] += [f"lm_head.weight -> {model_prefix}lm_head.weight"]
 
@@ -401,15 +408,17 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
             ]
 
-            if config.use_gated_attn:
+            use_mla = bool(getattr(config, "multi_latent_attention", False))
+
+            if config.use_gated_attn and use_mla:
+                # MLA mode: gate_proj is a separate parameter
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.self_attn.gate_proj.weight^T -> {prefix_offset}.self_attn.gate_proj.weight",
                 ]
 
-            if config.q_lora_rank:
+            if use_mla:
                 # MLA attention
                 aoa_config["aoa_statements"] += [
-                    f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
                     f"{prefix}.self_attn.q_a_proj.weight^T -> {prefix_offset}.self_attn.q_a_proj.weight",
                     f"{prefix}.self_attn.q_b_proj.weight^T -> {prefix_offset}.self_attn.q_b_proj.weight",
                     f"{prefix}.self_attn.kv_a_proj_with_mqa.weight^T -> {prefix_offset}.self_attn.kv_a_proj_with_mqa.weight",
@@ -429,9 +438,43 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     ]
 
                 # attention qkv
-                aoa_config["aoa_statements"] += [
-                    f"{prefix}.self_attn.q_proj.weight^T, {prefix}.self_attn.k_proj.weight^T, {prefix}.self_attn.v_proj.weight^T -> {prefix_offset}.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
-                ]
+                if config.use_gated_attn:
+                    # Non-MLA gated attention: gate is fused in qkv_proj
+                    # Fleet layout per group: [Q_heads(hpg*hd), Gate_heads(hpg*hd), K(hd), V(hd)]
+                    # HF q_proj layout: [Q_h0(hd), G_h0(hd), Q_h1(hd), G_h1(hd), ...]
+                    num_heads = config.num_attention_heads
+                    num_kv_heads = config.num_key_value_heads
+                    heads_per_group = num_heads // num_kv_heads
+                    n_chunks = 2 * num_heads  # Q + Gate interleaved
+                    qg_names = [f"{prefix}.self_attn.q_proj._qg{c}" for c in range(n_chunks)]
+                    aoa_config["aoa_statements"].append(
+                        f"{prefix}.self_attn.q_proj.weight -> {','.join(qg_names)}, axis=0"
+                    )
+                    k_names = [f"{prefix}.self_attn.k_proj._kh{c}" for c in range(num_kv_heads)]
+                    v_names = [f"{prefix}.self_attn.v_proj._vh{c}" for c in range(num_kv_heads)]
+                    aoa_config["aoa_statements"].append(
+                        f"{prefix}.self_attn.k_proj.weight -> {','.join(k_names)}, axis=0"
+                    )
+                    aoa_config["aoa_statements"].append(
+                        f"{prefix}.self_attn.v_proj.weight -> {','.join(v_names)}, axis=0"
+                    )
+                    # Reassemble per-group in fleet order: Q_heads, Gate_heads, K, V
+                    ordered = []
+                    for g in range(num_kv_heads):
+                        base = g * heads_per_group * 2
+                        for h in range(heads_per_group):
+                            ordered.append(qg_names[base + h * 2])  # Q heads
+                        for h in range(heads_per_group):
+                            ordered.append(qg_names[base + h * 2 + 1])  # Gate heads
+                        ordered.append(k_names[g])
+                        ordered.append(v_names[g])
+                    fused_tmp = f"{prefix}.self_attn.qkv_fused_tmp"
+                    aoa_config["aoa_statements"].append(f"{','.join(ordered)} -> {fused_tmp}, axis=0")
+                    aoa_config["aoa_statements"].append(f"{fused_tmp}^T -> {prefix_offset}.self_attn.qkv_proj.weight")
+                else:
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.self_attn.q_proj.weight^T, {prefix}.self_attn.k_proj.weight^T, {prefix}.self_attn.v_proj.weight^T -> {prefix_offset}.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
+                    ]
                 if config.attention_bias:
                     aoa_config["aoa_statements"] += [
                         f"{prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias -> {prefix_offset}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
@@ -451,7 +494,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix}.block_sparse_moe.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
                 f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight",
             ]
-            if config.use_latent_moe:
+            if config.moe_latent_size is not None and config.moe_latent_size > 0:
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.block_sparse_moe.fc1_latent_proj.weight^T -> {prefix_offset}.mlp.fc1_latent_proj.weight",
                     f"{prefix}.block_sparse_moe.fc2_latent_proj.weight^T -> {prefix_offset}.mlp.fc2_latent_proj.weight",
@@ -468,8 +511,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
             if n_shared_experts > 0:
                 aoa_config["aoa_statements"] += [
-                    f"{prefix}.block_sparse_moe.shared_experts.gate_proj.weight^T, {prefix}.block_sparse_moe.shared_experts.up_proj.weight^T -> {prefix_offset}.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
-                    f"{prefix}.block_sparse_moe.shared_experts.down_proj.weight^T -> {prefix_offset}.mlp.shared_experts.down_proj.weight",
+                    f"{prefix}.block_sparse_moe.shared_experts.w1.weight^T, {prefix}.block_sparse_moe.shared_experts.w3.weight^T -> {prefix_offset}.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
+                    f"{prefix}.block_sparse_moe.shared_experts.w2.weight^T -> {prefix_offset}.mlp.shared_experts.down_proj.weight",
                 ]
 
             for expert_id in range(config.n_routed_experts):
@@ -482,7 +525,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         f"{prefix}.block_sparse_moe.experts.{expert_id}.w1.weight^T, {prefix}.block_sparse_moe.experts.{expert_id}.w3.weight^T -> {prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight, axis=1",
                     ]
 
-            if config.moe_grouped_gemm or using_sonic_moe:
+            if config.moe_expert_fusion or using_sonic_moe:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(num_experts):
@@ -526,8 +569,15 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         aoa_statements += [
             "model.embedding.embed_tokens.weight -> model.embed_tokens.weight",
         ]
+
+        assert not (
+            config.tie_word_embeddings and getattr(config, "separate_mtp_headloss", False)
+        ), "tie_word_embeddings and separate_mtp_headloss cannot be enabled simultaneously in aoa"
         if config.tie_word_embeddings:
             aoa_statements += [f"{model_prefix}lm_head.weight -> _"]
+        elif getattr(config, "separate_mtp_headloss", False):
+            aoa_statements += [f"{model_prefix}shared_mtp_lm_head.weight -> lm_head.weight"]
+            aoa_statements += [f"{model_prefix}shared_head.weight -> _"]
         else:
             aoa_statements += [f"{model_prefix}lm_head.weight -> lm_head.weight"]
 
@@ -586,15 +636,17 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.self_attn.o_proj.weight^T -> {prefix}.self_attn.o_proj.weight",
             ]
 
-            if config.use_gated_attn:
+            use_mla = bool(getattr(config, "multi_latent_attention", False))
+
+            if config.use_gated_attn and use_mla:
+                # MLA mode: gate_proj is a separate parameter
                 aoa_statements += [
                     f"{prefix_offset}.self_attn.gate_proj.weight^T -> {prefix}.self_attn.gate_proj.weight",
                 ]
 
-            if config.q_lora_rank:
+            if use_mla:
                 # MLA attention
                 aoa_statements += [
-                    f"{prefix_offset}.self_attn.o_proj.weight^T -> {prefix}.self_attn.o_proj.weight",
                     f"{prefix_offset}.self_attn.q_a_proj.weight^T -> {prefix}.self_attn.q_a_proj.weight",
                     f"{prefix_offset}.self_attn.q_b_proj.weight^T -> {prefix}.self_attn.q_b_proj.weight",
                     f"{prefix_offset}.self_attn.kv_a_proj_with_mqa.weight^T -> {prefix}.self_attn.kv_a_proj_with_mqa.weight",
@@ -612,13 +664,53 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         f"{prefix_offset}.self_attn.k_norm.weight -> {prefix}.self_attn.k_norm.weight",
                     ]
 
-                aoa_statements += [
-                    f"{prefix_offset}.self_attn.qkv_proj.weight -> {prefix}.self_attn.q_proj.weight, {prefix}.self_attn.k_proj.weight, {prefix}.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
-                ]
-                aoa_statements += [
-                    f"{prefix}.self_attn.{x}_proj.weight^T -> {prefix}.self_attn.{x}_proj.weight"
-                    for x in ("q", "k", "v")
-                ]
+                if config.use_gated_attn:
+                    # Non-MLA gated attention: gate is fused in qkv_proj
+                    # Fleet layout per group: [Q_heads(hpg*hd), Gate_heads(hpg*hd), K(hd), V(hd)]
+                    # Need to split and reassemble to HF format
+                    num_heads = config.num_attention_heads
+                    num_kv_heads = config.num_key_value_heads
+                    heads_per_group = num_heads // num_kv_heads
+                    fleet_key = f"{prefix_offset}.self_attn.qkv_proj.weight"
+                    fused_tmp = f"{prefix}.self_attn.qkv_fused_tmp"
+
+                    # Step 1: Transpose fleet weight
+                    aoa_statements.append(f"{fleet_key}^T -> {fused_tmp}")
+
+                    # Step 2: Split into per-group chunks along axis=0
+                    chunk_names = []
+                    for g in range(num_kv_heads):
+                        for h in range(heads_per_group):
+                            chunk_names.append(f"{prefix}.self_attn._q_g{g}_h{h}")
+                        for h in range(heads_per_group):
+                            chunk_names.append(f"{prefix}.self_attn._gate_g{g}_h{h}")
+                        chunk_names.append(f"{prefix}.self_attn._k_g{g}")
+                        chunk_names.append(f"{prefix}.self_attn._v_g{g}")
+                    aoa_statements.append(f"{fused_tmp} -> {','.join(chunk_names)}, axis=0")
+
+                    # Step 3: Reassemble q_proj (interleaved Q+Gate)
+                    q_ordered = []
+                    for g in range(num_kv_heads):
+                        for h in range(heads_per_group):
+                            q_ordered.append(f"{prefix}.self_attn._q_g{g}_h{h}")
+                            q_ordered.append(f"{prefix}.self_attn._gate_g{g}_h{h}")
+                    aoa_statements.append(f"{','.join(q_ordered)} -> {prefix}.self_attn.q_proj.weight, axis=0")
+
+                    # k_proj
+                    k_ordered = [f"{prefix}.self_attn._k_g{g}" for g in range(num_kv_heads)]
+                    aoa_statements.append(f"{','.join(k_ordered)} -> {prefix}.self_attn.k_proj.weight, axis=0")
+
+                    # v_proj
+                    v_ordered = [f"{prefix}.self_attn._v_g{g}" for g in range(num_kv_heads)]
+                    aoa_statements.append(f"{','.join(v_ordered)} -> {prefix}.self_attn.v_proj.weight, axis=0")
+                else:
+                    aoa_statements += [
+                        f"{prefix_offset}.self_attn.qkv_proj.weight -> {prefix}.self_attn.q_proj.weight, {prefix}.self_attn.k_proj.weight, {prefix}.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
+                    ]
+                    aoa_statements += [
+                        f"{prefix}.self_attn.{x}_proj.weight^T -> {prefix}.self_attn.{x}_proj.weight"
+                        for x in ("q", "k", "v")
+                    ]
                 if config.attention_bias:
                     aoa_statements += [
                         f"{prefix_offset}.self_attn.qkv_proj.bias -> {prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
@@ -634,7 +726,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 # for mtp
                 prefix_offset += ".transformer_layer"
 
-            if config.moe_grouped_gemm or using_sonic_moe:
+            if config.moe_expert_fusion or using_sonic_moe:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
@@ -662,10 +754,10 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
             if n_shared_experts > 0:
                 aoa_statements += [
-                    f"{prefix_offset}.mlp.shared_experts.down_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.down_proj.weight",
+                    f"{prefix_offset}.mlp.shared_experts.down_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.w2.weight",
                     f"{prefix_offset}.mlp.shared_experts.up_gate_proj.weight -> {prefix_offset}.block_sparse_moe.shared_experts.gate_proj.weight, {prefix_offset}.block_sparse_moe.shared_experts.up_proj.weight, fused_ffn",
-                    f"{prefix_offset}.block_sparse_moe.shared_experts.gate_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.gate_proj.weight",
-                    f"{prefix_offset}.block_sparse_moe.shared_experts.up_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.up_proj.weight",
+                    f"{prefix_offset}.block_sparse_moe.shared_experts.gate_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.w1.weight",
+                    f"{prefix_offset}.block_sparse_moe.shared_experts.up_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.w3.weight",
                 ]
 
             aoa_statements += [
@@ -673,7 +765,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.block_sparse_moe.e_score_correction_bias",
             ]
 
-            if config.use_latent_moe:
+            if config.moe_latent_size is not None and config.moe_latent_size > 0:
                 aoa_statements += [
                     f"{prefix_offset}.mlp.fc1_latent_proj.weight^T -> {prefix}.block_sparse_moe.fc1_latent_proj.weight ",
                     f"{prefix_offset}.mlp.fc2_latent_proj.weight^T -> {prefix}.block_sparse_moe.fc2_latent_proj.weight",

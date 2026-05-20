@@ -93,7 +93,6 @@ trainer_args:
 
     ignore_data_skip: 0
     same_data: True
-    enable_timer: 1
     skip_profile_timer: False
     skip_load_data_seq_cache: 1
 

@@ -730,7 +730,7 @@ class FP8QuantWeightCallback(TrainerCallback):
                 self.use_fp8 = model.use_fp8()
             if not self.use_fp8:
                 return
-            model.fp8_quant_weight(True, quant_transpose=True)
+            model.fp8_quant_weight(True, quant_transpose=False)
             optimizer.clear_param_storage("moe_expert")
             optimizer.clear_param_storage("rms_linear")
             optimizer.clear_param_storage("memory_attn")

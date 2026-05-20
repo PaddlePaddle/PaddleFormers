@@ -347,12 +347,11 @@ def main():
     if getattr(config.trainer_args, "dp_comm_overlap", False):
         logger.warning("Pipeline dp_comm_overlap and FusedLinearWithGradAdd can not be used at the same time.")
 
-    if getattr(config.trainer_args, "timer", False):
-        from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
-            PipelineParallel,
-        )
+    from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
+        PipelineParallel,
+    )
 
-        PipelineParallel.timer_printer = lambda _: None
+    PipelineParallel.timer_printer = lambda _: None
 
     def formatv(v):
         if isinstance(v, ListConfig):
