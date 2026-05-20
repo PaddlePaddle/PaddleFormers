@@ -12,9 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-
-
 # 读取setup.py文件 拿到fleet的commit id
 def get_fleet_commit_id(setup_file_path):
     with open(setup_file_path, "r") as f:
