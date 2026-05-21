@@ -22,8 +22,8 @@ It automatically routes to the correct implementation based on the model configu
 from .configuration import InternLM2Config
 from .modeling import (
     InternLM2ForCausalLM,
-    InternLM2ForSequenceClassification,
     InternLM2ForQuestionAnswering,
+    InternLM2ForSequenceClassification,
     InternLM2ForTokenClassification,
     InternLM2Model,
     InternLM2PretrainedModel,

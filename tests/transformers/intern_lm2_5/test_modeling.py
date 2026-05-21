@@ -27,6 +27,7 @@ from paddleformers.transformers import (
 )
 from tests.testing_utils import require_package, slow
 
+# https://www.modelscope.cn/models/Shanghai_AI_Laboratory/internlm2_5-1_8b-chat/summary
 modelscope_lm25_model_location = "Shanghai_AI_Laboratory/internlm2_5-1_8b-chat"
 
 
@@ -228,33 +229,35 @@ class InternLM25CompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
     def setUpClass(cls) -> None:
-        import sys
-
-        if "transformers" in sys.modules:
-            del sys.modules["transformers"]
+        import json
 
         import torch
+        from modelscope import AutoConfig
+        from transformers import AutoModelForCausalLM
 
-        cls.torch_model_path = tempfile.TemporaryDirectory().name
+        cls.torch_model_path = tempfile.mkdtemp()
 
-        from transformers import AutoConfig, AutoModelForCausalLM
+        config = AutoConfig.from_pretrained(modelscope_lm25_model_location, trust_remote_code=True)
 
-        config = AutoConfig.from_pretrained(
-            "internlm/internlm2_5-1_8b-chat",
-            trust_remote_code=True,
-            hidden_size=128,
-            intermediate_size=384,
-            num_hidden_layers=4,
-            num_attention_heads=4,
-            num_key_value_heads=2,
-            max_position_embeddings=128,
-            vocab_size=10000,
-            use_cache=True,
-        )
+        # Override with small test parameters,  accelerate calc
+        config.hidden_size = 128
+        config.intermediate_size = 384
+        config.num_hidden_layers = 4
+        config.num_attention_heads = 4
+        config.num_key_value_heads = 4
+        config.vocab_size = 10000
+        config.max_position_embeddings = 128
 
         cls.torch_model = AutoModelForCausalLM.from_config(config, trust_remote_code=True)
-        cls.torch_model.config.save_pretrained(cls.torch_model_path)
+
         torch.save(cls.torch_model.state_dict(), f"{cls.torch_model_path}/pytorch_model.bin")
+
+        config_dict = config.to_dict()
+        for key in ["_commit_hash", "_name_or_path"]:
+            config_dict.pop(key, None)
+
+        with open(f"{cls.torch_model_path}/config.json", "w") as f:
+            json.dump(config_dict, f, indent=2)
 
     @require_package("transformers", "torch")
     def test_intern_converter(self):
@@ -263,7 +266,8 @@ class InternLM25CompatibilityTest(unittest.TestCase):
         input_ids = np.random.randint(100, 200, [1, 20])
 
         self.torch_model.eval()
-        torch_logit = self.torch_model(torch.tensor(input_ids), use_cache=False, return_dict=False)[0]
+        torch_output = self.torch_model(torch.tensor(input_ids), use_cache=False)
+        torch_logit = torch_output[0] if isinstance(torch_output, tuple) else torch_output.logits
 
         paddle_model = InternLM25ForCausalLM.from_pretrained(
             self.torch_model_path, convert_from_hf=True, load_checkpoint_format=""
