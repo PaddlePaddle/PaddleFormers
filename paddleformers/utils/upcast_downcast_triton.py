@@ -524,12 +524,12 @@ def downcast_to_mxfp_paddle(
 
     # For mxfp4 conversion, we assume the contiguous axis length is even.
     if is_fp4:
-        axis_shape = src_tensor.shape[axis]
+        axis_shape = int(src_tensor.shape[axis])
         assert axis_shape % 2 == 0, "For mxfp4 conversion the contiguous axis length must be even."
 
     # Permute the tensor so that the contiguous axis becomes the last dimension.
     src = src_tensor.transpose(axis, src_tensor.ndim - 1).to(paddle.float32)
-    axis_shape = src.shape[-1]
+    axis_shape = int(src.shape[-1])
 
     # Pad the axis to be divisible by 32, in case it is not.
     next_multiple = triton.cdiv(axis_shape, MXFP_BLOCK_SIZE) * MXFP_BLOCK_SIZE
@@ -669,12 +669,12 @@ def upcast_from_mxfp_paddle(tensor: paddle.Tensor, scale: paddle.Tensor, target_
         fp32_tensor = cvt_e2m1_to_fp32(tensor)
     else:
         fp32_tensor = tensor.to(paddle.float32)
-    logical_quant_dim = tensor.shape[-1] * (2 if tensor.dtype == paddle.uint8 else 1)
-    axis_shape = fp32_tensor.shape[-1]
+    logical_quant_dim = int(tensor.shape[-1]) * (2 if tensor.dtype == paddle.uint8 else 1)
+    axis_shape = int(fp32_tensor.shape[-1])
     padded_axis_shape = triton.cdiv(logical_quant_dim, MXFP_BLOCK_SIZE) * MXFP_BLOCK_SIZE
     pad_size = padded_axis_shape - axis_shape
     padded_tensor = F.pad(fp32_tensor, (0, int(pad_size)))
-    new_axis_shape = padded_tensor.shape[-1]
+    new_axis_shape = int(padded_tensor.shape[-1])
     new_shape = padded_tensor.shape[:-1] + [int(new_axis_shape // MXFP_BLOCK_SIZE), int(MXFP_BLOCK_SIZE)]
 
     padded_tensor = padded_tensor.view(*new_shape)

@@ -35,7 +35,6 @@ model_args:
             recompute_fwd_gate_up: [6, 7, 8, 11, 12, 13, 16, 17, 18]
             dequant_input: true
             offline_quant_expert_weight: true
-            clear_origin_weight_when_offline_quant: true
         fp8_fused_ops_configs:
             stack_quant: true
             swiglu_probs_bwd: true
@@ -89,7 +88,7 @@ trainer_args:
     seed: 666
     use_train_part_sharding: 1
     pre_alloc_memory: 60
-    offload_optim: True
+    tensorwise_offload_optimizer: True
 
     pipeline_model_parallel_size: 12
     tensor_model_parallel_size: 1
@@ -101,7 +100,6 @@ trainer_args:
     amp_master_grad: 1
 
     # pipeline_parallel_config
-    pp_delay_scale_loss: true
     overlap_p2p_comm: true
     best_unbalanced_scheduler: true
  

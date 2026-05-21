@@ -52,7 +52,8 @@ sequence_parallel: true
 moe_group: mp
 sharding: stage1
 amp_master_grad: true
-recompute: false
+moe_use_fusion_node: false
+# recompute: false
 recompute_granularity: ""
 bf16: true
 fp16_opt_level: O2
@@ -65,3 +66,4 @@ moe_router_force_load_balancing: true
 num_empty_layers_add_in_tail: 1
 
 router_aux_loss_coef: 0.001
+moe_deep_gemm: false

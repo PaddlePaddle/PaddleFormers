@@ -40,7 +40,7 @@ class MoEAOAConfigParams:
     # MoE specific config
     num_experts: int = 0
     using_sonic_moe: bool = False
-    moe_grouped_gemm: bool = False
+    moe_expert_fusion: bool = False
     fp8: bool = False
     fd_fallback: bool = False
 
@@ -63,10 +63,10 @@ class MoEAOAConfigParams:
     # Runtime config
     model_prefix: str = "model."
 
+    index_n_heads: int = 0
+
     # Extra statements to add
     extra_statements: List[str] = field(default_factory=list)
-
-    index_n_heads: int = 0
 
 
 class MoEAOAConfigGenerator:
@@ -114,9 +114,8 @@ class MoEAOAConfigGenerator:
             num_attention_heads=config.num_attention_heads,
             num_key_value_heads=config.num_key_value_heads,
             num_experts=num_experts,
-            index_n_heads=getattr(config, "index_n_heads", 0),
             using_sonic_moe=getattr(config, "using_sonic_moe", False),
-            moe_grouped_gemm=getattr(config, "moe_grouped_gemm", False),
+            moe_expert_fusion=getattr(config, "moe_expert_fusion", False),
             fp8=getattr(config, "fp8", False),
             fd_fallback=config.get("fd_fallback", False) if hasattr(config, "get") else False,
             tie_word_embeddings=getattr(config, "tie_word_embeddings", False),
@@ -132,6 +131,7 @@ class MoEAOAConfigGenerator:
             use_qk_norm=getattr(config, "use_qk_norm", False),
             has_shared_experts=cls._has_shared_experts(config),
             model_prefix=cls._get_model_prefix(config),
+            index_n_heads=getattr(config, "index_n_heads", 0),
         )
 
     @classmethod
@@ -154,20 +154,20 @@ class MoEAOAConfigGenerator:
         # 1. Basic weights (norm, embed_tokens, lm_head)
         aoa_statements.extend(cls._get_basic_weight_statements(params))
 
+        # 2. MoE layers
+        aoa_statements.extend(cls._get_moe_layer_statements(params))
+
         # 3. MTP layers (if any)
         aoa_statements.extend(cls._get_mtp_layer_statements(params))
 
-        # 4. MoE layers
-        aoa_statements.extend(cls._get_moe_layer_statements(params))
+        # 4. Dense layers (if any)
+        aoa_statements.extend(cls._get_dense_layer_statements(params))
 
         # 5. Grouped GEMM (if enabled)
         aoa_statements.extend(cls._get_grouped_gemm_statements(params))
 
         # 6. Extra statements from subclasses
         aoa_statements.extend(params.extra_statements)
-
-        # 2. Dense layers (if any)
-        aoa_statements.extend(cls._get_dense_layer_statements(params))
 
         return {"aoa_statements": aoa_statements}
 
@@ -222,8 +222,8 @@ class MoEAOAConfigGenerator:
         # Layer norms and attention output
         statements.extend(
             [
-                f"{prefix}.input_layernorm.weight -> {prefix_offset}.input_layernorm.weight, src_dtype='float32', dst_dtype='bfloat16'",
-                f"{prefix}.post_attention_layernorm.weight -> {prefix_offset}.post_attention_layernorm.weight,src_dtype='float32', dst_dtype='bfloat16'",
+                f"{prefix}.input_layernorm.weight -> {prefix_offset}.input_layernorm.weight",
+                f"{prefix}.post_attention_layernorm.weight -> {prefix_offset}.post_attention_layernorm.weight",
                 f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
             ]
         )
@@ -307,8 +307,8 @@ class MoEAOAConfigGenerator:
         # Layer norms and attention output
         statements.extend(
             [
-                f"{prefix}.input_layernorm.weight -> {prefix_offset}.input_layernorm.weight,src_dtype='float32', dst_dtype='bfloat16'",
-                f"{prefix}.post_attention_layernorm.weight -> {prefix_offset}.post_attention_layernorm.weight,src_dtype='float32', dst_dtype='bfloat16'",
+                f"{prefix}.input_layernorm.weight -> {prefix_offset}.input_layernorm.weight",
+                f"{prefix}.post_attention_layernorm.weight -> {prefix_offset}.post_attention_layernorm.weight",
                 f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
             ]
         )
@@ -331,7 +331,7 @@ class MoEAOAConfigGenerator:
 
         Override this method for different attention types (standard QKV vs MLA).
         """
-        if params.multi_latent_attention or (params.index_n_heads and params.index_n_heads > 0) or True:
+        if params.multi_latent_attention:
             return cls._get_mla_attention_statements(params, prefix, prefix_offset)
         return cls._get_standard_attention_statements(params, prefix, prefix_offset)
 
@@ -367,8 +367,8 @@ class MoEAOAConfigGenerator:
         if params.use_qk_norm:
             statements.extend(
                 [
-                    f"{prefix}.self_attn.q_a_layernorm.weight -> {prefix_offset}.self_attn.q_a_layernorm.weight, src_dtype='float32',dst_dtype='bfloat16'",
-                    f"{prefix}.self_attn.kv_a_layernorm.weight -> {prefix_offset}.self_attn.kv_a_layernorm.weight, src_dtype='float32',dst_dtype='bfloat16'",
+                    f"{prefix}.self_attn.q_a_layernorm.weight -> {prefix_offset}.self_attn.q_a_layernorm.weight",
+                    f"{prefix}.self_attn.kv_a_layernorm.weight -> {prefix_offset}.self_attn.kv_a_layernorm.weight",
                 ]
             )
 
@@ -380,14 +380,13 @@ class MoEAOAConfigGenerator:
             ]
             statements.extend(
                 [
-                    f"{prefix}.self_attn.indexer.{weight_name}.weight^T -> {prefix_offset}.self_attn.indexer.{weight_name}.weight"
+                    f"{prefix}.self_attn.indexer.{weight_name}.weight^T -> {prefix_offset}.self_attn.core_attention.indexer.{weight_name}.weight"
                     for weight_name in indexer_weights
                 ]
             )
             statements += [
-                f"{prefix}.self_attn.indexer.k_norm.bias ->  {prefix_offset}.self_attn.indexer.k_norm.bias,src_dtype='float32', dst_dtype='bfloat16'",
-                f"{prefix}.self_attn.indexer.k_norm.weight ->  {prefix_offset}.self_attn.indexer.k_norm.weight,src_dtype='float32', dst_dtype='bfloat16'",
-                "model.norm.weight -> model.norm.weight, src_dtype='float32',dst_dtype='bfloat16'",
+                f"{prefix}.self_attn.indexer.k_norm.bias ->  {prefix_offset}.self_attn.core_attention.indexer.k_norm.bias",
+                f"{prefix}.self_attn.indexer.k_norm.weight ->  {prefix_offset}.self_attn.core_attention.indexer.k_norm.weight",
             ]
 
         return statements
@@ -403,9 +402,7 @@ class MoEAOAConfigGenerator:
         statements.append(
             f"{prefix}.mlp.gate.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias"
         )
-        statements.append(
-            f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight,src_dtype='bfloat16',dst_dtype='float32'"
-        )
+        statements.append(f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='float32'")
 
         # Shared experts (if model has them)
         if params.has_shared_experts:
@@ -456,7 +453,7 @@ class MoEAOAConfigGenerator:
     @classmethod
     def _get_grouped_gemm_statements(cls, params: MoEAOAConfigParams) -> List[str]:
         """Generate grouped GEMM statements for efficient MoE computation."""
-        if not (params.moe_grouped_gemm or params.using_sonic_moe) and not params.fp8:
+        if not (params.moe_expert_fusion or params.using_sonic_moe) and not params.fp8:
             return cls._get_fd_fallback_statements(params)
 
         statements = []
@@ -482,8 +479,8 @@ class MoEAOAConfigGenerator:
 
             statements.extend(
                 [
-                    f"{group_gemm1} -> {prefix_offset}.mlp.grouped_gemm_experts.weight1, axis=0"
-                    f"{group_gemm2} -> {prefix_offset}.mlp.grouped_gemm_experts.weight2, axis=0"
+                    f"{group_gemm1} -> {prefix_offset}.mlp.grouped_gemm_experts.weight1, axis=0",
+                    f"{group_gemm2} -> {prefix_offset}.mlp.grouped_gemm_experts.weight2, axis=0",
                 ]
             )
 
@@ -518,12 +515,360 @@ class MoEAOAConfigGenerator:
 
             statements.extend(
                 [
-                    f"{group1} -> {prefix_offset}.mlp.experts.up_gate_proj, axis=0"
-                    f"{group2} -> {prefix_offset}.mlp.experts.down_proj, axis=0"
+                    f"{group1} -> {prefix_offset}.mlp.experts.up_gate_proj, axis=0",
+                    f"{group2} -> {prefix_offset}.mlp.experts.down_proj, axis=0",
                 ]
             )
 
         return statements
+
+    # ==================================================================
+    # Inverse AOA Config Generation (PaddleFleet -> HuggingFace)
+    # ==================================================================
+
+    @classmethod
+    def gen_inv_aoa_config(cls, config: Any) -> Dict[str, List[str]]:
+        """Main entry point for generating inverse AOA config.
+
+        The inverse AOA maps PaddleFleet weight names back to HuggingFace format,
+        used during save_pretrained to convert weights back to HF convention.
+
+        Args:
+            config: Model configuration object with necessary attributes.
+
+        Returns:
+            Dictionary with 'aoa_statements' key containing list of inverse conversion statements.
+        """
+        params = cls._extract_params(config)
+        return cls._build_inv_aoa_config(params)
+
+    @classmethod
+    def _build_inv_aoa_config(cls, params: MoEAOAConfigParams) -> Dict[str, List[str]]:
+        """Build the complete inverse AOA config from parameters."""
+        aoa_statements = []
+
+        # 1. Basic weights (norm, embed_tokens, lm_head)
+        aoa_statements.extend(cls._get_inv_basic_weight_statements(params))
+
+        # 2. MoE layers (attention + experts)
+        aoa_statements.extend(cls._get_inv_moe_layer_statements(params))
+
+        # 3. MTP layers (if any)
+        aoa_statements.extend(cls._get_inv_mtp_layer_statements(params))
+
+        # 4. Dense layers (if any)
+        aoa_statements.extend(cls._get_inv_dense_layer_statements(params))
+
+        # 5. Extra statements from subclasses
+        aoa_statements.extend(params.extra_statements)
+
+        return {"aoa_statements": aoa_statements}
+
+    # ==================== Inverse Basic Weights ====================
+
+    @classmethod
+    def _get_inv_basic_weight_statements(cls, params: MoEAOAConfigParams) -> List[str]:
+        """Generate inverse statements for basic weights: norm, embeddings, lm_head."""
+        statements = [
+            f"{params.model_prefix}norm.weight -> model.norm.weight",
+            "model.embedding.embed_tokens.weight -> model.embed_tokens.weight",
+        ]
+
+        if params.tie_word_embeddings:
+            statements.append(f"{params.model_prefix}lm_head.weight -> _")
+        else:
+            statements.append(f"{params.model_prefix}lm_head.weight -> lm_head.weight")
+
+        return statements
+
+    # ==================== Inverse Dense Layers ====================
+
+    @classmethod
+    def _get_inv_dense_layer_statements(cls, params: MoEAOAConfigParams) -> List[str]:
+        """Generate inverse statements for dense (non-MoE) layers.
+
+        Only handles MLP weights for dense layers. Attention weights are handled
+        in _get_inv_moe_layer_statements which covers all layers uniformly.
+        """
+        statements = []
+
+        if params.first_k_dense_replace <= 0:
+            return statements
+
+        for layer_idx in reversed(range(0, params.first_k_dense_replace)):
+            layer_idx_offset = layer_idx + params.num_head_empty_layers
+            statements.extend(cls._get_inv_single_dense_layer_statements(params, layer_idx, layer_idx_offset))
+
+        return statements
+
+    @classmethod
+    def _get_inv_single_dense_layer_statements(
+        cls, params: MoEAOAConfigParams, layer_idx: int, layer_idx_offset: int
+    ) -> List[str]:
+        """Generate inverse statements for a single dense layer (MLP only)."""
+        prefix = f"model.layers.{layer_idx}"
+        prefix_offset = f"{params.model_prefix}layers.{layer_idx_offset}"
+
+        # MLP: un-fuse up_gate_proj -> gate_proj + up_proj, then transpose each
+        return [
+            f"{prefix_offset}.mlp.down_proj.weight^T -> {prefix}.mlp.down_proj.weight",
+            f"{prefix_offset}.mlp.up_gate_proj.weight -> {prefix_offset}.mlp.gate_proj.weight, {prefix_offset}.mlp.up_proj.weight, fused_ffn",
+            f"{prefix_offset}.mlp.gate_proj.weight^T -> {prefix}.mlp.gate_proj.weight",
+            f"{prefix_offset}.mlp.up_proj.weight^T -> {prefix}.mlp.up_proj.weight",
+        ]
+
+    # ==================== Inverse MTP Layers ====================
+
+    @classmethod
+    def _get_inv_mtp_layer_statements(cls, params: MoEAOAConfigParams) -> List[str]:
+        """Generate inverse statements for MTP layers."""
+        statements = []
+
+        if params.num_nextn_predict_layers <= 0:
+            return statements
+
+        num_hidden_layers = params.num_hidden_layers
+        for layer_idx in reversed(range(num_hidden_layers, num_hidden_layers + params.num_nextn_predict_layers)):
+            layer_idx_offset = layer_idx + params.num_head_empty_layers
+            statements.extend(cls._get_inv_single_mtp_layer_statements(params, layer_idx, layer_idx_offset))
+
+        return statements
+
+    @classmethod
+    def _get_inv_single_mtp_layer_statements(
+        cls, params: MoEAOAConfigParams, layer_idx: int, layer_idx_offset: int
+    ) -> List[str]:
+        """Generate inverse statements for a single MTP layer. Override for customization."""
+        prefix = f"model.layers.{layer_idx}"
+        prefix_offset = f"{params.model_prefix}layers.{layer_idx_offset}"
+
+        return [
+            f"{prefix_offset}.eh_proj.weight^T -> {prefix}.eh_proj.weight",
+            f"{prefix_offset}.enorm.weight -> {prefix}.enorm.weight",
+            f"{prefix_offset}.hnorm.weight -> {prefix}.hnorm.weight",
+            f"{prefix_offset}.norm.weight -> {prefix}.shared_head.norm.weight",
+        ]
+
+    # ==================== Inverse MoE Layers ====================
+
+    @classmethod
+    def _get_inv_moe_layer_statements(cls, params: MoEAOAConfigParams) -> List[str]:
+        """Generate inverse statements for MoE layers (attention + experts)."""
+        statements = []
+
+        start_layer = params.first_k_dense_replace
+        end_layer = params.num_hidden_layers + params.num_nextn_predict_layers
+
+        # Attention for all layers (including dense layer 0 if first_k_dense_replace > 0)
+        for layer_idx in range(0, end_layer):
+            layer_idx_offset = layer_idx + params.num_head_empty_layers
+            prefix = f"model.layers.{layer_idx}"
+            prefix_offset = f"{params.model_prefix}layers.{layer_idx_offset}"
+            if layer_idx >= params.num_hidden_layers:
+                prefix_offset += ".transformer_layer"
+
+            statements.extend(
+                [
+                    f"{prefix_offset}.input_layernorm.weight -> {prefix}.input_layernorm.weight",
+                    f"{prefix_offset}.post_attention_layernorm.weight -> {prefix}.post_attention_layernorm.weight",
+                    f"{prefix_offset}.self_attn.o_proj.weight^T -> {prefix}.self_attn.o_proj.weight",
+                ]
+            )
+            statements.extend(cls._get_inv_attention_statements(params, layer_idx, prefix, prefix_offset))
+
+        # MoE expert weights for layers from start_layer onward
+        for layer_idx in range(start_layer, end_layer):
+            layer_idx_offset = layer_idx + params.num_head_empty_layers
+            prefix = f"model.layers.{layer_idx}"
+            prefix_offset = f"{params.model_prefix}layers.{layer_idx_offset}"
+            if layer_idx >= params.num_hidden_layers:
+                prefix_offset += ".transformer_layer"
+
+            # Grouped GEMM un-grouping (if applicable)
+            statements.extend(cls._get_inv_grouped_gemm_layer_statements(params, prefix_offset))
+
+            # MoE expert weight inversion
+            statements.extend(cls._get_inv_moe_expert_statements(params, prefix, prefix_offset))
+
+        return statements
+
+    # ==================== Inverse Attention ====================
+
+    @classmethod
+    def _get_inv_attention_statements(
+        cls, params: MoEAOAConfigParams, layer_idx: int, prefix: str, prefix_offset: str
+    ) -> List[str]:
+        """Generate inverse attention-related statements."""
+        if params.multi_latent_attention:
+            return cls._get_inv_mla_attention_statements(params, prefix, prefix_offset)
+        return cls._get_inv_standard_attention_statements(params, prefix, prefix_offset)
+
+    @classmethod
+    def _get_inv_standard_attention_statements(
+        cls, params: MoEAOAConfigParams, prefix: str, prefix_offset: str
+    ) -> List[str]:
+        """Generate inverse standard QKV attention statements.
+
+        Un-fuse qkv_proj back to separate q/k/v projections and transpose each.
+        """
+        statements = [
+            f"{prefix_offset}.self_attn.qkv_proj.weight -> {prefix}.self_attn.q_proj.weight, {prefix}.self_attn.k_proj.weight, {prefix}.self_attn.v_proj.weight, fused_qkv, num_heads={params.num_attention_heads}, num_key_value_groups={params.num_key_value_heads}",
+        ]
+        statements.extend(
+            f"{prefix}.self_attn.{x}_proj.weight^T -> {prefix}.self_attn.{x}_proj.weight" for x in ("q", "k", "v")
+        )
+
+        if params.attention_bias:
+            statements.append(
+                f"{prefix_offset}.self_attn.qkv_proj.bias -> {prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias, fused_qkv, num_heads={params.num_attention_heads}, num_key_value_groups={params.num_key_value_heads}, axis=0"
+            )
+
+        return statements
+
+    @classmethod
+    def _get_inv_mla_attention_statements(
+        cls, params: MoEAOAConfigParams, prefix: str, prefix_offset: str
+    ) -> List[str]:
+        """Generate inverse Multi-Latent Attention (MLA) statements."""
+        statements = [
+            f"{prefix_offset}.self_attn.kv_a_proj_with_mqa.weight^T -> {prefix}.self_attn.kv_a_proj_with_mqa.weight",
+            f"{prefix_offset}.self_attn.kv_b_proj.weight^T -> {prefix}.self_attn.kv_b_proj.weight",
+            f"{prefix_offset}.self_attn.q_a_proj.weight^T -> {prefix}.self_attn.q_a_proj.weight",
+            f"{prefix_offset}.self_attn.q_b_proj.weight^T -> {prefix}.self_attn.q_b_proj.weight",
+        ]
+
+        if params.use_qk_norm:
+            statements.extend(
+                [
+                    f"{prefix_offset}.self_attn.q_a_layernorm.weight -> {prefix}.self_attn.q_a_layernorm.weight",
+                    f"{prefix_offset}.self_attn.kv_a_layernorm.weight -> {prefix}.self_attn.kv_a_layernorm.weight",
+                ]
+            )
+
+        if params.index_n_heads and params.index_n_heads > 0:
+            indexer_weights = [
+                "wq_b",
+                "wk",
+                "weights_proj",
+            ]
+            statements.extend(
+                [
+                    f"{prefix_offset}.self_attn.core_attention.indexer.{weight_name}.weight^T -> {prefix}.self_attn.indexer.{weight_name}.weight"
+                    for weight_name in indexer_weights
+                ]
+            )
+            statements += [
+                f"{prefix_offset}.self_attn.core_attention.indexer.k_norm.bias -> {prefix}.self_attn.indexer.k_norm.bias",
+                f"{prefix_offset}.self_attn.core_attention.indexer.k_norm.weight -> {prefix}.self_attn.indexer.k_norm.weight",
+            ]
+
+        return statements
+
+    # ==================== Inverse MoE Expert Weights ====================
+
+    @classmethod
+    def _get_inv_moe_expert_statements(cls, params: MoEAOAConfigParams, prefix: str, prefix_offset: str) -> List[str]:
+        """Generate inverse MoE expert weight statements."""
+        statements = []
+
+        # Gate weights (cast back to bfloat16)
+        statements.append(f"{prefix_offset}.mlp.gate.weight -> {prefix}.mlp.gate.weight, dtype='bfloat16'")
+        statements.append(
+            f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.mlp.gate.e_score_correction_bias"
+        )
+
+        # Shared experts (if model has them)
+        if params.has_shared_experts:
+            statements.extend(cls._get_inv_shared_expert_statements(params, prefix, prefix_offset))
+
+        # Routed experts
+        statements.extend(cls._get_inv_routed_expert_statements(params, prefix, prefix_offset))
+
+        return statements
+
+    @classmethod
+    def _get_inv_shared_expert_statements(
+        cls, params: MoEAOAConfigParams, prefix: str, prefix_offset: str
+    ) -> List[str]:
+        """Generate inverse shared expert weight statements.
+
+        Un-fuse up_gate_proj back to gate_proj + up_proj, then transpose each.
+        """
+        return [
+            f"{prefix_offset}.mlp.shared_experts.down_proj.weight^T -> {prefix}.mlp.shared_experts.down_proj.weight",
+            f"{prefix_offset}.mlp.shared_experts.up_gate_proj.weight -> {prefix_offset}.mlp.shared_experts.gate_proj.weight, {prefix_offset}.mlp.shared_experts.up_proj.weight, fused_ffn",
+            f"{prefix_offset}.mlp.shared_experts.gate_proj.weight^T -> {prefix}.mlp.shared_experts.gate_proj.weight",
+            f"{prefix_offset}.mlp.shared_experts.up_proj.weight^T -> {prefix}.mlp.shared_experts.up_proj.weight",
+        ]
+
+    @classmethod
+    def _get_inv_routed_expert_statements(
+        cls, params: MoEAOAConfigParams, prefix: str, prefix_offset: str
+    ) -> List[str]:
+        """Generate inverse routed expert weight statements.
+
+        Un-fuse up_gate_proj back to gate_proj + up_proj per expert,
+        then transpose each (unless using_sonic_moe).
+        """
+        statements = []
+
+        # Un-fuse up_gate_proj per expert
+        if params.using_sonic_moe:
+            statements.append(
+                f"{prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> {prefix_offset}.mlp.experts.$EXPERT_ID.gate_proj.weight, {prefix_offset}.mlp.experts.$EXPERT_ID.up_proj.weight, axis=0"
+            )
+        else:
+            statements.append(
+                f"{prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight -> {prefix_offset}.mlp.experts.$EXPERT_ID.gate_proj.weight, {prefix_offset}.mlp.experts.$EXPERT_ID.up_proj.weight, axis=1"
+            )
+
+        # Transpose back (not needed for sonic_moe)
+        if not params.using_sonic_moe:
+            statements.extend(
+                [
+                    f"{prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.down_proj.weight",
+                    f"{prefix_offset}.mlp.experts.$EXPERT_ID.gate_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight",
+                    f"{prefix_offset}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight",
+                ]
+            )
+
+        return statements
+
+    # ==================== Inverse Grouped GEMM ====================
+
+    @classmethod
+    def _get_inv_grouped_gemm_layer_statements(cls, params: MoEAOAConfigParams, prefix_offset: str) -> List[str]:
+        """Generate inverse grouped GEMM statements for a single layer.
+
+        Un-groups the consolidated weight tensors back to per-expert weights.
+        """
+        if (params.moe_expert_fusion or params.using_sonic_moe) and not params.fp8:
+            ep_weight1 = []
+            ep_weight2 = []
+            for expert_id in range(params.num_experts):
+                ep_weight1.append(f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight")
+                ep_weight2.append(f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight")
+            group_gemm1 = ",".join(ep_weight1)
+            group_gemm2 = ",".join(ep_weight2)
+            return [
+                f"{prefix_offset}.mlp.grouped_gemm_experts.weight1 -> {group_gemm1}, axis=0",
+                f"{prefix_offset}.mlp.grouped_gemm_experts.weight2 -> {group_gemm2}, axis=0",
+            ]
+
+        if params.fd_fallback:
+            ep_weight1 = []
+            ep_weight2 = []
+            for expert_id in range(params.num_experts):
+                ep_weight1.append(f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight")
+                ep_weight2.append(f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight")
+            group1 = ",".join(ep_weight1)
+            group2 = ",".join(ep_weight2)
+            return [
+                f"{prefix_offset}.mlp.experts.up_gate_proj -> {group1}, axis=0",
+                f"{prefix_offset}.mlp.experts.down_proj -> {group2}, axis=0",
+            ]
+
+        return []
 
 
 __all__ = [

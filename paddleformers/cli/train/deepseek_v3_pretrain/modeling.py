@@ -453,7 +453,7 @@ class DeepseekV2MoE(MoELayer):
             using_post_norm_recompute=self.using_post_norm_recompute,
         )
 
-        if config.offline_quant_expert_weight and config.clear_origin_weight_when_offline_quant:
+        if config.offline_quant_expert_weight:
             expert_w1_list = [expert.w1 for expert in self.experts if expert is not None]
             expert_w2_list = [expert.w2 for expert in self.experts if expert is not None]
             for p in expert_w1_list:
@@ -2211,6 +2211,16 @@ def rearrange_kv(kv, k_pe, qk_nope_head_dim, num_heads):
     return key_states, value_states
 
 
+@contextlib.contextmanager
+def enable_to_static(value):
+    old_value = paddle.jit.dy2static.program_translator.ProgramTranslator().enable_to_static
+    paddle.jit.enable_to_static(value)
+    try:
+        yield
+    finally:
+        paddle.jit.enable_to_static(old_value)
+
+
 def qkv_pre_process(
     q, kv, k_pe, rotary_emb, num_heads, q_head_dim, qk_nope_head_dim, v_head_dim, qk_rope_head_dim, position_ids
 ):
@@ -2248,7 +2258,8 @@ def qkv_pre_process(
     query_states = fused_partial_rope(q, cos, sin)
     k_pe = fused_partial_rope(k_pe, cos, sin)
 
-    key_states, value_states = rearrange_kv(kv, k_pe, qk_nope_head_dim, num_heads)
+    with enable_to_static(True):
+        key_states, value_states = rearrange_kv(kv, k_pe, qk_nope_head_dim, num_heads)
 
     return query_states, key_states, value_states
 

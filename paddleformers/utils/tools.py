@@ -19,6 +19,23 @@ from .import_utils import is_paddle_available
 from .log import logger
 
 
+def dispatch_to(dispatch_fn, *, cond=None):
+
+    if cond is None:
+        cond = lambda self, *args, **kwargs: True  # noqa: E731
+
+    def decorator(fn):
+        def wrapper(*args, **kwargs):
+            if cond(*args, **kwargs):
+                return dispatch_fn(*args, **kwargs)
+            return fn(*args, **kwargs)
+
+        wrapper.__original_fn__ = fn
+        return wrapper
+
+    return decorator
+
+
 def static_params_to_dygraph(model, static_tensor_dict):
     """Simple tool for convert static parameters to dygraph parameters dict.
 

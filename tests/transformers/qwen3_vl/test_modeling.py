@@ -979,7 +979,7 @@ class Qwen3VLCompatibilityTest(unittest.TestCase):
                 )
             )
 
-    @parameterized.expand([("Qwen3VLForConditionalGeneration")])
+    @parameterized.expand(["Qwen3VLForConditionalGeneration"])
     @require_package("transformers", "torch")
     def test_Qwen3VL_classes_from_local_dir(self, class_name, pytorch_class_name: str | None = None):
         pytorch_class_name = pytorch_class_name or class_name

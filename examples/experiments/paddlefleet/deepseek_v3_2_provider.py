@@ -130,7 +130,7 @@ class DeepSeekV3_2BaseProvider(GPTModelProvider):
     moe_token_dispatcher_type: str = "deepep"
     moe_router_load_balancing_type: str = "seq_aux_loss"
     moe_router_pre_softmax: bool = False
-    moe_grouped_gemm: bool = False
+    moe_expert_fusion: bool = False
     moe_shared_expert_overlap: bool = True
     moe_router_dtype: str = "fp32"
     moe_router_enable_expert_bias: bool = True

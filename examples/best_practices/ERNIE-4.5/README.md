@@ -150,7 +150,7 @@ fi
 export PYTHONPATH=$PYTHONPATH:./ernie
 ```
 
-* 以上单机多机配置需每卡至少 80G 显存，配置中默认开启 offload_optim，会对性能造成影响
+* 以上单机多机配置需每卡至少 80G 显存，配置中默认开启 tensorwise_offload_optimizer，会对性能造成影响
 * 更详细的分布式启动命令请参考[这里](https://www.paddlepaddle.org.cn/documentation/docs/zh/3.3/api/paddle/distributed/launch_cn.html)
 
 ## 3.5. 权重存取
@@ -189,5 +189,5 @@ max_steps: 1  # 设为1（或任何小于已训练步数的值）表示不进行
 |名称|简介|影响效果|
 |-|-|-|
 |use_fp8_mlpuse_fp8_fuse_node|是否使用 FP8 算子（这两个参数需要同时设为 true 或 false）|FP8 算子通过使用低精度运算有效提高性能，默认为 true；但部分环境可能存在 FP8 兼容性问题，如果遇到 FP8 算子报错，可以将这两个参数设置为 false|
-|offload_optim|是否将优化器参数卸载到 CPU 上|设为 true 会将优化器状态卸载到 CPU 上，并仅在优化器步骤时装载回 GPU，可以节约显存，但会产生拷贝开销，默认为 true；当你使用足够多卡数或足够大的显存时，可以设为 false 以提高性能|
+|tensorwise_offload_optimizer|是否将优化器参数卸载到 CPU 上|设为 true 会将优化器状态逐张量卸载到 CPU 上，仅在每个参数更新时装载回 GPU，可以节约显存，但会产生拷贝开销，默认为 false；当你使用足够多卡数或足够大的显存时，可以设为 false 以提高性能|
 |use_recompute|是否使用重计算|重计算可以释放前向的部分中间结果并在反向时重新计算，从而节省显存，但会增加反向开销，默认为 false；如果你的显存预算较紧张，可以设为 true|

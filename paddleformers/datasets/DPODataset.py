@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 import numpy as np
-from paddle.io import IterableDataset
+from paddle.io import Dataset, IterableDataset
 
 from paddleformers.datasets.data_utils import (
     get_worker_sliced_iterator,
@@ -51,7 +51,7 @@ class Sequence:
     mm_inputs: Dict = field(default_factory=dict)
 
 
-class DPODataSet(IterableDataset):
+class BaseDPODataSet:
     def __init__(self, **dataset_config):
 
         # parameter init
@@ -59,15 +59,15 @@ class DPODataSet(IterableDataset):
         self.processor = dataset_config.get("processor", None)
         self.max_seq_len = dataset_config.get("max_seq_len", 8192)
         self.template = dataset_config.get("template_instance", None)
-        self.use_attn_mask_startend_row_indices = dataset_config.get("use_attn_mask_startend_row_indices", True)
         self.template_backend = dataset_config.get("template_backend", "jinja")
+        self.efficient_eos = True if not self.template else getattr(self.template, "efficient_eos", True)
         self.split_multi_turn = dataset_config.get("split_multi_turn", False)
-        self.is_valid = dataset_config.get("is_valid", False)
         self.packing = dataset_config.get("packing", False)
         self.greedy_intokens = dataset_config.get("greedy_intokens", True)
         self.buffer_size = dataset_config.get("buffer_size", 500)
-        self.efficient_eos = True if not self.template else getattr(self.template, "efficient_eos", True)
         self.use_filtered_label_loss = dataset_config.get("use_filtered_label_loss", False)
+        self.use_attn_mask_startend_row_indices = dataset_config.get("use_attn_mask_startend_row_indices", True)
+        self.is_valid = dataset_config.get("is_valid", False)
 
         # data loader + multisource dataset mix
         if self.is_valid:
@@ -90,7 +90,7 @@ class DPODataSet(IterableDataset):
     def __len__(self):
         return len(self.mix_datasets)
 
-    def __iter_func(self):
+    def _generate_sequences(self):
 
         # prepare epoch data
         batch_sequence, cur_len = [], 0
@@ -156,17 +156,6 @@ class DPODataSet(IterableDataset):
                     sequence_pack = self._generate_greedy_packs(sequence_buffer)
                     for pack in sequence_pack:
                         yield pack
-
-    def __iter__(self):
-        """
-        Rewrite the __iter__ method to implement dataset iteration.
-        Each iteration returns a Sequence-type element.
-        """
-        if self.is_valid:
-            yield from self.__iter_func()
-        else:
-            while True:
-                yield from self.__iter_func()
 
     def _generate_greedy_packs(self, sequences):
         """Generate packed sequences using greedy strategy.
@@ -501,3 +490,30 @@ class DPODataSet(IterableDataset):
             audios=example.get("audios", []),
             mm_inputs=mm_inputs,
         )
+
+
+class IteratorDPODataset(BaseDPODataSet, IterableDataset):
+    def __init__(self, **dataset_config):
+        super().__init__(**dataset_config)
+
+    def __iter__(self):
+        if self.is_valid:
+            yield from self._generate_sequences()
+        else:
+            while True:
+                yield from self._generate_sequences()
+
+
+class MapDPODataset(BaseDPODataSet, Dataset):
+    def __init__(self, **dataset_config):
+        super().__init__(**dataset_config)
+        self.new_data = []
+        for batch in self._generate_sequences():
+            self.new_data.append(batch)
+        logger.info(f"[DPOMapDataset] Total batches: {len(self.new_data)}")
+
+    def __len__(self):
+        return len(self.new_data)
+
+    def __getitem__(self, idx):
+        return self.new_data[idx]

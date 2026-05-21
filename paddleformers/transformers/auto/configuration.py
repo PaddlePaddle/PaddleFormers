@@ -40,6 +40,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
         ("paddleocr_vl", "PaddleOCRVLConfig"),
         ("llama", "LlamaConfig"),
+        ("kimi_k2", "KimiK2Config"),
         ("qwen2", "Qwen2Config"),
         ("qwen2_5_vl", "Qwen2_5_VLConfig"),
         ("qwen2_5_vl_text", "Qwen2_5_VLTextConfig"),
@@ -52,10 +53,15 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("qwen3_vl_moe", "Qwen3VLMoeConfig"),
         ("qwen3_vl_moe_text", "Qwen3VLMoeTextConfig"),
         ("glm4_moe", "Glm4MoeConfig"),
+        ("glm_moe_dsa", "GlmMoeDsaConfig"),
+        ("minimax_m2", "MiniMaxM2Config"),
         ("gpt_oss", "GptOssConfig"),
         ("phi3", "Phi3Config"),
         ("gemma3_text", "Gemma3TextConfig"),
         ("glm4v_moe", "Glm4vMoeConfig"),
+        ("glm_ocr", "GlmOcrConfig"),
+        ("qwen3_5", "Qwen3_5Config"),
+        ("qwen3_5_moe", "Qwen3_5MoEConfig"),
     ]
 )
 
@@ -81,6 +87,9 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_vl_text", "Qwen3VL"),
         ("qwen3_vl_moe", "Qwen3VLMoe"),
         ("qwen3_vl_moe_text", "Qwen3VLMoeText"),
+        ("glm_ocr", "GlmOcrForConditionalGeneration"),
+        ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
+        ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
     ]
 )
 

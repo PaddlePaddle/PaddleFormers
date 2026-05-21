@@ -29,6 +29,11 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
 )
 from paddle.incubate.nn.functional import fused_rotary_position_embedding as fused_rope
 
+from paddleformers.triton_kernels import (
+    apply_rotary_pos_emb_vision as apply_rotary_pos_emb_vision_triton,
+)
+from paddleformers.utils.tools import dispatch_to
+
 from ...generation import GenerationMixin
 from ...nn.activation import ACT2FN
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
@@ -87,17 +92,18 @@ def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim
     return q_embed, k_embed
 
 
-@paddle.jit.marker.unified
+@dispatch_to(apply_rotary_pos_emb_vision_triton, cond=apply_rotary_pos_emb_vision_triton.is_available)
 def apply_rotary_pos_emb_vision(q, k, cos, sin):
     """Applies Rotary Position Embedding to the query and key tensors."""
     orig_q_dtype = q.dtype
     orig_k_dtype = k.dtype
-    with paddle.amp.auto_cast(False):
-        q, k = q.astype(dtype="float32"), k.astype(dtype="float32")
-        cos, sin = cos.unsqueeze(-2).astype(dtype="float32"), sin.unsqueeze(-2).astype(dtype="float32")
-        q_embed = (q * cos) + (rotate_half(q) * sin)
-        k_embed = (k * cos) + (rotate_half(k) * sin)
-        return q_embed.astype(orig_q_dtype), k_embed.astype(orig_k_dtype)
+    cos = cos.tile((1, 2))
+    sin = sin.tile((1, 2))
+    q, k = q.astype(dtype="float32"), k.astype(dtype="float32")
+    cos, sin = cos.unsqueeze(-2).astype(dtype="float32"), sin.unsqueeze(-2).astype(dtype="float32")
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed.astype(orig_q_dtype), k_embed.astype(orig_k_dtype)
 
 
 def apply_fused_rope(query_states, key_states, rope_theta):
@@ -228,6 +234,10 @@ class PaddleOCRVisionEmbeddings(nn.Layer):
         self.num_positions = self.num_patches
         self.position_embedding = GeneralEmbedding.create(
             config=config, num_embeddings=self.num_positions, embedding_dim=self.embed_dim
+        )
+        # revert packing_position_embedding for vLLM inference compatibility
+        self.packing_position_embedding = GeneralEmbedding.create(
+            config=config, num_embeddings=32768, embedding_dim=self.embed_dim
         )
 
         self.register_buffer(
@@ -517,7 +527,6 @@ class PaddleOCREncoder(nn.Layer):
             cu_seqlens=cu_seqlens,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             rope_emb=rope_emb,
-            preserve_external_rng_state=False,
         )
         return hidden_states
 
@@ -579,7 +588,7 @@ class PaddleOCREncoder(nn.Layer):
             )  # TODO: Pre-compute RoPE embeddings by specifying a static `max_grid_size` during initialization to avoid redundant computation on the fly.
 
             rope_emb = rope_emb_max_grid[pids].flatten(1)
-            rope_emb = (rope_emb.cos().tile((1, 2)), rope_emb.sin().tile((1, 2)))
+            rope_emb = (rope_emb.cos(), rope_emb.sin())
 
         if cu_seqlens is not None and attention_mask is None:
             seq_ends = cu_seqlens[1:]
@@ -1349,6 +1358,7 @@ class Ernie4_5PretrainedModel(PretrainedModel):
             f"visual.vision_model.embeddings.patch_embedding.weight -> {visual_prefix}embeddings.patch_embedding.weight",
             f"visual.vision_model.embeddings.patch_embedding.bias -> {visual_prefix}embeddings.patch_embedding.bias",
             f"visual.vision_model.embeddings.position_embedding.weight -> {visual_prefix}embeddings.position_embedding.weight",
+            f"visual.vision_model.embeddings.packing_position_embedding.weight -> {visual_prefix}embeddings.packing_position_embedding.weight",
             f"visual.vision_model.encoder.layers.$LAYER_ID.self_attn.out_proj.weight^T -> {visual_prefix}encoder.layers.$LAYER_ID.self_attn.out_proj.weight",
             f"visual.vision_model.encoder.layers.$LAYER_ID.self_attn.out_proj.bias -> {visual_prefix}encoder.layers.$LAYER_ID.self_attn.out_proj.bias",
             f"visual.vision_model.encoder.layers.$LAYER_ID.layer_norm1.weight -> {visual_prefix}encoder.layers.$LAYER_ID.layer_norm1.weight",
@@ -1431,6 +1441,7 @@ class Ernie4_5PretrainedModel(PretrainedModel):
             f"{visual_prefix}embeddings.patch_embedding.weight -> visual.vision_model.embeddings.patch_embedding.weight",
             f"{visual_prefix}embeddings.patch_embedding.bias -> visual.vision_model.embeddings.patch_embedding.bias",
             f"{visual_prefix}embeddings.position_embedding.weight -> visual.vision_model.embeddings.position_embedding.weight",
+            f"{visual_prefix}embeddings.packing_position_embedding.weight -> visual.vision_model.embeddings.packing_position_embedding.weight",
             f"{visual_prefix}encoder.layers.$LAYER_ID.self_attn.out_proj.weight^T -> visual.vision_model.encoder.layers.$LAYER_ID.self_attn.out_proj.weight",
             f"{visual_prefix}encoder.layers.$LAYER_ID.self_attn.out_proj.bias -> visual.vision_model.encoder.layers.$LAYER_ID.self_attn.out_proj.bias",
             f"{visual_prefix}encoder.layers.$LAYER_ID.layer_norm1.weight -> visual.vision_model.encoder.layers.$LAYER_ID.layer_norm1.weight",
@@ -1550,7 +1561,6 @@ class Ernie4_5Model(Ernie4_5PretrainedModel):
             output_attentions,
             past_key_values,
             use_cache,
-            preserve_external_rng_state=False,
         )
         return hidden_states
 

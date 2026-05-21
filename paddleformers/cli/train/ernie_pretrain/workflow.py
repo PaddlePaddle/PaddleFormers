@@ -351,22 +351,16 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
         logger.warning("disabling `partial_send_recv` when using sequence parallel")
         training_args.partial_send_recv = False
 
-    if getattr(training_args, "bf16", False) and not getattr(training_args, "pp_delay_scale_loss", False):
-        logger.warning(
-            "It is recommended to enable pp_delay_scale_loss for better performance "
-            "of precision when using bf16 in training"
-        )
-        training_args.pp_delay_scale_loss = True
+    training_args.pp_delay_scale_loss = True
 
     if getattr(training_args, "dp_comm_overlap", False):
         logger.warning("Pipeline dp_comm_overlap and FusedLinearWithGradAdd can not be used at the same time.")
 
-    if getattr(training_args, "timer", False):
-        from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
-            PipelineParallel,
-        )
+    from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
+        PipelineParallel,
+    )
 
-        PipelineParallel.timer_printer = lambda _: None
+    PipelineParallel.timer_printer = lambda _: None
 
     def formatv(v):
         if isinstance(v, ListConfig):

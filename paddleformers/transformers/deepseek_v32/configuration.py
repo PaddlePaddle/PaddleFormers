@@ -56,6 +56,8 @@ class DeepseekV32Config(PretrainedConfig):
         qk_rope_head_dim=64,
         v_head_dim=128,
         head_dim=None,
+        multi_latent_attention=True,
+        use_qk_norm=True,
         # DSA Indexer parameters (field names match HF config.json)
         index_n_heads=64,
         index_head_dim=128,
@@ -110,6 +112,8 @@ class DeepseekV32Config(PretrainedConfig):
         # head_dim must equal v_head_dim for MLA: o_proj input size = num_heads * head_dim,
         # and the attention output per head = v_head_dim.
         self.head_dim = head_dim if head_dim is not None else v_head_dim
+        self.multi_latent_attention = multi_latent_attention
+        self.use_qk_norm = use_qk_norm
 
         # DSA Indexer
         self.index_n_heads = index_n_heads

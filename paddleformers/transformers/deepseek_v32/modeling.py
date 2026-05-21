@@ -47,7 +47,7 @@ class DeepseekV32PreTrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_inv_aoa_config(cls, config: DeepseekV32Config):
-        return None
+        return MoEAOAConfigGenerator.gen_inv_aoa_config(config)
 
 
 def _build_model(config):
