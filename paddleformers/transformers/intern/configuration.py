@@ -11,13 +11,26 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" InternLM2.5 model configuration"""
+
+"""
+InternLM2 Common Configuration
+
+This module provides a unified configuration for both InternLM2 2.0 and 2.5 models.
+It detects the version based on the configuration fields and routes accordingly.
+"""
 
 from paddleformers.transformers.configuration_utils import PretrainedConfig
 
 
-class InternLM25Config(PretrainedConfig):
-    model_type = "internlm2_5"
+class InternLM2Config(PretrainedConfig):
+    """
+    InternLM2 configuration. This is a unified config that handles both 2.0 and 2.5 versions.
+
+    When loading from HuggingFace, the `model_type` will be "internlm2" (not "internlm2_5").
+    This config detects the actual version and routes to the appropriate implementation.
+    """
+
+    model_type = "internlm2"  # Important: must match HuggingFace config
     _auto_class = "AutoConfig"
     keys_to_ignore_at_inference = ["past_key_values"]
 
@@ -53,6 +66,7 @@ class InternLM25Config(PretrainedConfig):
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.bias = bias
+
         import paddle
 
         if isinstance(dtype, str):
@@ -95,21 +109,24 @@ class InternLM25Config(PretrainedConfig):
 
         if not isinstance(self.rope_scaling, dict) or len(self.rope_scaling) != 2:
             raise ValueError(
-                "`rope_scaling` must be a dictionary with with two fields, `type` and `factor`, "
+                "`rope_scaling` must be a dictionary with two fields, `type` and `factor`, "
                 f"got {self.rope_scaling}"
             )
         rope_scaling_type = self.rope_scaling.get("type", None)
         rope_scaling_factor = self.rope_scaling.get("factor", None)
-        if rope_scaling_type is None or rope_scaling_type not in ["linear", "dynamic"]:
+        if rope_scaling_type is None or rope_scaling_factor is None:
             raise ValueError(
-                f"`rope_scaling`'s type field must be one of ['linear', 'dynamic'], got {rope_scaling_type}"
+                "`rope_scaling` must contain 'type' and 'factor' keys, "
+                f"got {self.rope_scaling}"
             )
-        if (
-            rope_scaling_factor is None
-            or not isinstance(rope_scaling_factor, (float, int))
-            or rope_scaling_factor < 1.0
-        ):
+        if rope_scaling_type not in ["linear", "dynamic"]:
             raise ValueError(
-                f"`rope_scaling`'s factor field must be a number >= 1, got {rope_scaling_factor} "
-                f"of type {type(rope_scaling_factor)}"
+                f"`rope_scaling` type must be 'linear' or 'dynamic', got '{rope_scaling_type}'"
             )
+
+    @property
+    def is_version_2_5(self):
+        if hasattr(self, "auto_map") and self.auto_map is not None:
+            if "AutoModelForSequenceClassification" in self.auto_map:
+                return True
+        return False

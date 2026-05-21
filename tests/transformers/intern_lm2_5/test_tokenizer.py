@@ -1,5 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2020 The HuggingFace Team. All rights reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,20 +11,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os
 import tempfile
 import unittest
 
 from paddleformers.transformers import InternLM25Tokenizer
 
-model_path = "learncat/internlm2_5-1_8b-chat-paddle"
+model_path = "Shanghai_AI_Laboratory/internlm2_5-1_8b-chat"
 
 
 class TestTokenizer(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            cls.tokenizer = InternLM25Tokenizer.from_pretrained(model_path)
+            cls.tokenizer = InternLM25Tokenizer.from_pretrained(model_path, download_hub="modelscope")
         except Exception:
             cls.tokenizer = None
 

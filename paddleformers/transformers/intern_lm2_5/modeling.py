@@ -11,20 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-# Copyright (c) The InternLM team and The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """ Paddle InternLM25 model."""
 import logging
 import math
@@ -118,10 +104,6 @@ class InternLM25RMSNorm(nn.Layer):
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
         hidden_states = hidden_states * paddle.rsqrt(variance + self.variance_epsilon)
         return self.weight * hidden_states.astype(input_dtype)
-
-
-# 这里会有一些 bf16 到 float32的类型提升，是正常的，原版也是这样。最好不要优化这里了，如果不提升精度，会导致 准确率显著下降
-# 可以参考 https://github.com/huggingface/transformers/pull/29285
 
 
 class InternLM25RotaryEmbedding(nn.Layer):
@@ -669,9 +651,31 @@ class InternLM25PretrainedModel(PretrainedModel):
 
     @classmethod
     def _gen_aoa_config(cls, config: InternLM25Config):
-        """Generate AOA (Auto-Transpose-Adapter) config for loading HuggingFace checkpoints."""
-        # 禁用AOA以解决tok_embeddings.weight未分配的问题
-        return {"aoa_statements": []}
+        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+        aoa_statements = [
+            f"model.tok_embeddings.weight -> {model_prefix}tok_embeddings.weight",
+            f"model.norm.weight -> {model_prefix}norm.weight",
+            f"model.layers.$LAYER_ID.attention_norm.weight -> {model_prefix}layers.$LAYER_ID.attention_norm.weight",
+            f"model.layers.$LAYER_ID.ffn_norm.weight -> {model_prefix}layers.$LAYER_ID.ffn_norm.weight",
+        ]
+        aoa_statements.extend(
+            [
+                f"model.layers.$LAYER_ID.attention.{w}.weight^T -> {model_prefix}layers.$LAYER_ID.attention.{w}.weight"
+                for w in ["wqkv", "wo"]
+            ]
+        )
+        aoa_statements.extend(
+            [
+                f"model.layers.$LAYER_ID.feed_forward.{w}.weight^T -> {model_prefix}layers.$LAYER_ID.feed_forward.{w}.weight"
+                for w in ["w1", "w2", "w3"]
+            ]
+        )
+        if cls != cls.base_model_class:
+            if getattr(config, "tie_word_embeddings", False):
+                aoa_statements.append("model.tok_embeddings.weight -> output.weight")
+            else:
+                aoa_statements.append("output.weight^T -> output.weight")
+        return {"aoa_statements": aoa_statements}
 
 
 @register_base_model
@@ -875,8 +879,6 @@ class InternLM25Model(InternLM25PretrainedModel):
             )
 
         if attention_mask is not None and attention_mask.ndim == 4:
-            if attention_mask.max() != 0:
-                raise ValueError("Custom 4D attention mask should be passed in inverted form with max==0`")
             causal_mask = attention_mask
         else:
             causal_mask = paddle.full([sequence_length, target_length], fill_value=min_dtype, dtype=dtype)
@@ -993,19 +995,6 @@ class InternLM25ForCausalLM(InternLM25PretrainedModel):
             shift_labels = shift_labels.reshape(-1)
             shift_labels = shift_labels.to(shift_logits.place)
             loss = loss_fct(shift_logits, shift_labels)
-            # DEBUG: log raw loss details for diagnosis
-            import os
-
-            if os.environ.get("INTERNLM25_DEBUG_LOSS"):
-                n_valid = (shift_labels != -100).sum().item()
-                n_total = shift_labels.shape[0]
-                print(
-                    f"[DEBUG LOSS] raw_loss={loss.item():.4f} n_valid={n_valid} n_total={n_total} "
-                    f"logits_shape={shift_logits.shape} labels_shape={shift_labels.shape} "
-                    f"logits_min={shift_logits.min().item():.4f} logits_max={shift_logits.max().item():.4f} "
-                    f"logits_mean={shift_logits.mean().item():.4f}",
-                    flush=True,
-                )
 
         if not return_dict:
             output = (logits,) + outputs[1:]

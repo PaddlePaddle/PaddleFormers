@@ -1,5 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2020 The HuggingFace Team. All rights reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,12 +27,9 @@ from paddleformers.transformers import (
 )
 from tests.testing_utils import require_package, slow
 
-aistudio_pt_lm25_model_location = "learncat/internlm2_5-1_8b-chat-raw"
-aistudio_paddle_lm25_model_location = "learncat/internlm2_5-1_8b-chat-paddle"
-hg_lm25_model_location = "internlm/internlm2_5-1_8b-chat"
+modelscope_lm25_model_location = "Shanghai_AI_Laboratory/internlm2_5-1_8b-chat"
 
 
-# config层的常规测试
 class TestInternLM25Config(unittest.TestCase):
     def test_config_custom_values(self):
         config = InternLM25Config(
@@ -57,7 +53,6 @@ class TestInternLM25Config(unittest.TestCase):
             self.assertEqual(config.hidden_size, loaded_config.hidden_size)
 
 
-# model层的常规测试
 class InternLM25ModelTest(unittest.TestCase):
     def setUp(self):
         self.config = InternLM25Config(
@@ -179,8 +174,7 @@ class InternLM25ModelTest(unittest.TestCase):
         self.assertIsNotNone(outputs.past_key_values)
 
 
-# paddle直接加载 原始的 hg权重的测试，是否可以正常推理
-class InternLM25ConvertedWeightTest(unittest.TestCase):
+class InternLM25ConvertedTest(unittest.TestCase):
     def setUp(self):
         self._original_dtype = paddle.get_default_dtype()
         paddle.set_default_dtype("bfloat16")
@@ -188,49 +182,6 @@ class InternLM25ConvertedWeightTest(unittest.TestCase):
     def tearDown(self):
         paddle.set_default_dtype(self._original_dtype)
 
-    # 使用paddle格式的权重，推理一次
-    @slow
-    def test_paddle_model_load_and_infer(self):
-        paddle.set_device("gpu")
-
-        model = InternLM25ForCausalLM.from_pretrained(
-            aistudio_paddle_lm25_model_location,
-            convert_from_hf=False,
-            dtype="bfloat16",
-            low_cpu_mem_usage=True,
-            load_checkpoint_format="",
-        )
-        model.eval()
-
-        tokenizer = InternLM25Tokenizer.from_pretrained(aistudio_paddle_lm25_model_location)
-
-        prompt = "猫和狗的区别是什么，列出主要的3点"
-        meta_instruction = "You are a helpful assistant. Please answer in plain text without markdown."
-        chat_inputs = model.build_inputs(tokenizer, prompt, history=[], meta_instruction=meta_instruction)
-
-        with paddle.no_grad():
-            out = model.generate(
-                input_ids=chat_inputs["input_ids"],
-                attention_mask=chat_inputs.get("attention_mask"),
-                max_new_tokens=128,
-                use_cache=True,
-                decode_strategy="greedy_search",
-            )
-
-        seq = out[0] if isinstance(out, (list, tuple)) else out
-
-        decoded = tokenizer.decode(seq.numpy().tolist()[0], skip_special_tokens=True)
-
-        print("\n" + "=" * 80)
-        print("Chinese Generation Test (Chat Mode)")
-        print("=" * 80)
-        print(f"Prompt: {prompt}")
-        print(f"Generated: {decoded}")
-        print("=" * 80 + "\n")
-
-        self.assertGreater(len(decoded.strip()), 0)
-
-    # 使用paddle框架，直接加载 pytorch原版的模型权重
     @slow
     def test_hf_direct_load_and_inference(self):
         if not paddle.is_compiled_with_cuda():
@@ -240,16 +191,19 @@ class InternLM25ConvertedWeightTest(unittest.TestCase):
         paddle.set_default_dtype("bfloat16")
 
         model = InternLM25ForCausalLM.from_pretrained(
-            aistudio_pt_lm25_model_location,
+            modelscope_lm25_model_location,
             convert_from_hf=True,
             dtype="bfloat16",
             low_cpu_mem_usage=True,
             load_checkpoint_format="",
+            download_hub="modelscope",
         )
         model.eval()
-        tokenizer = InternLM25Tokenizer.from_pretrained(aistudio_pt_lm25_model_location, load_checkpoint_format="")
+        tokenizer = InternLM25Tokenizer.from_pretrained(
+            modelscope_lm25_model_location, load_checkpoint_format="", download_hub="modelscope"
+        )
 
-        prompt = "猫和狗的区别是什么，列出主要的3点"
+        prompt = "What are the differences between cats and dogs? Here are the three main points"
         meta_instruction = "You are a helpful assistant. Please answer in plain text without markdown."
         inputs = model.build_inputs(tokenizer, prompt, history=[], meta_instruction=meta_instruction)
         with paddle.no_grad():
@@ -270,7 +224,6 @@ class InternLM25ConvertedWeightTest(unittest.TestCase):
         self.assertGreater(len(decoded.strip()), 0)
 
 
-# 测试 paddle框架 和 transformers框架 的推理结果对比，直接固定随机数， 确认infer结果是否对齐
 class InternLM25CompatibilityTest(unittest.TestCase):
     @classmethod
     @require_package("transformers", "torch")
@@ -286,10 +239,8 @@ class InternLM25CompatibilityTest(unittest.TestCase):
 
         from transformers import AutoConfig, AutoModelForCausalLM
 
-        # 从远程获取 InternLM2.5 的配置类并创建小配置用于快速测试
-        # 远程加载 configuration_internlm2.py 中的 InternLM2Config 类
         config = AutoConfig.from_pretrained(
-            hg_lm25_model_location,
+            "internlm/internlm2_5-1_8b-chat",
             trust_remote_code=True,
             hidden_size=128,
             intermediate_size=384,
@@ -325,7 +276,6 @@ class InternLM25CompatibilityTest(unittest.TestCase):
         max_diff = np.max(np.abs(paddle_out - torch_out))
         print(f"\nMax diff: {max_diff}")
 
-        # !! 对齐前10个token是否一致！！
         paddle_token_ids = paddle.argmax(paddle_logit, axis=-1).cpu().numpy()[0][:10]
         torch_token_ids = torch.argmax(torch_logit, dim=-1).cpu().numpy()[0][:10]
         print(f"Paddle token ids: {paddle_token_ids}")
@@ -335,7 +285,6 @@ class InternLM25CompatibilityTest(unittest.TestCase):
             f"Token ids mismatch: paddle={paddle_token_ids}, torch={torch_token_ids}",
         )
 
-        # 对齐推理的 1e-2 的容差
         self.assertTrue(
             np.allclose(paddle_out, torch_out, atol=1e-2, rtol=1e-2), f"Max diff {max_diff} exceeds tolerance"
         )

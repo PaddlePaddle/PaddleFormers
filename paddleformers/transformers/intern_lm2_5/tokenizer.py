@@ -1,5 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2020 The HuggingFace Team. All rights reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,7 +30,6 @@ VOCAB_FILES_NAMES = {"vocab_file": "tokenizer.model"}
 
 class InternLM25Tokenizer(PretrainedTokenizer):
     resource_files_names = VOCAB_FILES_NAMES
-    # PretrainedTokenizer.from_pretrained() uses vocab_files_names to locate vocab files
     vocab_files_names = VOCAB_FILES_NAMES
     model_input_names = ["input_ids", "attention_mask"]
 
@@ -176,9 +174,6 @@ class InternLM25Tokenizer(PretrainedTokenizer):
             return len(token_ids_0 + eos) * [0]
         return len(token_ids_0 + eos + token_ids_1 + eos) * [0]
 
-    # 全参微调的时候，会调用到;
-    # 不要觉得没人调用，就删掉，因为 原版的transformers没有集成lm25的实现；
-    # 如果强行 使用 warp_tokenizer 会很多棘手问题处理，这里 直接借鉴了hg上原版的lm25的逻辑
     def encode(
         self,
         text: None = None,
