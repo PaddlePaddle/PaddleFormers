@@ -194,3 +194,13 @@ class DataArguments:
         default=None,
         metadata={"help": "Multimodal plugin name (e.g. 'qwen2_vl'). Auto-detect from model type if None."},
     )
+    online: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Whether to load dataset from online/network source (e.g. HuggingFace Hub) "
+                "instead of local files. When True, data is fetched from network. "
+                "When False (default), data is loaded from local paths specified in train_dataset_path."
+            )
+        },
+    )

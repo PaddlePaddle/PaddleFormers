@@ -38,6 +38,7 @@ from paddleformers.cli.utils.process import add_new_special_tokens
 from paddleformers.datasets_v2 import (
     EncodeConfig,
     LazyEncodeDataset,
+    StreamingDataset,
     encode_pt,
     encode_sft,
     get_template,
@@ -175,6 +176,27 @@ def run_sft_v2(
     model_config._attn_implementation = model_args._attn_implementation
     model_config.is_lora = model_args.lora
 
+    # MTP: extend model seq_length to accommodate extra prediction tokens
+    num_nextn_predict_layers = getattr(training_args, "num_nextn_predict_layers", 0)
+    if num_nextn_predict_layers > 0:
+        model_config.seq_length = data_args.max_seq_len + num_nextn_predict_layers
+        model_config.max_sequence_length = data_args.max_seq_len + num_nextn_predict_layers
+
+    # Autoregressive MTP training: swap mtp_num_layers and num_nextn_predict_layers
+    if getattr(model_config, "mtp_num_layers", 0) > 1:
+        tmp = model_config.mtp_num_layers
+        model_config.mtp_num_layers = model_config.num_nextn_predict_layers
+        model_config.num_nextn_predict_layers = tmp
+        tmp = training_args.mtp_num_layers
+        training_args.mtp_num_layers = training_args.num_nextn_predict_layers
+        training_args.num_nextn_predict_layers = tmp
+        num_nextn_predict_layers = training_args.num_nextn_predict_layers
+        logger.info(
+            f"MTP args swapped for autoregressive mtp training: "
+            f"mtp_num_layers={model_config.mtp_num_layers}, "
+            f"num_nextn_predict_layers={model_config.num_nextn_predict_layers}"
+        )
+
     logger.info(f"Final model config: {model_config}")
     logger.info("Loading model...")
 
@@ -242,30 +264,83 @@ def run_sft_v2(
     train_dataset = None
     eval_dataset = None
     num_proc = getattr(data_args, "dataset_num_proc", 1)
+    # dataset_type 控制数据集加载模式:
+    #   iterable → streaming=True, 不下载到本地, 逐条从网络拉取(IterableDataset)
+    #   map      → streaming=False, 下载到HF cache后全量加载(MapDataset, 支持随机访问)
+    is_iterable = getattr(data_args, "dataset_type", "map") == "iterable"
 
-    if training_args.do_train and training_args.should_load_dataset:
-        hf_ds = v2_load_dataset(data_args.train_dataset_path, num_proc=num_proc)
-
-        # Auto-split: if eval path is same as train or not set, split from train
-        need_auto_split = training_args.do_eval and (
-            not data_args.eval_dataset_path or data_args.eval_dataset_path == data_args.train_dataset_path
+    if is_iterable and getattr(data_args, "packing", False):
+        raise ValueError(
+            "packing/binpacking is not supported with dataset_type='iterable'. "
+            "Bin-packing requires knowing all sample lengths upfront, which is incompatible "
+            "with streaming (iterable) datasets. Please set dataset_type='map' to use packing, "
+            "or disable packing for streaming mode."
         )
 
-        if need_auto_split:
-            from paddleformers.datasets_v2 import split_dataset
+    if training_args.do_train and training_args.should_load_dataset:
+        if is_iterable:
+            if training_args.max_steps <= 0:
+                raise ValueError("dataset_type=iterable requires --max_steps to be explicitly set (no len available).")
 
-            hf_ds, hf_eval_ds = split_dataset(hf_ds, test_ratio=0.1, shuffle=True, seed=training_args.seed)
-            eval_dataset = LazyEncodeDataset(hf_eval_ds, encode_fn, seed=training_args.seed)
-            logger.info(f"[datasets_v2] Auto-split: train={len(hf_ds)}, eval={len(hf_eval_ds)}")
+            # dataset_type=iterable → HF streaming=True，无论在线离线都返回 IterableDataset
+            hf_ds = v2_load_dataset(data_args.train_dataset_path, streaming=True, num_proc=1)
 
-        train_dataset = LazyEncodeDataset(hf_ds, encode_fn, seed=training_args.seed)
-        logger.info(f"[datasets_v2] Train dataset loaded: {len(train_dataset)} samples")
+            # Use HF IterableDataset.map() for lazy encoding
+            def _streaming_encode(row):
+                result = encode_fn(row)
+                if result is None:
+                    return {"input_ids": [], "labels": [], "seq_len": 0}
+                return {"input_ids": result.input_ids, "labels": result.labels, "seq_len": result.seq_len}
+
+            hf_ds = hf_ds.map(_streaming_encode, remove_columns=hf_ds.column_names or [])
+            # Filter out empty samples
+            hf_ds = hf_ds.filter(lambda x: x["seq_len"] > 0)
+            # Shuffle with buffer
+            hf_ds = hf_ds.shuffle(buffer_size=getattr(data_args, "buffer_size", 500))
+
+            train_dataset = StreamingDataset(hf_ds)
+            # Force single-thread DataLoader for iterable mode
+            training_args.dataloader_num_workers = 0
+            logger.info("[datasets_v2] Train dataset ready (iterable mode, streaming=True)")
+        else:
+            # dataset_type=map → HF streaming=False，全量加载（在线则先下载到缓存）
+            hf_ds = v2_load_dataset(data_args.train_dataset_path, streaming=False, num_proc=num_proc)
+
+            # Auto-split: if eval path is same as train or not set, split from train
+            need_auto_split = training_args.do_eval and (
+                not data_args.eval_dataset_path or data_args.eval_dataset_path == data_args.train_dataset_path
+            )
+
+            if need_auto_split:
+                from paddleformers.datasets_v2 import split_dataset
+
+                hf_ds, hf_eval_ds = split_dataset(hf_ds, test_ratio=0.1, shuffle=True, seed=training_args.seed)
+                eval_dataset = LazyEncodeDataset(hf_eval_ds, encode_fn, seed=training_args.seed)
+                logger.info(f"[datasets_v2] Auto-split: train={len(hf_ds)}, eval={len(hf_eval_ds)}")
+
+            train_dataset = LazyEncodeDataset(hf_ds, encode_fn, seed=training_args.seed)
+            logger.info(f"[datasets_v2] Train dataset loaded: {len(train_dataset)} samples")
 
     # Load eval dataset (only if not auto-split above)
     if training_args.do_eval and training_args.should_load_dataset and eval_dataset is None:
-        hf_eval_ds = v2_load_dataset(data_args.eval_dataset_path, num_proc=num_proc)
-        eval_dataset = LazyEncodeDataset(hf_eval_ds, encode_fn, seed=training_args.seed)
-        logger.info(f"[datasets_v2] Eval dataset loaded: {len(eval_dataset)} samples")
+        if is_iterable:
+            # eval 也走流式，不下载到本地
+            hf_eval_ds = v2_load_dataset(data_args.eval_dataset_path, streaming=True, num_proc=1)
+
+            def _streaming_eval_encode(row):
+                result = encode_fn(row)
+                if result is None:
+                    return {"input_ids": [], "labels": [], "seq_len": 0}
+                return {"input_ids": result.input_ids, "labels": result.labels, "seq_len": result.seq_len}
+
+            hf_eval_ds = hf_eval_ds.map(_streaming_eval_encode, remove_columns=hf_eval_ds.column_names or [])
+            hf_eval_ds = hf_eval_ds.filter(lambda x: x["seq_len"] > 0)
+            eval_dataset = StreamingDataset(hf_eval_ds)
+            logger.info("[datasets_v2] Eval dataset ready (iterable mode, streaming=True)")
+        else:
+            hf_eval_ds = v2_load_dataset(data_args.eval_dataset_path, num_proc=num_proc)
+            eval_dataset = LazyEncodeDataset(hf_eval_ds, encode_fn, seed=training_args.seed)
+            logger.info(f"[datasets_v2] Eval dataset loaded: {len(eval_dataset)} samples")
 
     # ====== Collate Function ======
     max_seq_len = (
@@ -277,13 +352,19 @@ def run_sft_v2(
 
     # Determine whether to use flashmask compact format
     use_startend = getattr(model_args, "use_attn_mask_startend_row_indices", True)
+    use_global_causal_attn = getattr(model_args, "use_global_causal_attn", False)
 
     data_collator = partial(
         collate_sft,
         pad_token_id=tokenizer.pad_token_id,
         max_seq_len=data_args.max_seq_len,
         packing=data_args.packing,
+        packing_method="binpacking" if getattr(data_args, "binpacking", False) else "greedy",
+        packing_interval=getattr(data_args, "packing_interval", 1000),
         use_attn_mask_startend_row_indices=use_startend,
+        num_nextn_predict_layers=num_nextn_predict_layers,
+        eos_token_id=tokenizer.eos_token_id if num_nextn_predict_layers > 0 else None,
+        use_global_causal_attn=use_global_causal_attn,
     )
 
     # ====== LoRA (optional) ======
@@ -309,6 +390,8 @@ def run_sft_v2(
 
     # ====== max_steps calculation ======
     if training_args.max_steps == -1:
+        if is_iterable:
+            raise ValueError("Streaming (iterable) mode requires --max_steps to be explicitly set.")
         if training_args.should_load_dataset and paddle.distributed.get_rank() == 0:
             training_args.max_steps = math.ceil(len(train_dataset) / training_args.global_batch_size)
             training_args.max_steps *= training_args.num_train_epochs
@@ -353,6 +436,12 @@ def run_sft_v2(
         do_generation=False,
         data_args=data_args,
     )
+
+    # MTP-only training: freeze everything except MTP layers
+    if getattr(training_args, "train_mtp_only", False):
+        from paddleformers.cli.train.sft.workflow import freeze_param_except_mtp
+
+        freeze_param_except_mtp(model, model_config)
 
     trainable_parameters = [
         p for p in model.parameters() if not p.stop_gradient or ("quantization_linear" in p.name and "w_1" in p.name)

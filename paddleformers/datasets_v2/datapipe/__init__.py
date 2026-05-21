@@ -23,13 +23,18 @@ from .encode import (
     encode_sft,
     encode_vl_sft,
 )
-from .packing import greedy_pack
+from .packing import binpack_ffd, greedy_pack
 from .template import (
     Slot,
     TemplateMeta,
     encode_multiturn,
     encode_multiturn_jinja,
+    encode_multiturn_reasoning,
+    fix_special_tokens,
     get_template,
+    get_template_and_fix_tokenizer,
     list_templates,
+    parse_template,
     register_template,
 )
+from .tool_utils import FunctionCall, ToolUtils, get_tool_utils

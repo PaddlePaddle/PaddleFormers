@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Greedy packing: bin multiple short sequences into max_seq_len slots.
+"""Packing algorithms: bin multiple short sequences into max_seq_len slots.
 
-Algorithm matches PaddleFormers' existing greedy_intokens approach:
-largest-remaining-capacity first-fit.
+Two strategies:
+  - greedy_pack: largest-remaining-capacity first-fit (fast, no external deps)
+  - binpack_ffd: First-Fit Decreasing via `binpacking` library (better packing efficiency)
 """
 
 from typing import List
@@ -72,3 +73,55 @@ def greedy_pack(
             next_bin += 1
 
     return [p for p in packs if p]
+
+
+def binpack_ffd(
+    samples: List[EncodedSample],
+    max_seq_len: int,
+    packing_interval: int = 1000,
+) -> List[List[EncodedSample]]:
+    """Bin-pack using First-Fit Decreasing (binpacking library).
+
+    Processes samples in chunks of packing_interval for memory efficiency.
+    The last incomplete bin in each chunk is carried over to the next chunk,
+    allowing cross-chunk optimization.
+
+    Args:
+        samples: List of encoded samples to pack.
+        max_seq_len: Maximum total token count per bin.
+        packing_interval: Buffer size — how many samples to accumulate
+            before running the FFD algorithm. Larger values give better
+            packing efficiency but use more memory.
+
+    Returns:
+        List of packed groups. Each group is a list of samples whose
+        combined seq_len <= max_seq_len.
+    """
+    import binpacking
+
+    if not samples:
+        return []
+
+    # Build (sample, weight) tuples for the binpacking library
+    items = [(s, s.seq_len) for s in samples]
+    accumulated = []
+    result: List[List[EncodedSample]] = []
+
+    for start in range(0, len(items), packing_interval):
+        end = min(start + packing_interval, len(items))
+        is_finished = end == len(items)
+        accumulated += items[start:end]
+
+        bins = binpacking.to_constant_volume(accumulated, max_seq_len, weight_pos=1)
+
+        if bins and not is_finished:
+            # Emit all complete bins, keep last one for next iteration
+            for b in bins[:-1]:
+                result.append([item[0] for item in b])
+            accumulated = bins[-1]
+        else:
+            for b in bins:
+                result.append([item[0] for item in b])
+            accumulated = []
+
+    return [g for g in result if g]

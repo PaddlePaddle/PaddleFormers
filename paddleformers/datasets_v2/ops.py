@@ -47,11 +47,14 @@ def sample_dataset(
         raise TypeError("sample_dataset only supports Map-style Dataset, not IterableDataset.")
     if n <= 0:
         raise ValueError("Cannot sample non-positive number of rows")
-    if not isinstance(n, int):
+    if not isinstance(n, (int, np.integer)):
         raise ValueError("Cannot sample non-integer number of rows")
 
-    rng = np.random.RandomState(seed)
     length = len(dataset)
+    if length == 0:
+        raise ValueError("Cannot sample from an empty dataset")
+
+    rng = np.random.RandomState(seed)
 
     if n <= length:
         if shuffle:

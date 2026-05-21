@@ -165,14 +165,22 @@ class BasePreprocessor:
     @staticmethod
     def _rename_columns(dataset: DATASET_TYPE, columns: Dict[str, str]) -> DATASET_TYPE:
         """Rename columns, skipping those not present in dataset."""
-        col_renames = {k: v for k, v in columns.items() if k in dataset.column_names and k != v}
-        col_renames = {k: v for k, v in col_renames.items() if v not in dataset.column_names}
+        col_names = dataset.column_names
+        if col_names is None:
+            # IterableDataset: column_names unknown upfront, skip rename
+            return dataset
+        col_renames = {k: v for k, v in columns.items() if k in col_names and k != v}
+        col_renames = {k: v for k, v in col_renames.items() if v not in col_names}
         return dataset.rename_columns(col_renames) if col_renames else dataset
 
     @staticmethod
     def _columns_to_remove(dataset: DATASET_TYPE) -> List[str]:
         """Get list of columns to remove after map (non-standard columns)."""
-        return [c for c in dataset.column_names if c not in STANDARD_KEYS]
+        col_names = dataset.column_names
+        if col_names is None:
+            # IterableDataset: cannot determine columns upfront, remove nothing
+            return []
+        return [c for c in col_names if c not in STANDARD_KEYS]
 
     # ================================================================
     # Batch <-> rows conversion

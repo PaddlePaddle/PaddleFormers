@@ -15,3 +15,4 @@
 """dataset: training-ready Dataset classes for datasets_v2."""
 
 from .lazy_dataset import LazyEncodeDataset
+from .streaming_dataset import StreamingDataset

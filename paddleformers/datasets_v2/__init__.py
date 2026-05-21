@@ -26,6 +26,7 @@ from .preprocessors import (
     BasePreprocessor,
     MessagesPreprocessor,
     ResponsePreprocessor,
+    TextPreprocessor,
 )
 
 # Load built-in dataset registry on import
@@ -58,17 +59,29 @@ _load_builtin_registry()
 from .datapipe import (
     EncodeConfig,
     EncodedSample,
+    FunctionCall,
     TemplateMeta,
     VLEncodedSample,
     collate_sft,
     collate_vl_sft,
     encode_multiturn,
+    encode_multiturn_reasoning,
     encode_pt,
     encode_sft,
     encode_vl_sft,
+    fix_special_tokens,
     get_template,
+    get_template_and_fix_tokenizer,
+    get_tool_utils,
     greedy_pack,
     list_templates,
+    parse_template,
     register_template,
 )
-from .dataset import LazyEncodeDataset
+from .dataset import LazyEncodeDataset, StreamingDataset
+from .grounding_plugin import (
+    BaseGroundingPlugin,
+    get_grounding_plugin,
+    register_grounding_plugin,
+)
+from .mm_plugin import get_mm_plugin, register_mm_plugin

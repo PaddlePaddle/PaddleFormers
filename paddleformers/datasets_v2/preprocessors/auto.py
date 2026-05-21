@@ -18,7 +18,7 @@ from typing import Dict, Optional
 
 from ..schema import DATASET_TYPE
 from .base import BasePreprocessor
-from .extra import AlpacaPreprocessor
+from .extra import AlpacaPreprocessor, TextPreprocessor
 from .messages import MessagesPreprocessor
 from .response import ResponsePreprocessor
 
@@ -38,11 +38,27 @@ class AutoPreprocessor:
 
     def _get_preprocessor(self, dataset: DATASET_TYPE) -> BasePreprocessor:
         col_names = dataset.column_names
+        # IterableDataset may have column_names=None; use features or peek first row
+        if col_names is None:
+            # Try .features first (non-destructive)
+            features = getattr(dataset, "features", None)
+            if features is not None:
+                col_names = list(features.keys())
+            else:
+                # Last resort: peek first row. Note: this loses one row for
+                # IterableDatasets without features, but such cases are rare
+                # (HF streaming datasets always have features defined).
+                first_row = next(iter(dataset))
+                col_names = list(first_row.keys())
         for key in ["messages", "conversation", "conversations"]:
             if key in col_names:
                 return MessagesPreprocessor(columns=self.columns, **self.kwargs)
         if "instruction" in col_names and "input" in col_names:
             return AlpacaPreprocessor(columns=self.columns, **self.kwargs)
+        # Pure text pretrain datasets (has "text" but no SFT-characteristic columns)
+        sft_indicators = {"query", "response", "instruction", "input", "output", "prompt", "answer"}
+        if "text" in col_names and not sft_indicators.intersection(col_names):
+            return TextPreprocessor(columns=self.columns, **self.kwargs)
         return ResponsePreprocessor(columns=self.columns, **self.kwargs)
 
     def __call__(

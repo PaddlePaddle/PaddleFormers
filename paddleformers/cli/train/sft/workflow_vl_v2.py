@@ -35,11 +35,11 @@ from paddleformers.cli.hparams import (
     ModelArguments,
 )
 from paddleformers.cli.utils.process import add_new_special_tokens
-from paddleformers.datasets.template.mm_plugin import get_mm_plugin
 from paddleformers.datasets_v2 import EncodeConfig, LazyEncodeDataset, get_template
 from paddleformers.datasets_v2 import load_dataset as v2_load_dataset
 from paddleformers.datasets_v2.datapipe.collate import collate_vl_sft
 from paddleformers.datasets_v2.datapipe.encode import encode_vl_sft
+from paddleformers.datasets_v2.mm_plugin import get_mm_plugin
 from paddleformers.nn.attention import AttentionInterface
 from paddleformers.peft import LoRAConfig, LoRAModel
 from paddleformers.trainer import (

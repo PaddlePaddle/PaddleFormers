@@ -63,15 +63,18 @@ class DatasetMeta:
 class DatasetSpec:
     """Parsed result of a dataset string specification.
 
-    Syntax: "dataset_name_or_path#sample_count"
+    Syntax: "dataset_name_or_path:subset#sample_count"
 
     Examples:
-        "alpaca"                   -> name="alpaca", sample=None
-        "alpaca#500"               -> name="alpaca", sample=500
-        "/path/to/data.jsonl#1000" -> name="/path/to/data.jsonl", sample=1000
+        "alpaca"                   -> name="alpaca", subset=None, sample=None
+        "alpaca#500"               -> name="alpaca", subset=None, sample=500
+        "openai/gsm8k:main"       -> name="openai/gsm8k", subset="main", sample=None
+        "openai/gsm8k:main#500"   -> name="openai/gsm8k", subset="main", sample=500
+        "/path/to/data.jsonl#1000" -> name="/path/to/data.jsonl", subset=None, sample=1000
     """
 
     name: str
+    subset: Optional[str] = None
     sample: Optional[int] = None
 
 
@@ -193,20 +196,23 @@ def register_dataset_info(json_path: str) -> List[DatasetMeta]:
 def parse_dataset_string(dataset_str: str) -> DatasetSpec:
     """Parse a dataset specification string.
 
-    Supports syntax: "name_or_path#N" where #N is optional sample count.
+    Supports syntax: "name_or_path:subset#N" where :subset and #N are optional.
 
     Args:
         dataset_str: The dataset string to parse.
 
     Returns:
-        A DatasetSpec with parsed name and optional sample count.
+        A DatasetSpec with parsed name, optional subset, and optional sample count.
 
     Raises:
         ValueError: If the sample count is not a positive integer.
     """
     dataset_str = dataset_str.strip()
+
+    # Parse sample count (#N)
+    sample = None
     if "#" in dataset_str:
-        name, sample_str = dataset_str.rsplit("#", 1)
+        name_part, sample_str = dataset_str.rsplit("#", 1)
         try:
             sample = int(sample_str)
         except ValueError:
@@ -215,8 +221,17 @@ def parse_dataset_string(dataset_str: str) -> DatasetSpec:
             )
         if sample <= 0:
             raise ValueError(f"Sample count must be positive, got {sample} in '{dataset_str}'.")
-        return DatasetSpec(name=name.strip(), sample=sample)
-    return DatasetSpec(name=dataset_str)
+        dataset_str = name_part.strip()
+
+    # Parse subset (:subset) — only for non-local paths (HF hub IDs)
+    subset = None
+    if not os.path.exists(dataset_str) and ":" in dataset_str:
+        # Split on last ":" to handle org/repo:subset
+        name, subset = dataset_str.rsplit(":", 1)
+        dataset_str = name.strip()
+        subset = subset.strip() or None
+
+    return DatasetSpec(name=dataset_str, subset=subset, sample=sample)
 
 
 # ============================================================

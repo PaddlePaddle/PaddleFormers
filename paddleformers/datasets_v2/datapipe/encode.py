@@ -149,7 +149,11 @@ def encode_pt(
         return None
 
     tokens = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(content))
-    tokens = tokens + [tokenizer.eos_token_id]
+    if tokenizer.eos_token_id is not None:
+        tokens = tokens + [tokenizer.eos_token_id]
+
+    if len(tokens) < 2:
+        return None
 
     if len(tokens) > config.max_seq_len + 1:
         tokens = tokens[: config.max_seq_len + 1]

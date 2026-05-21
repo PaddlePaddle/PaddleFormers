@@ -27,7 +27,6 @@ import os
 from typing import Dict, List, Optional, Union
 
 from datasets import Dataset as HfMapDataset
-from datasets import IterableDataset as HfIterableDataset  # noqa: F401
 from datasets import load_dataset as hf_load_dataset
 
 from .registry import DatasetMeta, get_dataset_meta, parse_dataset_string
@@ -155,6 +154,23 @@ def _load_local_directory(
     return dataset
 
 
+def _ensure_proxy():
+    """Ensure proxy env vars are propagated for hub downloads.
+
+    Reads from PADDLEFORMERS_PROXY env var. If set, applies it as
+    http/https proxy (respecting any existing proxy settings).
+    """
+    proxy = os.environ.get("PADDLEFORMERS_PROXY", "")
+    if not proxy:
+        return
+    for key in ("https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"):
+        os.environ.setdefault(key, proxy)
+    no_proxy = os.environ.get("PADDLEFORMERS_NO_PROXY", "")
+    if no_proxy:
+        os.environ.setdefault("no_proxy", no_proxy)
+        os.environ.setdefault("NO_PROXY", no_proxy)
+
+
 def _load_hub_dataset(
     repo_id: str,
     *,
@@ -165,10 +181,11 @@ def _load_hub_dataset(
     **kwargs,
 ) -> DATASET_TYPE:
     """Load a dataset from HuggingFace Hub."""
+    _ensure_proxy()
+
     load_kwargs = {
         "split": split,
         "streaming": streaming,
-        "trust_remote_code": True,
         **kwargs,
     }
     if subset is not None:
@@ -198,6 +215,7 @@ def _get_preprocessor(meta: DatasetMeta):
         AutoPreprocessor,
         MessagesPreprocessor,
         ResponsePreprocessor,
+        TextPreprocessor,
     )
 
     _PREPROCESSOR_MAP = {
@@ -205,6 +223,7 @@ def _get_preprocessor(meta: DatasetMeta):
         "messages": MessagesPreprocessor,
         "response": ResponsePreprocessor,
         "alpaca": AlpacaPreprocessor,
+        "text": TextPreprocessor,
     }
 
     if preprocessor not in _PREPROCESSOR_MAP:
@@ -263,7 +282,7 @@ def load_dataset(
 
     # 3. Resolve effective parameters
     effective_split = split or (meta.split if meta else "train")
-    effective_subset = subset or (meta.subset if meta else None)
+    effective_subset = subset or spec.subset or (meta.subset if meta else None)
     effective_path = (meta.path if meta else None) or spec.name
 
     # Merge column mappings: registry columns + explicit columns (explicit wins)

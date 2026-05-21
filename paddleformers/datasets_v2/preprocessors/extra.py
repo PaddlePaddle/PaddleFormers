@@ -19,6 +19,7 @@ Contains AlpacaPreprocessor and other lightweight derived classes.
 
 from typing import Any, Dict, Optional
 
+from .base import BasePreprocessor
 from .response import ResponsePreprocessor
 
 
@@ -53,3 +54,21 @@ class AlpacaPreprocessor(ResponsePreprocessor):
             row["response"] = output
         row["query"] = self.concat_inst_input(instruction, input_)
         return super().preprocess(row)
+
+
+class TextPreprocessor(BasePreprocessor):
+    """Preprocessor for pure-text pretrain datasets.
+
+    Handles datasets with only a "text" column (e.g. fineweb-edu),
+    converting to messages format for encode_pt.
+
+    Expected input:
+        {"text": "..."} → {"messages": [{"role": "user", "content": "..."}]}
+    """
+
+    def preprocess(self, row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        text = row.pop("text", None) or row.pop("content", None)
+        if not text or not isinstance(text, str) or not text.strip():
+            return None
+        row["messages"] = [{"role": "user", "content": text}]
+        return row
