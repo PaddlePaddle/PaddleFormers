@@ -138,7 +138,15 @@ class DataArguments:
         default=True,
         metadata={"help": "Whether to skip the warmup process of mmap files."},
     )
+    warmup_only_rank0: bool = field(
+        default=False,
+        metadata={"help": "Whether to warmup mmap files only on rank 0. If False, all ranks do warmup."},
+    )
     data_cache: str = field(default=None, metadata={"help": "The path of the cached dataset."})
+    truncation_strategy: str = field(
+        default="delete",
+        metadata={"help": "The truncation strategy to use in data processing."},
+    )
     truncate_packing: bool = field(
         default=True,
         metadata={"help": "Whether to truncate data in packing (only valid in pretrain online dataflow)."},
@@ -171,7 +179,14 @@ class DataArguments:
         default=1000,
         metadata={"help": "Interval of packing."},
     )
-    truncation_strategy: str = field(
-        default="right",
-        metadata={"help": "Truncation strategy for packing."},
+    packed_idx_cache_dir: str = field(
+        default=None,
+        metadata={
+            "help": (
+                "Directory to cache packed_idx built by MapSFTDataset. "
+                "Train and eval caches are stored as 'train.npz' and 'eval.npz' respectively. "
+                "When set, saves/reloads packed_idx to skip re-tokenization on restart. "
+                "Default is None (no caching)."
+            )
+        },
     )

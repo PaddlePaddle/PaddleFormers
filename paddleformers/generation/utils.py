@@ -1086,6 +1086,7 @@ class GenerationMixin(object):
                 raise ValueError(
                     "`streamer` cannot be used with beam search (yet!). Make sure that `num_beams` is set to 1."
                 )
+            streamer.put(input_ids.cpu())
 
         pad_token_id = self.set_pad_token_id(pad_token_id, eos_token_id)
 

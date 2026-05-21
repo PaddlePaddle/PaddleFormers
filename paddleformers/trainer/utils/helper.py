@@ -139,50 +139,90 @@ def nested_truncate(tensors, limit):
 
 def distributed_isfile(filename):
     """Check all machine nodes. return False if no machine have such file."""
+
+    # 1. 确定需要检查的文件列表
+    if filename.endswith((".json", ".bin")):
+        base_path = os.path.splitext(filename)[0]
+        targets = [f"{base_path}.json", f"{base_path}.bin"]
+    else:
+        targets = [filename]
+
+    # 2. 定义检查逻辑
+    def check_local():
+        return any(os.path.isfile(f) for f in targets)
+
+    # 3. 处理分布式逻辑
     trainers_num = int(os.getenv("PADDLE_TRAINERS_NUM", "1"))
     if trainers_num <= 1:
-        return os.path.isfile(filename)
-    else:
-        local_rank = int(os.getenv("PADDLE_RANK_IN_NODE", 0))
-        file_count = paddle.zeros([1], dtype="int64")
-        if local_rank == 0 and os.path.isfile(filename):
-            file_count += 1
+        return check_local()
 
-        paddle.distributed.all_reduce(file_count)
-        return file_count >= 1
+    # 多机环境下，仅 rank 0 检查，然后广播结果
+    local_rank = int(os.getenv("PADDLE_RANK_IN_NODE", 0))
+    file_count = paddle.zeros([1], dtype="int64")
+
+    if local_rank == 0 and check_local():
+        file_count += 1
+
+    paddle.distributed.all_reduce(file_count)
+    return file_count >= 1
+
+
+def _get_actual_path(filename):
+    """根据优先级返回实际存在的文件路径，否则返回原路径"""
+    base = os.path.splitext(filename)[0]
+    for ext in [".json", ".bin"]:
+        candidate = base + ext
+        if os.path.isfile(candidate):
+            return candidate
+    return filename
 
 
 def distributed_file(filename):
     trainers_num = int(os.getenv("PADDLE_TRAINERS_NUM", "1"))
-    if trainers_num <= 1:
-        return filename
+
+    # 1. 确定实际要读取的路径
+    # 如果是 json/bin 兼容逻辑，寻找实际存在的文件
+    if filename.endswith((".json", ".bin")):
+        actual_filename = _get_actual_path(filename)
     else:
-        local_rank = int(os.getenv("PADDLE_RANK_IN_NODE", 0))
-        found_file = paddle.to_tensor([2**20], dtype="int64")
-        if local_rank == 0 and os.path.isfile(filename):
-            found_file = paddle.to_tensor([paddle.distributed.get_rank()], dtype="int64")
+        actual_filename = filename
 
-        tensor_list = []
-        paddle.distributed.all_gather(tensor_list, found_file)
-        src = paddle.min(paddle.cat(tensor_list)).item()
+    # 2. 单机模式直接返回
+    if trainers_num <= 1:
+        return actual_filename
 
-        file_object_list = [None]
-        if paddle.distributed.get_rank() == src:
-            file_object_list = [open(filename, "rb").read()]
+    # 3. 分布式模式：同步文件内容
+    local_rank = int(os.getenv("PADDLE_RANK_IN_NODE", 0))
+    rank = paddle.distributed.get_rank()
 
-        paddle.distributed.broadcast_object_list(file_object_list, src=src)
-        file_object = file_object_list[0]
+    # 确定哪台机器持有文件 (持有即为 rank，未找到则用 int64 最大值)
+    found_rank = 2**63 - 1
+    if local_rank == 0 and os.path.isfile(actual_filename):
+        found_rank = rank
 
-        if local_rank == 0 and not os.path.isfile(filename):
-            if not os.path.exists(os.path.dirname(filename)):
-                os.makedirs(os.path.dirname(filename))
+    # 获取全局最小的 rank 作为源
+    rank_tensor = paddle.to_tensor([found_rank], dtype="int64")
+    rank_list = []
+    paddle.distributed.all_gather(rank_list, rank_tensor)
+    src = paddle.min(paddle.cat(rank_list)).item()
 
-            with open(filename, "wb") as f:
-                f.write(file_object)
+    # 广播文件内容
+    file_content = [None]
+    if rank == src:
+        with open(actual_filename, "rb") as f:
+            file_content = [f.read()]
 
-        paddle.distributed.barrier()
+    paddle.distributed.broadcast_object_list(file_content, src=src)
+    content = file_content[0]
 
-        return filename
+    # Rank 0 负责落盘
+    if local_rank == 0 and not os.path.isfile(actual_filename):
+        os.makedirs(os.path.dirname(actual_filename), exist_ok=True)
+        with open(actual_filename, "wb") as f:
+            f.write(content)
+
+    paddle.distributed.barrier()
+    return actual_filename
 
 
 def broadcast_dp_optimizer(state_dict):

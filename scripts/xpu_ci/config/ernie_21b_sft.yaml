@@ -48,7 +48,6 @@ tensor_model_parallel_size: 2
 pipeline_model_parallel_size: 2
 sequence_parallel: true
 sharding: stage1
-offload_optim: false
 tensorwise_offload_optimizer: false
 recompute_granularity: full
 recompute_method: uniform
@@ -57,5 +56,7 @@ bf16: true
 fp16_opt_level: O2
 load_checkpoint_format: flex_checkpoint
 save_checkpoint_format: flex_checkpoint
+
+moe_expert_fusion: false
 
 device: xpu

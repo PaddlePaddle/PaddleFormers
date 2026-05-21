@@ -52,7 +52,7 @@ class StreamerTester(unittest.TestCase):
         greedy_text = tokenizer.decode(greedy_ids[0][0])
 
         with CaptureStd(out=True, err=False, replay=True) as cs:
-            streamer = TextStreamer(tokenizer)
+            streamer = TextStreamer(tokenizer, skip_prompt=True)
             model.generate(**input_kwargs, streamer=streamer)
         # The greedy text should be printed to stdout, except for the final "\n" in the streamer
         streamer_text = cs.out[:-1]
@@ -70,7 +70,7 @@ class StreamerTester(unittest.TestCase):
         greedy_ids = model.generate(**input_kwargs)
         greedy_text = tokenizer.decode(greedy_ids[0][0])
 
-        streamer = TextIteratorStreamer(tokenizer)
+        streamer = TextIteratorStreamer(tokenizer, skip_prompt=True)
         generation_kwargs = {**input_kwargs, "streamer": streamer}
         thread = Thread(target=model.generate, kwargs=generation_kwargs)
         thread.start()

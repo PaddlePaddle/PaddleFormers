@@ -399,7 +399,7 @@ class PdArgumentParser(ArgumentParser):
         args = python_args + sys.argv[2:]
         return self.common_parse(args, return_remaining_strings)
 
-    def parse_dict(self, args: dict) -> Tuple[DataClass, ...]:
+    def parse_dict(self, args: dict, return_unknown_ars=False) -> Tuple[DataClass, ...]:
         """
         Alternative helper method that does not use `argparse` at all, instead uses a dict and populating the dataclass
         types.
@@ -461,19 +461,16 @@ class PdArgumentParser(ArgumentParser):
 
         # check unknown args
         all_valid_keys = set()
-        for dtype in self.dataclass_types:
-            keys = {f.name for f in dataclasses.fields(dtype) if f.init}
-            all_valid_keys.update(keys)
-
-        unknown_args = set(args.keys()) - all_valid_keys
-        if unknown_args:
-            print(f"Got unknown args, potentially deprecated arguments: {unknown_args}")
-            raise ValueError(f"Some specified arguments are not used by the PdArgumentParser: {unknown_args}")
-
         outputs = []
         for dtype in self.dataclass_types:
             keys = {f.name for f in dataclasses.fields(dtype) if f.init}
+            all_valid_keys.update(keys)
             inputs = {k: v for k, v in args.items() if k in keys}
             obj = dtype(**inputs)
             outputs.append(obj)
-        return (*outputs,)
+
+        if return_unknown_ars:
+            unknown_args = set(args.keys()) - all_valid_keys
+            return (*outputs, unknown_args)
+        else:
+            return (*outputs,)

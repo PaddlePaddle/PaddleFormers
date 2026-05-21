@@ -63,7 +63,7 @@ recompute_num_layers: 1
 apply_rope_fusion: true
 moe_router_fusion: false
 moe_router_force_load_balancing: true
-moe_grouped_gemm: true
+moe_expert_fusion: true
 
 sharding: stage1
 split_param: true
@@ -77,14 +77,12 @@ expert_model_parallel_size: 4
 
 
 # pp
-pp_delay_scale_loss: true
 overlap_p2p_comm: true
 variable_seq_lengths: true
 best_unbalanced_scheduler: true
 pp_release_grads: true
 
 # tp
-tp_delay_scale_loss: true
 
 
 optim: adamw
@@ -102,3 +100,4 @@ save_checkpoint_format: "flex_checkpoint"
 load_checkpoint_format: "flex_checkpoint"
 
 router_aux_loss_coef: 0.0
+moe_deep_gemm: false

@@ -255,10 +255,6 @@ class FinetuningArguments(
         default=0.0,
         metadata={"help": "dropout probability for attention layers"},
     )
-    benchmark: bool = field(
-        default=False,
-        metadata={"help": "Whether to run benchmark by autotuner. True for from_scratch."},
-    )
 
     # performance
     compute_type: str = field(
@@ -331,6 +327,10 @@ class FinetuningArguments(
             }
         elif self.compute_type == "nf4":
             self.weight_quantize_algo = {"nf4": DEFAULT_QUANTIZE_LAYERS}
+        elif self.compute_type == "float32":
+            self.bf16 = False
+            self.fp16 = False
+            self.weight_quantize_algo = None
         else:
             raise ValueError(f"Unknown compute_type: {self.compute_type}")
 

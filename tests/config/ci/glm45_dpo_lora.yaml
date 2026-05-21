@@ -71,3 +71,4 @@ num_hidden_layers: 3
 num_empty_layers_add_in_tail: 1
 
 router_aux_loss_coef: 0.001
+moe_deep_gemm: false

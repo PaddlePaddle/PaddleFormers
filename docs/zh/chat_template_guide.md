@@ -74,7 +74,7 @@ register_template(
 |`format_function`|对 role 为 function（申请工具调用）的 content 进行 format|
 |`format_observation`|对 role 为 observation（工具返回信息）的 content 进行 format|
 |`format_tools`|对 tools 信息进行 format|
-|`format_prefix`|在 system 前面加的内容|
+|`format_prefix`|在格式化后最开头固定添加的内容|
 |`default_system`|默认的 system 信息，如果数据里面没有 role 为 system 的，就用这个|
 |`chat_sep`|历史轮对话末尾加的字符串|
 |`suffix`|默认为 eos token，在多轮对话的最后面添加|

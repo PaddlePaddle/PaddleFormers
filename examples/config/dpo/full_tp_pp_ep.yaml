@@ -70,7 +70,6 @@ split_param: true
 amp_master_grad: true
 
 # tensor_parallel_config
-tp_delay_scale_loss: true
 tp_sync_param: true
 sync_grad: true
 

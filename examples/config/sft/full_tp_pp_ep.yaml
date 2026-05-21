@@ -67,7 +67,6 @@ partial_send_recv: false
 batch_p2p_comm: false
 
 # tensor_parallel_config
-tp_delay_scale_loss: true
 tp_sync_param: true
 sync_grad: true
 

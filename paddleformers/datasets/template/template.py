@@ -277,6 +277,24 @@ class ReasoningTemplate(Template):
 
 
 @dataclass
+class GLM5ReasoningTemplate(ReasoningTemplate):
+    r"""Reasoning template for GLM-5 (glm4_7 style).
+
+    GLM-5 uses only the closing tag '</think>' for empty CoT,
+    unlike GLM-4.5 which uses '<think></think>'.
+    See GLM-5 official chat_template.jinja line 55.
+    """
+
+    def add_thought(self, content: str = "") -> str:
+        r"""Add empty thought using only the closing tag."""
+        return self.thought_words[1] + content
+
+    def get_thought_word_ids(self, tokenizer: "PreTrainedTokenizer") -> list[int]:
+        r"""Get the token ids of the closing thought tag only."""
+        return tokenizer.encode(self.thought_words[1], add_special_tokens=False)
+
+
+@dataclass
 class Llama2Template(Template):
     r"""A template that fuse the system message to first user message."""
 
@@ -679,6 +697,36 @@ register_template(
     chat_sep="<|im_end|>\n",
 )
 
+register_template(
+    name="qwen3_5",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>\n"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_function=FunctionFormatter(slots=["{{content}}<|im_end|>\n"], tool_format="qwen3_5"),
+    format_observation=StringFormatter(
+        slots=["<|im_start|>user\n<tool_response>\n{{content}}\n</tool_response><|im_end|>\n<|im_start|>assistant\n"]
+    ),
+    format_tools=ToolFormatter(tool_format="qwen3_5"),
+    stop_words=["<|im_end|>"],
+    mm_plugin=get_mm_plugin(name="qwen3_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
+    template_class=ReasoningTemplate,
+)
+
+
+register_template(
+    name="qwen3_5_nothink",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>\n"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_function=FunctionFormatter(slots=["{{content}}<|im_end|>\n"], tool_format="qwen3_5"),
+    format_observation=StringFormatter(
+        slots=["<|im_start|>user\n<tool_response>\n{{content}}\n</tool_response><|im_end|>\n<|im_start|>assistant\n"]
+    ),
+    format_tools=ToolFormatter(tool_format="qwen3_5"),
+    stop_words=["<|im_end|>"],
+    mm_plugin=get_mm_plugin(name="qwen3_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
+)
+
 
 # copied from qwen template
 register_template(
@@ -774,14 +822,29 @@ register_template(
     name="glm4_moe",
     format_user=StringFormatter(slots=["<|user|>\n{{content}}<|assistant|>\n"]),
     format_assistant=StringFormatter(slots=["\n{{content}}"]),
-    format_system=StringFormatter(slots=["[gMASK]<sop><|system|>\n{{content}}"]),
+    format_system=StringFormatter(slots=["<|system|>\n{{content}}"]),
     format_function=FunctionFormatter(slots=["{{content}}"], tool_format="glm4_moe"),
     format_observation=StringFormatter(slots=["<|observation|>\n{{content}}<|assistant|>"]),
     format_tools=ToolFormatter(tool_format="glm4_moe"),
-    format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
+    format_prefix=EmptyFormatter(slots=["[gMASK]<sop>[gMASK]<sop>"]),
     suffix=["<|user|>"],
     thought_words=("<think>", "</think>"),
     template_class=ReasoningTemplate,
+)
+
+# aligned with GLM-5 official chat_template.jinja (glm4_7 style)
+register_template(
+    name="glm_moe_dsa",
+    format_user=StringFormatter(slots=["<|user|>{{content}}<|assistant|>"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["[gMASK]<sop><|system|>{{content}}"]),
+    format_function=FunctionFormatter(slots=["{{content}}"], tool_format="glm_moe_dsa"),
+    format_observation=StringFormatter(slots=["<|observation|>{{content}}<|assistant|>"]),
+    format_tools=ToolFormatter(tool_format="glm_moe_dsa"),
+    format_prefix=EmptyFormatter(slots=["[gMASK]<sop>"]),
+    suffix=["<|user|>"],
+    thought_words=("<think>", "</think>"),
+    template_class=GLM5ReasoningTemplate,
 )
 
 
@@ -913,6 +976,7 @@ register_template(
     suffix=["<|im_end|>"],
     chat_sep="<|im_end|>",
 )
+
 register_template(
     name="glm_ocr",
     format_user=StringFormatter(slots=["<|user|>\n{{content}}\n"]),

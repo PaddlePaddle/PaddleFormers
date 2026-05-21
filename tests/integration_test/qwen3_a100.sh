@@ -33,7 +33,7 @@ if [[ "$step" == "pt" ]]; then
     export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
     export model_name_or_path=$CACHE_DIR/Qwen3-30B-A3B
     export output_dir=$root_dir/checkpoints/qwen-pt
-    yq eval '.moe_grouped_gemm = false
+    yq eval '.moe_expert_fusion = false
           | .stage1_overlap = false'\
     $config_yaml > ${config_yaml}.tmp
     mv ${config_yaml}.tmp $config_yaml
@@ -42,7 +42,7 @@ elif [[ "$step" == "sft" ]]; then
     export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/sft
     export model_name_or_path=$root_dir/checkpoints/qwen-pt
     export output_dir=$root_dir/checkpoints/qwen-sft
-    yq eval '.moe_grouped_gemm = false
+    yq eval '.moe_expert_fusion = false
       | .stage1_overlap = false' \
     $config_yaml > ${config_yaml}.tmp
     mv ${config_yaml}.tmp $config_yaml
@@ -105,7 +105,7 @@ export REPO_NAME=$(echo $GITHUB_REPO_NAME | awk -F'/' '{print $2}')
 # if [[ "${PF}" == rel* ]]; then
 #   export pfpatch="rel"
 # fi
-wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${repo_name}${pfpatch}${pppatch}_latest/${gt_loss_file}
+wget --no-proxy --no-check-certificate https://xly-devops.cdn.bcebos.com/PaddleFleet/precision/${REPO_NAME}${pfpatch}${pppatch}_latest/${gt_loss_file}
 if [ $? -ne 0 ]; then
   echo "To request precision checks for new models, please contact swgu98."
   exit 1
