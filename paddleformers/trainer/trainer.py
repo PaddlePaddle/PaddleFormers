@@ -82,7 +82,6 @@ _obtain_optimizer_parameters_list = obtain_optimizer_parameters_list
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
     DygraphShardingOptimizerV2,
 )
-from paddle.distributed.fleet.meta_parallel.pipeline_parallel import PipelineParallel
 from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     fused_allreduce_gradients,
 )
@@ -446,7 +445,6 @@ class Trainer:
 
             set_profile_timers(self.timers)
         self.runtime_timer = RuntimeTimer("RuntimeTimer")
-        PipelineParallel.timer_printer = lambda _: None
 
         self.model_wrapped = model
         self.model = model
@@ -2547,8 +2545,9 @@ class Trainer:
 
             paddle_pipeline_timers = paddle_get_timers()
             for name, timer in paddle_pipeline_timers.timers.items():
-                elapsed_time = timer.elapsed(reset=True) * 1000.0
+                elapsed_time = timer.elapsed(reset=False) * 1000.0
                 paddle_timer_info += f" | {name}: {elapsed_time:.2f}"
+            paddle_pipeline_timers.log(paddle_pipeline_timers.timers.keys(), reset=True)
         except AssertionError:  # paddle timer not enabled
             pass
 

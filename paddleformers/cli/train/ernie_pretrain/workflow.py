@@ -356,11 +356,12 @@ def run_ernie_pretrain(model_args, data_args, generating_args, training_args):
     if getattr(training_args, "dp_comm_overlap", False):
         logger.warning("Pipeline dp_comm_overlap and FusedLinearWithGradAdd can not be used at the same time.")
 
-    from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
-        PipelineParallel,
-    )
+    if getattr(training_args, "timer", False):
+        from paddle.distributed.fleet.meta_parallel.pipeline_parallel import (
+            PipelineParallel,
+        )
 
-    PipelineParallel.timer_printer = lambda _: None
+        PipelineParallel.timer_printer = lambda _: None
 
     def formatv(v):
         if isinstance(v, ListConfig):
