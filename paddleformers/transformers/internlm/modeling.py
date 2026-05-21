@@ -69,7 +69,9 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
         if cos.shape[0] == 1 and position_ids.shape[0] > 1:
             cos = cos.expand([position_ids.shape[0], -1, -1])
             sin = sin.expand([position_ids.shape[0], -1, -1])
-        gather_indices = position_ids.unsqueeze(-1).expand([position_ids.shape[0], position_ids.shape[1], cos.shape[-1]])
+        gather_indices = position_ids.unsqueeze(-1).expand(
+            [position_ids.shape[0], position_ids.shape[1], cos.shape[-1]]
+        )
         q_cos = paddle.take_along_axis(cos, gather_indices, axis=1)
         q_sin = paddle.take_along_axis(sin, gather_indices, axis=1)
 
@@ -508,9 +510,7 @@ class InternLMModel(InternLMPretrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
         causal_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
-        full_position_ids = (
-            paddle.arange(0, kv_seq_len + seq_length, dtype=paddle.int64).unsqueeze(0).tile((bsz, 1))
-        )
+        full_position_ids = paddle.arange(0, kv_seq_len + seq_length, dtype=paddle.int64).unsqueeze(0).tile((bsz, 1))
         position_embeddings = self.rotary_emb(inputs_embeds, full_position_ids)
         all_hidden_states = [] if output_hidden_states else None
         all_self_attns = [] if output_attentions else None
@@ -767,5 +767,6 @@ class InternLMForCausalLMPipe(GeneralModelForCausalLMPipe):
     transpose_weight_keys = InternLMModel.transpose_weight_keys
     _gen_aoa_config = InternLMForCausalLM._gen_aoa_config
     _gen_inv_aoa_config = InternLMForCausalLM._gen_inv_aoa_config
+
 
 __all__ = ["InternLMModel", "InternLMForCausalLM", "InternLMForCausalLMPipe"]

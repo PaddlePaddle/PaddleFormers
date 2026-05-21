@@ -17,7 +17,11 @@ import unittest
 
 import paddle
 
-from paddleformers.transformers import InternLMConfig, InternLMForCausalLM, InternLMModel
+from paddleformers.transformers import (
+    InternLMConfig,
+    InternLMForCausalLM,
+    InternLMModel,
+)
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -182,7 +186,7 @@ class InternLMModelTester:
         past_key_values = outputs.past_key_values if self.return_dict else outputs[1]
 
         next_tokens = ids_tensor((self.batch_size, 3), self.vocab_size, dtype=paddle.int64)
-        next_mask = ids_tensor((self.batch_size, 3), vocab_size=2)
+        next_mask = ids_tensor((self.batch_size, 3), vocab_size=2, dtype=input_mask.dtype)
 
         next_input_ids = paddle.cat([input_ids, next_tokens], axis=-1)
         next_attention_mask = paddle.cat([input_mask, next_mask], axis=-1)
