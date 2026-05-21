@@ -277,13 +277,19 @@ def run_sft_v2(
             "or disable packing for streaming mode."
         )
 
+    # 获取数据格式 hint（兼容旧配置的 train_dataset_type）
+    train_format = getattr(data_args, "train_dataset_type", None)
+    eval_format = getattr(data_args, "eval_dataset_type", None)
+
     if training_args.do_train and training_args.should_load_dataset:
         if is_iterable:
             if training_args.max_steps <= 0:
                 raise ValueError("dataset_type=iterable requires --max_steps to be explicitly set (no len available).")
 
             # dataset_type=iterable → HF streaming=True，无论在线离线都返回 IterableDataset
-            hf_ds = v2_load_dataset(data_args.train_dataset_path, streaming=True, num_proc=1)
+            hf_ds = v2_load_dataset(
+                data_args.train_dataset_path, streaming=True, num_proc=1, dataset_format=train_format
+            )
 
             # Use HF IterableDataset.map() for lazy encoding
             def _streaming_encode(row):
@@ -304,7 +310,9 @@ def run_sft_v2(
             logger.info("[datasets_v2] Train dataset ready (iterable mode, streaming=True)")
         else:
             # dataset_type=map → HF streaming=False，全量加载（在线则先下载到缓存）
-            hf_ds = v2_load_dataset(data_args.train_dataset_path, streaming=False, num_proc=num_proc)
+            hf_ds = v2_load_dataset(
+                data_args.train_dataset_path, streaming=False, num_proc=num_proc, dataset_format=train_format
+            )
 
             # Auto-split: if eval path is same as train or not set, split from train
             need_auto_split = training_args.do_eval and (
@@ -325,7 +333,9 @@ def run_sft_v2(
     if training_args.do_eval and training_args.should_load_dataset and eval_dataset is None:
         if is_iterable:
             # eval 也走流式，不下载到本地
-            hf_eval_ds = v2_load_dataset(data_args.eval_dataset_path, streaming=True, num_proc=1)
+            hf_eval_ds = v2_load_dataset(
+                data_args.eval_dataset_path, streaming=True, num_proc=1, dataset_format=eval_format
+            )
 
             def _streaming_eval_encode(row):
                 result = encode_fn(row)
@@ -338,7 +348,7 @@ def run_sft_v2(
             eval_dataset = StreamingDataset(hf_eval_ds)
             logger.info("[datasets_v2] Eval dataset ready (iterable mode, streaming=True)")
         else:
-            hf_eval_ds = v2_load_dataset(data_args.eval_dataset_path, num_proc=num_proc)
+            hf_eval_ds = v2_load_dataset(data_args.eval_dataset_path, num_proc=num_proc, dataset_format=eval_format)
             eval_dataset = LazyEncodeDataset(hf_eval_ds, encode_fn, seed=training_args.seed)
             logger.info(f"[datasets_v2] Eval dataset loaded: {len(eval_dataset)} samples")
 

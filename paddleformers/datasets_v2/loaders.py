@@ -213,6 +213,7 @@ def _get_preprocessor(meta: DatasetMeta):
     from .preprocessors import (
         AlpacaPreprocessor,
         AutoPreprocessor,
+        ErnieKitPreprocessor,
         MessagesPreprocessor,
         ResponsePreprocessor,
         TextPreprocessor,
@@ -224,6 +225,7 @@ def _get_preprocessor(meta: DatasetMeta):
         "response": ResponsePreprocessor,
         "alpaca": AlpacaPreprocessor,
         "text": TextPreprocessor,
+        "erniekit": ErnieKitPreprocessor,
     }
 
     if preprocessor not in _PREPROCESSOR_MAP:
@@ -232,6 +234,49 @@ def _get_preprocessor(meta: DatasetMeta):
     cls = _PREPROCESSOR_MAP[preprocessor]
     columns = meta.columns or {}
     return cls(columns=columns)
+
+
+_FORMAT_TO_PREPROCESSOR = {
+    "erniekit": "erniekit",
+    "messages": "messages",
+    "alpaca": "alpaca",
+    "text": "text",
+    "response": "response",
+}
+
+
+def _resolve_preprocessor(meta, dataset_format, columns):
+    """Resolve preprocessor: dataset_format hint > registry meta > AutoPreprocessor."""
+    from .preprocessors import (
+        AlpacaPreprocessor,
+        AutoPreprocessor,
+        ErnieKitPreprocessor,
+        MessagesPreprocessor,
+        ResponsePreprocessor,
+        TextPreprocessor,
+    )
+
+    _FORMAT_CLASS_MAP = {
+        "erniekit": ErnieKitPreprocessor,
+        "messages": MessagesPreprocessor,
+        "alpaca": AlpacaPreprocessor,
+        "text": TextPreprocessor,
+        "response": ResponsePreprocessor,
+    }
+
+    # Priority 1: explicit dataset_format hint
+    if dataset_format and dataset_format in _FORMAT_CLASS_MAP:
+        cls = _FORMAT_CLASS_MAP[dataset_format]
+        return cls(columns=columns)
+
+    # Priority 2: registry metadata
+    if meta and meta.preprocessor is None:
+        return None
+    if meta:
+        return _get_preprocessor(meta)
+
+    # Priority 3: auto-detect
+    return AutoPreprocessor(columns=columns)
 
 
 # ============================================================
@@ -250,6 +295,7 @@ def load_dataset(
     preprocess: bool = True,
     columns: Optional[Dict[str, str]] = None,
     strict: bool = False,
+    dataset_format: Optional[str] = None,
 ) -> DATASET_TYPE:
     """Load a dataset from any source: local file, directory, or HuggingFace Hub.
 
@@ -270,6 +316,9 @@ def load_dataset(
         preprocess: Whether to apply the registered preprocessor.
         columns: Column rename mapping. Merged with registry columns.
         strict: If True, raise on preprocessing errors.
+        dataset_format: Explicit dataset format hint (e.g. "erniekit", "messages").
+            When provided and recognized, directly selects the corresponding preprocessor
+            instead of using auto-detection. Falls back to AutoPreprocessor if unrecognized.
 
     Returns:
         The loaded (and optionally preprocessed) dataset.
@@ -310,16 +359,7 @@ def load_dataset(
 
     # 5. Apply preprocessing
     if preprocess:
-        if meta and meta.preprocessor is None:
-            # Explicitly disabled preprocessing via registry
-            preprocessor = None
-        elif meta:
-            preprocessor = _get_preprocessor(meta)
-        else:
-            # No registry meta: default to AutoPreprocessor
-            from .preprocessors import AutoPreprocessor
-
-            preprocessor = AutoPreprocessor(columns=effective_columns)
+        preprocessor = _resolve_preprocessor(meta, dataset_format, effective_columns)
 
         if preprocessor is not None:
             proc_num_proc = num_proc if not streaming else 1

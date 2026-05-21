@@ -145,6 +145,8 @@ class StandardRow:
 # Checks
 # ============================================================
 
+_ALLOWED_MESSAGE_KEYS = {"role", "content", "loss", "tool_calls", "tool_call_id", "name", "tools"}
+
 
 def check_messages(messages: List[Dict[str, Any]]) -> None:
     """Check that a messages list conforms to schema."""
@@ -154,7 +156,7 @@ def check_messages(messages: List[Dict[str, Any]]) -> None:
         assert "content" in msg, f'message missing "content": {msg}'
         assert msg["role"] in ROLES, f'invalid role "{msg["role"]}", must be one of {ROLES}'
         assert msg["content"] is not None, f"message content is None: {msg}"
-        extra_keys = set(msg.keys()) - {"role", "content", "loss"}
+        extra_keys = set(msg.keys()) - _ALLOWED_MESSAGE_KEYS
         assert not extra_keys, f"unexpected keys in message: {extra_keys}"
 
 

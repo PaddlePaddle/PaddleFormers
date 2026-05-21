@@ -21,7 +21,7 @@ class DataArguments:
 
     # data dir
     dataset_type: str = field(
-        default="iterable",
+        default="map",
         metadata={
             "help": (
                 "Specify the type of dataset to use. Options are 'iterable' "

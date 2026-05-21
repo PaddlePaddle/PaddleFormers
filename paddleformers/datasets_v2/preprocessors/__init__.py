@@ -14,6 +14,7 @@
 
 from .auto import AutoPreprocessor
 from .base import BasePreprocessor
+from .erniekit import ErnieKitPreprocessor
 from .extra import AlpacaPreprocessor, TextPreprocessor
 from .messages import MessagesPreprocessor
 from .response import ResponsePreprocessor, history_to_messages
