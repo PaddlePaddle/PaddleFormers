@@ -231,9 +231,16 @@ class InternLM25CompatibilityTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         import json
 
+        import numpy as np
         import torch
         from modelscope import AutoConfig
         from transformers import AutoModelForCausalLM
+
+        # Set random seeds for reproducibility
+        np.random.seed(42)
+        torch.manual_seed(42)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(42)
 
         cls.torch_model_path = tempfile.mkdtemp()
 
@@ -261,7 +268,12 @@ class InternLM25CompatibilityTest(unittest.TestCase):
 
     @require_package("transformers", "torch")
     def test_intern_converter(self):
+        # Set seeds for reproducibility
+        import paddle
         import torch
+
+        paddle.seed(42)
+        np.random.seed(42)
 
         input_ids = np.random.randint(100, 200, [1, 20])
 
