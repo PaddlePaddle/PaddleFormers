@@ -256,8 +256,13 @@ def _remove_thought(content: str, thought_words: Tuple[str, str]) -> str:
     return re.sub(pattern, "", content).lstrip("\n")
 
 
-def _get_thought_word_ids(tokenizer: Any, thought_words: Tuple[str, str]) -> List[int]:
-    """Get token IDs for empty thought (open + close tags)."""
+_GLM5_TEMPLATES = {"glm_moe_dsa"}
+
+
+def _get_thought_word_ids(tokenizer: Any, thought_words: Tuple[str, str], template_name: str = "") -> List[int]:
+    """Get token IDs for empty thought. GLM5 uses only closing tag."""
+    if template_name in _GLM5_TEMPLATES:
+        return tokenizer.encode(thought_words[1], add_special_tokens=False)
     return tokenizer.encode(f"{thought_words[0]}{thought_words[1]}", add_special_tokens=False)
 
 
@@ -367,21 +372,11 @@ def encode_multiturn_reasoning(
 ) -> List[Tuple[List[int], List[int]]]:
     """Encode with reasoning/thinking support.
 
-    Like encode_multiturn but handles thought tags:
-    - Removes thought from intermediate assistant messages
-    - For the last assistant message: if no thought present, adds empty <think></think>
-    - If enable_thinking is False: thought goes into prompt (not trained on)
-    - If enable_thinking is True: thought goes into response (trained on)
-
-    Args:
-        template: Template with thought_words and enable_thinking set.
-        tokenizer: Tokenizer.
-        messages: Conversation messages.
-        system: Override system message.
-        tools: Tools JSON string.
-
-    Returns:
-        List of (prompt_ids, response_ids) tuples.
+    Aligned with old ReasoningTemplate.encode_multiturn:
+    - If enable_thinking is False: removes CoT from ALL assistant messages
+    - For each turn without thought tags: inserts empty thought tokens
+    - If enable_thinking is truthy: thought IDs go into response (trained on)
+    - If enable_thinking is falsy: thought IDs go into prompt (not trained on)
     """
     messages = deepcopy(messages)
     thought_words = template.thought_words
@@ -392,16 +387,11 @@ def encode_multiturn_reasoning(
         system = system or messages[0]["content"]
         actual_messages = messages[1:]
 
-    # Remove thought from all intermediate assistant messages (keep only last)
-    for i in range(1, len(actual_messages) - 2, 2):
-        if actual_messages[i].get("role") == "assistant":
-            actual_messages[i]["content"] = _remove_thought(actual_messages[i]["content"], thought_words)
-
-    # Handle last assistant message
+    # If enable_thinking is False, remove all CoT from all assistant messages
     if template.enable_thinking is False:
-        # Remove all CoT from the last response too
-        if actual_messages and actual_messages[-1].get("role") == "assistant":
-            actual_messages[-1]["content"] = _remove_thought(actual_messages[-1]["content"], thought_words)
+        for i in range(1, len(actual_messages), 2):
+            if actual_messages[i].get("role") == "assistant":
+                actual_messages[i]["content"] = _remove_thought(actual_messages[i]["content"], thought_words)
 
     # Rebuild messages with system
     if system:
@@ -409,26 +399,27 @@ def encode_multiturn_reasoning(
     else:
         rebuild = actual_messages
 
-    # Use normal encoding first
+    # Encode using normal path
     pairs = encode_multiturn(template, tokenizer, rebuild, system=system, tools=tools)
 
-    # Now handle thought insertion for the last turn
-    if pairs:
-        last_prompt, last_response = pairs[-1]
-        last_msg = actual_messages[-1] if actual_messages else {}
-        last_content = last_msg.get("content", "")
+    # Add empty thought to ALL turns that don't have thought tags
+    for i in range(0, len(actual_messages), 2):
+        if i + 1 >= len(actual_messages):
+            break
+        assistant_content = actual_messages[i + 1].get("content", "")
+        has_thought = thought_words[0].strip() in assistant_content and thought_words[1].strip() in assistant_content
+        pair_idx = i // 2
+        if pair_idx >= len(pairs):
+            break
 
-        has_thought = thought_words[0].strip() in last_content and thought_words[1].strip() in last_content
-
-        if not has_thought and last_msg.get("role") == "assistant":
-            thought_ids = _get_thought_word_ids(tokenizer, thought_words)
+        if not has_thought:
+            thought_ids = _get_thought_word_ids(tokenizer, thought_words, template.name)
+            prompt_ids, response_ids = pairs[pair_idx]
             if not template.enable_thinking:
-                # Don't compute loss on thought → prepend to prompt
-                last_prompt = last_prompt + thought_ids
+                prompt_ids = prompt_ids + thought_ids
             else:
-                # Compute loss on thought → prepend to response
-                last_response = thought_ids + last_response
-            pairs[-1] = (last_prompt, last_response)
+                response_ids = thought_ids + response_ids
+            pairs[pair_idx] = (prompt_ids, response_ids)
 
     return pairs
 
