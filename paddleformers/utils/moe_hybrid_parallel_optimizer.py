@@ -407,3 +407,118 @@ class MoEHybridParallelOptimizer(HPBase):
                         if "grad_clip" in item.keys():
                             item["grad_clip"] = MoEHybridParallelClipGrad(inner_opt._grad_clip, hcg, self._timers)
         self.processed_steps = 0
+        self._minimax_gate_adamw_state = {}
+        self._minimax_wrap_gate_fp32_wgrad_optimizer()
+
+    def _minimax_moe_router(self):
+        try:
+            import paddlefleet.transformer.moe.moe_router as moe_router
+        except Exception:
+            return None
+        return moe_router
+
+    def _minimax_compute_gate_shard(self, full_wg, param_numel):
+        total_numel = int(full_wg.numel().item())
+        rank = paddle.distributed.get_rank()
+        nranks = max(total_numel // param_numel, 1)
+        shard_size = total_numel // nranks
+        start = rank * shard_size
+        end = start + shard_size
+        return full_wg.reshape([-1])[start:end].contiguous()
+
+    def _minimax_manual_gate_adamw_step(self, param, grad):
+        key = getattr(param, "name", "_gate")
+        state = self._minimax_gate_adamw_state.setdefault(
+            key,
+            {"m": paddle.zeros_like(param), "v": paddle.zeros_like(param), "step": 0},
+        )
+        state["step"] += 1
+        step_t = state["step"]
+        beta1, beta2, eps, lr, wd = 0.9, 0.95, 1e-8, 1e-5, 0.1
+        m = state["m"]
+        v = state["v"]
+
+        m_new = paddle.add(
+            paddle.multiply(m, paddle.full([], beta1, dtype="float32")),
+            paddle.multiply(grad, paddle.full([], 1.0 - beta1, dtype="float32")),
+        )
+        v_new = paddle.add(
+            paddle.multiply(v, paddle.full([], beta2, dtype="float32")),
+            paddle.multiply(
+                paddle.multiply(grad, grad),
+                paddle.full([], 1.0 - beta2, dtype="float32"),
+            ),
+        )
+        m_hat = paddle.divide(m_new, paddle.full([], 1.0 - beta1 ** step_t, dtype="float32"))
+        v_hat = paddle.divide(v_new, paddle.full([], 1.0 - beta2 ** step_t, dtype="float32"))
+        denom = paddle.add(paddle.sqrt(v_hat), paddle.full([], eps, dtype="float32"))
+        p_decayed = paddle.multiply(param, paddle.full([], 1.0 - lr * wd, dtype="float32"))
+        p_new = paddle.subtract(
+            p_decayed,
+            paddle.multiply(
+                paddle.full([], lr, dtype="float32"),
+                paddle.divide(m_hat, denom),
+            ),
+        )
+        paddle.assign(m_new, m)
+        paddle.assign(v_new, v)
+        paddle.assign(p_new, param)
+
+    def _minimax_wrap_gate_fp32_wgrad_optimizer(self):
+        moe_router = self._minimax_moe_router()
+        if moe_router is None:
+            return
+        inner_apply_opt = getattr(self._inner_opt, "_apply_optimize", None)
+        if inner_apply_opt is None or getattr(inner_apply_opt, "_minimax_gate_fp32_wgrad", False):
+            return
+
+        import functools
+        import types
+
+        @functools.wraps(inner_apply_opt)
+        def _apply_optimize_with_gate_fp32(
+            inner_self,
+            loss,
+            startup_program,
+            params_grads,
+            param_group_idx=0,
+        ):
+            gate_param = None
+            gate_grad = None
+            if isinstance(params_grads, list):
+                full_wg = moe_router._minimax_peek_router_gate_fp32_wgrad()
+                if full_wg is not None:
+                    dist.all_reduce(full_wg)
+                    full_wg = full_wg / dist.get_world_size()
+                    full_numel = int(full_wg.numel().item())
+                    for i, (param, grad) in enumerate(params_grads):
+                        param_numel = 1
+                        for dim in param.shape:
+                            param_numel *= int(dim)
+                        if param_numel != full_numel and (
+                            full_numel % param_numel != 0 or full_numel // param_numel not in (1, 2, 4, 8)
+                        ):
+                            continue
+                        gate_param = param
+                        gate_grad = (
+                            full_wg
+                            if param_numel == full_numel
+                            else self._minimax_compute_gate_shard(full_wg, param_numel)
+                        )
+                        params_grads = params_grads[:i] + params_grads[i + 1 :]
+                        break
+            try:
+                result = inner_apply_opt(
+                    loss,
+                    startup_program,
+                    params_grads,
+                    param_group_idx=param_group_idx,
+                )
+            finally:
+                moe_router._minimax_clear_router_gate_fp32_wgrad()
+            if gate_param is not None and gate_grad is not None:
+                self._minimax_manual_gate_adamw_step(gate_param, gate_grad)
+            return result
+
+        _apply_optimize_with_gate_fp32._minimax_gate_fp32_wgrad = True
+        self._inner_opt._apply_optimize = types.MethodType(_apply_optimize_with_gate_fp32, self._inner_opt)

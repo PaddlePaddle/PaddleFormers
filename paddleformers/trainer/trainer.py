@@ -3073,6 +3073,31 @@ class Trainer:
         self.create_scheduler(num_training_steps=num_training_steps)
         self.create_optimizer(self.lr_scheduler)
 
+    def _create_decay_param_fun(self, params):
+        """Create AdamW decay filter for flat parameter-list optimizers.
+
+        SFT/DPO can call ``set_optimizer_grouped_parameters`` with a flat list of
+        trainable parameters.  Preserve the usual AdamW contract in that path:
+        bias and norm parameters skip decoupled weight decay, while all other
+        optimizer-visible parameters decay.
+        """
+        if params is None or (isinstance(params, list) and params and isinstance(params[0], dict)):
+            return None
+
+        optimizer_param_ids = {id(p) for p in params}
+        decay_parameters = {
+            p.name
+            for n, p in self.model.named_parameters()
+            if id(p) in optimizer_param_ids
+            and not p.stop_gradient
+            and not any(nd in n for nd in ["bias", "norm"])
+        }
+
+        def apply_decay_param_fun(param_name):
+            return param_name in decay_parameters
+
+        return apply_decay_param_fun
+
     def create_optimizer(self, lr_scheduler=None):
         """
         Setup the optimizer.
@@ -3083,17 +3108,9 @@ class Trainer:
         if self.optimizer is None:
             if self.optimizer_grouped_parameters is not None:
                 params = self.optimizer_grouped_parameters
-                apply_decay_param_fun = None
             else:
                 params = [p for p in self.model.parameters() if not p.stop_gradient]
-                decay_parameters = [
-                    p.name
-                    for n, p in self.model.named_parameters()
-                    if not p.stop_gradient and not any(nd in n for nd in ["bias", "norm"])
-                ]
-
-                def apply_decay_param_fun(x):
-                    return x in decay_parameters
+            apply_decay_param_fun = self._create_decay_param_fun(params)
 
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
             if self.args.optim == OptimizerNames.ADAMW_CUSTOM:
