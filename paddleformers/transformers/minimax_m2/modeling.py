@@ -137,6 +137,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
         moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         use_gated_attn = getattr(config, "use_gated_attn", False)
+        csa_compress_ratios = getattr(config, "csa_compress_ratios", None)
 
         # Get Muon configuration from muon_configs
         muon_qkv_update_mode = muon_configs.get("muon_qkv_update_mode", "split_head")
@@ -163,7 +164,65 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         if use_mla and muon_qkv_update_mode == "split_head":
             mla_slice_fn = _mla_per_head
 
-        def _add_layer_slice_config(prefix):
+        def _add_layer_slice_config(prefix, layer_idx):
+            # DeepSeekV4 Attention weights:
+            if csa_compress_ratios is not None and mla_slice_fn is not None:
+                ratio = csa_compress_ratios[layer_idx]
+                # common weights (Sliding Window Attenion)
+                slice_config[f"{prefix}.self_attn.linear_q_up_proj.weight"] = (
+                    mla_slice_fn,
+                    {
+                        "head_num": num_attention_head,
+                        "axis": 1,
+                    },
+                )
+
+                # Compressor weights
+                if ratio == 4:
+                    slice_config[f"{prefix}.self_attn.core_attention.compressor.linear_wkv.weight"] = (
+                        mla_slice_fn,
+                        {
+                            "head_num": 1,
+                            "axis": 1,
+                            "head_split_sizes": [config.v_head_dim, config.v_head_dim],
+                        },
+                    )
+                    slice_config[f"{prefix}.self_attn.core_attention.compressor.linear_wgate.weight"] = (
+                        mla_slice_fn,
+                        {
+                            "head_num": 1,
+                            "axis": 1,
+                            "head_split_sizes": [config.v_head_dim, config.v_head_dim],
+                        },
+                    )
+                # Indexer weights
+                print(f"layer: {layer_idx}, ratio: {ratio}, dense_mode: {config.csa_dense_mode}")
+                if ratio == 4 and config.csa_dense_mode is False:
+                    slice_config[f"{prefix}.self_attn.core_attention.indexer.linear_wq_b.weight"] = (
+                        mla_slice_fn,
+                        {
+                            "head_num": config.dsa_index_n_heads,
+                            "axis": 1,
+                        },
+                    )
+                    # Compressed weights
+                    slice_config[f"{prefix}.self_attn.core_attention.indexer.compressor.linear_wkv.weight"] = (
+                        mla_slice_fn,
+                        {
+                            "head_num": 1,
+                            "axis": 1,
+                            "head_split_sizes": [config.dsa_index_head_dim, config.dsa_index_head_dim],
+                        },
+                    )
+                    slice_config[f"{prefix}.self_attn.core_attention.indexer.compressor.linear_wgate.weight"] = (
+                        mla_slice_fn,
+                        {
+                            "head_num": 1,
+                            "axis": 1,
+                            "head_split_sizes": [config.dsa_index_head_dim, config.dsa_index_head_dim],
+                        },
+                    )
+
             # Fused QKV weights (non-MLA path)
             if not use_mla and qkv_slice_fn is not None:
                 slice_config[f"{prefix}.self_attn.qkv_proj.weight"] = (qkv_slice_fn, qkv_kwargs.copy())
@@ -244,7 +303,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
         # Main layers
         for layer_idx in range(num_hidden_layers):
-            _add_layer_slice_config(f"model.layers.{layer_idx}")
+            _add_layer_slice_config(f"model.layers.{layer_idx}", layer_idx)
 
         # MTP layers
         if config.mtp_num_layers > 0:
@@ -252,9 +311,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         else:
             num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
         for layer_idx in range(num_nextn_predict_layers):
-            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}")
+            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}", num_hidden_layers + layer_idx)
         for layer_idx in range(num_nextn_predict_layers):
-            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer")
+            _add_layer_slice_config(
+                f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer", num_hidden_layers + layer_idx
+            )
 
         return slice_config
 
@@ -296,8 +357,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
         for pp_name, param in model.named_parameters():
             name = pp_to_single.get(pp_name, pp_name)
-            use_muon = _default_should_use_muon(name, param.shape, exclude_patterns) and _default_should_use_muon(
-                param.name, param.shape, exclude_patterns
+            use_muon = (
+                _default_should_use_muon(name, param.shape, exclude_patterns)
+                and _default_should_use_muon(param.name, param.shape, exclude_patterns)
+                and "hc_head_fn" not in name
+                and "mapping_proj" not in name
             )
 
             if name in slice_config:
@@ -907,6 +971,7 @@ class MiniMaxM2ForCausalLM(MiniMaxM2PreTrainedModel):
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model.build_muon_param_info_map = cls.build_muon_param_info_map
         gpt_model.config_to_save = config
         gpt_model.is_fleet = cls.is_fleet
         return gpt_model
@@ -933,6 +998,7 @@ class MiniMaxM2ForCausalLMPipe(MiniMaxM2PreTrainedModel, GeneralModelForCausalLM
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model.build_muon_param_info_map = cls.build_muon_param_info_map
         if not hasattr(config, "architectures"):
             config.architectures = [cls.__name__.replace("Pipe", "")]
         gpt_model.config_to_save = config
