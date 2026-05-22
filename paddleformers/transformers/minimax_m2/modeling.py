@@ -431,12 +431,14 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     ]
 
             elif config.experimental_attention_variant == "dsv4_hybrid":
-                # MTP layers (layer_idx >= num_hidden_layers) are not in csa_compress_ratios;
-                # observed checkpoint shows MTP has no compressor -> treat as ratio 0.
-                if layer_idx < num_hidden_layers:
-                    csa_ratio = config.csa_compress_ratios[layer_idx]
-                else:
-                    csa_ratio = 0
+                # csa_compress_ratios has length num_hidden_layers + num_nextn_predict_layers,
+                # i.e. it covers both main layers and MTP layers.
+                assert len(config.csa_compress_ratios) == num_hidden_layers + num_nextn_predict_layers, (
+                    f"csa_compress_ratios length ({len(config.csa_compress_ratios)}) must equal "
+                    f"num_hidden_layers + num_nextn_predict_layers "
+                    f"({num_hidden_layers} + {num_nextn_predict_layers})"
+                )
+                csa_ratio = config.csa_compress_ratios[layer_idx]
                 aoa_config["aoa_statements"] += [
                     # Linear projections (transpose: HF [out, in] -> paddle [in, out])
                     f"{prefix}.self_attn.linear_q_down_proj.weight^T -> {prefix_offset}.self_attn.linear_q_down_proj.weight",
@@ -698,12 +700,14 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         f"{prefix_offset}.self_attn.kv_a_layernorm.weight -> {prefix}.self_attn.kv_a_layernorm.weight",
                     ]
             elif config.experimental_attention_variant == "dsv4_hybrid":
-                # MTP layers (layer_idx >= num_hidden_layers) are not in csa_compress_ratios;
-                # observed checkpoint shows MTP has no compressor -> treat as ratio 0.
-                if layer_idx < num_hidden_layers:
-                    csa_ratio = config.csa_compress_ratios[layer_idx]
-                else:
-                    csa_ratio = 0
+                # csa_compress_ratios has length num_hidden_layers + num_nextn_predict_layers,
+                # i.e. it covers both main layers and MTP layers.
+                assert len(config.csa_compress_ratios) == num_hidden_layers + num_nextn_predict_layers, (
+                    f"csa_compress_ratios length ({len(config.csa_compress_ratios)}) must equal "
+                    f"num_hidden_layers + num_nextn_predict_layers "
+                    f"({num_hidden_layers} + {num_nextn_predict_layers})"
+                )
+                csa_ratio = config.csa_compress_ratios[layer_idx]
                 aoa_statements += [
                     # Linear projections (transpose: paddle [in, out] -> HF [out, in])
                     f"{prefix_offset}.self_attn.linear_q_down_proj.weight^T -> {prefix}.self_attn.linear_q_down_proj.weight",
