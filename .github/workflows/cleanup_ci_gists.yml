@@ -1,5 +1,3 @@
-# 放置路径: PaddlePaddle/PaddleFormers/.github/workflows/cleanup-ci-gists.yml
-
 name: Cleanup CI Gists
 
 on:
@@ -22,7 +20,7 @@ jobs:
     steps:
       - name: Delete old CI gists
         env:
-          GH_TOKEN: ${{ secrets.CLEANUP_GITS }}
+          GH_TOKEN: ${{ secrets.GIST_CLEANUP_TOKEN }}
           KEEP_DAYS: ${{ inputs.keep_days || '14' }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
         run: |
@@ -36,10 +34,10 @@ jobs:
           headers  = {"Authorization": f"token {token}"}
           cutoff   = datetime.now(timezone.utc) - timedelta(days=keep)
 
-          # 匹配所有 CI bot 生成的 Gist 命名规则
           CI_PREFIXES = [
-              "PaddleFleet CI ",    # 主日志: "PaddleFleet CI coverage_check - run xxx PR#xxx"
-              "error_",             # bot临时上传: "error_${BOT_TASK_ID}_${pipeline_slug}"
+              "PaddleFleet CI ",    
+              "PaddleFormers CI ", 
+              "error_", 
           ]
 
           print(f"{'[DRY RUN] ' if dry_run else ''}Deleting gists older than {keep} days (before {cutoff.date()})\n")
