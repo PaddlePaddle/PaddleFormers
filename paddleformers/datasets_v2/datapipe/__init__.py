@@ -14,11 +14,14 @@
 
 """datapipe: template encoding + packing + collation for datasets_v2."""
 
-from .collate import collate_sft, collate_vl_sft
+from .collate import collate_dpo, collate_sft, collate_vl_sft
 from .encode import (
+    DPOEncodeConfig,
+    DPOEncodedSample,
     EncodeConfig,
     EncodedSample,
     VLEncodedSample,
+    encode_dpo,
     encode_pt,
     encode_sft,
     encode_vl_sft,

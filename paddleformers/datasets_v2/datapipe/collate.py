@@ -591,3 +591,189 @@ def collate_vl_sft(
         result["attention_mask"] = attention_mask
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# DPO collation
+# ---------------------------------------------------------------------------
+
+
+def collate_dpo(
+    batch: List[Any],
+    pad_token_id: int,
+    max_seq_len: int,
+    use_attn_mask_startend_row_indices: bool = False,
+    use_filtered_label_loss: bool = True,
+) -> Dict[str, np.ndarray]:
+    """Collate a batch of DPOEncodedSamples into training-ready numpy arrays.
+
+    Produces the format expected by DPOTrainer.compute_loss():
+    - Block-causal attention mask (rejected cannot see chosen tokens)
+    - response_indexs for slicing chosen/rejected log-probs
+
+    Args:
+        batch: List of DPOEncodedSample (or dicts from streaming).
+        pad_token_id: Tokenizer's pad token ID.
+        max_seq_len: Maximum sequence length for padding.
+        use_attn_mask_startend_row_indices: If True, use compact flashmask format.
+        use_filtered_label_loss: Controls response_indexs computation mode.
+
+    Returns:
+        Dict with numpy arrays:
+            - input_ids: [B, S] int64
+            - position_ids: [B, S] int64
+            - response_labels: [B, S] int64
+            - response_indexs: [N, 4] int32 where N=batch_size
+            - attention_mask: [B, 1, S, S] float32 (or attn_mask_startend_row_indices)
+            - score_deltas: [N, 1] float32
+    """
+    from .encode import DPOEncodedSample
+
+    # Handle dict input from streaming .map()
+    if batch and isinstance(batch[0], dict):
+        batch = [
+            DPOEncodedSample(
+                input_ids=item["input_ids"],
+                position_ids=item["position_ids"],
+                response_labels=item["response_labels"],
+                response_index=item["response_index"],
+                seq_len=item["seq_len"],
+                score_delta=item.get("score_delta", 1.0),
+            )
+            for item in batch
+        ]
+
+    if not batch:
+        raise ValueError("collate_dpo received an empty batch")
+
+    batch_size = len(batch)
+    pad_len = min(max_seq_len, max(s.seq_len for s in batch))
+
+    input_ids = np.full((batch_size, pad_len), pad_token_id, dtype=np.int64)
+    position_ids = np.zeros((batch_size, pad_len), dtype=np.int64)
+    response_labels = np.full((batch_size, pad_len), -100, dtype=np.int64)
+
+    for i, sample in enumerate(batch):
+        seq_len = min(sample.seq_len, pad_len)
+        input_ids[i, :seq_len] = sample.input_ids[:seq_len]
+        position_ids[i, :seq_len] = sample.position_ids[:seq_len]
+        response_labels[i, :seq_len] = sample.response_labels[:seq_len]
+
+    # Build response_indexs: [batch_idx, chosen_start, rejected_start, rejected_end]
+    response_indexs_list = []
+    if use_filtered_label_loss:
+        # Absolute indices into flattened (filtered) logps
+        sequence_sum_flatten = 0
+        for i, sample in enumerate(batch):
+            ri = sample.response_index  # [chosen_start, rejected_start, rejected_end]
+            response_indexs_list.append(
+                [
+                    i,
+                    sequence_sum_flatten + ri[0],
+                    sequence_sum_flatten + ri[1],
+                    sequence_sum_flatten + ri[2],
+                ]
+            )
+            sequence_sum_flatten += ri[2]  # rejected_end = total response length
+    else:
+        # Per-sequence relative indices
+        for i, sample in enumerate(batch):
+            ri = sample.response_index
+            response_indexs_list.append([i, ri[0], ri[1], ri[2]])
+
+    response_indexs = np.array(response_indexs_list, dtype=np.int32)
+
+    # Score deltas
+    score_deltas = np.array([[s.score_delta] for s in batch], dtype=np.float32)
+
+    result = {
+        "input_ids": input_ids,
+        "position_ids": position_ids,
+        "response_labels": response_labels,
+        "response_indexs": response_indexs,
+        "score_deltas": score_deltas,
+    }
+
+    # Build attention mask (block-causal for DPO)
+    if use_attn_mask_startend_row_indices:
+        result["attn_mask_startend_row_indices"] = _build_dpo_startend(batch, pad_len)
+    else:
+        result["attention_mask"] = _build_dpo_attention_mask(batch, pad_len)
+
+    return result
+
+
+def _build_dpo_startend(
+    batch: List[Any],
+    pad_len: int,
+) -> np.ndarray:
+    """Build attn_mask_startend_row_indices for DPO batch.
+
+    DPO attention pattern:
+    - Prompt tokens: can attend to full sequence (value = seq_len)
+    - Chosen tokens: can attend up to end of chosen (value = prompt_len + chosen_len - 1)
+    - Fork token: can attend to full sequence (value = seq_len)
+    - Rejected tokens: can attend to full sequence (value = seq_len)
+    - Padding: self-attend only (value = position)
+
+    Returns: [B, 1, S, 1] int32
+    """
+    batch_size = len(batch)
+    indices = np.zeros((batch_size, 1, pad_len, 1), dtype=np.int32)
+
+    for i, sample in enumerate(batch):
+        seq_len = min(sample.seq_len, pad_len)
+        ri = sample.response_index
+
+        # Derive structure lengths
+        chosen_len = ri[1] - ri[0]
+        rejected_len = ri[2] - ri[1]
+        prompt_len = seq_len - chosen_len - rejected_len + 1
+
+        # DPO startend pattern
+        indices[i, 0, :prompt_len, 0] = seq_len
+        chosen_end_pos = prompt_len + chosen_len - 1
+        indices[i, 0, prompt_len:chosen_end_pos, 0] = chosen_end_pos
+        indices[i, 0, chosen_end_pos, 0] = seq_len  # fork token
+        if chosen_end_pos + 1 < seq_len:
+            indices[i, 0, chosen_end_pos + 1 : seq_len, 0] = seq_len  # rejected
+
+        # Padding: each position attends only to itself
+        if seq_len < pad_len:
+            indices[i, 0, seq_len:, 0] = np.arange(seq_len, pad_len)
+
+    return indices
+
+
+def _build_dpo_attention_mask(
+    batch: List[Any],
+    pad_len: int,
+) -> np.ndarray:
+    """Build 4D attention mask for DPO batch.
+
+    Block-causal: lower triangular, but rejected tokens cannot attend to chosen tokens.
+
+    Returns: [B, 1, S, S] float32
+    """
+    batch_size = len(batch)
+    attention_mask = np.zeros((batch_size, 1, pad_len, pad_len), dtype=np.float32)
+
+    for i, sample in enumerate(batch):
+        seq_len = min(sample.seq_len, pad_len)
+        ri = sample.response_index
+
+        chosen_len = ri[1] - ri[0]
+        rejected_len = ri[2] - ri[1]
+        prompt_len = seq_len - chosen_len - rejected_len + 1
+
+        # Start with full causal mask
+        attention_mask[i, 0, :seq_len, :seq_len] = np.tril(np.ones((seq_len, seq_len), dtype=np.float32))
+
+        # Block rejected tokens from seeing chosen tokens
+        # Fork token is at: prompt_len + chosen_len - 1
+        # Rejected tokens: [fork_pos, seq_len)
+        # Chosen tokens occupy: [prompt_len - 1, fork_pos)
+        fork_pos = prompt_len + chosen_len - 1
+        attention_mask[i, 0, fork_pos:seq_len, prompt_len - 1 : fork_pos] = 0.0
+
+    return attention_mask

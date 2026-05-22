@@ -13,5 +13,6 @@
 # limitations under the License.
 
 from .workflow import run_dpo
+from .workflow2 import run_dpo_v2
 
-__all__ = ["run_dpo"]
+__all__ = ["run_dpo", "run_dpo_v2"]

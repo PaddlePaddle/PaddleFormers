@@ -57,13 +57,17 @@ from .schema import (
 _load_builtin_registry()
 
 from .datapipe import (
+    DPOEncodeConfig,
+    DPOEncodedSample,
     EncodeConfig,
     EncodedSample,
     FunctionCall,
     TemplateMeta,
     VLEncodedSample,
+    collate_dpo,
     collate_sft,
     collate_vl_sft,
+    encode_dpo,
     encode_multiturn,
     encode_multiturn_reasoning,
     encode_pt,

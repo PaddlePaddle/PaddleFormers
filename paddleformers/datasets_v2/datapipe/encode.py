@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Single-sample encoding: messages → input_ids + labels."""
+"""Single-sample encoding: messages → input_ids + labels.
+
+Supports SFT, PT, VL-SFT, and DPO encoding modes.
+"""
 
 import logging
 from dataclasses import dataclass, field
@@ -471,3 +474,238 @@ def encode_pt(
     position_ids = list(range(len(input_ids)))
 
     return EncodedSample(input_ids=input_ids, labels=labels, seq_len=len(input_ids), position_ids=position_ids)
+
+
+# ---------------------------------------------------------------------------
+# DPO Encoding
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DPOEncodeConfig(EncodeConfig):
+    """Configuration for DPO encoding."""
+
+    use_filtered_label_loss: bool = True
+
+
+@dataclass
+class DPOEncodedSample:
+    """Output of encode_dpo.
+
+    The DPO sequence layout:
+        [prompt_tokens, chosen_response[:-1], prompt_last_token, rejected_response[:-1]]
+
+    Position IDs fork at the prompt boundary:
+        [0..P-1, P..P+C-2, P-1, P..P+R-2]
+
+    Response labels:
+        [-100]*(P-1) + chosen_with_eos + rejected_with_eos
+    """
+
+    input_ids: List[int]
+    position_ids: List[int]
+    response_labels: List[int]
+    response_index: List[int]  # [chosen_start, rejected_start, rejected_end]
+    seq_len: int
+    score_delta: float = 1.0
+
+
+def _get_suffix_ids(template: Optional[TemplateMeta], tokenizer: Any) -> List[int]:
+    """Get EOS/suffix token IDs for DPO response endings."""
+    if template is not None and template.suffix:
+        return tokenizer.encode(template.suffix[-1], add_special_tokens=False)
+    if tokenizer.eos_token_id is not None:
+        return [tokenizer.eos_token_id]
+    return []
+
+
+def _find_divergence_index(messages: List[Dict], rejected_messages: List[Dict]) -> int:
+    """Find the index where chosen and rejected message lists diverge.
+
+    Returns the index of the first differing message. Typically this is
+    len(messages)-1 for standard DPO (only the last assistant turn differs).
+    """
+    min_len = min(len(messages), len(rejected_messages))
+    for i in range(min_len):
+        if messages[i].get("role") != rejected_messages[i].get("role"):
+            return i
+        if messages[i].get("content") != rejected_messages[i].get("content"):
+            return i
+    return min_len
+
+
+def encode_dpo(
+    example: Dict[str, Any],
+    tokenizer: Any,
+    template: Optional[TemplateMeta],
+    config: DPOEncodeConfig,
+) -> Optional[DPOEncodedSample]:
+    """Encode a single DPO sample: chosen/rejected messages → forked sequence.
+
+    Expected input format:
+        - messages: Full chosen conversation [system?, user, assistant, ...]
+        - rejected_messages: Full rejected conversation [system?, user, assistant, ...]
+
+    The two lists share a common prefix (prompt). This function:
+    1. Finds the divergence point
+    2. Encodes prompt, chosen response, and rejected response
+    3. Concatenates into the forked DPO format
+
+    Args:
+        example: Dict with 'messages' and 'rejected_messages'.
+        tokenizer: Tokenizer instance.
+        template: TemplateMeta for encoding.
+        config: DPOEncodeConfig.
+
+    Returns:
+        DPOEncodedSample or None if encoding fails.
+    """
+    messages = example.get("messages")
+    rejected_messages = example.get("rejected_messages")
+
+    if not messages or not rejected_messages:
+        logger.warning("[SKIP] DPO sample missing messages or rejected_messages")
+        return None
+
+    if len(messages) < 2 or len(rejected_messages) < 2:
+        logger.warning("[SKIP] DPO messages too short")
+        return None
+
+    # Inject system prompt for ERNIE models if needed
+    if template is not None:
+        messages = _inject_ernie_think_system(messages, template)
+        rejected_messages = _inject_ernie_think_system(rejected_messages, template)
+
+    # Find shared prefix (prompt) vs diverging response
+    diverge_idx = _find_divergence_index(messages, rejected_messages)
+    if diverge_idx == 0:
+        logger.warning("[SKIP] DPO messages diverge at index 0 (no shared prompt)")
+        return None
+
+    # Encode the full chosen and rejected conversations
+    chosen_pairs = _dispatch_encode(template, tokenizer, messages)
+    rejected_pairs = _dispatch_encode(template, tokenizer, rejected_messages)
+
+    if not chosen_pairs or not rejected_pairs:
+        logger.warning("[SKIP] DPO encoding produced empty pairs")
+        return None
+
+    # Determine the split point in encoded pairs.
+    # Each pair corresponds to one (user, assistant) turn.
+    # diverge_idx is in message-space. Convert to pair-space:
+    # Messages: [sys?, user, asst, user, asst, ...]
+    # Pairs:    [pair0(user+asst), pair1(user+asst), ...]
+    # If system message exists, it's folded into pair0's prompt.
+
+    # Count how many complete (user, assistant) turns are in the shared prefix
+    prompt_messages = messages[:diverge_idx]
+    # Count assistant messages in prompt (= number of complete turns in prompt)
+    prompt_turns = sum(1 for m in prompt_messages if m.get("role") == "assistant")
+
+    # Split pairs into prompt_pairs and response_pairs
+    split_pair_idx = prompt_turns
+    if split_pair_idx >= len(chosen_pairs) or split_pair_idx >= len(rejected_pairs):
+        # Edge case: all turns are shared or encoding mismatch
+        logger.warning("[SKIP] DPO split point beyond encoded pairs")
+        return None
+
+    # Build prompt token sequence from shared pairs
+    prompt_token_ids: List[int] = []
+    for i in range(split_pair_idx):
+        q, a = chosen_pairs[i]
+        prompt_token_ids += q + a
+
+    # Add the prompt part (query) of the split pair
+    chosen_split_q, chosen_split_a = chosen_pairs[split_pair_idx]
+    rejected_split_q, rejected_split_a = rejected_pairs[split_pair_idx]
+    prompt_token_ids += chosen_split_q
+
+    # Build chosen response tokens (remaining turns after split)
+    chosen_response_ids: List[int] = list(chosen_split_a)
+    for i in range(split_pair_idx + 1, len(chosen_pairs)):
+        q, a = chosen_pairs[i]
+        chosen_response_ids += q + a
+
+    # Build rejected response tokens (remaining turns after split)
+    rejected_response_ids: List[int] = list(rejected_split_a)
+    for i in range(split_pair_idx + 1, len(rejected_pairs)):
+        q, a = rejected_pairs[i]
+        rejected_response_ids += q + a
+
+    # Add EOS/suffix to both responses
+    suffix_ids = _get_suffix_ids(template, tokenizer)
+    efficient_eos = template.efficient_eos if template else False
+    if efficient_eos and suffix_ids:
+        chosen_response_ids += suffix_ids
+        rejected_response_ids += suffix_ids
+
+    # Check minimum lengths
+    if not chosen_response_ids or not rejected_response_ids:
+        logger.warning("[SKIP] DPO chosen or rejected response is empty after encoding")
+        return None
+
+    prompt_len = len(prompt_token_ids)
+    chosen_len = len(chosen_response_ids)
+    rejected_len = len(rejected_response_ids)
+
+    # Total length: prompt + (chosen-1) + 1(fork token) + (rejected-1) = prompt + chosen + rejected - 1
+    total_len = prompt_len + chosen_len + rejected_len - 1
+
+    # Truncate prompt from the front if too long
+    max_seq_len = config.max_seq_len
+    if total_len > max_seq_len:
+        excess = total_len - max_seq_len
+        if excess >= prompt_len:
+            logger.warning("[SKIP] DPO sequence too long even without prompt")
+            return None
+        prompt_token_ids = prompt_token_ids[excess:]
+        prompt_len = len(prompt_token_ids)
+        total_len = max_seq_len
+
+    if prompt_len == 0:
+        logger.warning("[SKIP] DPO prompt became empty after truncation")
+        return None
+
+    # Construct the forked DPO sequence:
+    # input_ids = prompt + chosen[:-1] + [prompt_last] + rejected[:-1]
+    input_ids = prompt_token_ids + chosen_response_ids[:-1] + [prompt_token_ids[-1]] + rejected_response_ids[:-1]
+
+    # Position IDs: fork at prompt end
+    # prompt: [0, 1, ..., P-1]
+    # chosen: [P, P+1, ..., P+C-2]
+    # fork:   [P-1]
+    # rejected: [P, P+1, ..., P+R-2]
+    position_ids = (
+        list(range(prompt_len))
+        + list(range(prompt_len, prompt_len + chosen_len - 1))
+        + [prompt_len - 1]
+        + list(range(prompt_len, prompt_len + rejected_len - 1))
+    )
+
+    # Response labels:
+    # [-100]*(P-1) + chosen_response_with_eos + rejected_response_with_eos
+    response_labels = [-100] * (prompt_len - 1) + chosen_response_ids + rejected_response_ids
+
+    # Response index: [chosen_start, rejected_start, rejected_end]
+    if config.use_filtered_label_loss:
+        response_index = [0, chosen_len, chosen_len + rejected_len]
+    else:
+        response_index = [
+            prompt_len - 1,
+            prompt_len - 1 + chosen_len,
+            prompt_len - 1 + chosen_len + rejected_len,
+        ]
+
+    # Sanity checks
+    assert len(input_ids) == total_len, f"input_ids len {len(input_ids)} != total_len {total_len}"
+    assert len(position_ids) == total_len, f"position_ids len {len(position_ids)} != total_len {total_len}"
+    assert len(response_labels) == total_len, f"response_labels len {len(response_labels)} != total_len {total_len}"
+
+    return DPOEncodedSample(
+        input_ids=input_ids,
+        position_ids=position_ids,
+        response_labels=response_labels,
+        response_index=response_index,
+        seq_len=total_len,
+        score_delta=example.get("score_delta", 1.0),
+    )

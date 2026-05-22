@@ -18,7 +18,7 @@ import paddle
 
 from ..hparams import get_train_args, read_args
 from .auto_parallel import run_auto_parallel
-from .dpo import run_dpo
+from .dpo import run_dpo, run_dpo_v2
 from .sft import run_sft, run_sft_v2
 
 
@@ -62,6 +62,9 @@ def _training_function(config: dict[str, Any]) -> None:
     elif model_args.stage == "DPO" or model_args.stage == "VL-DPO":
         with paddle.amp.auto_cast(enable=False):
             run_dpo(model_args, data_args, generating_args, finetuning_args)
+    elif model_args.stage == "DPO-V2":
+        with paddle.amp.auto_cast(enable=False):
+            run_dpo_v2(model_args, data_args, generating_args, finetuning_args)
     elif model_args.stage == "dsv3_pretrain":
         from .deepseek_v3_pretrain import run_dsv3_pretrain
 
