@@ -267,15 +267,16 @@ def run_sft_v2(
     # dataset_type 控制数据集加载模式:
     #   iterable → streaming=True, 不下载到本地, 逐条从网络拉取(IterableDataset)
     #   map      → streaming=False, 下载到HF cache后全量加载(MapDataset, 支持随机访问)
-    is_iterable = getattr(data_args, "dataset_type", "map") == "iterable"
+    # V2 管道默认使用 map 模式（支持 packing），除非用户显式指定 iterable
+    dataset_type = getattr(data_args, "dataset_type", "iterable")
+    use_packing = getattr(data_args, "packing", False) or getattr(data_args, "binpacking", False)
 
-    if is_iterable and getattr(data_args, "packing", False):
-        raise ValueError(
-            "packing/binpacking is not supported with dataset_type='iterable'. "
-            "Bin-packing requires knowing all sample lengths upfront, which is incompatible "
-            "with streaming (iterable) datasets. Please set dataset_type='map' to use packing, "
-            "or disable packing for streaming mode."
-        )
+    # 如果用户未显式设置 dataset_type（仍为默认值 iterable）且开启了 packing，V2 自动用 map
+    if dataset_type == "iterable" and use_packing:
+        dataset_type = "map"
+        logger.info("V2 pipeline: auto-switching dataset_type to 'map' (packing requires map mode).")
+
+    is_iterable = dataset_type == "iterable"
 
     # 获取数据格式 hint（兼容旧配置的 train_dataset_type）
     train_format = getattr(data_args, "train_dataset_type", None)
