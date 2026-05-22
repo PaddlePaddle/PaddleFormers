@@ -2936,9 +2936,6 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 offload=load_via_cpu,
             )
 
-            print("==========> MODEL ARCH")
-            print(model)
-
             for v in sharded_state_dict.values():
                 if hasattr(v.local_tensor, "target_tensor"):
                     del v.local_tensor.target_tensor

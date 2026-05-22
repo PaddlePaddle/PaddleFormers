@@ -144,5 +144,10 @@ class DeepseekV32Config(PretrainedConfig):
 
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
+        # Re-set after super().__init__ because LlmMetaConfig defaults override these
+        self.multi_latent_attention = multi_latent_attention
+        self.use_qk_norm = use_qk_norm
+        self.num_nextn_predict_layers = num_nextn_predict_layers
+
 
 __all__ = ["DeepseekV32Config"]

@@ -2050,24 +2050,6 @@ class Trainer:
             _data_load_start_time = time.time()
 
             for step, inputs in enumerate(epoch_iterator):
-
-                # # print("=====> inputs: ",inputs)
-                # input_ids_ = inputs["input_ids"]
-                # labels_ = inputs["labels"]
-                # position_ids_ = inputs["position_ids"]
-                # input_ids_numpy = input_ids_.numpy()
-                # labels_numpy = labels_.numpy()
-                # position_ids_numpy = position_ids_.numpy()
-                # path = r"/root/paddlejob/share-storage/gpfs/system-public/zhuxinming/zhuxinming/paddlefleet_dpskv32/paddlefleet/new_paddlefleet/data_cache/paddlefleet"
-                # inputs_ids_path = os.path.join(path,f"input_ids_step_{step}.np")
-                # np.save(inputs_ids_path, input_ids_numpy)
-
-                # labels_path = os.path.join(path,f"labels_step_{step}.np")
-                # np.save(labels_path, labels_numpy)
-
-                # position_ids_path = os.path.join(path,f"position_ids_step_{step}.np")
-                # np.save(position_ids_path, position_ids_numpy)
-
                 # Record data loading time for this iteration
                 _data_load_end_time = time.time()
                 _data_load_time_for_global_step += _data_load_end_time - _data_load_start_time
@@ -2106,7 +2088,7 @@ class Trainer:
                         steps_trained_progress_bar.update(1)
                     if steps_trained_in_current_epoch == 0:
                         self._load_rng_state(resume_from_checkpoint)
-                    # self.timers and self.timers("read-data").start()
+                    self.timers and self.timers("read-data").start()
                     # Reset data loading timer for skipped steps
                     _data_load_start_time = time.time()
                     continue
