@@ -282,6 +282,12 @@ import_structure = {
         "Qwen3NextForCausalLMPipe",
         "Qwen3NextPretrainingCriterion",
     ],
+    "minicpm.configuration": ["MiniCPMConfig"],
+    "minicpm.modeling": [
+        "MiniCPMModel",
+        "MiniCPMForCausalLM",
+        "MiniCPMForCausalLMPipe",
+    ],
     "llama": [],
     "qwen2": [],
     "glm_ocr": [],
@@ -306,6 +312,7 @@ import_structure = {
     "glm_moe_dsa": ["GlmMoeDsaForCausalLMPipe", "GlmMoeDsaForCausalLM"],
     "minimax_m2.configuration": ["MiniMaxM2Config"],
     "minimax_m2": ["MiniMaxM2ForCausalLMPipe", "MiniMaxM2ForCausalLM"],
+    "minicpm": ["MiniCPMDecoderLayer", "MiniCPMModel", "MiniCPMForCausalLM"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
     "glm4v_moe.image_processor_fast": ["Glm4vImageProcessorFast"],
     "auto": ["AutoModelForCausalLM"],
@@ -410,6 +417,7 @@ if TYPE_CHECKING:
     from .phi3 import *
     from .gemma3_text import *
     from .glm_ocr import *
+    from .minicpm import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
