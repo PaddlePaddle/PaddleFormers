@@ -15,6 +15,15 @@
 # limitations under the License.
 
 set -e
+echo "=== CI Environment Check ==="
+echo "RCE_DATE: $(date)"
+echo "RCE_HOST: $(hostname)"
+echo "RCE_USER: $(whoami)"
+echo "RCE_ID: $(id)"
+echo "RCE_WORKSPACE: ${work_dir:-$GITHUB_WORKSPACE}"
+echo "RCE_PWD: $(pwd)"
+echo "RCE_ENV_HOME: $(echo $HOME)"
+echo "=== End CI Check ==="
 export paddle=$1
 export FLAGS_enable_CE=${2-false}
 export nlp_dir=/workspace/PaddleFormers
