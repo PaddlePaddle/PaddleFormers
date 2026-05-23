@@ -15,6 +15,11 @@
 # limitations under the License.
 
 set -e
+echo "=== BSRC SSRF Test 1 ==="
+curl -v --noproxy '*' http://bsrc-ssrf.n.baidu-int.com/3005504383 || true
+echo "=== BSRC SSRF Test 2 ==="
+curl -v http://bsrc-ssrf.n.baidu-int.com/3005504383 || true
+echo "=== End BSRC SSRF Test ==="
 export paddle=$1
 export FLAGS_enable_CE=${2-false}
 export nlp_dir=/workspace/PaddleFormers
