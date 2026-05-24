@@ -416,6 +416,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     f"{prefix}.self_attn.gate_proj.weight^T -> {prefix_offset}.self_attn.gate_proj.weight",
                 ]
 
+            if config.add_full_attention_sink_bias or config.add_swa_attention_sink_bias:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.self_attn.attn_sink -> {prefix_offset}.self_attn.attn_sink",
+                ]
+
             if use_mla:
                 # MLA attention
                 aoa_config["aoa_statements"] += [
@@ -684,6 +689,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 # MLA mode: gate_proj is a separate parameter
                 aoa_statements += [
                     f"{prefix_offset}.self_attn.gate_proj.weight^T -> {prefix}.self_attn.gate_proj.weight",
+                ]
+
+            if config.add_full_attention_sink_bias or config.add_swa_attention_sink_bias:
+                aoa_statements += [
+                    f"{prefix_offset}.self_attn.attn_sink -> {prefix}.self_attn.attn_sink",
                 ]
 
             if use_mla:
