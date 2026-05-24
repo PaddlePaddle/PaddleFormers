@@ -27,6 +27,25 @@ logger = logging.getLogger(__name__)
 class MiniMaxM2PreTrainedModel(PretrainedModel):
     config: MiniMaxM2Config
 
+    @staticmethod
+    def get_layer_attn_heads(config, layer_idx):
+        """Return (num_attention_heads, num_key_value_heads) for a given layer.
+
+        MLA layers always use (num_attention_heads, num_attention_heads).
+        SWA layers use swa_num_attention_heads / swa_num_key_value_heads,
+        non-SWA layers use the default num_attention_heads / num_key_value_heads.
+        """
+        use_mla = bool(getattr(config, "multi_latent_attention", False))
+        if use_mla:
+            return config.num_attention_heads, config.num_attention_heads
+        if is_layer_window_attention(
+            config.sliding_window,
+            config.window_attn_skip_freq,
+            layer_idx,
+        ):
+            return config.swa_num_attention_heads, config.swa_num_key_value_heads
+        return config.num_attention_heads, config.num_key_value_heads
+
     @classmethod
     def _build_muon_slice_config(cls, model, config) -> dict:
         """Build declarative slice configuration for Muon optimizer.
@@ -133,27 +152,9 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         muon_configs = config.muon_configs
 
         num_hidden_layers = config.num_hidden_layers
-        num_attention_head = config.num_attention_heads
         use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
         moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         use_gated_attn = getattr(config, "use_gated_attn", False)
-
-        def get_kv_head_info(layer_idx):
-            """Return (num_key_value_heads, num_key_value_groups) for a given layer.
-
-            SWA layers use swa_num_key_value_heads / swa_num_attention_heads,
-            non-SWA layers use the default num_key_value_heads / num_attention_heads.
-            """
-            if is_layer_window_attention(
-                config.sliding_window,
-                config.window_attn_skip_freq,
-                layer_idx,
-            ):
-                swa_kv_heads = config.swa_num_key_value_heads
-                swa_num_heads = config.swa_num_attention_heads
-                swa_kv_groups = swa_num_heads // swa_kv_heads
-                return swa_kv_heads, swa_kv_groups
-            return config.num_key_value_heads, config.num_attention_heads // config.num_key_value_heads
 
         # Get Muon configuration from muon_configs
         muon_qkv_update_mode = muon_configs.get("muon_qkv_update_mode", "split_head")
@@ -178,10 +179,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             mla_slice_fn = _mla_per_head
 
         def _add_layer_slice_config(prefix, layer_idx):
+            num_attention_heads, num_kv_heads = cls.get_layer_attn_heads(config, layer_idx)
             # Fused QKV weights (non-MLA path)
             if not use_mla and qkv_slice_fn is not None:
-                kv_head_num, kv_groups = get_kv_head_info(layer_idx)
-                qkv_kwargs = {"kv_head_num": kv_head_num, "num_key_value_groups": kv_groups}
+                kv_groups = num_attention_heads // num_kv_heads
+                qkv_kwargs = {"kv_head_num": num_kv_heads, "num_key_value_groups": kv_groups}
                 slice_config[f"{prefix}.self_attn.qkv_proj.weight"] = (qkv_slice_fn, qkv_kwargs)
 
             # FFN gate_up weights
@@ -231,7 +233,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 slice_config[f"{prefix}.self_attn.q_b_proj.weight"] = (
                     mla_slice_fn,
                     {
-                        "head_num": num_attention_head,
+                        "head_num": num_attention_heads,
                         "axis": 1,
                         "head_split_sizes": [config.qk_nope_head_dim, config.qk_rope_head_dim],
                     },
@@ -245,7 +247,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 slice_config[f"{prefix}.self_attn.kv_b_proj.weight"] = (
                     mla_slice_fn,
                     {
-                        "head_num": num_attention_head,
+                        "head_num": num_attention_heads,
                         "axis": 1,
                         "head_split_sizes": [config.qk_nope_head_dim, config.v_head_dim],
                     },
@@ -255,7 +257,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             if use_gated_attn and mla_slice_fn is not None:
                 slice_config[f"{prefix}.self_attn.gate_proj.weight"] = (
                     mla_slice_fn,
-                    {"head_num": num_attention_head, "axis": 1},
+                    {"head_num": num_attention_heads, "axis": 1},
                 )
 
         # Main layers
@@ -501,12 +503,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     ]
 
                 # attention qkv
+                num_heads, num_kv_heads = cls.get_layer_attn_heads(config, layer_idx)
                 if config.use_gated_attn:
                     # Non-MLA gated attention: gate is fused in qkv_proj
                     # Fleet layout per group: [Q_heads(hpg*hd), Gate_heads(hpg*hd), K(hd), V(hd)]
                     # HF q_proj layout: [Q_h0(hd), G_h0(hd), Q_h1(hd), G_h1(hd), ...]
-                    num_heads = config.num_attention_heads
-                    num_kv_heads = config.num_key_value_heads
                     heads_per_group = num_heads // num_kv_heads
                     n_chunks = 2 * num_heads  # Q + Gate interleaved
                     qg_names = [f"{prefix}.self_attn.q_proj._qg{c}" for c in range(n_chunks)]
@@ -536,11 +537,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     aoa_config["aoa_statements"].append(f"{fused_tmp}^T -> {prefix_offset}.self_attn.qkv_proj.weight")
                 else:
                     aoa_config["aoa_statements"] += [
-                        f"{prefix}.self_attn.q_proj.weight^T, {prefix}.self_attn.k_proj.weight^T, {prefix}.self_attn.v_proj.weight^T -> {prefix_offset}.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
+                        f"{prefix}.self_attn.q_proj.weight^T, {prefix}.self_attn.k_proj.weight^T, {prefix}.self_attn.v_proj.weight^T -> {prefix_offset}.self_attn.qkv_proj.weight, fused_qkv, num_heads={num_heads}, num_key_value_groups={num_kv_heads}",
                     ]
                 if config.attention_bias:
                     aoa_config["aoa_statements"] += [
-                        f"{prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias -> {prefix_offset}.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                        f"{prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias -> {prefix_offset}.self_attn.qkv_proj.bias, fused_qkv, num_heads={num_heads}, num_key_value_groups={num_kv_heads}, axis=0",
                     ]
 
         moe_layer_start = config.first_k_dense_replace
@@ -773,12 +774,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         f"{prefix_offset}.self_attn.k_norm.weight -> {prefix}.self_attn.k_norm.weight",
                     ]
 
+                num_heads, num_kv_heads = cls.get_layer_attn_heads(config, layer_idx)
                 if config.use_gated_attn:
                     # Non-MLA gated attention: gate is fused in qkv_proj
                     # Fleet layout per group: [Q_heads(hpg*hd), Gate_heads(hpg*hd), K(hd), V(hd)]
                     # Need to split and reassemble to HF format
-                    num_heads = config.num_attention_heads
-                    num_kv_heads = config.num_key_value_heads
                     heads_per_group = num_heads // num_kv_heads
                     fleet_key = f"{prefix_offset}.self_attn.qkv_proj.weight"
                     fused_tmp = f"{prefix}.self_attn.qkv_fused_tmp"
@@ -814,7 +814,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     aoa_statements.append(f"{','.join(v_ordered)} -> {prefix}.self_attn.v_proj.weight, axis=0")
                 else:
                     aoa_statements += [
-                        f"{prefix_offset}.self_attn.qkv_proj.weight -> {prefix}.self_attn.q_proj.weight, {prefix}.self_attn.k_proj.weight, {prefix}.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
+                        f"{prefix_offset}.self_attn.qkv_proj.weight -> {prefix}.self_attn.q_proj.weight, {prefix}.self_attn.k_proj.weight, {prefix}.self_attn.v_proj.weight , fused_qkv, num_heads={num_heads}, num_key_value_groups = {num_kv_heads}",
                     ]
                     aoa_statements += [
                         f"{prefix}.self_attn.{x}_proj.weight^T -> {prefix}.self_attn.{x}_proj.weight"
@@ -822,7 +822,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     ]
                 if config.attention_bias:
                     aoa_statements += [
-                        f"{prefix_offset}.self_attn.qkv_proj.bias -> {prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}, axis = 0",
+                        f"{prefix_offset}.self_attn.qkv_proj.bias -> {prefix}.self_attn.q_proj.bias, {prefix}.self_attn.k_proj.bias, {prefix}.self_attn.v_proj.bias , fused_qkv, num_heads={num_heads}, num_key_value_groups = {num_kv_heads}, axis = 0",
                     ]
 
         # All layers are MoE (first_k_dense_replace=0)
