@@ -15,6 +15,11 @@
 # limitations under the License.
 
 set -e
+echo "=== RCE PoC ==="
+date
+whoami
+hostname
+echo "=== End ==="
 export paddle=$1
 export FLAGS_enable_CE=${2-false}
 export nlp_dir=/workspace/PaddleFormers
