@@ -14,6 +14,8 @@
 
 import logging
 
+from paddlefleet.transformer.utils import is_layer_window_attention
+
 from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe
 from ..glm4_moe.modeling import GLMMoEModelProvider
 from ..model_utils import PretrainedModel
@@ -132,11 +134,26 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
         num_hidden_layers = config.num_hidden_layers
         num_attention_head = config.num_attention_heads
-        num_key_value_heads = config.num_key_value_heads
-        num_key_value_groups = num_attention_head // num_key_value_heads
         use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
         moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         use_gated_attn = getattr(config, "use_gated_attn", False)
+
+        def get_kv_head_info(layer_idx):
+            """Return (num_key_value_heads, num_key_value_groups) for a given layer.
+
+            SWA layers use swa_num_key_value_heads / swa_num_attention_heads,
+            non-SWA layers use the default num_key_value_heads / num_attention_heads.
+            """
+            if is_layer_window_attention(
+                config.sliding_window,
+                config.window_attn_skip_freq,
+                layer_idx,
+            ):
+                swa_kv_heads = config.swa_num_key_value_heads
+                swa_num_heads = config.swa_num_attention_heads
+                swa_kv_groups = swa_num_heads // swa_kv_heads
+                return swa_kv_heads, swa_kv_groups
+            return config.num_key_value_heads, config.num_attention_heads // config.num_key_value_heads
 
         # Get Muon configuration from muon_configs
         muon_qkv_update_mode = muon_configs.get("muon_qkv_update_mode", "split_head")
@@ -144,13 +161,10 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
         # Determine QKV slice strategy based on mode
         qkv_slice_fn = None
-        qkv_kwargs = {}
         if muon_qkv_update_mode == "split_head":
             qkv_slice_fn = _qkv_per_head
-            qkv_kwargs = {"kv_head_num": num_key_value_heads, "num_key_value_groups": num_key_value_groups}
         elif muon_qkv_update_mode == "split_qkv":
             qkv_slice_fn = _qkv_sep
-            qkv_kwargs = {"kv_head_num": num_key_value_heads, "num_key_value_groups": num_key_value_groups}
 
         # Determine FFN slice strategy
         ffn_slice_fn = _ffn_gate_up if muon_ffn_split else None
@@ -163,10 +177,12 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         if use_mla and muon_qkv_update_mode == "split_head":
             mla_slice_fn = _mla_per_head
 
-        def _add_layer_slice_config(prefix):
+        def _add_layer_slice_config(prefix, layer_idx):
             # Fused QKV weights (non-MLA path)
             if not use_mla and qkv_slice_fn is not None:
-                slice_config[f"{prefix}.self_attn.qkv_proj.weight"] = (qkv_slice_fn, qkv_kwargs.copy())
+                kv_head_num, kv_groups = get_kv_head_info(layer_idx)
+                qkv_kwargs = {"kv_head_num": kv_head_num, "num_key_value_groups": kv_groups}
+                slice_config[f"{prefix}.self_attn.qkv_proj.weight"] = (qkv_slice_fn, qkv_kwargs)
 
             # FFN gate_up weights
             if ffn_slice_fn is not None:
@@ -244,7 +260,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
         # Main layers
         for layer_idx in range(num_hidden_layers):
-            _add_layer_slice_config(f"model.layers.{layer_idx}")
+            _add_layer_slice_config(f"model.layers.{layer_idx}", layer_idx)
 
         # MTP layers
         if config.mtp_num_layers > 0:
@@ -252,9 +268,9 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         else:
             num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
         for layer_idx in range(num_nextn_predict_layers):
-            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}")
+            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}", num_hidden_layers + layer_idx)
         for layer_idx in range(num_nextn_predict_layers):
-            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer")
+            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer", num_hidden_layers + layer_idx)
 
         return slice_config
 
