@@ -434,7 +434,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     f"{prefix}.self_attn.gate_proj.weight^T -> {prefix_offset}.self_attn.gate_proj.weight",
                 ]
 
-            if config.add_full_attention_sink_bias or config.add_swa_attention_sink_bias:
+            is_swa = is_layer_window_attention(config.sliding_window, config.window_attn_skip_freq, layer_idx)
+            if (config.add_full_attention_sink_bias and not is_swa) or (config.add_swa_attention_sink_bias and is_swa):
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.self_attn.attn_sink -> {prefix_offset}.self_attn.attn_sink",
                 ]
@@ -708,7 +709,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     f"{prefix_offset}.self_attn.gate_proj.weight^T -> {prefix}.self_attn.gate_proj.weight",
                 ]
 
-            if config.add_full_attention_sink_bias or config.add_swa_attention_sink_bias:
+            is_swa = is_layer_window_attention(config.sliding_window, config.window_attn_skip_freq, layer_idx)
+            if (config.add_full_attention_sink_bias and not is_swa) or (config.add_swa_attention_sink_bias and is_swa):
                 aoa_statements += [
                     f"{prefix_offset}.self_attn.attn_sink -> {prefix}.self_attn.attn_sink",
                 ]
