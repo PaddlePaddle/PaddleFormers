@@ -16,6 +16,7 @@ import pytest
 from conftest import run_command_and_validate
 
 
+
 def test_ernie_21b_sft_training(project_root, base_value_dir, log_file):
     """Test ERNIE-21B SFT training loss values.
 
