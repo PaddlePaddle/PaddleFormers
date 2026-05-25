@@ -84,7 +84,7 @@ jobs:
                 sys.exit(0)
 
             # GitHub workflow_run completed 后状态同步有延迟
-            time.sleep(20)
+            time.sleep(10)
 
             # ── 定时触发路径：直接检查触发本次的 run，不依赖 PR ──────────────
             if trigger_event == 'schedule':
