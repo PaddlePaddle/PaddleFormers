@@ -19,7 +19,7 @@ permissions:
 jobs:
   # ─── Job 1: 判断所有 watched workflows 是否完成，收集失败 job URLs ───
   check-and-collect:
-    runs-on: ubuntu-latest
+    runs-on: 'ernie-cpu'
     permissions:
       pull-requests: read
       actions: read
@@ -221,12 +221,12 @@ jobs:
           path: /tmp/bot_results/bot_result_${{ env.TASK_ID }}.md
           retention-days: 1
 
-  # ─── Job 3: ubuntu-latest 下载 artifact，用 PAT 发评论 ───
+  # ─── Job 3: 'ernie-cpu' 下载 artifact，用 PAT 发评论 ───
   post-comment:
     needs: [check-and-collect, analyze]
     # analyze 失败也要发评论（告知无结果）
     if: always() && needs.check-and-collect.outputs.skip == 'false'
-    runs-on: ubuntu-latest
+    runs-on: 'ernie-cpu'
     # 写评论全部走 PAT，GITHUB_TOKEN 只用于下载 artifact（只读）
     permissions:
       actions: read

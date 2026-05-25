@@ -15,7 +15,7 @@ on:
 jobs:
   check-bypass:
     name: Check bypass
-    runs-on: ubuntu-latest
+    runs-on: 'ernie-cpu'
     permissions:
       contents: read
     env:
