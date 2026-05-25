@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   check-and-collect:
-    runs-on: ubuntu-latest
+    runs-on: 'ernie-cpu'
     permissions:
       pull-requests: read
       actions: read
