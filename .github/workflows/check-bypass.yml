@@ -15,7 +15,7 @@ on:
 jobs:
   check-bypass:
     name: Check bypass
-    runs-on: ubuntu-latest
+    runs-on: 'ernie-cpu'
     permissions:
       contents: read
     env:
@@ -25,7 +25,7 @@ jobs:
     steps:
       - id: check-bypass
         name: Check Bypass
-        uses: PFCCLab/ci-bypass@v2
+        uses: PFCCLab/ci-bypass@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           non-pull-request-event-strategy: 'never-skipped'
