@@ -13,7 +13,17 @@
 # limitations under the License.
 
 from .workflow import run_sft
-from .workflow2 import run_sft_v2
-from .workflow_vl_v2 import run_vl_sft_v2
 
 __all__ = ["run_sft", "run_sft_v2", "run_vl_sft_v2"]
+
+
+def __getattr__(name):
+    if name == "run_sft_v2":
+        from .workflow2 import run_sft_v2
+
+        return run_sft_v2
+    if name == "run_vl_sft_v2":
+        from .workflow_vl_v2 import run_vl_sft_v2
+
+        return run_vl_sft_v2
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
