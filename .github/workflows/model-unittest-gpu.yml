@@ -89,8 +89,8 @@ jobs:
           echo "skip-models-ci label found"
           echo "Downstream GPU jobs will be skipped"
   model-unittest-gpu-ci:
-    # needs: check_skip
-    # if: needs.check_skip.outputs.skip == 'false'
+    needs: check_skip
+    if: needs.check_skip.outputs.skip == 'false'
     name: model-unittest-gpu-ci
     runs-on: ${{ inputs.runner || 'ernie-8gpu' || 'distrbute' }}
     steps:

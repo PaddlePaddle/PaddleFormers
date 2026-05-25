@@ -101,8 +101,8 @@ jobs:
           echo "skip-models-ce label found"
           echo "Downstream GPU jobs will be skipped"
   model-unittest-gpu-ce-develop:
-    needs: check_skip
-    if: needs.check_skip.outputs.skip == 'false'
+    # needs: check_skip
+    # if: needs.check_skip.outputs.skip == 'false'
     name: model-unittest-gpu-ce-develop
     runs-on: 'models'
     steps:
@@ -115,7 +115,7 @@ jobs:
           elif [[ "$schedule_time" == "0 10 "* ]]; then
             echo "FLAGS_enable_CE=CE_Develop_cu130_py312" >> $GITHUB_OUTPUT
           else
-            echo "FLAGS_enable_CE=${{ github.event.inputs.FLAGS_enable_CE || 'CE_Develop_cu130_py313' }}" >> $GITHUB_OUTPUT
+            echo "FLAGS_enable_CE=${{ github.event.inputs.FLAGS_enable_CE || 'CE_Develop_cu1129_py312' }}" >> $GITHUB_OUTPUT
           fi
       - name: Determine Image Name
         env:
@@ -289,7 +289,7 @@ jobs:
           echo "BRANCH: ${BRANCH}"
           echo "PR number: ${PR_NUMBER}"
           source ${work_dir}/../../../proxy_huggingface
-          bash -x scripts/regression/ci_model_unittest.sh False $FLAGS_enable_CE "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
+          bash -x scripts/regression/ci_model_unittest.sh True False False develop 0
           DOCKER_EOF
       - name: Upload Products
         if: always()
