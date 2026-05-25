@@ -522,6 +522,16 @@ class LlmMetaConfig:
             "Standard deviation for embedding layer initialization (only effective if `embedding_init_method='normal'`). Defaults to 0.02 (common choice for transformer embeddings to avoid saturation).",
         ),
         ("fa_version", int, 2, "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."),
+        (
+            "enable_hyper_connections",
+            bool,
+            False,
+            "Enable mHC (Manifold-Constrained Hyper-Connections) residual connections.",
+        ),
+        ("num_residual_streams", int, 4, "Number of residual streams for mHC."),
+        ("mhc_sinkhorn_iterations", int, 20, "Number of Sinkhorn-Knopp iterations for mHC."),
+        ("mhc_init_gating_factor", float, 0.01, "Initial gating factor for mHC."),
+        ("mhc_recompute_layer_num", Optional[int], None, "Number of layers per mHC recompute block."),
     ]
 
     @classmethod
