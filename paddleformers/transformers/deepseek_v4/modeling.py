@@ -79,6 +79,309 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
     config: DeepseekV4Config
 
     @classmethod
+    def _build_muon_slice_config(cls, model, config) -> dict:
+        """Build declarative slice configuration for Muon optimizer.
+
+        Constructs a mapping from parameter original names to (slice_fn, slice_kwargs)
+        tuples. This allows slice strategies to be defined declaratively in the model
+        configuration rather than being hard-coded inside the muon.py optimizer.
+
+        Args:
+            model: The GPTModel (PipelineLayer) instance.
+            config: The model configuration object.
+
+        Returns:
+            A dict mapping parameter name strings to (slice_fn, slice_kwargs) tuples.
+        """
+
+        def _ffn_gate_up(matrix, ortho_fn, intermediate_size=None):
+            """Slice FFN gate_up, orthogonalise gate and up independently."""
+            import paddle
+
+            if matrix.ndim == 2:
+                gate, up = paddle.split(matrix, [intermediate_size, intermediate_size], axis=1)
+                return paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=1)
+            elif matrix.ndim == 3:
+                expert_updates = []
+                for ei in range(matrix.shape[0]):
+                    gate, up = paddle.split(matrix[ei], [intermediate_size, intermediate_size], axis=1)
+                    expert_updates.append(paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=1))
+                return paddle.stack(expert_updates, axis=0)
+            else:
+                raise ValueError(f"FFN gate_up split expects 2D or 3D tensor, got shape {matrix.shape}")
+
+        def _mla_per_head(matrix_2d_global, ortho_fn, head_num=None, axis=None, head_split_sizes=None):
+            """Slice MLA weights by heads."""
+            import paddle
+
+            split_args = head_num if head_split_sizes is None else head_split_sizes * head_num
+            groups = paddle.split(matrix_2d_global, split_args, axis=axis)
+            processed_groups = [ortho_fn(group) for group in groups]
+            return paddle.concat(processed_groups, axis=axis)
+
+        def _moe_experts(matrix_3d_global, ortho_fn):
+            """Slice MoE weights by experts."""
+            import paddle
+
+            if matrix_3d_global.ndim != 3:
+                raise ValueError(f"MoE expert split expects 3D tensor, got shape {matrix_3d_global.shape}")
+            n_experts = matrix_3d_global.shape[0]
+            return paddle.stack(
+                [ortho_fn(matrix_3d_global[ei]) for ei in range(n_experts)],
+                axis=0,
+            )
+
+        slice_config = {}
+
+        muon_configs = config.muon_configs
+
+        num_hidden_layers = config.num_hidden_layers
+        num_attention_head = config.num_attention_heads
+
+        use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
+        moe_grouped_gemm = getattr(config, "moe_grouped_gemm", False)
+        use_gated_attn = getattr(config, "use_gated_attn", False)
+        csa_compress_ratios = getattr(config, "csa_compress_ratios", None)
+
+        # Get Muon configuration from muon_configs
+        muon_qkv_update_mode = muon_configs.get("muon_qkv_update_mode", "split_head")
+        muon_ffn_split = muon_configs.get("muon_ffn_split", False)
+
+        # Determine FFN slice strategy
+        ffn_slice_fn = _ffn_gate_up if muon_ffn_split else None
+
+        # Determine Fused MoE slice strategy
+        fused_moe_fn = _moe_experts if moe_grouped_gemm else None
+
+        # Determine MLA slice strategy
+        mla_slice_fn = None
+        if use_mla and muon_qkv_update_mode == "split_head":
+            mla_slice_fn = _mla_per_head
+
+        def _add_layer_slice_config(prefix, layer_idx):
+            # DeepSeekV4 Attention weights:
+            if csa_compress_ratios is not None and mla_slice_fn is not None:
+                ratio = csa_compress_ratios[layer_idx]
+                # common weights (Sliding Window Attenion)
+                slice_config[f"{prefix}.self_attn.linear_q_up_proj.weight"] = (
+                    mla_slice_fn,
+                    {
+                        "head_num": num_attention_head,
+                        "axis": 1,
+                    },
+                )
+
+                # Compressor weights
+                if ratio == 4:
+                    slice_config[f"{prefix}.self_attn.core_attention.compressor.linear_wkv.weight"] = (
+                        mla_slice_fn,
+                        {
+                            "head_num": 1,
+                            "axis": 1,
+                            "head_split_sizes": [config.v_head_dim, config.v_head_dim],
+                        },
+                    )
+                    slice_config[f"{prefix}.self_attn.core_attention.compressor.linear_wgate.weight"] = (
+                        mla_slice_fn,
+                        {
+                            "head_num": 1,
+                            "axis": 1,
+                            "head_split_sizes": [config.v_head_dim, config.v_head_dim],
+                        },
+                    )
+                # Indexer weights
+                print(f"layer: {layer_idx}, ratio: {ratio}, dense_mode: {config.csa_dense_mode}")
+                if ratio == 4 and config.csa_dense_mode is False:
+                    slice_config[f"{prefix}.self_attn.core_attention.indexer.linear_wq_b.weight"] = (
+                        mla_slice_fn,
+                        {
+                            "head_num": config.dsa_index_n_heads,
+                            "axis": 1,
+                        },
+                    )
+                    # Compressed weights
+                    slice_config[f"{prefix}.self_attn.core_attention.indexer.compressor.linear_wkv.weight"] = (
+                        mla_slice_fn,
+                        {
+                            "head_num": 1,
+                            "axis": 1,
+                            "head_split_sizes": [config.dsa_index_head_dim, config.dsa_index_head_dim],
+                        },
+                    )
+                    slice_config[f"{prefix}.self_attn.core_attention.indexer.compressor.linear_wgate.weight"] = (
+                        mla_slice_fn,
+                        {
+                            "head_num": 1,
+                            "axis": 1,
+                            "head_split_sizes": [config.dsa_index_head_dim, config.dsa_index_head_dim],
+                        },
+                    )
+
+            # FFN gate_up weights
+            if ffn_slice_fn is not None:
+                moe_intermediate_size = config.moe_intermediate_size
+                intermediate_size = config.intermediate_size
+
+                # Fused experts
+                param_name = f"{prefix}.mlp.experts.up_gate_proj.weight"
+                slice_config[param_name] = (ffn_slice_fn, {"intermediate_size": moe_intermediate_size})
+
+                # Shared experts
+                slice_config[f"{prefix}.mlp.shared_experts.up_gate_proj.weight"] = (
+                    ffn_slice_fn,
+                    {"intermediate_size": moe_intermediate_size},
+                )
+                slice_config[f"{prefix}.mlp.grouped_gemm_experts.weight1"] = (
+                    ffn_slice_fn,
+                    {"intermediate_size": moe_intermediate_size},
+                )
+                # Common experts
+                param_name = f"{prefix}.mlp.up_gate_proj.weight"
+                slice_config[param_name] = (ffn_slice_fn, {"intermediate_size": intermediate_size})
+
+                # Routed experts (per-expert)
+                if hasattr(config, "n_routed_experts") and config.n_routed_experts > 0:
+                    for expert_idx in range(config.n_routed_experts):
+                        slice_config[f"{prefix}.mlp.experts.{expert_idx}.up_gate_proj.weight"] = (
+                            ffn_slice_fn,
+                            {"intermediate_size": moe_intermediate_size},
+                        )
+
+            # Fused MoE weights (grouped_gemm)
+            if moe_grouped_gemm and fused_moe_fn is not None:
+                slice_config[f"{prefix}.mlp.experts.down_proj.weight"] = (fused_moe_fn, {})
+                slice_config[f"{prefix}.mlp.grouped_gemm_experts.weight2"] = (fused_moe_fn, {})
+
+            # MLA weights
+            if use_mla and mla_slice_fn is not None:
+                assert (
+                    hasattr(config, "qk_nope_head_dim")
+                    and hasattr(config, "qk_rope_head_dim")
+                    and hasattr(config, "kv_lora_rank")
+                    and hasattr(config, "v_head_dim")
+                )
+
+                slice_config[f"{prefix}.self_attn.q_b_proj.weight"] = (
+                    mla_slice_fn,
+                    {
+                        "head_num": num_attention_head,
+                        "axis": 1,
+                        "head_split_sizes": [config.qk_nope_head_dim, config.qk_rope_head_dim],
+                    },
+                )
+
+                slice_config[f"{prefix}.self_attn.kv_a_proj_with_mqa.weight"] = (
+                    mla_slice_fn,
+                    {"head_num": 1, "axis": 1, "head_split_sizes": [config.kv_lora_rank, config.qk_rope_head_dim]},
+                )
+
+                slice_config[f"{prefix}.self_attn.kv_b_proj.weight"] = (
+                    mla_slice_fn,
+                    {
+                        "head_num": num_attention_head,
+                        "axis": 1,
+                        "head_split_sizes": [config.qk_nope_head_dim, config.v_head_dim],
+                    },
+                )
+
+            # Gated Attn
+            if use_gated_attn and mla_slice_fn is not None:
+                slice_config[f"{prefix}.self_attn.gate_proj.weight"] = (
+                    mla_slice_fn,
+                    {"head_num": num_attention_head, "axis": 1},
+                )
+
+        # Main layers
+        for layer_idx in range(num_hidden_layers):
+            _add_layer_slice_config(f"model.layers.{layer_idx}", layer_idx)
+
+        # MTP layers
+        if config.mtp_num_layers > 0:
+            num_nextn_predict_layers = config.mtp_num_layers
+        else:
+            num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
+        for layer_idx in range(num_nextn_predict_layers):
+            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}", num_hidden_layers + layer_idx)
+        for layer_idx in range(num_nextn_predict_layers):
+            _add_layer_slice_config(
+                f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer", num_hidden_layers + layer_idx
+            )
+
+        return slice_config
+
+    @classmethod
+    def build_muon_param_info_map(cls, model, config):
+        """Build parameter info map for Muon optimizer.
+
+        Args:
+            model: The GPTModel (PipelineLayer) instance.
+            config: The model configuration object.
+
+        Returns:
+            Dict[str, MuonParamInfo]: Mapping from parameter name to Muon metadata.
+        """
+        from functools import partial
+
+        from paddle.optimizer.muon import MuonParamInfo, _default_should_use_muon
+
+        info_map = {}
+        exclude_patterns = config.muon_configs["muon_exclude_patterns"]
+
+        # Get slice config from model (keys are original names like "model.layers.0.xxx")
+        slice_config = cls._build_muon_slice_config(model, config)
+
+        # Build pipeline name -> original name mapping by inverting the forward mapping
+        # returned by _set_pipeline_name_mapping(). We use the return value instead of
+        # model._pp_to_single_mapping because Paddle Layer.__setattr__ prevents the
+        # instance attribute from persisting after super().__init__().
+        pp_to_single = getattr(model, "_pp_to_single_mapping", None)
+        if pp_to_single is None:
+            try:
+                single_to_pp = model._set_pipeline_name_mapping()
+                if single_to_pp:
+                    pp_to_single = {v: k for k, v in single_to_pp.items()}
+            except Exception as e:
+                logger.warning(f"_set_pipeline_name_mapping failed: {e}")
+        if pp_to_single is None:
+            pp_to_single = {}
+
+        for pp_name, param in model.named_parameters():
+            name = pp_to_single.get(pp_name, pp_name)
+            use_muon = (
+                _default_should_use_muon(name, param.shape, exclude_patterns)
+                and _default_should_use_muon(param.name, param.shape, exclude_patterns)
+                and "hc_head_fn" not in name
+                and "mapping_proj" not in name
+            )
+
+            if name in slice_config:
+                slice_fn, slice_kwargs = slice_config[name]
+                param_info = MuonParamInfo(
+                    use_muon=use_muon,
+                    split_concat_func=partial(slice_fn, **slice_kwargs),
+                )
+            else:
+                param_info = MuonParamInfo(
+                    use_muon=use_muon,
+                    split_concat_func=None,
+                )
+
+            info_map[param.name] = param_info
+
+            sc_func = param_info.split_concat_func
+            func_name = sc_func.func.__name__ if sc_func else None
+            func_kwargs = sc_func.keywords if sc_func else {}
+
+            logger.info(
+                f"name: {name}, param.name: {param.name}, shape: {param.shape}, "
+                f"use_muon: {use_muon}, "
+                f"split_concat_func: {func_name}, "
+                f"split_concat_func_kwargs: {func_kwargs}"
+            )
+
+        return info_map
+
+    @classmethod
     def _gen_aoa_config(cls, config: DeepseekV4Config):
         """Weight conversion: HuggingFace DSv4 checkpoint -> PaddleFleet internal format.
 
@@ -690,6 +993,7 @@ class DeepseekV4ForCausalLM(DeepseekV4PreTrainedModel):
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model.build_muon_param_info_map = cls.build_muon_param_info_map
         gpt_model.config_to_save = config
         gpt_model.is_fleet = cls.is_fleet
 
@@ -722,6 +1026,7 @@ class DeepseekV4ForCausalLMPipe(DeepseekV4PreTrainedModel, GeneralModelForCausal
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model.build_muon_param_info_map = cls.build_muon_param_info_map
         if not hasattr(config, "architectures"):
             config.architectures = [cls.__name__.replace("Pipe", "")]
         gpt_model.config_to_save = config
