@@ -90,7 +90,7 @@ class Qwen3MoEModelProvider(GPTModelProvider):
 
     rope_scaling: float = 1.0
     bias_dropout_fusion: bool = True
-    moe_grouped_gemm: bool = True
+    moe_expert_fusion: bool = True
 
     n_shared_experts: int = 0
 
@@ -808,7 +808,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
             ]
 
-        if getattr(cls, "is_fleet", False) and (config.moe_grouped_gemm or using_sonic_moe):
+        if getattr(cls, "is_fleet", False) and (config.moe_expert_fusion or using_sonic_moe):
             for layer_idx in range(0, config.num_hidden_layers):
                 src_prefix = f"model.layers.{layer_idx}"
                 tgt_prefix = f"{model_prefix}layers.{layer_idx}"
@@ -893,7 +893,7 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                 f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
             ]
 
-        if getattr(cls, "is_fleet", False) and (config.moe_grouped_gemm or using_sonic_moe):
+        if getattr(cls, "is_fleet", False) and (config.moe_expert_fusion or using_sonic_moe):
             for layer_id in range(config.num_hidden_layers):
                 ep_weight1 = []
                 ep_weight2 = []

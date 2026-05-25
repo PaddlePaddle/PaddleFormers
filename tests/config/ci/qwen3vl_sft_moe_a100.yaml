@@ -50,8 +50,8 @@ recompute_method: uniform
 recompute_num_layers: 1
 # fuse_attention_qkv: true
 # fuse_attention_ffn: true
-moe_grouped_gemm: false
-# moe_deep_gemm: false
+moe_expert_fusion: false
+moe_deep_gemm: false
 apply_rope_fusion: False
 # fuse_rms_norm: true
 moe_token_dispatcher_type: alltoall

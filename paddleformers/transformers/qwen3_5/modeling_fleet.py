@@ -150,7 +150,7 @@ class Qwen3_5TextModelProvider(GPTModelProvider):
             self.mtp_num_layers = 0
             self.num_nextn_predict_layers = 0
 
-    moe_grouped_gemm: bool = True
+    moe_expert_fusion: bool = True
     moe_router_load_balancing_type: str = "aux_loss"
     moe_router_pre_softmax: bool = False
     moe_permute_fusion: bool = True
@@ -167,13 +167,13 @@ class Qwen3_5TextModelProvider(GPTModelProvider):
 
 
 def _build_mtp_layers_spec(config, transformer_layers_spec):
-    """Build MTP layer specs with moe_grouped_gemm disabled for qwen3.5.
+    """Build MTP layer specs with moe_expert_fusion disabled for qwen3.5.
 
     The AOA engine cannot handle concat+reshape with EP sharding for per-expert
-    2D HF keys, so MTP layers use per-expert storage instead of grouped_gemm.
+    2D HF keys, so MTP layers use per-expert storage instead of expert fusion.
     """
     mtp_cfg = copy.copy(config)
-    mtp_cfg.moe_grouped_gemm = False
+    mtp_cfg.moe_expert_fusion = False
     # Create a new spec identical to the last decoder layer but with mtp_cfg
     # embedded, so MoELayer inside TransformerLayer uses per-expert weights.
     base_spec = transformer_layers_spec[-1]
@@ -212,7 +212,7 @@ def get_qwen3_5_language_spec(config):
             layer_number=i + head_offset,
             attention_layer_type=attn_type,
             num_experts=config.n_routed_experts,
-            moe_grouped_gemm=config.moe_grouped_gemm,
+            moe_expert_fusion=config.moe_expert_fusion,
             multi_latent_attention=config.multi_latent_attention,
         )
 

@@ -377,7 +377,7 @@ class LlmMetaConfig:
         (
             "moe_expert_fusion",
             bool,
-            True,
+            False,
             "Whether to fuse experts. Default to True.",
         ),
         (
@@ -393,16 +393,10 @@ class LlmMetaConfig:
             "Number of tokens per sub-batch after MoE expert dispatch. Controls memory usage for expert computations. Defaults to 4096 (balances memory efficiency and parallelism for most GPUs).",
         ),
         (
-            "moe_grouped_gemm",
-            bool,
-            False,
-            "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
-        ),
-        (
             "moe_deep_gemm",
             bool,
-            False,
-            "Whether to enable deep GEMM for MoE experts. Defaults to False. Effective only after the moe_grouped_gemm is set. ",
+            True,
+            "Whether to enable deep GEMM for MoE experts. Defaults to True. Effective only after the moe_expert_fusion is set. ",
         ),
         (
             "moe_ep_barrier",
@@ -1269,7 +1263,7 @@ class PretrainedConfig:
             id2label = kwargs["id2label"] if kwargs["id2label"] is not None else []
             if len(id2label) != num_labels:
                 raise ValueError(
-                    f"You passed along `num_labels={num_labels }` with an incompatible id to label map: "
+                    f"You passed along `num_labels={num_labels}` with an incompatible id to label map: "
                     f"{kwargs['id2label']}. Since those arguments are inconsistent with each other, you should remove "
                     "one of them."
                 )
@@ -1379,7 +1373,7 @@ class PretrainedConfig:
     def register_unsavable_keys(self, keys):
         # Save: not save it in any case
         # Print: show it if non default value
-        if type(keys) == list or type(keys) == tuple:
+        if isinstance(keys, (list, tuple)):
             for key in keys:
                 self._unsavable_keys.add(key)
         else:
