@@ -18,13 +18,13 @@ from dataclasses import dataclass
 from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe
 from ..gpt_provider import GPTModelProvider
 from ..model_utils import PretrainedModel
-from .configuration import DeepSeekV4Config
+from .configuration import DeepseekV4Config
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class DeepSeekV4ModelProvider(GPTModelProvider):
+class DeepseekV4ModelProvider(GPTModelProvider):
     """DeepSeek-V4 configuration provider for PaddleFleet GPTModel.
 
     Activates DSv4 Hybrid Attention (CSA + MLA + Grouped LoRA Output),
@@ -75,11 +75,11 @@ class DeepSeekV4ModelProvider(GPTModelProvider):
     }
 
 
-class DeepSeekV4PreTrainedModel(PretrainedModel):
-    config: DeepSeekV4Config
+class DeepseekV4PreTrainedModel(PretrainedModel):
+    config: DeepseekV4Config
 
     @classmethod
-    def _gen_aoa_config(cls, config: DeepSeekV4Config):
+    def _gen_aoa_config(cls, config: DeepseekV4Config):
         """Weight conversion: HuggingFace DSv4 checkpoint -> PaddleFleet internal format.
 
         Maps open-source DeepSeek-V4 HuggingFace parameter names to PaddleFleet names.
@@ -372,7 +372,7 @@ class DeepSeekV4PreTrainedModel(PretrainedModel):
         return {"aoa_statements": stmts}
 
     @classmethod
-    def _gen_inv_aoa_config(cls, config: DeepSeekV4Config):
+    def _gen_inv_aoa_config(cls, config: DeepseekV4Config):
         """Inverse weight conversion: PaddleFleet -> HuggingFace DSv4 format.
 
         Maps PaddleFleet internal parameter names back to HuggingFace naming.
@@ -664,7 +664,7 @@ class DeepSeekV4PreTrainedModel(PretrainedModel):
         return {"aoa_statements": stmts}
 
 
-class DeepSeekV4ForCausalLM(DeepSeekV4PreTrainedModel):
+class DeepseekV4ForCausalLM(DeepseekV4PreTrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
@@ -683,7 +683,7 @@ class DeepSeekV4ForCausalLM(DeepSeekV4PreTrainedModel):
         config.experimental_attention_variant = "dsv4_hybrid"
         config.enable_hyper_connections = True
 
-        model_provider = DeepSeekV4ModelProvider.from_config(config)
+        model_provider = DeepseekV4ModelProvider.from_config(config)
         loss_fn = None
         if getattr(config, "dpo_config", None):
             loss_fn = CriterionLayerPipe(config, use_infohub=True)
@@ -696,7 +696,7 @@ class DeepSeekV4ForCausalLM(DeepSeekV4PreTrainedModel):
         return gpt_model
 
 
-class DeepSeekV4ForCausalLMPipe(DeepSeekV4PreTrainedModel, GeneralModelForCausalLMPipe):
+class DeepseekV4ForCausalLMPipe(DeepseekV4PreTrainedModel, GeneralModelForCausalLMPipe):
     is_fleet = True
 
     def __new__(cls, config):
@@ -715,7 +715,7 @@ class DeepSeekV4ForCausalLMPipe(DeepSeekV4PreTrainedModel, GeneralModelForCausal
         config.experimental_attention_variant = "dsv4_hybrid"
         config.enable_hyper_connections = True
 
-        model_provider = DeepSeekV4ModelProvider.from_config(config)
+        model_provider = DeepseekV4ModelProvider.from_config(config)
         loss_fn = None
         if getattr(config, "dpo_config", None):
             loss_fn = CriterionLayerPipe(config, use_infohub=True)
@@ -731,6 +731,6 @@ class DeepSeekV4ForCausalLMPipe(DeepSeekV4PreTrainedModel, GeneralModelForCausal
 
 
 __all__ = [
-    "DeepSeekV4ForCausalLMPipe",
-    "DeepSeekV4ForCausalLM",
+    "DeepseekV4ForCausalLMPipe",
+    "DeepseekV4ForCausalLM",
 ]
