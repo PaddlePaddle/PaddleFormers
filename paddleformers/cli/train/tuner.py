@@ -18,6 +18,7 @@ import paddle
 
 from ..hparams import get_train_args, read_args
 from .auto_parallel import run_auto_parallel
+from .dpo import run_dpo
 from .sft import run_sft
 
 
@@ -61,8 +62,6 @@ def _training_function(config: dict[str, Any]) -> None:
         with paddle.amp.auto_cast(enable=False):
             run_vl_sft_v2(model_args, data_args, generating_args, finetuning_args)
     elif model_args.stage == "DPO" or model_args.stage == "VL-DPO":
-        from .dpo import run_dpo
-
         with paddle.amp.auto_cast(enable=False):
             run_dpo(model_args, data_args, generating_args, finetuning_args)
     elif model_args.stage == "DPO-V2":

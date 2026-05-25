@@ -13,6 +13,13 @@
 # limitations under the License.
 
 from .workflow import run_dpo
-from .workflow2 import run_dpo_v2
 
 __all__ = ["run_dpo", "run_dpo_v2"]
+
+
+def __getattr__(name):
+    if name == "run_dpo_v2":
+        from .workflow2 import run_dpo_v2
+
+        return run_dpo_v2
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
