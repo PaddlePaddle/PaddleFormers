@@ -308,7 +308,7 @@ def encode_multiturn(
             # Prefix (BOS, etc.)
             if template.prefix:
                 elements += template.prefix
-            # System message (+ tools description)
+            # System message and tools description
             if system or tools:
                 tool_text = ""
                 if tools and template.tool_format:
