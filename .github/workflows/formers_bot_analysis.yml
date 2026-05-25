@@ -20,7 +20,7 @@ permissions:
 jobs:
   check-and-collect:
     runs-on: 
-        group: APPROVAL   
+      group: APPROVAL
     permissions:
       pull-requests: read
       actions: read
