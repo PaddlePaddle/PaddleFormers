@@ -11,7 +11,7 @@ on:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: 'ernie-cpu'
     steps:
       - uses: actions/checkout@v4
       - name: Check if PR description contains dev PR link
