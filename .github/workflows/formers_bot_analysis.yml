@@ -9,6 +9,8 @@ on:
       - "Fleet Model Test"
       - "Codestyle Check"
       - "CI_XPU"
+      - "Model Unittest GPU CE Develop"
+      - "Unittest GPU CE"
     types:
       - completed
 
@@ -23,6 +25,7 @@ jobs:
       actions: read
     outputs:
       skip:            ${{ steps.check.outputs.skip }}
+      is_schedule:     ${{ steps.check.outputs.is_schedule }}
       pr_number:       ${{ steps.check.outputs.pr_number }}
       failed_job_urls: ${{ steps.check.outputs.failed_job_urls }}
       failed_run_ids:  ${{ steps.check.outputs.failed_run_ids }}
@@ -30,16 +33,20 @@ jobs:
       - name: Check all workflows done and collect failed job URLs
         id: check
         env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-            REPO: ${{ github.repository }}
-            HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+            GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
+            REPO:              ${{ github.repository }}
+            HEAD_SHA:          ${{ github.event.workflow_run.head_sha }}
+            TRIGGER_EVENT:     ${{ github.event.workflow_run.event }}
+            TRIGGERING_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
             python3 - <<'PYEOF'
             import json, os, urllib.request, sys, time
 
-            token    = os.environ['GITHUB_TOKEN']
-            repo     = os.environ['REPO']
-            head_sha = os.environ['HEAD_SHA']
+            token             = os.environ['GITHUB_TOKEN']
+            repo              = os.environ['REPO']
+            head_sha          = os.environ['HEAD_SHA']
+            trigger_event     = os.environ.get('TRIGGER_EVENT', '')
+            triggering_run_id = os.environ.get('TRIGGERING_RUN_ID', '')
 
             watched = {
                 "Unittest GPU CI", "Model Unittest GPU CI",
@@ -75,6 +82,35 @@ jobs:
             # GitHub workflow_run completed 后状态同步有延迟
             time.sleep(20)
 
+            # ── 定时触发路径：直接检查触发本次的 run，不依赖 PR ──────────────
+            if trigger_event == 'schedule':
+                print(f"Schedule trigger detected, run_id={triggering_run_id}")
+                run_data = gh_get(
+                    f"https://api.github.com/repos/{repo}/actions/runs/{triggering_run_id}"
+                )
+                conclusion = run_data.get('conclusion', '')
+                if conclusion != 'failure':
+                    skip(f"Schedule run {triggering_run_id} did not fail (conclusion: {conclusion})")
+                jobs_data = gh_get(
+                    f"https://api.github.com/repos/{repo}/actions/runs"
+                    f"/{triggering_run_id}/jobs?per_page=100"
+                )
+                failed_job_urls = [
+                    j['html_url'] for j in jobs_data.get('jobs', [])
+                    if j['conclusion'] == 'failure'
+                    and not any(kw in j['name'].lower() for kw in skip_keywords)
+                ]
+                failed_job_urls = list(dict.fromkeys(failed_job_urls))
+                print(f"Schedule failed_job_urls: {failed_job_urls}")
+                with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                    f.write("skip=false\n")
+                    f.write("is_schedule=true\n")
+                    f.write("pr_number=\n")
+                    f.write(f"failed_job_urls={' '.join(failed_job_urls)}\n")
+                    f.write(f"failed_run_ids={triggering_run_id}\n")
+                sys.exit(0)
+
+            # ── PR 触发路径：原有逻辑 ─────────────────────────────────────────
             # 1. find PR
             pr_number = None
             for state in ['open', 'closed']:
@@ -161,7 +197,6 @@ jobs:
 
                     failed_job_urls.append(job['html_url'])
 
-            # 去重
             failed_job_urls = list(dict.fromkeys(failed_job_urls))
 
             # 失败 workflow 的 run_id 列表（用于按 run_id 上报到 monitor，
@@ -173,6 +208,7 @@ jobs:
 
             with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
                 f.write("skip=false\n")
+                f.write("is_schedule=false\n")
                 f.write(f"pr_number={pr_number}\n")
                 f.write(f"failed_job_urls={' '.join(failed_job_urls)}\n")
                 f.write(f"failed_run_ids={' '.join(failed_run_ids)}\n")
@@ -228,7 +264,10 @@ jobs:
 
   post-comment:
     needs: [check-and-collect, analyze]
-    if: always() && needs.check-and-collect.outputs.skip == 'false'
+    if: >-
+      always() &&
+      needs.check-and-collect.outputs.skip == 'false' &&
+      needs.check-and-collect.outputs.is_schedule == 'false'
     runs-on: ubuntu-latest
     permissions:
       actions: read

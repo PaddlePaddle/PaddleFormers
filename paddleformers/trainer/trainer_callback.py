@@ -793,8 +793,9 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
             if (
                 isinstance(layer, PretrainedMoEGate) or isinstance(layer, StandardMoERouter)
             ) and layer.topk_method == "noaux_tc":
-                biases.append(layer.e_score_correction_bias)
-                usages.append(layer.expert_usage)
+                if hasattr(layer, "e_score_correction_bias") and layer.e_score_correction_bias is not None:
+                    biases.append(layer.e_score_correction_bias)
+                    usages.append(layer.expert_usage)
 
         model.apply(get_stat)
 
@@ -830,6 +831,8 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
             if (
                 isinstance(layer, PretrainedMoEGate) or isinstance(layer, StandardMoERouter)
             ) and layer.topk_method == "noaux_tc":
+                if not hasattr(layer, "e_score_correction_bias") or layer.e_score_correction_bias is None:
+                    return
                 with paddle.no_grad():
                     if not layer.weight.stop_gradient:
                         biases.pop(0).add_(update_list.pop(0))

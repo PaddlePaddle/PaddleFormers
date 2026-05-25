@@ -82,7 +82,6 @@ _obtain_optimizer_parameters_list = obtain_optimizer_parameters_list
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
     DygraphShardingOptimizerV2,
 )
-from paddle.distributed.fleet.meta_parallel.pipeline_parallel import PipelineParallel
 from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     fused_allreduce_gradients,
 )
@@ -446,7 +445,6 @@ class Trainer:
 
             set_profile_timers(self.timers)
         self.runtime_timer = RuntimeTimer("RuntimeTimer")
-        PipelineParallel.timer_printer = lambda _: None
 
         self.model_wrapped = model
         self.model = model

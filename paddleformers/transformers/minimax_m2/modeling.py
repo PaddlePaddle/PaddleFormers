@@ -430,6 +430,48 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         f"{prefix}.self_attn.kv_a_layernorm.weight -> {prefix_offset}.self_attn.kv_a_layernorm.weight",
                     ]
 
+            elif config.experimental_attention_variant == "dsv4_hybrid":
+                # csa_compress_ratios has length num_hidden_layers + num_nextn_predict_layers,
+                # i.e. it covers both main layers and MTP layers.
+                assert len(config.csa_compress_ratios) == num_hidden_layers + num_nextn_predict_layers, (
+                    f"csa_compress_ratios length ({len(config.csa_compress_ratios)}) must equal "
+                    f"num_hidden_layers + num_nextn_predict_layers "
+                    f"({num_hidden_layers} + {num_nextn_predict_layers})"
+                )
+                csa_ratio = config.csa_compress_ratios[layer_idx]
+                aoa_config["aoa_statements"] += [
+                    # Linear projections (transpose: HF [out, in] -> paddle [in, out])
+                    f"{prefix}.self_attn.linear_q_down_proj.weight^T -> {prefix_offset}.self_attn.linear_q_down_proj.weight",
+                    f"{prefix}.self_attn.linear_q_up_proj.weight^T -> {prefix_offset}.self_attn.linear_q_up_proj.weight",
+                    f"{prefix}.self_attn.linear_kv_proj.weight^T -> {prefix_offset}.self_attn.linear_kv_proj.weight",
+                    f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
+                    # Layer norms (no transpose, 1D)
+                    f"{prefix}.self_attn.q_layernorm.weight -> {prefix_offset}.self_attn.q_layernorm.weight",
+                    f"{prefix}.self_attn.kv_layernorm.weight -> {prefix_offset}.self_attn.kv_layernorm.weight",
+                    # Grouped output projection (raw parameter, shape [out, in] on both sides)
+                    f"{prefix}.self_attn.linear_o_group_proj -> {prefix_offset}.self_attn.linear_o_group_proj",
+                    # Core attention: learnable attention sink (1D, no transpose)
+                    f"{prefix}.self_attn.core_attention.attn_sink -> {prefix_offset}.self_attn.core_attention.attn_sink",
+                ]
+                # Compressor exists only when compress_ratio > 1 (i.e. ratio in {4, 128})
+                if csa_ratio > 1:
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.self_attn.core_attention.compressor.linear_wkv.weight^T -> {prefix_offset}.self_attn.core_attention.compressor.linear_wkv.weight",
+                        f"{prefix}.self_attn.core_attention.compressor.linear_wgate.weight^T -> {prefix_offset}.self_attn.core_attention.compressor.linear_wgate.weight",
+                        f"{prefix}.self_attn.core_attention.compressor.norm.weight -> {prefix_offset}.self_attn.core_attention.compressor.norm.weight",
+                        f"{prefix}.self_attn.core_attention.compressor.ape -> {prefix_offset}.self_attn.core_attention.compressor.ape",
+                    ]
+                # Indexer exists only when compress_ratio == 4 and not csa_dense_mode
+                if csa_ratio == 4 and not getattr(config, "csa_dense_mode", False):
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.self_attn.core_attention.indexer.linear_wq_b.weight^T -> {prefix_offset}.self_attn.core_attention.indexer.linear_wq_b.weight",
+                        f"{prefix}.self_attn.core_attention.indexer.linear_weights_proj.weight^T -> {prefix_offset}.self_attn.core_attention.indexer.linear_weights_proj.weight",
+                        f"{prefix}.self_attn.core_attention.indexer.compressor.linear_wkv.weight^T -> {prefix_offset}.self_attn.core_attention.indexer.compressor.linear_wkv.weight",
+                        f"{prefix}.self_attn.core_attention.indexer.compressor.linear_wgate.weight^T -> {prefix_offset}.self_attn.core_attention.indexer.compressor.linear_wgate.weight",
+                        f"{prefix}.self_attn.core_attention.indexer.compressor.norm.weight -> {prefix_offset}.self_attn.core_attention.indexer.compressor.norm.weight",
+                        f"{prefix}.self_attn.core_attention.indexer.compressor.ape -> {prefix_offset}.self_attn.core_attention.indexer.compressor.ape",
+                    ]
+
             else:
                 if config.use_qk_norm:
                     aoa_config["aoa_statements"] += [
@@ -656,6 +698,47 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     aoa_statements += [
                         f"{prefix_offset}.self_attn.q_a_layernorm.weight -> {prefix}.self_attn.q_a_layernorm.weight",
                         f"{prefix_offset}.self_attn.kv_a_layernorm.weight -> {prefix}.self_attn.kv_a_layernorm.weight",
+                    ]
+            elif config.experimental_attention_variant == "dsv4_hybrid":
+                # csa_compress_ratios has length num_hidden_layers + num_nextn_predict_layers,
+                # i.e. it covers both main layers and MTP layers.
+                assert len(config.csa_compress_ratios) == num_hidden_layers + num_nextn_predict_layers, (
+                    f"csa_compress_ratios length ({len(config.csa_compress_ratios)}) must equal "
+                    f"num_hidden_layers + num_nextn_predict_layers "
+                    f"({num_hidden_layers} + {num_nextn_predict_layers})"
+                )
+                csa_ratio = config.csa_compress_ratios[layer_idx]
+                aoa_statements += [
+                    # Linear projections (transpose: paddle [in, out] -> HF [out, in])
+                    f"{prefix_offset}.self_attn.linear_q_down_proj.weight^T -> {prefix}.self_attn.linear_q_down_proj.weight",
+                    f"{prefix_offset}.self_attn.linear_q_up_proj.weight^T -> {prefix}.self_attn.linear_q_up_proj.weight",
+                    f"{prefix_offset}.self_attn.linear_kv_proj.weight^T -> {prefix}.self_attn.linear_kv_proj.weight",
+                    f"{prefix_offset}.self_attn.o_proj.weight^T -> {prefix}.self_attn.o_proj.weight",
+                    # Layer norms (no transpose, 1D)
+                    f"{prefix_offset}.self_attn.q_layernorm.weight -> {prefix}.self_attn.q_layernorm.weight",
+                    f"{prefix_offset}.self_attn.kv_layernorm.weight -> {prefix}.self_attn.kv_layernorm.weight",
+                    # Grouped output projection (raw parameter, shape [out, in] on both sides)
+                    f"{prefix_offset}.self_attn.linear_o_group_proj -> {prefix}.self_attn.linear_o_group_proj",
+                    # Core attention: learnable attention sink (1D, no transpose)
+                    f"{prefix_offset}.self_attn.core_attention.attn_sink -> {prefix}.self_attn.core_attention.attn_sink",
+                ]
+                # Compressor exists only when compress_ratio > 1 (i.e. ratio in {4, 128})
+                if csa_ratio > 1:
+                    aoa_statements += [
+                        f"{prefix_offset}.self_attn.core_attention.compressor.linear_wkv.weight^T -> {prefix}.self_attn.core_attention.compressor.linear_wkv.weight",
+                        f"{prefix_offset}.self_attn.core_attention.compressor.linear_wgate.weight^T -> {prefix}.self_attn.core_attention.compressor.linear_wgate.weight",
+                        f"{prefix_offset}.self_attn.core_attention.compressor.norm.weight -> {prefix}.self_attn.core_attention.compressor.norm.weight",
+                        f"{prefix_offset}.self_attn.core_attention.compressor.ape -> {prefix}.self_attn.core_attention.compressor.ape",
+                    ]
+                # Indexer exists only when compress_ratio == 4 and not csa_dense_mode
+                if csa_ratio == 4 and not getattr(config, "csa_dense_mode", False):
+                    aoa_statements += [
+                        f"{prefix_offset}.self_attn.core_attention.indexer.linear_wq_b.weight^T -> {prefix}.self_attn.core_attention.indexer.linear_wq_b.weight",
+                        f"{prefix_offset}.self_attn.core_attention.indexer.linear_weights_proj.weight^T -> {prefix}.self_attn.core_attention.indexer.linear_weights_proj.weight",
+                        f"{prefix_offset}.self_attn.core_attention.indexer.compressor.linear_wkv.weight^T -> {prefix}.self_attn.core_attention.indexer.compressor.linear_wkv.weight",
+                        f"{prefix_offset}.self_attn.core_attention.indexer.compressor.linear_wgate.weight^T -> {prefix}.self_attn.core_attention.indexer.compressor.linear_wgate.weight",
+                        f"{prefix_offset}.self_attn.core_attention.indexer.compressor.norm.weight -> {prefix}.self_attn.core_attention.indexer.compressor.norm.weight",
+                        f"{prefix_offset}.self_attn.core_attention.indexer.compressor.ape -> {prefix}.self_attn.core_attention.indexer.compressor.ape",
                     ]
             else:
                 if config.use_qk_norm:
