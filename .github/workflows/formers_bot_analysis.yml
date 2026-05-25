@@ -19,7 +19,8 @@ permissions:
 
 jobs:
   check-and-collect:
-    runs-on: ubuntu-latest
+    runs-on: 
+        group: APPROVAL   
     permissions:
       pull-requests: read
       actions: read
@@ -30,6 +31,9 @@ jobs:
       failed_job_urls: ${{ steps.check.outputs.failed_job_urls }}
       failed_run_ids:  ${{ steps.check.outputs.failed_run_ids }}
     steps:
+      - name: Cleanup
+        run: |
+          rm -rf * .[^.]*
       - name: Check all workflows done and collect failed job URLs
         id: check
         env:
@@ -254,82 +258,35 @@ jobs:
         run: |
           python /home/paddle-1/paddle_ci_bot/report_monitor.py "$TASK_ID"
 
-      - name: Upload result artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: bot-result-${{ github.run_id }}
-          path: /tmp/bot_results/bot_result_paddleformers_${{ env.TASK_ID }}.md
-          retention-days: 1
-
-  post-comment:
-    needs: [check-and-collect, analyze]
-    if: >-
-      always() &&
-      needs.check-and-collect.outputs.skip == 'false' &&
-      needs.check-and-collect.outputs.is_schedule == 'false'
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-    steps:
-      - name: Download bot result artifact
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO:         ${{ github.repository }}
-          RUN_ID:       ${{ github.run_id }}
-        run: |
-          mkdir -p /tmp/bot_result
-
-          ARTIFACT_ID=$(curl -s \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${REPO}/actions/runs/${RUN_ID}/artifacts" \
-            | python3 -c "
-          import json, sys
-          data = json.load(sys.stdin)
-          for a in data.get('artifacts', []):
-              if a['name'] == f'bot-result-{sys.argv[1]}':
-                  print(a['id'])
-                  break
-          " "$RUN_ID" 2>/dev/null || true)
-
-          if [ -z "$ARTIFACT_ID" ]; then
-            echo "No artifact found, will post fallback comment."
-          else
-            curl -s -L \
-              -H "Authorization: Bearer $GITHUB_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${REPO}/actions/artifacts/${ARTIFACT_ID}/zip" \
-              -o /tmp/bot_result/result.zip
-            unzip -q /tmp/bot_result/result.zip -d /tmp/bot_result/
-            echo "Downloaded: $(ls /tmp/bot_result/)"
-          fi
-
       - name: Post or update PR comment
+        if: always() && needs.check-and-collect.outputs.is_schedule == 'false'
         env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          REPO:          ${{ github.repository }}
-          PR_NUMBER:     ${{ needs.check-and-collect.outputs.pr_number }}
-          RUN_ID:        ${{ github.run_id }}
-          RUN_ATTEMPT:   ${{ github.run_attempt }}
+          BOT_TOKEN:   ${{ secrets.BOT_TOKEN }}
+          REPO:        ${{ github.repository }}
+          PR_NUMBER:   ${{ needs.check-and-collect.outputs.pr_number }}
+          RUN_ID:      ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RESULT_FILE: /tmp/bot_results/bot_result_paddleformers_${{ env.TASK_ID }}.md
         run: |
           python3 - <<'PYEOF'
-          import json, os, glob, urllib.request, urllib.error, sys
+          import json, os, urllib.request, urllib.error, sys
 
           token       = os.environ['BOT_TOKEN']
           repo        = os.environ['REPO']
           pr_number   = os.environ['PR_NUMBER']
           run_id      = os.environ['RUN_ID']
           run_attempt = os.environ['RUN_ATTEMPT']
+          result_file = os.environ['RESULT_FILE']
           marker      = "<!-- bot-log-analysis -->"
 
           if not token:
               print("ERROR: BOT_TOKEN is empty, cannot post comment.", file=sys.stderr)
               sys.exit(1)
 
-          files = glob.glob("/tmp/bot_result/*.md")
-          body  = open(files[0]).read() if files else \
-                  "⚠️ 未生成分析结果，请手动查看 Action 日志。"
+          if os.path.isfile(result_file):
+              body = open(result_file).read()
+          else:
+              body = "⚠️ 未生成分析结果，请手动查看 Action 日志。"
 
           run_url = f"https://github.com/{repo}/actions/runs/{run_id}"
           comment = (
