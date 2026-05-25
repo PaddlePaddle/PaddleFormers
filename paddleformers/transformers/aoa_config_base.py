@@ -667,7 +667,7 @@ class MoEAOAConfigGenerator:
             if layer_idx >= params.num_hidden_layers:
                 prefix_offset += ".transformer_layer"
 
-            statements.extend( 
+            statements.extend(
                 [
                     f"{prefix_offset}.input_layernorm.weight -> {prefix}.input_layernorm.weight",
                     f"{prefix_offset}.post_attention_layernorm.weight -> {prefix}.post_attention_layernorm.weight",

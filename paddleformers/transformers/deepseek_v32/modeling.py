@@ -37,9 +37,15 @@ class DeepseekV32PreTrainedModel(PretrainedModel):
     base_model_prefix = "model"
 
     # Layernorm weight names that need dtype cast (fleet model skips generic dtype mapping)
-    _NORM_WEIGHT_KEYS = ("input_layernorm.weight", "post_attention_layernorm.weight",
-                         "q_a_layernorm.weight", "kv_a_layernorm.weight",
-                         "k_norm.weight", "k_norm.bias", "norm.weight")
+    _NORM_WEIGHT_KEYS = (
+        "input_layernorm.weight",
+        "post_attention_layernorm.weight",
+        "q_a_layernorm.weight",
+        "kv_a_layernorm.weight",
+        "k_norm.weight",
+        "k_norm.bias",
+        "norm.weight",
+    )
 
     @classmethod
     def _gen_aoa_config(cls, config: DeepseekV32Config):
