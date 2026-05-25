@@ -2240,7 +2240,7 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
             logger.info("[ZCC worker] master weights dict filter by master_weights_filter complete.")
 
             def _extract_struct_name(key):
-                match = re.match(r"^(.*)\.(moment1_0|moment2_0)$", key)
+                match = re.match(r"^(.*)\.(moment1_0|moment2_0|w_0)$", key)
                 return match.group(1) if match else None
 
             if self.grouped_gemm_params and len(self.grouped_gemm_params) > 0:
@@ -2251,6 +2251,14 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
                         opt_state_dict[k] = v.reshape((-1, v.shape[-1]))
                         logger.info(
                             f"[ZCC worker] {k} with shape {origin_shape} is reshaped to {opt_state_dict[k].shape}."
+                        )
+                for k, v in master_weights.items():
+                    struct_name = _extract_struct_name(k)
+                    if struct_name is not None and struct_name in self.grouped_gemm_params:
+                        origin_shape = v.shape
+                        master_weights[k] = v.reshape((-1, v.shape[-1]))
+                        logger.info(
+                            f"[ZCC worker] {k} with shape {origin_shape} is reshaped to {master_weights[k].shape}."
                         )
 
             logger.debug(f"opt states length is {len(opt_state_dict)}")

@@ -1,0 +1,79 @@
+name: Cleanup CI Gists
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # 每天北京时间11点（UTC+8）
+  workflow_dispatch:
+    inputs:
+      keep_days:
+        description: '保留最近几天的 Gist（默认14天）'
+        default: '14'
+        required: false
+      dry_run:
+        description: '只预览不删除 (true/false)'
+        default: 'false'
+        required: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old CI gists
+        env:
+          GH_TOKEN: ${{ secrets.GIST_CLEANUP_TOKEN }}
+          KEEP_DAYS: ${{ inputs.keep_days || '14' }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          python3 << 'EOF'
+          import os, requests
+          from datetime import datetime, timezone, timedelta
+
+          token    = os.environ["GH_TOKEN"]
+          keep     = int(os.environ["KEEP_DAYS"])
+          dry_run  = os.environ["DRY_RUN"].lower() == "true"
+          headers  = {"Authorization": f"token {token}"}
+          cutoff   = datetime.now(timezone.utc) - timedelta(days=keep)
+
+          CI_PREFIXES = [
+              "PaddleFleet CI ",    
+              "PaddleFormers CI ", 
+              "error_", 
+          ]
+
+          print(f"{'[DRY RUN] ' if dry_run else ''}Deleting gists older than {keep} days (before {cutoff.date()})\n")
+
+          page, deleted, skipped = 1, 0, 0
+          while True:
+              resp = requests.get(
+                  f"https://api.github.com/gists?per_page=100&page={page}",
+                  headers=headers
+              )
+              gists = resp.json()
+              if not gists:
+                  break
+
+              for g in gists:
+                  desc    = g.get("description", "")
+                  created = datetime.fromisoformat(g["created_at"].replace("Z", "+00:00"))
+                  is_ci   = any(desc.startswith(p) for p in CI_PREFIXES)
+
+                  if is_ci and created < cutoff:
+                      if dry_run:
+                          print(f"[WOULD DELETE] [{created.date()}] {desc}")
+                      else:
+                          r = requests.delete(
+                              f"https://api.github.com/gists/{g['id']}",
+                              headers=headers
+                          )
+                          if r.status_code == 204:
+                              print(f"✓ Deleted [{created.date()}] {desc}")
+                              deleted += 1
+                          else:
+                              print(f"✗ Failed ({r.status_code}) {desc}")
+                  else:
+                      skipped += 1
+
+              page += 1
+
+          print(f"\n{'[DRY RUN] ' if dry_run else ''}Done — deleted: {deleted}, skipped: {skipped}")
+          EOF

@@ -9,10 +9,6 @@ on:
     types: [opened, assigned]
   pull_request_review:
     types: [submitted]
-  pull_request:
-    branches:
-      - develop
-      - release/**
 jobs:
   formers:
     if: |
@@ -31,19 +27,22 @@ jobs:
       actions: read
     steps:
       - name: Extract @formers comment and run bot
+        id: run_bot
         env:
           COMMENT_BODY: ${{ github.event.comment.body }}
           REVIEW_BODY: ${{ github.event.review.body }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
+          TASK_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
+          echo "TASK_ID=$TASK_ID" >> $GITHUB_ENV 
           cd /home/paddle-1/
           if [[ "$COMMENT_BODY" == *"@formers"* ]]; then
-            python formers_bot.py --prompt "$COMMENT_BODY"
+            python formers_bot.py --prompt "$COMMENT_BODY" --task-id "$TASK_ID"
           elif [[ "$REVIEW_BODY" == *"@formers"* ]]; then
-            python formers_bot.py --prompt "$REVIEW_BODY"
+            python formers_bot.py --prompt "$REVIEW_BODY" --task-id "$TASK_ID"
           elif [[ "$ISSUE_BODY" == *"@formers"* ]] || [[ "$ISSUE_TITLE" == *"@formers"* ]]; then
-            python formers_bot.py --prompt "$ISSUE_BODY $ISSUE_TITLE"
+            python formers_bot.py --prompt "$ISSUE_BODY $ISSUE_TITLE" --task-id "$TASK_ID"
           fi 
       - name: Post result to PR/Issue comment
         if: always()
@@ -55,12 +54,12 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           COMMENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
-          if [ ! -f /tmp/bot_result.md ]; then
+          if [ ! -f /tmp/bot_results/bot_result_${TASK_ID}.md ]; then
             echo "No result file found, skipping comment"
             exit 0
           fi
           
-          RESULT=$(cat /tmp/bot_result.md)
+          RESULT=$(cat /tmp/bot_results/bot_result_${TASK_ID}.md)
 
           COMMENT_BODY=$(cat <<EOF
           

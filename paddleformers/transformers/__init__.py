@@ -306,6 +306,8 @@ import_structure = {
     "glm_moe_dsa": ["GlmMoeDsaForCausalLMPipe", "GlmMoeDsaForCausalLM"],
     "minimax_m2.configuration": ["MiniMaxM2Config"],
     "minimax_m2": ["MiniMaxM2ForCausalLMPipe", "MiniMaxM2ForCausalLM"],
+    "deepseek_v4.configuration": ["DeepSeekV4Config"],
+    "deepseek_v4": ["DeepSeekV4ForCausalLMPipe", "DeepSeekV4ForCausalLM"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
     "glm4v_moe.image_processor_fast": ["Glm4vImageProcessorFast"],
     "auto": ["AutoModelForCausalLM"],
@@ -406,6 +408,7 @@ if TYPE_CHECKING:
     from .glm4v_moe import *
     from .glm_moe_dsa import *
     from .minimax_m2 import *
+    from .deepseek_v4 import *
     from .gpt_oss import *
     from .phi3 import *
     from .gemma3_text import *

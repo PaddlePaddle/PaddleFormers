@@ -90,8 +90,6 @@ class BaseSFTDataset:
         # check
         if not self.dataset_num_proc:
             self.dataset_num_proc = 1
-        if self.dataset_num_proc > 1 and self.dataloader_num_workers > 0:
-            raise ValueError("dataset_num_proc and dataloader_num_workers can not be set simultaneously now.")
         if self.truncate_packing and not self.is_pretraining:
             logger.warning_once("Truncate packing is only valid in pretraining data flow")
         if self.is_pretraining and self.packing and self.truncate_packing:
@@ -948,6 +946,8 @@ class BaseSFTDataset:
 class IteratorSFTDataset(BaseSFTDataset, IterableDataset):
     def __init__(self, **dataset_config):
         super().__init__(**dataset_config)
+        if self.dataset_num_proc > 1 and self.dataloader_num_workers > 0:
+            raise ValueError("dataset_num_proc and dataloader_num_workers cannot be set simultaneously.")
 
     def __iter__(self):
         if self.is_valid:
@@ -960,6 +960,11 @@ class IteratorSFTDataset(BaseSFTDataset, IterableDataset):
 class MapSFTDataset(BaseSFTDataset, Dataset):
     def __init__(self, **dataset_config):
         super().__init__(**dataset_config)
+        if self.dataset_num_proc > 1 and self.dataloader_num_workers > 0:
+            logger.warning(
+                "dataset_num_proc and dataloader_num_workers are both set, "
+                "which may cause confusion and potential performance issues."
+            )
 
         self.packed_idx_cache_dir = dataset_config.get("packed_idx_cache_dir", None)
 
