@@ -28,7 +28,7 @@ defaults:
 jobs:
   check_skip:
     name: Check skip-unittest-ce label
-    runs-on: ubuntu-latest
+    runs-on: 'ernie-cpu'
 
     outputs:
       skip: ${{ steps.check_skip.outputs.skip }}
@@ -255,7 +255,7 @@ jobs:
     name: upload-coverage
     needs: [unittest-gpu-ce]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: 'ernie-cpu'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
@@ -320,7 +320,7 @@ jobs:
     name: upload-allure
     needs: [unittest-gpu-ce]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: 'ernie-cpu'
     steps:
       - name: Checkout
         uses: actions/checkout@v5
