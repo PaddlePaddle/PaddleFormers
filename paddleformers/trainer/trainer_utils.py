@@ -68,9 +68,11 @@ from transformers.tokenization_utils_base import BatchEncoding
 from ..trainer.argparser import strtobool
 from ..utils.import_utils import is_paddlefleet_available
 
-if is_paddlefleet_available():
+try:
+    if not is_paddlefleet_available():
+        raise ImportError("paddlefleet is not installed.")
     from ..transformers.gpt_provider import GPTModel
-else:
+except ImportError:
     GPTModel = None
 
 from ..transformers.model_utils import (

@@ -64,6 +64,7 @@ MAPPING_NAMES = OrderedDict(
         ("PaddleOCRVL", "paddleocr_vl"),
         ("Llama", "llama"),
         ("Llama4", "llama4"),
+        ("MiMo", "mimo"),
         ("KimiK2", "kimi_k2"),
         ("KimiK3", "kimi_k3"),
         ("Qwen2", "qwen2"),

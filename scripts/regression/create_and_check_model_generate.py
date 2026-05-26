@@ -72,6 +72,11 @@ MODEL_MAPPING = {
         "class_name": "Qwen2ForCausalLM",
         "dtype": "bfloat16",
     },
+    "mimo": {
+        "import_path": "paddleformers.transformers.mimo.modeling",
+        "class_name": "MiMoForCausalLM",
+        "dtype": "bfloat16",
+    },
     "ernie4_5_moe": {
         "import_path": "paddleformers.transformers.ernie4_5_moe.modeling",
         "class_name": "Ernie4_5_MoeForCausalLM",
