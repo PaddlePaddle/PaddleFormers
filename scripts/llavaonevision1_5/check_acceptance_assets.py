@@ -22,9 +22,9 @@ TOKENIZER_OR_PROCESSOR_FILES = [
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--tiny-dir", default="./tiny-random-llavaonevision1_5")
-    parser.add_argument("--reduced-dir", default="./.cache/llavaonevision1_5/reduced-random-llavaonevision1_5-4l-512h")
-    parser.add_argument("--reduced-hf-dir", default="./.cache/llavaonevision1_5/reduced-random-llavaonevision1_5-4l-512h-hf")
-    parser.add_argument("--reduced-reference-dir", default="./.cache/llavaonevision1_5/reduced_text_reference")
+    parser.add_argument("--reduced-dir", default="./.cache/llavaonevision1_5/reduced-depth-4l-fullwidth-random-v2")
+    parser.add_argument("--reduced-hf-dir", default="./.cache/llavaonevision1_5/reduced-depth-4l-fullwidth-random-v2-hf")
+    parser.add_argument("--reduced-reference-dir", default="./.cache/llavaonevision1_5/reduced_depth_fullwidth_text_reference_fp32")
     parser.add_argument("--gsm8k-train", default="./data/gsm8k_erniekit/train.jsonl")
     parser.add_argument("--gsm8k-eval", default="./data/gsm8k_erniekit/test.jsonl")
     parser.add_argument("--sft-vl-dir", default="./tests/fixtures/dummy/sft-vl/DoclingMatix")
