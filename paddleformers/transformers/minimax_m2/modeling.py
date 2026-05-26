@@ -35,7 +35,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         if is_layer_window_attention(
             config.sliding_window,
             config.window_attn_skip_freq,
-            layer_idx,
+            layer_idx - config.num_empty_layers_add_in_head,
         ):
             assert not use_mla, "MLA need to rewrite get_layer_attn_split_info func"
             head_dim = config.swa_head_dim
@@ -363,19 +363,21 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
         # Main layers
         for layer_idx in range(num_hidden_layers):
-            _add_layer_slice_config(f"model.layers.{layer_idx}", layer_idx)
+            real_layer_number = layer_idx + config.num_empty_layers_add_in_head
+            _add_layer_slice_config(f"model.layers.{real_layer_number}", real_layer_number)
 
         # MTP layers
         if config.mtp_num_layers > 0:
             num_nextn_predict_layers = config.mtp_num_layers
         else:
             num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
+
         for layer_idx in range(num_nextn_predict_layers):
-            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}", num_hidden_layers + layer_idx)
+            real_layer_number = layer_idx + config.num_empty_layers_add_in_head + num_hidden_layers
+            _add_layer_slice_config(f"model.layers.{real_layer_number}", real_layer_number)
         for layer_idx in range(num_nextn_predict_layers):
-            _add_layer_slice_config(
-                f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer", num_hidden_layers + layer_idx
-            )
+            real_layer_number = layer_idx + config.num_empty_layers_add_in_head + num_hidden_layers
+            _add_layer_slice_config(f"model.layers.{real_layer_number}.transformer_layer", real_layer_number)
 
         return slice_config
 
