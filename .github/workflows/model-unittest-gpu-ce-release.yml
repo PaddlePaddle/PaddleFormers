@@ -69,7 +69,7 @@ defaults:
 jobs:
   check_skip:
     name: Check skip-models-ce label
-    runs-on: ubuntu-latest
+    runs-on: 'ernie-cpu'
 
     outputs:
       skip: ${{ steps.check_skip.outputs.skip }}
@@ -361,7 +361,7 @@ jobs:
     name: upload-allure
     needs: [model-unittest-gpu-ce-release]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: 'ernie-cpu'
     steps:
       - name: Checkout gh-pages
         uses: actions/checkout@v5

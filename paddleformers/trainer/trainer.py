@@ -82,7 +82,6 @@ _obtain_optimizer_parameters_list = obtain_optimizer_parameters_list
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
     DygraphShardingOptimizerV2,
 )
-from paddle.distributed.fleet.meta_parallel.pipeline_parallel import PipelineParallel
 from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     fused_allreduce_gradients,
 )
@@ -446,7 +445,6 @@ class Trainer:
 
             set_profile_timers(self.timers)
         self.runtime_timer = RuntimeTimer("RuntimeTimer")
-        PipelineParallel.timer_printer = lambda _: None
 
         self.model_wrapped = model
         self.model = model
@@ -2653,6 +2651,24 @@ class Trainer:
                     logs.update(
                         {k: v.item() if hasattr(v, "item") else v for k, v in LanguageLoss.mtp_loss_tracker.items()}
                     )
+            except (ImportError, AttributeError):
+                pass
+
+            # Add DSA indexer loss metrics if available
+            try:
+                from paddlefleet.transformer.dsa_attention import (
+                    DSAIndexerLossLoggingHelper,
+                )
+
+                if DSAIndexerLossLoggingHelper.tracker.get("values") is not None:
+                    loss_scale = 1.0 / self.args.gradient_accumulation_steps
+                    DSAIndexerLossLoggingHelper.reduce_loss_in_tracker()
+                    tracker = DSAIndexerLossLoggingHelper.tracker
+                    indexer_loss_values = tracker["values"] * loss_scale
+                    num_layers = indexer_loss_values.shape[0]
+                    avg_indexer_loss = indexer_loss_values.sum() / num_layers
+                    logs["indexer_loss"] = avg_indexer_loss.item()
+                    DSAIndexerLossLoggingHelper.clean_loss_in_tracker()
             except (ImportError, AttributeError):
                 pass
 

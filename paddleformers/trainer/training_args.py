@@ -36,7 +36,7 @@ from ..utils.env import PREFIX_CHECKPOINT_DIR
 from ..utils.import_utils import is_paddlefleet_available
 from ..utils.log import logger
 from ..utils.pdc_sdk import FLASH_DEVICE
-from ..utils.tools import get_env_device, paddle_device
+from ..utils.tools import paddle_device
 from .trainer_utils import (
     IntervalStrategy,
     OptimizerNames,
@@ -691,6 +691,19 @@ class TrainingArguments:
         },
     )
 
+    dsa_indexer_loss_coeff: float = field(
+        default=0.01,
+        metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
+    )
+
+    sharding_comm_group_call_opt: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Whether to enable the group-call communication optimization for sharding broadcast and reduce operations. This only takes effect when using the Muon optimizer."
+            )
+        },
+    )
     sharding_offload_opt_buffersize_GB: int = field(
         default=-1,
         metadata={
@@ -1515,6 +1528,12 @@ class TrainingArguments:
             "help": "Enable splitting backward pass into stages to balance computation and reduce peak memory usage in model parallelism."
         },
     )
+    timer: bool = field(
+        default=False,
+        metadata={
+            "help": "Enable timing for pipeline parallel stages to profile and optimize communication/computation overlap."
+        },
+    )
     stage1_tensor_fusion: bool = field(
         default=False,
         metadata={
@@ -1683,7 +1702,7 @@ class TrainingArguments:
         default=True, metadata={"help": "Whether to perform online merge of the EMA parameters during training. "}
     )
 
-    flex_ckpt_comm_method: str = field(
+    flex_ckpt_comm_method: Optional[str] = field(
         default=None,
         metadata={
             "help": "Communication method for FlexCheckpoint reshard. Options: 'auto', 'broadcast', 'parallel_broadcast'. Default: 'auto'."
@@ -1932,6 +1951,7 @@ class TrainingArguments:
                                 "enable_delay_scale_loss",
                                 "enable_dp_comm_overlap",
                                 "enable_sharding_comm_overlap",
+                                "enable_timer",
                                 "enable_release_grads",
                                 "enable_clear_every_step_cache",
                                 "enable_overlap_p2p_comm",
@@ -1984,7 +2004,7 @@ class TrainingArguments:
                         "delay_scale_loss": True,  # TODO[Waynezee]: remove this config in the future
                         "dp_comm_overlap": enable_dp_comm_overlap,
                         "sharding_comm_overlap": self.enable_sharding_comm_overlap,
-                        "enable_timer": get_env_device() != "xpu",
+                        "enable_timer": self.timer,
                         "release_gradients": self.pp_release_grads or self.release_grads,
                         "overlap_p2p_comm": self.overlap_p2p_comm,
                         "clear_every_step_cache": self.clear_every_step_cache,
@@ -2241,6 +2261,12 @@ class TrainingArguments:
                                 self.sharding_offload_opt_buffersize_GB
                             )
 
+                        if self.sharding_comm_group_call_opt:
+                            assert (
+                                self.optim == OptimizerNames.MUON
+                            ), "sharding_comm_group_call_opt only supports Muon optimizer."
+                            strategy.hybrid_configs["sharding_configs"].comm_group_call_opt = True
+
                         if self.split_param:
                             strategy.hybrid_configs["sharding_configs"].split_param = True
                             assert self.amp_master_grad, "Currently sharding stage1 v2 only support amp_master_grad"
@@ -2409,6 +2435,7 @@ class TrainingArguments:
                             "enable_delay_scale_loss",
                             # "enable_dp_comm_overlap",       # no implementation for auto_parallel
                             # "enable_sharding_comm_overlap", # no implementation for auto_parallel
+                            # "enable_timer",                 # no implementation for auto_parallel
                             # "disable_batch_p2p_comm",       # no implementation for auto_parallel
                             "enable_split_backward",
                             "auto_parallel_sync_shared_params",
@@ -2836,11 +2863,11 @@ class TrainingArguments:
                 self.expert_model_parallel_size = -1
                 self.expert_tensor_model_parallel_size = -1
 
-        # NOTE(Waynezee): when moe_grouped_gemm is true and sharding_parallel_size = 1,  checkpoint will fail to save
-        if hasattr(self, "moe_grouped_gemm") and self.moe_grouped_gemm and self.world_size > 1:
+        # NOTE(Waynezee): when moe_expert_fusion is true and sharding_parallel_size = 1,  checkpoint will fail to save
+        if hasattr(self, "moe_expert_fusion") and self.moe_expert_fusion and self.world_size > 1:
             assert (
                 self.sharding_parallel_size > 1
-            ), "Checkpoint will fail to save when moe_grouped_gemm is true and sharding_parallel_size = 1, please set moe_grouped_gemm to false"
+            ), "Checkpoint will fail to save when moe_expert_fusion is true and sharding_parallel_size = 1, please set moe_expert_fusion to false"
 
         if self.hybrid_parallel_topo_order is None:
             self.hybrid_parallel_topo_order = "sharding_first"

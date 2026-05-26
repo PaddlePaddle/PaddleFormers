@@ -77,6 +77,6 @@ fp32_residual_connection: false
 moe_router_fusion: true
 router_aux_loss_coef: 0.001
 
-# grouped gemm
-moe_grouped_gemm: true
-# use_deep_gemm: false
+# expert fusion
+moe_expert_fusion: true
+moe_deep_gemm: false

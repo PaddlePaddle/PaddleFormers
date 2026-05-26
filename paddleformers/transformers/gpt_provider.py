@@ -99,7 +99,7 @@ def local_layer_spec(config: "GPTModelProvider") -> LayerSpec:
     """
     return get_gpt_layer_local_spec(
         num_experts=config.num_moe_experts,
-        moe_grouped_gemm=config.moe_grouped_gemm,
+        moe_expert_fusion=config.moe_expert_fusion,
         qk_layernorm=config.qk_layernorm,
         normalization=config.normalization,
     )
@@ -144,7 +144,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
 
     # MoE / FP8
     n_routed_experts: Optional[int] = None
-    moe_grouped_gemm: bool = False
+    moe_expert_fusion: bool = False
     use_qk_norm: bool = False
     fp8: Optional[str] = None
     normalization: str = "RMSNorm"

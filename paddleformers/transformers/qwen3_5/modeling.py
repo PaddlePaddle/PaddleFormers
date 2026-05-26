@@ -395,7 +395,7 @@ class Qwen3_5ForConditionalGeneration(PretrainedModel):
             ]
             # MoE — routed experts
             for i in range(text_config.num_hidden_layers):
-                if getattr(config, "moe_grouped_gemm", True):
+                if getattr(config, "moe_expert_fusion", True):
                     aoa_config["aoa_statements"] += [
                         f'model.language_model.layers.{i}.mlp.experts.gate_up_proj -> {llm_prefix}layers.{i}.mlp.grouped_gemm_experts.weight1, permute="[0, 2, 1]"',
                         f'model.language_model.layers.{i}.mlp.experts.down_proj -> {llm_prefix}layers.{i}.mlp.grouped_gemm_experts.weight2, permute="[0, 2, 1]"',

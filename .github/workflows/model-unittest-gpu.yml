@@ -60,8 +60,9 @@ defaults:
 jobs:
   check_skip:
     name: Check skip-models-ci label
-    runs-on: ubuntu-latest
-    outputs:
+    runs-on: 'ernie-cpu'
+
+outputs:
       skip: ${{ steps.check_skip.outputs.skip }}
     steps:
       - name: Check skip-models-ci label
