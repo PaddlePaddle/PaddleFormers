@@ -337,7 +337,7 @@ jobs:
     name: upload-allure
     needs: [unittest-gpu-ci]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ernie-cpu
     steps:
       - name: Checkout gh-pages
         uses: actions/checkout@v5

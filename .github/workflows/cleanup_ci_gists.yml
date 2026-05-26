@@ -16,7 +16,7 @@ on:
 
 jobs:
   cleanup:
-    runs-on: ubuntu-latest
+    runs-on: ernie-cpu
     steps:
       - name: Delete old CI gists
         env:

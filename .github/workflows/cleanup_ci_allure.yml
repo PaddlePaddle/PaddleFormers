@@ -1,0 +1,55 @@
+name: Cleanup PR Allure Reports
+
+on:
+  pull_request:
+    types:
+      - closed
+
+jobs:
+  cleanup:
+    runs-on: 'ernie-cpu'
+
+    steps:
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          fetch-depth: 0
+
+      - name: Remove PR allure reports
+        env:
+          PR_ID: ${{ github.event.pull_request.number }}
+        run: |
+          echo "Cleaning PR_${PR_ID} allure reports..."
+
+          TARGETS=(
+            "unit_CI/PR_${PR_ID}"
+            "model_CI/PR_${PR_ID}"
+          )
+
+          for dir in "${TARGETS[@]}"; do
+            if [ -d "$dir" ]; then
+              echo "Removing $dir"
+              rm -rf "$dir"
+            else
+              echo "$dir not found"
+            fi
+          done
+
+      - name: Commit changes
+        run: |
+          git config user.name "PaddleCI"
+          git config user.email "paddle_ci@example.com"
+
+          git add .
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "cleanup allure reports for PR #${{ github.event.pull_request.number }}"
+
+      - name: Push changes
+        run: |
+          git push origin gh-pages
