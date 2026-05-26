@@ -316,10 +316,10 @@ jobs:
   upload-allure:
     name: upload-allure
     needs: [model-unittest-gpu-ci]
-    if: always()
-    runs-on: ernie-cpu
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: 'ernie-cpu'
     permissions:
-      contents: write
+      contents: write    
     steps:
       - name: Checkout gh-pages
         uses: actions/checkout@v5
@@ -336,22 +336,22 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             MODE="manual"
             PR_NUMBER="manual"
-            cp -r gh-pages/model_CI/manual/history result/history || true
+            cp -r gh-pages/model_CI/manual/history result/ || true
             destination_dir="model_CI/manual"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
             MODE="schedule"
             PR_NUMBER="schedule"
-            cp -r gh-pages/model_CI/schedule/history result/history || true
+            cp -r gh-pages/model_CI/schedule/history result/ || true
             destination_dir="model_CI/schedule"
           elif [[ "${{ github.event_name }}" == "issue_comment" ]]; then
             MODE="comment"
             PR_NUMBER="${{ github.event.issue.number }}"
-            cp -r gh-pages/model_CI/$PR_NUMBER/history result/history || true
+            cp -r gh-pages/model_CI/$PR_NUMBER/history result/ || true
             destination_dir="model_CI/$PR_NUMBER"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             MODE="pr"
             PR_NUMBER="${PR_ID}"
-            cp -r gh-pages/model_CI/$PR_NUMBER/history result/history || true
+            cp -r gh-pages/model_CI/$PR_NUMBER/history result/ || true
             destination_dir="model_CI/$PR_NUMBER"
           fi
           
@@ -380,6 +380,7 @@ jobs:
           tar -xzf report.tar.gz
           if [ -d "report" ]; then
             echo "report directory exists"
+            rm -rf report/data/attachments/*
           else
             echo "ERROR: report directory not found!"
             exit 1
