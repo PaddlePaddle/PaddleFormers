@@ -338,6 +338,8 @@ jobs:
     needs: [unittest-gpu-ci]
     if: always()
     runs-on: ernie-cpu
+    permissions:
+      contents: write
     steps:
       - name: Checkout gh-pages
         uses: actions/checkout@v5
@@ -387,7 +389,7 @@ jobs:
           fi
 
           wget -q --no-proxy \
-            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/ci-model-unittest-gpu/${bos_prefix}/logs/report.tar.gz \
+            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/ci-unittest-gpu/${bos_prefix}/logs/report.tar.gz \
             --no-check-certificate
           tar -xzf report.tar.gz
           if [ -d "report" ]; then
@@ -400,7 +402,7 @@ jobs:
         if: always()
         uses: peaceiris/actions-gh-pages@v3
         with:
-          github_token: ${{ secrets.BOT_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./report
           destination_dir: ${{ steps.trigger_mode.outputs.destination_dir }}
       - name: Display GitHub Pages URL

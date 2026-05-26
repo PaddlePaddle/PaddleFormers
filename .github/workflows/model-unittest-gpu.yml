@@ -318,6 +318,8 @@ jobs:
     needs: [model-unittest-gpu-ci]
     if: always()
     runs-on: ernie-cpu
+    permissions:
+      contents: write
     steps:
       - name: Checkout gh-pages
         uses: actions/checkout@v5
@@ -386,7 +388,7 @@ jobs:
         if: always()
         uses: peaceiris/actions-gh-pages@v3
         with:
-          github_token: ${{ secrets.BOT_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./report
           destination_dir: ${{ steps.trigger_mode.outputs.destination_dir }}
       - name: Display GitHub Pages URL
