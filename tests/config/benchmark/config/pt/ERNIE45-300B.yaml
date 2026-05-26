@@ -117,4 +117,5 @@ ernie_model_config:
 
     moe_gate: top2_fused
 
+moe_deep_gemm: false
 

@@ -64,6 +64,7 @@ recompute_num_layers: 11
 
 moe_expert_fusion: true
 apply_rope_fusion: true
+moe_deep_gemm: false
 fp32_residual_connection: false
 # moe_router_force_load_balancing: true
 

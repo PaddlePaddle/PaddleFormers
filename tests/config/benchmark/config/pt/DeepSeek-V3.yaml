@@ -78,3 +78,5 @@ skip_profile_timer: false
 
 ### benchmark config
 metrics_output_path: ./output/paddle_distributed_logs/
+
+moe_deep_gemm: false

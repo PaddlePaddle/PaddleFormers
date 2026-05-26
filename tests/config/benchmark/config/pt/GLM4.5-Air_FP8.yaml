@@ -94,3 +94,4 @@ continue_training: true
 tensorwise_offload_optimizer: true
 
 skip_profile_timer: false
+moe_deep_gemm: false

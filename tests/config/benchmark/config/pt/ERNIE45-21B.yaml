@@ -101,3 +101,4 @@ ernie_model_config:
         transpose_split_quant: true
     use_combine_before_a2a: true
 
+moe_deep_gemm: false

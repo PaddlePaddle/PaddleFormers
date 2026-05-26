@@ -59,3 +59,4 @@ freeze_config: freeze_vision freeze_aligner
 
 dataloader_num_workers: 8
 prefetch_factor: 8
+moe_deep_gemm: false
