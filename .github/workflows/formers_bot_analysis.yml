@@ -5,7 +5,6 @@ on:
     workflows:
       - "Unittest GPU CI"
       - "Model Unittest GPU CI"
-      - "CI_ILUVATAR"
       - "Fleet Model Test"
       - "Codestyle Check"
       - "CI_XPU"
@@ -53,8 +52,7 @@ jobs:
             triggering_run_id = os.environ.get('TRIGGERING_RUN_ID', '')
 
             watched = {
-                "Unittest GPU CI", "Model Unittest GPU CI",
-                "CI_ILUVATAR", "Fleet Model Test", "Codestyle Check", "CI_XPU"
+                "Unittest GPU CI", "Model Unittest GPU CI", "Fleet Model Test", "Codestyle Check", "CI_XPU"
             }
 
             skip_keywords = [
