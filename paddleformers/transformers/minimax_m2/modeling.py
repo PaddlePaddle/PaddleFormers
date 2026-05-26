@@ -193,7 +193,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         muon_configs = config.muon_configs
 
         num_hidden_layers = config.num_hidden_layers
-        use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
+        use_mla = bool(getattr(config, "multi_latent_attention", False))
         moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         use_gated_attn = getattr(config, "use_gated_attn", False)
         csa_compress_ratios = getattr(config, "csa_compress_ratios", None)
