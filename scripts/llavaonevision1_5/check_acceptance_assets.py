@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-
 REQUIRED_MODEL_FILES = ["config.json", "model.safetensors.index.json"]
 TOKENIZER_OR_PROCESSOR_FILES = [
     "tokenizer.json",
@@ -23,8 +22,12 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--tiny-dir", default="./tiny-random-llavaonevision1_5")
     parser.add_argument("--reduced-dir", default="./.cache/llavaonevision1_5/reduced-depth-4l-fullwidth-random-v2")
-    parser.add_argument("--reduced-hf-dir", default="./.cache/llavaonevision1_5/reduced-depth-4l-fullwidth-random-v2-hf")
-    parser.add_argument("--reduced-reference-dir", default="./.cache/llavaonevision1_5/reduced_depth_fullwidth_text_reference_fp32")
+    parser.add_argument(
+        "--reduced-hf-dir", default="./.cache/llavaonevision1_5/reduced-depth-4l-fullwidth-random-v2-hf"
+    )
+    parser.add_argument(
+        "--reduced-reference-dir", default="./.cache/llavaonevision1_5/reduced_depth_fullwidth_text_reference_fp32"
+    )
     parser.add_argument("--gsm8k-train", default="./data/gsm8k_erniekit/train.jsonl")
     parser.add_argument("--gsm8k-eval", default="./data/gsm8k_erniekit/test.jsonl")
     parser.add_argument("--sft-vl-dir", default="./tests/fixtures/dummy/sft-vl/DoclingMatix")
@@ -62,7 +65,12 @@ def main():
     reduced_hf_dir = Path(args.reduced_hf_dir)
     ok &= check_path(reduced_hf_dir, "HF-compatible reduced checkpoint directory", required=False)
     if reduced_hf_dir.exists():
-        for name in ["config.json", "model.safetensors.index.json", "configuration_llavaonevision1_5.py", "modeling_llavaonevision1_5.py"]:
+        for name in [
+            "config.json",
+            "model.safetensors.index.json",
+            "configuration_llavaonevision1_5.py",
+            "modeling_llavaonevision1_5.py",
+        ]:
             ok &= check_path(reduced_hf_dir / name, f"HF-compatible reduced checkpoint {name}")
 
     reduced_reference_dir = Path(args.reduced_reference_dir)

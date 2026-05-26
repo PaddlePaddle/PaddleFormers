@@ -41,7 +41,11 @@ from ..masking_utils import (
 from ..model_outputs import BaseModelOutputWithPast, ModelOutput
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS
-from .configuration import Llavaonevision1_5Config, LLaVAOneVision1_5TextConfig, RiceConfig
+from .configuration import (
+    Llavaonevision1_5Config,
+    LLaVAOneVision1_5TextConfig,
+    RiceConfig,
+)
 
 
 def rotate_half(x: paddle.Tensor) -> paddle.Tensor:
@@ -297,9 +301,7 @@ class LLaVAOneVision1_5RotaryEmbedding(nn.Layer):
     ) -> tuple[paddle.Tensor, float]:
         base = config.rope_parameters["rope_theta"]
         dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
-        inv_freq = 1.0 / (
-            base ** (paddle.arange(0, dim, 2, dtype="int64").astype("float32").to(device) / dim)
-        )
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype="int64").astype("float32").to(device) / dim))
         return inv_freq, 1.0
 
     def forward(self, x, position_ids):
@@ -309,8 +311,10 @@ class LLaVAOneVision1_5RotaryEmbedding(nn.Layer):
                 position_ids_expanded = position_ids[:, None, :].float()
                 freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose([0, 2, 1])
             else:
-                inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand(
-                    [position_ids.shape[0], position_ids.shape[1], -1, 1]
+                inv_freq_expanded = (
+                    self.inv_freq[None, None, :, None]
+                    .float()
+                    .expand([position_ids.shape[0], position_ids.shape[1], -1, 1])
                 )
                 position_ids_expanded = position_ids[:, :, None, :].float()
                 freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose([0, 1, 3, 2])
@@ -832,7 +836,9 @@ class LLaVAOneVision1_5TextModel(LLaVAOneVision1_5PretrainedModel):
             all_hidden_states += (hidden_states,)
 
         if not return_dict:
-            return tuple(v for v in [hidden_states, past_key_values, all_hidden_states, all_self_attns] if v is not None)
+            return tuple(
+                v for v in [hidden_states, past_key_values, all_hidden_states, all_self_attns] if v is not None
+            )
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=past_key_values,
@@ -946,9 +952,15 @@ class LLaVAOneVision1_5Model(LLaVAOneVision1_5PretrainedModel):
                     st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
                     llm_pos_ids_list.append(paddle.arange(text_len).reshape([1, -1]).expand([3, -1]) + st_idx)
 
-                    t_index = paddle.arange(llm_grid_t).reshape([-1, 1]).expand([-1, llm_grid_h * llm_grid_w]).flatten()
-                    h_index = paddle.arange(llm_grid_h).reshape([1, -1, 1]).expand([llm_grid_t, -1, llm_grid_w]).flatten()
-                    w_index = paddle.arange(llm_grid_w).reshape([1, 1, -1]).expand([llm_grid_t, llm_grid_h, -1]).flatten()
+                    t_index = (
+                        paddle.arange(llm_grid_t).reshape([-1, 1]).expand([-1, llm_grid_h * llm_grid_w]).flatten()
+                    )
+                    h_index = (
+                        paddle.arange(llm_grid_h).reshape([1, -1, 1]).expand([llm_grid_t, -1, llm_grid_w]).flatten()
+                    )
+                    w_index = (
+                        paddle.arange(llm_grid_w).reshape([1, 1, -1]).expand([llm_grid_t, llm_grid_h, -1]).flatten()
+                    )
                     llm_pos_ids_list.append(paddle.stack([t_index, h_index, w_index]) + text_len + st_idx)
                     st = ed + llm_grid_t * llm_grid_h * llm_grid_w
 
@@ -1034,19 +1046,25 @@ class LLaVAOneVision1_5Model(LLaVAOneVision1_5PretrainedModel):
         **kwargs,
     ) -> Union[Tuple, LLaVAOneVision1_5ModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if inputs_embeds is None:
             inputs_embeds = self.get_input_embeddings()(input_ids)
 
         if pixel_values is not None:
-            image_embeds = paddle.cat(self.get_image_features(pixel_values, image_grid_thw), axis=0).astype(inputs_embeds.dtype)
+            image_embeds = paddle.cat(self.get_image_features(pixel_values, image_grid_thw), axis=0).astype(
+                inputs_embeds.dtype
+            )
             image_mask, _ = self.get_placeholder_mask(input_ids, inputs_embeds, image_features=image_embeds)
             inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
 
         if pixel_values_videos is not None:
-            video_embeds = paddle.cat(self.get_video_features(pixel_values_videos, video_grid_thw), axis=0).astype(inputs_embeds.dtype)
+            video_embeds = paddle.cat(self.get_video_features(pixel_values_videos, video_grid_thw), axis=0).astype(
+                inputs_embeds.dtype
+            )
             _, video_mask = self.get_placeholder_mask(input_ids, inputs_embeds, video_features=video_embeds)
             inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_embeds)
 
@@ -1299,7 +1317,9 @@ class RiceTransformerPretrainedModel(LLaVAOneVision1_5PretrainedModel):
 
         return recompute(create_custom_forward(layer_module), hidden_states, cu_seqlens, position_embeddings)
 
-    def forward(self, hidden_states: paddle.Tensor, grid_thw: paddle.Tensor, is_verifying: bool = False) -> paddle.Tensor:
+    def forward(
+        self, hidden_states: paddle.Tensor, grid_thw: paddle.Tensor, is_verifying: bool = False
+    ) -> paddle.Tensor:
         hidden_states = self.patch_embed(hidden_states)
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
         img_feats = hidden_states.shape[0]
@@ -1318,8 +1338,12 @@ class RiceTransformerPretrainedModel(LLaVAOneVision1_5PretrainedModel):
             seg_end = int(cu[i].item())
             segment = hidden_states[seg_start:seg_end]
             rotary_segment = rotary_pos_emb[seg_start:seg_end]
-            hidden_segments.append(paddle.cat([self.class_embedding.astype(segment.dtype).unsqueeze(0), segment], axis=0))
-            rotary_segments.append(paddle.cat([self.class_pos_emb.astype(rotary_segment.dtype), rotary_segment], axis=0))
+            hidden_segments.append(
+                paddle.cat([self.class_embedding.astype(segment.dtype).unsqueeze(0), segment], axis=0)
+            )
+            rotary_segments.append(
+                paddle.cat([self.class_pos_emb.astype(rotary_segment.dtype), rotary_segment], axis=0)
+            )
             new_cu.append(new_cu[-1] + seg_end - seg_start + 1)
 
         hidden_states = paddle.cat(hidden_segments, axis=0)

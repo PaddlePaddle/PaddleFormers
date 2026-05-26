@@ -14,7 +14,11 @@
 
 import unittest
 
-from paddleformers.transformers import LLaVAOneVision1_5TextConfig, Llavaonevision1_5Config, RiceConfig
+from paddleformers.transformers import (
+    Llavaonevision1_5Config,
+    LLaVAOneVision1_5TextConfig,
+    RiceConfig,
+)
 from tests.transformers.test_configuration_common import ConfigTester
 
 

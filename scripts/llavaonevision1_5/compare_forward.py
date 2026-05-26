@@ -109,7 +109,9 @@ def main():
 
     with torch.inference_mode():
         torch_outputs = torch_model(**torch_forward_inputs)
-        torch_generated = torch_model.generate(**torch_forward_inputs, max_new_tokens=args.max_new_tokens, do_sample=False)
+        torch_generated = torch_model.generate(
+            **torch_forward_inputs, max_new_tokens=args.max_new_tokens, do_sample=False
+        )
 
     torch_logits = torch_outputs.logits.detach().cpu().float().numpy()
     input_len = torch_inputs["input_ids"].shape[1]

@@ -27,6 +27,7 @@ from typing import Optional, Union
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
+
 try:
     from paddle.distributed.fleet.meta_parallel import LayerSpec
 except ImportError:

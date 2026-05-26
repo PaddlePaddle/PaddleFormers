@@ -23,7 +23,9 @@ def parse_args():
         help="Input GSM8K jsonl file or HuggingFace datasets save_to_disk directory.",
     )
     parser.add_argument("--output", required=True, help="Output erniekit jsonl file.")
-    parser.add_argument("--split", default=None, help="Dataset split to read when --input is a save_to_disk directory.")
+    parser.add_argument(
+        "--split", default=None, help="Dataset split to read when --input is a save_to_disk directory."
+    )
     parser.add_argument("--question-key", default="question")
     parser.add_argument("--answer-key", default="answer")
     parser.add_argument(
@@ -82,8 +84,7 @@ def main():
         for line_no, example in iter_examples(input_path, args.split):
             if args.question_key not in example or args.answer_key not in example:
                 raise KeyError(
-                    f"{input_path}:{line_no} must contain keys "
-                    f"{args.question_key!r} and {args.answer_key!r}."
+                    f"{input_path}:{line_no} must contain keys " f"{args.question_key!r} and {args.answer_key!r}."
                 )
             question = str(example[args.question_key])
             answer = str(example[args.answer_key])

@@ -42,6 +42,7 @@ from transformers.models.encoder_decoder.configuration_encoder_decoder import (
     EncoderDecoderConfig,
 )
 from transformers.tokenization_utils_base import TOKENIZER_CONFIG_FILE
+
 try:
     from transformers.tokenization_utils_tokenizers import TokenizersBackend
 except ModuleNotFoundError:

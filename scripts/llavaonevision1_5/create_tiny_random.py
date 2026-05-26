@@ -27,7 +27,10 @@ if REPO_ROOT not in sys.path:
 import paddle
 from transformers import AutoTokenizer
 
-from paddleformers.transformers import LLaVAOneVision1_5ForConditionalGeneration, Llavaonevision1_5Config
+from paddleformers.transformers import (
+    Llavaonevision1_5Config,
+    LLaVAOneVision1_5ForConditionalGeneration,
+)
 
 
 def parse_args():
@@ -35,8 +38,15 @@ def parse_args():
     parser.add_argument("--output-dir", default="./tiny-random-llavaonevision1_5")
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--dtype", default="float32", choices=["float32", "bfloat16", "float16"])
-    parser.add_argument("--tokenizer-dir", default=None, help="Optional tokenizer directory to copy into the tiny repo.")
-    parser.add_argument("--vocab-size", type=int, default=None, help="Override vocab size; useful when tokenizer length differs from model config vocab_size.")
+    parser.add_argument(
+        "--tokenizer-dir", default=None, help="Optional tokenizer directory to copy into the tiny repo."
+    )
+    parser.add_argument(
+        "--vocab-size",
+        type=int,
+        default=None,
+        help="Override vocab size; useful when tokenizer length differs from model config vocab_size.",
+    )
     parser.add_argument("--text-hidden-size", type=int, default=32)
     parser.add_argument("--text-intermediate-size", type=int, default=64)
     parser.add_argument("--text-layers", type=int, default=2)
@@ -48,7 +58,9 @@ def parse_args():
     parser.add_argument("--vision-heads", type=int, default=4)
     parser.add_argument("--max-position-embeddings", type=int, default=64)
     parser.add_argument("--rope-theta", type=float, default=10000.0)
-    parser.add_argument("--no-rope-scaling", action="store_true", help="Use rope_scaling=None like the original 8B config.")
+    parser.add_argument(
+        "--no-rope-scaling", action="store_true", help="Use rope_scaling=None like the original 8B config."
+    )
     parser.add_argument("--image-token-id", type=int, default=None)
     parser.add_argument("--video-token-id", type=int, default=None)
     parser.add_argument("--vision-start-token-id", type=int, default=None)

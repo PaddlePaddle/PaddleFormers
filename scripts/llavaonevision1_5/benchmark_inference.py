@@ -68,6 +68,7 @@ def main():
         model.model.language_model.config._attn_implementation = args.attn_implementation
         model.config.vision_config._attn_implementation = args.attn_implementation
         model.model.visual.config._attn_implementation = args.attn_implementation
+
     def forward_full(input_ids, attention_mask):
         return model(input_ids=input_ids, attention_mask=attention_mask, use_cache=False).logits
 
@@ -76,7 +77,9 @@ def main():
         return manual_lm_head(model, outputs.last_hidden_state)
 
     def forward_backbone(input_ids, attention_mask):
-        return model.model(input_ids=input_ids, attention_mask=attention_mask, use_cache=False, return_dict=True).last_hidden_state
+        return model.model(
+            input_ids=input_ids, attention_mask=attention_mask, use_cache=False, return_dict=True
+        ).last_hidden_state
 
     if args.benchmark_mode == "full":
         forward_fn = forward_full

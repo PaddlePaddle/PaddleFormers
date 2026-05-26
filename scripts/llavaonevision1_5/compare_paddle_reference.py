@@ -29,7 +29,6 @@ if REPO_ROOT not in sys.path:
 
 from paddleformers.transformers import LLaVAOneVision1_5ForConditionalGeneration
 
-
 INPUT_KEYS = {
     "input_ids",
     "attention_mask",
@@ -78,11 +77,7 @@ def main():
         with open(metadata_path, "r", encoding="utf-8") as f:
             metadata = json.load(f)
 
-    paddle_inputs = {
-        key: paddle.to_tensor(reference[key])
-        for key in INPUT_KEYS
-        if key in reference.files
-    }
+    paddle_inputs = {key: paddle.to_tensor(reference[key]) for key in INPUT_KEYS if key in reference.files}
     reference_logits = reference["reference_logits"].astype("float32")
     if args.logits_to_keep:
         reference_logits = reference_logits[:, -args.logits_to_keep :, :]

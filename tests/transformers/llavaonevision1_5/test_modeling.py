@@ -12,17 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import unittest
 import tempfile
+import unittest
 
 import paddle
 
 from paddleformers.transformers import (
     AutoModelForConditionalGeneration,
+    Llavaonevision1_5Config,
     LLaVAOneVision1_5ForConditionalGeneration,
     LLaVAOneVision1_5Model,
     LLaVAOneVision1_5TextModel,
-    Llavaonevision1_5Config,
     RiceConfig,
     RiceTransformerPretrainedModel,
 )
