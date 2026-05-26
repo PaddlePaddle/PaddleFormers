@@ -5,18 +5,22 @@ on:
     - cron: "0 16 * * *"     # every day at 00:00 Beijing time (UTC+8)
   workflow_dispatch:        # allow to manually trigger the workflow
 
-# concurrency:
-#   group: unittest-ce-${{ github.workflow }}
-#   cancel-in-progress: true
+concurrency:
+  group: unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 env:
-  COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
   PR_ID: ${{ github.event.pull_request.number || '0' }}
-  TASK: PaddleFormers-CE-unittest-gpu
-  ce_scripts: workspace/PaddleFormers/scripts/unit_test
+  COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
   BRANCH: ${{ github.event.pull_request.base.ref }}
   AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
+  work_dir: ${{ github.workspace }}
   CE_name: unittest-gpu-ce
+  TASK: PaddleFormers_CE_unittest_gpu
+  ce_scripts: workspace/PaddleFormers/scripts/unit_test
+  IMAGE_NAME: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda129-dev
+  python_version: 3.12
+  paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
   PYTEST_EXECUTE_FLAG_FILE: ${{ github.workspace }}/../../../PYTEST_EXECUTE_FLAG_FILE/${{ github.event.pull_request.number || '0' }}/${{ github.event.pull_request.head.sha || github.sha }}/pytest_execute.flag
   PYTEST_EXECUTE_FLAG: false
@@ -32,7 +36,6 @@ jobs:
 
     outputs:
       skip: ${{ steps.check_skip.outputs.skip }}
-
     steps:
       - name: Check skip-unittest-ce label
         id: check_skip
@@ -50,7 +53,6 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-
       - name: Skip CE but mark success
         if: steps.check_skip.outputs.skip == 'true'
         run: |
@@ -61,13 +63,10 @@ jobs:
     needs: check_skip
     if: needs.check_skip.outputs.skip == 'false'
     name: unittest-gpu-ce
-    runs-on: ${{ inputs.runner || 'ernie-unittest' || 'distrbute' }}
+    runs-on: 'ernie-unittest'
     outputs:  
       pytest_execute_flag: ${{ steps.set_pytest_flag.outputs.pytest_execute_flag }}
     steps:
-      - name: Determine Image Name
-        run: |
-          echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda129-dev" >> "$GITHUB_ENV"
       - name: Determine the runner
         run: |
           gpu_id=$(( $(echo $PWD | awk -F'/' '{print $4}' | awk -F'_' '{print $2}') ))
@@ -75,12 +74,9 @@ jobs:
           echo GPU_DEVICES="$gpu_id" >> $GITHUB_ENV
       - name: Run Container
         env:
-          work_dir: ${{ github.workspace }}
           FLAGS_dynamic_static_unified_comm: "True"
-          python_version: "3.12"
           PIP_CACHE_DIR: /root/.cache/pip
           GPU_DEVICES: ${{ env.GPU_DEVICES }}
-          paddle_whl: https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
         run: |
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "GPU_DEVICES=$GPU_DEVICES"
@@ -92,17 +88,16 @@ jobs:
             -v /home/.cache/:/root/.cache/ \
             -v /home/paddle-1/models/:/home/models/ \
             -e PF_HOME=/home/models/ \
-            -e "BRANCH=$BRANCH" \
-            -e "AGILE_COMPILE_BRANCH=$AGILE_COMPILE_BRANCH" \
+            -e "work_dir=$work_dir" \
             -e "PR_ID=$PR_ID" \
+            -e "BRANCH=$BRANCH" \
+            -e "COMMIT_ID=$COMMIT_ID" \
+            -e "AGILE_COMPILE_BRANCH=$AGILE_COMPILE_BRANCH" \
             -e CUDA_VISIBLE_DEVICES=${GPU_DEVICES} \
             -e NVIDIA_VISIBLE_DEVICES=${GPU_DEVICES} \
-            -e "COMMIT_ID=$COMMIT_ID" \
-            -e "work_dir=$work_dir" \
             -e "ce_scripts=$ce_scripts" \
             -e "PYTEST_EXECUTE_FLAG_FILE=$PYTEST_EXECUTE_FLAG_FILE" \
             -e "no_proxy=$no_proxy" \
-            -e "CE_JOB_NAME=$CE_JOB_NAME" \
             -e "paddle_whl=$paddle_whl" \
             -e "FLAGS_dynamic_static_unified_comm=$FLAGS_dynamic_static_unified_comm" \
             -e "python_version=$python_version" \
@@ -143,9 +138,6 @@ jobs:
             git log --pretty=oneline -10
             '
       - name: Change python version
-        env:
-          work_dir: ${{ github.workspace }}
-          python_version: "3.12"
         run: |
           docker exec -i -e "work_dir=$work_dir" -e "python_version=$python_version" $container_name /bin/bash <<-DOCKER_EOF
           echo "Change python version to $python_version"
@@ -175,10 +167,8 @@ jobs:
           cd /workspace/PaddleFormers && git config --global --add safe.directory $PWD
           source $work_dir/../../../proxy
           source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
-          echo "work_dir = ${work_dir}"
           bash -x scripts/unit_test/ci_unittest.sh ${paddle_whl} true ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
           '
-          
       - name: Upload Products
         env:
           home_path: ${{ github.workspace }}/../../..
@@ -202,17 +192,26 @@ jobs:
             wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
             unzip -q ${{ env.home_path }}/allure-2.19.0.zip
           fi
-          if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
+          
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            bos_prefix="manual/$(date +%Y%m%d%H)_${{ github.run_id }}"
+          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+            bos_prefix="schedule/$(date +%Y%m%d%H)_${{ github.run_id }}"
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
-          else
-            bos_prefix="schedule/github-ce-$(date +%Y%m%d)"
           fi
+
           # coverage.xml
           if [ -f "${PYTEST_EXECUTE_FLAG_FILE}" ]; then
             echo "PYTEST_EXECUTE_FLAG_FILE found, uploading coverage.xml."
             cd /workspace/PaddleFormers
-            python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-            echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml"
+            python ${{ env.bos_file }} coverage.xml paddle-github-action/PR/PaddleFormers/ce-unittest-gpu/${bos_prefix}/logs
+            exit_code=$?
+            if [ $exit_code -eq 0 ]; then
+              echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/ce-unittest-gpu/${bos_prefix}/logs/coverage.xml"
+            else
+              echo "ERROR: Failed to upload $file (exit code: $exit_code)"
+            fi
           else
             echo "PYTEST_EXECUTE_FLAG_FILE not found, skipping coverage.xml upload."
           fi
@@ -220,9 +219,14 @@ jobs:
           cd /workspace/PaddleFormers/unittest_logs
           for FILE in /workspace/PaddleFormers/unittest_logs/*; do
             file=$(basename "$FILE")
-            python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-            echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/$file"
-          done
+            python ${{ env.bos_file }} $file paddle-github-action/PR/PaddleFormers/ce-unittest-gpu/${bos_prefix}/logs
+            exit_code=$?
+            if [ $exit_code -eq 0 ]; then
+              echo "$file: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/ce-unittest-gpu/${bos_prefix}/logs/$file"
+            else
+              echo "ERROR: Failed to upload $file (exit code: $exit_code)"
+            fi
+            done
           # allure
           cd /workspace/PaddleFormers/
           export JAVA_HOME="${{ env.java_file }}"
@@ -231,8 +235,13 @@ jobs:
           export PATH="${JAVA_HOME}/bin:${PATH}"
           ${{ env.allure_file }} generate result -o report
           tar -czf report.tar.gz report
-          python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs
-          echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/report.tar.gz"
+          python ${{ env.bos_file }} report.tar.gz paddle-github-action/PR/PaddleFormers/ce-unittest-gpu/${bos_prefix}/logs
+          exit_code=$?
+          if [ $exit_code -eq 0 ]; then
+            echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/ci-unittest-gpu/${bos_prefix}/logs/report.tar.gz"
+          else
+            echo "ERROR: Failed to upload report.tar.gz (exit code: $exit_code)"
+          fi
           '
       - name: Set pytest execute flag output
         id: set_pytest_flag  # 专门设置输出的步骤
@@ -245,7 +254,6 @@ jobs:
             echo "pytest_execute_flag=false" >> $GITHUB_OUTPUT
             echo "PYTEST_EXECUTE_FLAG_FILE does not exist, setting flag to false"
           fi
-
       - name: Terminate And Delete the Container
         if: always()
         run: |
@@ -261,7 +269,6 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-
       - name: Check if should upload coverage
         id: flag_check
         run: |
@@ -273,23 +280,23 @@ jobs:
             echo "pytest_execute_flag is false, skipping coverage upload."
             echo "should_upload=false" >> $GITHUB_OUTPUT
           fi
-
       - name: Download coverage.xml
         if: steps.flag_check.outputs.should_upload == 'true'
         env:
           PR_ID: ${{ github.event.pull_request.number || '0' }}
           COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            bos_prefix="manual/$(date +%Y%m%d%H)_${{ github.run_id }}"
+          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+            bos_prefix="schedule/$(date +%Y%m%d%H)_${{ github.run_id }}"
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
-          else
-            bos_prefix="schedule/github-ce-$(date +%Y%m%d)"
           fi
           echo "bos_prefix=${bos_prefix}"
           wget -q --no-proxy \
-            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/coverage.xml \
+            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/ce-unittest-gpu/${bos_prefix}/logs/coverage.xml \
             --no-check-certificate -O coverage.xml
-
       - name: Fix coverage.xml paths
         if: steps.flag_check.outputs.should_upload == 'true'
         run: |
@@ -307,7 +314,6 @@ jobs:
 
           echo "After fix:"
           head -n 10 coverage.xml || true
-
       - name: Upload coverage to Codecov
         if: steps.flag_check.outputs.should_upload == 'true'
         uses: codecov/codecov-action@v4
@@ -322,44 +328,60 @@ jobs:
     if: always()
     runs-on: 'ernie-cpu'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          repository: PaddlePaddle/PaddleFormers
-          ref: develop
       - name: Checkout gh-pages
         uses: actions/checkout@v5
         with:
           ref: gh-pages
           path: gh-pages
         continue-on-error: true
-      - name: Restore history
-        run: |          
-          if [ -d "gh-pages/unittest_ce/history" ]; then
-            mkdir -p result
-            cp -r gh-pages/unittest_ce/history result/history
+      - name: Determine trigger mode && Restore history
+        id: trigger_mode
+        run: |
+          MODE="pr"
+          PR_NUMBER="${PR_ID}"
+          mkdir -p result
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            MODE="manual"
+            PR_NUMBER="manual"
+            cp -r gh-pages/unit_CE/manual/history result/ || true
+            destination_dir="unit_CE/manual"
+          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+            MODE="schedule"
+            PR_NUMBER="schedule"
+            cp -r gh-pages/unit_CE/schedule/history result/ || true
+            destination_dir="unit_CE/schedule"
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            MODE="pr"
+            PR_NUMBER="${PR_ID}"
+            cp -r gh-pages/unit_CE/$PR_NUMBER/history result/ || true
+            destination_dir="unit_CE/$PR_NUMBER"
           fi
+          
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "destination_dir=$destination_dir" >> "$GITHUB_OUTPUT"
       - name: Download report
         id: download_report
+        env:
+          MODE: ${{ steps.trigger_mode.outputs.mode }}
+          PR_NUMBER: ${{ steps.trigger_mode.outputs.pr_number }}
+          RUN_ID: ${{ github.run_id }}
         run: |
-          if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            bos_prefix="manual/$(date +%Y%m%d%H)_${{ github.run_id }}"
+          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+            bos_prefix="schedule/$(date +%Y%m%d%H)_${{ github.run_id }}"
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
-          else
-            bos_prefix="schedule/github-ce-$(date +%Y%m%d)"
           fi
-          echo "bos_prefix=${bos_prefix}" >> "$GITHUB_OUTPUT"
 
           wget -q --no-proxy \
-            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/unittest-gpu/${bos_prefix}/logs/report.tar.gz \
+            https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/ce-unittest-gpu/${bos_prefix}/logs/report.tar.gz \
             --no-check-certificate
-          echo "Current directory: $(pwd)"
-          echo "Files after download:"
-          ls -la
           tar -xzf report.tar.gz
-          echo "Files after extraction:"
-          ls -la
           if [ -d "report" ]; then
             echo "report directory exists"
+            rm -rf report/data/attachments/*
           else
             echo "ERROR: report directory not found!"
             exit 1
@@ -368,14 +390,14 @@ jobs:
         if: always()
         uses: peaceiris/actions-gh-pages@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.BOT_TOKEN }}
           publish_dir: ./report
-          destination_dir: unittest_ce
+          destination_dir: ${{ steps.trigger_mode.outputs.destination_dir }}
       - name: Display GitHub Pages URL
         if: always()
         run: |
-          # GitHub Pages URL
-          PAGES_URL="https://paddlepaddle.github.io/PaddleFormers/unittest_ce/"
+          DEST_DIR="${{ steps.trigger_mode.outputs.destination_dir }}"
+          PAGES_URL="https://paddlepaddle.github.io/PaddleFormers/${DEST_DIR}/"
           echo "GitHub Allure Pages URL: ${PAGES_URL}"
 
           echo "## 🚀 Allure Report" >> $GITHUB_STEP_SUMMARY
@@ -383,4 +405,5 @@ jobs:
           echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Workflow | ${{ github.workflow }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Mode | ${{ steps.trigger_mode.outputs.mode }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Report | [Open Report](${PAGES_URL}) |" >> $GITHUB_STEP_SUMMARY
