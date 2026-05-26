@@ -678,9 +678,9 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         ordered.append(qg_names[g])
                         ordered.append(bias_qg_names[g])
                     ordered.append(k_names[g])
-                    ordered.append(bias_k_names[g])
+                    bias_ordered.append(bias_k_names[g])
                     ordered.append(v_names[g])
-                    ordered.append(bias_v_names[g])
+                    bias_ordered.append(bias_v_names[g])
                 fused_tmp = f"{prefix}.self_attn.qkv_fused_tmp"
                 aoa_config["aoa_statements"].append(f"{','.join(ordered)} -> {fused_tmp}, axis=0")
                 aoa_config["aoa_statements"].append(f"{fused_tmp}^T -> {prefix_offset}.self_attn.qkv_proj.weight")
