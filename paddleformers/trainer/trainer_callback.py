@@ -39,12 +39,15 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
 
 from ..utils.import_utils import is_paddlefleet_available
 
-# Conditionally import paddlefleet modules
-if is_paddlefleet_available():
+# Conditionally import paddlefleet modules. A partial paddlefleet installation
+# can exist without paddlefleet_ops, so guard the actual imports as well.
+try:
+    if not is_paddlefleet_available():
+        raise ImportError("paddlefleet is not installed.")
     from paddlefleet.models.gpt import GPTModel
     from paddlefleet.transformer.moe.moe_layer import MoELayer
     from paddlefleet.transformer.moe.moe_router import StandardMoERouter
-else:
+except ImportError:
 
     class GPTModel:
         pass
