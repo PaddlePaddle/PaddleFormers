@@ -32,6 +32,7 @@ on:
         type: choice
         options:
           - 'CE_Release_cu129_py312_nightly'
+          - 'CE_Develop_cu132_py312'
           - 'CE_Develop_cu130_py313'
           - 'CE_Develop_cu130_py312'
           - 'CE_Release_cu130_py313'
@@ -104,14 +105,16 @@ jobs:
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "FLAGS_enable_CE=${{ github.event.inputs.FLAGS_enable_CE }}" >> $GITHUB_OUTPUT
           else
-            echo "FLAGS_enable_CE=CE_Develop_cu130_py312" >> $GITHUB_OUTPUT
+            echo "FLAGS_enable_CE=CE_Develop_cu132_py312" >> $GITHUB_OUTPUT
           fi
       - name: Determine Image Name
         env:
           FLAGS_enable_CE: ${{ steps.determine_flag.outputs.FLAGS_enable_CE }}
         run: |
-          if [[ "${FLAGS_enable_CE}" == *cu130* ]]; then
+          if [[ "${FLAGS_enable_CE}" == *cu132* ]]; then
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:ubuntu24-cuda132-py312-dev" >> "$GITHUB_ENV"
+          elif [[ "${FLAGS_enable_CE}" == *cu130* ]]; then
+            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda130-dev" >> "$GITHUB_ENV"
           elif [[ "${FLAGS_enable_CE}" == *cu129* ]]; then
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda129-dev" >> "$GITHUB_ENV"
           elif [[ "${FLAGS_enable_CE}" == *cu126* ]]; then
