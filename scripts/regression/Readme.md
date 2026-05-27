@@ -92,7 +92,6 @@ python -m pytest -s -v --models=all scripts/regression/test_models.py --update-b
 只改动了.py文件，没有捕获到修改模型文件
 ```
 
-```
 ### CE 执行规则
 
 ```bash
@@ -112,6 +111,4 @@ CE_Release_cu126_py310
 3、手动触发
 在 [Model Unittest GPU CE Develop] action中选择FLAGS_enable_CE执行对应develop的测试
 在 [Model Unittest GPU CE Release] action中选择FLAGS_enable_CE执行对应release的测试
-```
-
 ```
