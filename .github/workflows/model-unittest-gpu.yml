@@ -319,7 +319,7 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: 'ernie-cpu'
     permissions:
-      contents: write    
+      contents: write
     steps:
       - name: Checkout gh-pages
         uses: actions/checkout@v5

@@ -344,6 +344,7 @@ jobs:
     permissions:
       contents: write
       pages: write
+      id-token: write
     steps:
       - name: Checkout gh-pages
         uses: actions/checkout@v5
