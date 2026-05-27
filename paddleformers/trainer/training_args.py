@@ -1698,6 +1698,10 @@ class TrainingArguments:
         },
     )
 
+    csa_sparse_attn_fusion: bool = field(
+        default=False, metadata={"help": "Whether to enable sparse attention tilelang fusion in CSA."}
+    )
+
     dsa_indexer_loss_coeff: float = field(
         default=0.01,
         metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
