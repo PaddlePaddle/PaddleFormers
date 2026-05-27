@@ -19,6 +19,7 @@ on:
         options:
           - 'false'
           - 'all'
+          - 'mistral'
           - 'llama'
           - 'qwen3'
           - 'glm_moe'

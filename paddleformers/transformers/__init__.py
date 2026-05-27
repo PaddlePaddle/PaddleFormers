@@ -163,6 +163,17 @@ import_structure = {
     "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
+    "mistral.configuration": ["MistralConfig"],
+    "mistral.modeling": [
+        "MistralDecoderLayer",
+        "MistralForCausalLM",
+        "MistralForCausalLMPipe",
+        "MistralForQuestionAnswering",
+        "MistralForSequenceClassification",
+        "MistralForTokenClassification",
+        "MistralModel",
+        "MistralPretrainedModel",
+    ],
     "kimi_k25.vision_processor": ["KimiK25VisionProcessor"],
     "kimi_k25.processor": ["KimiK25Processor"],
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
@@ -288,6 +299,7 @@ import_structure = {
         "Qwen3NextPretrainingCriterion",
     ],
     "llama": [],
+    "mistral": [],
     "qwen2": [],
     "glm_ocr": [],
     "qwen3": [],
@@ -396,6 +408,7 @@ if TYPE_CHECKING:
     from .kimi_k25 import *
     from .kimi_k2 import *
     from .paddleocr_vl import *
+    from .mistral import *
     from .llama import *
     from .optimization import *
     from .qwen2 import *
