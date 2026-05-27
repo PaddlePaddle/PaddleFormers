@@ -21,6 +21,7 @@ on:
           - 'glm4_moe'
           - 'qwen3_next'
           - 'qwen3moe'
+          - 'minicpm3'
           - 'phi3'
           - 'qwen2'
           - 'gemma3_text'

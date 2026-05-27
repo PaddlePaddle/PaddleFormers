@@ -57,6 +57,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("minimax_m2", "MiniMaxM2Config"),
         ("deepseek_v4", "DeepseekV4Config"),
         ("gpt_oss", "GptOssConfig"),
+        ("minicpm3", "MiniCPM3Config"),
         ("phi3", "Phi3Config"),
         ("gemma3_text", "Gemma3TextConfig"),
         ("glm4v_moe", "Glm4vMoeConfig"),
@@ -91,6 +92,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
+        ("minicpm3", "MiniCPM3"),
     ]
 )
 
