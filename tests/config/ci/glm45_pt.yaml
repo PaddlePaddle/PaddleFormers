@@ -86,5 +86,3 @@ num_hidden_layers: 3
 apply_rope_fusion: true
 moe_router_fusion: true
 moe_deep_gemm: false
-enable_hyper_connections: true
-num_nextn_predict_layers: 1
