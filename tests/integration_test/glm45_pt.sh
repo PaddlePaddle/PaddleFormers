@@ -32,7 +32,7 @@ yq eval '.train_dataset_path = strenv(data_dir) + "/train.jsonl"
     | .logging_dir = strenv(cur_dir) + "/vdl_log"
     | .output_dir = strenv(cur_dir) + "/checkpoints/pretrain"
     | .enable_hyper_connections = true
-    | .num_nextn_predict_layers = 1'
+    | .num_nextn_predict_layers = 1' \
    $config_yaml > ${config_yaml}.tmp
 mv ${config_yaml}.tmp $config_yaml
 
