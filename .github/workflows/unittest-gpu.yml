@@ -205,9 +205,9 @@ jobs:
           fi
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            bos_prefix="manual/$(date +%Y%m%d%H)_${{ github.run_id }}"
+            bos_prefix="manual/$(date +%Y%m%d)_${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
-            bos_prefix="schedule/$(date +%Y%m%d%H)_${{ github.run_id }}"
+            bos_prefix="schedule/$(date +%Y%m%d)_${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           fi
@@ -298,13 +298,13 @@ jobs:
           COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            bos_prefix="manual/$(date +%Y%m%d%H)_${{ github.run_id }}"
+            bos_prefix="manual/$(date +%Y%m%d)_${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
-            bos_prefix="schedule/$(date +%Y%m%d%H)_${{ github.run_id }}"
+            bos_prefix="schedule/$(date +%Y%m%d)_${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           fi
-          echo "bos_prefix=${bos_prefix}"
+          echo "cov-report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/ci-unittest-gpu/${bos_prefix}/logs/coverage.xml"
           wget -q --no-proxy \
             https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/ci-unittest-gpu/${bos_prefix}/logs/coverage.xml \
             --no-check-certificate -O coverage.xml
@@ -381,9 +381,9 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            bos_prefix="manual/$(date +%Y%m%d%H)_${{ github.run_id }}"
+            bos_prefix="manual/$(date +%Y%m%d)_${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
-            bos_prefix="schedule/$(date +%Y%m%d%H)_${{ github.run_id }}"
+            bos_prefix="schedule/$(date +%Y%m%d)_${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           fi
@@ -419,7 +419,7 @@ jobs:
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Workflow | ${{ github.workflow }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Mode | ${{ steps.trigger_mode.outputs.mode }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Time | $(date +%Y%m%d%H) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Time | $(date +%Y%m%d) |" >> $GITHUB_STEP_SUMMARY
           echo "| Allure_Report | [Open Report](${PAGES_URL}) |" >> $GITHUB_STEP_SUMMARY
       - name: Post PR comment
         if: ${{ github.event_name == 'pull_request' }}
