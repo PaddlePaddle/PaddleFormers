@@ -224,12 +224,14 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
             # DeepSeekV4 Attention weights:
             if csa_compress_ratios is not None and mla_slice_fn is not None:
-                ratio = csa_compress_ratios[layer_idx]
+                real_layer_idx = layer_idx - config.num_empty_layers_add_in_head
+                ratio = csa_compress_ratios[real_layer_idx]
+                num_attention_heads = config.num_attention_heads
                 # common weights (Sliding Window Attenion)
                 slice_config[f"{prefix}.self_attn.linear_q_up_proj.weight"] = (
                     mla_slice_fn,
                     {
-                        "head_num": num_attention_head,
+                        "head_num": num_attention_heads,
                         "axis": 1,
                     },
                 )
@@ -253,7 +255,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         },
                     )
                 # Indexer weights
-                print(f"layer: {layer_idx}, ratio: {ratio}, dense_mode: {config.csa_dense_mode}")
+                print(f"layer: {real_layer_idx}, ratio: {ratio}, dense_mode: {config.csa_dense_mode}")
                 if ratio == 4 and config.csa_dense_mode is False:
                     slice_config[f"{prefix}.self_attn.core_attention.indexer.linear_wq_b.weight"] = (
                         mla_slice_fn,
@@ -543,9 +545,13 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 ]
 
             is_swa = is_layer_window_attention(config.sliding_window, config.window_attn_skip_freq, layer_idx)
-            if (config.add_full_attention_sink_bias and not is_swa) or (config.add_swa_attention_sink_bias and is_swa):
+            if (
+                config.softmax_type == "learnable"
+                or (config.add_full_attention_sink_bias and not is_swa)
+                or (config.add_swa_attention_sink_bias and is_swa)
+            ):
                 aoa_config["aoa_statements"] += [
-                    f"{prefix}.self_attn.attn_sink -> {prefix_offset}.self_attn.attn_sink",
+                    f"{prefix}.self_attn.core_attention.softmax_offset -> {prefix_offset}.self_attn.core_attention.softmax_offset",
                 ]
 
             if use_mla:
