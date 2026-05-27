@@ -374,7 +374,7 @@ jobs:
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           fi
-
+          echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/ce-unittest-gpu/${bos_prefix}/logs/report.tar.gz"
           wget -q --no-proxy \
             https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/ce-unittest-gpu/${bos_prefix}/logs/report.tar.gz \
             --no-check-certificate
@@ -390,7 +390,7 @@ jobs:
         if: always()
         uses: peaceiris/actions-gh-pages@v3
         with:
-          github_token: ${{ secrets.BOT_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./report
           destination_dir: ${{ steps.trigger_mode.outputs.destination_dir }}
       - name: Display GitHub Pages URL
@@ -406,4 +406,5 @@ jobs:
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Workflow | ${{ github.workflow }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Mode | ${{ steps.trigger_mode.outputs.mode }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Time | $(date +%Y%m%d%H) |" >> $GITHUB_STEP_SUMMARY
           echo "| Report | [Open Report](${PAGES_URL}) |" >> $GITHUB_STEP_SUMMARY

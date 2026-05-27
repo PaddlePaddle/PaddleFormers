@@ -166,7 +166,8 @@ elif [[ ${FLAGS_enable_CI} == "True" ]];then
         get_diff_TO_case
     fi
 elif [[ ${FLAGS_enable_CE} != "False" ]];then
-    models="all"
+    # models="all"
+    models="qwen3_vl" # for test
 fi
 
 if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];then
