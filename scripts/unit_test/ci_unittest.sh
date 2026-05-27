@@ -66,7 +66,7 @@ install_requirements() {
         python -m pip install paddle_nvidia_nvshmem_cu13-3.4.5-py3-none-manylinux_2_17_x86_64.whl
         #paddlefleet_ops
         wget -q https://xly-devops.bj.bcebos.com/gushiwei/cuda132/paddlefleet_ops-0.3.0.dev20260527%2B0c3a4f84-cp312-cp312-linux_x86_64.whl
-        python -m pip install paddlefleet_ops-0.3.0.dev20260527+0c3a4f84-cp312-cp312-linux_x86_64.whl
+        python -m pip install paddlefleet_ops-0.3.0.dev20260527+0c3a4f84-cp312-cp312-linux_x86_64.whl -i https://pypi.org/simple 
         python -m pip uninstall paddlepaddle-gpu -y
         #paddle
         wget -q https://xly-devops.bj.bcebos.com/gushiwei/cuda132/paddlepaddle_gpu-3.4.0.post20260527%2B8b49e407ce7-cp312-cp312-linux_x86_64.whl
