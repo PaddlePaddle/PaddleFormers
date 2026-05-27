@@ -1205,10 +1205,12 @@ class Trainer:
                 else:
                     opt_states[k] = v
 
+            # use filtered AOA for master_weight (excludes FP32-only params)
+            master_weight_aoa = getattr(self.args, "aoa_config_master_weight", None) or self.args.aoa_config
             dist.load_state_dict(
                 master_weights,
                 master_weights_path,
-                aoa_config=self.args.aoa_config,
+                aoa_config=master_weight_aoa,
                 offload=self.args.load_via_cpu,
                 comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
@@ -1263,7 +1265,13 @@ class Trainer:
 
             # NOTE(xingmingyyj) When saving model states only in float32 format, we assume that users
             # will not use AOA to change the mapping relationships among these float32 weights.
-            if enable_bf16_opt:
+            if os.getenv("HACK_CONVERT_CKPT", "0").lower() in ["true", "1"]:
+                # model_state only loads params not in master_weight
+                # params in master_weight will be cast from master_weight
+                if enable_bf16_opt:
+                    model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
+                aoa_config = getattr(self.args, "aoa_config_model_state", None)
+            elif enable_bf16_opt:
                 model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
                 aoa_config = None
             else:

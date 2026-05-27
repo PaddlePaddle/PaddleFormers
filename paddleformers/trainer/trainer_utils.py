@@ -1519,8 +1519,11 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
         for buffer in optimizer._comm_buffer_list:
             for param_name, grad_view in buffer._sharding_param_grad_view.items():
                 struct_name = static_to_struct_mapping[param_name]
-                if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
-                    continue
+                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]:
+                    if not any(
+                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
+                    ):
+                        continue
                 param_buffer = grad_view._param_buffer
                 param_begin = grad_view._param_begin
                 param_end = grad_view._param_end
@@ -1542,8 +1545,11 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
                 if param_name not in static_to_struct_mapping:
                     continue
                 struct_name = static_to_struct_mapping[param_name]
-                if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
-                    continue
+                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]:
+                    if not any(
+                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
+                    ):
+                        continue
                 param_buffer = grad_view._param_buffer
                 param_begin = grad_view._param_begin
                 param_end = grad_view._param_end
@@ -1568,8 +1574,11 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
                 if param_name not in static_to_struct_mapping:
                     continue
                 struct_name = static_to_struct_mapping[param_name]
-                if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
-                    continue
+                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]:
+                    if not any(
+                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
+                    ):
+                        continue
                 parameter_list.append(param)
 
         optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), parameter_list)
