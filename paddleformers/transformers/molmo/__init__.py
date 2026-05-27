@@ -20,17 +20,21 @@ from ...utils.lazy_import import _LazyModule
 
 import_structure = {
     "configuration": ["MolmoConfig"],
+    "image_processing": ["MolmoImageProcessor"],
     "modeling": [
         "MolmoPretrainedModel",
         "MolmoModel",
         "MolmoForCausalLM",
         "MolmoForCausalLMPipe",
     ],
+    "processing": ["MolmoProcessor"],
 }
 
 if TYPE_CHECKING:
     from .configuration import *
+    from .image_processing import *
     from .modeling import *
+    from .processing import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

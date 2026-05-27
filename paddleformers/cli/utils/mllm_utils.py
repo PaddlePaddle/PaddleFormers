@@ -31,6 +31,7 @@ class MLLMModelMapping:
     paddleocr_vl = "paddleocr_vl"
     ernie4_5_moe_vl = "ernie4_5_moe_vl"
     glm4v_moe = "glm4v_moe"
+    molmo = "molmo"
 
 
 @dataclass
@@ -187,6 +188,14 @@ def freeze_model_parameters(model, freeze_config):
         logger.info("\n".join(log_info))
 
 
+register_multimodel_keys(
+    MultiModelKeys(
+        model_dtype=MLLMModelMapping.molmo,
+        aligner="model.vision_backbone.image_projector",
+        llm=["model.embed_tokens", "model.layers", "model.norm", "lm_head"],
+        vision="model.vision_backbone",
+    )
+)
 register_multimodel_keys(
     MultiModelKeys(
         model_dtype=MLLMModelMapping.qwen2_5_vl,

@@ -492,6 +492,7 @@ class MolmoVisionResidualAttentionBlock(nn.Layer):
 class MolmoVisionBlockCollection(nn.Layer):
     def __init__(self, config: MolmoConfig):
         super().__init__()
+        self.config = config
         v_cfg = _vision_cfg(config)
         self.resblocks = nn.LayerList(
             [MolmoVisionResidualAttentionBlock(config) for _ in range(v_cfg["image_num_layers"])]
@@ -500,7 +501,17 @@ class MolmoVisionBlockCollection(nn.Layer):
     def forward(self, x: paddle.Tensor) -> list[paddle.Tensor]:
         hidden_states = []
         for block in self.resblocks:
-            x = block(x)
+            has_gradient = not x.stop_gradient
+            if (
+                self.training
+                and self.config.recompute_granularity == "full"
+                and self.config.recompute_method == "uniform"
+                and self.config.recompute_num_layers == 1
+                and has_gradient
+            ):
+                x = recompute(block, x, use_reentrant=self.config.recompute_use_reentrant)
+            else:
+                x = block(x)
             hidden_states.append(x)
         return hidden_states
 

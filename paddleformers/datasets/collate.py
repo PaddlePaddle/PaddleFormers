@@ -590,6 +590,9 @@ def mm_collate_fn(
         input_keys.append("video_grid_thw")
         input_keys.append("input_features")
         input_keys.append("feature_attention_mask")
+        input_keys.append("images")
+        input_keys.append("image_masks")
+        input_keys.append("image_input_idx")
 
     if training_args.num_nextn_predict_layers > 0:
         input_keys.append("nbatch_pack_offset")
@@ -617,6 +620,9 @@ def mm_collate_fn(
         video_grid_thw = []
         input_features = []
         feature_attention_mask = []
+        molmo_images = []
+        molmo_image_masks = []
+        molmo_image_input_idx = []
         for seq in batch_sequence:
             original_token_ids.append(seq.token_ids)
             mm_inputs = seq.mm_inputs
@@ -632,6 +638,12 @@ def mm_collate_fn(
                 input_features.append(mm_inputs["input_features"])
             if "feature_attention_mask" in mm_inputs:
                 feature_attention_mask.append(mm_inputs["feature_attention_mask"])
+            if "images" in mm_inputs:
+                molmo_images.append(mm_inputs["images"])
+            if "image_masks" in mm_inputs:
+                molmo_image_masks.append(mm_inputs["image_masks"])
+            if "image_input_idx" in mm_inputs:
+                molmo_image_input_idx.append(mm_inputs["image_input_idx"])
             if get_rope_func is not None:
                 filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
                 total_input_ids = paddle.to_tensor([seq.token_ids])
@@ -677,6 +689,12 @@ def mm_collate_fn(
             input_features = paddle.concat(input_features, axis=0)
         if len(feature_attention_mask) > 0:
             feature_attention_mask = paddle.concat(feature_attention_mask, axis=0)
+        if len(molmo_images) > 0:
+            molmo_images = paddle.stack(molmo_images, axis=0)
+        if len(molmo_image_masks) > 0:
+            molmo_image_masks = paddle.stack(molmo_image_masks, axis=0)
+        if len(molmo_image_input_idx) > 0:
+            molmo_image_input_idx = paddle.stack(molmo_image_input_idx, axis=0)
         if get_token_type_func is not None:  # ernie45vl
             bs_idx_in_rope = 0
             padded_position_ids = padded_position_ids.transpose([1, 2, 0])
@@ -701,6 +719,9 @@ def mm_collate_fn(
                     video_grid_thw,
                     input_features,
                     feature_attention_mask,
+                    molmo_images,
+                    molmo_image_masks,
+                    molmo_image_input_idx,
                 ]
             )
 

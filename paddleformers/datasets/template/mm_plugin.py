@@ -1403,6 +1403,74 @@ class Gemma3Plugin(BasePlugin):
 
 
 @dataclass
+class MolmoPlugin(BasePlugin):
+    image_start_token: str = "<im_start>"
+    image_end_token: str = "<im_end>"
+    image_col_token: str = "<im_col>"
+
+    @override
+    def get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(kwargs.get("messages", []), images, videos, audios)
+        if len(videos) != 0 or len(audios) != 0:
+            raise ValueError("MolmoPlugin only supports image inputs.")
+        if len(images) == 0:
+            return {}
+
+        pil_images = [
+            self._img_download(image).convert("RGB") if isinstance(image, str) else image for image in images
+        ]
+        return processor.process(images=pil_images, text="", return_tensors="pd")
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        messages = deepcopy(messages)
+        tokenizer = getattr(processor, "tokenizer")
+        user_token = tokenizer.encode(" User", add_special_tokens=False)
+        if len(user_token) != 1:
+            raise ValueError("Molmo tokenizer should encode ' User' as a single token.")
+
+        image_prefix = ""
+        if len(images) > 0:
+            input_ids = mm_inputs["input_ids"].numpy().tolist()
+            try:
+                user_idx = input_ids.index(user_token[0])
+            except ValueError as exc:
+                raise ValueError("Unable to locate Molmo user prompt token in image prefix.") from exc
+            image_prefix = tokenizer.decode(input_ids[:user_idx], skip_special_tokens=False)
+
+        first_user = True
+        for message in messages:
+            if message["role"] != "user":
+                continue
+            content = message["content"].replace(IMAGE_PLACEHOLDER, "").strip()
+            if first_user:
+                message["content"] = f"{image_prefix} User: {content}"
+                first_user = False
+            else:
+                message["content"] = f" User: {content}"
+
+        return messages
+
+
+@dataclass
 class GlmOcrPlugin(BasePlugin):
     """
     GLM-OCR 专用插件：
@@ -1504,6 +1572,7 @@ PLUGINS = {
     "gemma3": Gemma3Plugin,
     "qwen2_omni": Qwen2OmniPlugin,
     "glm_ocr": GlmOcrPlugin,
+    "molmo": MolmoPlugin,
 }
 
 
