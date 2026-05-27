@@ -1,5 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2025 Microsoft and the HuggingFace Inc. team. All rights reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -144,9 +143,6 @@ class Phi4Tokenizer(PreTrainedTokenizerFast):
             return bos + ([0] * len(token_ids_0)) + eos
         return bos + ([0] * len(token_ids_0)) + eos + bos + ([0] * len(token_ids_1)) + eos
 
-    # 全参微调的时候，会调用到;
-    # 不要觉得没人调用，就删掉，因为 原版的transformers没有集成 phi4 的实现；
-    # 如果强行 使用 warp_tokenizer 会很多棘手问题处理，这里 直接借鉴了hg上原版的 phi4 的逻辑
     def encode(
         self,
         text=None,

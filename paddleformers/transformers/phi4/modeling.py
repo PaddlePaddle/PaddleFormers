@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -268,13 +268,11 @@ class Phi4Attention(nn.Layer):
             else:
                 causal_mask = attention_mask
 
+        attn_weights = None
         attn_output = self.inner_cross_attn(query_states, key_states, value_states, attention_mask=causal_mask)
         attn_output = F.dropout(attn_output, p=self.attention_dropout, training=self.training)
         attn_output = attn_output.transpose([0, 2, 1, 3]).reshape([bsz, q_len, self.hidden_size])
         attn_output = self.out_proj(attn_output)
-
-        if not output_attentions:
-            attn_weights = None
 
         return attn_output, attn_weights, yoco_key_values
 
@@ -387,8 +385,7 @@ class Phi4Mamba(nn.Layer):
             B = x_dbl[:, self.dt_rank : self.dt_rank + self.d_state]
             C = x_dbl[:, self.dt_rank + self.d_state :]
 
-            dt = paddle.matmul(dt, self.dt_proj.weight).T
-            dt = dt.T.reshape([batch, seqlen, self.d_inner]).transpose([0, 2, 1])
+            dt = paddle.matmul(dt, self.dt_proj.weight).reshape([batch, seqlen, self.d_inner]).transpose([0, 2, 1])
             B = B.reshape([batch, seqlen, self.d_state]).transpose([0, 2, 1])
             C = C.reshape([batch, seqlen, self.d_state]).transpose([0, 2, 1])
 
@@ -404,7 +401,6 @@ class Phi4Mamba(nn.Layer):
                 delta_softplus=True,
                 return_last_state=ssm_state is not None,
             )
-            # --- PyTorch: ssm_state.copy_(last_state) (ref: modeling_phi4flash.py) ---
             if ssm_state is not None:
                 y, last_state = y
                 ssm_state.set_value(last_state.astype(ssm_state.dtype))
@@ -434,11 +430,10 @@ class Phi4Mamba(nn.Layer):
 
         x_db = self.x_proj(x)
         dt, B, C = paddle.split(x_db, [self.dt_rank, self.d_state, self.d_state], axis=-1)
-        dt = paddle.matmul(dt, self.dt_proj.weight)
-        # --- PyTorch: A stays float32 for precision (ref: modeling_phi4flash.py step) ---
-        A = -paddle.exp(self.A_log.astype("float32"))
+        dt = self.dt_proj(dt)
 
-        dt = F.softplus(dt + self.dt_proj.bias.astype(dtype))
+        A = -paddle.exp(self.A_log.astype("float32"))
+        dt = F.softplus(dt.astype("float32")).astype(dtype)
         dA = paddle.exp(paddle.einsum("bd,dn->bdn", dt.astype("float32"), A))
         dB = paddle.einsum("bd,bn->bdn", dt.astype("float32"), B.astype("float32"))
         ssm_state_new = ssm_state.astype("float32") * dA + x.astype("float32").unsqueeze(2) * dB
@@ -468,7 +463,6 @@ class Phi4Cache:
         config: Phi4Config,
         batch_size: int = None,
         max_cache_len: int = None,
-        device: str = "gpu",
         dtype=None,
         max_batch_size: Optional[int] = None,
     ):
@@ -640,11 +634,9 @@ class Phi4DecoderLayer(nn.Layer):
                 yoco_key_values=ssm_output,
                 cache_position=cache_position,
             )
-            # --- PyTorch: residual.to(torch.float32) for Mamba (ref: modeling_phi4flash.py) ---
             residual = residual.astype("float32")
             self_attn_weights = None
         else:
-            # --- PyTorch: sliding_window truncation (ref: modeling_phi4flash.py SambaYDecoderLayer.forward) ---
             layer_mask = causal_mask
             if (
                 self.config.sliding_window is not None
@@ -665,7 +657,6 @@ class Phi4DecoderLayer(nn.Layer):
                 yoco_key_values=yoco_key_values,
             )
 
-        # --- PyTorch: residual connection in float32 for Mamba, then cast back ---
         hidden_states = (residual + self.resid_attn_dropout(attn_outputs)).astype(hidden_dtype)
 
         residual = hidden_states
@@ -766,11 +757,11 @@ class Phi4PretrainedModel(PretrainedModel):
     def _init_weights(self, layer):
         std = self.config.initializer_range
         if isinstance(layer, nn.Linear):
-            layer.weight.set_value(paddle.tensor.normal(mean=0.0, std=std, shape=layer.weight.shape))
+            layer.weight.set_value(paddle.normal(mean=0.0, std=std, shape=layer.weight.shape))
             if layer.bias is not None:
                 layer.bias.set_value(paddle.zeros(shape=layer.bias.shape))
         elif isinstance(layer, nn.Embedding):
-            layer.weight.set_value(paddle.tensor.normal(mean=0.0, std=std, shape=layer.weight.shape))
+            layer.weight.set_value(paddle.normal(mean=0.0, std=std, shape=layer.weight.shape))
             if layer._padding_idx is not None:
                 layer.weight[layer._padding_idx].set_value(paddle.zeros(shape=[layer.weight.shape[-1]]))
 
@@ -799,7 +790,6 @@ class Phi4Model(Phi4PretrainedModel):
 
     @staticmethod
     def _build_causal_mask(attention_mask, input_shape, past_key_values_length, dtype, sliding_window_size=None):
-        # --- PyTorch: FA uses causal=True internally; here we build explicit 4D causal mask ---
         if input_shape[-1] <= 1 and past_key_values_length > 0:
             return None
         if attention_mask is not None and attention_mask.ndim == 2:
@@ -815,6 +805,8 @@ class Phi4Model(Phi4PretrainedModel):
             expanded_attn_mask = expanded_attn_mask & combined
             return paddle.where(expanded_attn_mask.cast("bool"), 0.0, paddle.finfo(dtype).min).astype(dtype)
         elif attention_mask is not None and attention_mask.ndim >= 3:
+            if attention_mask.dtype == paddle.bool:
+                return paddle.where(attention_mask, 0.0, paddle.finfo(dtype).min).astype(dtype)
             return attention_mask
         else:
             causal = _make_causal_mask(input_shape, past_key_values_length=past_key_values_length)
@@ -892,13 +884,11 @@ class Phi4Model(Phi4PretrainedModel):
 
         hidden_states = inputs_embeds
 
-        # --- PyTorch: causal=True (ref: modeling_phi4flash.py FlashDiffCustomAttention) ---
         past_key_values_length = 0
         if past_key_values is not None and hasattr(past_key_values, "get_seq_length"):
             past_key_values_length = past_key_values.get_seq_length()
         input_shape = (batch_size, seq_length)
         causal_mask = self._build_causal_mask(attention_mask, input_shape, past_key_values_length, inputs_embeds.dtype)
-        # --- PyTorch: sliding_window via FA window_size param (ref: modeling_phi4flash.py) ---
         sliding_window_sizes = []
         if self.config.sliding_window:
             for sw in self.config.sliding_window:

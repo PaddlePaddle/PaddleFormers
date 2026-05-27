@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -153,7 +153,7 @@ class TestPhi4InferenceUseHf(unittest.TestCase):
 
 @slow
 class TestPhi4InferenceUsePaddle(unittest.TestCase):
-    model_path = os.path.expanduser("learncat/Phi-4-mini-flash-reasoning-paddle")
+    model_path = os.path.expanduser("microsoft/Phi-4-mini-flash-reasoning")
     model = None
     tokenizer = None
 
@@ -163,7 +163,7 @@ class TestPhi4InferenceUsePaddle(unittest.TestCase):
         cls.model = Phi4ForCausalLM.from_pretrained(
             cls.model_path,
             dtype="bfloat16",
-            convert_from_hf=False,
+            convert_from_hf=True,
         )
         cls.model.eval()
 
@@ -288,20 +288,10 @@ class TestPhi4InferenceUsePaddle(unittest.TestCase):
 
 
 """
-
-因为手动编译的cuda算子的差异，导致在多层网络的累加误差之下，无法在最后一层实现对齐，目前只能做到：
-
-1. 在 第一层的输出中，实现 0.000793 的平均误差；
-2. 前10个token id完全一致
-3. 最后一层是 0.281017 的平均误差
-
-
-对齐测试稍微有点特殊， 因为phi4 依赖了 mamba-ssm、causal-conv1d 等组件，导致特定的环境下需要手动编译并初始化python环境
-
-所以这里采用了：在一个专门的phi4的conda 环境里，输出第一层和最后一层的output的向量值的前20个数据，并取了 token输出的前10个id直接硬编码
-
-REF_xxx 的变量全部来自phi4环境下使用pytorch 进行推理的输出数据的硬编码 。
-
+Alignment test notes:
+- Due to differences in manually compiled CUDA ops, accumulated errors prevent last-layer alignment.
+- Achieved: layer0 mean diff ~0.0008, first 10 token ids match, last layer mean diff ~0.28.
+- REF_* values are hardcoded from PyTorch inference in a dedicated phi4 conda environment.
 """
 
 
@@ -418,7 +408,7 @@ class TestPhi4LayerDiffAlignment(unittest.TestCase):
         inputs = self.tokenizer(input_text, return_tensors="pd")
         return inputs["input_ids"]
 
-    # 这里只对齐第一层，和前10个token id
+    # Only align layer0 and first 10 token ids
     def test_alignment(self):
         input_ids = self._get_input_ids()
         print(f"\n{'=' * 80}")
@@ -453,7 +443,7 @@ class TestPhi4LayerDiffAlignment(unittest.TestCase):
         print(f"Layer0[0,0,:20]  pytorch: {ref_l0}")
         print(f"Layer0 diff: max={diff0.max():.6f}, mean={diff0.mean():.6f}")
 
-        # 指标要求1e-2以内的diff
+        # Require mean diff < 1e-2
         self.assertTrue(diff0.mean() < 0.01, "Layer0 diff too large")
 
         ll = last_layer_out[0]
@@ -470,9 +460,9 @@ class TestPhi4LayerDiffAlignment(unittest.TestCase):
         print(f"LastLayer[0,-1,:20] pytorch: {ref_ll_last}")
         print(f"LastLayer last token diff: max={diff_ll_last.max():.6f}, mean={diff_ll_last.mean():.6f}")
 
-        # 最后一层对齐不了，因为phi4依赖的本地cuda算子等原因，在多层误差迭代之后，不能满足1e-2
+        # Last layer cannot align due to accumulated CUDA op errors across layers
 
-        # generate 完整推理（KV cache 加速）
+        # Generate with KV cache
         with paddle.no_grad():
             output_ids = self.model.generate(
                 input_ids=input_ids,
@@ -488,7 +478,7 @@ class TestPhi4LayerDiffAlignment(unittest.TestCase):
         print(f"Full output:\n{full_text}")
         print(f"{'=' * 80}")
 
-        # 前10个 token 对比
+        # First 10 tokens comparison
         first10 = new_ids[:10]
         ref_ids = self.REF_NEW_TOKEN_IDS
         match = sum(a == b for a, b in zip(first10, ref_ids))

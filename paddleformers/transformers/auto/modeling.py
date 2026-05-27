@@ -77,6 +77,7 @@ MAPPING_NAMES = OrderedDict(
         ("DeepseekV4", "deepseek_v4"),
         ("GptOss", "gpt_oss"),
         ("Phi3", "phi3"),
+        ("Phi4", "phi4"),
         ("Gemma3", "gemma3_text"),
         ("Glm4vMoe", "glm4v_moe"),
         ("GlmOcr", "glm_ocr"),
