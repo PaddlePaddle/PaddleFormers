@@ -59,6 +59,8 @@ install_requirements() {
     else
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
         #paddlefleet_ops
+        wget https://xly-devops.bj.bcebos.com/gushiwei/cuda132/paddle_nvidia_nvshmem_cu13-3.4.5-py3-none-manylinux_2_17_x86_64.whl
+        python -m pip install paddle_nvidia_nvshmem_cu13-3.4.5-py3-none-manylinux_2_17_x86_64.whl
         wget -q https://xly-devops.bj.bcebos.com/gushiwei/cuda132/paddlefleet_ops-0.3.0.dev20260527%2B0c3a4f84-cp312-cp312-linux_x86_64.whl
         python -m pip install paddlefleet_ops-0.3.0.dev20260527+0c3a4f84-cp312-cp312-linux_x86_64.whl
         python -m pip uninstall paddlepaddle-gpu -y
