@@ -377,7 +377,7 @@ class LlmMetaConfig:
         (
             "moe_expert_fusion",
             bool,
-            True,
+            False,
             "Whether to fuse experts. Default to True.",
         ),
         (
@@ -393,16 +393,10 @@ class LlmMetaConfig:
             "Number of tokens per sub-batch after MoE expert dispatch. Controls memory usage for expert computations. Defaults to 4096 (balances memory efficiency and parallelism for most GPUs).",
         ),
         (
-            "moe_grouped_gemm",
-            bool,
-            False,
-            "Whether to enable grouped GEMM (General Matrix Multiplication) for MoE experts. Batches computations across multiple experts to improve hardware utilization. Defaults to True.",
-        ),
-        (
             "moe_deep_gemm",
             bool,
-            False,
-            "Whether to enable deep GEMM for MoE experts. Defaults to False. Effective only after the moe_grouped_gemm is set. ",
+            True,
+            "Whether to enable deep GEMM for MoE experts. Defaults to True. Effective only after the moe_expert_fusion is set. ",
         ),
         (
             "moe_ep_barrier",
@@ -415,6 +409,12 @@ class LlmMetaConfig:
             bool,
             False,
             "Whether to use SonicMoE as the computation backend for the moelayer.",
+        ),
+        (
+            "dsa_indexer_loss_coeff",
+            float,
+            0.01,
+            "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term.",
         ),
     ]
 
@@ -476,6 +476,12 @@ class LlmMetaConfig:
             str,
             "rope",
             "Type of position embedding. Defaults to RoPE (Rotary Position Embedding).",
+        ),
+        (
+            "high_precision_rope",
+            bool,
+            False,
+            "Whether to use high precision ROPEs.",
         ),
         (
             "gated_linear_unit",
@@ -760,6 +766,7 @@ class PretrainedConfig:
         > Parameters for general components
 
         _attn_implementation (`str`, defaults to `eager`)
+        flashmask_use_varlen (`bool`, defaults to `False`)
 
         > Parameters linked to the tokenizer
 
@@ -834,6 +841,7 @@ class PretrainedConfig:
         self._unsavable_keys = set(LlmMetaConfig._get_unsavable_keys())
         self._unsavable_keys.discard("tensor_model_parallel_size")
         self._unsavable_keys.add("_attn_implementation")
+        self._unsavable_keys.add("flashmask_use_varlen")
 
         kwargs = set_expected_keys(self, llm_meta, kwargs)
         if self.sequence_parallel:
@@ -857,6 +865,7 @@ class PretrainedConfig:
 
         # for general components
         self._attn_implementation = kwargs.pop("_attn_implementation", "eager")
+        self.flashmask_use_varlen = kwargs.pop("flashmask_use_varlen", False)
 
         if "quantization_config" in kwargs and isinstance(kwargs["quantization_config"], Dict):
             kwargs["quantization_config"] = QuantizationConfig.from_dict(kwargs["quantization_config"])
@@ -1260,7 +1269,7 @@ class PretrainedConfig:
             id2label = kwargs["id2label"] if kwargs["id2label"] is not None else []
             if len(id2label) != num_labels:
                 raise ValueError(
-                    f"You passed along `num_labels={num_labels }` with an incompatible id to label map: "
+                    f"You passed along `num_labels={num_labels}` with an incompatible id to label map: "
                     f"{kwargs['id2label']}. Since those arguments are inconsistent with each other, you should remove "
                     "one of them."
                 )
@@ -1370,7 +1379,7 @@ class PretrainedConfig:
     def register_unsavable_keys(self, keys):
         # Save: not save it in any case
         # Print: show it if non default value
-        if type(keys) == list or type(keys) == tuple:
+        if isinstance(keys, (list, tuple)):
             for key in keys:
                 self._unsavable_keys.add(key)
         else:

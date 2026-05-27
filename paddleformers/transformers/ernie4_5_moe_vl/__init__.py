@@ -33,8 +33,8 @@ import_structure = {
         "Ernie4_5_VLMoeForConditionalGenerationPipe",
     ],
     "vision_process": [
-        "read_frames_decord",
-        "read_video_decord",
+        "read_frames_paddlecodec",
+        "read_video_paddlecodec",
         "RAW_IMAGE_DIR",
         "get_downloadable",
         "render_frame_timestamp",
@@ -52,8 +52,8 @@ if TYPE_CHECKING:
     from .vision_process import (
         RAW_IMAGE_DIR,
         get_downloadable,
-        read_frames_decord,
-        read_video_decord,
+        read_frames_paddlecodec,
+        read_video_paddlecodec,
         render_frame_timestamp,
     )
 else:

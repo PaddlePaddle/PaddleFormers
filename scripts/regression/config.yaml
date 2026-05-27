@@ -128,7 +128,7 @@ qwen3:
         - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
         dpo_full_function_call_excepted_result:
         - [61700, 106616, 133770, 61700, 131731, 79170, 61700, 116702, 130187, 743]
-glm_moe:
+glm4_moe:
     repo_id: PaddleFormers/tiny-random-glm4moe-bf16
     model_type: text
     cli_args:
@@ -140,6 +140,8 @@ glm_moe:
         pt_full_resume_loss: 12.83085155
         sft_full_loss: 12.71898651
         sft_full_resume_loss: 12.72072887
+        sft_full_map_loss: 12.89130259
+        sft_full_map_resume_loss: 13.02694035
         dpo_full_loss: 0.69314718
         dpo_full_resume_loss: 0.69314718
         pt_lora_loss: 12.830774305
@@ -168,6 +170,8 @@ glm_moe:
         pt_full_excepted_result:
         - [10564, 10564, 10564, 138932, 102954, 47231, 47231, 47231, 47231, 47231]
         sft_full_excepted_result:
+        - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
+        sft_full_map_excepted_result:
         - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
         dpo_full_excepted_result:
         - [10564, 10564, 102954, 47231, 47231, 47231, 47231, 47231, 47231, 47231]
@@ -506,6 +510,71 @@ gemma3_text:
         - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
         dpo_full_function_call_excepted_result:
         - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+deepseek_v3:
+    repo_id: PaddleFormers/tiny-random-deepseek-v3
+    model_type: text
+    cli_args:
+        save_checkpoint_format: flex_checkpoint
+        load_checkpoint_format: flex_checkpoint
+        template: deepseek3
+    base_loss:
+        sft_full_loss: 12.50187826
+        sft_full_resume_loss: 12.50134277
+        dpo_full_loss: 0.69314718
+        dpo_full_resume_loss: 0.69314718
+        pt_full_loss: 12.50470114
+        pt_full_resume_loss: 12.50417328
+        sft_lora_loss: 12.50187826
+        sft_lora_resume_loss: 12.50134277
+        dpo_lora_loss: 0.69314718
+        dpo_lora_resume_loss: 0.69314718
+        pt_lora_loss: 12.50470114
+        pt_lora_resume_loss: 12.50417328
+        sft_full_tp_pp_loss: 12.50841904
+        sft_full_tp_pp_resume_loss: 12.50841904
+        dpo_full_tp_pp_loss: 0.69314718
+        dpo_full_tp_pp_resume_loss: 0.69314718
+        pt_full_tp_pp_loss: 12.505197045
+        pt_full_tp_pp_resume_loss: 12.50471401
+        sft_lora_tp_pp_loss: 12.50841904
+        sft_lora_tp_pp_resume_loss: 12.50841904
+        dpo_lora_tp_pp_loss: 0.69314718
+        dpo_lora_tp_pp_resume_loss: 0.69314718
+        pt_lora_tp_pp_loss: 12.505197045
+        pt_lora_tp_pp_resume_loss: 12.50471401
+        sft_full_function_call_loss: 12.52293873
+        sft_full_function_call_resume_loss: 12.52273846
+        dpo_full_function_call_loss: 0.69314718
+        dpo_full_function_call_resume_loss: 0.69314718
+    base_result:
+        pt_full_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 201204, 4214, 190858]
+        sft_full_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        dpo_full_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        pt_lora_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        sft_lora_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        dpo_lora_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        pt_full_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 201204, 4214, 190858]
+        sft_full_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 201204, 4214, 190858]
+        dpo_full_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        pt_lora_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        sft_lora_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        dpo_lora_tp_pp_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        sft_full_function_call_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
+        dpo_full_function_call_excepted_result:
+        - [90659, 223589, 199098, 132132, 123851, 26914, 97962, 10543, 137989, 132257]
 paddleocr_vl:
     repo_id: PaddleFormers/tiny-random-paddleocr-vl-bf16
     model_type: vl
@@ -519,49 +588,7 @@ paddleocr_vl:
         dataloader_shuffle: false
         freeze_config: ''
     base_loss:
-        sft_full_loss: 0.0
-        sft_full_resume_loss: 0.0
-        dpo_full_loss: 0.69314718
-        dpo_full_resume_loss: 0.69314718
-        pt_full_loss: 0.0
-        pt_full_resume_loss: 0.0
-        sft_lora_loss: 0.0
-        sft_lora_resume_loss: 0.0
-        dpo_lora_loss: 0.69314718
-        dpo_lora_resume_loss: 0.69314718
-        pt_lora_loss: 0.0
-        pt_lora_resume_loss: 0.0
-        sft_full_tp_pp_loss: 0.0
-        sft_full_tp_pp_resume_loss: 0.0
-        dpo_full_tp_pp_loss: 0.69314718
-        dpo_full_tp_pp_resume_loss: 0.69314718
-        pt_full_tp_pp_loss: 0.0
-        pt_full_tp_pp_resume_loss: 0.0
-        sft_lora_tp_pp_loss: 0.0
-        sft_lora_tp_pp_resume_loss: 0.0
-        dpo_lora_tp_pp_loss: 0.69314718
-        dpo_lora_tp_pp_resume_loss: 0.69314718
-        pt_lora_tp_pp_loss: 0.0
-        pt_lora_tp_pp_resume_loss: 0.0
-        sft_full_function_call_loss: 0.0
-        sft_full_function_call_resume_loss: 0.0
-        dpo_full_function_call_loss: 0.69314718
-        dpo_full_function_call_resume_loss: 0.69314718
         sft-vl_full_loss: 12.476868625
         sft-vl_full_resume_loss: 12.49209785
     base_result:
-        pt_full_excepted_result: []
-        sft_full_excepted_result: []
-        dpo_full_excepted_result: []
-        pt_lora_excepted_result: []
-        sft_lora_excepted_result: []
-        dpo_lora_excepted_result: []
-        pt_full_tp_pp_excepted_result: []
-        sft_full_tp_pp_excepted_result: []
-        dpo_full_tp_pp_excepted_result: []
-        pt_lora_tp_pp_excepted_result: []
-        sft_lora_tp_pp_excepted_result: []
-        dpo_lora_tp_pp_excepted_result: []
-        sft_full_function_call_excepted_result: []
-        dpo_full_function_call_excepted_result: []
         sft-vl_full_excepted_result: []

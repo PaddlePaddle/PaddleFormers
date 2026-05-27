@@ -21,6 +21,15 @@ testpaths = [
     "tests/trainer",
     "tests/transformers",
     "tests/utils",
+    "tests/ai_edited_test/cli",
+    "tests/ai_edited_test/data",
+    "tests/ai_edited_test/datasets",
+    "tests/ai_edited_test/nn",
+    "tests/ai_edited_test/peft",
+    "tests/ai_edited_test/quantization",
+    "tests/ai_edited_test/trainer",
+    "tests/ai_edited_test/transformers",
+    "tests/ai_edited_test/utils",
 ]
 python_files = [
     "test.py",

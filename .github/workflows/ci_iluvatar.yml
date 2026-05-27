@@ -4,7 +4,12 @@ on:
   pull_request:
     types: [opened, synchronize]
     branches: [develop, release/**]
-permissions: read-all
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  id-token: write
+  checks: read
 
 concurrency:
   group: ${{ github.event.pull_request.number }}-${{ github.workflow }}
@@ -113,4 +118,3 @@ jobs:
           python -m pytest -v -s --tb=short scripts/iluvatar_ci/
           echo "============================All tests passed============================"
           rm -rf baidu/
-          

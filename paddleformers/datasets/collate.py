@@ -482,6 +482,11 @@ def collate_fn(
     max_seq_len = calc_padding_size(max_seq_len, training_args)
     if training_args.num_nextn_predict_layers > 0:
         max_seq_len += training_args.num_nextn_predict_layers
+        if model_args.use_attn_mask_startend_row_indices:
+            input_keys.append("mtp_attn_mask_startend_row_indices")
+        else:
+            input_keys.append("mtp_attn_mask")
+        input_keys.append("mtp_layer_mask")
 
     for batch_sequence in batch:
         if len(batch_sequence) == 1 and isinstance(batch_sequence[0].position_ids[0], List):
@@ -523,6 +528,36 @@ def collate_fn(
         else:
             return_list[-1].append(
                 gen_self_attn_mask(original_position_ids, max_seq_len, model_args.use_global_causal_attn)
+            )
+
+        if training_args.num_nextn_predict_layers > 0:
+
+            if model_args.use_attn_mask_startend_row_indices:
+                return_list[-1].append(
+                    gen_mtp_attn_mask_startend_row_indices(
+                        original_position_ids,
+                        max_seq_len,
+                        training_args.num_nextn_predict_layers,
+                        model_args.use_global_causal_attn,
+                    )
+                )
+            else:
+                return_list[-1].append(
+                    gen_mtp_attn_mask(
+                        original_position_ids,
+                        max_seq_len,
+                        training_args.num_nextn_predict_layers,
+                        model_args.use_global_causal_attn,
+                    )
+                )
+
+            return_list[-1].append(
+                gen_mtp_layer_mask(
+                    original_position_ids,
+                    max_seq_len,
+                    training_args.num_nextn_predict_layers,
+                    tokenizer.eos_token_id,
+                )
             )
 
     return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
@@ -851,3 +886,118 @@ def gen_attn_mask_startend_row_indices(
             attn_mask_startend_row_indices.extend(list(range(offset, max_seq_len)))
     # NOTE(hehuang): The dtype of attn_mask_startend_row_indices must be np.int32
     return np.array(attn_mask_startend_row_indices, dtype=np.int32)[None, None, ..., None]  # add dimension modify
+
+
+def gen_mtp_attn_mask(
+    batch_token_ids: List[List[int]],
+    max_seq_len: int,
+    mtp_depth: int,
+    use_global_causal_attn: bool,
+) -> np.ndarray:
+    """Generate MTP per-layer attention mask (2D matrix form).
+
+    Args:
+        batch_token_ids: List of token ID sequences (document grouping provides boundaries).
+        max_seq_len: Padded sequence length, already extended by mtp_depth.
+        mtp_depth: Number of MTP prediction layers D.
+        use_global_causal_attn: If True, use global causal mask (single block);
+            otherwise use block-causal mask with per-layer shifted boundaries.
+
+    Returns:
+        np.ndarray, shape [mtp_depth, 1, max_seq_len, max_seq_len], dtype=float32.
+    """
+    total_len = sum(len(ids) for ids in batch_token_ids)
+    if use_global_causal_attn:
+        single = np.zeros((max_seq_len, max_seq_len), dtype=np.float32)
+        single[:total_len, :total_len] = np.tril(np.ones([total_len, total_len]))
+        result = np.stack([single] * mtp_depth, axis=0)
+    else:
+        internal_boundaries = []
+        offset = 0
+        for ids in batch_token_ids[:-1]:
+            offset += len(ids)
+            internal_boundaries.append(offset)
+        result = []
+        for mtp_idx in range(mtp_depth):
+            mask = np.zeros((max_seq_len, max_seq_len), dtype=np.float32)
+            shift = mtp_idx + 1
+            all_boundaries = [b - shift for b in internal_boundaries if b - shift > 0] + [total_len]
+            prev = 0
+            for boundary in all_boundaries:
+                if boundary > prev:
+                    mask[prev:boundary, prev:boundary] = np.tril(np.ones([boundary - prev, boundary - prev]))
+                prev = boundary
+            result.append(mask)
+        result = np.stack(result, axis=0)
+    return result[:, None, :, :]
+
+
+def gen_mtp_attn_mask_startend_row_indices(
+    batch_token_ids: List[List[int]],
+    max_seq_len: int,
+    mtp_depth: int,
+    use_global_causal_attn: bool,
+) -> np.ndarray:
+    """Generate MTP per-layer attention mask (compressed startend_row_indices form).
+
+    Args:
+        batch_token_ids: List of token ID sequences.
+        max_seq_len: Padded sequence length, already extended by mtp_depth.
+        mtp_depth: Number of MTP prediction layers D.
+        use_global_causal_attn: If True, single global block; otherwise per-layer shifted blocks.
+
+    Returns:
+        np.ndarray, shape [mtp_depth, 1, max_seq_len, 1], dtype=int32.
+    """
+    total_len = sum(len(ids) for ids in batch_token_ids)
+    pad_indices = list(range(total_len, max_seq_len))
+    if use_global_causal_attn:
+        row = [total_len] * total_len + pad_indices
+        result = np.array([row] * mtp_depth, dtype=np.int32)
+    else:
+        internal_boundaries = []
+        offset = 0
+        for ids in batch_token_ids[:-1]:
+            offset += len(ids)
+            internal_boundaries.append(offset)
+        result = []
+        for mtp_idx in range(mtp_depth):
+            shift = mtp_idx + 1
+            all_boundaries = [b - shift for b in internal_boundaries if b - shift > 0] + [total_len]
+            indices = []
+            prev = 0
+            for boundary in all_boundaries:
+                indices.extend([boundary] * (boundary - prev))
+                prev = boundary
+            result.append(indices + pad_indices)
+        result = np.array(result, dtype=np.int32)
+    return result[:, None, :, None]
+
+
+def gen_mtp_layer_mask(
+    batch_token_ids: List[List[int]],
+    max_seq_len: int,
+    mtp_depth: int,
+    eos_token_id: int = None,
+) -> np.ndarray:
+    """Generate MTP per-layer hidden inputs mask.
+
+    Args:
+        batch_token_ids: List of token ID sequences.
+        max_seq_len: Padded sequence length, already extended by mtp_depth.
+        mtp_depth: Number of MTP prediction layers D.
+        eos_token_id: If provided, zero out positions where EOS appears in shifted input.
+
+    Returns:
+        np.ndarray, shape [mtp_depth, max_seq_len], dtype=int32.
+    """
+    if eos_token_id is None:
+        return np.ones((mtp_depth, max_seq_len), dtype=np.int32)
+    all_token_ids = np.concatenate([np.array(ids, dtype=np.int32) for ids in batch_token_ids])
+    result = []
+    for mtp_idx in range(mtp_depth):
+        mask = np.ones(max_seq_len, dtype=np.int32)
+        shifted = all_token_ids[mtp_idx + 1 :]
+        mask[np.where(shifted == eos_token_id)[0]] = 0
+        result.append(mask)
+    return np.stack(result, axis=0)

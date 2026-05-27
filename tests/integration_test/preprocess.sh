@@ -34,7 +34,7 @@ fi
 
 cd $root_dir/PaddleFormers/examples/experiments/paddlefleet
 
-apt-get update
+# apt-get update
 #apt-get install jq -y
 
 sed -i '/if not int(os.getenv("test_ci_no_save_model", 0)):/s/^/# /' run_pretrain.py

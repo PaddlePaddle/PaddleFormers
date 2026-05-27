@@ -40,43 +40,51 @@ init_env() {
     if echo "${FLAGS_enable_CE}" | grep -q "CE_Release"; then
         echo "CE_Release: install paddle release + fleet release + formers release"
         bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}"
-        # donwload configs
         cd ./scripts/regression
-        wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_release_config/config.yaml 
-        # update configs
-        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
+        wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_release_config/config.yaml
+        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml --output config.yaml 2>&1 | tee /tmp/merge_output.txt
         cd -
-    
+
     elif echo "${FLAGS_enable_CE}" | grep -q "CE_Develop"; then
-    
+
         echo "CE_Develop: install paddle develop + fleet develop + formers develop"
         bash ./scripts/regression/install_requirements.sh "${FLAGS_enable_CE}"
         # donwload configs
         cd ./scripts/regression
-        wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_develop_config/config.yaml 
-        # update configs
-        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
+        wget https://paddle-qa.bj.bcebos.com/paddleformers/ce_develop_config/config.yaml
+        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml --output config.yaml 2>&1 | tee /tmp/merge_output.txt
         cd -
     elif [[ "${FLAGS_enable_CI}" == "True" ]] && [[ "${BRANCH}" == "develop" ]];then
         echo "CI: install paddle stable + fleet stable + develop formers"
-        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI} 
+        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI}
         # donwload configs
         cd ./scripts/regression
-        wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_develop_config/config.yaml 
-        # update configs
-        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
+        wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_develop_config/config.yaml
+        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml --output config.yaml 2>&1 | tee /tmp/merge_output.txt
         cd -
     else
         # CI Release
         echo "CI: install paddle stable + fleet stable + release formers"
-        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI} 
-        # donwload configs
         cd ./scripts/regression
-        wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_release_config/config.yaml 
-        # update configs
-        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml
-        cd - 
+        wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_release_config/config.yaml
+        python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml --output config.yaml 2>&1 | tee /tmp/merge_output.txt
+        cd -
     fi
+    grep "^new_models=" /tmp/merge_output.txt || true
+    new_models=$(grep "^new_models=" /tmp/merge_output.txt | cut -d'=' -f2)
+
+    if [[ "$new_models" != "" ]] && [[ "$new_models" != "false" ]] && [[ "$new_models" != "False" ]]; then
+        if [[ "$update_baseline_models" == "false" ]] || [[ "$update_baseline_models" == "False" ]]; then
+
+            update_baseline_models="$new_models"
+        else
+            update_baseline_models="$update_baseline_models $new_models"
+        fi
+        echo "Updated baseline models: $update_baseline_models"
+    else
+        echo "No new models found, keeping existing: $update_baseline_models"
+    fi
+   
 }
 upload_baseline(){
     cp -r /home/models/bos/* ./
@@ -141,7 +149,7 @@ if [ ${#model_array[@]} -gt 0 ]; then
     models=$(IFS=,; echo "${model_array[*]}")
     echo "Models to test: $models"
 else
-    models="glm_moe"
+    models="glm4_moe"
     echo "No transformer changes detected, using default model: $models"
 fi
 
@@ -152,7 +160,13 @@ if [[ "$update_baseline_models" != "false" ]] && [[ "$update_baseline_models" !=
     echo "Update baseline models: $update_baseline_models"
     models=$update_baseline_models
 elif [[ ${FLAGS_enable_CI} == "True" ]];then
-    get_diff_TO_case
+    if [[ "$PR_NUMBER" == "0" ]]; then
+        models="all"
+    else
+        get_diff_TO_case
+    fi
+elif [[ ${FLAGS_enable_CE} != "False" ]];then
+    models="all"
 fi
 
 if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];then
@@ -168,10 +182,14 @@ if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];the
     export FLAGS_tcp_store_using_libuv=0
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
-    python -m pytest -s -v --models=${models} --update-baseline=${update_baseline_models} scripts/regression/test_models.py > ${log_path}/model_unittest.log 2>&1
+    python -m pytest -s -v --alluredir=result --models=${models} --update-baseline=${update_baseline_models} scripts/regression/test_models.py > ${log_path}/model_unittest.log 2>&1
     exit_code=$?
     print_info $exit_code model_unittest
-    upload_baseline   
+    if [[ $exit_code -eq 0 ]] && [[ "$update_baseline_models" != "false" ]] && [[ "$update_baseline_models" != "False" ]]; then
+        upload_baseline   
+    else
+        echo " fix error, first"
+    fi
 else
     echo -e "\033[32m Changed Not CI case, Skips \033[0m"
     exit_code=0

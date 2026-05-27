@@ -86,3 +86,5 @@ pp_release_grads: true
 
 num_empty_layers_add_in_head: 1
 
+moe_deep_gemm: false
+

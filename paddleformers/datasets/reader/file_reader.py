@@ -37,14 +37,12 @@ class BaseReader(IterableDataset):
         file_path,
         file_type,
         file_samplenum=None,
-        shuffle_file=True,
         split_multi_turn=False,
         template_backend="jinja",
     ):
         self._file_path = file_path
         self._file_type = file_type  # erniekit, alpaca, ...
         self._file_samplenum = file_samplenum
-        self._shuffle_file = shuffle_file
         self._split_multi_turn = split_multi_turn
         self._template_backend = template_backend
         self.loader_map = {
@@ -66,7 +64,6 @@ class FileReader(BaseReader):
         file_path,
         file_type,
         file_samplenum=None,
-        shuffle_file=True,
         split_multi_turn=False,
         template_backend="jinja",
     ):
@@ -74,7 +71,6 @@ class FileReader(BaseReader):
             file_path=file_path,
             file_type=file_type,
             file_samplenum=file_samplenum,
-            shuffle_file=shuffle_file,
             split_multi_turn=split_multi_turn,
             template_backend=template_backend,
         )
@@ -228,7 +224,6 @@ class FileListReader(BaseReader):
         file_path,
         file_type,
         file_samplenum=None,
-        shuffle_file=True,
         split_multi_turn=False,
         template_backend="jinja",
     ):
@@ -238,7 +233,6 @@ class FileListReader(BaseReader):
             file_path=file_path,
             file_type=file_type,
             file_samplenum=file_samplenum,
-            shuffle_file=shuffle_file,
             split_multi_turn=split_multi_turn,
             template_backend=template_backend,
         )
@@ -250,7 +244,6 @@ class FileListReader(BaseReader):
                 file_path,
                 self._file_type,
                 self._file_samplenum,
-                self._shuffle_file,
                 self._split_multi_turn,
                 self._template_backend,
             )
@@ -278,7 +271,6 @@ class HuggingFaceReader(BaseReader):
         file_path,
         file_type="alpaca",
         file_samplenum=None,
-        shuffle_file=True,
         split_multi_turn=False,
         template_backend="jinja",
     ):
@@ -297,7 +289,6 @@ class HuggingFaceReader(BaseReader):
                     download_file_path,
                     download_file_type,
                     file_samplenum,
-                    shuffle_file,
                     split_multi_turn,
                     template_backend,
                 )
@@ -306,7 +297,6 @@ class HuggingFaceReader(BaseReader):
                     download_file_path,
                     download_file_type,
                     file_samplenum,
-                    shuffle_file,
                     split_multi_turn,
                     template_backend,
                 )
