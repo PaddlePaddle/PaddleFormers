@@ -69,7 +69,7 @@ install_requirements() {
     pip install -r tests/requirements.txt -i https://pypi.org/simple 
 
     echo "paddle commit:"
-python -c "import paddle; print(paddle.version.commit)"
+    python -c "import paddle; print(paddle.version.commit)"
     echo "paddlefleet commit:"
     python -c "import paddlefleet; print(paddlefleet.version.commit)"
     echo "paddlefleet_ops commit:"
