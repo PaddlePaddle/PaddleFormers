@@ -54,8 +54,10 @@ install_requirements() {
         python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/ --no-cache-dir --force-reinstall --no-dependencies
         python -m pip uninstall paddlepaddle-gpu -y
         #paddle
-        wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda130-Cudnn913-Trt1013-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
-        python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ 
+        # wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda130-Cudnn913-Trt1013-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
+        # python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ 
+        wget -q https://xly-devops.bj.bcebos.com/gushiwei/cuda132/paddlepaddle_gpu-3.4.0.post20260527%2B8b49e407ce7-cp312-cp312-linux_x86_64.whl
+        python -m pip install paddlepaddle_gpu-3.4.0.post20260527%2B8b49e407ce7-cp312-cp312-linux_x86_64.whl
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
