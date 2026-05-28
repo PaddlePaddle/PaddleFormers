@@ -21,7 +21,10 @@ install_requirements() {
     rm -rf ./build ./dist ./paddleformers.egg-info/
     # Todo: fix later 
     # python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple > /dev/null
+    python -m pip config --user set global.trusted-host pypi.org
+    python -m pip config --user set global.index-url https://pypi.org/simple
     python -m pip install -r requirements.txt -i https://pypi.org/simple 
+    python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
     if [[ "$ce_branch" == "CE_Release_cu129_py312_nightly" ]]; then # nightly regerssion
         #fleet
         wget -q https://paddle-github-action.bj.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp312-cp312-linux_x86_64.whl
@@ -107,7 +110,24 @@ install_requirements() {
         python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --no-cache-dir --force-reinstall --no-dependencies
         #formers
         python setup.py bdist_wheel  > /dev/null
-        python -m pip install ./dist/*.whl    
+        python -m pip install ./dist/*.whl 
+    elif [[ "$ce_branch" == "CE_Develop_cu132_py312" ]]; then # test
+        #fleet
+        python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ -i https://pypi.org/simple 
+        wget -q https://xly-devops.bj.bcebos.com/gushiwei/cuda132/paddle_nvidia_nvshmem_cu13-3.4.5-py3-none-manylinux_2_17_x86_64.whl
+        python -m pip install paddle_nvidia_nvshmem_cu13-3.4.5-py3-none-manylinux_2_17_x86_64.whl -i https://pypi.org/simple 
+        #paddlefleet_ops
+        wget -q https://xly-devops.bj.bcebos.com/gushiwei/cuda132/paddlefleet_ops-0.3.0.dev20260527%2B0c3a4f84-cp312-cp312-linux_x86_64.whl
+        python -m pip install paddlefleet_ops-0.3.0.dev20260527+0c3a4f84-cp312-cp312-linux_x86_64.whl -i https://pypi.org/simple
+        python -m pip uninstall paddlepaddle-gpu -y
+        #paddle
+        pip list 2>/dev/null | grep nvidia | grep -v "^-" | awk '{print $1}' | grep -v "^$" | xargs -r pip uninstall -y
+        pip list | grep -i nvidia || true
+        # wget -q https://xly-devops.bj.bcebos.com/gushiwei/cuda132/paddlepaddle_gpu-3.4.0.post20260527%2B8b49e407ce7-cp312-cp312-linux_x86_64.whl
+        # python -m pip install paddlepaddle_gpu-3.4.0.post20260527+8b49e407ce7-cp312-cp312-linux_x86_64.whl -i https://pypi.org/simple --no-cache-dir -i https://pypi.org/simple 
+        #formers
+        python setup.py bdist_wheel  > /dev/null
+        python -m pip install ./dist/*.whl   
     else
         echo "Install CI ENV: Cuda129+Python312"
         python setup.py bdist_wheel > /dev/null
@@ -115,7 +135,6 @@ install_requirements() {
         #paddlefleet_ops
         python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir --force-reinstall --no-dependencies
     fi
-    python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
 
     echo "paddle commit:"
     python -c "import paddle; print(paddle.version.commit)"

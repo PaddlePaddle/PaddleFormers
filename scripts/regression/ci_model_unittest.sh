@@ -171,6 +171,7 @@ fi
 
 if [[ ${FLAGS_enable_CI} == "True" ]] || [[ ${FLAGS_enable_CE} != "False" ]];then
     cd ${nlp_dir}
+    sleep 5h
     unset http_proxy && unset https_proxy
     set +e
     echo "Check nvidia-smi"
