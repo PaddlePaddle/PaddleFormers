@@ -1,7 +1,6 @@
 name: Cleanup CI Gists
 
 on:
-  pull_request:
   schedule:
     - cron: '0 3 * * *'  # 每天北京时间11点（UTC+8）
   workflow_dispatch:
@@ -25,7 +24,6 @@ jobs:
           KEEP_DAYS: ${{ inputs.keep_days || '14' }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
         run: |
-          conda activate py310
           python3 << 'EOF'
           import os, requests
           from datetime import datetime, timezone, timedelta
