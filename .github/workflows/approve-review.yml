@@ -13,21 +13,38 @@ on:
 jobs:
   check-review:
     runs-on: ernie-cpu
-    defaults:
-      run:
-        working-directory: ${{ github.workspace }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          path: .
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Find repo root
+        id: repo_root
+        run: |
+          # 从 checkout action 写入的 $GITHUB_WORKSPACE 向上找 .git 目录
+          DIR=$GITHUB_WORKSPACE
+          while [ "$DIR" != "/" ]; do
+            if [ -d "$DIR/.git" ]; then
+              echo "REPO_DIR=$DIR" >> $GITHUB_ENV
+              echo "Found repo at: $DIR"
+              break
+            fi
+            DIR=$(dirname $DIR)
+          done
+          if [ -z "$REPO_DIR" ]; then
+            # fallback: actions/checkout 实际 clone 到 _work/repo/repo
+            REPO_DIR=$(find /home -maxdepth 7 -name ".git" -type d 2>/dev/null | head -1 | xargs dirname)
+            echo "REPO_DIR=$REPO_DIR" >> $GITHUB_ENV
+            echo "Fallback repo at: $REPO_DIR"
+          fi
 
       - name: Auto merge base into PR branch if outdated
         id: auto_merge
         run: |
+          cd $REPO_DIR
           git fetch origin ${{ github.base_ref }}
 
           BEHIND=$(git rev-list HEAD..origin/${{ github.base_ref }} --count)
@@ -48,19 +65,18 @@ jobs:
       - name: Detect changed sensitive files
         id: check_diff
         run: |
+          cd $REPO_DIR
           MERGE_BASE=$(git merge-base HEAD origin/${{ github.base_ref }})
           echo "Merge base: $MERGE_BASE"
 
           ALL_CHANGED=$(git diff $MERGE_BASE --name-only)
 
-          # 检查 requirements.txt
           if echo "$ALL_CHANGED" | grep -q '^requirements\.txt$'; then
             echo "requirements_changed=true" >> $GITHUB_OUTPUT
           else
             echo "requirements_changed=false" >> $GITHUB_OUTPUT
           fi
 
-          # 检查 training_args.py / hparams/*
           if echo "$ALL_CHANGED" | grep -qE \
             '^paddleformers/trainer/training_args\.py$|^paddleformers/cli/hparams/'; then
             echo "training_changed=true" >> $GITHUB_OUTPUT
@@ -76,10 +92,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const required = [
-              "zjjlivein",
-              "From00"
-            ];
+            const required = ["zjjlivein", "From00"];
             const { data: reviews } = await github.rest.pulls.listReviews({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -92,9 +105,7 @@ jobs:
               }
             }
             if (approved.size === 0) {
-              core.setFailed(
-                `requirements.txt changed: need approval from one of ${required.join(", ")}`
-              );
+              core.setFailed(`requirements.txt changed: need approval from one of ${required.join(", ")}`);
             } else {
               core.info(`[requirements.txt] Approved by: ${Array.from(approved).join(", ")}`);
             }
@@ -104,9 +115,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const required = [
-              "From00"
-            ];
+            const required = ["From00"];
             const { data: reviews } = await github.rest.pulls.listReviews({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -119,14 +128,11 @@ jobs:
               }
             }
             if (approved.size === 0) {
-              core.setFailed(
-                `training_args.py / hparams/* changed: need approval from one of ${required.join(", ")}`
-              );
+              core.setFailed(`training_args.py / hparams/* changed: need approval from one of ${required.join(", ")}`);
             } else {
               core.info(`[training_args/hparams] Approved by: ${Array.from(approved).join(", ")}`);
             }
 
       - name: All checks passed
         if: steps.check_diff.outputs.requirements_changed == 'false' && steps.check_diff.outputs.training_changed == 'false'
-        run: |
-          echo "No sensitive files changed, skip approval check"
+        run: echo "No sensitive files changed, skip approval check"
