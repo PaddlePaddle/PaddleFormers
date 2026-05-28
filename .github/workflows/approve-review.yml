@@ -1,5 +1,4 @@
-# .github/workflows/check-sensitive-files-review.yml
-name: Check Sensitive Files Need Approval
+name: Check Files Need Approval
 
 on:
   pull_request:
@@ -14,16 +13,41 @@ on:
 jobs:
   check-review:
     runs-on: ernie-cpu
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          path: .
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto merge base into PR branch if outdated
+        id: auto_merge
+        run: |
+          git fetch origin ${{ github.base_ref }}
+
+          BEHIND=$(git rev-list HEAD..origin/${{ github.base_ref }} --count)
+          echo "Commits behind base: $BEHIND"
+
+          if [ "$BEHIND" -gt "0" ]; then
+            echo "PR is outdated ($BEHIND commits), merging base into PR branch..."
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git merge origin/${{ github.base_ref }} --no-edit
+            git push origin HEAD:${{ github.head_ref }}
+            echo "merged=true" >> $GITHUB_OUTPUT
+          else
+            echo "PR is up to date, skip merge"
+            echo "merged=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Detect changed sensitive files
         id: check_diff
         run: |
-          git fetch origin ${{ github.base_ref }}
           MERGE_BASE=$(git merge-base HEAD origin/${{ github.base_ref }})
           echo "Merge base: $MERGE_BASE"
 
