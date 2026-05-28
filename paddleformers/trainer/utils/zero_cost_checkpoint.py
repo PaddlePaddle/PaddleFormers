@@ -1417,11 +1417,10 @@ class ZeroCostCheckpointWorker:
         model_params = {}
         for k, v in state_dict.items():
             if k.endswith(".w_0"):
-                original_key = inv_mapping.get(k, k)
+                original_key = inv_mapping[k]
                 master_weights[original_key] = v
             else:
-                original_key = inv_mapping.get(k, k)
-                model_params[original_key] = v
+                model_params[k] = v
 
         # Re-pad master_weights to match current buffer slot size
         mw_meta = self.optimizer_fusion_storage_helper.master_weights_meta
@@ -2520,12 +2519,11 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
 
             if unified_key.endswith(".w_0"):
                 # master_weight key: reverse lookup using .w_0 key directly
-                original_key = inv_name_mapping.get(unified_key, unified_key)
+                original_key = inv_name_mapping[unified_key]
                 master_weights[original_key] = tensor
             else:
                 # model_params key: map back to original param name
-                original_key = inv_name_mapping.get(unified_key, unified_key)
-                model_params[original_key] = tensor
+                model_params[unified_key] = tensor
 
         # Re-pad master_weights to match current buffer slot size
         # FC reshard produces unpadded tensors, but load_ema_state_dict expects padded buffer slots
