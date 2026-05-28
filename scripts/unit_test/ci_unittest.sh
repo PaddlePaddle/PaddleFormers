@@ -36,8 +36,10 @@ AGILE_COMPILE_BRANCH=$4
 
 install_requirements() {
     start_ts=$(date +%s)
-    python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-    python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
+    python -m pip config --user set global.trusted-host pypi.org
+    python -m pip config --user set global.index-url https://pypi.org/simple
+    pip install -r requirements.txt -i https://pypi.org/simple 
+    pip install -r tests/requirements.txt -i https://pypi.org/simple 
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
     python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple  > /dev/null
     # cd /home/models/my_packages && dpkg -i *.deb > /dev/null
@@ -75,7 +77,6 @@ install_requirements() {
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
     fi
-    pip install -r tests/requirements.txt -i https://pypi.org/simple 
 
     echo "paddle commit:"
     python -c "import paddle; print(paddle.version.commit)"
@@ -160,7 +161,7 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}
     set +e
     export PYTHONFAULTHANDLER=1
-    
+    sleep 10h 
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
