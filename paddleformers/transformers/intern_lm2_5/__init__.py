@@ -29,6 +29,13 @@ import_structure = {
         "InternLM25ForQuestionAnswering",
         "InternLM25ForTokenClassification",
         "InternLM25PretrainedModel",
+        "InternLM2PretrainedModel",
+        "InternLM2DecoderLayer",
+        "InternLM2Model",
+        "InternLM2ForCausalLM",
+        "InternLM2ForSequenceClassification",
+        "InternLM2ForQuestionAnswering",
+        "InternLM2ForTokenClassification",
     ],
 }
 

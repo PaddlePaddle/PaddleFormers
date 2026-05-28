@@ -55,14 +55,18 @@ class InternLM2PretrainedModel(PretrainedModel):
         # Detect version and load appropriate implementation
         if config.is_version_2_5:
             logger.info("Detected InternLM2 2.5, loading 2.5 implementation")
-            from ..intern_lm2_5.modeling import InternLM25PretrainedModel as ImplModel
+            from ..intern_lm2_5 import modeling as _impl_module
         else:
-            logger.error("Detected InternLM2 2.0, but 2.0 implementation is not supported!")
+            logger.info("Detected InternLM2 2.0, loading 2.0 implementation")
+            from ..intern_lm2 import modeling as _impl_module
+
+        _cls_name = self.__class__.__name__
+        if not hasattr(_impl_module, _cls_name):
             raise NotImplementedError(
-                "InternLM2 2.0 is not supported in PaddleFormers. "
-                "Please use InternLM2 2.5 or later versions. "
-                "If you need to use 2.0, please implement `paddleformers/transformers/internlm2/` module first."
+                f"{_cls_name} is not implemented for InternLM2 "
+                f"{'2.5' if config.is_version_2_5 else '2.0'} in PaddleFormers."
             )
+        ImplModel = getattr(_impl_module, _cls_name)
 
         # Store the actual implementation
         self._impl = ImplModel(config)
@@ -72,6 +76,24 @@ class InternLM2PretrainedModel(PretrainedModel):
         for key, value in self._impl.__dict__.items():
             if key not in self.__dict__:
                 self.__dict__[key] = value
+
+    @classmethod
+    def _gen_aoa_config(cls, config):
+        if config.is_version_2_5:
+            from ..intern_lm2_5 import modeling as impl_module
+        else:
+            from ..intern_lm2 import modeling as impl_module
+        impl_cls = getattr(impl_module, cls.__name__)
+        return impl_cls._gen_aoa_config(config)
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config):
+        if config.is_version_2_5:
+            from ..intern_lm2_5 import modeling as impl_module
+        else:
+            from ..intern_lm2 import modeling as impl_module
+        impl_cls = getattr(impl_module, cls.__name__)
+        return impl_cls._gen_inv_aoa_config(config)
 
     def forward(self, *args, **kwargs):
         """Forward to the actual implementation."""

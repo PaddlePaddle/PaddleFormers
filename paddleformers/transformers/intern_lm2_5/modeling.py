@@ -678,6 +678,35 @@ class InternLM25PretrainedModel(PretrainedModel):
         return {"aoa_statements": aoa_statements}
 
 
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: InternLM25Config):
+        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+        aoa_statements = [
+            f"{model_prefix}tok_embeddings.weight -> model.tok_embeddings.weight",
+            f"{model_prefix}norm.weight -> model.norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.attention_norm.weight -> model.layers.$LAYER_ID.attention_norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.ffn_norm.weight -> model.layers.$LAYER_ID.ffn_norm.weight",
+        ]
+        aoa_statements.extend(
+            [
+                f"{model_prefix}layers.$LAYER_ID.attention.{w}.weight^T -> model.layers.$LAYER_ID.attention.{w}.weight"
+                for w in ["wqkv", "wo"]
+            ]
+        )
+        aoa_statements.extend(
+            [
+                f"{model_prefix}layers.$LAYER_ID.feed_forward.{w}.weight^T -> model.layers.$LAYER_ID.feed_forward.{w}.weight"
+                for w in ["w1", "w2", "w3"]
+            ]
+        )
+        if cls != cls.base_model_class:
+            if getattr(config, "tie_word_embeddings", False):
+                aoa_statements.append("output.weight -> model.tok_embeddings.weight")
+            else:
+                aoa_statements.append("output.weight^T -> output.weight")
+        return {"aoa_statements": aoa_statements}
+
+
 @register_base_model
 class InternLM25Model(InternLM25PretrainedModel):
     _auto_class = "AutoModel"
@@ -1456,7 +1485,12 @@ class InternLM25ForTokenClassification(InternLM25PretrainedModel):
         )
 
 
-# original config.json architectures field uses "InternLM2ForCausalLM" while the paddle
-# implementation class is InternLM25ForCausalLM; provide backward-compatible alias so
-# that Auto mapping (which does getattr(module, "InternLM2ForCausalLM")) resolves correctly.
+# Aliases for intern proxy compatibility. The intern/modeling.py proxy resolves
+# implementation classes by InternLM2* names via getattr(_impl_module, cls_name).
+InternLM2PretrainedModel = InternLM25PretrainedModel
+InternLM2DecoderLayer = InternLM25DecoderLayer
+InternLM2Model = InternLM25Model
 InternLM2ForCausalLM = InternLM25ForCausalLM
+InternLM2ForSequenceClassification = InternLM25ForSequenceClassification
+InternLM2ForQuestionAnswering = InternLM25ForQuestionAnswering
+InternLM2ForTokenClassification = InternLM25ForTokenClassification
