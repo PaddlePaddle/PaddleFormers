@@ -299,7 +299,7 @@ jobs:
           if [[ "$MODE" == "pr" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
-            bos_prefix="${MODE}_${FLAGS_enable_CE}/$(date +%Y%m%d%H)_${{ env.RUN_ID }}"
+            bos_prefix="${MODE}_${FLAGS_enable_CE}/$(date +%Y%m%d)_${{ env.RUN_ID }}"
           fi
 
           # logs
@@ -342,6 +342,8 @@ jobs:
     runs-on: 'ernie-cpu'
     permissions:
       contents: write
+      pages: write
+      id-token: write
     steps:
       - name: Checkout gh-pages
         uses: actions/checkout@v5
@@ -401,9 +403,9 @@ jobs:
           if [[ "$MODE" == "pr" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
-            bos_prefix="${MODE}_${FLAGS_enable_CE}/$(date +%Y%m%d%H)_${{ env.RUN_ID }}"
+            bos_prefix="${MODE}_${FLAGS_enable_CE}/$(date +%Y%m%d)_${{ env.RUN_ID }}"
           fi
-
+          echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/ce-model-unittest-gpu/${bos_prefix}/logs/report.tar.gz"
           wget -q --no-proxy \
             https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/ce-model-unittest-gpu/${bos_prefix}/logs/report.tar.gz \
             --no-check-certificate
@@ -417,9 +419,11 @@ jobs:
           fi
       - name: Deploy to GitHub Pages
         if: always()
+        timeout-minutes: 5
+        continue-on-error: true
         uses: peaceiris/actions-gh-pages@v3
         with:
-          github_token: ${{ secrets.BOT_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./report
           destination_dir: ${{ steps.trigger_mode.outputs.destination_dir }}
       - name: Display GitHub Pages URL
@@ -439,4 +443,5 @@ jobs:
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Workflow | ${{ github.workflow }} |" >> $GITHUB_STEP_SUMMARY
           echo "| CE Mode | $MODE_$FLAGS_enable_CE |" >> $GITHUB_STEP_SUMMARY
+          echo "| Time | $(date +%Y%m%d) |" >> $GITHUB_STEP_SUMMARY
           echo "| Report | [Open Report](${PAGES_URL}) |" >> $GITHUB_STEP_SUMMARY

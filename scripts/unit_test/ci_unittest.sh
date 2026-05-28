@@ -61,13 +61,24 @@ install_requirements() {
         #paddlefleet_ops
         python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir --force-reinstall --no-dependencies
     fi
+    pip install -r tests/requirements.txt -i https://pypi.org/simple 
+
+    echo "paddle commit:"
+    python -c "import paddle; print(paddle.version.commit)"
     echo "paddlefleet commit:"
     python -c "import paddlefleet; print(paddlefleet.version.commit)"
+    echo "paddlefleet_ops commit:"
+    python -c "from paddlefleet_ops import __version__; print(__version__)"
+    echo "paddleformers commit:"
+    python -c "import paddleformers; print(paddleformers.version.commit)"
+
+    python -c "import paddle; print('paddle commit:',paddle.version.commit)" >> ${log_path}/commit_info.txt
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
-    pip install -r tests/requirements.txt -i https://pypi.org/simple 
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
-    python -m pip list >> ${log_path}/commit_info.txt 
+    python -c "from paddlefleet_ops import __version__; print('paddlefleet_ops version:', __version__)" >> ${log_path}/commit_info.txt
+    python -c "import paddlefleet; print('paddlefleet commit:',paddlefleet.version.commit)" >> ${log_path}/commit_info.txt
+    python -m pip list >> ${log_path}/commit_info.txt
     end_ts=$(date +%s)
     echo -e "\033[32m install requirements cost $((end_ts - start_ts))s \033[0m"
 }
