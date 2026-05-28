@@ -19,6 +19,8 @@ install_requirements() {
     start_ts=$(date +%s)
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet paddleformers -y
     rm -rf ./build ./dist ./paddleformers.egg-info/
+    python -m pip config --user set global.trusted-host pypi.org
+    python -m pip config --user set global.index-url https://pypi.org/simple
     # Todo: fix later 
     # python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple > /dev/null
     python -m pip install -r requirements.txt -i https://pypi.org/simple 
@@ -72,7 +74,7 @@ install_requirements() {
         pip list 2>/dev/null | grep nvidia | grep -v "^-" | awk '{print $1}' | grep -v "^$" | xargs -r pip uninstall -y
         pip list | grep -i nvidia || true
         wget -q https://xly-devops.bj.bcebos.com/gushiwei/cuda132/paddlepaddle_gpu-3.4.0.post20260527%2B8b49e407ce7-cp312-cp312-linux_x86_64.whl
-        python -m pip install paddlepaddle_gpu-3.4.0.post20260527+8b49e407ce7-cp312-cp312-linux_x86_64.whl -i https://pypi.org/simple --no-cache-dir --force-reinstall 
+        python -m pip install paddlepaddle_gpu-3.4.0.post20260527+8b49e407ce7-cp312-cp312-linux_x86_64.whl -i https://pypi.org/simple --no-cache-dir --force-reinstall -i https://pypi.org/simple 
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
