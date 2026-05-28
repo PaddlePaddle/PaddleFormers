@@ -713,8 +713,7 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
 
     @classmethod
     def _resolve_local_cache_path(cls, model_path, download_hub=None):
-        """Resolve Hub model_id to local cache path. Returns (path, source),
-        source is "aistudio" / "huggingface" / None (cache miss)."""
+        """Resolve Hub model_id to local cache path. Returns (path, source)."""
         import os
 
         if os.path.isdir(model_path):
@@ -731,6 +730,12 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
                     return cache_candidate, "aistudio"
             except ImportError:
                 pass
+
+        if hub_str == "modelscope":
+            cache_root = os.path.join(os.path.expanduser("~"), ".cache", "modelscope", "hub", "models")
+            cache_candidate = os.path.join(cache_root, model_path)
+            if os.path.isdir(cache_candidate):
+                return cache_candidate, "modelscope"
 
         if hub_str in ("huggingface", ""):
             try:
@@ -765,7 +770,6 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
             model_path = os.path.expanduser(model_path)
 
         check_path, cache_source = cls._resolve_local_cache_path(model_path, kwargs.get("download_hub", None))
-        # Auto-infer download source when cache hit but download_hub not specified
         if cache_source is not None and kwargs.get("download_hub") is None:
             kwargs["download_hub"] = cache_source
 

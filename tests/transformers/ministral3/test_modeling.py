@@ -21,7 +21,6 @@ import paddle
 
 from tests.testing_utils import require_package, slow
 
-_MODEL_3B_PADDLE_ID = "learncat/Ministral-3-3B-Instruct-2512-for-paddle"
 _MODEL_3B_HF_ID = "mistralai/Ministral-3-3B-Instruct-2512"
 _PROMPT_DIFF = "Hello, how are you today?"
 _PROMPT_INFERENCE = "What is the difference between cats and dogs?"
@@ -154,10 +153,9 @@ def _load_paddle_model_3b(dtype="float32"):
     paddle.set_device("gpu")
 
     model = Mistral3ForConditionalGeneration.from_pretrained(
-        _MODEL_3B_PADDLE_ID,
-        download_hub="aistudio",
-        load_checkpoint_format="legacy",
-        use_safetensors=False,
+        _MODEL_3B_HF_ID,
+        download_hub="modelscope",
+        convert_from_hf=True,
         dtype=dtype,
     )
     model.eval()
@@ -178,88 +176,171 @@ def _dequant_fp8_torch_model(model, torch_dtype):
     return fp8_count
 
 
+def _run_torch_inference(result_path):
+    import torch
+    from transformers import Mistral3ForConditionalGeneration as TorchMistral3ForConditionalGeneration
+
+    os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+
+    from paddleformers.transformers import Mistral3Tokenizer
+
+    hf_model_id = _MODEL_3B_HF_ID
+    tokenizer = Mistral3Tokenizer.from_pretrained(hf_model_id)
+    inputs = tokenizer(_PROMPT_DIFF, return_tensors="pt")
+    input_ids_pt = inputs["input_ids"]
+    input_ids_list = input_ids_pt[0].tolist()
+    print(f"\n[Diff-Torch] prompt: {repr(_PROMPT_DIFF)}")
+    print(f"[Diff-Torch] input_ids: {input_ids_list}, seq_len={len(input_ids_list)}")
+
+    torch.manual_seed(_SEED)
+    print("[Diff-Torch] Loading PyTorch model (bf16 -> fp32, GPU)...")
+    torch_model = TorchMistral3ForConditionalGeneration.from_pretrained(
+        hf_model_id,
+        device_map="auto",
+        torch_dtype=torch.bfloat16,
+        attn_implementation="eager",
+    )
+    fp8_n = _dequant_fp8_torch_model(torch_model, torch.bfloat16)
+    print(f"[Diff-Torch] Dequantized {fp8_n} FP8 weights")
+    torch_model = torch_model.to(torch.float32)
+    torch_model.eval()
+
+    device = torch_model.device
+    input_ids_dev = input_ids_pt.to(device)
+
+    with torch.inference_mode():
+        torch_out = torch_model(input_ids=input_ids_dev, use_cache=False)
+    torch_logits = torch_out.logits.float().cpu().numpy()
+
+    with torch.inference_mode():
+        torch_gen = torch_model.generate(
+            input_ids=input_ids_dev,
+            max_new_tokens=_NUM_GEN_TOKENS,
+            do_sample=False,
+            temperature=None,
+            top_p=None,
+            use_cache=True,
+        )
+    torch_gen_ids = torch_gen[0, input_ids_pt.shape[1] :].cpu().tolist()
+    print(f"[Diff-Torch] generated tokens: {torch_gen_ids}")
+    print(f"[Diff-Torch] generated text: {repr(tokenizer.decode(torch_gen_ids, skip_special_tokens=True))}")
+
+    np.savez(
+        result_path,
+        logits=torch_logits,
+        gen_ids=np.array(torch_gen_ids, dtype=np.int64),
+        input_ids=np.array(input_ids_list, dtype=np.int64),
+    )
+    print(f"[Diff-Torch] Results saved to {result_path}")
+
+
+def _run_paddle_inference(result_path):
+    import paddle
+
+    from paddleformers.transformers import Mistral3Tokenizer
+
+    os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+
+    hf_model_id = _MODEL_3B_HF_ID
+    tokenizer = Mistral3Tokenizer.from_pretrained(hf_model_id)
+    inputs = tokenizer(_PROMPT_DIFF, return_tensors=None)
+    input_ids_list = inputs["input_ids"]
+    print(f"\n[Diff-Paddle] prompt: {repr(_PROMPT_DIFF)}")
+    print(f"[Diff-Paddle] input_ids: {input_ids_list}, seq_len={len(input_ids_list)}")
+
+    paddle.seed(_SEED)
+    print("[Diff-Paddle] Loading Paddle model...")
+    paddle_model = _load_paddle_model_3b(dtype="float32")
+
+    input_ids_pd = paddle.to_tensor(np.array([input_ids_list], dtype=np.int64), dtype="int64")
+
+    with paddle.no_grad():
+        paddle_out = paddle_model(input_ids=input_ids_pd, use_cache=False)
+    paddle_logits = paddle_out.logits.astype("float32").numpy()
+
+    cur_ids = np.array([input_ids_list], dtype=np.int64)
+    paddle_gen_ids = []
+    with paddle.no_grad():
+        for step in range(_NUM_GEN_TOKENS):
+            input_tensor = paddle.to_tensor(cur_ids, dtype="int64")
+            out = paddle_model(input_ids=input_tensor, use_cache=False)
+            next_token = int(out.logits[0, -1].argmax().item())
+            paddle_gen_ids.append(next_token)
+            cur_ids = np.concatenate([cur_ids, [[next_token]]], axis=1)
+    print(f"[Diff-Paddle] generated tokens: {paddle_gen_ids}")
+    print(f"[Diff-Paddle] generated text: {repr(tokenizer.decode(paddle_gen_ids, skip_special_tokens=True))}")
+
+    np.savez(
+        result_path,
+        logits=paddle_logits,
+        gen_ids=np.array(paddle_gen_ids, dtype=np.int64),
+        input_ids=np.array(input_ids_list, dtype=np.int64),
+    )
+    print(f"[Diff-Paddle] Results saved to {result_path}")
+
+
 class TestMistral3DiffAlignment(unittest.TestCase):
     @slow
     @require_package("transformers", "torch")
     def test_diff_alignment(self):
-        import paddle
-        import torch
-        from transformers import (
-            Mistral3ForConditionalGeneration as TorchMistral3ForConditionalGeneration,
+        import subprocess
+        import tempfile
+
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        tmp_dir = os.path.join(project_root, "tmp")
+        os.makedirs(tmp_dir, exist_ok=True)
+        torch_result = os.path.join(tmp_dir, "torch_result.npz")
+        paddle_result = os.path.join(tmp_dir, "paddle_result.npz")
+
+        this_file = os.path.abspath(__file__)
+        python = os.sys.executable
+
+        # Phase 1: Torch inference in subprocess
+        print("\n[Diff] === Phase 1: PyTorch inference (subprocess) ===")
+        script = (
+            "import sys, os\n"
+            f"sys.path.insert(0, {os.path.abspath(os.path.join(os.path.dirname(this_file), '..', '..', '..'))!r})\n"
+            f"sys.path.insert(0, {os.path.dirname(this_file)!r})\n"
+            f"os.environ['PADDLEFORMERS_TESTING'] = '1'\n"
+            "os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')\n"
+            "import test_modeling as tm\n"
+            f"tm._run_torch_inference({torch_result!r})\n"
         )
+        result = subprocess.run([python, "-c", script], capture_output=True, text=True, timeout=600)
+        print(result.stdout)
+        if result.returncode != 0:
+            print(result.stderr)
+            self.fail(f"Torch inference subprocess failed (exit {result.returncode})")
 
-        from paddleformers.transformers import Mistral3Tokenizer
-
-        os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
-
-        hf_model_id = _MODEL_3B_HF_ID
-
-        tokenizer = Mistral3Tokenizer.from_pretrained(hf_model_id)
-        inputs = tokenizer(_PROMPT_DIFF, return_tensors="pt")
-        input_ids_pt = inputs["input_ids"]
-        input_ids_list = input_ids_pt[0].tolist()
-        print(f"\n[Diff] prompt: {repr(_PROMPT_DIFF)}")
-        print(f"[Diff] input_ids: {input_ids_list}, seq_len={len(input_ids_list)}")
-        print(f"[Diff] hf_model_id: {hf_model_id}")
-
-        torch.manual_seed(_SEED)
-        print("[Diff] Loading PyTorch model (float32, GPU)...")
-        torch_model = TorchMistral3ForConditionalGeneration.from_pretrained(
-            hf_model_id,
-            device_map="auto",
-            torch_dtype=torch.bfloat16,
-            attn_implementation="eager",
+        # Phase 2: Paddle inference in subprocess
+        print("\n[Diff] === Phase 2: Paddle inference (subprocess) ===")
+        script = (
+            "import sys, os\n"
+            f"sys.path.insert(0, {os.path.abspath(os.path.join(os.path.dirname(this_file), '..', '..', '..'))!r})\n"
+            f"sys.path.insert(0, {os.path.dirname(this_file)!r})\n"
+            f"os.environ['PADDLEFORMERS_TESTING'] = '1'\n"
+            "os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')\n"
+            "import test_modeling as tm\n"
+            f"tm._run_paddle_inference({paddle_result!r})\n"
         )
-        fp8_n = _dequant_fp8_torch_model(torch_model, torch.bfloat16)
-        print(f"[Diff] Dequantized {fp8_n} FP8 weights")
-        # bf16 logits max_diff ~0.015, upgrade to fp32 for comparison
-        torch_model = torch_model.to(torch.float32)
-        torch_model.eval()
+        result = subprocess.run([python, "-c", script], capture_output=True, text=True, timeout=600)
+        print(result.stdout)
+        if result.returncode != 0:
+            print(result.stderr)
+            self.fail(f"Paddle inference subprocess failed (exit {result.returncode})")
 
-        device = torch_model.device
-        input_ids_dev = input_ids_pt.to(device)
+        # Phase 3: Compare results
+        print("\n[Diff] === Phase 3: Compare results ===")
+        torch_data = np.load(torch_result)
+        paddle_data = np.load(paddle_result)
 
-        with torch.inference_mode():
-            torch_out = torch_model(input_ids=input_ids_dev, use_cache=False)
-        torch_logits = torch_out.logits.float().cpu().numpy()
+        torch_logits = torch_data["logits"]
+        paddle_logits = paddle_data["logits"]
+        torch_gen_ids = torch_data["gen_ids"].tolist()
+        paddle_gen_ids = paddle_data["gen_ids"].tolist()
 
-        with torch.inference_mode():
-            torch_gen = torch_model.generate(
-                input_ids=input_ids_dev,
-                max_new_tokens=_NUM_GEN_TOKENS,
-                do_sample=False,
-                temperature=None,
-                top_p=None,
-                use_cache=True,
-            )
-        torch_gen_ids = torch_gen[0, input_ids_pt.shape[1] :].cpu().tolist()
-        print(f"[Diff] PyTorch generated tokens: {torch_gen_ids}")
-        print(f"[Diff] PyTorch generated text: {repr(tokenizer.decode(torch_gen_ids, skip_special_tokens=True))}")
-
-        del torch_model
-        torch.cuda.empty_cache()
-
-        paddle.seed(_SEED)
-        print("[Diff] Loading Paddle model...")
-        paddle_model = _load_paddle_model_3b(dtype="float32")
-
-        input_ids_pd = paddle.to_tensor(np.array([input_ids_list], dtype=np.int64), dtype="int64")
-
-        with paddle.no_grad():
-            paddle_out = paddle_model(input_ids=input_ids_pd, use_cache=False)
-        paddle_logits = paddle_out.logits.astype("float32").numpy()
-
-        cur_ids = np.array([input_ids_list], dtype=np.int64)
-        paddle_gen_ids = []
-        with paddle.no_grad():
-            for step in range(_NUM_GEN_TOKENS):
-                input_tensor = paddle.to_tensor(cur_ids, dtype="int64")
-                out = paddle_model(input_ids=input_tensor, use_cache=False)
-                next_token = int(out.logits[0, -1].argmax().item())
-                paddle_gen_ids.append(next_token)
-                cur_ids = np.concatenate([cur_ids, [[next_token]]], axis=1)
-        print(f"[Diff] Paddle generated tokens: {paddle_gen_ids}")
-        print(f"[Diff] Paddle generated text: {repr(tokenizer.decode(paddle_gen_ids, skip_special_tokens=True))}")
+        print(f"[Diff] torch_logits shape: {torch_logits.shape}")
+        print(f"[Diff] paddle_logits shape: {paddle_logits.shape}")
 
         self.assertEqual(
             list(torch_logits.shape),
@@ -308,7 +389,7 @@ class TestMistral3PaddleInference(unittest.TestCase):
         os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
         paddle.seed(_SEED)
-        tokenizer = Mistral3Tokenizer.from_pretrained(_MODEL_3B_PADDLE_ID, download_hub="aistudio")
+        tokenizer = Mistral3Tokenizer.from_pretrained(_MODEL_3B_HF_ID, download_hub="modelscope")
 
         encoded = tokenizer(_PROMPT_INFERENCE, return_tensors=None)
         input_ids_list = encoded["input_ids"]
