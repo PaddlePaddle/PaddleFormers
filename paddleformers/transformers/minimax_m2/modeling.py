@@ -486,13 +486,13 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(num_experts):
-                    ep_weight1.append(f"{prefix}.mlp.experts.{expert_id}.up_gate_proj.weight")
-                    ep_weight2.append(f"{prefix}.mlp.experts.{expert_id}.down_proj.weight")
+                    ep_weight1.append(f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight")
+                    ep_weight2.append(f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight")
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 aoa_config["aoa_statements"] += [
-                    f"{group_gemm1} -> {prefix_offset}.mlp.grouped_gemm_experts.weight1, axis=0"
-                    f"{group_gemm2} -> {prefix_offset}.mlp.grouped_gemm_experts.weight2, axis=0"
+                    f"{group_gemm1} -> {prefix_offset}.mlp.grouped_gemm_experts.weight1, axis=0",
+                    f"{group_gemm2} -> {prefix_offset}.mlp.grouped_gemm_experts.weight2, axis=0",
                 ]
             else:
                 if config.get("fd_fallback", False):
@@ -504,8 +504,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     group1 = ",".join(ep_weight1)
                     group2 = ",".join(ep_weight2)
                     aoa_config["aoa_statements"] += [
-                        f"{group1} -> {prefix_offset}.mlp.experts.up_gate_proj, axis=0"
-                        f"{group2} -> {prefix_offset}.mlp.experts.down_proj, axis=0"
+                        f"{group1} -> {prefix_offset}.mlp.experts.up_gate_proj, axis=0",
+                        f"{group2} -> {prefix_offset}.mlp.experts.down_proj, axis=0",
                     ]
 
         return aoa_config
@@ -638,13 +638,13 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
-                    ep_weight1.append(f"{prefix}.mlp.experts.{expert_id}.up_gate_proj.weight")
-                    ep_weight2.append(f"{prefix}.mlp.experts.{expert_id}.down_proj.weight")
+                    ep_weight1.append(f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight")
+                    ep_weight2.append(f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight")
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 aoa_statements += [
-                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight1 -> {group_gemm1}, axis=0"
-                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight2 -> {group_gemm2}, axis=0"
+                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight1 -> {group_gemm1}, axis=0",
+                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight2 -> {group_gemm2}, axis=0",
                 ]
             else:
                 if config.get("fd_fallback", False):
@@ -656,8 +656,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     group1 = ",".join(ep_weight1)
                     group2 = ",".join(ep_weight2)
                     aoa_statements += [
-                        f"{prefix_offset}.mlp.experts.up_gate_proj -> {group1}, axis=0"
-                        f"{prefix_offset}.mlp.experts.down_proj -> {group2}, axis=0"
+                        f"{prefix_offset}.mlp.experts.up_gate_proj -> {group1}, axis=0",
+                        f"{prefix_offset}.mlp.experts.down_proj -> {group2}, axis=0",
                     ]
 
             if n_shared_experts > 0:
