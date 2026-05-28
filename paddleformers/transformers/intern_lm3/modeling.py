@@ -1,8 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright (c) The InternLM team and The HuggingFace Inc. team. All rights reserved.
-#
-# This code is based on transformers/src/transformers/models/llama/modeling_llama.py
-# and transformers/src/transformers/models/internlm3/modeling_internlm3.py
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,10 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-"""
-InternLM3 模型实现
-"""
 
 from typing import Callable, Optional
 
@@ -65,7 +57,6 @@ class InternLM3Attention(nn.Layer):
         self.num_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
 
-        # InternLM3 支持 head_dim 配置
         self.head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
 
         assert config.num_attention_heads % config.num_key_value_heads == 0, (
@@ -140,7 +131,6 @@ class InternLM3Attention(nn.Layer):
         key_states = self.k_proj(hidden_states).reshape(shape)
         value_states = self.v_proj(hidden_states).reshape(shape).transpose(1, 2)
         cos, sin = position_embeddings
-        # 尝试用paddle的ROPE优化速度
         if _triton_apply_rotary_pos_emb is not None and _triton_apply_rotary_pos_emb.is_available():
             cos_half = cos[0, :, : cos.shape[-1] // 2]  # [seq, dim/2]
             sin_half = sin[0, :, : sin.shape[-1] // 2]  # [seq, dim/2]

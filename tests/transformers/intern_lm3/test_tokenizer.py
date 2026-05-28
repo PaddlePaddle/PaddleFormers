@@ -1,5 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2020 The HuggingFace Team. All rights reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +17,6 @@ import unittest
 
 from paddleformers.transformers import InternLM3Tokenizer
 
-# 单测时只下载token，还能接受
 hf_model_path = "internlm/internlm3-8b-instruct"
 
 
@@ -52,7 +50,6 @@ class TestTokenizer(unittest.TestCase):
             self.skipTest("Model path not available")
 
         text = "hello world, this is a tokenizer test"
-        # 使用 encode 方法获取 token_ids，确保返回 list
         input_ids = self.tokenizer.encode(text)
         decode_text = self.tokenizer.decode(input_ids, skip_special_tokens=True)
         self.assertEqual(text, decode_text)
