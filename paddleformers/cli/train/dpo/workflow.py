@@ -252,16 +252,6 @@ def run_dpo(
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    if "VL" in model_args.stage and training_args.dataloader_num_workers > 0:
-        data_args.processor_use_fast = False
-        logger.warning_once(
-            f"Detected dataloader_num_workers={training_args.dataloader_num_workers} (>0). "
-            "Since the CPU version of the 'interpolate' operator is currently unsupported, "
-            "some models may use a fast image processor which can cause errors in dataloader workers. "
-            "Temporarily fallback to the slow image processor (`use_fast=False`) by default to avoid potential issues. "
-            "You can also explicitly set `processor_use_fast=False` or `dataloader_num_workers=0` to avoid this warning."
-        )
-
     processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
 
     logger.info("Loading model & tokenizer successfully !")
@@ -304,6 +294,9 @@ def run_dpo(
         model.print_trainable_parameters()
 
     logger.info("Start to create dataset")
+
+    type_map = {"bf16": "bfloat16", "fp16": "float16"}
+    compute_type = type_map.get(training_args.compute_type, "float32")
     dataset_config = {
         "tokenizer": tokenizer,
         "processor": processor,
@@ -322,7 +315,12 @@ def run_dpo(
         "encode_one_turn": data_args.encode_one_turn,
         "stage": model_args.stage,
         "template_backend": data_args.template_backend,
+        "dataset_type": data_args.dataset_type,
         "use_filtered_label_loss": model_config.use_filtered_label_loss,
+        "dtype": compute_type,
+        "binpacking": data_args.binpacking,
+        "packing_interval": data_args.packing_interval,
+        "truncation_strategy": data_args.truncation_strategy,
     }
 
     dataset_config.update(
@@ -452,7 +450,7 @@ def run_dpo(
     if training_args.do_train:
         train_result = trainer.train(resume_from_checkpoint=last_checkpoint)
 
-        if not training_args.autotuner_benchmark and not training_args.benchmark:
+        if not training_args.autotuner_benchmark:
             trainer.save_model(merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True)
             trainer.log_metrics("train", train_result.metrics)
             trainer.save_metrics("train", train_result.metrics)

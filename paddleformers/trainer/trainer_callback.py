@@ -21,6 +21,7 @@ Callbacks to use with the Trainer class and customize the training loop.
 import dataclasses
 import json
 import os
+import random
 import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
@@ -41,8 +42,19 @@ from ..utils.import_utils import is_paddlefleet_available
 # Conditionally import paddlefleet modules
 if is_paddlefleet_available():
     from paddlefleet.models.gpt import GPTModel
+    from paddlefleet.transformer.moe.moe_layer import MoELayer
+    from paddlefleet.transformer.moe.moe_router import StandardMoERouter
 else:
-    GPTModel = None  # Define a mock or None when not available
+
+    class GPTModel:
+        pass
+
+    class MoELayer:
+        pass
+
+    class StandardMoERouter:
+        pass
+
 
 from tqdm.auto import tqdm
 
@@ -129,6 +141,9 @@ class TrainerState:
         if self.log_history is None:
             self.log_history = []
 
+    def save(self, path):
+        paddle.save(self, path)
+
     def save_to_json(self, json_path: str):
         """Save the content of this instance in JSON format inside `json_path`."""
         json_string = json.dumps(dataclasses.asdict(self), indent=2, sort_keys=True) + "\n"
@@ -141,6 +156,12 @@ class TrainerState:
         with open(json_path, "r", encoding="utf-8") as f:
             text = f.read()
         return cls(**json.loads(text))
+
+    @classmethod
+    def load(cls, path):
+        """Load an instance from a file saved with `paddle.save`."""
+        state = paddle.load(path)
+        return state
 
 
 @dataclass
@@ -506,6 +527,8 @@ class DefaultFlowCallback(TrainerCallback):
         # End training
         if state.global_step >= state.max_steps:
             control.should_training_stop = True
+            if args.save_last_step:
+                control.should_save = True
 
         # Save hf
         if (
@@ -591,14 +614,13 @@ class PrinterCallback(TrainerCallback):
 
     def on_log(self, args, state, control, logs=None, **kwargs):
         _ = logs.pop("total_flos", None)
-        if state.is_local_process_zero:
-            if type(logs) is dict:
-                logger.info(", ".join(f"{k}: {v}" for k, v in logs.items()))
-                metrics_dumper = kwargs.get("metrics_dumper", None)
-                if metrics_dumper is not None:
-                    metrics_dumper.append(logs)
-            else:
-                logger.info(logs)
+        if type(logs) is dict:
+            logger.info(", ".join(f"{k}: {v}" for k, v in logs.items()))
+            metrics_dumper = kwargs.get("metrics_dumper", None)
+            if metrics_dumper is not None:
+                metrics_dumper.append(logs)
+        else:
+            logger.info(logs)
 
 
 class EarlyStoppingCallback(TrainerCallback):
@@ -697,14 +719,18 @@ class FP8QuantWeightCallback(TrainerCallback):
         optimizer = kwargs["optimizer"]
         global skip_count
 
-        if (not g_shard_bypass_dygraph_optimizer or skip_count == 0) and hasattr(model, "fp8_quant_weight"):
+        if (
+            (not g_shard_bypass_dygraph_optimizer or skip_count == 0)
+            and hasattr(model, "fp8_quant_weight")
+            and not args.sharding_parallel_size <= 1
+        ):
             self.moe_weights_name = []
             self.use_fp8 = True
-            if GPTModel is not None and isinstance(model, GPTModel):
+            if isinstance(model, GPTModel):
                 self.use_fp8 = model.use_fp8()
             if not self.use_fp8:
                 return
-            model.fp8_quant_weight(True, quant_transpose=True)
+            model.fp8_quant_weight(True, quant_transpose=False)
             optimizer.clear_param_storage("moe_expert")
             optimizer.clear_param_storage("rms_linear")
             optimizer.clear_param_storage("memory_attn")
@@ -732,7 +758,11 @@ class FP8QuantWeightCallback(TrainerCallback):
         optimizer = kwargs["optimizer"]
         global skip_count
 
-        if (not g_shard_bypass_dygraph_optimizer) and hasattr(model, "fp8_quant_weight"):
+        if (
+            (not g_shard_bypass_dygraph_optimizer)
+            and hasattr(model, "fp8_quant_weight")
+            and not args.sharding_parallel_size <= 1
+        ):
             for name in self.moe_weights_name:
                 if name in optimizer._master_weights:
                     reload(optimizer._master_weights[name])
@@ -749,15 +779,23 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
         self.use_mp = use_mp
 
     def on_optimizer_end(self, args, state, control, **kwargs):
+        # Skip bias update when freeze_training is enabled
+        if getattr(args, "freeze_training", False):
+            logger.warning("freeze_training is enabled! MoE e_score_correction_bias will NOT be updated.")
+            return
+
         model = kwargs["model"]
 
         biases = []
         usages = []
 
         def get_stat(layer):
-            if isinstance(layer, PretrainedMoEGate) and layer.topk_method == "noaux_tc":
-                biases.append(layer.e_score_correction_bias)
-                usages.append(layer.expert_usage)
+            if (
+                isinstance(layer, PretrainedMoEGate) or isinstance(layer, StandardMoERouter)
+            ) and layer.topk_method == "noaux_tc":
+                if hasattr(layer, "e_score_correction_bias") and layer.e_score_correction_bias is not None:
+                    biases.append(layer.e_score_correction_bias)
+                    usages.append(layer.expert_usage)
 
         model.apply(get_stat)
 
@@ -790,7 +828,11 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
         # print('on_optimizer_end update:', update.tolist())
 
         def update_bias(layer):
-            if isinstance(layer, PretrainedMoEGate) and layer.topk_method == "noaux_tc":
+            if (
+                isinstance(layer, PretrainedMoEGate) or isinstance(layer, StandardMoERouter)
+            ) and layer.topk_method == "noaux_tc":
+                if not hasattr(layer, "e_score_correction_bias") or layer.e_score_correction_bias is None:
+                    return
                 with paddle.no_grad():
                     if not layer.weight.stop_gradient:
                         biases.pop(0).add_(update_list.pop(0))
@@ -914,3 +956,18 @@ class InterleaveGateUpCallback(TrainerCallback):
         for name, param in self.model.state_dict().items():
             if "weight1" in name:
                 self.interleave_gate_up_proj(param)
+
+
+class GlobalRNGCallback(TrainerCallback):
+    """
+    此 hook 给组网插入正确的全局 随机数生成器
+    """
+
+    def on_step_end(self, args, state, control, model, **kwargs):
+        rng = random.Random(state.global_step)
+
+        def _set_global_rng(layer):
+            if isinstance(layer, MoELayer):
+                layer.rng = rng
+
+        model.apply(_set_global_rng)

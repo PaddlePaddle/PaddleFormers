@@ -377,8 +377,8 @@ class GenerationMixin(object):
         can_infer_attention_mask = is_pad_token_in_inputs_ids * is_pad_token_not_equal_to_eos_token_id
         attention_mask_from_padding = (inputs_tensor != pad_token_id).astype(paddle.get_default_dtype())
 
-        attention_mask = (
-            attention_mask_from_padding * can_infer_attention_mask + default_attention_mask * ~can_infer_attention_mask
+        attention_mask = attention_mask_from_padding * can_infer_attention_mask + default_attention_mask * (
+            1 - can_infer_attention_mask
         )
         return attention_mask
 
@@ -1086,6 +1086,7 @@ class GenerationMixin(object):
                 raise ValueError(
                     "`streamer` cannot be used with beam search (yet!). Make sure that `num_beams` is set to 1."
                 )
+            streamer.put(input_ids.cpu())
 
         pad_token_id = self.set_pad_token_id(pad_token_id, eos_token_id)
 

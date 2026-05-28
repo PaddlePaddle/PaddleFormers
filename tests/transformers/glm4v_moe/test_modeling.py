@@ -518,8 +518,10 @@ class Glm4vMoeIntegrationTest(unittest.TestCase):
                 ],
             }
         ]
-        self.video = load_video(self.video_url, video_backend="decord")[0][
-            :3, ::4, ::4
+        # load_video with paddlecodec returns [N, C, H, W]; take first 3 frames
+        # and spatially downsample H/W dims (dim 2 and 3), keeping all 3 channels
+        self.video = load_video(self.video_url, video_backend="paddlecodec")[0][
+            :3, :, ::4, ::4
         ]  # Only the first 3 frames for testing
 
     def test_inference_no_attention(self):

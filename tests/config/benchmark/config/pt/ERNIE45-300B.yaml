@@ -3,18 +3,18 @@ stage: ernie_pretrain
 
 # data
 dataset_type: pretrain
-input_dir: "1.0 /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/eb45_industrycorpus2_94k"
+input_dir: "1.0 /root/efficient_benchmark/dataset/eb45_industrycorpus2_94k/eb45_industrycorpus2_94k"
 split: "998,1,1"
 data_load_process_num: 40
-max_seq_len: 4096
-base_seq_length: 4096
+max_seq_len: 8192
+base_seq_length: 8192
 dataloader_num_workers: 8
 prefetch_factor: 32
 ignore_data_skip: 0
 
 # model
-model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/ERNIE-4.5-300B-A47B/
-tokenizer_name_or_path: examples/experiments/ernie_pretrain/ernie/src/tokenizers/tokenizer_model
+model_name_or_path: /root/efficient_benchmark/huggingface/ERNIE-4.5-300B-A47B/
+tokenizer_name_or_path: PaddleFormers/examples/experiments/ernie_pretrain/ernie/src/tokenizers/tokenizer_model
 moe_router_bias_update_rate: 0.001
 moe_with_send_router_loss: False
 moe_group: ep
@@ -58,7 +58,7 @@ scale_loss: 4096
 seed: 666
 use_train_part_sharding: 1
 pre_alloc_memory: 60
-offload_optim: True
+tensorwise_offload_optimizer: True
 pipeline_model_parallel_size: 8
 tensor_model_parallel_size: 1
 virtual_pipeline_model_parallel_size: 1
@@ -71,7 +71,6 @@ amp_master_grad: 1
 global_batch_size: 128
 
 # pipeline_parallel_config
-pp_delay_scale_loss: true
 overlap_p2p_comm: true
 best_unbalanced_scheduler: true
 
@@ -117,3 +116,6 @@ ernie_model_config:
         transpose_split_quant: true
 
     moe_gate: top2_fused
+
+moe_deep_gemm: false
+

@@ -1,9 +1,8 @@
-### data /root/paddlejob/gpfs/xuxinyi/fleet/glm45_fleet_pt/data_sft_64k/sftdata_60to62k_messages_100.jsonl
 train_dataset_type: messages
 eval_dataset_type: messages
-train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/data_sft_10w/sft_data_10w.jsonl
+train_dataset_path: /root/efficient_benchmark/dataset/data_sft_10w/sft_data_10w.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/data_sft_10w/sft_data_10w.jsonl
+eval_dataset_path: /root/efficient_benchmark/dataset/data_sft_10w/sft_data_10w.jsonl
 eval_dataset_prob: "1.0"
 
 max_seq_len: 131072
@@ -15,7 +14,7 @@ truncate_packing: false
 padding_free: true
 
 ### model
-model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/huggingface/GLM-4.5-Air
+model_name_or_path: /root/efficient_benchmark/huggingface/GLM-4.5-Air
 _attn_implementation: flashmask
 
 ### finetuning
@@ -62,13 +61,10 @@ recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
 
-# using_sonic_moe: true
-
-moe_grouped_gemm: true
+moe_expert_fusion: true
 moe_deep_gemm: false
 
 apply_rope_fusion: true
-fuse_rms_norm: true
 moe_router_force_load_balancing: false
 
 split_param: true
@@ -76,13 +72,10 @@ sharding: stage1
 stage1_overlap: true
 
 # pp
-pp_delay_scale_loss: true
 overlap_p2p_comm: true
 variable_seq_lengths: true
 best_unbalanced_scheduler: true
 pp_release_grads: true
-
-tp_delay_scale_loss: True
 
 amp_master_grad: true
 bf16: true
@@ -93,8 +86,6 @@ save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
 continue_training: true
 dataloader_shuffle: false
-
-benchmark: true
 
 dataloader_num_workers: 24
 prefetch_factor: 24

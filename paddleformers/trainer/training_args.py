@@ -31,6 +31,7 @@ import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet, in_auto_parallel_align_mode
 
+from ..utils.config_check import _raise_config_conflict
 from ..utils.env import PREFIX_CHECKPOINT_DIR
 from ..utils.import_utils import is_paddlefleet_available
 from ..utils.log import logger
@@ -46,7 +47,7 @@ from .trainer_utils import (
 )
 
 # Conditionally import paddlefleet modules
-if paddle.device.is_compiled_with_cuda() and is_paddlefleet_available():
+if is_paddlefleet_available():
     from paddlefleet.parallel_state import get_tensor_model_parallel_group
     from paddlefleet.training import initialize_fleet
 else:
@@ -407,7 +408,9 @@ class TrainingArguments:
             Defaults to True.
         save_hf_steps (`int`, *optional*, defaults to -1):
             Number of updates steps before two huggingface checkpoint saves if `save_strategy="steps"`.
-        hybrid_parallel_expert_grad_scale (float, optional, defaults to None)(
+        save_hf_total_limit(`int`, *optional*):
+            If a value is passed, will limit the total amount of huggingface checkpoints. Deletes the older huggingface checkpoints in `output_dir`.
+        hybrid_parallel_expert_grad_scale (float, optional, defaults to None):
             Scaling factor for expert gradients when Expert Parallel is enabled.
 
             When Expert Parallel is enabled, the number of tokens processed by each MoE expert
@@ -424,7 +427,7 @@ class TrainingArguments:
         )
         enable_auto_parallel (`bool`, *optional*, defaults to `False`):
             whether to run distributed training in auto parallel mode.
-        use_intermediate_api (`bool`, *optional*, defaults to `True`):
+        use_intermediate_api (`bool`, *optional*, defaults to `False`):
             whether to use auto_parallel intermediate API if `enable_auto_parallel=True`.
 
         use_cache (`bool`, *optional*, defaults to `False`):
@@ -439,6 +442,11 @@ class TrainingArguments:
             If set to True, replicas will be stored locally on each node/machine.
             Defaults to False.
 
+        online_merge_ema (`bool`, *optional*, defaults to `True`):
+            Whether to enable online merge EMA during training. Default is `True`.
+
+        flex_ckpt_comm_method (str, None):
+            Communication method used in FlexCheckpoint reshard. One of "broadcast" and "parallel_broadcast". Default is None.
     """
 
     output_dir: str = field(
@@ -505,8 +513,27 @@ class TrainingArguments:
     lr_end: float = field(default=1e-7, metadata={"help": "The end LR in the polynomial scheduler."})
     power: float = field(default=1.0, metadata={"help": "The power factor in the polynomial scheduler."})
     min_lr: float = field(default=0.0, metadata={"help": "The minimum learning rate in cosine scheduler."})
-    moe_correction_bias_lr: float = field(
-        default=0.0, metadata={"help": "Learning rate for MoE (Mixture of Experts) correction bias adjustment."}
+    moe_router_bias_update_rate: float = field(
+        default=0.0,
+        metadata={
+            "help": """The expert bias is updated based on the number of assigned tokens to each expert
+        in a global batch, where the bias is increased for the experts with less assigned tokens
+        and decreased for the experts with more assigned tokens."""
+        },
+    )
+    freeze_training: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "When set to True, the training process will be frozen: "
+                "1) Model parameters will not be updated (backward and optimizer step are skipped). "
+                "2) Optimizer state remains unchanged. "
+                "3) Learning rate scheduler is not updated. "
+                "4) MoE e_score_correction_bias is not updated. "
+                "This is useful for debugging, profiling, or running inference-only passes through the training loop. "
+                "Note: The learning rate will also be effectively set to 0 when this flag is enabled."
+            )
+        },
     )
 
     log_on_each_node: bool = field(
@@ -664,6 +691,19 @@ class TrainingArguments:
         },
     )
 
+    dsa_indexer_loss_coeff: float = field(
+        default=0.01,
+        metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
+    )
+
+    sharding_comm_group_call_opt: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Whether to enable the group-call communication optimization for sharding broadcast and reduce operations. This only takes effect when using the Muon optimizer."
+            )
+        },
+    )
     sharding_offload_opt_buffersize_GB: int = field(
         default=-1,
         metadata={
@@ -942,7 +982,7 @@ class TrainingArguments:
     device: Optional[str] = field(default="gpu", metadata={"help": "select cpu, gpu, xpu, npu devices."})
 
     disable_tqdm: Optional[bool] = field(
-        default=None, metadata={"help": "Whether or not to disable the tqdm progress bars."}
+        default=True, metadata={"help": "Whether or not to disable the tqdm progress bars."}
     )
 
     remove_unused_columns: Optional[bool] = field(
@@ -972,6 +1012,14 @@ class TrainingArguments:
     optim: str = field(
         default="adamw",
         metadata={"help": "The optimizer to use."},
+    )
+    muon_exclude_patterns: Optional[List[str]] = field(
+        default_factory=lambda: ["embed", "bias", "lm_head", "mlp.gate"],
+        metadata={
+            "help": "List of substrings to exclude from Muon orthogonal updates. "
+            "Parameters whose name contains any of these substrings will use AdamW instead. "
+            "Default: ['embed', 'bias', 'gptlm_head_0.w_0', 'mlp.gate]"
+        },
     )
     use_lowprecision_moment: bool = field(
         default=False,
@@ -1097,10 +1145,6 @@ class TrainingArguments:
         default=None,
         metadata={"help": "The intervals to skip, pass start global step and end global step at each interval"},
     )
-    offload_optim: Optional[bool] = field(
-        default=False,
-        metadata={"help": "Offload optimizer after optimizer.step()"},
-    )
     tensorwise_offload_optimizer: Optional[bool] = field(
         default=False,
         metadata={
@@ -1207,6 +1251,11 @@ class TrainingArguments:
         metadata={"help": "pre allocate memory size GB"},
     )
     num_nextn_predict_layers: int = field(default=0, metadata={"help": "Number of nextn predict layers."})
+    train_mtp_only: bool = field(default=False, metadata={"help": "Whether to train MTP only."})
+    mtp_distillation_loss: bool = field(default=False, metadata={"help": "Whether to use distillation MTP loss."})
+    mtp_num_layers: int = field(
+        default=0, metadata={"help": "Whether to use Autoregressive MTP Training, activate if > 1."}
+    )
     profile: bool = field(default=False, metadata={"help": "Enable nsys profiling."})
     profile_step_start: int = field(default=10, metadata={"help": "Step to start nsys profiling."})
     profile_step_end: int = field(default=12, metadata={"help": "Step to end nsys profiling."})
@@ -1249,13 +1298,37 @@ class TrainingArguments:
     )
 
     save_hf_steps: int = field(default=-1, metadata={"help": "Save huggingface checkpoint every X updates steps."})
+    save_hf_total_limit: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Limit the total amount of huggingface checkpoints. "
+                "Deletes the older huggingface checkpoints in the output_dir. Default is unlimited checkpoints"
+            )
+        },
+    )
+
+    save_last_step: Optional[bool] = field(
+        default=False,
+        metadata={"help": "If True, saves the last step of the training process."},
+    )
+
+    save_hf_memory_growth_threshold: int = field(
+        default=8,
+        metadata={
+            "help": (
+                "Memory growth threshold (in GB) for HFFormatFullParamSaver when saving HF-format checkpoints. "
+                "Controls the maximum memory growth allowed during full-param checkpoint assembly. Default is 8 (GB)."
+            )
+        },
+    )
 
     hybrid_parallel_expert_grad_scale: Optional[float] = field(
         default=None,
         metadata={"help": ("Scaling factor for expert gradients.")},
     )
     use_intermediate_api: bool = field(
-        default=True,
+        default=False,
         metadata={"help": "whether to use auto_parallel intermediate API."},
     )
     offload_fp8_expert_master_weight: bool = field(
@@ -1348,14 +1421,8 @@ class TrainingArguments:
             "help": "Support fused_linear_param_grad_add in ColumnParallelLinear (requires cuda >= 11.6). Only works when mp_async_allreduce is True. Can accelerate model parallel further."
         },
     )
-    tp_delay_scale_loss: bool = field(
-        default=False,
-        metadata={
-            "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
-        },
-    )
     pp_delay_scale_loss: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "Accumulate gradients until optimizer step, all gradients divided by accumulate step (instead of dividing accumulate step on loss directly). Also applies to inner pipeline accumulate step in relevant scenarios."
         },
@@ -1528,6 +1595,85 @@ class TrainingArguments:
             "help": "Enable parameter sharding to distribute model parameters across devices, reducing memory footprint per GPU (ZeRO-style optimization)."
         },
     )
+    muon_qkv_update_mode: str = field(
+        default="split_head",
+        metadata={
+            "help": (
+                "Controls how QKV weight matrices are orthogonalised in the Muon optimizer. "
+                "Options: "
+                "'split_head' (default) — each Q/K/V head is orthogonalised independently (interleaved layout); "
+                "'split_qkv' — Q, K, V projections each treated as one whole matrix for Newton-Schulz; "
+                "'fused_qkv' — the entire QKV matrix is treated as one matrix. "
+                "Only used when optim=muon."
+            )
+        },
+    )
+    muon_ffn_split: bool = field(
+        default=True,
+        metadata={
+            "help": (
+                "Whether to split FFN gate_up weights for separate orthogonalisation. "
+                "If True, gate and up projections are orthogonalised independently. "
+                "Only used when optim=muon."
+            )
+        },
+    )
+    muon_extra_scale_factor: float = field(
+        default=0.2,
+        metadata={
+            "help": (
+                "Additional scaling factor for Muon orthogonal updates. "
+                "The final scale = dimension_scale * muon_extra_scale_factor. "
+                "Default: 0.2. Only used when optim=muon."
+            )
+        },
+    )
+    muon_momentum: float = field(
+        default=0.95,
+        metadata={"help": ("Momentum coefficient for Muon optimizer. " "Default: 0.95. Only used when optim=muon.")},
+    )
+    muon_version: int = field(
+        default=3,
+        metadata={
+            "help": (
+                "Scaling-function version for Muon optimizer (1, 2, or 3). "
+                "Version 1: scale = max(1, dout/din)^0.5. "
+                "Version 2: scale = (dout/din)^0.5. "
+                "Version 3: scale = max(dout, din)^0.5. "
+                "Default: 3. Only used when optim=muon."
+            )
+        },
+    )
+    muon_ns_steps: int = field(
+        default=5,
+        metadata={
+            "help": (
+                "Number of Newton-Schulz iteration steps for Muon optimizer. " "Default: 5. Only used when optim=muon."
+            )
+        },
+    )
+    muon_ns_coeff_type: str = field(
+        default="quintic",
+        metadata={
+            "help": (
+                "Coefficient type for Newton-Schulz iteration in Muon optimizer. "
+                "Options: 'simple', 'quintic', 'polar_express', 'aol', 'deepseekv4', 'custom'. "
+                "Ignored when muon_ns_coeffs is provided. "
+                "Default: 'quintic'. Only used when optim=muon."
+            )
+        },
+    )
+    muon_ns_coeffs: Optional[List[List[float]]] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Custom Newton-Schulz coefficient list for Muon optimizer. "
+                "Each element is a list/tuple of [a, b, c]. "
+                "Example: [[3.4445, -4.7750, 2.0315], [2.5, -2.0, 0.8]]. "
+                "Default: None. Only used when optim=muon, muon_ns_coeff_type='custom'."
+            )
+        },
+    )
     sd_sharding_comm_overlap: bool = field(
         default=False,
         metadata={
@@ -1552,16 +1698,35 @@ class TrainingArguments:
         },
     )
 
+    dsa_indexer_loss_coeff: float = field(
+        default=0.01,
+        metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
+    )
+
+    online_merge_ema: bool = field(
+        default=True, metadata={"help": "Whether to perform online merge of the EMA parameters during training. "}
+    )
+
+    flex_ckpt_comm_method: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Communication method for FlexCheckpoint reshard. Options: 'auto', 'broadcast', 'parallel_broadcast'. Default: 'auto'."
+        },
+    )
+
     def __post_init__(self):
         world_size = paddle.distributed.get_world_size()
         if in_auto_parallel_align_mode():
             # self.max_grad_norm = 0.0
             # The current auto_hybrid_pp has aligned the handling of ClipGradByGlobalNorm with the original dygraph semi-auto parallel and dynamic manual-parallel modes and can correctly handle grad_clip, so it is no longer necessary to set max_grad_norm=0.0.
             if self.max_grad_norm != 0.0:
-                warnings.warn(
-                    "max_grad_norm is not 0.0,We will execute ClipGradByGlobalNorm,if you want to disable it,please set max_grad_norm=0.0"
+                _raise_config_conflict(
+                    name="max_grad_norm",
+                    current=self.max_grad_norm,
+                    expected=0.0,
+                    reason="auto_parallel_align_mode is enabled",
+                    extra="disable auto_parallel_align_mode",
                 )
-            self.max_grad_norm = 0.0
             os.environ["FLAGS_max_inplace_grad_add"] = "65536"
             os.environ["FLAGS_embedding_deterministic"] = "1"
             os.environ["FLAGS_cudnn_deterministic"] = "1"
@@ -1583,9 +1748,7 @@ class TrainingArguments:
                 ), f"Invalid fa_version: {self.fa_version}. Supported versions are: 2 on non-CUDA devices."
         else:
             if paddle.base.core.is_compiled_with_cuda():
-                is_sm100 = (
-                    paddle_device.get_device_capability()[0] == 10 and paddle_device.get_device_capability()[1] == 0
-                )
+                is_sm100 = paddle_device.get_device_capability()[0] == 10
                 is_sm90 = (
                     paddle_device.get_device_capability()[0] == 9 and paddle_device.get_device_capability()[1] == 0
                 )
@@ -1638,7 +1801,7 @@ class TrainingArguments:
             self.output_signal_dir = os.path.expanduser(self.output_signal_dir)
 
         if self.disable_tqdm is None:
-            self.disable_tqdm = False  # logger.getEffectiveLevel() > logging.WARN
+            self.disable_tqdm = True
 
         # XPU Device Data Loading Strategy:
         # - XPU does not support concurrent access from multiple threads on the same device.
@@ -1662,10 +1825,13 @@ class TrainingArguments:
             self.do_eval = True
 
         if self.do_eval and self.evaluation_strategy == IntervalStrategy.NO:
-            logger.warning(
-                "evaluation_strategy reset to IntervalStrategy.STEPS for do_eval is True. you can also set evaluation_strategy='epoch'."
+            _raise_config_conflict(
+                name="evaluation_strategy",
+                current=self.evaluation_strategy,
+                expected=IntervalStrategy.STEPS,
+                reason="do_eval=True",
+                extra="set evaluation_strategy='epoch' or disable do_eval",
             )
-            self.evaluation_strategy = IntervalStrategy.STEPS
 
         # eval_steps has to be defined and non-zero, fallbacks to logging_steps if the latter is non-zero
         if self.evaluation_strategy == IntervalStrategy.STEPS and (self.eval_steps is None or self.eval_steps == 0):
@@ -1754,8 +1920,16 @@ class TrainingArguments:
 
         if self.amp_master_grad:
             if not (self.bf16 or self.fp16):
-                logger.warning("set amp_master_grad to false since amp is disabled.")
-                self.amp_master_grad = False
+                _raise_config_conflict(
+                    name="amp_master_grad",
+                    current=self.amp_master_grad,
+                    expected=False,
+                    reason="amp is disabled (bf16=False and fp16=False)",
+                    extra="enable fp16 or bf16",
+                )
+
+        if self.optim == OptimizerNames.MUON:
+            assert self.use_hybrid_parallel, "Muon optimizer only supports use_hybrid_parallel=True"
 
         # use_hybrid_parallel
         if self.use_hybrid_parallel:
@@ -1832,7 +2006,7 @@ class TrainingArguments:
                         )
 
                     dygraph_pp_configs = {
-                        "delay_scale_loss": self.pp_delay_scale_loss,
+                        "delay_scale_loss": True,  # TODO[Waynezee]: remove this config in the future
                         "dp_comm_overlap": enable_dp_comm_overlap,
                         "sharding_comm_overlap": self.enable_sharding_comm_overlap,
                         "enable_timer": self.timer,
@@ -1863,12 +2037,13 @@ class TrainingArguments:
 
                     if self.do_eval:
                         if self.per_device_train_batch_size != self.per_device_eval_batch_size:
-                            logger.warning(
-                                "In pipeline model, the evaluation also shares same setting with training. "
-                                "We will enforce that per_device_eval_batch_size=per_device_train_batch_size."
+                            _raise_config_conflict(
+                                name="per_device_eval_batch_size",
+                                current=self.per_device_eval_batch_size,
+                                expected=self.per_device_train_batch_size,
+                                reason="pipeline model with do_eval=True",
+                                extra="align per_device_eval_batch_size with per_device_train_batch_size",
                             )
-
-                            self.per_device_eval_batch_size = self.per_device_train_batch_size
 
                 if self.tensor_model_parallel_size > 1:
                     strategy.tensor_parallel_configs = {"tensor_init_seed": self.seed}
@@ -2091,9 +2266,19 @@ class TrainingArguments:
                                 self.sharding_offload_opt_buffersize_GB
                             )
 
+                        if self.sharding_comm_group_call_opt:
+                            assert (
+                                self.optim == OptimizerNames.MUON
+                            ), "sharding_comm_group_call_opt only supports Muon optimizer."
+                            strategy.hybrid_configs["sharding_configs"].comm_group_call_opt = True
+
                         if self.split_param:
                             strategy.hybrid_configs["sharding_configs"].split_param = True
                             assert self.amp_master_grad, "Currently sharding stage1 v2 only support amp_master_grad"
+
+                        # Muon optimizer requires split_param for MuonSharding
+                        if self.optim == OptimizerNames.MUON:
+                            assert self.split_param, "Muon optimizer requires split_param=True for MuonSharding"
 
                         if self.sd_release_grads:
                             strategy.hybrid_configs["sharding_configs"].release_gradients = True
@@ -2152,6 +2337,11 @@ class TrainingArguments:
                 if self.nccl_comm_group_config is not None:
                     strategy = init_nccl_config(self.nccl_comm_group_config, strategy)
 
+                # Enable MuonShardingOptimizer automatically when optim=muon
+                if self.optim == OptimizerNames.MUON:
+                    strategy.use_muon_sharding = True
+                    logger.info("MuonShardingOptimizer enabled for Muon optimizer")
+
                 fleet.init(is_collective=True, strategy=strategy)
 
                 # In PaddleFleet, we should use the following code to initialize.
@@ -2170,7 +2360,6 @@ class TrainingArguments:
         elif self.enable_auto_parallel:
 
             assert paddle.distributed.get_world_size() > 1, "Auto parallel mode needs world size > 1."
-            assert self.use_intermediate_api, "Auto parallel is only supported with intermediate API now."
             assert (
                 not self.to_static
             ), "Auto parallel only support dyanmic parallel now. Static parallel will be supported later."
@@ -2277,11 +2466,13 @@ class TrainingArguments:
 
                 if self.do_eval:
                     if self.per_device_train_batch_size != self.per_device_eval_batch_size:
-                        logger.warning(
-                            "In pipeline model, the evaluation also shares same setting with training. "
-                            "We will enforce that per_device_eval_batch_size=per_device_train_batch_size."
+                        _raise_config_conflict(
+                            name="per_device_eval_batch_size",
+                            current=self.per_device_eval_batch_size,
+                            expected=self.per_device_train_batch_size,
+                            reason="pipeline model with do_eval=True (auto_parallel)",
+                            extra="align per_device_eval_batch_size with per_device_train_batch_size",
                         )
-                        self.per_device_eval_batch_size = self.per_device_train_batch_size
 
             elif self.gradient_accumulation_steps > 1:
                 gradient_merge = strategy.gradient_merge
@@ -2676,6 +2867,12 @@ class TrainingArguments:
                 self.context_parallel_size = -1
                 self.expert_model_parallel_size = -1
                 self.expert_tensor_model_parallel_size = -1
+
+        # NOTE(Waynezee): when moe_expert_fusion is true and sharding_parallel_size = 1,  checkpoint will fail to save
+        if hasattr(self, "moe_expert_fusion") and self.moe_expert_fusion and self.world_size > 1:
+            assert (
+                self.sharding_parallel_size > 1
+            ), "Checkpoint will fail to save when moe_expert_fusion is true and sharding_parallel_size = 1, please set moe_expert_fusion to false"
 
         if self.hybrid_parallel_topo_order is None:
             self.hybrid_parallel_topo_order = "sharding_first"

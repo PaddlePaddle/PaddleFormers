@@ -476,42 +476,6 @@ def require_paddle_non_multi_gpu(test_case):
     return unittest.skipUnless(paddle.device.cuda.device_count() < 2, "test requires 0 or 1 GPU")(test_case)
 
 
-def require_paddle_at_least_2_gpu(test_case):
-    """
-    Decorator marking a test that requires >= 2 GPU setup (in PaddlePaddle).
-    """
-    if not is_paddle_available():
-        return unittest.skip("test requires PaddlePaddle")(test_case)
-
-    import paddle
-
-    return unittest.skipUnless(paddle.device.cuda.device_count() >= 2, "test requires at least 2 GPUs")(test_case)
-
-
-def require_paddle_at_least_8_gpu(test_case):
-    """
-    Decorator marking a test that requires >= 8 GPU setup (in PaddlePaddle).
-    """
-    if not is_paddle_available():
-        return unittest.skip("test requires PaddlePaddle")(test_case)
-
-    import paddle
-
-    return unittest.skipUnless(paddle.device.cuda.device_count() >= 8, "test requires at least 8 GPUs")(test_case)
-
-
-def require_paddle_up_to_2_gpus(test_case):
-    """
-    Decorator marking a test that requires 0 or 1 or 2 GPU setup (in PaddlePaddle).
-    """
-    if not is_paddle_available():
-        return unittest.skip("test requires PaddlePaddle")(test_case)
-
-    import paddle
-
-    return unittest.skipUnless(paddle.device.cuda.device_count() < 3, "test requires 0 or 1 or 2 GPUs")(test_case)
-
-
 def require_gpu(min_gpus: int = 1):
     def actual_decorator(func):
         gpu_count = paddle.device.cuda.device_count()

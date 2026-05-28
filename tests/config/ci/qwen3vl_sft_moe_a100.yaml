@@ -12,7 +12,7 @@ template_backend: custom
 template: qwen3_vl
 ### model
 model_name_or_path: /root/.cache/qwen3vl/tiny-random-qwen3vlmoev2
-attn_impl: flashmask
+_attn_implementation: flashmask
 ### finetuning
 # base
 stage: VL-SFT
@@ -42,18 +42,18 @@ router_aux_loss_coef: 0.001
 # parallel
 tensor_model_parallel_size: 4
 pipeline_model_parallel_size: 1
-sequence_parallel: true
+sequence_parallel: false
 sharding: stage1
 # performance
 recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
-fuse_attention_qkv: true
-fuse_attention_ffn: true
-moe_grouped_gemm: false
+# fuse_attention_qkv: true
+# fuse_attention_ffn: true
+moe_expert_fusion: false
 moe_deep_gemm: false
 apply_rope_fusion: False
-fuse_rms_norm: true
+# fuse_rms_norm: true
 moe_token_dispatcher_type: alltoall
 # moe_router_force_load_balancing: true
 
@@ -64,14 +64,12 @@ sharding: stage1
 # fuse_optimizer_states: true
 
 # pp
-pp_delay_scale_loss: true
 overlap_p2p_comm: true
 variable_seq_lengths: true
 best_unbalanced_scheduler: true
 # pp_release_grads: true
 
 # tp
-tp_delay_scale_loss: True
 tp_sync_param: true
 sync_grad: true
 amp_master_grad: true
@@ -83,7 +81,6 @@ save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
 continue_training: True
 dataloader_shuffle: false
-benchmark: false
 report_to: none
 dataloader_num_workers: 4
 prefetch_factor: 8
@@ -93,3 +90,4 @@ prefetch_factor: 8
 # num_hidden_layers: 38
 freeze_config: freeze_vision freeze_aligner
 tensorwise_offload_optimizer: true
+high_precision_rope: true

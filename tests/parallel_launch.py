@@ -21,16 +21,12 @@ import sys
 import time
 import unittest
 
-import paddle
 from paddle.distributed.utils.launch_utils import (
     TrainerProc,
     find_free_ports,
     get_cluster,
-    terminate_local_procs,
     watch_local_trainers,
 )
-
-from paddleformers.utils.downloader import get_path_from_url_with_filelock
 
 logger = logging.getLogger("root")
 
@@ -166,101 +162,6 @@ def start_local_trainers(
         procs.append(tp)
 
     return procs
-
-
-class TestMultipleGpus(unittest.TestCase):
-    def setUp(self):
-        self.selected_gpus = get_gpus("0,1")
-        self.num_nodes = 1
-
-    def run_1gpu(self, *args, **kwargs):
-        self.selected_gpus = get_gpus("0")
-        self.run_n_gpu(*args, **kwargs)
-
-    def run_2gpu(self, *args, **kwargs):
-        self.selected_gpus = get_gpus("0,1")
-        self.run_n_gpu(*args, **kwargs)
-
-    def run_4gpu(self, *args, **kwargs):
-        self.selected_gpus = get_gpus("0,1,2,3")
-        self.run_n_gpu(*args, **kwargs)
-
-    def run_8gpu(self, *args, **kwargs):
-        self.selected_gpus = get_gpus("0,1,2,3,4,5,6,7")
-        self.run_n_gpu(*args, **kwargs)
-
-    def run_n1c2(self, *args, **kwargs):
-        self.selected_gpus = get_gpus("0,1")
-        self.num_nodes = 1
-        self.run_n_gpu(*args, **kwargs)
-
-    def run_n1c8(self, *args, **kwargs):
-        self.selected_gpus = get_gpus("0,1,2,3,4,5,6,7")
-        self.num_nodes = 1
-        self.run_n_gpu(*args, **kwargs)
-
-    def run_n2c4(self, *args, **kwargs):
-        self.selected_gpus = get_gpus("0,1,2,3,4,5,6,7")
-        self.num_nodes = 2
-        self.run_n_gpu(*args, **kwargs)
-
-    def run_n4c2(self, *args, **kwargs):
-        self.num_nodes = 4
-        self.selected_gpus = get_gpus("0,1,2,3,4,5,6,7")
-        self.run_n_gpu(*args, **kwargs)
-
-    def run_n8c1(self, *args, **kwargs):
-        self.num_nodes = 8
-        self.selected_gpus = get_gpus("0,1,2,3,4,5,6,7")
-        self.run_n_gpu(*args, **kwargs)
-
-    def run_n_gpu(
-        self,
-        target_file_name,
-        log_dir="./log",
-        **kwargs,
-    ):
-        if not paddle.framework.core.is_compiled_with_cuda() or paddle.framework.core.get_cuda_device_count() == 0:
-            return
-
-        # selected_gpus = get_gpus("0,1")
-        cluster = None
-        pod = None
-
-        cluster, pod = get_cluster_from_args(self.selected_gpus)
-        script_args = []
-        for k, v in kwargs.items():
-            script_args.append("--" + str(k))
-            script_args.append(str(v))
-
-        procs = start_local_trainers(
-            cluster,
-            pod,
-            # allocator_strategy=allocator_strategy,
-            log_dir=log_dir,
-            training_script=target_file_name,
-            training_script_args=script_args,
-            num_nodes=self.num_nodes,
-        )
-
-        try:
-            while True:
-                alive = watch_local_trainers(procs, cluster.trainers_endpoints())
-
-                if not alive:
-                    print("Local procs complete, POD info:{}".format(pod))
-                    break
-                time.sleep(0.5)
-        finally:
-            terminate_local_procs(procs)
-
-    def prepare_inputs_data(self, input_dir, files):
-        os.makedirs(input_dir, exist_ok=True)
-        for file in files:
-            file_name = file.split("/")[-1]
-            file_path = os.path.join(input_dir, file_name)
-            if not os.path.exists(file_path):
-                get_path_from_url_with_filelock(file, root_dir=input_dir)
 
 
 class TestMultipleWithGloo(unittest.TestCase):
