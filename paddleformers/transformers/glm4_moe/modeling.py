@@ -948,7 +948,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
                 ]
 
-            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
+            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(num_experts):
@@ -957,8 +957,8 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 aoa_config["aoa_statements"] += [
-                    f"{group_gemm1} -> {prefix_offset}.mlp.grouped_gemm_experts.weight1, axis=0"
-                    f"{group_gemm2} -> {prefix_offset}.mlp.grouped_gemm_experts.weight2, axis=0"
+                    f"{group_gemm1} -> {prefix_offset}.mlp.grouped_gemm_experts.weight1, axis=0",
+                    f"{group_gemm2} -> {prefix_offset}.mlp.grouped_gemm_experts.weight2, axis=0",
                 ]
             else:
                 if config.get("fd_fallback", False):
@@ -970,8 +970,8 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     group1 = ",".join(ep_weight1)
                     group2 = ",".join(ep_weight2)
                     aoa_config["aoa_statements"] += [
-                        f"{group1} -> {prefix_offset}.mlp.experts.gate_up_proj, axis=0"
-                        f"{group2} -> {prefix_offset}.mlp.experts.down_proj, axis=0"
+                        f"{group1} -> {prefix_offset}.mlp.experts.gate_up_proj, axis=0",
+                        f"{group2} -> {prefix_offset}.mlp.experts.down_proj, axis=0",
                     ]
 
         return aoa_config
@@ -1073,7 +1073,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 # for mtp
                 prefix_offset += ".transformer_layer"
 
-            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
+            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
@@ -1082,8 +1082,8 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 aoa_statements += [
-                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight1 -> {group_gemm1}, axis=0"
-                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight2 -> {group_gemm2}, axis=0"
+                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight1 -> {group_gemm1}, axis=0",
+                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight2 -> {group_gemm2}, axis=0",
                 ]
             else:
                 if config.get("fd_fallback", False):
@@ -1095,8 +1095,8 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     group1 = ",".join(ep_weight1)
                     group2 = ",".join(ep_weight2)
                     aoa_statements += [
-                        f"{prefix_offset}.mlp.experts.gate_up_proj -> {group1}, axis=0"
-                        f"{prefix_offset}.mlp.experts.down_proj -> {group2}, axis=0"
+                        f"{prefix_offset}.mlp.experts.gate_up_proj -> {group1}, axis=0",
+                        f"{prefix_offset}.mlp.experts.down_proj -> {group2}, axis=0",
                     ]
 
             aoa_statements += [
