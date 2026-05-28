@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   stale:
-    runs-on: ubuntu-24.04
+    runs-on: ernie-cpu
 
     permissions:
       issues: write

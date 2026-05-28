@@ -32,7 +32,7 @@ except ImportError:
 from paddle.distributed.fleet.meta_parallel.zero_bubble_utils import WeightGradStore
 
 try:
-    from paddlefleet.ops import deep_gemm
+    from paddlefleet_ops import deep_gemm
 except:
     try:
         from paddle.incubate.fp8 import deep_gemm
