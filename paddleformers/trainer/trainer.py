@@ -983,6 +983,21 @@ class Trainer:
         if resume_from_checkpoint is None:
             return
 
+        if self.args.zcc_save_ema_coef is None:
+            return
+
+        # Path A: main process completed EMA reshard, pass via shared memory
+        if hasattr(self, "_ema_reshard_result") and self._ema_reshard_result is not None:
+            logger.info("[ZCC] EMA reshard done in main process, passing to workers via shared memory")
+            # Pass tensor_refs to manager so it can keep them alive until workers consume
+            tensor_refs = getattr(self, "_ema_shared_tensor_refs", None)
+            self.zcc_manager.set_ema_shared_memory(self._ema_reshard_result, tensor_refs=tensor_refs)
+            # Clear local refs (manager now owns them)
+            self._ema_shared_tensor_refs = None
+            self._ema_reshard_result = None
+            return
+
+        # Path B: no reshard needed, subprocess loads from file (existing logic)
         ema_state_path = self._get_ema_state_path(resume_from_checkpoint)
 
         if not os.path.exists(ema_state_path):
@@ -1046,16 +1061,34 @@ class Trainer:
         logger.info("Zero cost checkpoint manager created successfully.")
 
     def add_non_zcc_ema_callback(self, resume_from_checkpoint, ema_state_assembler=None):
+        # If main process already completed EMA reshard, skip file-based loading in EMABuffer
+        ema_reshard_done = hasattr(self, "_ema_reshard_result") and self._ema_reshard_result is not None
+        effective_resume = None if ema_reshard_done else resume_from_checkpoint
 
         non_zcc_ema_callback = NonZCCEMACallback.create_nonzcc_callback(
             args=self.args,
-            resume_from_checkpoint=resume_from_checkpoint,
+            resume_from_checkpoint=effective_resume,
             sharding_io=self.sharding_io,
             model=self.model,
             optimizer=self.optimizer,
             hcg=self.hcg,
             ema_state_assembler=ema_state_assembler,
         )
+
+        # If main process already completed EMA reshard, fill buffer from shared memory
+        if ema_reshard_done:
+            logger.info("[EMA Reshard] Filling NonZCC EMA buffer from shared memory...")
+            buffer = non_zcc_ema_callback.buffer
+            for unified_key, info in self._ema_reshard_result.items():
+                meta = info["shared_meta"]
+                shape = info["shape"]
+                shared_lod = paddle.base.core.LoDTensor._new_shared_filename(meta)
+                tensor = paddle.to_tensor(shared_lod).reshape(shape)
+                if unified_key.endswith(".w_0"):
+                    buffer.master_weights[unified_key] = tensor.pin_memory()
+                else:
+                    buffer.model_params[unified_key] = tensor.pin_memory()
+            logger.info("[EMA Reshard] NonZCC EMA buffer filled from shared memory")
 
         self.add_callback(non_zcc_ema_callback)
 
@@ -1195,6 +1228,26 @@ class Trainer:
 
         if not self.args.sharded_model_from_ema:
             init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
+            # ===== EMA State Resharding (right after optimizer init) =====
+            self._ema_reshard_result = None
+            ema_state_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC)
+            if (
+                os.path.exists(ema_state_path)
+                and self.args.zcc_save_ema_coef is not None
+                and self._is_fc_format_ema(ema_state_path)
+            ):
+                same_strategy, err_msg = DistInfoCollectorValidator(self.args, self.hcg).check_same_strategy(
+                    resume_from_checkpoint
+                )
+
+                if not same_strategy:
+                    logger.info(f"[EMA Reshard] Parallelism strategy changed ({err_msg}), performing EMA reshard...")
+                    self._ema_reshard_result = self._load_ema_with_reshard(
+                        ema_state_path, flex_ckpt_comm_method, worker_groups
+                    )
+                    logger.info("[EMA Reshard] EMA reshard completed, results stored for subprocess")
+                else:
+                    logger.info("[EMA Reshard] Same strategy, subprocess will load EMA directly from file")
 
             optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
             opt_states = {}
@@ -1381,6 +1434,73 @@ class Trainer:
                             paddle.assign(
                                 paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key]
                             )
+
+    def _is_fc_format_ema(self, ema_state_path):
+        """Check if EMA state is in FC format by looking for .metadata file."""
+        if not os.path.isdir(ema_state_path):
+            return False
+        return any(f.endswith(".metadata") for f in os.listdir(ema_state_path))
+
+    def _load_ema_with_reshard(self, ema_state_path, comm_method, worker_groups):
+        """Use FlexCheckpoint to reshard EMA state, return shared memory metas for subprocess."""
+        model_sharded_state_dict = self.model.sharded_state_dict()
+        opt_sharded = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+        ema_target = {}
+
+        # master_weights portion: use .w_0 keys directly (same as optimizer master_weights key format)
+        for k, sw in opt_sharded.items():
+            if k.endswith(".w_0"):
+                local_tensor = paddle.zeros(sw.local_tensor.shape, dtype=paddle.float32)
+                ema_target[k] = ShardedWeight(
+                    key=sw.key,
+                    local_tensor=local_tensor,
+                    local_shape=sw.local_shape,
+                    global_shape=sw.global_shape,
+                    global_offset=sw.global_offset,
+                    is_flattened=sw.is_flattened,
+                    flattened_range=sw.flattened_range,
+                )
+
+        # model_params portion: float32 items from model sharded state dict (no suffix change)
+        for k, sw in model_sharded_state_dict.items():
+            if sw.local_tensor.dtype == paddle.float32:
+                local_tensor = paddle.zeros(sw.local_shape, dtype=paddle.float32)
+                ema_target[k] = ShardedWeight(
+                    key=sw.key,
+                    local_tensor=local_tensor,
+                    local_shape=sw.local_shape,
+                    global_shape=sw.global_shape,
+                    global_offset=sw.global_offset,
+                    is_flattened=getattr(sw, "is_flattened", False),
+                    flattened_range=getattr(sw, "flattened_range", None),
+                )
+
+        logger.info(f"[EMA Reshard] Loading {len(ema_target)} EMA tensors via dist.load_state_dict...")
+        dist.load_state_dict(
+            ema_target,
+            ema_state_path,
+            comm_method=comm_method,
+            worker_groups=worker_groups,
+        )
+        logger.info("[EMA Reshard] dist.load_state_dict completed")
+
+        # Move to CPU shared memory for subprocess consumption
+        ema_shared_result = {}
+        self._ema_shared_tensor_refs = {}
+
+        for k, sw in ema_target.items():
+            cpu_tensor = sw.local_tensor.cpu().flatten()
+            shared_meta = cpu_tensor.value().get_tensor()._share_filename(False)
+            ema_shared_result[k] = {
+                "shared_meta": shared_meta,
+                "shape": list(sw.local_tensor.shape),
+            }
+            # Keep reference to prevent GC before subprocess reads the data
+            self._ema_shared_tensor_refs[k] = cpu_tensor
+            sw.local_tensor._clear()
+
+        logger.info(f"[EMA Reshard] Created shared memory for {len(ema_shared_result)} EMA tensors")
+        return ema_shared_result
 
     def prepare_resume_from_checkpoint(self, args, resume_from_checkpoint):
         logger.info(f"Starting training from resume_from_checkpoint : {resume_from_checkpoint}")
@@ -1646,6 +1766,13 @@ class Trainer:
 
         elif self.args.zcc_save_ema_coef is not None:
             self.add_non_zcc_ema_callback(resume_from_checkpoint)
+
+        # Note: _ema_shared_tensor_refs is released by ZeroCostCheckpointManager
+        # after workers successfully consume the shared memory in update_zcc_workers.
+        # For non-ZCC path, release here since the buffer already copied the data.
+        if not self.args.enable_zero_cost_checkpoint and hasattr(self, "_ema_shared_tensor_refs"):
+            del self._ema_shared_tensor_refs
+            self._ema_reshard_result = None
 
         if self.args.using_sonic_moe:
             callback = InterleaveGateUpCallback(self.model, resume_from_checkpoint, self.args.output_dir)
