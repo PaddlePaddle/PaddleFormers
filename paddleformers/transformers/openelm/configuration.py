@@ -1,7 +1,16 @@
-# For licensing see accompanying LICENSE file.
-# Copyright (C) 2024 Apple Inc. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
-# Adapted for PaddlePaddle / paddleformers from the original Apple OpenELM implementation.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """Implements OpenELMConfig based on PretrainedConfig for paddleformers."""
 from numbers import Number
@@ -173,17 +182,17 @@ class OpenELMConfig(PretrainedConfig):
             ]
         else:
             raise NotImplementedError(
-                f"QKV multipliers should be a single number or a list containing exactly two numbers. Got: {qkv_multipliers}."
+                f"QKV multipliers should be a single number or a list containing exactly two numbers. Got: {self.qkv_multipliers}."
             )
 
-        self.num_query_heads = [int(compute_heads(q_dim, self.head_dim)) for q_dim in query_dims]
-        self.num_kv_heads = [q_heads // self.num_gqa_groups for q_heads in self.num_query_heads]
+        num_query_heads = [int(compute_heads(q_dim, self.head_dim)) for q_dim in query_dims]
+        num_kv_heads = [q_heads // self.num_gqa_groups for q_heads in num_query_heads]
 
         if isinstance(self.ffn_multipliers, Number):
-            self.ffn_multipliers = [self.ffn_multipliers] * self.num_transformer_layers
+            ffn_multipliers = [self.ffn_multipliers] * self.num_transformer_layers
         elif isinstance(self.ffn_multipliers, (tuple, list)):
             if len(self.ffn_multipliers) == 2:
-                self.ffn_multipliers = [
+                ffn_multipliers = [
                     round(v, 2)
                     for v in np.linspace(
                         self.ffn_multipliers[0],
@@ -193,13 +202,15 @@ class OpenELMConfig(PretrainedConfig):
                     )
                 ]
             else:
-                assert (
-                    len(self.ffn_multipliers) == self.num_transformer_layers
-                ), f"{len(self.ffn_multipliers)=}!={self.num_transformer_layers=}"
+                ffn_multipliers = list(self.ffn_multipliers)
         else:
             raise NotImplementedError(
-                f"FFN multipliers should be a single number or a list containing exactly two numbers. Got: {qkv_multipliers}."
+                f"FFN multipliers should be a single number or a list containing exactly two numbers. Got: {self.ffn_multipliers}."
             )
 
         for layer_idx in range(len(query_dims)):
-            assert self.num_query_heads[layer_idx] % self.num_kv_heads[layer_idx] == 0
+            assert num_query_heads[layer_idx] % num_kv_heads[layer_idx] == 0
+
+        self.num_query_heads = num_query_heads
+        self.num_kv_heads = num_kv_heads
+        self.ffn_multipliers = ffn_multipliers

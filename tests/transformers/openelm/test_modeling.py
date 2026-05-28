@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,11 +30,8 @@ _TOKENIZER_ID = "PaddleNLP/Llama-2-7b"
 _PROMPT_DIFF = "Hello, how are you today?"
 _PROMPT_QUESTION = "What is the capital of China?"
 _SEED = 42
-# 最大对比生成的前10个token
 _NUM_GEN_TOKENS = 10
-# logits最大diff 阈值
 _DIFF_THRESHOLD = 1e-2
-# 小型单元测试案例
 SMALL_CONFIG = {
     "vocab_size": 1000,
     "max_context_length": 128,
@@ -70,7 +67,6 @@ class TestOpenELMModel(unittest.TestCase):
         self.model.eval()
 
     def test_model_from_config(self):
-        """测试从配置创建模型"""
         from paddleformers.transformers import OpenELMConfig, OpenELMModel
 
         config = OpenELMConfig(**SMALL_CONFIG)
@@ -203,7 +199,6 @@ class TestOpenELMForCausalLM(unittest.TestCase):
 
     def test_causal_lm_forward_with_labels(self):
         original_device = paddle.get_device()
-        # 强制cpu，方便处理数据
         paddle.set_device("cpu")
         try:
             from paddleformers.transformers import OpenELMConfig, OpenELMForCausalLM
@@ -416,7 +411,7 @@ class TestOpenELMSaveLoad(unittest.TestCase):
 
         self.assertTrue(
             paddle.allclose(out_before.logits, out_after.logits),
-            "保存后重新加载的模型输出不一致",
+            "Model output inconsistent after save/load",
         )
 
 
@@ -462,22 +457,22 @@ class TestOpenELMPaddleInference(unittest.TestCase):
         full_text = tokenizer.decode(input_ids_list + gen_ids, skip_special_tokens=True)
 
         print("=" * 60)
-        print(f"[Paddle Inference] 生成文本: {repr(gen_text)}")
-        print(f"[Paddle Inference] 完整文本: {repr(full_text)}")
+        print(f"[Paddle Inference] Generated text: {repr(gen_text)}")
+        print(f"[Paddle Inference] Full text: {repr(full_text)}")
         print("=" * 60)
 
-        self.assertGreater(len(gen_ids), 0, "模型没有生成任何 token")
-        self.assertGreater(len(gen_text.strip()), 0, "模型生成的文本为空")
+        self.assertGreater(len(gen_ids), 0, "Model generated no tokens")
+        self.assertGreater(len(gen_text.strip()), 0, "Model generated empty text")
 
         self.assertIn(
             "beijing",
             full_text.lower(),
-            "模型输出应包含 beijing 信息",
+            "Model output should contain beijing",
         )
 
         printable_chars = sum(1 for c in gen_text if c.isprintable() or c.isspace())
         printable_ratio = printable_chars / len(gen_text) if len(gen_text) > 0 else 0
-        self.assertGreater(printable_ratio, 0.5, "输出包含过多不可打印字符，可能是乱码")
+        self.assertGreater(printable_ratio, 0.5, "Output contains too many unprintable characters")
 
 
 class TestOpenELMDiffAlignment(unittest.TestCase):
@@ -491,15 +486,16 @@ class TestOpenELMDiffAlignment(unittest.TestCase):
         import torch
         from huggingface_hub import hf_hub_download
         from safetensors.torch import load_file
-        from transformers.dynamic_module_utils import get_class_from_dynamic_module
 
         from paddleformers.transformers import OpenELMForCausalLM, OpenELMTokenizer
 
         paddle.set_device("gpu")
 
-        # openelm 没有完全收录在transformers 主线，加上测试框架对 transformers的特殊处理，这里手动加载了。
+        # Clear transformers modules to ensure fresh load
         for mod_name in [m for m in list(sys.modules) if m == "transformers" or m.startswith("transformers.")]:
             del sys.modules[mod_name]
+
+        from transformers.dynamic_module_utils import get_class_from_dynamic_module
 
         TorchOpenELMConfig = get_class_from_dynamic_module("configuration_openelm.OpenELMConfig", _MODEL_HF_ID)
         TorchOpenELMForCausalLM = get_class_from_dynamic_module("modeling_openelm.OpenELMForCausalLM", _MODEL_HF_ID)
@@ -510,12 +506,27 @@ class TestOpenELMDiffAlignment(unittest.TestCase):
         with open(config_path) as f:
             config_dict = json.load(f)
 
-        config = TorchOpenELMConfig(**config_dict)
-        if not hasattr(config, "use_cache"):
-            config.use_cache = True
+        # Workaround: HF __post_init__ misses super() call and has a broken assert on int
+        _o = TorchOpenELMConfig.__post_init__
+        _p = getattr(TorchOpenELMConfig.__bases__[0], '__post_init__', None)
+
+        def _fix(self, **kw):
+            if _p:
+                try: _p(self, **kw)
+                except Exception: pass
+            try: _o(self, **kw)
+            except TypeError as e:
+                if "not subscriptable" not in str(e): raise
+
+        TorchOpenELMConfig.__post_init__ = _fix
+        torch_config = TorchOpenELMConfig(**config_dict)
+        TorchOpenELMConfig.__post_init__ = _o
+
+        if not hasattr(torch_config, "use_cache"):
+            torch_config.use_cache = True
 
         torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        torch_model = TorchOpenELMForCausalLM(config)
+        torch_model = TorchOpenELMForCausalLM(torch_config)
         state_dict = load_file(safetensors_path)
         torch_model.load_state_dict(state_dict, strict=False)
         torch_model = torch_model.float().to(torch_device)
@@ -544,8 +555,8 @@ class TestOpenELMDiffAlignment(unittest.TestCase):
                 next_token = out.logits[0, -1].argmax().item()
                 torch_gen_ids.append(next_token)
                 cur_torch = torch.cat([cur_torch, torch.tensor([[next_token]], device=torch_device)], dim=1)
-        print(f"[Diff] PyTorch 生成 tokens: {torch_gen_ids}")
-        print(f"[Diff] PyTorch 生成文本: {repr(tokenizer.decode(torch_gen_ids, skip_special_tokens=True))}")
+        print(f"[Diff] PyTorch generated tokens: {torch_gen_ids}")
+        print(f"[Diff] PyTorch generated text: {repr(tokenizer.decode(torch_gen_ids, skip_special_tokens=True))}")
 
         del torch_model
         torch.cuda.empty_cache()
@@ -577,13 +588,13 @@ class TestOpenELMDiffAlignment(unittest.TestCase):
                 paddle_gen_ids.append(next_token)
                 cur_ids = np.concatenate([cur_ids, [[next_token]]], axis=1)
 
-        print(f"[Diff] Paddle 生成 tokens: {paddle_gen_ids}")
-        print(f"[Diff] Paddle 生成文本: {repr(tokenizer.decode(paddle_gen_ids, skip_special_tokens=True))}")
+        print(f"[Diff] Paddle generated tokens: {paddle_gen_ids}")
+        print(f"[Diff] Paddle generated text: {repr(tokenizer.decode(paddle_gen_ids, skip_special_tokens=True))}")
 
         self.assertEqual(
             list(torch_logits.shape),
             list(paddle_logits.shape),
-            f"logits shape 不一致: torch={torch_logits.shape}, paddle={paddle_logits.shape}",
+            f"logits shape mismatch: torch={torch_logits.shape}, paddle={paddle_logits.shape}",
         )
 
         diff = np.abs(torch_logits - paddle_logits)
@@ -605,7 +616,7 @@ class TestOpenELMDiffAlignment(unittest.TestCase):
         )
 
         n = min(len(torch_gen_ids), len(paddle_gen_ids), _NUM_GEN_TOKENS)
-        print(f"\n[Diff] Token 对比 (前 {n} 个):")
+        print(f"\n[Diff] Token comparison (first {n} tokens):")
         print(f"  {'Step':>4}  {'Torch':>10}  {'Paddle':>10}  {'Status':>6}")
         print("  " + "-" * 42)
         for i in range(n):
@@ -615,7 +626,7 @@ class TestOpenELMDiffAlignment(unittest.TestCase):
         self.assertEqual(
             torch_gen_ids[:n],
             paddle_gen_ids[:n],
-            f"前 {n} 个生成的 token 不一致",
+            f"First {n} generated tokens mismatch",
         )
 
 
