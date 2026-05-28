@@ -288,7 +288,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 slice_config[f"{prefix}.self_attn.kv_b_proj.weight"] = (
                     mla_slice_fn,
                     {
-                        "head_num": num_attention_head,
+                        # For GQA, kv_b_proj has num_key_value_heads, not num_attention_heads.
+                        "head_num": num_key_value_heads,
                         "axis": 1,
                         "head_split_sizes": [config.qk_nope_head_dim, config.v_head_dim],
                     },
