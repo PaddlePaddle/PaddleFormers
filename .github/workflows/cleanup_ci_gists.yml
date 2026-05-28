@@ -50,8 +50,19 @@ jobs:
                   f"https://api.github.com/gists?per_page=100&page={page}",
                   headers=headers
               )
-              gists = resp.json()
-              if not gists:
+
+              # 修复：检查响应状态和类型
+              if resp.status_code != 200:
+                  print(f"Error: API returned {resp.status_code}: {resp.text}")
+                  break
+
+              try:
+                  gists = resp.json()
+              except Exception as e:
+                  print(f"Error parsing JSON: {e}")
+                  break
+
+              if not isinstance(gists, list) or not gists:
                   break
 
               for g in gists:
