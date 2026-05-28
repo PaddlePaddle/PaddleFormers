@@ -69,6 +69,8 @@ install_requirements() {
         python -m pip install paddlefleet_ops-0.3.0.dev20260527+0c3a4f84-cp312-cp312-linux_x86_64.whl -i https://pypi.org/simple
         python -m pip uninstall paddlepaddle-gpu -y
         #paddle
+        pip list 2>/dev/null | grep nvidia | grep -v "^-" | awk '{print $1}' | grep -v "^$" | xargs -r pip uninstall -y
+        pip list | grep -i nvidia
         wget -q https://xly-devops.bj.bcebos.com/gushiwei/cuda132/paddlepaddle_gpu-3.4.0.post20260527%2B8b49e407ce7-cp312-cp312-linux_x86_64.whl
         python -m pip install paddlepaddle_gpu-3.4.0.post20260527+8b49e407ce7-cp312-cp312-linux_x86_64.whl -i https://pypi.org/simple 
         #formers
