@@ -225,9 +225,11 @@ class TestGenMtpAttnMaskStartendRowIndices(unittest.TestCase):
 # gen_mtp_layer_mask
 # ---------------------------------------------------------------------------
 #
-# all_token_ids=[1,2,EOS,4,5,6], ids_mtp=[5,6], ids_ori=[1,2,3,4]
-# Layer 0: mtp_ids=[2,3,4,5] → EOS@1 → mask[1]=0
-# Layer 1: mtp_ids=[3,4,5,6] → EOS@0 → mask[0]=0
+# all_token_ids=[1,2,EOS,4,5,6], ids_input=all[:-1]=[1,2,EOS,4,5]
+# ids_ori=ids_input[:-2]=[1,2,EOS], ids_mtp=ids_input[-2:]=[4,5]
+# Layer 0: mtp_ids=concat(ids_ori[1:], ids_mtp[:1])=[2,EOS,4] → EOS@1 → mask[1]=0
+# Layer 1: mtp_ids=concat(ids_ori[2:], ids_mtp[:2])=[EOS,4,5] → EOS@0 → mask[0]=0
+# padding area (seq_len=5 to max_seq_len=8) is all ones
 # ---------------------------------------------------------------------------
 
 
@@ -259,6 +261,50 @@ class TestGenMtpLayerMask(unittest.TestCase):
         result = self._call(EOS)
         for k in range(MTP_DEPTH):
             np.testing.assert_array_equal(result[k, TOTAL_LEN:], 1)
+
+
+# ---------------------------------------------------------------------------
+# gen_mtp_layer_mask — 3 sequences, depth=3
+# ---------------------------------------------------------------------------
+#
+# seq1=[1,2,EOS], seq2=[4,EOS], seq3=[6,7,8]  (EOS=99)
+# all_token_ids=[1,2,99,4,99,6,7,8], ids_input=all[:-1]=[1,2,99,4,99,6,7]
+# ids_ori=ids_input[:-3]=[1,2,99,4], ids_mtp=ids_input[-3:]=[99,6,7]
+# Layer 0: mtp_ids=concat(ids_ori[1:], ids_mtp[:1])=[2,99,4,99] → EOS@[1,3]
+# Layer 1: mtp_ids=concat(ids_ori[2:], ids_mtp[:2])=[99,4,99,6] → EOS@[0,2]
+# Layer 2: mtp_ids=concat(ids_ori[3:], ids_mtp[:3])=[4,99,6,7]  → EOS@[1]
+# ---------------------------------------------------------------------------
+
+
+class TestGenMtpLayerMaskDepth3(unittest.TestCase):
+    """Test with 3 packed sequences and mtp_depth=3."""
+
+    BATCH_3SEQ = [[1, 2, 99], [4, 99], [6, 7, 8]]
+    EOS_3SEQ = 99
+    MTP_DEPTH_3 = 3
+    MAX_SEQ_LEN_3 = 10
+
+    EXPECTED = np.array(
+        [
+            [1, 0, 1, 0, 1, 1, 1, 1, 1, 1],
+            [0, 1, 0, 1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 1, 1, 1, 1, 1, 1, 1, 1],
+        ],
+        dtype=np.int32,
+    )
+
+    def test_full_output(self):
+        result = gen_mtp_layer_mask(
+            self.BATCH_3SEQ, self.MAX_SEQ_LEN_3, self.MTP_DEPTH_3, self.EOS_3SEQ
+        )
+        np.testing.assert_array_equal(result, self.EXPECTED)
+
+    def test_shape_and_dtype(self):
+        result = gen_mtp_layer_mask(
+            self.BATCH_3SEQ, self.MAX_SEQ_LEN_3, self.MTP_DEPTH_3, self.EOS_3SEQ
+        )
+        self.assertEqual(result.shape, (3, 10))
+        self.assertEqual(result.dtype, np.int32)
 
 
 if __name__ == "__main__":

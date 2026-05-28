@@ -553,7 +553,7 @@ def collate_fn(
 
             return_list[-1].append(
                 gen_mtp_layer_mask(
-                    original_position_ids,
+                    token_ids,
                     max_seq_len,
                     training_args.num_nextn_predict_layers,
                     tokenizer.eos_token_id,
@@ -982,8 +982,13 @@ def gen_mtp_layer_mask(
 ) -> np.ndarray:
     """Generate MTP per-layer hidden inputs mask.
 
+    For each MTP layer, constructs the shifted input_ids (aligned with model's
+    MTPmmLayerPipe.forward) and zeros out positions where EOS appears, so that
+    hidden states at EOS boundaries are masked.
+
     Args:
-        batch_token_ids: List of token ID sequences.
+        batch_token_ids: List of token ID sequences (already concatenated as
+            a single-element list, e.g. [[id0, id1, ...]]).
         max_seq_len: Padded sequence length, already extended by mtp_depth.
         mtp_depth: Number of MTP prediction layers D.
         eos_token_id: If provided, zero out positions where EOS appears in shifted input.
@@ -993,11 +998,22 @@ def gen_mtp_layer_mask(
     """
     if eos_token_id is None:
         return np.ones((mtp_depth, max_seq_len), dtype=np.int32)
+
     all_token_ids = np.concatenate([np.array(ids, dtype=np.int32) for ids in batch_token_ids])
-    result = []
+    ids_input = all_token_ids[:-1]
+    seq_len = len(ids_input)
+    ids_mtp = ids_input[-mtp_depth:]
+    ids_ori = ids_input[:-mtp_depth]
+
+    mtp_hidden_inputs_mask_all = []
     for mtp_idx in range(mtp_depth):
-        mask = np.ones(max_seq_len, dtype=np.int32)
-        shifted = all_token_ids[mtp_idx + 1 :]
-        mask[np.where(shifted == eos_token_id)[0]] = 0
-        result.append(mask)
-    return np.stack(result, axis=0)
+        mtp_ids_input_ids = np.concatenate([ids_ori[(mtp_idx + 1):], ids_mtp[:(mtp_idx + 1)]])
+        mask = np.ones((1, seq_len), dtype=np.int32)
+        eos_positions = np.where(mtp_ids_input_ids[:seq_len] == eos_token_id)[0]
+        mask[0, eos_positions] = 0
+        if seq_len < max_seq_len:
+            padding = np.ones((1, max_seq_len - seq_len), dtype=np.int32)
+            mask = np.concatenate([mask, padding], axis=1)
+        mtp_hidden_inputs_mask_all.append(mask)
+
+    return np.concatenate(mtp_hidden_inputs_mask_all, axis=0)
