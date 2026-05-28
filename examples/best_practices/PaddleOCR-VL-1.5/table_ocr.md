@@ -464,7 +464,7 @@ load_checkpoint_format: "flex_checkpoint"
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
-paddleformers-cli train examples/best_practices/PaddleOCR-VL-1.5/paddleocr-vl_full_16k_table_config.yaml \
+paddleformers-cli train examples/best_practices/PaddleOCR-VL-1.5/paddleocr-vl-v15_full_16k_table_config.yaml \
                         model_name_or_path=PaddlePaddle/PaddleOCR-VL-1.5 \
                         train_dataset_path=./complex_table/complex_table_train.jsonl \
                         eval_dataset_path=./complex_table/complex_table_val.jsonl \
@@ -495,7 +495,7 @@ visualdl --logdir ./PaddleOCR-VL-1.5-SFT-Table/visualdl_logs/ --port 8084
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
-paddleformers-cli train examples/best_practices/PaddleOCR-VL-1.5/paddleocr-vl_lora_16k_table_config.yaml \
+paddleformers-cli train examples/best_practices/PaddleOCR-VL-1.5/paddleocr-vl-v15_lora_16k_table_config.yaml \
                         model_name_or_path=PaddlePaddle/PaddleOCR-VL-1.5 \
                         train_dataset_path=./complex_table/complex_table_train.jsonl \
                         eval_dataset_path=./complex_table/complex_table_val.jsonl \

@@ -27,6 +27,7 @@ from typing import Optional, Union
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
+from paddle.distributed.fleet.meta_parallel import LayerSpec
 from paddle.distributed.fleet.utils import recompute
 from paddlefleet import parallel_state, tensor_parallel
 from paddlefleet.fusions.fused_bias_dropout import get_bias_dropout_add
@@ -34,7 +35,6 @@ from paddlefleet.models.common.vision_layer.vision_layer import VisionLayer
 from paddlefleet.models.multimodal.llava_model import LLaVAModel as MCoreLLaVAModel
 from paddlefleet.packed_seq_params import PackedSeqParams
 from paddlefleet.process_groups_config import ProcessGroupCollection
-from paddlefleet.spec_utils import LayerSpec
 from paddlefleet.tensor_parallel.layers import ColumnParallelLinear, RowParallelLinear
 from paddlefleet.transformer.attention import SelfAttention, SelfAttentionSublayersSpec
 from paddlefleet.transformer.dot_product_attention import DotProductAttention
@@ -379,14 +379,14 @@ class Qwen3VLTextProvider(GPTModelProvider):
     rms_norm_eps: float = 1e-6
     rotary_base: float = 1000000.0
     position_embedding_type: str = "rope"
+    bias_activation_fusion: bool = True
     use_qk_norm: bool = True
     specific_layer: type = Qwen3VLTextTransformerLayer
     max_sequence_length: int = 262144
     multimodal_embedding: bool = False
     _save_to_hf: bool = False
     use_fused_linear_cross_entropy: bool = True
-    high_precision_rope: bool = True
-    moe_grouped_gemm: bool = True
+    moe_expert_fusion: bool = True
 
     n_shared_experts: int = 0
     transform_rules = {
@@ -438,7 +438,6 @@ class Qwen3VLVisionProvider(TransformerConfig):
     img_w: int = 336
     add_class_token: bool = False
     class_token_len: int = 1
-    high_precision_rope: bool = True
     # _save_to_hf: bool = False
     # use_fused_linear_cross_entropy: bool = True
     # fuse_linear: bool = True
@@ -517,6 +516,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
         inference_context=None,
         packed_seq_params: PackedSeqParams | None = None,
         sequence_len_offset: paddle.Tensor | None = None,
+        attn_mask_startend_row_indices: paddle.Tensor | None = None,
         *,
         inference_params=None,
     ):
@@ -577,6 +577,7 @@ class Qwen3VLVisionTransformerBlock(TransformerBlock):
                 input_dict = {
                     "hidden_states": hidden_states,
                     "attention_mask": attention_mask,
+                    "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
                     "context": context,
                     "rotary_pos_emb": rotary_pos_emb,
                     "rotary_pos_cos": rotary_pos_cos,
@@ -648,124 +649,156 @@ class Qwen3VLVisionModel(VisionLayer):
             post_process=True,
         )
 
-    def rot_pos_emb(self, grid_thw):
+    def _build_token_image_mapping(self, grid_thw):
+        """Build token-to-image mapping, shared by rot_pos_emb and fast_pos_embed_interpolate"""
+        heights = grid_thw[:, 1]
+        widths = grid_thw[:, 2]
+        frames = grid_thw[:, 0]
+
+        num_tokens = frames * heights * widths  # [N]
+
+        total_tokens = num_tokens.sum().item()  # 1 D2H
+        max_hw = paddle.max(paddle.maximum(heights, widths)).item()  # 1 D2H
+
+        # token-to-image mapping: image_id[j] = i, where cu_tokens[i] <= j < cu_tokens[i+1]
+        cu_tokens = paddle.concat([paddle.zeros([1], dtype="int64"), num_tokens.cumsum(0)])
+        global_idx = paddle.arange(total_tokens, dtype="int64")
+        image_id = (global_idx.unsqueeze(-1) >= cu_tokens[:-1].unsqueeze(0)).astype("int64").sum(-1) - 1
+
+        local_idx = global_idx - cu_tokens[image_id]
+
+        # frame-local index
+        token_hw = (heights * widths)[image_id]
+        frame_local_idx = local_idx % token_hw
+
+        return image_id, frame_local_idx, total_tokens, max_hw
+
+    def rot_pos_emb(self, grid_thw, image_id=None, frame_local_idx=None, total_tokens=None, max_hw=None):
         m = self.spatial_merge_size
-        grid_thw_list = grid_thw.tolist()
+        widths = grid_thw[:, 2]
+        merged_w = widths // m
 
-        max_hw = max(max(h, w) for _, h, w in grid_thw_list)
-        freq_table = self.rotary_pos_emb(max_hw)  # [max_hw, dim//2]
+        if image_id is None:
+            image_id, frame_local_idx, total_tokens, max_hw = self._build_token_image_mapping(grid_thw)
 
-        total_tokens = sum(int(t * h * w) for t, h, w in grid_thw_list)
-        pos_ids = paddle.empty([total_tokens, 2], dtype="int64")
+        freq_table = self.rotary_pos_emb(max_hw)
 
-        offset = 0
-        for num_frames, height, width in grid_thw_list:
-            num_frames, height, width = int(num_frames), int(height), int(width)
-            merged_h, merged_w = height // m, width // m
+        token_mw = merged_w[image_id]  # [total_tokens]
 
-            block_rows = paddle.arange(merged_h)
-            block_cols = paddle.arange(merged_w)
-            intra_row = paddle.arange(m)
-            intra_col = paddle.arange(m)
+        # Decompose linear index to coordinates: layout [merged_h, merged_w, m, m]
+        mm = m * m
+        mw_mm = token_mw * mm
+        block_row = frame_local_idx // mw_mm
+        r1 = frame_local_idx % mw_mm
+        block_col = r1 // mm
+        r2 = r1 % mm
+        intra_row = r2 // m
+        intra_col = r2 % m
 
-            # Compute full-resolution positions via broadcasting
-            row_idx = block_rows[:, None, None, None] * m + intra_row[None, None, :, None]
-            col_idx = block_cols[None, :, None, None] * m + intra_col[None, None, None, :]
+        row_idx = block_row * m + intra_row
+        col_idx = block_col * m + intra_col
 
-            row_idx = row_idx.expand([merged_h, merged_w, m, m]).reshape([-1])
-            col_idx = col_idx.expand([merged_h, merged_w, m, m]).reshape([-1])
+        pos_ids = paddle.stack([row_idx, col_idx], axis=-1)  # [total_tokens, 2]
 
-            coords = paddle.stack([row_idx, col_idx], axis=-1)  # [h*w, 2]
-
-            if num_frames > 1:
-                coords = coords.tile([num_frames, 1])
-
-            num_tokens = coords.shape[0]
-            pos_ids[offset : offset + num_tokens] = coords
-            offset += num_tokens
-
-        embeddings = freq_table[pos_ids]  # [total_tokens, 2, dim//2]
-        embeddings = embeddings.flatten(start_axis=1)  # [total_tokens, dim]
+        embeddings = freq_table[pos_ids]
+        embeddings = embeddings.flatten(start_axis=1)
         return embeddings
 
-    def fast_pos_embed_interpolate(self, grid_thw):
-        grid_ts, grid_hs, grid_ws = grid_thw[:, 0], grid_thw[:, 1], grid_thw[:, 2]
-        device = paddle.get_device()
+    def fast_pos_embed_interpolate(
+        self, grid_thw, image_id=None, frame_local_idx=None, total_tokens=None, max_hw=None
+    ):
+        N = self.num_grid_per_side
+        m = self.spatial_merge_size
+        heights = grid_thw[:, 1]
+        widths = grid_thw[:, 2]
+        merged_w = widths // m
 
-        idx_list = [[] for _ in range(4)]
-        weight_list = [[] for _ in range(4)]
+        if image_id is None:
+            image_id, frame_local_idx, total_tokens, max_hw = self._build_token_image_mapping(grid_thw)
 
-        for t, h, w in zip(grid_ts, grid_hs, grid_ws):
-            h_idxs = paddle.linspace(0, self.num_grid_per_side - 1, int(h))
-            w_idxs = paddle.linspace(0, self.num_grid_per_side - 1, int(w))
+        token_mw = merged_w[image_id]
 
-            h_idxs_floor = h_idxs.int()
-            w_idxs_floor = w_idxs.int()
-            h_idxs_ceil = (h_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
-            w_idxs_ceil = (w_idxs.int() + 1).clip(max=self.num_grid_per_side - 1)
+        # Decompose linear index to coordinates (same layout as rot_pos_emb)
+        mm = m * m
+        mw_mm = token_mw * mm
+        block_row = frame_local_idx // mw_mm
+        r1 = frame_local_idx % mw_mm
+        block_col = r1 // mm
+        r2 = r1 % mm
+        intra_row = r2 // m
+        intra_col = r2 % m
 
-            dh = h_idxs - h_idxs_floor.astype("float32")
-            dw = w_idxs - w_idxs_floor.astype("float32")
+        # Pixel coordinates
+        j_h = (block_row * m + intra_row).astype("float32")
+        j_w = (block_col * m + intra_col).astype("float32")
 
-            base_h = h_idxs_floor * self.num_grid_per_side
-            base_h_ceil = h_idxs_ceil * self.num_grid_per_side
+        # Bilinear interpolation: h_idx = j_h * (N-1) / (h-1)
+        token_h = heights[image_id].astype("float32")
+        token_w = widths[image_id].astype("float32")
+        h_denom = (token_h - 1).clip(min=1.0)
+        w_denom = (token_w - 1).clip(min=1.0)
+        h_idx = j_h * (N - 1) / h_denom
+        w_idx = j_w * (N - 1) / w_denom
 
-            indices = [
-                (base_h[None].T + w_idxs_floor[None]).flatten(),
-                (base_h[None].T + w_idxs_ceil[None]).flatten(),
-                (base_h_ceil[None].T + w_idxs_floor[None]).flatten(),
-                (base_h_ceil[None].T + w_idxs_ceil[None]).flatten(),
+        h_floor = h_idx.astype("int32")
+        w_floor = w_idx.astype("int32")
+        h_ceil = (h_floor + 1).clip(max=N - 1)
+        w_ceil = (w_floor + 1).clip(max=N - 1)
+
+        dh = h_idx - h_floor.astype("float32")
+        dw = w_idx - w_floor.astype("float32")
+
+        base_h = h_floor * N
+        base_h_ceil = h_ceil * N
+
+        idx_tensor = paddle.stack(
+            [
+                (base_h + w_floor).astype("int64"),
+                (base_h + w_ceil).astype("int64"),
+                (base_h_ceil + w_floor).astype("int64"),
+                (base_h_ceil + w_ceil).astype("int64"),
             ]
+        )  # [4, total_tokens]
 
-            weights = [
-                ((1 - dh)[None].T * (1 - dw)[None]).flatten(),
-                ((1 - dh)[None].T * dw[None]).flatten(),
-                (dh[None].T * (1 - dw)[None]).flatten(),
-                (dh[None].T * dw[None]).flatten(),
-            ]
+        weight_tensor = paddle.stack([(1 - dh) * (1 - dw), (1 - dh) * dw, dh * (1 - dw), dh * dw]).astype(
+            self.pos_embed.weight.dtype
+        )  # [4, total_tokens]
 
-            for i in range(4):
-                idx_list[i].extend(indices[i].tolist())
-                weight_list[i].extend(weights[i].tolist())
-
-        idx_tensor = paddle.tensor(idx_list, dtype=paddle.long, device=device)
-        weight_tensor = paddle.tensor(weight_list, dtype=self.pos_embed.weight.dtype)
         pos_embeds = self.pos_embed(idx_tensor) * weight_tensor[:, :, None]
         patch_pos_embeds = pos_embeds[0] + pos_embeds[1] + pos_embeds[2] + pos_embeds[3]
-
-        patch_pos_embeds = patch_pos_embeds.split([h * w for h, w in zip(grid_hs, grid_ws)])
-
-        patch_pos_embeds_permute = []
-        merge_size = self.spatial_merge_size
-        for pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws):
-            # Convert to Python int to avoid NumPy 2.x compatibility issues
-            h_merged = int(h) // int(merge_size)
-            w_merged = int(w) // int(merge_size)
-            pos_embed = (
-                pos_embed.reshape([t, h_merged, merge_size, w_merged, merge_size, -1])
-                .permute(0, 1, 3, 2, 4, 5)
-                .flatten(0, 4)
-            )
-            patch_pos_embeds_permute.append(pos_embed)
-        patch_pos_embeds = paddle.cat(patch_pos_embeds_permute)
+        # Already in (block_h, block_w, intra_h, intra_w) order, no merge_reshape needed
         return patch_pos_embeds
 
     def get_packed_seq_params(
         self,
         grid_thw: paddle.Tensor,
     ):
-        seqlens = safe_repeat_interleave_values(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0])
-        cu_seqlens = seqlens.cumsum(axis=0, dtype=paddle.int32)
-        cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0).contiguous()
-        cu_seqlens = cu_seqlens.squeeze().contiguous()
+        hw = grid_thw[:, 1] * grid_thw[:, 2]
+        frames = grid_thw[:, 0]
 
+        # Build seqlens: repeat hw[i] by frames[i]
+        total_seqs = frames.sum().item()  # 1 D2H
+        cu_frames = paddle.concat([paddle.zeros([1], dtype="int64"), frames.cumsum(0)])
+        seq_idx = paddle.arange(total_seqs, dtype="int64")
+        seq_image_id = (seq_idx.unsqueeze(-1) >= cu_frames[:-1].unsqueeze(0)).astype("int64").sum(-1) - 1
+        seqlens = hw[seq_image_id]
+
+        cu_seqlens = paddle.concat(
+            [
+                paddle.zeros([1], dtype="int32"),
+                seqlens.cumsum(0).astype("int32"),
+            ]
+        )
         max_seqlen = seqlens.max().item()
+        total_seqlen = cu_seqlens[-1].item()
 
         return PackedSeqParams(
             cu_seqlens_q=cu_seqlens,
             cu_seqlens_kv=cu_seqlens,
             max_seqlen_q=max_seqlen,
             max_seqlen_kv=max_seqlen,
+            total_seqlen_q=total_seqlen,
+            total_seqlen_kv=total_seqlen,
             qkv_format="thd",
         )
 
@@ -778,14 +811,22 @@ class Qwen3VLVisionModel(VisionLayer):
     ) -> paddle.Tensor:
         # Pathed embedding
         hidden_states = self.patch_embed(hidden_states).view(-1, self.embed_dim)
-        pos_embeds = self.fast_pos_embed_interpolate(grid_thw)
+
+        # Share token-to-image mapping to avoid redundant computation
+        image_id, frame_local_idx, total_tokens, max_hw = self._build_token_image_mapping(grid_thw)
+
+        pos_embeds = self.fast_pos_embed_interpolate(
+            grid_thw, image_id=image_id, frame_local_idx=frame_local_idx, total_tokens=total_tokens, max_hw=max_hw
+        )
         hidden_states = hidden_states + pos_embeds
 
         seq_len, _ = hidden_states.size()
         hidden_states = hidden_states.reshape([seq_len, -1])
         hidden_states = hidden_states.unsqueeze(0)
 
-        rotary_pos_emb = self.rot_pos_emb(grid_thw)
+        rotary_pos_emb = self.rot_pos_emb(
+            grid_thw, image_id=image_id, frame_local_idx=frame_local_idx, total_tokens=total_tokens, max_hw=max_hw
+        )
         rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
         rotary_pos_emb = paddle.cat((rotary_pos_emb, rotary_pos_emb), axis=-1)
         # Cast freqs to float32 and compute cos/sin inside auto_cast(False) to match the
@@ -800,6 +841,22 @@ class Qwen3VLVisionModel(VisionLayer):
 
         packed_seq_params = self.get_packed_seq_params(grid_thw)
 
+        # Pre-compute attn_mask_startend_row_indices once for all ViT layers
+        cu_seqlens = packed_seq_params.cu_seqlens_kv
+        lengths = cu_seqlens[1:] - cu_seqlens[:-1]
+        indices_per_segment = paddle.stack(
+            [
+                cu_seqlens[1:],  # col 0: lower_start = end_i
+                paddle.full_like(cu_seqlens[1:], seq_len),  # col 1: lower_end   = total_seq
+                paddle.zeros_like(cu_seqlens[:-1]),  # col 2: upper_start = 0
+                cu_seqlens[:-1],  # col 3: upper_end   = start_i
+            ],
+            axis=1,
+        )  # [num_segments, 4]
+        attn_mask_startend_row_indices = (
+            paddle.repeat_interleave(indices_per_segment, lengths, axis=0).unsqueeze(0).unsqueeze(0)
+        )  # [1, 1, seq_len, 4]
+
         hidden_states = self.decoder(
             hidden_states,
             attention_mask,
@@ -807,6 +864,7 @@ class Qwen3VLVisionModel(VisionLayer):
             rotary_pos_cos=rotary_pos_cos,
             rotary_pos_sin=rotary_pos_sin,
             packed_seq_params=packed_seq_params,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )
 
         return hidden_states
@@ -897,10 +955,6 @@ class Qwen3VLProvider(TransformerConfig):
             for attr in config_attrs:
                 setattr(config, attr, getattr(self, attr))
 
-        # VIT uses 2D spatial RoPE which is incompatible with fused_rope kernel,
-        # force disable regardless of global setting.
-        self.vision_config.apply_rope_fusion = False
-
         self.text_config.tp_comm_overlap = self.tp_comm_overlap
         self.vision_config.tp_comm_overlap = False
         # self.vision_projection_config.tp_comm_overlap = False
@@ -935,7 +989,9 @@ class Qwen3VLProvider(TransformerConfig):
     def from_config(cls, config):
         res = super().from_config(config)
         res.vision_config = Qwen3VLVisionProvider.from_config(config.vision_config)
+        res.vision_config.fa_version = config.fa_version
         res.text_config = Qwen3VLTextProvider.from_config(config.text_config)
+
         res.vision_config.normalization = "LayerNorm"
         res.vision_config.gated_linear_unit = False
         res.text_config.multimodal_embedding = True
@@ -1157,22 +1213,58 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
         assert loss_mask is None, "loss_mask is not supported yet"
         image_embeds, video_embeds, deepstack_image_embeds, deepstack_video_embeds = (None for _ in range(4))
         if self.add_encoder and pixel_values is not None:
-            pixel_values = pixel_values.to(self.vision_model.parameters()[0].dtype)
-            if self.config.freeze_vision_model:
-                with paddle.no_grad():
+            # Handle list[paddle.Tensor] input (from RL training pipeline)
+            if isinstance(pixel_values, list):
+                # Filter out None and concatenate tensors
+                tensor_list = [elem for elem in pixel_values if elem is not None]
+                if tensor_list:
+                    pixel_values = paddle.concat(tensor_list, axis=0)
+                else:
+                    pixel_values = None
+            if pixel_values is not None:
+                pixel_values = pixel_values.to(self.vision_model.parameters()[0].dtype)
+                # Handle list[paddle.Tensor] for image_grid_thw
+                if image_grid_thw is not None:
+                    if isinstance(image_grid_thw, list):
+                        tensor_list = [elem for elem in image_grid_thw if elem is not None]
+                        if tensor_list:
+                            image_grid_thw = paddle.concat(tensor_list, axis=0)
+                        else:
+                            image_grid_thw = None
+                if self.config.freeze_vision_model:
+                    with paddle.no_grad():
+                        image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
+                else:
                     image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
-            else:
-                image_embeds, deepstack_image_embeds = self.get_image_features(pixel_values, image_grid_thw)
-            image_embeds = paddle.cat(image_embeds, dim=0)
+                image_embeds = paddle.cat(image_embeds, dim=0)
 
         if self.add_encoder and pixel_values_videos is not None:
-            pixel_values_videos = pixel_values_videos.to(self.vision_model.parameters()[0].dtype)
-            if self.config.freeze_vision_model:
-                with paddle.no_grad():
+            # Handle list[paddle.Tensor] input (from RL training pipeline)
+            if isinstance(pixel_values_videos, list):
+                # Filter out None and concatenate tensors
+                tensor_list = [elem for elem in pixel_values_videos if elem is not None]
+                if tensor_list:
+                    pixel_values_videos = paddle.concat(tensor_list, axis=0)
+                else:
+                    pixel_values_videos = None
+            if pixel_values_videos is not None:
+                pixel_values_videos = pixel_values_videos.to(self.vision_model.parameters()[0].dtype)
+                # Handle list[paddle.Tensor] for video_grid_thw
+                if video_grid_thw is not None:
+                    if isinstance(video_grid_thw, list):
+                        tensor_list = [elem for elem in video_grid_thw if elem is not None]
+                        if tensor_list:
+                            video_grid_thw = paddle.concat(tensor_list, axis=0)
+                        else:
+                            video_grid_thw = None
+                if self.config.freeze_vision_model:
+                    with paddle.no_grad():
+                        video_embeds, deepstack_video_embeds = self.get_video_features(
+                            pixel_values_videos, video_grid_thw
+                        )
+                else:
                     video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
-            else:
-                video_embeds, deepstack_video_embeds = self.get_video_features(pixel_values_videos, video_grid_thw)
-            video_embeds = paddle.cat(video_embeds, axis=0)
+                video_embeds = paddle.cat(video_embeds, axis=0)
 
         if position_ids is None:
             if self.rope_deltas is None or cache_position is None or cache_position[0] == 0:
@@ -1194,7 +1286,10 @@ class Qwen3VLModelDist(MCoreLLaVAModel):
                 delta = delta.repeat_interleave(batch_size // delta.shape[0], axis=1)
                 position_ids = position_ids + delta
         else:
-            if position_ids.shape == input_ids.shape:
+            # Handle position_ids with mrope format [batch_size, seq_len, 3] -> [3, batch_size, seq_len]
+            if position_ids.ndim == 3 and position_ids.shape[-1] == 3:
+                position_ids = position_ids.transpose([2, 0, 1])
+            elif position_ids.shape == input_ids.shape:
                 position_ids = position_ids.expand(3, position_ids.shape[0], -1)
 
         input_dict = {

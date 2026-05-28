@@ -10,7 +10,8 @@
 |eval_dataset_path|验证数据集路径：允许指定多个路径，通过`,`分隔不同的数据集。|
 |train_dataset_type|训练数据集格式，可选数据集格式为 `erniekit` / `messages`|
 |eval_dataset_type|验证数据集格式，可选数据集格式为 `erniekit` / `messages`|
-|dataset_type|数据集类型，离线预训练数据流为`pretrain`，在线数据流当前默认为`iterable`|
+|dataset_type|数据集类型，离线预训练数据流为`pretrain`，离线 SFT 数据流为`offline`，在线数据流当前默认为`iterable`|
+|skip_warmup|是否跳过 mmap 文件的预热过程，默认为 `True`|
 
 * 示例：
 

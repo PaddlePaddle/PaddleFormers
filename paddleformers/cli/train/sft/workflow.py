@@ -65,7 +65,6 @@ from paddleformers.transformers.configuration_utils import (
     LlmMetaConfig,
     QuantizationConfig,
 )
-from paddleformers.utils.import_utils import is_paddlefleet_available
 from paddleformers.utils.log import logger
 
 from .make_data_utils import DataGenerator
@@ -214,9 +213,6 @@ def run_sft(
     training_args.model_name_or_path = model_args.model_name_or_path
     training_args.download_hub = model_args.download_hub
     training_args.copy_custom_file_list = model_args.copy_custom_file_list
-    if is_paddlefleet_available() and model_args.lora and training_args.moe_token_dispatcher_type == "deepep":
-        logger.warning("For PaddleFleet, moe_use_fusion_node should False when using LoRA.")
-        training_args.moe_use_fusion_node = False
 
     training_args.print_config(model_args, "Model")
     training_args.print_config(data_args, "Data")
@@ -335,7 +331,10 @@ def run_sft(
 
     # Sync arguments to MLLM sub_config
     if getattr(model_config, "text_config", None) is not None:
+        LlmMetaConfig.set_llm_config(model_config.text_config, training_args)
         model_config.text_config.max_sequence_length = data_args.max_seq_len
+        if hasattr(model_config.text_config, "mtp_num_hidden_layers"):
+            model_config.text_config.mtp_num_hidden_layers = getattr(training_args, "num_nextn_predict_layers", 0)
     if getattr(model_config, "vision_config", None) is not None:
         model_config.vision_config._attn_implementation = model_args._attn_implementation
         model_config.vision_config.recompute_granularity = model_config.recompute_granularity
@@ -441,15 +440,17 @@ def run_sft(
         "template_backend": data_args.template_backend,
         "split_multi_turn": data_args.split_multi_turn,
         "dataset_type": data_args.dataset_type,
-        "truncation_strategy": data_args.truncation_strategy,
         "dtype": compute_type,
         "dataset_num_proc": finetuning_args.dataset_num_proc,
         "binpacking": data_args.binpacking,
         "packing_interval": data_args.packing_interval,
+        "packed_idx_cache_dir": data_args.packed_idx_cache_dir,
         "dataloader_num_workers": training_args.dataloader_num_workers,
         "template": data_args.template,
         "tool_format": None,
         "default_system": None,
+        "truncation_strategy": data_args.truncation_strategy,
+        "skip_warmup": data_args.skip_warmup,
     }
 
     if dataset_config["template_backend"] == "custom":
@@ -580,10 +581,18 @@ def run_sft(
         )
     elif data_args.dataset_type == "offline":
         train_file_path = os.path.join(data_args.input_dir, "train")
-        train_dataset = create_indexed_dataset(data_file_prefix=train_file_path)
+        train_dataset = create_indexed_dataset(
+            data_file_prefix=train_file_path,
+            skip_warmup=data_args.skip_warmup,
+            warmup_only_rank0=data_args.warmup_only_rank0,
+        )
         if training_args.do_eval:
             eval_file_path = os.path.join(data_args.input_dir, "eval")
-            eval_dataset = create_indexed_dataset(data_file_prefix=eval_file_path)
+            eval_dataset = create_indexed_dataset(
+                data_file_prefix=eval_file_path,
+                skip_warmup=data_args.skip_warmup,
+                warmup_only_rank0=data_args.warmup_only_rank0,
+            )
     else:
         if training_args.should_load_dataset:
             train_dataset = create_dataset_sft(
@@ -741,27 +750,22 @@ def run_sft(
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         if model_args.neftune:
             neft_post_hook_handle.remove()
-        if training_args.benchmark:
-            total_tokens = (
-                data_args.max_seq_len
-                * training_args.per_device_train_batch_size
-                * training_args.dataset_world_size
-                * training_args.gradient_accumulation_steps
-                * training_args.max_steps
-            )
-            total_tokens_per_second_per_gpu = (
-                total_tokens / train_result.metrics["train_runtime"] / training_args.world_size
-            )
-            logger.info(f"Total_Tokens_per_second_per_gpu: {total_tokens_per_second_per_gpu} ")
-            logger.info("Benchmark done.")
-        else:
-            if not training_args.autotuner_benchmark:
-                trainer.save_model(
-                    merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True
-                )
-                trainer.log_metrics("train", train_result.metrics)
-                trainer.save_metrics("train", train_result.metrics)
-                trainer.save_state()
+        total_tokens = (
+            data_args.max_seq_len
+            * training_args.per_device_train_batch_size
+            * training_args.dataset_world_size
+            * training_args.gradient_accumulation_steps
+            * training_args.max_steps
+        )
+        total_tokens_per_second_per_gpu = (
+            total_tokens / train_result.metrics["train_runtime"] / training_args.world_size
+        )
+        logger.info(f"Total_Tokens_per_second_per_gpu: {total_tokens_per_second_per_gpu} ")
+        if not training_args.autotuner_benchmark:
+            trainer.save_model(merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True)
+            trainer.log_metrics("train", train_result.metrics)
+            trainer.save_metrics("train", train_result.metrics)
+            trainer.save_state()
 
 
 def create_peft_model(model_args, training_args, dtype, model):

@@ -63,7 +63,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     moe_token_dispatcher_type: str = "deepep"
     moe_router_load_balancing_type: str = "seq_aux_loss"
     moe_router_pre_softmax: bool = False
-    moe_grouped_gemm: bool = False
+    moe_expert_fusion: bool = False
     scoring_func: str = "sigmoid"
     moe_permute_fusion: bool = True
     moe_router_dtype: str = "fp32"

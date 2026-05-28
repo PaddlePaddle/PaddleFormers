@@ -29,11 +29,11 @@ from paddle.nn import functional as F
 
 from paddleformers.transformers.gpt_provider import GPTModelProvider
 
-from ...nn.activation import ACT2FN
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.attention.utils import repeat_kv
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
+from ...nn.experts import MoeExperts
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Glm4MoeMLP
@@ -62,6 +62,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     bias_activation_fusion: bool = True
 
     transform_rules = {
+        **GPTModelProvider.transform_rules,
         "dtype": "params_dtype",
     }
 
@@ -85,7 +86,7 @@ class GLMMoEModelProvider(GPTModelProvider):
 
     rope_scaling: float = 1.0
     bias_dropout_fusion: bool = True
-    moe_grouped_gemm: bool = False
+    moe_expert_fusion: bool = False
 
 
 def eager_attention_forward(
@@ -380,66 +381,21 @@ class Glm4MoeTopkRouter(nn.Layer):
         return topk_indices, topk_weights
 
 
-class GLm4MoeNaiveMoe(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.num_experts = config.n_routed_experts
-        self.intermediate_size = config.moe_intermediate_size
-        self.hidden_size = config.hidden_size
-        self.act_fn = ACT2FN[config.hidden_act]
-
-        self.up_gate_proj = self.create_parameter(
-            shape=[self.num_experts, self.hidden_size, 2 * self.intermediate_size],
-            dtype=paddle.get_default_dtype(),
-            is_bias=False,
-        )
-        self.down_proj = self.create_parameter(
-            shape=[self.num_experts, self.intermediate_size, self.hidden_size],
-            dtype=paddle.get_default_dtype(),
-            is_bias=False,
-        )
-
+class GLm4MoeNaiveMoe(MoeExperts):
     def sharded_state_dict(
         self,
         structured_name_prefix: str = "",
     ):
         state_dict = self.state_dict(structured_name_prefix="")
-        w1 = state_dict["up_gate_proj"].reshape(-1, self.up_gate_proj.shape[-1])
+        w1 = state_dict["gate_up_proj"].reshape(-1, self.gate_up_proj.shape[-1])
         w2 = state_dict["down_proj"].reshape(-1, self.down_proj.shape[-1])
-        state_dict["up_gate_proj"] = w1
+        state_dict["gate_up_proj"] = w1
         state_dict["down_proj"] = w2
         sharded_dict = {}
 
         sharded_dict = build_sharded_state_dict(state_dict, None, structured_name_prefix)
 
         return sharded_dict
-
-    def forward(
-        self,
-        hidden_states: paddle.Tensor,
-        top_k_index: paddle.Tensor,
-        top_k_weights: paddle.Tensor,
-    ) -> paddle.Tensor:
-        final_hidden_states = paddle.zeros_like(hidden_states)
-
-        with paddle.no_grad():
-            expert_mask = paddle.nn.functional.one_hot(top_k_index, num_classes=self.num_experts)
-            expert_mask = expert_mask.permute(2, 1, 0)
-            expert_hit = paddle.greater(expert_mask.sum(dim=(-1, -2)), paddle.to_tensor(0)).nonzero()
-
-        for expert_idx in expert_hit:
-            expert_idx = expert_idx[0]
-            if expert_idx == self.num_experts:
-                continue
-            top_k_pos, token_idx = paddle.where(expert_mask[expert_idx])
-            current_state = hidden_states[token_idx]
-            gate, up = nn.functional.linear(current_state, self.up_gate_proj[expert_idx]).chunk(2, dim=-1)
-            current_hidden_states = self.act_fn(gate) * up
-            current_hidden_states = nn.functional.linear(current_hidden_states, self.down_proj[expert_idx])
-            current_hidden_states = current_hidden_states * top_k_weights[token_idx, top_k_pos, None]
-            final_hidden_states.index_add_(0, token_idx, current_hidden_states.to(final_hidden_states.dtype))
-
-        return final_hidden_states
 
 
 class Glm4MoeMoE(nn.Layer):
@@ -993,7 +949,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
                 ]
 
-            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
+            if is_fleet and (config.moe_expert_fusion or using_sonic_moe) and not config.fp8:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(num_experts):
@@ -1002,8 +958,8 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 aoa_config["aoa_statements"] += [
-                    f"{group_gemm1} -> {prefix_offset}.mlp.grouped_gemm_experts.weight1, axis=0"
-                    f"{group_gemm2} -> {prefix_offset}.mlp.grouped_gemm_experts.weight2, axis=0"
+                    f"{group_gemm1} -> {prefix_offset}.mlp.grouped_gemm_experts.weight1, axis=0",
+                    f"{group_gemm2} -> {prefix_offset}.mlp.grouped_gemm_experts.weight2, axis=0",
                 ]
             else:
                 if config.get("fd_fallback", False):
@@ -1015,7 +971,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     group1 = ",".join(ep_weight1)
                     group2 = ",".join(ep_weight2)
                     aoa_config["aoa_statements"] += [
-                        f"{group1} -> {prefix_offset}.mlp.experts.up_gate_proj, axis=0"
+                        f"{group1} -> {prefix_offset}.mlp.experts.gate_up_proj, axis=0"
                         f"{group2} -> {prefix_offset}.mlp.experts.down_proj, axis=0"
                     ]
 
@@ -1057,12 +1013,12 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         # layer 0
         for layer_idx in range(config.first_k_dense_replace):
             aoa_statements += [
-                f"{model_prefix}layers.{num_head_empty_layers+layer_idx}.mlp.down_proj.weight^T -> model.layers.{layer_idx}.mlp.down_proj.weight",
+                f"{model_prefix}layers.{num_head_empty_layers + layer_idx}.mlp.down_proj.weight^T -> model.layers.{layer_idx}.mlp.down_proj.weight",
             ]
             aoa_statements += [
-                f"{model_prefix}layers.{num_head_empty_layers+layer_idx}.mlp.up_gate_proj.weight -> model.layers.{num_head_empty_layers+layer_idx}.mlp.gate_proj.weight, model.layers.{num_head_empty_layers+layer_idx}.mlp.up_proj.weight, fused_ffn",
-                f"model.layers.{num_head_empty_layers+layer_idx}.mlp.gate_proj.weight^T -> model.layers.{layer_idx}.mlp.gate_proj.weight",
-                f"model.layers.{num_head_empty_layers+layer_idx}.mlp.up_proj.weight^T -> model.layers.{layer_idx}.mlp.up_proj.weight",
+                f"{model_prefix}layers.{num_head_empty_layers + layer_idx}.mlp.up_gate_proj.weight -> model.layers.{num_head_empty_layers + layer_idx}.mlp.gate_proj.weight, model.layers.{num_head_empty_layers + layer_idx}.mlp.up_proj.weight, fused_ffn",
+                f"model.layers.{num_head_empty_layers + layer_idx}.mlp.gate_proj.weight^T -> model.layers.{layer_idx}.mlp.gate_proj.weight",
+                f"model.layers.{num_head_empty_layers + layer_idx}.mlp.up_proj.weight^T -> model.layers.{layer_idx}.mlp.up_proj.weight",
             ]
 
         num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
@@ -1118,7 +1074,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 # for mtp
                 prefix_offset += ".transformer_layer"
 
-            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe) and not config.fp8:
+            if is_fleet and (config.moe_expert_fusion or using_sonic_moe) and not config.fp8:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
@@ -1127,8 +1083,8 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 aoa_statements += [
-                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight1 -> {group_gemm1}, axis=0"
-                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight2 -> {group_gemm2}, axis=0"
+                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight1 -> {group_gemm1}, axis=0",
+                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight2 -> {group_gemm2}, axis=0",
                 ]
             else:
                 if config.get("fd_fallback", False):
@@ -1140,7 +1096,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     group1 = ",".join(ep_weight1)
                     group2 = ",".join(ep_weight2)
                     aoa_statements += [
-                        f"{prefix_offset}.mlp.experts.up_gate_proj -> {group1}, axis=0"
+                        f"{prefix_offset}.mlp.experts.gate_up_proj -> {group1}, axis=0"
                         f"{prefix_offset}.mlp.experts.down_proj -> {group2}, axis=0"
                     ]
 
