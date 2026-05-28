@@ -25,8 +25,7 @@ jobs:
           KEEP_DAYS: ${{ inputs.keep_days || '14' }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
         run: |
-          source /root/miniconda3/etc/profile.d/conda.sh
-          conda activate py310
+          source /home/paddle-1/miniconda3/bin/activate py312
           python3 << 'EOF'
           import os, requests
           from datetime import datetime, timezone, timedelta
