@@ -11,16 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import sys
 from typing import TYPE_CHECKING
 
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "configuration": ["DeepseekV4Config"],
+    "configuration": ["DeepseekV32Config"],
     "modeling": [
-        "DeepseekV4ForCausalLMPipe",
-        "DeepseekV4ForCausalLM",
+        "DeepseekV32ForCausalLM",
+        "DeepseekV32ForCausalLMPipe",
     ],
 }
 

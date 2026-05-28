@@ -54,6 +54,7 @@ __all__ = [
 MAPPING_NAMES = OrderedDict(
     [
         ("DeepseekV3", "deepseek_v3"),
+        ("DeepseekV32", "deepseek_v32"),
         ("Ernie4_5", "ernie4_5"),
         ("Ernie4_5_Moe", "ernie4_5_moe"),
         ("Ernie4_5_VLMoe", "ernie4_5_moe_vl"),
@@ -73,7 +74,7 @@ MAPPING_NAMES = OrderedDict(
         ("Glm4Moe", "glm4_moe"),
         ("GlmMoeDsa", "glm_moe_dsa"),
         ("MiniMaxM2", "minimax_m2"),
-        ("DeepSeekV4", "deepseek_v4"),
+        ("DeepseekV4", "deepseek_v4"),
         ("GptOss", "gpt_oss"),
         ("Phi3", "phi3"),
         ("Gemma3", "gemma3_text"),
