@@ -62,7 +62,7 @@ recompute_granularity: full
 recompute_method: uniform
 recompute_num_layers: 1
 
-moe_grouped_gemm: true
+moe_expert_fusion: true
 moe_deep_gemm: false
 moe_shared_expert_overlap: true
 

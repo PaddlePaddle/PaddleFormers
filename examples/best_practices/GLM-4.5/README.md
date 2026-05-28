@@ -139,7 +139,7 @@ recompute_method: uniform
 recompute_num_layers: 1
 
 
-moe_grouped_gemm: false
+moe_expert_fusion: false
 moe_deep_gemm: false
 moe_shared_expert_overlap: true
 

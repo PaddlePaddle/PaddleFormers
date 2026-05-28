@@ -135,8 +135,9 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         num_key_value_heads = config.num_key_value_heads
         num_key_value_groups = num_attention_head // num_key_value_heads
         use_mla = getattr(config, "q_lora_rank", None) and config.q_lora_rank > 0
-        moe_grouped_gemm = getattr(config, "moe_grouped_gemm", False)
+        moe_expert_fusion = getattr(config, "moe_expert_fusion", False)
         use_gated_attn = getattr(config, "use_gated_attn", False)
+        csa_compress_ratios = getattr(config, "csa_compress_ratios", None)
 
         # Get Muon configuration from muon_configs
         muon_qkv_update_mode = muon_configs.get("muon_qkv_update_mode", "split_head")
@@ -156,14 +157,72 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         ffn_slice_fn = _ffn_gate_up if muon_ffn_split else None
 
         # Determine Fused MoE slice strategy
-        fused_moe_fn = _moe_experts if moe_grouped_gemm else None
+        fused_moe_fn = _moe_experts if moe_expert_fusion else None
 
         # Determine MLA slice strategy
         mla_slice_fn = None
         if use_mla and muon_qkv_update_mode == "split_head":
             mla_slice_fn = _mla_per_head
 
-        def _add_layer_slice_config(prefix):
+        def _add_layer_slice_config(prefix, layer_idx):
+            # DeepSeekV4 Attention weights:
+            if csa_compress_ratios is not None and mla_slice_fn is not None:
+                ratio = csa_compress_ratios[layer_idx]
+                # common weights (Sliding Window Attenion)
+                slice_config[f"{prefix}.self_attn.linear_q_up_proj.weight"] = (
+                    mla_slice_fn,
+                    {
+                        "head_num": num_attention_head,
+                        "axis": 1,
+                    },
+                )
+
+                # Compressor weights
+                if ratio == 4:
+                    slice_config[f"{prefix}.self_attn.core_attention.compressor.linear_wkv.weight"] = (
+                        mla_slice_fn,
+                        {
+                            "head_num": 1,
+                            "axis": 1,
+                            "head_split_sizes": [config.v_head_dim, config.v_head_dim],
+                        },
+                    )
+                    slice_config[f"{prefix}.self_attn.core_attention.compressor.linear_wgate.weight"] = (
+                        mla_slice_fn,
+                        {
+                            "head_num": 1,
+                            "axis": 1,
+                            "head_split_sizes": [config.v_head_dim, config.v_head_dim],
+                        },
+                    )
+                # Indexer weights
+                print(f"layer: {layer_idx}, ratio: {ratio}, dense_mode: {config.csa_dense_mode}")
+                if ratio == 4 and config.csa_dense_mode is False:
+                    slice_config[f"{prefix}.self_attn.core_attention.indexer.linear_wq_b.weight"] = (
+                        mla_slice_fn,
+                        {
+                            "head_num": config.dsa_index_n_heads,
+                            "axis": 1,
+                        },
+                    )
+                    # Compressed weights
+                    slice_config[f"{prefix}.self_attn.core_attention.indexer.compressor.linear_wkv.weight"] = (
+                        mla_slice_fn,
+                        {
+                            "head_num": 1,
+                            "axis": 1,
+                            "head_split_sizes": [config.dsa_index_head_dim, config.dsa_index_head_dim],
+                        },
+                    )
+                    slice_config[f"{prefix}.self_attn.core_attention.indexer.compressor.linear_wgate.weight"] = (
+                        mla_slice_fn,
+                        {
+                            "head_num": 1,
+                            "axis": 1,
+                            "head_split_sizes": [config.dsa_index_head_dim, config.dsa_index_head_dim],
+                        },
+                    )
+
             # Fused QKV weights (non-MLA path)
             if not use_mla and qkv_slice_fn is not None:
                 slice_config[f"{prefix}.self_attn.qkv_proj.weight"] = (qkv_slice_fn, qkv_kwargs.copy())
@@ -199,7 +258,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         )
 
             # Fused MoE weights (grouped_gemm)
-            if moe_grouped_gemm and fused_moe_fn is not None:
+            if moe_expert_fusion and fused_moe_fn is not None:
                 slice_config[f"{prefix}.mlp.experts.down_proj.weight"] = (fused_moe_fn, {})
                 slice_config[f"{prefix}.mlp.grouped_gemm_experts.weight2"] = (fused_moe_fn, {})
 
@@ -244,7 +303,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
         # Main layers
         for layer_idx in range(num_hidden_layers):
-            _add_layer_slice_config(f"model.layers.{layer_idx}")
+            _add_layer_slice_config(f"model.layers.{layer_idx}", layer_idx)
 
         # MTP layers
         if config.mtp_num_layers > 0:
@@ -252,9 +311,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         else:
             num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
         for layer_idx in range(num_nextn_predict_layers):
-            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}")
+            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}", num_hidden_layers + layer_idx)
         for layer_idx in range(num_nextn_predict_layers):
-            _add_layer_slice_config(f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer")
+            _add_layer_slice_config(
+                f"model.layers.{num_hidden_layers + layer_idx}.transformer_layer", num_hidden_layers + layer_idx
+            )
 
         return slice_config
 
@@ -296,8 +357,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
         for pp_name, param in model.named_parameters():
             name = pp_to_single.get(pp_name, pp_name)
-            use_muon = _default_should_use_muon(name, param.shape, exclude_patterns) and _default_should_use_muon(
-                param.name, param.shape, exclude_patterns
+            use_muon = (
+                _default_should_use_muon(name, param.shape, exclude_patterns)
+                and _default_should_use_muon(param.name, param.shape, exclude_patterns)
+                and "hc_head_fn" not in name
+                and "mapping_proj" not in name
             )
 
             if name in slice_config:
@@ -430,6 +494,48 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         f"{prefix}.self_attn.kv_a_layernorm.weight -> {prefix_offset}.self_attn.kv_a_layernorm.weight",
                     ]
 
+            elif config.experimental_attention_variant == "dsv4_hybrid":
+                # csa_compress_ratios has length num_hidden_layers + num_nextn_predict_layers,
+                # i.e. it covers both main layers and MTP layers.
+                assert len(config.csa_compress_ratios) == num_hidden_layers + num_nextn_predict_layers, (
+                    f"csa_compress_ratios length ({len(config.csa_compress_ratios)}) must equal "
+                    f"num_hidden_layers + num_nextn_predict_layers "
+                    f"({num_hidden_layers} + {num_nextn_predict_layers})"
+                )
+                csa_ratio = config.csa_compress_ratios[layer_idx]
+                aoa_config["aoa_statements"] += [
+                    # Linear projections (transpose: HF [out, in] -> paddle [in, out])
+                    f"{prefix}.self_attn.linear_q_down_proj.weight^T -> {prefix_offset}.self_attn.linear_q_down_proj.weight",
+                    f"{prefix}.self_attn.linear_q_up_proj.weight^T -> {prefix_offset}.self_attn.linear_q_up_proj.weight",
+                    f"{prefix}.self_attn.linear_kv_proj.weight^T -> {prefix_offset}.self_attn.linear_kv_proj.weight",
+                    f"{prefix}.self_attn.o_proj.weight^T -> {prefix_offset}.self_attn.o_proj.weight",
+                    # Layer norms (no transpose, 1D)
+                    f"{prefix}.self_attn.q_layernorm.weight -> {prefix_offset}.self_attn.q_layernorm.weight",
+                    f"{prefix}.self_attn.kv_layernorm.weight -> {prefix_offset}.self_attn.kv_layernorm.weight",
+                    # Grouped output projection (raw parameter, shape [out, in] on both sides)
+                    f"{prefix}.self_attn.linear_o_group_proj -> {prefix_offset}.self_attn.linear_o_group_proj",
+                    # Core attention: learnable attention sink (1D, no transpose)
+                    f"{prefix}.self_attn.core_attention.attn_sink -> {prefix_offset}.self_attn.core_attention.attn_sink",
+                ]
+                # Compressor exists only when compress_ratio > 1 (i.e. ratio in {4, 128})
+                if csa_ratio > 1:
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.self_attn.core_attention.compressor.linear_wkv.weight^T -> {prefix_offset}.self_attn.core_attention.compressor.linear_wkv.weight",
+                        f"{prefix}.self_attn.core_attention.compressor.linear_wgate.weight^T -> {prefix_offset}.self_attn.core_attention.compressor.linear_wgate.weight",
+                        f"{prefix}.self_attn.core_attention.compressor.norm.weight -> {prefix_offset}.self_attn.core_attention.compressor.norm.weight",
+                        f"{prefix}.self_attn.core_attention.compressor.ape -> {prefix_offset}.self_attn.core_attention.compressor.ape",
+                    ]
+                # Indexer exists only when compress_ratio == 4 and not csa_dense_mode
+                if csa_ratio == 4 and not getattr(config, "csa_dense_mode", False):
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.self_attn.core_attention.indexer.linear_wq_b.weight^T -> {prefix_offset}.self_attn.core_attention.indexer.linear_wq_b.weight",
+                        f"{prefix}.self_attn.core_attention.indexer.linear_weights_proj.weight^T -> {prefix_offset}.self_attn.core_attention.indexer.linear_weights_proj.weight",
+                        f"{prefix}.self_attn.core_attention.indexer.compressor.linear_wkv.weight^T -> {prefix_offset}.self_attn.core_attention.indexer.compressor.linear_wkv.weight",
+                        f"{prefix}.self_attn.core_attention.indexer.compressor.linear_wgate.weight^T -> {prefix_offset}.self_attn.core_attention.indexer.compressor.linear_wgate.weight",
+                        f"{prefix}.self_attn.core_attention.indexer.compressor.norm.weight -> {prefix_offset}.self_attn.core_attention.indexer.compressor.norm.weight",
+                        f"{prefix}.self_attn.core_attention.indexer.compressor.ape -> {prefix_offset}.self_attn.core_attention.indexer.compressor.ape",
+                    ]
+
             else:
                 if config.use_qk_norm:
                     aoa_config["aoa_statements"] += [
@@ -494,7 +600,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix}.block_sparse_moe.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
                 f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight",
             ]
-            if config.use_latent_moe:
+            if config.moe_latent_size is not None and config.moe_latent_size > 0:
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.block_sparse_moe.fc1_latent_proj.weight^T -> {prefix_offset}.mlp.fc1_latent_proj.weight",
                     f"{prefix}.block_sparse_moe.fc2_latent_proj.weight^T -> {prefix_offset}.mlp.fc2_latent_proj.weight",
@@ -511,8 +617,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
             if n_shared_experts > 0:
                 aoa_config["aoa_statements"] += [
-                    f"{prefix}.block_sparse_moe.shared_experts.gate_proj.weight^T, {prefix}.block_sparse_moe.shared_experts.up_proj.weight^T -> {prefix_offset}.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
-                    f"{prefix}.block_sparse_moe.shared_experts.down_proj.weight^T -> {prefix_offset}.mlp.shared_experts.down_proj.weight",
+                    f"{prefix}.block_sparse_moe.shared_experts.w1.weight^T, {prefix}.block_sparse_moe.shared_experts.w3.weight^T -> {prefix_offset}.mlp.shared_experts.up_gate_proj.weight, fused_ffn",
+                    f"{prefix}.block_sparse_moe.shared_experts.w2.weight^T -> {prefix_offset}.mlp.shared_experts.down_proj.weight",
                 ]
 
             for expert_id in range(config.n_routed_experts):
@@ -525,7 +631,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         f"{prefix}.block_sparse_moe.experts.{expert_id}.w1.weight^T, {prefix}.block_sparse_moe.experts.{expert_id}.w3.weight^T -> {prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight, axis=1",
                     ]
 
-            if config.moe_grouped_gemm or using_sonic_moe:
+            if config.moe_expert_fusion or using_sonic_moe:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(num_experts):
@@ -657,6 +763,47 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         f"{prefix_offset}.self_attn.q_a_layernorm.weight -> {prefix}.self_attn.q_a_layernorm.weight",
                         f"{prefix_offset}.self_attn.kv_a_layernorm.weight -> {prefix}.self_attn.kv_a_layernorm.weight",
                     ]
+            elif config.experimental_attention_variant == "dsv4_hybrid":
+                # csa_compress_ratios has length num_hidden_layers + num_nextn_predict_layers,
+                # i.e. it covers both main layers and MTP layers.
+                assert len(config.csa_compress_ratios) == num_hidden_layers + num_nextn_predict_layers, (
+                    f"csa_compress_ratios length ({len(config.csa_compress_ratios)}) must equal "
+                    f"num_hidden_layers + num_nextn_predict_layers "
+                    f"({num_hidden_layers} + {num_nextn_predict_layers})"
+                )
+                csa_ratio = config.csa_compress_ratios[layer_idx]
+                aoa_statements += [
+                    # Linear projections (transpose: paddle [in, out] -> HF [out, in])
+                    f"{prefix_offset}.self_attn.linear_q_down_proj.weight^T -> {prefix}.self_attn.linear_q_down_proj.weight",
+                    f"{prefix_offset}.self_attn.linear_q_up_proj.weight^T -> {prefix}.self_attn.linear_q_up_proj.weight",
+                    f"{prefix_offset}.self_attn.linear_kv_proj.weight^T -> {prefix}.self_attn.linear_kv_proj.weight",
+                    f"{prefix_offset}.self_attn.o_proj.weight^T -> {prefix}.self_attn.o_proj.weight",
+                    # Layer norms (no transpose, 1D)
+                    f"{prefix_offset}.self_attn.q_layernorm.weight -> {prefix}.self_attn.q_layernorm.weight",
+                    f"{prefix_offset}.self_attn.kv_layernorm.weight -> {prefix}.self_attn.kv_layernorm.weight",
+                    # Grouped output projection (raw parameter, shape [out, in] on both sides)
+                    f"{prefix_offset}.self_attn.linear_o_group_proj -> {prefix}.self_attn.linear_o_group_proj",
+                    # Core attention: learnable attention sink (1D, no transpose)
+                    f"{prefix_offset}.self_attn.core_attention.attn_sink -> {prefix}.self_attn.core_attention.attn_sink",
+                ]
+                # Compressor exists only when compress_ratio > 1 (i.e. ratio in {4, 128})
+                if csa_ratio > 1:
+                    aoa_statements += [
+                        f"{prefix_offset}.self_attn.core_attention.compressor.linear_wkv.weight^T -> {prefix}.self_attn.core_attention.compressor.linear_wkv.weight",
+                        f"{prefix_offset}.self_attn.core_attention.compressor.linear_wgate.weight^T -> {prefix}.self_attn.core_attention.compressor.linear_wgate.weight",
+                        f"{prefix_offset}.self_attn.core_attention.compressor.norm.weight -> {prefix}.self_attn.core_attention.compressor.norm.weight",
+                        f"{prefix_offset}.self_attn.core_attention.compressor.ape -> {prefix}.self_attn.core_attention.compressor.ape",
+                    ]
+                # Indexer exists only when compress_ratio == 4 and not csa_dense_mode
+                if csa_ratio == 4 and not getattr(config, "csa_dense_mode", False):
+                    aoa_statements += [
+                        f"{prefix_offset}.self_attn.core_attention.indexer.linear_wq_b.weight^T -> {prefix}.self_attn.core_attention.indexer.linear_wq_b.weight",
+                        f"{prefix_offset}.self_attn.core_attention.indexer.linear_weights_proj.weight^T -> {prefix}.self_attn.core_attention.indexer.linear_weights_proj.weight",
+                        f"{prefix_offset}.self_attn.core_attention.indexer.compressor.linear_wkv.weight^T -> {prefix}.self_attn.core_attention.indexer.compressor.linear_wkv.weight",
+                        f"{prefix_offset}.self_attn.core_attention.indexer.compressor.linear_wgate.weight^T -> {prefix}.self_attn.core_attention.indexer.compressor.linear_wgate.weight",
+                        f"{prefix_offset}.self_attn.core_attention.indexer.compressor.norm.weight -> {prefix}.self_attn.core_attention.indexer.compressor.norm.weight",
+                        f"{prefix_offset}.self_attn.core_attention.indexer.compressor.ape -> {prefix}.self_attn.core_attention.indexer.compressor.ape",
+                    ]
             else:
                 if config.use_qk_norm:
                     aoa_statements += [
@@ -726,7 +873,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 # for mtp
                 prefix_offset += ".transformer_layer"
 
-            if config.moe_grouped_gemm or using_sonic_moe:
+            if config.moe_expert_fusion or using_sonic_moe:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
@@ -754,10 +901,10 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
             if n_shared_experts > 0:
                 aoa_statements += [
-                    f"{prefix_offset}.mlp.shared_experts.down_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.down_proj.weight",
+                    f"{prefix_offset}.mlp.shared_experts.down_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.w2.weight",
                     f"{prefix_offset}.mlp.shared_experts.up_gate_proj.weight -> {prefix_offset}.block_sparse_moe.shared_experts.gate_proj.weight, {prefix_offset}.block_sparse_moe.shared_experts.up_proj.weight, fused_ffn",
-                    f"{prefix_offset}.block_sparse_moe.shared_experts.gate_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.gate_proj.weight",
-                    f"{prefix_offset}.block_sparse_moe.shared_experts.up_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.up_proj.weight",
+                    f"{prefix_offset}.block_sparse_moe.shared_experts.gate_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.w1.weight",
+                    f"{prefix_offset}.block_sparse_moe.shared_experts.up_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.w3.weight",
                 ]
 
             aoa_statements += [
@@ -765,7 +912,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.block_sparse_moe.e_score_correction_bias",
             ]
 
-            if config.use_latent_moe:
+            if config.moe_latent_size is not None and config.moe_latent_size > 0:
                 aoa_statements += [
                     f"{prefix_offset}.mlp.fc1_latent_proj.weight^T -> {prefix}.block_sparse_moe.fc1_latent_proj.weight ",
                     f"{prefix_offset}.mlp.fc2_latent_proj.weight^T -> {prefix}.block_sparse_moe.fc2_latent_proj.weight",
@@ -824,6 +971,7 @@ class MiniMaxM2ForCausalLM(MiniMaxM2PreTrainedModel):
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model.build_muon_param_info_map = cls.build_muon_param_info_map
         gpt_model.config_to_save = config
         gpt_model.is_fleet = cls.is_fleet
         return gpt_model
@@ -850,6 +998,7 @@ class MiniMaxM2ForCausalLMPipe(MiniMaxM2PreTrainedModel, GeneralModelForCausalLM
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model.build_muon_param_info_map = cls.build_muon_param_info_map
         if not hasattr(config, "architectures"):
             config.architectures = [cls.__name__.replace("Pipe", "")]
         gpt_model.config_to_save = config
