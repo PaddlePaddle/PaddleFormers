@@ -3031,6 +3031,7 @@ class TrainingArguments:
                 sharding_parallel_size = self.sharding_parallel_size
             return max(sharding_parallel_size, 1) * max(self.data_parallel_size, 1)
         elif self.enable_auto_parallel:
+            # Testing
             return max(self.sharding_parallel_size, 1) * max(self.data_parallel_size, 1)
         else:
             return paddle.distributed.get_world_size()
