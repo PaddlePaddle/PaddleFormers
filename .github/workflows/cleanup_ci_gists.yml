@@ -1,7 +1,6 @@
 name: Cleanup CI Gists
 
 on:
-  pull_request:
   schedule:
     - cron: '0 3 * * *'  # 每天北京时间11点（UTC+8）
   workflow_dispatch:
