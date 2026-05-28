@@ -1,5 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2025 the HuggingFace Team. All rights reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -271,9 +270,12 @@ class Olmo3ForCausalLM(Olmo2ForCausalLM):
     config_class = Olmo3Config
     _model_cls = Olmo3Model
 
+    _gen_aoa_config = Olmo2ForCausalLM._gen_aoa_config
+
 
 class Olmo3ForCausalLMPipe(Olmo2ForCausalLMPipe):
     """OLMo3 model for pipeline parallel training."""
 
     config_class = Olmo3Config
     _decoder_layer_cls = Olmo3DecoderLayer
+    _gen_aoa_config = Olmo2ForCausalLM._gen_aoa_config

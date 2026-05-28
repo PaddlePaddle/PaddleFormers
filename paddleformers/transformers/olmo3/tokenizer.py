@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,5 +17,4 @@ from ..tokenizer_utils import warp_tokenizer
 
 __all__ = ["Olmo3Tokenizer"]
 
-# v3和v2版本使用同样的tokenizer
 Olmo3Tokenizer = warp_tokenizer(hf.GPT2TokenizerFast)

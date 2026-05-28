@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ from tests.transformers.test_modeling_common import (
 )
 
 
-# 测试基础类，后续的test 会调用这个基础类测试;
+# Base test class, subsequent tests will call this base class
 class Olmo3ModelTester:
     def __init__(
         self,
@@ -158,7 +158,7 @@ class Olmo3ModelTester:
             self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
 
 
-# 基础配置测试类，测试Config的基础配置是否正确
+# Basic config test class, tests whether the basic configuration is correct
 class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
     all_model_classes = (Olmo3Model, Olmo3ForCausalLM)
 
@@ -214,7 +214,7 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
         self.assertIsInstance(config, Olmo2Config)
 
 
-# 快速测试token是否正确
+# Quick token test
 class Olmo3TokenizerTest(unittest.TestCase):
     def test_tokenizer_encode_decode(self):
         tokenizer = AutoTokenizer.from_pretrained(
@@ -234,7 +234,7 @@ class Olmo3TokenizerTest(unittest.TestCase):
         self.assertIsNotNone(tokenizer.pad_token)
 
 
-#  生成测试，带有slow标记，不会主动执行
+#  Generation test, marked with slow decorator, not executed by default
 class Olmo3GenerationTest(unittest.TestCase):
     _MODEL_ID = "allenai/OLMo-3-7B-Instruct"
 
@@ -250,7 +250,7 @@ class Olmo3GenerationTest(unittest.TestCase):
             self._MODEL_ID,
             dtype="bfloat16",
             download_hub="modelscope",
-            load_via_cpu=True,  # 通过 CPU 加载权重避免 GPU OOM
+            load_via_cpu=True,  # Load weights via CPU to avoid GPU OOM
         )
         model.eval()
 
@@ -279,16 +279,19 @@ class Olmo3GenerationTest(unittest.TestCase):
 
 
 """
-受限于 olmo3依赖于一个 老的transformers版本，如果降级之后，会引起 paddleformres的tokenizer的错误，所以 olmo3和paddle的对齐
-采用直接生成对齐数组的方式进行，原版的8b模型输入提示词：
+Due to olmo3 depending on an old version of transformers, downgrading would cause tokenizer errors
+in paddleformers. Therefore, olmo3 and paddle alignment uses direct array generation for comparison.
+
+The original 8b model input prompt:
 
 input_question = "What is the capital of China?"
 messages = [{"role": "user", "content": input_question}]
 input_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
-进行后续的推理处理对比。
+Proceed with subsequent inference processing comparison.
 
-受限于每一层的精度稍微有差异，而且这是bf16的精度，最终的diff是2e0-2, 离强制的1e-2只差一点点
+Due to slight precision differences in each layer and this being bf16 precision, the final diff is
+2e-2, just slightly below the mandatory 1e-2 threshold.
 
 """
 
@@ -409,6 +412,9 @@ def _prepare_pt_layout_pd_checkpoint(src_model_path: str) -> str:
             load_via_cpu=True,
         )
         paddle.save(model.state_dict(), pd_weight_path)
+        del model
+        if paddle.is_compiled_with_cuda():
+            paddle.cuda.empty_cache()
 
     state_dict = paddle.load(pd_weight_path)
     state_dict = _transpose_to_pt_layout(state_dict)
