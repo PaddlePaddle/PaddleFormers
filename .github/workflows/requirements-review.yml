@@ -10,7 +10,7 @@ on:
 
 jobs:
   check-review:
-    runs-on: ubuntu-latest
+    runs-on: 'ernie-cpu'
 
     steps:
       - name: Checkout

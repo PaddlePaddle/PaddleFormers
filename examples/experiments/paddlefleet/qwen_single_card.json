@@ -3,7 +3,7 @@
   "input_dir": "1.0 ./data/pre-training/llama_openwebtext_100k",
   "split": "998,1,1",
   "max_seq_len": 8192,
-  "model_name_or_path": "/root/paddlejob/gpfs/huangjiyi/Models/Qwen3-30B-A3B-Base",
+  "model_name_or_path": "./Models/Qwen3-30B-A3B-Base",
   "seed": 23,
   "do_train": true,
   "do_eval": true,

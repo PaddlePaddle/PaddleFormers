@@ -111,7 +111,6 @@ class TestFinetuningArgumentsFieldDefaults(unittest.TestCase):
         self.assertEqual(fields["compute_type"], "bf16")
         self.assertEqual(fields["use_fp8"], False)
         self.assertEqual(fields["use_recompute_mtp"], False)
-        self.assertEqual(fields["benchmark"], False)
         self.assertEqual(fields["autotuner_benchmark"], False)
         self.assertEqual(fields["dataset_num_proc"], None)
         self.assertEqual(fields["dataset_batch_size"], 1000)

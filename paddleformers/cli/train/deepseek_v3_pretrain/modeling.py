@@ -453,7 +453,7 @@ class DeepseekV2MoE(MoELayer):
             using_post_norm_recompute=self.using_post_norm_recompute,
         )
 
-        if config.offline_quant_expert_weight and config.clear_origin_weight_when_offline_quant:
+        if config.offline_quant_expert_weight:
             expert_w1_list = [expert.w1 for expert in self.experts if expert is not None]
             expert_w2_list = [expert.w2 for expert in self.experts if expert is not None]
             for p in expert_w1_list:
