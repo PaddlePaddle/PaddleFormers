@@ -40,6 +40,8 @@ install_requirements() {
     python -m pip config --user set global.index-url https://pypi.org/simple
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
     python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple  > /dev/null
+    python -m pip install -r requirements.txt -i https://pypi.org/simple 
+    python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
     apt-get update && apt-get install -y ffmpeg
     # cd /home/models/my_packages && dpkg -i *.deb > /dev/null
     # cd -
@@ -75,7 +77,6 @@ install_requirements() {
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
     fi
-    pip install -r tests/requirements.txt -i https://pypi.org/simple 
 
     echo "paddle commit:"
     python -c "import paddle; print(paddle.version.commit)"
