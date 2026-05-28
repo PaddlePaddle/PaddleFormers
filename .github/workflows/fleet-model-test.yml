@@ -45,20 +45,23 @@ jobs:
     needs: check-bypass
     if: ${{ needs.check-bypass.outputs.can-skip == 'false' }}
     name: check documents type for pull request
-    runs-on: 'ernie-cpu'
+    runs-on:
+      group: APPROVAL
     env:
       GITHUB_REPO_NAME: ${{ github.repository }}
     outputs:
       is_md_only: ${{ steps.check_files.outputs.is_md_only }}
     steps:
+      - name: Cleanup
+        run: |
+          rm -rf * .[^.]*
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Setup Python
-        run: |
-          source /home/paddle-1/miniconda3/bin/activate py312
-          python --version
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
       - name: git diff and check 
         id: check_files
         if: |
