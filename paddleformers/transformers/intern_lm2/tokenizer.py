@@ -1,8 +1,4 @@
-# Copyright (c) 2024 PaddlePaddle Authors. All Rights Reserved.
-#
-# Copyright (c) The InternLM team and The HuggingFace Inc. team. All rights reserved.
-#
-# This code is based on transformers/src/transformers/models/llama/tokenization_llama.py
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,8 +25,7 @@ from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
 from paddleformers.transformers.tokenizer_utils_base import TextInput
 from paddleformers.utils.log import logger
 
-VOCAB_FILES_NAMES = {"vocab_file": "./tokenizer.model"}
-# VOCAB_FILES_NAMES = {"vocab_file": "sentencepiece.bpe.model"}
+VOCAB_FILES_NAMES = {"vocab_file": "tokenizer.model"}
 
 # Modified from transformers.model.llama.tokenization_llama.LlamaTokenizer
 

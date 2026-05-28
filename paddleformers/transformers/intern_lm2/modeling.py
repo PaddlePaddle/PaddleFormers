@@ -1,8 +1,4 @@
-# Copyright (c) 2024 PaddlePaddle Authors. All Rights Reserved.
-#
-# Copyright (c) The InternLM team and The HuggingFace Inc. team. All rights reserved.
-#
-# This code is based on transformers/src/transformers/models/llama/modeling_llama.py
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,7 +22,7 @@ import paddle.nn.functional as F
 from paddle import nn
 from paddle.nn import CrossEntropyLoss
 
-from paddleformers.transformers import PretrainedModel
+from ..model_utils import PretrainedModel, register_base_model
 from paddleformers.transformers.activations import ACT2FN
 from paddleformers.transformers.model_outputs import (
     BaseModelOutputWithPast,
@@ -36,7 +32,10 @@ from paddleformers.transformers.model_outputs import (
 from .configuration import InternLM2Config
 
 logger = logging.getLogger(__name__)
-from ..intern.bert_padding_delte import index_first_axis, pad_input, unpad_input
+try:
+    from ..intern.bert_padding_delte import index_first_axis, pad_input, unpad_input
+except ImportError:
+    index_first_axis = pad_input = unpad_input = None
 
 try:
     from paddle.nn.functional.flash_attention import flash_attention as flash_attn_func
@@ -50,7 +49,7 @@ except:
     flash_attn_func, flash_attn_varlen_func = None, None
     print("modeling_internlm2 has_flash_attn is False.")
     has_flash_attn = False
-has_flash_attn = False  # TODO
+has_flash_attn = False
 
 
 def _get_unpad_data(attention_mask):
@@ -70,7 +69,6 @@ def masked_fill(x, mask, value):
     return paddle.where(mask, y, x)
 
 
-# Copied from transformers.models.bart.modeling_bart._make_causal_mask
 def _make_causal_mask(input_ids_shape: list, dtype: paddle.dtype, past_key_values_length: int = 0):
     """
     Make causal mask used for bi-directional self-attention.
@@ -86,7 +84,6 @@ def _make_causal_mask(input_ids_shape: list, dtype: paddle.dtype, past_key_value
     return mask[(None), (None), :, :].expand(shape=[bsz, 1, tgt_len, tgt_len + past_key_values_length])
 
 
-# Copied from transformers.models.bart.modeling_bart._expand_mask
 def _expand_mask(mask: paddle.Tensor, dtype: paddle.dtype, tgt_len: Optional[int] = None):
     """
     Expands attention_mask from `[bsz, seq_len]` to `[bsz, 1, tgt_seq_len, src_seq_len]`.
@@ -99,7 +96,6 @@ def _expand_mask(mask: paddle.Tensor, dtype: paddle.dtype, tgt_len: Optional[int
     return masked_fill(inverted_mask, inverted_mask.astype("bool"), paddle.finfo(dtype).min)
 
 
-# Copied from transformers.models.llama.modeling_llama.LlamaRMSNorm with Llama->InternLM2
 class InternLM2RMSNorm(nn.Layer):
     def __init__(self, hidden_size, eps=1e-6):
         """
@@ -123,7 +119,6 @@ class InternLM2RMSNorm(nn.Layer):
         return self.weight * hidden_states.to(input_dtype)
 
 
-# Copied from transformers.model.llama.modeling_llama.LlamaRotaryEmbedding with Llama->InternLM2
 class InternLM2RotaryEmbedding(nn.Layer):
     def __init__(self, dim, max_position_embeddings=2048, base=10000):
         super().__init__()
@@ -158,7 +153,6 @@ class InternLM2RotaryEmbedding(nn.Layer):
         )
 
 
-# Copied from transformers.model.llama.modeling_llama.LlamaLinearScalingRotaryEmbedding with Llama->InternLM2
 class InternLM2LinearScalingRotaryEmbedding(InternLM2RotaryEmbedding):
     """InternLM2RotaryEmbedding extended with linear scaling. Credits to the Reddit user /u/kaiokendev"""
 
@@ -178,7 +172,6 @@ class InternLM2LinearScalingRotaryEmbedding(InternLM2RotaryEmbedding):
         self.register_buffer("sin_cached", emb.sin().to(dtype), persistable=False)  # persistent=False)
 
 
-# Copied from transformers.model.llama.modeling_llama.LlamaDynamicNTKScalingRotaryEmbedding with Llama->InternLM2
 class InternLM2DynamicNTKScalingRotaryEmbedding(InternLM2RotaryEmbedding):
     """InternLM2RotaryEmbedding extended with Dynamic NTK scaling.
     Credits to the Reddit users /u/bloc97 and /u/emozilla.
@@ -207,7 +200,6 @@ class InternLM2DynamicNTKScalingRotaryEmbedding(InternLM2RotaryEmbedding):
         self.register_buffer("sin_cached", emb.sin().to(dtype), persistable=False)  # persistent=False)
 
 
-# Copied from transformers.model.llama.modeling_llama.rotate_half
 def rotate_half(x):
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
@@ -215,7 +207,6 @@ def rotate_half(x):
     return paddle.concat((-x2, x1), axis=-1)
 
 
-# Copied from transformers.model.llama.modeling_llama.apply_rotary_pos_emb
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
     """Applies Rotary Position Embedding to the query and key tensors."""
     cos = cos[position_ids].unsqueeze(unsqueeze_dim)
@@ -241,7 +232,6 @@ class InternLM2MLP(nn.Layer):
         return down_proj
 
 
-# Copied from transformers.model.llama.modeling_llama.repeat_kv
 def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
     """
     This is the equivalent of paddle.repeat_interleave(x, dim=1, repeats=n_rep). The hidden states go from (batch,
@@ -292,8 +282,8 @@ class InternLM2Attention(nn.Layer):
                 base=self.config.rope_theta,
             )
         else:
-            scaling_type = self.config.rope_scaling["type"]
-            scaling_factor = self.config.rope_scaling["factor"]
+            scaling_type = self.config.rope_scaling.get("type", "linear")
+            scaling_factor = self.config.rope_scaling.get("factor", 1.0)
             if scaling_type == "dynamic":
                 self.rotary_emb = InternLM2DynamicNTKScalingRotaryEmbedding(
                     self.head_dim,
@@ -520,7 +510,7 @@ class InternLM2FlashAttention2(InternLM2Attention):
         causal = self.is_causal and query_length != 1
 
         head_dim = query_states.shape[-1]
-        softmax_scale = head_dim**-0.5  # TODO: 需要手动加上
+        softmax_scale = head_dim**-0.5
 
         if attention_mask is not None:
             batch_size = query_states.shape[0]  # [2, 3383, 16, 128]
@@ -683,14 +673,11 @@ class InternLM2DecoderLayer(nn.Layer):
 
         return outputs
 
-
-# # Copied from transformers.models.llama.modeling_llama.LlamaPreTrainedModel with Llama->InternLM2
 class InternLM2PretrainedModel(PretrainedModel):
     config_class = InternLM2Config
     base_model_prefix = "model"
     _no_split_modules = ["InternLM2DecoderLayer"]
     _skip_keys_device_placement = "past_key_values"
-    # paddle和pytorch不同，需要 nn.Linear 对调 in out的位置
     transpose_weight_keys = ["wqkv", "wo", "w1", "w2", "w3", "output"]
     _supports_flash_attn_2 = True
 
@@ -706,8 +693,53 @@ class InternLM2PretrainedModel(PretrainedModel):
                 with paddle.no_grad():
                     layer.weight[layer._padding_idx] = 0.0
 
+    @classmethod
+    def _gen_aoa_config(cls, config: InternLM2Config):
+        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+        aoa_statements = [
+            f"model.tok_embeddings.weight -> {model_prefix}tok_embeddings.weight",
+            f"model.norm.weight -> {model_prefix}norm.weight",
+            f"model.layers.$LAYER_ID.attention_norm.weight -> {model_prefix}layers.$LAYER_ID.attention_norm.weight",
+            f"model.layers.$LAYER_ID.ffn_norm.weight -> {model_prefix}layers.$LAYER_ID.ffn_norm.weight",
+        ]
+        for key in ["wqkv", "wo"]:
+            aoa_statements.append(
+                f"model.layers.$LAYER_ID.attention.{key}.weight^T -> {model_prefix}layers.$LAYER_ID.attention.{key}.weight"
+            )
+        for key in ["w1", "w3", "w2"]:
+            aoa_statements.append(
+                f"model.layers.$LAYER_ID.feed_forward.{key}.weight^T -> {model_prefix}layers.$LAYER_ID.feed_forward.{key}.weight"
+            )
+        if cls != cls.base_model_class:
+            if config.tie_word_embeddings:
+                aoa_statements.append("model.tok_embeddings.weight -> output.weight")
+            else:
+                aoa_statements.append("output.weight^T -> output.weight")
+        return {"aoa_statements": aoa_statements}
 
-# # Modified from transformers.model.llama.modeling_llama.LlamaModel
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: InternLM2Config):
+        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+        aoa_statements = [
+            f"{model_prefix}tok_embeddings.weight -> model.tok_embeddings.weight",
+            f"{model_prefix}norm.weight -> model.norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.attention_norm.weight -> model.layers.$LAYER_ID.attention_norm.weight",
+            f"{model_prefix}layers.$LAYER_ID.ffn_norm.weight -> model.layers.$LAYER_ID.ffn_norm.weight",
+        ]
+        for key in ["wqkv", "wo"]:
+            aoa_statements.append(
+                f"{model_prefix}layers.$LAYER_ID.attention.{key}.weight^T -> model.layers.$LAYER_ID.attention.{key}.weight"
+            )
+        for key in ["w1", "w3", "w2"]:
+            aoa_statements.append(
+                f"{model_prefix}layers.$LAYER_ID.feed_forward.{key}.weight^T -> model.layers.$LAYER_ID.feed_forward.{key}.weight"
+            )
+        if not config.tie_word_embeddings and cls != cls.base_model_class:
+            aoa_statements.append("output.weight^T -> output.weight")
+        return {"aoa_statements": aoa_statements}
+
+
+@register_base_model
 class InternLM2Model(InternLM2PretrainedModel):
     """
     Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`InternLM2DecoderLayer`]
@@ -988,15 +1020,10 @@ class InternLM2ForCausalLM(InternLM2PretrainedModel):
 
         loss = None
         if labels is not None:
-            # Shift so that tokens < n predict n
-            shift_logits = logits[..., :-1, :]
-            shift_labels = labels[..., 1:]
-            # Flatten the tokens
             loss_fct = CrossEntropyLoss()
-            shift_logits = shift_logits.reshape([-1, self.config.vocab_size])
-            shift_labels = shift_labels.reshape([-1])
-            # Enable model parallelism
-            loss = loss_fct(shift_logits, shift_labels)
+            logits_flat = logits.reshape([-1, self.config.vocab_size])
+            labels_flat = labels.reshape([-1])
+            loss = loss_fct(logits_flat, labels_flat)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
@@ -1084,9 +1111,9 @@ class InternLM2ForCausalLM(InternLM2PretrainedModel):
         do_sample: bool = True,
         temperature: float = 0.8,
         top_p: float = 0.8,
-        meta_instruction: str = "You are an AI assistant whose name is InternLM (书生·浦语).\n"
-        "- InternLM (书生·浦语) is a conversational language model that is developed by Shanghai AI Laboratory (上海人工智能实验室). It is designed to be helpful, honest, and harmless.\n"
-        "- InternLM (书生·浦语) can understand and communicate fluently in the language chosen by the user such as English and 中文.",
+        meta_instruction: str = "You are an AI assistant whose name is InternLM.\n"
+        "- InternLM is a conversational language model developed by Shanghai AI Laboratory. It is designed to be helpful, honest, and harmless.\n"
+        "- InternLM can understand and communicate fluently in the language chosen by the user such as English and Chinese.",
         **kwargs,
     ):
         inputs = self.build_inputs(tokenizer, query, history, meta_instruction)
