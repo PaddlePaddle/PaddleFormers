@@ -27,6 +27,7 @@ from typing import Optional, Union
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
+from paddle.distributed.fleet.meta_parallel import LayerSpec
 from paddle.distributed.fleet.utils import recompute
 from paddlefleet import parallel_state, tensor_parallel
 from paddlefleet.fusions.fused_bias_dropout import get_bias_dropout_add
@@ -34,7 +35,6 @@ from paddlefleet.models.common.vision_layer.vision_layer import VisionLayer
 from paddlefleet.models.multimodal.llava_model import LLaVAModel as MCoreLLaVAModel
 from paddlefleet.packed_seq_params import PackedSeqParams
 from paddlefleet.process_groups_config import ProcessGroupCollection
-from paddlefleet.spec_utils import LayerSpec
 from paddlefleet.tensor_parallel.layers import ColumnParallelLinear, RowParallelLinear
 from paddlefleet.transformer.attention import SelfAttention, SelfAttentionSublayersSpec
 from paddlefleet.transformer.dot_product_attention import DotProductAttention
@@ -386,8 +386,7 @@ class Qwen3VLTextProvider(GPTModelProvider):
     multimodal_embedding: bool = False
     _save_to_hf: bool = False
     use_fused_linear_cross_entropy: bool = True
-    high_precision_rope: bool = True
-    moe_grouped_gemm: bool = True
+    moe_expert_fusion: bool = True
 
     n_shared_experts: int = 0
     transform_rules = {
@@ -439,7 +438,6 @@ class Qwen3VLVisionProvider(TransformerConfig):
     img_w: int = 336
     add_class_token: bool = False
     class_token_len: int = 1
-    high_precision_rope: bool = True
     # _save_to_hf: bool = False
     # use_fused_linear_cross_entropy: bool = True
     # fuse_linear: bool = True
@@ -991,7 +989,9 @@ class Qwen3VLProvider(TransformerConfig):
     def from_config(cls, config):
         res = super().from_config(config)
         res.vision_config = Qwen3VLVisionProvider.from_config(config.vision_config)
+        res.vision_config.fa_version = config.fa_version
         res.text_config = Qwen3VLTextProvider.from_config(config.text_config)
+
         res.vision_config.normalization = "LayerNorm"
         res.vision_config.gated_linear_unit = False
         res.text_config.multimodal_embedding = True

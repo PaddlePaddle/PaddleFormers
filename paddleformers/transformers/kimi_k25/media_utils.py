@@ -25,7 +25,6 @@ import numpy as np
 import paddle
 from PIL import Image
 
-from ...utils import is_decord_available
 from ...utils.log import logger
 from ..paddle_vision_utils import pad, resize
 
@@ -65,57 +64,6 @@ class VideoChunkInput(TypedDict):
 
 
 MediaInput = ImageInput | VideoChunkInput
-
-
-def _read_video_decord(
-    video_src: str | bytes | os.PathLike,
-    num_threads: int = 0,
-    sample_indices: list = None,
-    return_video: bool = False,
-) -> dict:
-
-    if not is_decord_available():
-        raise ImportError(
-            "Backend=decord for loading the video but the required library is not found in your environment "
-            "Make sure to install 'decord' before loading the video."
-        )
-    import decord
-
-    logger.info("Loading video with decord backend.")
-    st = time.time()
-    vr = decord.VideoReader(video_src, num_threads=num_threads)
-    total_frames, video_fps = len(vr), vr.get_avg_fps()
-
-    original_height = int(vr[0].shape[0])
-    original_width = int(vr[0].shape[1])
-
-    assert total_frames > 0, "Invalid video format."
-    assert original_width > 0 and original_height > 0, "Invalid video format."
-    assert video_fps > 0, "Invalid video format."
-
-    estimated_frame = max(1, int(video_fps))
-    key_indices = list(range(0, total_frames, estimated_frame))
-
-    frame_time_info = {
-        "video_start": 0,
-        "video_end": total_frames - 1,
-        "total_frames": total_frames,
-    }
-    video = vr.get_batch(indices=sample_indices if sample_indices is not None else key_indices).asnumpy()
-    video = paddle.to_tensor(video).permute(0, 3, 1, 2)  # Convert to TCHW format
-
-    logger.info(f"decord:  {video_src=}, {total_frames=}, {video_fps=}, time={time.time() - st:.3f}s")
-    video_spec = VideoSpec(
-        media_type="video",
-        height=original_height,
-        width=original_width,
-        num_frames=total_frames,
-        fps=video_fps,
-        key_indices=key_indices,
-        frame_time_info=frame_time_info,
-    )
-
-    return (video, video_spec) if return_video else video_spec
 
 
 def _read_video_paddlecodec(
@@ -209,7 +157,6 @@ def _read_video_paddlecodec(
 
 
 VIDEO_READER_BACKENDS = {
-    "decord": _read_video_decord,
     "paddlecodec": _read_video_paddlecodec,
 }
 

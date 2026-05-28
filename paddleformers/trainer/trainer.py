@@ -58,17 +58,11 @@ from ..utils.import_utils import is_paddlefleet_available
 
 # Conditionally import paddlefleet modules
 if is_paddlefleet_available():
-    import paddlefleet.distributed.model as paddlefleet_dist_model
     from paddlefleet.models.gpt import GPTModel as FleetGPTModel
-    from paddlefleet.pipeline_parallel import ParallelBase as PaddleFleetParallelBase
-    from paddlefleet.pipeline_parallel import PipelineLayer as PaddleFleetPipelineLayer
 
     from paddleformers.transformers.gpt_provider import GPTModel
 else:
-    paddlefleet_dist_model = None
     FleetGPTModel = None
-    PaddleFleetParallelBase = None
-    PaddleFleetPipelineLayer = None
 
 from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_optimizer import (
@@ -101,8 +95,10 @@ from ..data import (
     DataCollator,
     DataCollatorWithPadding,
     DistDataLoader,
+    StreamDistDataLoader,
     default_data_collator,
     init_dataloader_comm_group,
+    init_stream_data_group,
 )
 from ..peft import LoRAModel
 from ..peft.lora import QuantizationLoRABaseLinear
@@ -194,7 +190,11 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     TrainerMemoryTracker,
     TrainOutput,
     _exec_mode_guard,
+    _get_muon_2d_param_names,
     _insert_sync,
+    _is_muon_sharding_optimizer,
+    _restore_master_weights_single,
+    _unwrap_muon_sharding_optimizer,
     download_recovery_ckpt_from_pdc,
     find_batch_size,
     get_last_checkpoint,
@@ -343,6 +343,13 @@ class Trainer:
         processing_class: Optional[ImageProcessingMixin] = None,
         resume_from_custom_func: Optional[Callable] = None,
     ):
+        if is_paddlefleet_available() and (
+            isinstance(model, FleetGPTModel)
+            or (isinstance(model, LoRAModel) and isinstance(model.model, FleetGPTModel))
+        ):
+            self.using_fleet_model = True
+        else:
+            self.using_fleet_model = False
 
         if args is None:
             output_dir = "tmp_trainer"
@@ -433,6 +440,10 @@ class Trainer:
         if not args.skip_profile_timer:
             set_timers()
         self.timers = get_timers()
+        if is_paddlefleet_available():
+            from paddlefleet.training.global_vars import set_profile_timers
+
+            set_profile_timers(self.timers)
         self.runtime_timer = RuntimeTimer("RuntimeTimer")
 
         self.model_wrapped = model
@@ -478,16 +489,9 @@ class Trainer:
             )
 
         if self.args.pipeline_model_parallel_size > 1 and self.args.use_hybrid_parallel:
-            if is_paddlefleet_available() and PaddleFleetPipelineLayer is not None:
-                assert (
-                    isinstance(model, LoRAModel) and isinstance(model.model, (PaddleFleetPipelineLayer, PipelineLayer))
-                ) or isinstance(
-                    model, (PaddleFleetPipelineLayer, PipelineLayer)
-                ), f"Only support pipeline parallel mode when model is PaddleFleetPipelineLayer or PipelineLayer!!! but get {type(model.model)}"
-            else:
-                assert (isinstance(model, LoRAModel) and isinstance(model.model, PipelineLayer)) or isinstance(
-                    model, PipelineLayer
-                ), f"Only support pipeline parallel mode when model is PipelineLayer!!! but get {type(model.model)}"
+            assert (isinstance(model, LoRAModel) and isinstance(model.model, PipelineLayer)) or isinstance(
+                model, PipelineLayer
+            ), f"Only support pipeline parallel mode when model is PipelineLayer or PipelineLayer!!! but get {type(model.model)}"
         default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(self.args.report_to)
         callbacks = default_callbacks if callbacks is None else default_callbacks + callbacks
         self.callback_handler = CallbackHandler(
@@ -592,6 +596,10 @@ class Trainer:
         self._pp_data_group = None
         if self.args.pipeline_model_parallel_size > 1 and self.args.distributed_dataloader:
             self._pp_data_group = init_dataloader_comm_group()
+
+        self._stream_data_group = None
+        if self.args.distributed_dataloader:
+            self._stream_data_group, _ = init_stream_data_group()
 
         default_label_names = (
             ["start_positions", "end_positions"]
@@ -948,7 +956,7 @@ class Trainer:
             use_expert_parallel=self.args.use_expert_parallel,
             ema_coef=self.args.zcc_save_ema_coef,
             zcc_worker_class=zcc_worker_class,
-            save_hf_steps=self.args.save_hf_steps,
+            save_hf_steps=self.args.save_hf_steps if self.args.online_merge_ema else -1,
         )
 
     def _register_pipeline_hooks(self, unwrapped_model):
@@ -1108,7 +1116,11 @@ class Trainer:
         model_states_path = os.path.join(resume_from_checkpoint, MODEL_STATE_DIC)
 
         hcg = dist.fleet.get_hybrid_communicate_group()
-        flex_ckpt_comm_method = select_flex_ckpt_comm_method()
+        flex_ckpt_comm_method = (
+            select_flex_ckpt_comm_method()
+            if self.args.flex_ckpt_comm_method is None
+            else self.args.flex_ckpt_comm_method
+        )
         if flex_ckpt_comm_method == "parallel_broadcast":
             try:
                 pp_group = hcg.get_pipe_parallel_group()
@@ -1129,7 +1141,10 @@ class Trainer:
             except Exception:
                 moe_sharding_group = None
 
-            worker_groups = [moe_group, pp_group, moe_sharding_group]
+            if pp_group.nranks > 1:
+                worker_groups = [moe_group, pp_group, moe_sharding_group]
+            else:
+                worker_groups = [moe_group, moe_sharding_group, pp_group]
         else:
             worker_groups = None
 
@@ -1182,7 +1197,6 @@ class Trainer:
             init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
 
             optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
-
             opt_states = {}
             master_weights = {}
             for k, v in optimizer_sharded_state_dict.items():
@@ -1220,8 +1234,12 @@ class Trainer:
         enable_bf16_opt = (
             not isinstance(self.model, LoRAModel)
             and self.args.bf16
-            and isinstance(self.optimizer._inner_opt, DygraphShardingOptimizerV2)
+            and (
+                isinstance(self.optimizer._inner_opt, DygraphShardingOptimizerV2)
+                or _is_muon_sharding_optimizer(self.optimizer)
+            )
         )
+
         logger.debug(f"sharded_model_from_ema: {self.args.sharded_model_from_ema}")
         logger.debug(f"enable_bf16_opt: {enable_bf16_opt}")
 
@@ -1263,41 +1281,14 @@ class Trainer:
         if enable_bf16_opt:
             opt_state_dict = self.optimizer.state_dict()
 
-            def recover_params_from_master_weight(opt_state_dict, group):
-                master_weights = opt_state_dict["master_weights"]
-                tmp = OrderedDict()
-                master_weights, tmp = (tmp, master_weights)
-                # cast to before
-                for k, v in tmp.items():
-                    name = v.name
-                    master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
-                    master_weights[k].name = name
-
-                structure_name_map = {k: v.name for (k, v) in self.model.state_dict().items()}
-                node_model_state = reshard_util.NodeModelState(group=group)
-                node_model_state_tmp = reshard_util.NodeModelState(group=group)
-                node_model_state_tmp.add_master_weights(master_weights)
-                node_model_state_tmp.pack_keys(structure_name_map)
-                node_model_state.merge_from(node_model_state_tmp, max(group.rank, 0))
-                del node_model_state_tmp
-                sharding_strategy = reshard_util.get_sharding_strategy(self.optimizer)
-                logger.debug(f"sharding_strategy: {sharding_strategy}")
-                restore_func = (
-                    reshard_util.sharding_v1.restore
-                    if sharding_strategy == SHARDING_STRATEGY_V1
-                    else reshard_util.sharding_v2.restore
-                )
-                node_model_state = restore_func(node_model_state, self.model, self.optimizer)
-                node_model_state.unpack_keys()
-                master_weights = node_model_state.master_weights
-
-                master_weights = reshard_util.all_gather_state_dict(master_weights, lambda x: True, group)
-
+            def _assign_master_weights_to_model(master_weights):
                 model_state_dict = self.model.state_dict()
                 for key, param in model_state_dict.items():
                     if param.name in master_weights and param.dtype == paddle.bfloat16:
                         logger.debug(
-                            f"key {key}, convert master weights {param.name} shape {master_weights[param.name].shape} to param {param.name} shape{param.shape}"
+                            f"key {key}, convert master weights {param.name} "
+                            f"shape {master_weights[param.name].shape} to param "
+                            f"{param.name} shape{param.shape}"
                         )
                         assert (
                             param.shape == master_weights[param.name].shape
@@ -1305,12 +1296,73 @@ class Trainer:
                         master_weight = paddle.reshape(master_weights[param.name], param.shape)
                         paddle.assign(paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key])
 
+            def recover_params_from_master_weight(opt_state_dict, group):
+                master_weights = opt_state_dict.get("master_weights", {})
+                tmp = OrderedDict()
+                master_weights, tmp = (tmp, master_weights)
+                # cast to bf16 and move to cpu
+                for k, v in tmp.items():
+                    name = v.name
+                    master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
+                    master_weights[k].name = name
+
+                structure_name_map = {k: v.name for (k, v) in self.model.state_dict().items()}
+
+                muon_opt = _unwrap_muon_sharding_optimizer(self.optimizer)
+                if muon_opt is not None:
+                    param_2d_names = _get_muon_2d_param_names(muon_opt)
+                    logger.debug(f"Muon recovery: {len(param_2d_names)} 2D params detected")
+
+                    mw_2d = OrderedDict()
+                    mw_1d = OrderedDict()
+                    for k, v in master_weights.items():
+                        if k in param_2d_names:
+                            mw_2d[k] = v
+                        else:
+                            mw_1d[k] = v
+
+                    all_master_weights = OrderedDict()
+                    restored_2d = _restore_master_weights_single(
+                        mw_2d,
+                        self.model,
+                        self.optimizer,
+                        group,
+                        structure_name_map,
+                        reshard_util.sharding_v1.restore,
+                    )
+                    all_master_weights.update(restored_2d)
+
+                    restored_1d = _restore_master_weights_single(
+                        mw_1d,
+                        self.model,
+                        self.optimizer,
+                        group,
+                        structure_name_map,
+                        reshard_util.sharding_v2.restore,
+                    )
+                    all_master_weights.update(restored_1d)
+
+                    master_weights = all_master_weights
+                else:
+                    sharding_strategy = reshard_util.get_sharding_strategy(self.optimizer)
+                    logger.debug(f"sharding_strategy: {sharding_strategy}")
+                    restore_func = (
+                        reshard_util.sharding_v1.restore
+                        if sharding_strategy == SHARDING_STRATEGY_V1
+                        else reshard_util.sharding_v2.restore
+                    )
+                    master_weights = _restore_master_weights_single(
+                        master_weights, self.model, self.optimizer, group, structure_name_map, restore_func
+                    )
+
+                _assign_master_weights_to_model(master_weights)
+
             with paddle.no_grad():
                 if paddle.distributed.is_initialized():
                     group_getter = GroupGetter(self.model)
                     opt_state_dict = split_opt_state(opt_state_dict, group_getter)
                     for gid in group_getter.get_group_ids():
-                        sub_opt_state_dict = opt_state_dict[gid]
+                        sub_opt_state_dict = opt_state_dict.get(gid, {})
                         group = group_getter.get_group_by_id(gid)
                         if self.args.bf16:
                             recover_params_from_master_weight(sub_opt_state_dict, group)
@@ -1779,6 +1831,16 @@ class Trainer:
         return global_micro_batchs
 
     def optimizer_step(self, args, model, parameters_list=None):
+        # When freeze_training is enabled, skip optimizer step and lr scheduler step
+        # to keep both model parameters and optimizer state unchanged
+        if args.freeze_training:
+            logger.warning(
+                "freeze_training is enabled! Model parameters and optimizer state will NOT be updated. "
+                "This is intended for debugging/profiling only."
+            )
+            self.optimizer.clear_grad()
+            return
+
         if parameters_list is None:
             parameters_list = []
 
@@ -2483,9 +2545,8 @@ class Trainer:
 
             paddle_pipeline_timers = paddle_get_timers()
             for name, timer in paddle_pipeline_timers.timers.items():
-                elapsed_time = timer.elapsed(reset=False) * 1000.0
+                elapsed_time = timer.elapsed(reset=True) * 1000.0
                 paddle_timer_info += f" | {name}: {elapsed_time:.2f}"
-            paddle_pipeline_timers.log(paddle_pipeline_timers.timers.keys(), reset=True)
         except AssertionError:  # paddle timer not enabled
             pass
 
@@ -2559,9 +2620,7 @@ class Trainer:
 
             seq_length = None
             model_flops_per_token = None
-            if (getattr(self, "is_pretraining", False) or getattr(self.args, "benchmark", False)) and hasattr(
-                self.model, "config"
-            ):
+            if hasattr(self.model, "config"):
                 seq_length = getattr(self.model.config, "seq_length", None)
                 try:
                     model_flops_per_token = self.model.get_hardware_flops()
@@ -2592,6 +2651,24 @@ class Trainer:
                     logs.update(
                         {k: v.item() if hasattr(v, "item") else v for k, v in LanguageLoss.mtp_loss_tracker.items()}
                     )
+            except (ImportError, AttributeError):
+                pass
+
+            # Add DSA indexer loss metrics if available
+            try:
+                from paddlefleet.transformer.dsa_attention import (
+                    DSAIndexerLossLoggingHelper,
+                )
+
+                if DSAIndexerLossLoggingHelper.tracker.get("values") is not None:
+                    loss_scale = 1.0 / self.args.gradient_accumulation_steps
+                    DSAIndexerLossLoggingHelper.reduce_loss_in_tracker()
+                    tracker = DSAIndexerLossLoggingHelper.tracker
+                    indexer_loss_values = tracker["values"] * loss_scale
+                    num_layers = indexer_loss_values.shape[0]
+                    avg_indexer_loss = indexer_loss_values.sum() / num_layers
+                    logs["indexer_loss"] = avg_indexer_loss.item()
+                    DSAIndexerLossLoggingHelper.clean_loss_in_tracker()
             except (ImportError, AttributeError):
                 pass
 
@@ -2728,35 +2805,48 @@ class Trainer:
         if is_iterable_dataset:  # For iterable dataset
             total_batch_size = self.args.per_device_train_batch_size
 
-            # For auto_parallel mode, skip IterableDatasetShard to avoid double sharding
-            # DataLoader and dist.shard_dataloader will handle the sharding
-            if not self.args.enable_auto_parallel:
-                if self.args.dataset_world_size > 1 and train_dataset is not None:
-                    train_dataset = IterableDatasetShard(
-                        train_dataset,
-                        batch_size=total_batch_size,
-                        drop_last=self.args.dataloader_drop_last,
-                        num_processes=self.args.dataset_world_size,
-                        process_index=self.args.dataset_rank,
-                    )
+            if self.args.distributed_dataloader and self._stream_data_group is not None:
+                # StreamDistDataLoader: only rank 0 reads, scatter to dataset ranks
+                logger.info("Training using StreamDistDataLoader for iterable dataset.")
+                train_dataloader = StreamDistDataLoader(
+                    dataset=train_dataset,
+                    batch_size=total_batch_size,
+                    collate_fn=self.data_collator,
+                    num_workers=self.args.dataloader_num_workers,
+                    prefetch_factor=self.args.prefetch_factor,
+                    persistent_workers=self.args.dataloader_num_workers > 0,
+                    reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
+                    stream_data_group=self._stream_data_group,
+                    pp_data_group=self._pp_data_group,
+                )
             else:
-                # For auto_parallel, set batch_size to be divisible by dp_world_size
-                # so that DataLoader's internal sharding works correctly
-                total_batch_size = self.args.per_device_train_batch_size * self.args.dataset_world_size
+                if not self.args.enable_auto_parallel:
+                    if self.args.dataset_world_size > 1 and train_dataset is not None:
+                        train_dataset = IterableDatasetShard(
+                            train_dataset,
+                            batch_size=total_batch_size,
+                            drop_last=self.args.dataloader_drop_last,
+                            num_processes=self.args.dataset_world_size,
+                            process_index=self.args.dataset_rank,
+                        )
+                else:
+                    # For auto_parallel, set batch_size to be divisible by dp_world_size
+                    # so that DataLoader's internal sharding works correctly
+                    total_batch_size = self.args.per_device_train_batch_size * self.args.dataset_world_size
 
-            if self.args.distributed_dataloader:
-                logger.info("Training using DistDataLoader.")
-                additional_configs = {"is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
-            train_dataloader = _DataLoader(
-                train_dataset,
-                batch_size=total_batch_size,
-                collate_fn=self.data_collator,
-                num_workers=self.args.dataloader_num_workers,
-                persistent_workers=self.args.dataloader_num_workers > 0,
-                prefetch_factor=self.args.prefetch_factor,
-                reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
-                **additional_configs,
-            )
+                if self.args.distributed_dataloader:
+                    logger.info("Training using DistDataLoader.")
+                    additional_configs = {"is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
+                train_dataloader = _DataLoader(
+                    train_dataset,
+                    batch_size=total_batch_size,
+                    collate_fn=self.data_collator,
+                    num_workers=self.args.dataloader_num_workers,
+                    persistent_workers=self.args.dataloader_num_workers > 0,
+                    prefetch_factor=self.args.prefetch_factor,
+                    reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
+                    **additional_configs,
+                )
         else:
             train_sampler = self._get_train_sampler()
             if self.args.distributed_dataloader:
@@ -2808,9 +2898,7 @@ class Trainer:
                 drop_last=False,
             )
         else:
-            if (
-                is_paddlefleet_available() and isinstance(self.model, PaddleFleetPipelineLayer)
-            ) or self.args.pipeline_model_parallel_size > 1:
+            if (is_paddlefleet_available() and self.using_fleet_model) or self.args.pipeline_model_parallel_size > 1:
                 # In pipeline parallelism, batch size will be strictly checked
                 # Use LastBatchPaddingSampler to pad the last batch with the first batch
                 from .trainer_utils import LastBatchPaddingSampler
@@ -2860,27 +2948,43 @@ class Trainer:
 
         additional_configs = {}
         if is_iterable_dataset:
-            if (
-                self.args.dataset_world_size > 1 or self.args.pipeline_model_parallel_size > 1
-            ) and eval_dataset is not None:
-                eval_dataset = IterableDatasetShard(
+            if self.args.distributed_dataloader and self._stream_data_group is not None:
+                logger.info("Eval using StreamDistDataLoader for iterable dataset.")
+                return StreamDistDataLoader(
+                    dataset=eval_dataset,
+                    batch_size=self.args.per_device_eval_batch_size,
+                    collate_fn=self.data_collator,
+                    num_workers=0,
+                    stream_data_group=self._stream_data_group,
+                    pp_data_group=self._pp_data_group,
+                    eval=True,
+                )
+            else:
+                if (
+                    self.args.dataset_world_size > 1 or self.args.pipeline_model_parallel_size > 1
+                ) and eval_dataset is not None:
+                    eval_dataset = IterableDatasetShard(
+                        eval_dataset,
+                        batch_size=self.args.per_device_eval_batch_size,
+                        drop_last=self.args.dataloader_drop_last,
+                        num_processes=self.args.dataset_world_size,
+                        process_index=self.args.dataset_rank,
+                    )
+
+                if self.args.distributed_dataloader:
+                    logger.info("Eval using DistDataLoader.")
+                    additional_configs = {
+                        "eval": True,
+                        "is_iterable_dataset": True,
+                        "pp_data_group": self._pp_data_group,
+                    }
+                return _DataLoader(
                     eval_dataset,
                     batch_size=self.args.per_device_eval_batch_size,
-                    drop_last=self.args.dataloader_drop_last,
-                    num_processes=self.args.dataset_world_size,
-                    process_index=self.args.dataset_rank,
+                    collate_fn=self.data_collator,
+                    num_workers=0,
+                    **additional_configs,
                 )
-
-            if self.args.distributed_dataloader:
-                logger.info("Eval using DistDataLoader.")
-                additional_configs = {"eval": True, "is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
-            return _DataLoader(
-                eval_dataset,
-                batch_size=self.args.per_device_eval_batch_size,
-                collate_fn=self.data_collator,
-                num_workers=0,
-                **additional_configs,
-            )
         else:
             eval_sampler = self._get_eval_sampler(eval_dataset)
             if self.args.distributed_dataloader:
@@ -2923,28 +3027,47 @@ class Trainer:
 
         additional_config = {}
         if is_iterable_dataset:
-            if self.args.dataset_world_size > 1 and test_dataset is not None:
-                test_dataset = IterableDatasetShard(
-                    test_dataset,
+            if self.args.distributed_dataloader and self._stream_data_group is not None:
+                logger.info("Test using StreamDistDataLoader for iterable dataset.")
+                return StreamDistDataLoader(
+                    dataset=test_dataset,
                     batch_size=self.args.per_device_eval_batch_size,
-                    drop_last=self.args.dataloader_drop_last,
-                    num_processes=self.args.dataset_world_size,
-                    process_index=self.args.dataset_rank,
+                    collate_fn=self.data_collator,
+                    num_workers=self.args.dataloader_num_workers,
+                    prefetch_factor=self.args.prefetch_factor,
+                    persistent_workers=self.args.dataloader_num_workers > 0,
+                    reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
+                    stream_data_group=self._stream_data_group,
+                    pp_data_group=self._pp_data_group,
+                    eval=True,
                 )
+            else:
+                if self.args.dataset_world_size > 1 and test_dataset is not None:
+                    test_dataset = IterableDatasetShard(
+                        test_dataset,
+                        batch_size=self.args.per_device_eval_batch_size,
+                        drop_last=self.args.dataloader_drop_last,
+                        num_processes=self.args.dataset_world_size,
+                        process_index=self.args.dataset_rank,
+                    )
 
-            if self.args.distributed_dataloader:
-                logger.info("Test using DistDataLoader.")
-                additional_config = {"eval": True, "is_iterable_dataset": True, "pp_data_group": self._pp_data_group}
-            return _DataLoader(
-                test_dataset,
-                batch_size=self.args.per_device_eval_batch_size * self.world_size,
-                collate_fn=self.data_collator,
-                num_workers=self.args.dataloader_num_workers,
-                persistent_workers=self.args.dataloader_num_workers > 0,
-                prefetch_factor=self.args.prefetch_factor,
-                reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
-                **additional_config,
-            )
+                if self.args.distributed_dataloader:
+                    logger.info("Test using DistDataLoader.")
+                    additional_config = {
+                        "eval": True,
+                        "is_iterable_dataset": True,
+                        "pp_data_group": self._pp_data_group,
+                    }
+                return _DataLoader(
+                    test_dataset,
+                    batch_size=self.args.per_device_eval_batch_size * self.world_size,
+                    collate_fn=self.data_collator,
+                    num_workers=self.args.dataloader_num_workers,
+                    persistent_workers=self.args.dataloader_num_workers > 0,
+                    prefetch_factor=self.args.prefetch_factor,
+                    reader_buffer_size=max(self.args.gradient_accumulation_steps, 2),
+                    **additional_config,
+                )
         else:
             test_sampler = self._get_eval_sampler(test_dataset)
             if self.args.distributed_dataloader:
@@ -3000,6 +3123,17 @@ class Trainer:
 
             if hasattr(optimizer_cls, "_create_master_weight") and self.args.fp16_opt_level == "O2":
                 optimizer_kwargs["multi_precision"] = True
+
+            if self.args.optim == OptimizerNames.MUON and hasattr(self.model, "build_muon_param_info_map"):
+                self.model.config.muon_configs = {
+                    "muon_qkv_update_mode": self.args.muon_qkv_update_mode,
+                    "muon_ffn_split": self.args.muon_ffn_split,
+                    "muon_exclude_patterns": self.args.muon_exclude_patterns,
+                }
+                optimizer_kwargs["muon_param_info_map"] = self.model.build_muon_param_info_map(
+                    self.model, self.model.config
+                )
+                logger.info(f"muon_param_info_map: {optimizer_kwargs['muon_param_info_map']}")
 
             self.optimizer = optimizer_cls(
                 learning_rate=self.lr_scheduler if lr_scheduler is None else lr_scheduler,
@@ -3106,6 +3240,30 @@ class Trainer:
 
             optimizer_cls = AdamWCustom
             optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.MUON:
+            assert (
+                args.save_checkpoint_format == "flex_checkpoint" and args.load_checkpoint_format == "flex_checkpoint"
+            ), (
+                "Muon optimizer only supports flex_checkpoint. "
+                "Please set --save_checkpoint_format flex_checkpoint --load_checkpoint_format flex_checkpoint."
+            )
+            from paddle.optimizer import Muon
+
+            logger.info("Creating Muon optimizer")
+            muon_kwargs = {
+                **adam_kwargs,
+                "momentum": args.muon_momentum,
+                "muon_version": args.muon_version,
+                "muon_exclude_patterns": args.muon_exclude_patterns,
+                "muon_qkv_update_mode": args.muon_qkv_update_mode,
+                "muon_ffn_split": args.muon_ffn_split,
+                "muon_extra_scale_factor": args.muon_extra_scale_factor,
+                "ns_steps": args.muon_ns_steps,
+                "ns_coeff_type": args.muon_ns_coeff_type,
+                "ns_coeffs": args.muon_ns_coeffs,
+            }
+            optimizer_cls = Muon
+            optimizer_kwargs.update(muon_kwargs)
         else:
             raise ValueError(f"Trainer cannot instantiate unsupported optimizer: {args.optim}")
 
@@ -3127,16 +3285,28 @@ class Trainer:
             decay_steps = self.args.decay_steps
 
         if self.lr_scheduler is None:
-            self.lr_scheduler = get_scheduler(
-                self.args.lr_scheduler_type,
-                learning_rate=self.args.learning_rate,
-                num_warmup_steps=warmup,
-                num_training_steps=decay_steps,
-                num_cycles=self.args.num_cycles,
-                lr_end=self.args.lr_end,
-                power=self.args.power,
-                min_lr=self.args.min_lr,
-            )
+            # When freeze_training is enabled, use constant scheduler with lr=0
+            # to ensure learning rate stays 0 throughout training
+            if self.args.freeze_training:
+                logger.warning(
+                    "WARNING: freeze_training is enabled! "
+                    "Learning rate is set to 0 and model parameters will NOT be updated. "
+                    "This mode is intended for debugging/profiling only, NOT for actual training."
+                )
+                from .trainer_utils import get_constant_schedule
+
+                self.lr_scheduler = get_constant_schedule(learning_rate=0.0)
+            else:
+                self.lr_scheduler = get_scheduler(
+                    self.args.lr_scheduler_type,
+                    learning_rate=self.args.learning_rate,
+                    num_warmup_steps=warmup,
+                    num_training_steps=decay_steps,
+                    num_cycles=self.args.num_cycles,
+                    lr_end=self.args.lr_end,
+                    power=self.args.power,
+                    min_lr=self.args.min_lr,
+                )
 
         return self.lr_scheduler
 
@@ -3289,11 +3459,7 @@ class Trainer:
 
         if isinstance(model, LoRAModel):
             model = model.model
-        if (
-            is_paddlefleet_available()
-            and PaddleFleetPipelineLayer is not None
-            and isinstance(model, PaddleFleetPipelineLayer)
-        ):
+        if is_paddlefleet_available() and self.using_fleet_model:
             in_pipeline_parallel_mode = True
         else:
             in_pipeline_parallel_mode = self.args.pipeline_model_parallel_size > 1
@@ -3335,21 +3501,13 @@ class Trainer:
                 model._prepare_pipeline_inputs_func if hasattr(model, "_prepare_pipeline_inputs_func") else None
             )
 
-            if (
-                is_paddlefleet_available()
-                and paddlefleet_dist_model is not None
-                and PaddleFleetPipelineLayer is not None
-                and isinstance(model, PaddleFleetPipelineLayer)
-            ):
-                model = paddlefleet_dist_model.distributed_model(model)
-            else:
-                model = fleet.distributed_model(model)
+            model = fleet.distributed_model(model)
             if prepare_pipeline_inputs_func is not None:
                 model._prepare_pipeline_inputs_func = prepare_pipeline_inputs_func
             else:
 
                 def _prepare_pipeline_inputs_func(inputs):
-                    first_stage_keys = ["input_ids", "attention_mask", "position_ids"]
+                    first_stage_keys = ["input_ids", "attention_mask", "position_ids", "labels"]
                     last_stage_keys = ["labels"]
 
                     def get_expected_keys(inputs, keys):
@@ -3366,13 +3524,9 @@ class Trainer:
 
                     keys = list(inputs[0].keys())
                     inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
-                    if (
-                        is_paddlefleet_available()
-                        and PaddleFleetParallelBase is not None
-                        and isinstance(model, PaddleFleetParallelBase)
-                    ):
+                    if is_paddlefleet_available() and self.using_fleet_model:
                         first_stage_inputs_batch = inputs_batch
-                        last_stage_inputs = first_stage_inputs_batch.pop("labels")
+                        last_stage_inputs = first_stage_inputs_batch.get("labels")
                         outputs = (
                             first_stage_inputs_batch,
                             last_stage_inputs,
@@ -3580,11 +3734,7 @@ class Trainer:
         else:
             labels = None
 
-        if (
-            is_paddle_cuda_available()
-            and PaddleFleetPipelineLayer is not None
-            and isinstance(model, PaddleFleetPipelineLayer)
-        ):
+        if is_paddle_cuda_available() and self.using_fleet_model:
             outputs = model(inputs)
         else:
             outputs = model(**inputs)
@@ -3642,11 +3792,7 @@ class Trainer:
         Return:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
-        if (
-            is_paddlefleet_available()
-            and PaddleFleetParallelBase is not None
-            and isinstance(model, PaddleFleetParallelBase)
-        ):
+        if is_paddlefleet_available() and self.using_fleet_model:
             return self.training_pipeline_step(model, inputs)
 
         if self.args.pipeline_model_parallel_size > 1:
@@ -4622,8 +4768,6 @@ class Trainer:
         prediction_loss_only = prediction_loss_only if prediction_loss_only is not None else args.prediction_loss_only
 
         if self.args.pipeline_model_parallel_size > 1:
-            from paddle.distributed.fleet.meta_parallel import PipelineLayer
-
             _prepare_pipeline_inputs_func = getattr(self.model_wrapped, "_prepare_pipeline_inputs_func", None)
             # Only accept wrapped model for pipeline_parallel mode
             if self.model is self.model_wrapped and isinstance(self.model_wrapped, PipelineLayer):
@@ -4651,6 +4795,8 @@ class Trainer:
             batch_size = dataloader._batch_sampler.batch_size
             # alias for inner dataloader
             dataloader.dataset = dataloader._dataset
+        elif isinstance(dataloader, StreamDistDataLoader):
+            batch_size = dataloader._batch_size
         else:
             raise ValueError("Only support for paddle.io.DataLoader")
 
@@ -4933,11 +5079,7 @@ class Trainer:
                             inputs = {"input_ids": inputs[0], "position_ids": inputs[1]}
                         return inputs
 
-                    if (
-                        is_paddlefleet_available()
-                        and PaddleFleetParallelBase is not None
-                        and isinstance(model, PaddleFleetParallelBase)
-                    ):
+                    if is_paddlefleet_available() and self.using_fleet_model:
                         inputs = _prepare_inputs_for_fleet(inputs)
                     loss = model.eval_batch(data_provider, compute_loss=True)
                     # loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
@@ -4982,11 +5124,7 @@ class Trainer:
             Tuple[Optional[paddle.Tensor], Optional[paddle.Tensor], Optional[paddle.Tensor]]: A tuple with the loss,
             logits and labels (each being optional).
         """
-        if self.args.pipeline_model_parallel_size > 1 or (
-            is_paddlefleet_available()
-            and PaddleFleetParallelBase is not None
-            and isinstance(model, PaddleFleetParallelBase)
-        ):
+        if self.args.pipeline_model_parallel_size > 1 or self.using_fleet_model:
             # hack for pipeline mode
             inputs = self._prepare_inputs(inputs)
             return self.prediction_pipeline_step(model, inputs, prediction_loss_only, ignore_keys, step)

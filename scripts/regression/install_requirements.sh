@@ -26,6 +26,8 @@ install_requirements() {
         #fleet
         wget -q https://paddle-github-action.bj.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp312-cp312-linux_x86_64.whl
         pip install  paddlefleet-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ -i https://pypi.org/simple 
+        #paddlefleet_ops
+        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir --force-reinstall --no-dependencies
         pip uninstall paddlepaddle-gpu -y
         #paddle
         wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
@@ -36,6 +38,8 @@ install_requirements() {
     elif [[ "$ce_branch" == "CE_Develop_cu130_py313" ]]; then # nightly regerssion
         #fleet
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ -i https://pypi.org/simple 
+        #paddlefleet_ops
+        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/ --no-cache-dir --force-reinstall --no-dependencies
         python -m pip uninstall paddlepaddle-gpu -y
         #paddle
         wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda130-Cudnn913-Trt1013-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp313-cp313-linux_x86_64.whl
@@ -46,6 +50,8 @@ install_requirements() {
     elif [[ "$ce_branch" == "CE_Develop_cu130_py312" ]]; then # nightly regerssion
         #fleet
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ -i https://pypi.org/simple 
+        #paddlefleet_ops
+        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/ --no-cache-dir --force-reinstall --no-dependencies
         python -m pip uninstall paddlepaddle-gpu -y
         #paddle
         wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda130-Cudnn913-Trt1013-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
@@ -57,51 +63,75 @@ install_requirements() {
     elif [[ "$ce_branch" == "CE_Release_cu130_py313" ]]; then # release regerssion
         #fleet
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
+        #paddlefleet_ops
+        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/ --no-cache-dir --force-reinstall --no-dependencies
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
     elif [[ "$ce_branch" == "CE_Release_cu130_py312" ]]; then # release regerssion
         #fleet
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
+        #paddlefleet_ops
+        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/ --no-cache-dir --force-reinstall --no-dependencies
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
      elif [[ "$ce_branch" == "CE_Release_cu130_py311" ]]; then # release regerssion
         #fleet
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
+        #paddlefleet_ops
+        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/ --no-cache-dir --force-reinstall --no-dependencies
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
     elif [[ "$ce_branch" == "CE_Release_cu129_py313" ]]; then # release regerssion
         #fleet
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+        #paddlefleet_ops
+        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir --force-reinstall --no-dependencies
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl 
     elif [[ "$ce_branch" == "CE_Release_cu129_py312_weekly" ]]; then # release regerssion
         #fleet
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+        #paddlefleet_ops
+        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir --force-reinstall --no-dependencies
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl  
     elif [[ "$ce_branch" == "CE_Release_cu126_py310" ]]; then # release regerssion
         #fleet
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+        #paddlefleet_ops
+        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --no-cache-dir --force-reinstall --no-dependencies
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl    
     else
-        echo "Install CI ENV: Cuda126+Python310"
+        echo "Install CI ENV: Cuda129+Python312"
         python setup.py bdist_wheel > /dev/null
-        pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
+        pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+        #paddlefleet_ops
+        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir --force-reinstall --no-dependencies
     fi
-   
+    python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
+
+    echo "paddle commit:"
+    python -c "import paddle; print(paddle.version.commit)"
     echo "paddlefleet commit:"
     python -c "import paddlefleet; print(paddlefleet.version.commit)"
+    echo "paddlefleet_ops commit:"
+    python -c "from paddlefleet_ops import __version__; print(__version__)"
+    echo "paddleformers commit:"
+    python -c "import paddleformers; print(paddleformers.version.commit)"
+    
+    python -c "import paddle; print('paddle commit:',paddle.version.commit)" >> ${log_path}/commit_info.txt
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
-    python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
+    python -c "from paddlefleet_ops import __version__; print('paddlefleet_ops version:', __version__)" >> ${log_path}/commit_info.txt
+    python -c "import paddlefleet; print('paddlefleet commit:',paddlefleet.version.commit)" >> ${log_path}/commit_info.txt
     python -m pip list >> ${log_path}/commit_info.txt
     end_ts=$(date +%s)
     echo -e "\033[32m install requirements cost $((end_ts - start_ts))s \033[0m"

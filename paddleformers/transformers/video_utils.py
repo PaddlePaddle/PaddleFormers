@@ -25,7 +25,6 @@ import numpy as np
 import paddle
 import PIL
 
-from ..utils import is_decord_available
 from ..utils.log import logger
 from .image_transforms import PaddingMode, to_channel_dimension_format
 from .image_utils import (
@@ -282,62 +281,6 @@ def default_sample_indices_fn(metadata: VideoMetadata, num_frames=None, fps=None
     return indices
 
 
-def read_video_decord(
-    video_path: Union["URL", "Path"],
-    sample_indices_fn: Callable,
-    **kwargs,
-):
-    """
-    Decode a video using the Decord backend.
-
-    Args:
-        video_path (`str`):
-            Path to the video file.
-        sample_indices_fn (`Callable`):
-            A callable function that will return indices at which the video should be sampled. If the video has to be loaded using
-            by a different sampling technique than provided by `num_frames` or `fps` arguments, one should provide their own `sample_indices_fn`.
-            If not provided, simple uniform sampling with fps is performed.
-            Example:
-            def sample_indices_fn(metadata, **kwargs):
-                return np.linspace(0, metadata.total_num_frames - 1, num_frames, dtype=int)
-
-    Returns:
-        tuple[`np.array`, `VideoMetadata`]: A tuple containing:
-            - Numpy array of frames in RGB (shape: [num_frames, height, width, 3]).
-            - `VideoMetadata` object.
-    """
-    if not is_decord_available():
-        raise ImportError(
-            "video_backend=decord for loading the video but the required library is not found in your environment."
-            "Make sure to install 'decord' before loading the video."
-        )
-    from decord import VideoReader, cpu
-
-    logger.info("Loading video with decord backend.")
-    vr = VideoReader(uri=video_path, ctx=cpu(0))  # decord has problems with gpu
-    video_fps = vr.get_avg_fps()
-    total_num_frames = len(vr)
-    duration = total_num_frames / video_fps if video_fps else 0
-    metadata = VideoMetadata(
-        total_num_frames=int(total_num_frames),
-        fps=float(video_fps),
-        duration=float(duration),
-        video_backend="decord",
-    )
-
-    indices = sample_indices_fn(metadata=metadata, **kwargs)
-    video = vr.get_batch(indices).asnumpy()
-
-    metadata.update(
-        {
-            "frames_indices": indices,
-            "height": video.shape[1],
-            "width": video.shape[2],
-        }
-    )
-    return video, metadata
-
-
 def read_video_paddlecodec(
     video_path: Union["URL", "Path"],
     sample_indices_fn: Callable,
@@ -421,7 +364,6 @@ def read_video_paddlecodec(
 
 
 VIDEO_DECODERS = {
-    "decord": read_video_decord,
     "paddlecodec": read_video_paddlecodec,
 }
 
@@ -446,7 +388,7 @@ def load_video(
             Number of frames to sample per second. Should be passed only when `num_frames=None`.
             If not specified and `num_frames==None`, all frames are sampled.
         video_backend (`str`, *optional*, defaults to `"paddlecodec"`):
-            The video_backend to use when loading the video. Can be any of ["paddlecodec", "decord"]. Defaults to "paddlecodec".
+            The video_backend to use when loading the video. Only "paddlecodec" is supported. Defaults to "paddlecodec".
         sample_indices_fn (`Callable`, *optional*):
             A callable function that will return indices at which the video should be sampled. If the video has to be loaded using
             by a different sampling technique than provided by `num_frames` or `fps` arguments, one should provide their own `sample_indices_fn`.
@@ -490,12 +432,8 @@ def load_video(
     else:
         raise TypeError("Incorrect format used for video. Should be an url linking to an video or a local path.")
 
-    # load with decord
-    if not is_decord_available() and video_backend == "decord":
-        raise ImportError(
-            f"You chose video_backend={video_backend} for loading the video but the required library is not found in your environment "
-            f"Make sure to install {video_backend} before loading the video."
-        )
+    if video_backend not in VIDEO_DECODERS:
+        raise ValueError(f"video_backend='{video_backend}' is not supported. Only 'paddlecodec' is available.")
 
     video_decoder = VIDEO_DECODERS[video_backend]
     video, metadata = video_decoder(file_obj, sample_indices_fn, **kwargs)
