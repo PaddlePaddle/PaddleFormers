@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -110,19 +110,6 @@ class Mistral3Config(PretrainedConfig):
         self.vision_feature_layer = vision_feature_layer
         self.initializer_range = initializer_range
 
-        # Default vision config (Pixtral-like)
-        if vision_config is None:
-            vision_config = {
-                "intermediate_size": 4096,
-                "hidden_size": 1024,
-                "patch_size": 14,
-                "image_size": 1540,
-                "num_hidden_layers": 24,
-                "num_attention_heads": 16,
-                "vocab_size": 32000,
-                "head_dim": 64,
-                "hidden_act": "gelu",
-            }
         # Default vision config (Pixtral-like)
         if vision_config is None:
             vision_config = {

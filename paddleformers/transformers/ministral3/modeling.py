@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -469,7 +469,7 @@ class Mistral3Model(Mistral3PreTrainedModel):
         elif isinstance(text_cfg_raw, Ministral3TextConfig):
             self._text_cfg = text_cfg_raw
         else:
-            # Mistral3TextConfig (PretrainedConfig) 或其他对象 -> 转为 dict 再包装
+            # Mistral3TextConfig (PretrainedConfig) or other objects -> convert to dict then wrap
             from .configuration import Mistral3TextConfig as _PretrainedTextCfg
 
             if isinstance(text_cfg_raw, _PretrainedTextCfg):
@@ -650,7 +650,7 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
 
     @classmethod
     def _load_hf_safetensors_to_paddle(cls, model_path):
-        """FP8 反量化 + HF 名称映射 + Linear 权重转置 -> Paddle state_dict"""
+        """FP8 dequantization + HF name mapping + Linear weight transpose -> Paddle state_dict"""
         import glob
         import os
         import re
@@ -669,7 +669,7 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
             if os.path.exists(single_file):
                 shard_files = [single_file]
             else:
-                raise FileNotFoundError(f"未找到 safetensors 权重文件: {model_path}")
+                raise FileNotFoundError(f"Safetensors weight file not found: {model_path}")
 
         scale_inv_map = {}
         for sf in shard_files:
@@ -713,8 +713,8 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
 
     @classmethod
     def _resolve_local_cache_path(cls, model_path, download_hub=None):
-        """将 Hub model_id 解析为本地缓存路径。返回 (path, source)，
-        source 为 "aistudio" / "huggingface" / None（未命中缓存）。"""
+        """Resolve Hub model_id to local cache path. Returns (path, source),
+        source is "aistudio" / "huggingface" / None (cache miss)."""
         import os
 
         if os.path.isdir(model_path):
@@ -749,10 +749,10 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
-        """加载预训练模型，自动识别三种格式:
-        1. 已转换的 .pdparams（AIStudio）: convert_from_hf=False 直接加载
-        2. 原始 HF safetensors（含 FP8）: 内存中做反量化 + 映射 + 转置
-        3. 已转换的 safetensors（无 FP8）: flex_checkpoint + AOA 加载
+        """Load pretrained model, auto-detect three formats:
+        1. Converted .pdparams (AIStudio): convert_from_hf=False, direct load
+        2. Original HF safetensors (with FP8): in-memory dequant + mapping + transpose
+        3. Converted safetensors (no FP8): flex_checkpoint + AOA load
         """
         import os
 
@@ -765,7 +765,7 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
             model_path = os.path.expanduser(model_path)
 
         check_path, cache_source = cls._resolve_local_cache_path(model_path, kwargs.get("download_hub", None))
-        # 缓存命中但未指定 download_hub 时，自动推断下载源
+        # Auto-infer download source when cache hit but download_hub not specified
         if cache_source is not None and kwargs.get("download_hub") is None:
             kwargs["download_hub"] = cache_source
 
@@ -803,8 +803,8 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
         model = super(Mistral3ForConditionalGeneration, cls).from_pretrained(
             pretrained_model_name_or_path, *args, **kwargs
         )
-        # 旧版 AIStudio 权重 lm_head.weight 形状为 [hidden, vocab]，被 ignore_mismatched_sizes 跳过，
-        # 需要通过 tie_weights() 重新绑定到 embed_tokens.weight
+        # Old AIStudio weights have lm_head.weight shape [hidden, vocab], skipped by
+        # ignore_mismatched_sizes, need tie_weights() to rebind to embed_tokens.weight
         if hasattr(model, "tie_weights"):
             model.tie_weights()
         return model
@@ -883,10 +883,9 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
 
         loss = None
         if labels is not None:
-            shift_logits = logits[..., :-1, :]
             loss = F.cross_entropy(
-                shift_logits.reshape([-1, shift_logits.shape[-1]]),
-                labels[..., 1:].reshape([-1]),
+                logits.reshape([-1, logits.shape[-1]]),
+                labels.reshape([-1]),
                 ignore_index=-100,
             )
 

@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -203,7 +203,7 @@ class TestMistral3DiffAlignment(unittest.TestCase):
         print(f"[Diff] hf_model_id: {hf_model_id}")
 
         torch.manual_seed(_SEED)
-        print("[Diff] 加载 PyTorch 模型 (float32, GPU)...")
+        print("[Diff] Loading PyTorch model (float32, GPU)...")
         torch_model = TorchMistral3ForConditionalGeneration.from_pretrained(
             hf_model_id,
             device_map="auto",
@@ -211,8 +211,8 @@ class TestMistral3DiffAlignment(unittest.TestCase):
             attn_implementation="eager",
         )
         fp8_n = _dequant_fp8_torch_model(torch_model, torch.bfloat16)
-        print(f"[Diff] 反量化 {fp8_n} 个 FP8 权重")
-        # bf16 logits max_diff 约 0.015，需升级到 fp32 再对比
+        print(f"[Diff] Dequantized {fp8_n} FP8 weights")
+        # bf16 logits max_diff ~0.015, upgrade to fp32 for comparison
         torch_model = torch_model.to(torch.float32)
         torch_model.eval()
 
@@ -233,14 +233,14 @@ class TestMistral3DiffAlignment(unittest.TestCase):
                 use_cache=True,
             )
         torch_gen_ids = torch_gen[0, input_ids_pt.shape[1] :].cpu().tolist()
-        print(f"[Diff] PyTorch 生成 tokens: {torch_gen_ids}")
-        print(f"[Diff] PyTorch 生成文本: {repr(tokenizer.decode(torch_gen_ids, skip_special_tokens=True))}")
+        print(f"[Diff] PyTorch generated tokens: {torch_gen_ids}")
+        print(f"[Diff] PyTorch generated text: {repr(tokenizer.decode(torch_gen_ids, skip_special_tokens=True))}")
 
         del torch_model
         torch.cuda.empty_cache()
 
         paddle.seed(_SEED)
-        print("[Diff] 加载 Paddle 模型...")
+        print("[Diff] Loading Paddle model...")
         paddle_model = _load_paddle_model_3b(dtype="float32")
 
         input_ids_pd = paddle.to_tensor(np.array([input_ids_list], dtype=np.int64), dtype="int64")
@@ -258,13 +258,13 @@ class TestMistral3DiffAlignment(unittest.TestCase):
                 next_token = int(out.logits[0, -1].argmax().item())
                 paddle_gen_ids.append(next_token)
                 cur_ids = np.concatenate([cur_ids, [[next_token]]], axis=1)
-        print(f"[Diff] Paddle 生成 tokens: {paddle_gen_ids}")
-        print(f"[Diff] Paddle 生成文本: {repr(tokenizer.decode(paddle_gen_ids, skip_special_tokens=True))}")
+        print(f"[Diff] Paddle generated tokens: {paddle_gen_ids}")
+        print(f"[Diff] Paddle generated text: {repr(tokenizer.decode(paddle_gen_ids, skip_special_tokens=True))}")
 
         self.assertEqual(
             list(torch_logits.shape),
             list(paddle_logits.shape),
-            f"logits shape 不一致: torch={torch_logits.shape}, paddle={paddle_logits.shape}",
+            f"logits shape mismatch: torch={torch_logits.shape}, paddle={paddle_logits.shape}",
         )
 
         diff = np.abs(torch_logits - paddle_logits)
@@ -281,7 +281,7 @@ class TestMistral3DiffAlignment(unittest.TestCase):
         )
 
         n = min(len(torch_gen_ids), len(paddle_gen_ids), _NUM_GEN_TOKENS)
-        print(f"\n[Diff] Token 对比 (前 {n} 个):")
+        print(f"\n[Diff] Token comparison (first {n}):")
         print(f"  {'Step':>4}  {'Torch':>10}  {'Paddle':>10}  {'Status':>6}")
         print("  " + "-" * 42)
         for i in range(n):
@@ -291,12 +291,12 @@ class TestMistral3DiffAlignment(unittest.TestCase):
         self.assertEqual(
             torch_gen_ids[:n],
             paddle_gen_ids[:n],
-            f"前 {n} 个生成的 token 不一致",
+            f"First {n} generated tokens mismatch",
         )
 
 
 class TestMistral3PaddleInference(unittest.TestCase):
-    """使用paddle版本的权重加载并推理"""
+    """Load paddle-format weights and run inference."""
 
     @slow
     @require_package("transformers", "torch")
@@ -332,17 +332,17 @@ class TestMistral3PaddleInference(unittest.TestCase):
         full_text = tokenizer.decode(input_ids_list + gen_ids, skip_special_tokens=True)
 
         print("=" * 60)
-        print(f"[Inference] 生成文本: {gen_text}")
-        print(f"[Inference] 完整文本: {full_text}")
+        print(f"[Inference] Generated text: {gen_text}")
+        print(f"[Inference] Full text: {full_text}")
         print("=" * 60)
 
-        self.assertGreater(len(gen_ids), 0, "模型没有生成任何 token")
-        self.assertGreater(len(gen_text.strip()), 0, "模型生成的文本为空")
+        self.assertGreater(len(gen_ids), 0, "Model generated no tokens")
+        self.assertGreater(len(gen_text.strip()), 0, "Model generated empty text")
 
     @slow
     @require_package("transformers", "torch")
     def test_02_load_hf_original_model(self):
-        """使用huggingface版本的权重加载并推理"""
+        """Load original HF weights and run inference."""
         import paddle
 
         from paddleformers.transformers import (
@@ -385,16 +385,16 @@ class TestMistral3PaddleInference(unittest.TestCase):
         full_text = tokenizer.decode(input_ids_list + gen_ids, skip_special_tokens=True)
 
         print("=" * 60)
-        print(f"[HF Original] 生成文本: {gen_text}")
-        print(f"[HF Original] 完整文本: {full_text}")
+        print(f"[HF Original] Generated text: {gen_text}")
+        print(f"[HF Original] Full text: {full_text}")
         print("=" * 60)
 
         self.assertIsNotNone(gen_text)
         self.assertIsInstance(gen_text, str)
-        self.assertGreater(len(gen_text), 0, "模型没有生成任何文本")
+        self.assertGreater(len(gen_text), 0, "Model generated no text")
         printable_chars = sum(1 for c in gen_text if c.isprintable() or c.isspace())
         printable_ratio = printable_chars / len(gen_text) if len(gen_text) > 0 else 0
-        self.assertGreater(printable_ratio, 0.5, "输出包含过多不可打印字符，可能是乱码")
+        self.assertGreater(printable_ratio, 0.5, "Output contains too many non-printable characters, possibly garbled")
 
 
 if __name__ == "__main__":
