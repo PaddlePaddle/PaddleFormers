@@ -18,8 +18,7 @@ permissions:
 
 jobs:
   check-and-collect:
-    runs-on: 
-      group: APPROVAL
+    runs-on: 'ernie-cpu'
     permissions:
       pull-requests: read
       actions: read
@@ -30,9 +29,6 @@ jobs:
       failed_job_urls: ${{ steps.check.outputs.failed_job_urls }}
       failed_run_ids:  ${{ steps.check.outputs.failed_run_ids }}
     steps:
-      - name: Cleanup
-        run: |
-          rm -rf * .[^.]*
       - name: Check all workflows done and collect failed job URLs
         id: check
         env:
@@ -42,6 +38,8 @@ jobs:
             TRIGGER_EVENT:     ${{ github.event.workflow_run.event }}
             TRIGGERING_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
+            source /home/paddle-1/miniconda3/bin/activate py312
+            python3 --version
             python3 - <<'PYEOF'
             import json, os, urllib.request, sys, time
 

@@ -10,12 +10,8 @@ permissions:
 jobs:
   remove-skip-ci-labels:
     name: Remove skip-ci labels on new commits
-    runs-on:
-      group: APPROVAL
+    runs-on: 'ernie-cpu'
     steps:
-      - name: Cleanup
-        run: |
-          rm -rf * .[^.]*
       - name: Get PR labels
         id: get-labels
         uses: actions/github-script@v8
