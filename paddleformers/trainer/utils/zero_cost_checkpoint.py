@@ -1801,15 +1801,16 @@ class EMABufferFcBased(EMABuffer):
 
                 result_tensor.name = opt_tensor.name
 
-                if self.offload:
-                    result_tensor = result_tensor.pin_memory()
+                gpu_tensor = result_tensor
+                result_tensor = result_tensor.cpu()
+                gpu_tensor._clear()
                 self.master_weights[static_name] = result_tensor
             else:
                 # model_params: struct_name unchanged
-                result_tensor = loaded_tensor
-                if self.offload:
-                    result_tensor = result_tensor.pin_memory()
+                result_tensor = loaded_tensor.cpu()
                 self.model_params[unified_key] = result_tensor
+
+            loaded_tensor._clear()
 
         logger.info(
             f"[NonZCC EMA] Converted to buffer format: "

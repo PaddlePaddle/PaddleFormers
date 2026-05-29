@@ -1471,6 +1471,7 @@ class Trainer:
             ema_target,
             ema_state_path,
             aoa_config=self.args.aoa_config,
+            offload=self.args.load_via_cpu,
             comm_method=comm_method,
             worker_groups=worker_groups,
         )
