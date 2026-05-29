@@ -1000,20 +1000,10 @@ def gen_mtp_layer_mask(
         return np.ones((mtp_depth, max_seq_len), dtype=np.int32)
 
     all_token_ids = np.concatenate([np.array(ids, dtype=np.int32) for ids in batch_token_ids])
-    ids_input = all_token_ids[:-1]
-    seq_len = len(ids_input)
-    ids_mtp = ids_input[-mtp_depth:]
-    ids_ori = ids_input[:-mtp_depth]
-
-    mtp_hidden_inputs_mask_all = []
+    result = []
     for mtp_idx in range(mtp_depth):
-        mtp_ids_input_ids = np.concatenate([ids_ori[(mtp_idx + 1):], ids_mtp[:(mtp_idx + 1)]])
-        mask = np.ones((1, seq_len), dtype=np.int32)
-        eos_positions = np.where(mtp_ids_input_ids[:seq_len] == eos_token_id)[0]
-        mask[0, eos_positions] = 0
-        if seq_len < max_seq_len:
-            padding = np.ones((1, max_seq_len - seq_len), dtype=np.int32)
-            mask = np.concatenate([mask, padding], axis=1)
-        mtp_hidden_inputs_mask_all.append(mask)
-
-    return np.concatenate(mtp_hidden_inputs_mask_all, axis=0)
+        mask = np.ones(max_seq_len, dtype=np.int32)
+        shifted = all_token_ids[mtp_idx + 1 :]
+        mask[np.where(shifted == eos_token_id)[0]] = 0
+        result.append(mask)
+    return np.stack(result, axis=0)
