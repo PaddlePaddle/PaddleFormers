@@ -419,6 +419,8 @@ jobs:
           fi
       - name: Deploy to GitHub Pages
         if: always()
+        timeout-minutes: 5
+        continue-on-error: true
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

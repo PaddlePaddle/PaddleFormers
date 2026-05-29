@@ -38,8 +38,6 @@ install_requirements() {
     start_ts=$(date +%s)
     python -m pip config --user set global.trusted-host pypi.org
     python -m pip config --user set global.index-url https://pypi.org/simple
-    pip install -r requirements.txt -i https://pypi.org/simple 
-    # pip install -r tests/requirements.txt -i https://pypi.org/simple 
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
     python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple  > /dev/null
     # cd /home/models/my_packages && dpkg -i *.deb > /dev/null

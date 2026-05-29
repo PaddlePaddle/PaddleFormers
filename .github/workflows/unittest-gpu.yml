@@ -198,16 +198,11 @@ jobs:
             wget -q --no-proxy -O ${{ env.home_path }}/allure-2.19.0.zip https://xly-devops.bj.bcebos.com/tools/allure-2.19.0.zip --no-check-certificate
             unzip -q ${{ env.home_path }}/allure-2.19.0.zip
           fi
-          if [ -n "$PR_ID" ] && [ "$PR_ID" != "0" ]; then
-            bos_prefix="${PR_ID}/${COMMIT_ID}"
-          else
-            bos_prefix="schedule/github-ci-$(date +%Y%m%d)"
-          fi
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            bos_prefix="manual/$(date +%Y%m%d)_${{ github.run_id }}"
+            bos_prefix="manual/$(date +%Y%m)_${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
-            bos_prefix="schedule/$(date +%Y%m%d)_${{ github.run_id }}"
+            bos_prefix="schedule/$(date +%Y%m)_${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           fi
@@ -298,9 +293,9 @@ jobs:
           COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            bos_prefix="manual/$(date +%Y%m%d)_${{ github.run_id }}"
+            bos_prefix="manual/$(date +%Y%m)_${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
-            bos_prefix="schedule/$(date +%Y%m%d)_${{ github.run_id }}"
+            bos_prefix="schedule/$(date +%Y%m)_${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           fi
@@ -381,9 +376,9 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            bos_prefix="manual/$(date +%Y%m%d)_${{ github.run_id }}"
+            bos_prefix="manual/$(date +%Y%m)_${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
-            bos_prefix="schedule/$(date +%Y%m%d)_${{ github.run_id }}"
+            bos_prefix="schedule/$(date +%Y%m)_${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           fi
@@ -401,6 +396,8 @@ jobs:
           fi
       - name: Deploy to GitHub Pages
         if: always()
+        timeout-minutes: 5
+        continue-on-error: true
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
