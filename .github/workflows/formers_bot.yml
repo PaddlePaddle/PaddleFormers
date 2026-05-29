@@ -37,6 +37,7 @@ jobs:
         run: |
           echo "TASK_ID=$TASK_ID" >> $GITHUB_ENV 
           cd /home/paddle-1/
+          rm -rf /tmp/bot_result.md 
           if [[ "$COMMENT_BODY" == *"@formers"* ]]; then
             python formers_bot.py --prompt "$COMMENT_BODY" --task-id "$TASK_ID"
           elif [[ "$REVIEW_BODY" == *"@formers"* ]]; then
