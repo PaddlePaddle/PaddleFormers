@@ -15,18 +15,19 @@ jobs:
     runs-on: ernie-cpu
 
     steps:
-      - name: Shallow clone PR branch and fetch base
+      - name: Shallow clone via PR merge commit
         run: |
-          HEAD_REF="${{ github.head_ref }}"
-          if [ -z "$HEAD_REF" ]; then
-            HEAD_REF="${{ github.event.pull_request.head.ref }}"
-          fi
           BASE_REF="${{ github.base_ref }}"
           if [ -z "$BASE_REF" ]; then
             BASE_REF="${{ github.event.pull_request.base.ref }}"
           fi
-          echo "HEAD_REF=$HEAD_REF" >> $GITHUB_ENV
           echo "BASE_REF=$BASE_REF" >> $GITHUB_ENV
+
+          PR_SHA="${{ github.event.pull_request.head.sha }}"
+          if [ -z "$PR_SHA" ]; then
+            PR_SHA="${{ github.sha }}"
+          fi
+          echo "PR_SHA=$PR_SHA" >> $GITHUB_ENV
 
           REPO_DIR=/home/paddle-1/runner_work/PaddleFormers
           rm -rf $REPO_DIR
@@ -34,17 +35,17 @@ jobs:
 
           GIT_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
 
-          # 只 clone PR 分支，depth=1 最快
-          git clone --depth=1 --branch $HEAD_REF $GIT_URL $REPO_DIR
-
+          # 初始化 repo，不 clone 任何分支
+          git init $REPO_DIR
           cd $REPO_DIR
+          git remote add origin $GIT_URL
 
-          # 再单独 fetch base 分支，depth=1 即可，merge-base 用得到
-          git fetch --depth=1 origin $BASE_REF
+          # 只拉 PR head commit + base 分支，各 depth=50
+          git fetch --depth=50 origin $PR_SHA
+          git fetch --depth=50 origin $BASE_REF
 
-          # 加深历史直到找到公共祖先（通常几步就够）
-          git fetch --deepen=50 origin $HEAD_REF
-          git fetch --deepen=50 origin $BASE_REF
+          # checkout 到 PR 的 head commit
+          git checkout $PR_SHA
 
           echo "REPO_DIR=$REPO_DIR" >> $GITHUB_ENV
 
@@ -52,6 +53,11 @@ jobs:
         id: auto_merge
         run: |
           cd $REPO_DIR
+          HEAD_REF="${{ github.head_ref }}"
+          if [ -z "$HEAD_REF" ]; then
+            HEAD_REF="${{ github.event.pull_request.head.ref }}"
+          fi
+
           BEHIND=$(git rev-list HEAD..origin/$BASE_REF --count)
           echo "Commits behind base: $BEHIND"
 
