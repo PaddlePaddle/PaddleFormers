@@ -1685,8 +1685,6 @@ class EMABufferFcBased(EMABuffer):
         for struct_name, sw in model_sharded_sd.items():
             if sw.local_tensor.dtype != paddle.float32:
                 continue
-            if struct_name not in self.model_params:
-                continue
 
             ema_tensor = self.model_params[struct_name]
             local_data = ema_tensor.reshape(sw.local_shape)
