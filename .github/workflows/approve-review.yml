@@ -15,17 +15,36 @@ jobs:
     runs-on: ernie-cpu
 
     steps:
-      - name: Manual clone with git
+      - name: Shallow clone PR branch and fetch base
         run: |
+          HEAD_REF="${{ github.head_ref }}"
+          if [ -z "$HEAD_REF" ]; then
+            HEAD_REF="${{ github.event.pull_request.head.ref }}"
+          fi
+          BASE_REF="${{ github.base_ref }}"
+          if [ -z "$BASE_REF" ]; then
+            BASE_REF="${{ github.event.pull_request.base.ref }}"
+          fi
+          echo "HEAD_REF=$HEAD_REF" >> $GITHUB_ENV
+          echo "BASE_REF=$BASE_REF" >> $GITHUB_ENV
+
           REPO_DIR=/home/paddle-1/runner_work/PaddleFormers
           rm -rf $REPO_DIR
           mkdir -p $REPO_DIR
 
-          git clone \
-            --depth=0 \
-            --branch ${{ github.head_ref }} \
-            https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git \
-            $REPO_DIR
+          GIT_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+
+          # 只 clone PR 分支，depth=1 最快
+          git clone --depth=1 --branch $HEAD_REF $GIT_URL $REPO_DIR
+
+          cd $REPO_DIR
+
+          # 再单独 fetch base 分支，depth=1 即可，merge-base 用得到
+          git fetch --depth=1 origin $BASE_REF
+
+          # 加深历史直到找到公共祖先（通常几步就够）
+          git fetch --deepen=50 origin $HEAD_REF
+          git fetch --deepen=50 origin $BASE_REF
 
           echo "REPO_DIR=$REPO_DIR" >> $GITHUB_ENV
 
@@ -33,17 +52,15 @@ jobs:
         id: auto_merge
         run: |
           cd $REPO_DIR
-          git fetch origin ${{ github.base_ref }}
-
-          BEHIND=$(git rev-list HEAD..origin/${{ github.base_ref }} --count)
+          BEHIND=$(git rev-list HEAD..origin/$BASE_REF --count)
           echo "Commits behind base: $BEHIND"
 
           if [ "$BEHIND" -gt "0" ]; then
             echo "PR is outdated ($BEHIND commits), merging base into PR branch..."
             git config user.name  "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git merge origin/${{ github.base_ref }} --no-edit
-            git push origin HEAD:${{ github.head_ref }}
+            git merge origin/$BASE_REF --no-edit
+            git push origin HEAD:$HEAD_REF
             echo "merged=true" >> $GITHUB_OUTPUT
           else
             echo "PR is up to date, skip merge"
@@ -54,7 +71,7 @@ jobs:
         id: check_diff
         run: |
           cd $REPO_DIR
-          MERGE_BASE=$(git merge-base HEAD origin/${{ github.base_ref }})
+          MERGE_BASE=$(git merge-base HEAD origin/$BASE_REF)
           echo "Merge base: $MERGE_BASE"
 
           ALL_CHANGED=$(git diff $MERGE_BASE --name-only)
@@ -84,7 +101,9 @@ jobs:
             const { data: reviews } = await github.rest.pulls.listReviews({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: context.payload.pull_request.number,
+              pull_number: context.payload.pull_request
+                ? context.payload.pull_request.number
+                : context.payload.review.pull_request_url.split("/").pop(),
             });
             const approved = new Set();
             for (const r of reviews) {
@@ -107,7 +126,9 @@ jobs:
             const { data: reviews } = await github.rest.pulls.listReviews({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: context.payload.pull_request.number,
+              pull_number: context.payload.pull_request
+                ? context.payload.pull_request.number
+                : context.payload.review.pull_request_url.split("/").pop(),
             });
             const approved = new Set();
             for (const r of reviews) {
