@@ -2,8 +2,6 @@ name: Model Unittest GPU CI
 
 on:
   pull_request:
-  issue_comment:
-    types: [created, edited]
   schedule:
     - cron: '0 16 * * *'  # 毎日凌晨1:00 JST
   workflow_dispatch:
