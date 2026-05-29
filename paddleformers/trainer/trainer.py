@@ -988,13 +988,19 @@ class Trainer:
 
         # Path A: main process completed EMA reshard, pass via shared memory
         if hasattr(self, "_ema_reshard_result") and self._ema_reshard_result is not None:
-            logger.info("[ZCC] EMA reshard done in main process, passing to workers via shared memory")
             # Pass tensor_refs to manager so it can keep them alive until workers consume
             tensor_refs = getattr(self, "_ema_shared_tensor_refs", None)
-            self.zcc_manager.set_ema_shared_memory(self._ema_reshard_result, tensor_refs=tensor_refs)
-            # Clear local refs (manager now owns them)
+            shm_filenames = getattr(self, "_ema_shm_filenames", [])
+            num_refs = len(tensor_refs) if tensor_refs else 0
+            logger.info(f"[EMA Reshard] Transferring {num_refs} shared memory refs to manager")
+            self.zcc_manager.set_ema_shared_memory(
+                self._ema_reshard_result, tensor_refs=tensor_refs, shm_filenames=shm_filenames
+            )
+            # Clear local refs (manager now owns them, refcount NOT zero yet)
             self._ema_shared_tensor_refs = None
             self._ema_reshard_result = None
+            self._ema_shm_filenames = None
+            logger.info("[EMA Reshard] Local refs cleared, manager holds ownership until workers consume")
             return
 
         # Path B: no reshard needed, subprocess loads from file (existing logic)
@@ -1473,6 +1479,7 @@ class Trainer:
         # Move to CPU shared memory for subprocess consumption
         ema_shared_result = {}
         self._ema_shared_tensor_refs = {}
+        self._ema_shm_filenames = []  # Track specific shm files for leak detection
 
         for k, sw in ema_target.items():
             cpu_tensor = sw.local_tensor.cpu().flatten()
@@ -1481,11 +1488,17 @@ class Trainer:
                 "shared_meta": shared_meta,
                 "shape": list(sw.local_tensor.shape),
             }
+            # shared_meta[0] is the shm filename (e.g. "/dev/shm/paddle_12345_0_xxx")
+            if shared_meta and len(shared_meta) > 0:
+                self._ema_shm_filenames.append(shared_meta[0])
             # Keep reference to prevent GC before subprocess reads the data
             self._ema_shared_tensor_refs[k] = cpu_tensor
             sw.local_tensor._clear()
 
-        logger.info(f"[EMA Reshard] Created shared memory for {len(ema_shared_result)} EMA tensors")
+        logger.info(
+            f"[EMA Reshard] Created shared memory for {len(ema_shared_result)} EMA tensors, "
+            f"shm files tracked: {len(self._ema_shm_filenames)}"
+        )
         return ema_shared_result
 
     def prepare_resume_from_checkpoint(self, args, resume_from_checkpoint):

@@ -858,13 +858,21 @@ class ZeroCostCheckpointManager:
             worker.task_queue.put((ZCCTaskType.SET_EMA_STATE_DICT, path))
         logger.info("[ZCC manager] done setting EMA state dict")
 
-    def set_ema_shared_memory(self, ema_shared_metas, tensor_refs=None):
+    def set_ema_shared_memory(self, ema_shared_metas, tensor_refs=None, shm_filenames=None):
         """Store EMA reshard results (shared memory metas) to be sent to workers after first UPDATE.
         tensor_refs: keep alive until workers consume the shared memory to prevent GC.
+        shm_filenames: list of specific shm file paths for leak detection.
         """
-        logger.info("[ZCC manager] EMA shared memory metas received from main process")
+        logger.info("[EMA Reshard] Shared memory metas received from main process")
         self.ema_shared_metas = ema_shared_metas
         self._ema_tensor_refs = tensor_refs
+        self._ema_shm_filenames = shm_filenames or []
+
+    @staticmethod
+    def _check_shm_files_released(shm_filenames):
+        """Check if specific shm files have been released (deleted from /dev/shm)."""
+        leaked = [f for f in shm_filenames if os.path.exists(f)]
+        return leaked
 
     def update_zcc_workers(self, new_version, dynamic_objecs, static_object, global_step):
         self.report_error_worker()
@@ -897,15 +905,27 @@ class ZeroCostCheckpointManager:
                 worker.ema_shm_consumed.clear()
             for worker in self.workers:
                 worker.task_queue.put((ZCCTaskType.LOAD_EMA_FROM_SHARED_MEM, self.ema_shared_metas))
-            logger.info("[ZCC manager] EMA shared memory metas sent to workers, waiting for consumption...")
+            logger.info("[EMA Reshard] Shared memory metas sent to workers, waiting for consumption...")
             for worker in self.workers:
-                logger.info(f"[ZCC manager] Waiting worker{worker.worker_id} to consume EMA shared memory...")
+                logger.info(f"[EMA Reshard] Waiting worker{worker.worker_id} to consume shared memory...")
                 worker.ema_shm_consumed.wait()
-                logger.info(f"[ZCC manager] Worker{worker.worker_id} consumed EMA shared memory.")
+                logger.info(f"[EMA Reshard] Worker{worker.worker_id} consumed shared memory.")
             # Now safe to release shared memory tensor references
+            num_refs = len(self._ema_tensor_refs) if self._ema_tensor_refs else 0
+            num_files = len(self._ema_shm_filenames)
+            logger.info(f"[EMA Reshard] Releasing {num_refs} tensor refs ({num_files} tracked shm files)...")
             self.ema_shared_metas = None
             self._ema_tensor_refs = None
-            logger.info("[ZCC manager] All workers consumed EMA shared memory, refs released")
+            # Verify specific shm files are gone
+            leaked = self._check_shm_files_released(self._ema_shm_filenames)
+            if leaked:
+                logger.warning(
+                    f"[EMA Reshard] LEAK DETECTED: {len(leaked)}/{num_files} shm files still exist! "
+                    f"Examples: {leaked[:5]}"
+                )
+            else:
+                logger.info(f"[EMA Reshard] All {num_files} shm files released successfully, no leak")
+            self._ema_shm_filenames = []
 
         self.ready_to_save = True
 
