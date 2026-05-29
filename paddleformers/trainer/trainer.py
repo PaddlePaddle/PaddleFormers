@@ -1061,35 +1061,15 @@ class Trainer:
         logger.info("Zero cost checkpoint manager created successfully.")
 
     def add_non_zcc_ema_callback(self, resume_from_checkpoint, ema_state_assembler=None):
-        # If main process already completed EMA reshard, skip file-based loading in EMABuffer
-        ema_reshard_done = hasattr(self, "_ema_reshard_result") and self._ema_reshard_result is not None
-        effective_resume = None if ema_reshard_done else resume_from_checkpoint
-
         non_zcc_ema_callback = NonZCCEMACallback.create_nonzcc_callback(
             args=self.args,
-            resume_from_checkpoint=effective_resume,
+            resume_from_checkpoint=resume_from_checkpoint,
             sharding_io=self.sharding_io,
             model=self.model,
             optimizer=self.optimizer,
             hcg=self.hcg,
             ema_state_assembler=ema_state_assembler,
         )
-
-        # If main process already completed EMA reshard, fill buffer from shared memory
-        if ema_reshard_done:
-            logger.info("[EMA Reshard] Filling NonZCC EMA buffer from shared memory...")
-            buffer = non_zcc_ema_callback.buffer
-            for unified_key, info in self._ema_reshard_result.items():
-                meta = info["shared_meta"]
-                shape = info["shape"]
-                shared_lod = paddle.base.core.LoDTensor._new_shared_filename(meta)
-                tensor = paddle.to_tensor(shared_lod).reshape(shape)
-                if unified_key.endswith(".w_0"):
-                    buffer.master_weights[unified_key] = tensor.pin_memory()
-                else:
-                    buffer.model_params[unified_key] = tensor.pin_memory()
-            logger.info("[EMA Reshard] NonZCC EMA buffer filled from shared memory")
-
         self.add_callback(non_zcc_ema_callback)
 
     def _save_flex_model_state(self, output_dir):
@@ -1228,26 +1208,31 @@ class Trainer:
 
         if not self.args.sharded_model_from_ema:
             init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
-            # ===== EMA State Resharding (right after optimizer init) =====
-            self._ema_reshard_result = None
-            ema_state_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC)
-            if (
-                os.path.exists(ema_state_path)
-                and self.args.zcc_save_ema_coef is not None
-                and self._is_fc_format_ema(ema_state_path)
-            ):
-                same_strategy, err_msg = DistInfoCollectorValidator(self.args, self.hcg).check_same_strategy(
-                    resume_from_checkpoint
-                )
 
-                if not same_strategy:
-                    logger.info(f"[EMA Reshard] Parallelism strategy changed ({err_msg}), performing EMA reshard...")
-                    self._ema_reshard_result = self._load_ema_with_reshard(
-                        ema_state_path, flex_ckpt_comm_method, worker_groups
+            # ===== EMA State Resharding for ZCC (right after optimizer init) =====
+            # Non-ZCC handles reshard internally in EMABufferFcBased._load()
+            self._ema_reshard_result = None
+            if self.args.enable_zero_cost_checkpoint:
+                ema_state_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC)
+                if (
+                    os.path.exists(ema_state_path)
+                    and self.args.zcc_save_ema_coef is not None
+                    and self._is_fc_format_ema(ema_state_path)
+                ):
+                    same_strategy, err_msg = DistInfoCollectorValidator(self.args, self.hcg).check_same_strategy(
+                        resume_from_checkpoint
                     )
-                    logger.info("[EMA Reshard] EMA reshard completed, results stored for subprocess")
-                else:
-                    logger.info("[EMA Reshard] Same strategy, subprocess will load EMA directly from file")
+
+                    if not same_strategy:
+                        logger.info(
+                            f"[EMA Reshard] Parallelism strategy changed ({err_msg}), performing EMA reshard..."
+                        )
+                        self._ema_reshard_result = self._load_ema_with_reshard(
+                            ema_state_path, flex_ckpt_comm_method, worker_groups
+                        )
+                        logger.info("[EMA Reshard] EMA reshard completed, results stored for subprocess")
+                    else:
+                        logger.info("[EMA Reshard] Same strategy, subprocess will load EMA directly from file")
 
             optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
             opt_states = {}
@@ -1479,6 +1464,7 @@ class Trainer:
         dist.load_state_dict(
             ema_target,
             ema_state_path,
+            aoa_config=self.args.aoa_config,
             comm_method=comm_method,
             worker_groups=worker_groups,
         )
@@ -1766,13 +1752,6 @@ class Trainer:
 
         elif self.args.zcc_save_ema_coef is not None:
             self.add_non_zcc_ema_callback(resume_from_checkpoint)
-
-        # Note: _ema_shared_tensor_refs is released by ZeroCostCheckpointManager
-        # after workers successfully consume the shared memory in update_zcc_workers.
-        # For non-ZCC path, release here since the buffer already copied the data.
-        if not self.args.enable_zero_cost_checkpoint and hasattr(self, "_ema_shared_tensor_refs"):
-            del self._ema_shared_tensor_refs
-            self._ema_reshard_result = None
 
         if self.args.using_sonic_moe:
             callback = InterleaveGateUpCallback(self.model, resume_from_checkpoint, self.args.output_dir)

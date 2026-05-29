@@ -1570,6 +1570,9 @@ class EMABufferFcBased(EMABuffer):
     def _ema_path(self, base_path):
         return os.path.join(base_path, "ema_state", f"{dist.get_rank()}_0.distcp")
 
+    def _ema_dir(self, base_path):
+        return os.path.join(base_path, "ema_state")
+
     def _check_consistent_dist_strategy(self, resume_from_checkpoint):
         return self.dist_info_collector_and_validator.check_same_strategy(resume_from_checkpoint)
 
@@ -1581,16 +1584,217 @@ class EMABufferFcBased(EMABuffer):
         assert self.optimizer is not None, "expected optimizer is not None"
         return self.optimizer.state_dict()["master_weights"]
 
+    # ==================== Save ====================
+
     def save(self, global_step):
-        model_meta_content = self._get_model_meta()
         base_path = os.path.join(self.args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{global_step}")
         os.makedirs(base_path, exist_ok=True)
+
+        # Save model_meta.json (parallelism strategy info for reshard detection)
+        model_meta_content = self._get_model_meta()
         model_meta_path = os.path.join(base_path, MODEL_META_NAME)
         if self.device_id == 0:
             with open(model_meta_path, "w") as f:
                 json.dump(model_meta_content, f)
 
-        super().save(global_step)
+        # Save EMA state in FC distributed format (supports reshard on load)
+        ema_save_dir = self._ema_dir(base_path)
+        os.makedirs(ema_save_dir, exist_ok=True)
+
+        ema_sharded_sd = self._build_ema_save_sharded_state_dict()
+        logger.info(
+            f"[NonZCC EMA] Saving {len(ema_sharded_sd)} EMA tensors via dist.save_state_dict to {ema_save_dir}"
+        )
+        dist.save_state_dict(ema_sharded_sd, ema_save_dir)
+        logger.info(f"[NonZCC EMA] Save EMA state (FC format) to {ema_save_dir} done")
+
+    def _build_ema_save_sharded_state_dict(self):
+        """Build sharded state dict from EMA buffer for dist.save_state_dict.
+
+        Converts:
+          master_weights[static_name] (padded 1D or 2D) -> unified_name.w_0 (unpadded, ShardedWeight)
+          model_params[struct_name] (original shape) -> struct_name (ShardedWeight)
+        """
+        model_sharded_sd = self.model.sharded_state_dict()
+        opt_sharded_sd = self.optimizer.sharded_state_dict(model_sharded_sd)
+
+        # Build static_name -> struct_name mapping
+        struct_to_static = {k: v.name for k, v in self.model.state_dict().items()}
+
+        ema_sharded = {}
+
+        # --- master_weights portion ---
+        for unified_key, sw in opt_sharded_sd.items():
+            if not unified_key.endswith(".w_0"):
+                continue
+            struct_name = unified_key[:-4]  # e.g. "linear_0.w_0" -> "linear_0"
+            static_name = struct_to_static.get(struct_name)
+
+            if static_name is None or static_name not in self.master_weights:
+                continue
+
+            ema_tensor = self.master_weights[static_name]
+
+            # Remove padding: slice out actual data
+            if sw.is_flattened and sw.flattened_range is not None:
+                flat = ema_tensor.flatten()
+                actual_numel = sw.flattened_range.stop - sw.flattened_range.start
+                if actual_numel > 0 and actual_numel <= flat._numel():
+                    local_data = flat[:actual_numel]
+                else:
+                    local_data = flat
+            else:
+                # 2D param (e.g. Muon): reshape to local_shape
+                local_data = ema_tensor.reshape(sw.local_shape)
+
+            # Handle grouped_gemm_experts: 3D -> 2D
+            if getattr(sw, "grouped_gemm_param", False) and local_data.ndim == 3:
+                local_data = local_data.reshape((-1, local_data.shape[-1]))
+
+            ema_sharded[unified_key] = ShardedWeight(
+                key=sw.key,
+                local_tensor=local_data,
+                local_shape=sw.local_shape,
+                global_shape=sw.global_shape,
+                global_offset=sw.global_offset,
+                is_flattened=sw.is_flattened,
+                flattened_range=sw.flattened_range,
+            )
+
+        # --- model_params portion (float32 only) ---
+        for struct_name, sw in model_sharded_sd.items():
+            if sw.local_tensor.dtype != paddle.float32:
+                continue
+            if struct_name not in self.model_params:
+                continue
+
+            ema_tensor = self.model_params[struct_name]
+            local_data = ema_tensor.reshape(sw.local_shape)
+
+            ema_sharded[struct_name] = ShardedWeight(
+                key=sw.key,
+                local_tensor=local_data,
+                local_shape=sw.local_shape,
+                global_shape=sw.global_shape,
+                global_offset=sw.global_offset,
+                is_flattened=getattr(sw, "is_flattened", False),
+                flattened_range=getattr(sw, "flattened_range", None),
+            )
+
+        return ema_sharded
+
+    # ==================== Load ====================
+
+    def _load(self, resume_from_checkpoint):
+        """Override base _load to support FC format with automatic reshard."""
+        ema_dir = self._ema_dir(resume_from_checkpoint)
+
+        if self._is_fc_distributed_format(ema_dir):
+            # New FC format (has .metadata) -> dist.load_state_dict (auto reshard)
+            self._load_fc_format(ema_dir)
+        else:
+            # Old format -> original logic (same strategy only)
+            super()._load(resume_from_checkpoint)
+
+    def _is_fc_distributed_format(self, ema_dir):
+        """Check if ema_state/ directory contains .metadata file (FC distributed format)."""
+        if not os.path.isdir(ema_dir):
+            return False
+        return any(f.endswith(".metadata") for f in os.listdir(ema_dir))
+
+    def _load_fc_format(self, ema_dir):
+        """Load EMA state via dist.load_state_dict (supports automatic reshard)."""
+        model_sharded_sd = self.model.sharded_state_dict()
+        opt_sharded_sd = self.optimizer.sharded_state_dict(model_sharded_sd)
+
+        # Build load target with empty placeholder tensors
+        ema_target = {}
+
+        # master_weights
+        for k, sw in opt_sharded_sd.items():
+            if k.endswith(".w_0"):
+                local_tensor = paddle.zeros(sw.local_tensor.shape, dtype=paddle.float32)
+                ema_target[k] = ShardedWeight(
+                    key=sw.key,
+                    local_tensor=local_tensor,
+                    local_shape=sw.local_shape,
+                    global_shape=sw.global_shape,
+                    global_offset=sw.global_offset,
+                    is_flattened=sw.is_flattened,
+                    flattened_range=sw.flattened_range,
+                )
+
+        # model_params (float32)
+        for k, sw in model_sharded_sd.items():
+            if sw.local_tensor.dtype == paddle.float32:
+                local_tensor = paddle.zeros(sw.local_shape, dtype=paddle.float32)
+                ema_target[k] = ShardedWeight(
+                    key=sw.key,
+                    local_tensor=local_tensor,
+                    local_shape=sw.local_shape,
+                    global_shape=sw.global_shape,
+                    global_offset=sw.global_offset,
+                    is_flattened=getattr(sw, "is_flattened", False),
+                    flattened_range=getattr(sw, "flattened_range", None),
+                )
+
+        logger.info(f"[NonZCC EMA] Loading {len(ema_target)} EMA tensors via dist.load_state_dict from {ema_dir}")
+        dist.load_state_dict(ema_target, ema_dir, aoa_config=self.args.aoa_config)
+        logger.info("[NonZCC EMA] dist.load_state_dict completed")
+
+        # Convert FC format -> buffer format (re-pad + rename)
+        self._fc_to_buffer_format(ema_target)
+
+    def _fc_to_buffer_format(self, ema_target):
+        """Convert dist.load_state_dict results to EMABuffer's master_weights/model_params.
+
+        FC format (unified_name, unpadded) -> buffer format (static_name, padded to optimizer slot).
+        """
+        struct_to_static = {k: v.name for k, v in self.model.state_dict().items()}
+        opt_master_weights = self.optimizer.state_dict()["master_weights"]
+
+        self.master_weights = {}
+        self.model_params = {}
+
+        for unified_key, sw in ema_target.items():
+            loaded_tensor = sw.local_tensor
+
+            if unified_key.endswith(".w_0"):
+                # master_weight: unified_name.w_0 -> static_name, re-pad
+                struct_name = unified_key[:-4]
+                static_name = struct_to_static[struct_name]
+
+                opt_tensor = opt_master_weights[static_name]
+                if opt_tensor.ndim == 1:
+                    # Flattened buffer format: re-pad to buffer slot size
+                    flat = loaded_tensor.flatten()
+                    expected_numel = opt_tensor._numel()
+                    if flat._numel() < expected_numel:
+                        padded = paddle.zeros([expected_numel], dtype=loaded_tensor.dtype)
+                        padded[: flat._numel()] = flat
+                        result_tensor = padded
+                    else:
+                        result_tensor = flat
+                else:
+                    # 2D param (Muon etc.): reshape to optimizer's shape
+                    result_tensor = loaded_tensor.reshape(opt_tensor.shape)
+
+                result_tensor.name = opt_tensor.name
+
+                if self.offload:
+                    result_tensor = result_tensor.pin_memory()
+                self.master_weights[static_name] = result_tensor
+            else:
+                # model_params: struct_name unchanged
+                result_tensor = loaded_tensor
+                if self.offload:
+                    result_tensor = result_tensor.pin_memory()
+                self.model_params[unified_key] = result_tensor
+
+        logger.info(
+            f"[NonZCC EMA] Converted to buffer format: "
+            f"{len(self.master_weights)} master_weights, {len(self.model_params)} model_params"
+        )
 
 
 class NonZCCEMACallback(TrainerCallback):
@@ -2503,7 +2707,7 @@ class ZeroCostCheckpointWorkerFcBased(ZeroCostCheckpointWorker):
         """Load EMA state from shared memory after reshard in main process."""
         assert self.zcc_ema_processor is not None, "zcc_ema_processor not initialized."
 
-        logger.info("[ZCC Worker] Loading EMA from shared memory...")
+        logger.info("[ZCC Worker] Loading EMA state from shared memory...")
 
         inv_name_mapping = {v: k for k, v in self.unified_name_mapping.items()}
 
