@@ -123,11 +123,12 @@ install_requirements() {
         #paddle
         pip list 2>/dev/null | grep nvidia | grep -v "^-" | awk '{print $1}' | grep -v "^$" | xargs -r pip uninstall -y
         pip list | grep -i nvidia || true
-        # wget -q https://xly-devops.bj.bcebos.com/gushiwei/cuda132/paddlepaddle_gpu-3.4.0.post20260527%2B8b49e407ce7-cp312-cp312-linux_x86_64.whl
-        # python -m pip install paddlepaddle_gpu-3.4.0.post20260527+8b49e407ce7-cp312-cp312-linux_x86_64.whl -i https://pypi.org/simple --no-cache-dir -i https://pypi.org/simple 
+        wget -q https://xly-devops.bj.bcebos.com/gushiwei/cuda132/paddlepaddle_gpu-3.4.0.post20260528%2B5f0986092f2-cp312-cp312-linux_x86_64.whl
+        python -m pip install paddlepaddle_gpu-3.4.0.post20260528+5f0986092f2-cp312-cp312-linux_x86_64.whl -i https://pypi.org/simple --no-cache-dir -i https://pypi.org/simple 
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl   
+
     else
         echo "Install CI ENV: Cuda129+Python312"
         python setup.py bdist_wheel > /dev/null
@@ -135,6 +136,7 @@ install_requirements() {
         #paddlefleet_ops
         python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir --force-reinstall --no-dependencies
     fi
+    python -m pip install torch --index-url https://download.pytorch.org/whl/cu132 -i https://pypi.org/simple
 
     echo "paddle commit:"
     python -c "import paddle; print(paddle.version.commit)"
