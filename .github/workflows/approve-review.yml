@@ -15,31 +15,19 @@ jobs:
     runs-on: ernie-cpu
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Find repo root
-        id: repo_root
+      - name: Manual clone with git
         run: |
-          # 从 checkout action 写入的 $GITHUB_WORKSPACE 向上找 .git 目录
-          DIR=$GITHUB_WORKSPACE
-          while [ "$DIR" != "/" ]; do
-            if [ -d "$DIR/.git" ]; then
-              echo "REPO_DIR=$DIR" >> $GITHUB_ENV
-              echo "Found repo at: $DIR"
-              break
-            fi
-            DIR=$(dirname $DIR)
-          done
-          if [ -z "$REPO_DIR" ]; then
-            # fallback: actions/checkout 实际 clone 到 _work/repo/repo
-            REPO_DIR=$(find /home -maxdepth 7 -name ".git" -type d 2>/dev/null | head -1 | xargs dirname)
-            echo "REPO_DIR=$REPO_DIR" >> $GITHUB_ENV
-            echo "Fallback repo at: $REPO_DIR"
-          fi
+          REPO_DIR=/home/paddle-1/runner_work/PaddleFormers
+          rm -rf $REPO_DIR
+          mkdir -p $REPO_DIR
+
+          git clone \
+            --depth=0 \
+            --branch ${{ github.head_ref }} \
+            https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git \
+            $REPO_DIR
+
+          echo "REPO_DIR=$REPO_DIR" >> $GITHUB_ENV
 
       - name: Auto merge base into PR branch if outdated
         id: auto_merge
