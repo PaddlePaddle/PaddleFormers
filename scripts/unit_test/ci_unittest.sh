@@ -39,7 +39,7 @@ install_requirements() {
     python -m pip config --user set global.trusted-host pypi.org
     python -m pip config --user set global.index-url https://pypi.org/simple
     pip install -r requirements.txt -i https://pypi.org/simple 
-    pip install -r tests/requirements.txt -i https://pypi.org/simple 
+    # pip install -r tests/requirements.txt -i https://pypi.org/simple 
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
     python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple  > /dev/null
     # cd /home/models/my_packages && dpkg -i *.deb > /dev/null
@@ -71,9 +71,10 @@ install_requirements() {
         python -m pip install paddlefleet_ops-0.3.0.dev20260527+0c3a4f84-cp312-cp312-linux_x86_64.whl -i https://pypi.org/simple 
         python -m pip uninstall paddlepaddle-gpu -y
         #paddle
-        wget -q https://xly-devops.bj.bcebos.com/gushiwei/cuda132/paddlepaddle_gpu-3.4.0.post20260527%2B8b49e407ce7-cp312-cp312-linux_x86_64.whl
-        python -m pip install paddlepaddle_gpu-3.4.0.post20260527+8b49e407ce7-cp312-cp312-linux_x86_64.whl -i https://pypi.org/simple 
-        #formers
+        wget -q https://xly-devops.bj.bcebos.com/gushiwei/cuda132/paddlepaddle_gpu-3.4.0.post20260528%2B5f0986092f2-cp312-cp312-linux_x86_64.whl
+        python -m pip install paddlepaddle_gpu-3.4.0.post20260528+5f0986092f2-cp312-cp312-linux_x86_64.whl -i https://pypi.org/simple --no-cache-dir -i https://pypi.org/simple#formers
+        pip install -r tests/requirements.txt -i https://pypi.org/simple 
+
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
     fi
@@ -161,7 +162,6 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}
     set +e
     export PYTHONFAULTHANDLER=1
-    sleep 10h 
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
