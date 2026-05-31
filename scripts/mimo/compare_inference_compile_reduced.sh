@@ -19,7 +19,7 @@ COMMON_ARGS=(
   --seq-len "$SEQ_LEN"
   --steps "$STEPS"
   --warmup-steps "$WARMUP_STEPS"
-  --load-checkpoint-format flex_checkpoint
+  --load-checkpoint-format sharding_io
   --no-convert-from-hf
   --attn-implementation "$ATTN_IMPLEMENTATION"
   --benchmark-mode "$BENCHMARK_MODE"

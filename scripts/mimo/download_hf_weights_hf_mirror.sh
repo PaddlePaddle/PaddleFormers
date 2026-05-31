@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT_DIR=${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
-LOCAL_DIR=${LOCAL_DIR:-/sda/data/Lichenyang/models/MiMo-7B-Base}
+LOCAL_DIR=${LOCAL_DIR:-./models/MiMo-7B-Base}
 HF_ENDPOINT=${HF_ENDPOINT:-https://hf-mirror.com}
 REPO_ID=${REPO_ID:-XiaomiMiMo/MiMo-7B-Base}
 

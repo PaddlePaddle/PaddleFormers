@@ -31,7 +31,7 @@ if [ -z "${config_yaml:-}" ]; then
   exit 1
 fi
 
-python $REPO_DIR/scripts/llavaonevision1_5/patch_yaml_top_level.py $config_yaml \
+python $REPO_DIR/scripts/mimo/patch_yaml_top_level.py $config_yaml \
   --set "train_dataset_path=$data_dir/train.jsonl" \
   --set "eval_dataset_path=$data_dir/eval.jsonl" \
   --set "model_name_or_path=$model_name_or_path" \

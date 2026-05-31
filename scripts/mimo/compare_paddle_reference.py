@@ -28,7 +28,9 @@ def parse_args():
     parser.add_argument("--device", default="gpu", choices=["gpu", "cpu"])
     parser.add_argument("--max-new-tokens", type=int, default=10)
     parser.add_argument("--topk", type=int, default=10)
-    parser.add_argument("--load-checkpoint-format", default="naive", choices=["naive", "flex_checkpoint"])
+    parser.add_argument(
+        "--load-checkpoint-format", default="sharding_io", choices=["naive", "sharding_io", "flex_checkpoint"]
+    )
     parser.add_argument("--no-convert-from-hf", action="store_true")
     parser.add_argument("--load-via-cpu", action="store_true")
     parser.add_argument("--low-cpu-mem-usage", action="store_true")
