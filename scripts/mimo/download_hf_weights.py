@@ -11,7 +11,6 @@ from pathlib import Path
 
 from huggingface_hub import snapshot_download
 
-
 DEFAULT_ALLOW_PATTERNS = [
     "*.safetensors",
     "*.json",
@@ -25,7 +24,7 @@ DEFAULT_ALLOW_PATTERNS = [
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-id", default="XiaomiMiMo/MiMo-7B-Base")
-    parser.add_argument("--local-dir", default="/sda/data/Lichenyang/models/MiMo-7B-Base")
+    parser.add_argument("--local-dir", default="./models/MiMo-7B-Base")
     parser.add_argument("--token", default=None, help="HF token. Defaults to HF_TOKEN/HUGGING_FACE_HUB_TOKEN env.")
     parser.add_argument(
         "--endpoint",
@@ -34,7 +33,9 @@ def parse_args():
     )
     parser.add_argument("--revision", default=None)
     parser.add_argument("--max-workers", type=int, default=8)
-    parser.add_argument("--all-files", action="store_true", help="Download all repo files instead of model assets only.")
+    parser.add_argument(
+        "--all-files", action="store_true", help="Download all repo files instead of model assets only."
+    )
     return parser.parse_args()
 
 

@@ -14,6 +14,7 @@ template: qwen
 ### model
 model_name_or_path: ./.cache/mimo/reduced-depth-4l-fullwidth-random
 _attn_implementation: eager
+convert_from_hf: false
 
 ### finetuning
 stage: SFT
@@ -52,6 +53,6 @@ bf16: true
 fp16_opt_level: O2
 unified_checkpoint: false
 save_checkpoint_format: flex_checkpoint
-load_checkpoint_format: flex_checkpoint
+load_checkpoint_format: sharding_io
 
 benchmark: true

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 REPO_ID=${REPO_ID:-XiaomiMiMo/MiMo-7B-Base}
-LOCAL_DIR=${LOCAL_DIR:-/sda/data/Lichenyang/models/MiMo-7B-Base}
+LOCAL_DIR=${LOCAL_DIR:-./models/MiMo-7B-Base}
 HF_ENDPOINT=${HF_ENDPOINT:-https://hf-mirror.com}
 HFD_SCRIPT=${HFD_SCRIPT:-/tmp/hfd.sh}
 TOOL=${TOOL:-wget}

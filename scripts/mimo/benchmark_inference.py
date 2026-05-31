@@ -23,7 +23,9 @@ def parse_args():
     parser.add_argument("--steps", type=int, default=20)
     parser.add_argument("--warmup-steps", type=int, default=5)
     parser.add_argument("--use-to-static", action="store_true")
-    parser.add_argument("--load-checkpoint-format", default="naive", choices=["naive", "flex_checkpoint"])
+    parser.add_argument(
+        "--load-checkpoint-format", default="sharding_io", choices=["naive", "sharding_io", "flex_checkpoint"]
+    )
     parser.add_argument("--no-convert-from-hf", action="store_true")
     parser.add_argument("--load-via-cpu", action="store_true")
     parser.add_argument("--low-cpu-mem-usage", action="store_true")
@@ -72,7 +74,9 @@ def main():
         return manual_lm_head(model, outputs.last_hidden_state)
 
     def forward_backbone(input_ids, attention_mask):
-        return model.model(input_ids=input_ids, attention_mask=attention_mask, use_cache=False, return_dict=True).last_hidden_state
+        return model.model(
+            input_ids=input_ids, attention_mask=attention_mask, use_cache=False, return_dict=True
+        ).last_hidden_state
 
     forward_fn = {
         "full": forward_full,

@@ -36,8 +36,16 @@ def parse_args():
     parser.add_argument("--output-dir", default="./tiny-random-mimo")
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--dtype", default="float32", choices=["float32", "bfloat16", "float16"])
-    parser.add_argument("--safe-serialization", action="store_true", help="Save safetensors instead of Paddle native pdparams.")
-    parser.add_argument("--tokenizer-dir", default=None, help="Optional tokenizer directory to copy into the tiny repo.")
+    parser.add_argument(
+        "--safe-serialization", action="store_true", help="Save safetensors instead of Paddle native pdparams."
+    )
+    parser.add_argument(
+        "--save-to-hf", action="store_true", help="Export HF-style keys instead of Paddle native keys."
+    )
+    parser.add_argument("--save-checkpoint-format", default="naive", choices=["naive", "flex_checkpoint"])
+    parser.add_argument(
+        "--tokenizer-dir", default=None, help="Optional tokenizer directory to copy into the tiny repo."
+    )
     parser.add_argument("--vocab-size", type=int, default=99)
     parser.add_argument("--hidden-size", type=int, default=32)
     parser.add_argument("--intermediate-size", type=int, default=64)
@@ -100,7 +108,12 @@ def main():
     )
 
     model = MiMoForCausalLM(config)
-    model.save_pretrained(args.output_dir, safe_serialization=args.safe_serialization)
+    model.save_pretrained(
+        args.output_dir,
+        safe_serialization=args.safe_serialization,
+        save_to_hf=args.save_to_hf,
+        save_checkpoint_format=args.save_checkpoint_format,
+    )
 
     if args.tokenizer_dir:
         for name in [

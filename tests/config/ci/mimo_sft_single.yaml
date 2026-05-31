@@ -14,6 +14,7 @@ template: qwen
 ### model
 model_name_or_path: /root/PaddleFormers/.cache/mimo/tiny-random-mimo
 _attn_implementation: eager
+convert_from_hf: false
 
 ### finetuning
 stage: SFT
@@ -50,7 +51,7 @@ recompute_num_layers: 1
 bf16: true
 fp16_opt_level: O2
 unified_checkpoint: false
-save_checkpoint_format: "flex_checkpoint"
-load_checkpoint_format: "flex_checkpoint"
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: sharding_io
 processor_use_fast: false
 high_precision_rope: true

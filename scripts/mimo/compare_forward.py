@@ -29,7 +29,9 @@ def parse_args():
     parser.add_argument("--torch-device", default="cuda:0")
     parser.add_argument("--max-new-tokens", type=int, default=10)
     parser.add_argument("--topk", type=int, default=10)
-    parser.add_argument("--load-checkpoint-format", default="naive", choices=["naive", "flex_checkpoint"])
+    parser.add_argument(
+        "--load-checkpoint-format", default="naive", choices=["naive", "sharding_io", "flex_checkpoint"]
+    )
     parser.add_argument("--no-convert-from-hf", action="store_true")
     parser.add_argument("--load-via-cpu", action="store_true")
     parser.add_argument("--low-cpu-mem-usage", action="store_true")
@@ -54,7 +56,9 @@ def main():
     torch_forward_inputs = {key: value.to(torch_model.device) for key, value in torch_inputs.items()}
     with torch.inference_mode():
         torch_outputs = torch_model(**torch_forward_inputs)
-        torch_generated = torch_model.generate(**torch_forward_inputs, max_new_tokens=args.max_new_tokens, do_sample=False)
+        torch_generated = torch_model.generate(
+            **torch_forward_inputs, max_new_tokens=args.max_new_tokens, do_sample=False
+        )
     torch_logits = torch_outputs.logits.detach().cpu().float().numpy()
     input_len = int(torch_inputs["input_ids"].shape[1])
     torch_new_tokens = torch_generated[:, input_len : input_len + args.topk].detach().cpu().numpy().tolist()
