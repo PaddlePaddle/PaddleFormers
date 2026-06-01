@@ -1698,6 +1698,11 @@ class TrainingArguments:
         },
     )
 
+    dsa_indexer_loss_coeff: float = field(
+        default=0.01,
+        metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
+    )
+
     online_merge_ema: bool = field(
         default=True, metadata={"help": "Whether to perform online merge of the EMA parameters during training. "}
     )

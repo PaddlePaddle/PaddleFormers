@@ -203,6 +203,9 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
                     self.rope_type = self.rope_parameters["rope_type"]
             if "rope_theta" in self.rope_parameters:
                 self.rope_theta = self.rope_parameters["rope_theta"]
+        if hasattr(self, "rope_scaling") and self.rope_scaling is not None:
+            if "mscale_all_dim" in self.rope_scaling:
+                self.mscale_all_dim = self.rope_scaling["mscale_all_dim"]
 
         # Check if mtp_block_spec parameter is supported
         kwargs = {}

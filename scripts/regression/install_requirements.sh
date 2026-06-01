@@ -115,8 +115,8 @@ install_requirements() {
         #paddlefleet_ops
         python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir --force-reinstall --no-dependencies
     fi
-   
-    
+    python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
+
     echo "paddle commit:"
     python -c "import paddle; print(paddle.version.commit)"
     echo "paddlefleet commit:"
@@ -132,7 +132,6 @@ install_requirements() {
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
     python -c "from paddlefleet_ops import __version__; print('paddlefleet_ops version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddlefleet; print('paddlefleet commit:',paddlefleet.version.commit)" >> ${log_path}/commit_info.txt
-    python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
     python -m pip list >> ${log_path}/commit_info.txt
     end_ts=$(date +%s)
     echo -e "\033[32m install requirements cost $((end_ts - start_ts))s \033[0m"
