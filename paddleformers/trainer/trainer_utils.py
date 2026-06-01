@@ -1519,8 +1519,11 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
         for buffer in optimizer._comm_buffer_list:
             for param_name, grad_view in buffer._sharding_param_grad_view.items():
                 struct_name = static_to_struct_mapping[param_name]
-                if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
-                    continue
+                if os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]:
+                    if not any(
+                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
+                    ):
+                        continue
                 param_buffer = grad_view._param_buffer
                 param_begin = grad_view._param_begin
                 param_end = grad_view._param_end
@@ -1542,8 +1545,11 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
                 if param_name not in static_to_struct_mapping:
                     continue
                 struct_name = static_to_struct_mapping[param_name]
-                # if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
-                #     continue
+                if (os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]) and False:
+                    if not any(
+                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
+                    ):
+                        continue
                 param_buffer = grad_view._param_buffer
                 param_begin = grad_view._param_begin
                 param_end = grad_view._param_end
@@ -1568,8 +1574,11 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
                 if param_name not in static_to_struct_mapping:
                     continue
                 struct_name = static_to_struct_mapping[param_name]
-                # if not any(struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names):
-                #     continue
+                if (os.getenv("HACK_CONVERT_CKPT", "0").lower() not in ["true", "1"]) and False:
+                    if not any(
+                        struct_name + state_name in state_dict_metadata for state_name in optimizer_state_names
+                    ):
+                        continue
                 parameter_list.append(param)
 
         optimizer._create_accumulators(paddle.base.framework.default_main_program().global_block(), parameter_list)
@@ -2126,6 +2135,45 @@ class EMAStateAssembler:
 
         logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Loading EMA state from {ema_state_path}.")
         ema_state_dict = paddle.load(str(ema_state_path))
+        if "master_weights" not in ema_state_dict:
+            # FC format: flat dict with .w_0 suffix keys → rename back + re-pad to old format
+            model_state_dict = self.model.state_dict()
+            struct_name_to_static_name = {k: v.name for k, v in model_state_dict.items()}
+            opt_master_weights = self.optimizer.state_dict().get("master_weights", {})
+
+            master_weights = {}
+            model_params = {}
+            for k, v in ema_state_dict.items():
+                if k.endswith(".w_0"):
+                    struct_name = k[:-4]
+                    tensor_name = struct_name_to_static_name[struct_name]
+                    if tensor_name in opt_master_weights:
+                        opt_tensor = opt_master_weights[tensor_name]
+                        if opt_tensor.ndim == 1:
+                            # Flattened format (sharding_v2) → flatten + re-pad
+                            flat = v.flatten()
+                            expected_numel = opt_tensor._numel()
+                            if flat._numel() < expected_numel:
+                                padded = paddle.zeros([expected_numel], dtype=v.dtype)
+                                padded[: flat._numel()] = flat
+                                padded.name = tensor_name
+                                master_weights[tensor_name] = padded
+                                flat._clear()
+                            else:
+                                flat.name = tensor_name
+                                master_weights[tensor_name] = flat
+                        else:
+                            # Non-flattened (Muon etc.) → reshape to optimizer's shape
+                            reshaped = v.reshape(opt_tensor.shape)
+                            reshaped.name = tensor_name
+                            master_weights[tensor_name] = reshaped
+                    else:
+                        master_weights[tensor_name] = v
+                else:
+                    model_params[k] = v
+            ema_state_dict = {}
+            ema_state_dict["master_weights"] = master_weights
+            ema_state_dict.update(model_params)
         return ema_state_dict
 
     def _build_ema_sharded_state_dict(self, ema_state_dict):

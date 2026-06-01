@@ -85,7 +85,7 @@ class KimiK2PretrainedModel(PretrainedModel):
                 f"model.layers.{layer_id}.mlp.shared_experts.gate_proj.weight^T, model.layers.{layer_id}.mlp.shared_experts.up_proj.weight^T -> model.layers.{layer_id}.mlp.shared_experts.up_gate_proj.weight , fused_ffn",
             ]
 
-            if config.moe_grouped_gemm and not config.fp8:
+            if config.moe_expert_fusion and not config.fp8:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
@@ -125,7 +125,7 @@ class KimiK2PretrainedModel(PretrainedModel):
 
         # layer 1 -> num_hidden_layers
         for layer_id in range(1, config.num_hidden_layers):
-            if config.moe_grouped_gemm and not config.fp8:
+            if config.moe_expert_fusion and not config.fp8:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):

@@ -1,0 +1,37 @@
+name: Approval
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+env:
+  BRANCH: ${{ github.base_ref }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  PR_ID: ${{ github.event.pull_request.number }}
+  COMMIT_ID: ${{ github.event.pull_request.head.sha }}
+
+jobs:
+  check-approvers:
+    name: Check approval
+    runs-on:
+      group: APPROVAL
+    steps:
+      - name: Cleanup
+        run: |
+          rm -rf * .[^.]*
+
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 200
+
+      - name: Merge PR to test branch
+        run: |
+          git fetch origin pull/${PR_ID}/merge
+          git checkout -b test FETCH_HEAD
+
+      - name: Display Required Approvers
+        run: |
+          git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
+          git fetch upstream $BRANCH
+          bash ci/check_approval.sh

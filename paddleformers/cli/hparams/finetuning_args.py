@@ -255,10 +255,6 @@ class FinetuningArguments(
         default=0.0,
         metadata={"help": "dropout probability for attention layers"},
     )
-    benchmark: bool = field(
-        default=False,
-        metadata={"help": "Whether to run benchmark by autotuner. True for from_scratch."},
-    )
 
     # performance
     compute_type: str = field(

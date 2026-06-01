@@ -92,7 +92,16 @@ jobs:
 
           PARENT_DIR=$(dirname "$WORKSPACE")
           echo "PARENT_DIR:$PARENT_DIR"
-          docker run --rm --net=host --cap-add=SYS_PTRACE --privileged --shm-size=64G  \
+          docker run --rm --net=host --cap-add=SYS_PTRACE --shm-size=64G  \
+          --device /dev/xpuctrl \
+          --device /dev/xpu0:/dev/xpu0 \
+          --device /dev/xpu1:/dev/xpu1 \
+          --device /dev/xpu2:/dev/xpu2 \
+          --device /dev/xpu3:/dev/xpu3 \
+          --device /dev/xpu4:/dev/xpu4 \
+          --device /dev/xpu5:/dev/xpu5 \
+          --device /dev/xpu6:/dev/xpu6 \
+          --device /dev/xpu7:/dev/xpu7 \
           -v $(pwd):/workspace -w /workspace \
           -v "/home/suijiaxin/model:/model" \
           -v "/home/suijiaxin/images:/images" \

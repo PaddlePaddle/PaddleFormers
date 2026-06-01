@@ -31,6 +31,7 @@ import paddle
 import paddle.distributed as dist
 from paddle.distributed import fleet, in_auto_parallel_align_mode
 
+from ..utils.config_check import _raise_config_conflict
 from ..utils.env import PREFIX_CHECKPOINT_DIR
 from ..utils.import_utils import is_paddlefleet_available
 from ..utils.log import logger
@@ -690,6 +691,19 @@ class TrainingArguments:
         },
     )
 
+    dsa_indexer_loss_coeff: float = field(
+        default=0.01,
+        metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
+    )
+
+    sharding_comm_group_call_opt: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Whether to enable the group-call communication optimization for sharding broadcast and reduce operations. This only takes effect when using the Muon optimizer."
+            )
+        },
+    )
     sharding_offload_opt_buffersize_GB: int = field(
         default=-1,
         metadata={
@@ -968,7 +982,7 @@ class TrainingArguments:
     device: Optional[str] = field(default="gpu", metadata={"help": "select cpu, gpu, xpu, npu devices."})
 
     disable_tqdm: Optional[bool] = field(
-        default=None, metadata={"help": "Whether or not to disable the tqdm progress bars."}
+        default=True, metadata={"help": "Whether or not to disable the tqdm progress bars."}
     )
 
     remove_unused_columns: Optional[bool] = field(
@@ -1684,11 +1698,16 @@ class TrainingArguments:
         },
     )
 
+    dsa_indexer_loss_coeff: float = field(
+        default=0.01,
+        metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
+    )
+
     online_merge_ema: bool = field(
         default=True, metadata={"help": "Whether to perform online merge of the EMA parameters during training. "}
     )
 
-    flex_ckpt_comm_method: str = field(
+    flex_ckpt_comm_method: Optional[str] = field(
         default=None,
         metadata={
             "help": "Communication method for FlexCheckpoint reshard. Options: 'auto', 'broadcast', 'parallel_broadcast'. Default: 'auto'."
@@ -1701,10 +1720,13 @@ class TrainingArguments:
             # self.max_grad_norm = 0.0
             # The current auto_hybrid_pp has aligned the handling of ClipGradByGlobalNorm with the original dygraph semi-auto parallel and dynamic manual-parallel modes and can correctly handle grad_clip, so it is no longer necessary to set max_grad_norm=0.0.
             if self.max_grad_norm != 0.0:
-                warnings.warn(
-                    "max_grad_norm is not 0.0,We will execute ClipGradByGlobalNorm,if you want to disable it,please set max_grad_norm=0.0"
+                _raise_config_conflict(
+                    name="max_grad_norm",
+                    current=self.max_grad_norm,
+                    expected=0.0,
+                    reason="auto_parallel_align_mode is enabled",
+                    extra="disable auto_parallel_align_mode",
                 )
-            self.max_grad_norm = 0.0
             os.environ["FLAGS_max_inplace_grad_add"] = "65536"
             os.environ["FLAGS_embedding_deterministic"] = "1"
             os.environ["FLAGS_cudnn_deterministic"] = "1"
@@ -1779,7 +1801,7 @@ class TrainingArguments:
             self.output_signal_dir = os.path.expanduser(self.output_signal_dir)
 
         if self.disable_tqdm is None:
-            self.disable_tqdm = False  # logger.getEffectiveLevel() > logging.WARN
+            self.disable_tqdm = True
 
         # XPU Device Data Loading Strategy:
         # - XPU does not support concurrent access from multiple threads on the same device.
@@ -1803,10 +1825,13 @@ class TrainingArguments:
             self.do_eval = True
 
         if self.do_eval and self.evaluation_strategy == IntervalStrategy.NO:
-            logger.warning(
-                "evaluation_strategy reset to IntervalStrategy.STEPS for do_eval is True. you can also set evaluation_strategy='epoch'."
+            _raise_config_conflict(
+                name="evaluation_strategy",
+                current=self.evaluation_strategy,
+                expected=IntervalStrategy.STEPS,
+                reason="do_eval=True",
+                extra="set evaluation_strategy='epoch' or disable do_eval",
             )
-            self.evaluation_strategy = IntervalStrategy.STEPS
 
         # eval_steps has to be defined and non-zero, fallbacks to logging_steps if the latter is non-zero
         if self.evaluation_strategy == IntervalStrategy.STEPS and (self.eval_steps is None or self.eval_steps == 0):
@@ -1895,8 +1920,13 @@ class TrainingArguments:
 
         if self.amp_master_grad:
             if not (self.bf16 or self.fp16):
-                logger.warning("set amp_master_grad to false since amp is disabled.")
-                self.amp_master_grad = False
+                _raise_config_conflict(
+                    name="amp_master_grad",
+                    current=self.amp_master_grad,
+                    expected=False,
+                    reason="amp is disabled (bf16=False and fp16=False)",
+                    extra="enable fp16 or bf16",
+                )
 
         if self.optim == OptimizerNames.MUON:
             assert self.use_hybrid_parallel, "Muon optimizer only supports use_hybrid_parallel=True"
@@ -2007,12 +2037,13 @@ class TrainingArguments:
 
                     if self.do_eval:
                         if self.per_device_train_batch_size != self.per_device_eval_batch_size:
-                            logger.warning(
-                                "In pipeline model, the evaluation also shares same setting with training. "
-                                "We will enforce that per_device_eval_batch_size=per_device_train_batch_size."
+                            _raise_config_conflict(
+                                name="per_device_eval_batch_size",
+                                current=self.per_device_eval_batch_size,
+                                expected=self.per_device_train_batch_size,
+                                reason="pipeline model with do_eval=True",
+                                extra="align per_device_eval_batch_size with per_device_train_batch_size",
                             )
-
-                            self.per_device_eval_batch_size = self.per_device_train_batch_size
 
                 if self.tensor_model_parallel_size > 1:
                     strategy.tensor_parallel_configs = {"tensor_init_seed": self.seed}
@@ -2235,6 +2266,12 @@ class TrainingArguments:
                                 self.sharding_offload_opt_buffersize_GB
                             )
 
+                        if self.sharding_comm_group_call_opt:
+                            assert (
+                                self.optim == OptimizerNames.MUON
+                            ), "sharding_comm_group_call_opt only supports Muon optimizer."
+                            strategy.hybrid_configs["sharding_configs"].comm_group_call_opt = True
+
                         if self.split_param:
                             strategy.hybrid_configs["sharding_configs"].split_param = True
                             assert self.amp_master_grad, "Currently sharding stage1 v2 only support amp_master_grad"
@@ -2429,11 +2466,13 @@ class TrainingArguments:
 
                 if self.do_eval:
                     if self.per_device_train_batch_size != self.per_device_eval_batch_size:
-                        logger.warning(
-                            "In pipeline model, the evaluation also shares same setting with training. "
-                            "We will enforce that per_device_eval_batch_size=per_device_train_batch_size."
+                        _raise_config_conflict(
+                            name="per_device_eval_batch_size",
+                            current=self.per_device_eval_batch_size,
+                            expected=self.per_device_train_batch_size,
+                            reason="pipeline model with do_eval=True (auto_parallel)",
+                            extra="align per_device_eval_batch_size with per_device_train_batch_size",
                         )
-                        self.per_device_eval_batch_size = self.per_device_train_batch_size
 
             elif self.gradient_accumulation_steps > 1:
                 gradient_merge = strategy.gradient_merge
@@ -2829,11 +2868,11 @@ class TrainingArguments:
                 self.expert_model_parallel_size = -1
                 self.expert_tensor_model_parallel_size = -1
 
-        # NOTE(Waynezee): when moe_grouped_gemm is true and sharding_parallel_size = 1,  checkpoint will fail to save
-        if hasattr(self, "moe_grouped_gemm") and self.moe_grouped_gemm and self.world_size > 1:
+        # NOTE(Waynezee): when moe_expert_fusion is true and sharding_parallel_size = 1,  checkpoint will fail to save
+        if hasattr(self, "moe_expert_fusion") and self.moe_expert_fusion and self.world_size > 1:
             assert (
                 self.sharding_parallel_size > 1
-            ), "Checkpoint will fail to save when moe_grouped_gemm is true and sharding_parallel_size = 1, please set moe_grouped_gemm to false"
+            ), "Checkpoint will fail to save when moe_expert_fusion is true and sharding_parallel_size = 1, please set moe_expert_fusion to false"
 
         if self.hybrid_parallel_topo_order is None:
             self.hybrid_parallel_topo_order = "sharding_first"
