@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - develop
-  pull_request:
-    types: [opened, synchronize]
-    branches: [develop, release/**]
 
 jobs:
   determine-whether-update:
