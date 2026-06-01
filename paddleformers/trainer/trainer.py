@@ -1205,10 +1205,12 @@ class Trainer:
                 else:
                     opt_states[k] = v
 
+            # use filtered AOA for master_weight (excludes FP32-only params)
+            master_weight_aoa = getattr(self.args, "aoa_config_master_weight", None) or self.args.aoa_config
             dist.load_state_dict(
                 master_weights,
                 master_weights_path,
-                aoa_config=self.args.aoa_config,
+                aoa_config=master_weight_aoa,
                 offload=self.args.load_via_cpu,
                 comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
@@ -1263,7 +1265,13 @@ class Trainer:
 
             # NOTE(xingmingyyj) When saving model states only in float32 format, we assume that users
             # will not use AOA to change the mapping relationships among these float32 weights.
-            if enable_bf16_opt:
+            if os.getenv("HACK_CONVERT_CKPT", "0").lower() in ["true", "1"]:
+                # model_state only loads params not in master_weight
+                # params in master_weight will be cast from master_weight
+                if enable_bf16_opt:
+                    model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
+                aoa_config = getattr(self.args, "aoa_config_model_state", None)
+            elif enable_bf16_opt:
                 model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
                 aoa_config = None
             else:
@@ -2545,9 +2553,8 @@ class Trainer:
 
             paddle_pipeline_timers = paddle_get_timers()
             for name, timer in paddle_pipeline_timers.timers.items():
-                elapsed_time = timer.elapsed(reset=False) * 1000.0
+                elapsed_time = timer.elapsed(reset=True) * 1000.0
                 paddle_timer_info += f" | {name}: {elapsed_time:.2f}"
-            paddle_pipeline_timers.log(paddle_pipeline_timers.timers.keys(), reset=True)
         except AssertionError:  # paddle timer not enabled
             pass
 
@@ -2621,9 +2628,7 @@ class Trainer:
 
             seq_length = None
             model_flops_per_token = None
-            if (getattr(self, "is_pretraining", False) or getattr(self.args, "benchmark", False)) and hasattr(
-                self.model, "config"
-            ):
+            if hasattr(self.model, "config"):
                 seq_length = getattr(self.model.config, "seq_length", None)
                 try:
                     model_flops_per_token = self.model.get_hardware_flops()
@@ -2654,6 +2659,24 @@ class Trainer:
                     logs.update(
                         {k: v.item() if hasattr(v, "item") else v for k, v in LanguageLoss.mtp_loss_tracker.items()}
                     )
+            except (ImportError, AttributeError):
+                pass
+
+            # Add DSA indexer loss metrics if available
+            try:
+                from paddlefleet.transformer.dsa_attention import (
+                    DSAIndexerLossLoggingHelper,
+                )
+
+                if DSAIndexerLossLoggingHelper.tracker.get("values") is not None:
+                    loss_scale = 1.0 / self.args.gradient_accumulation_steps
+                    DSAIndexerLossLoggingHelper.reduce_loss_in_tracker()
+                    tracker = DSAIndexerLossLoggingHelper.tracker
+                    indexer_loss_values = tracker["values"] * loss_scale
+                    num_layers = indexer_loss_values.shape[0]
+                    avg_indexer_loss = indexer_loss_values.sum() / num_layers
+                    logs["indexer_loss"] = avg_indexer_loss.item()
+                    DSAIndexerLossLoggingHelper.clean_loss_in_tracker()
             except (ImportError, AttributeError):
                 pass
 
@@ -3109,6 +3132,17 @@ class Trainer:
             if hasattr(optimizer_cls, "_create_master_weight") and self.args.fp16_opt_level == "O2":
                 optimizer_kwargs["multi_precision"] = True
 
+            if self.args.optim == OptimizerNames.MUON and hasattr(self.model, "build_muon_param_info_map"):
+                self.model.config.muon_configs = {
+                    "muon_qkv_update_mode": self.args.muon_qkv_update_mode,
+                    "muon_ffn_split": self.args.muon_ffn_split,
+                    "muon_exclude_patterns": self.args.muon_exclude_patterns,
+                }
+                optimizer_kwargs["muon_param_info_map"] = self.model.build_muon_param_info_map(
+                    self.model, self.model.config
+                )
+                logger.info(f"muon_param_info_map: {optimizer_kwargs['muon_param_info_map']}")
+
             self.optimizer = optimizer_cls(
                 learning_rate=self.lr_scheduler if lr_scheduler is None else lr_scheduler,
                 apply_decay_param_fun=apply_decay_param_fun,
@@ -3234,6 +3268,7 @@ class Trainer:
                 "muon_extra_scale_factor": args.muon_extra_scale_factor,
                 "ns_steps": args.muon_ns_steps,
                 "ns_coeff_type": args.muon_ns_coeff_type,
+                "ns_coeffs": args.muon_ns_coeffs,
             }
             optimizer_cls = Muon
             optimizer_kwargs.update(muon_kwargs)

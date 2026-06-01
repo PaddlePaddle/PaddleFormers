@@ -19,6 +19,7 @@ export paddle=$1
 export FLAGS_enable_CE=${2-false}
 export nlp_dir=/workspace/PaddleFormers
 export log_path=/workspace/PaddleFormers/unittest_logs
+unset http_proxy && unset https_proxy
 cd $nlp_dir
 if [ ! -d "unittest_logs" ];then
     mkdir unittest_logs
@@ -33,30 +34,10 @@ dir_name=$(dirname "${PYTEST_EXECUTE_FLAG_FILE}")
 mkdir -p "${dir_name}"
 AGILE_COMPILE_BRANCH=$4
 
-kill_process() {
-    echo -e "\033[32m===== print python / pytest / xdist processes =====\033[0m"
-
-    ps -o pid,ppid,tty,stat,etime,cmd -C python | \
-      grep -E 'pytest|exec\(eval|paddleformers|launcher\.py' || true
-
-    echo -e "\033[32m===== kill python / pytest / xdist processes =====\033[0m"
-
-    TTY=$(tty | sed 's#/dev/##')
-
-    # kill pytest + xdist on current tty
-    ps -o pid=,tty=,cmd= -C python | \
-      awk -v tty="$TTY" '$2==tty && $3 ~ /pytest|exec\(eval/ {print $1}' | \
-      xargs -r kill -9 || true
-
-    # kill paddleformers launcher (distributed training)
-    pkill -9 -f paddleformers/cli/launcher.py || true
-}
-
-
 install_requirements() {
     start_ts=$(date +%s)
-    python -m pip config --user set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-    python -m pip config --user set global.trusted-host pypi.tuna.tsinghua.edu.cn
+    python -m pip config --user set global.trusted-host pypi.org
+    python -m pip config --user set global.index-url https://pypi.org/simple
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
     python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple  > /dev/null
     cd /home/models/my_packages && dpkg -i *.deb > /dev/null
@@ -68,21 +49,36 @@ install_requirements() {
         python -m pip install dist/*.whl 
         #fleet
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
+        #paddlefleet_ops
+        python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir --force-reinstall --no-dependencies
         python -m pip uninstall paddlepaddle-gpu -y
         #paddle
         wget -q $paddle
-        python -m pip install paddlepaddle_gpu-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
+        python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
 
     else
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+        #paddlefleet_ops
+        python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir --force-reinstall --no-dependencies
     fi
+    pip install -r tests/requirements.txt -i https://pypi.org/simple 
+
+    echo "paddle commit:"
+    python -c "import paddle; print(paddle.version.commit)"
     echo "paddlefleet commit:"
     python -c "import paddlefleet; print(paddlefleet.version.commit)"
+    echo "paddlefleet_ops commit:"
+    python -c "from paddlefleet_ops import __version__; print(__version__)"
+    echo "paddleformers commit:"
+    python -c "import paddleformers; print(paddleformers.version.commit)"
+
+    python -c "import paddle; print('paddle commit:',paddle.version.commit)" >> ${log_path}/commit_info.txt
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
-    pip install -r tests/requirements.txt -i https://pypi.org/simple 
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
-    python -m pip list >> ${log_path}/commit_info.txt 
+    python -c "from paddlefleet_ops import __version__; print('paddlefleet_ops version:', __version__)" >> ${log_path}/commit_info.txt
+    python -c "import paddlefleet; print('paddlefleet commit:',paddlefleet.version.commit)" >> ${log_path}/commit_info.txt
+    python -m pip list >> ${log_path}/commit_info.txt
     end_ts=$(date +%s)
     echo -e "\033[32m install requirements cost $((end_ts - start_ts))s \033[0m"
 }
@@ -144,11 +140,9 @@ fi
 get_diff_TO_case
 set_env
 if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
-    kill_process
     install_requirements
     cd ${nlp_dir}
     echo ' Testing all unittest cases '
-    unset http_proxy && unset https_proxy
     export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}
     set +e
     export PYTHONFAULTHANDLER=1
@@ -160,7 +154,6 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     python -m pytest -v -s -n 1 \
         --dist no \
         --maxfail=10 \
-        --retries 3 --retry-delay 1 \
         --timeout 200 --durations 20 \
         --alluredir=result \
         --cov=paddleformers \
@@ -172,7 +165,6 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
         cd ${nlp_dir}
         echo -e "\033[35m ---- Generate Allure Report  \033[0m"
-        unset http_proxy && unset https_proxy
         cp scripts/unit_test/gen_allure_report.py ./
         python gen_allure_report.py > /dev/null
         echo -e "\033[35m ---- Report: https://xly.bce.baidu.com/ipipe/ipipe-report/report/${AGILE_JOB_BUILD_ID}/report/  \033[0m"

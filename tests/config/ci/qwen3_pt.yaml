@@ -58,7 +58,7 @@ sequence_parallel: false
 use_expert_parallel: false
 
 # compute 
-moe_grouped_gemm: true
+moe_expert_fusion: true
 apply_rope_fusion: true
 moe_router_fusion: true
 
@@ -79,3 +79,4 @@ load_checkpoint_format: "flex_checkpoint"
 moe_router_fusion: false
 
 router_aux_loss_coef: 0.0
+moe_deep_gemm: false

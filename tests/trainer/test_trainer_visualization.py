@@ -39,6 +39,7 @@ class TestWandbCallback(unittest.TestCase):
             logging_steps=20,
             run_name="test_wandbcallback",
             logging_dir=output_dir,
+            bf16=True,
         )
         state = TrainerState(trial_name="PaddleFormers")
         control = TrainerControl()
@@ -76,6 +77,7 @@ class TestSwanlabCallback(unittest.TestCase):
             logging_steps=20,
             run_name="test_swanlabcallback",
             logging_dir=output_dir,
+            bf16=True,
         )
         state = TrainerState(trial_name="PaddleFormers")
         control = TrainerControl()
@@ -101,7 +103,12 @@ class TestTensorboardCallback(unittest.TestCase):
     def test_tbcallback(self):
         output_dir = tempfile.mkdtemp()
         args = TrainingArguments(
-            output_dir=output_dir, max_steps=200, logging_steps=20, run_name="test_tbcallback", logging_dir=output_dir
+            output_dir=output_dir,
+            max_steps=200,
+            logging_steps=20,
+            run_name="test_tbcallback",
+            logging_dir=output_dir,
+            bf16=True,
         )
         state = TrainerState(trial_name="PaddleFormers")
         control = TrainerControl()
@@ -141,7 +148,12 @@ class TestVisualDLCallback(unittest.TestCase):
     def test_vdlcallback(self):
         output_dir = tempfile.mkdtemp()
         args = TrainingArguments(
-            output_dir=output_dir, max_steps=200, logging_steps=20, run_name="test_vdlcallback", logging_dir=output_dir
+            output_dir=output_dir,
+            max_steps=200,
+            logging_steps=20,
+            run_name="test_vdlcallback",
+            logging_dir=output_dir,
+            bf16=True,
         )
         state = TrainerState(trial_name="PaddleFormers")
         control = TrainerControl()

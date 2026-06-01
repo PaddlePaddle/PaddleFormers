@@ -62,6 +62,7 @@ class GLMMoEModelProvider(GPTModelProvider):
     bias_activation_fusion: bool = True
 
     transform_rules = {
+        **GPTModelProvider.transform_rules,
         "dtype": "params_dtype",
     }
 
@@ -85,7 +86,7 @@ class GLMMoEModelProvider(GPTModelProvider):
 
     rope_scaling: float = 1.0
     bias_dropout_fusion: bool = True
-    moe_grouped_gemm: bool = False
+    moe_expert_fusion: bool = False
 
 
 def eager_attention_forward(
@@ -948,7 +949,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                     f"{prefix}.mlp.experts.$EXPERT_ID.gate_proj.weight^T, {prefix}.mlp.experts.$EXPERT_ID.up_proj.weight^T -> {prefix_offset}.mlp.experts.$EXPERT_ID.up_gate_proj.weight, fused_ffn",
                 ]
 
-            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe):
+            if is_fleet and (config.moe_expert_fusion or using_sonic_moe):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(num_experts):
@@ -1012,12 +1013,12 @@ class Glm4MoePreTrainedModel(PretrainedModel):
         # layer 0
         for layer_idx in range(config.first_k_dense_replace):
             aoa_statements += [
-                f"{model_prefix}layers.{num_head_empty_layers+layer_idx}.mlp.down_proj.weight^T -> model.layers.{layer_idx}.mlp.down_proj.weight",
+                f"{model_prefix}layers.{num_head_empty_layers + layer_idx}.mlp.down_proj.weight^T -> model.layers.{layer_idx}.mlp.down_proj.weight",
             ]
             aoa_statements += [
-                f"{model_prefix}layers.{num_head_empty_layers+layer_idx}.mlp.up_gate_proj.weight -> model.layers.{num_head_empty_layers+layer_idx}.mlp.gate_proj.weight, model.layers.{num_head_empty_layers+layer_idx}.mlp.up_proj.weight, fused_ffn",
-                f"model.layers.{num_head_empty_layers+layer_idx}.mlp.gate_proj.weight^T -> model.layers.{layer_idx}.mlp.gate_proj.weight",
-                f"model.layers.{num_head_empty_layers+layer_idx}.mlp.up_proj.weight^T -> model.layers.{layer_idx}.mlp.up_proj.weight",
+                f"{model_prefix}layers.{num_head_empty_layers + layer_idx}.mlp.up_gate_proj.weight -> model.layers.{num_head_empty_layers + layer_idx}.mlp.gate_proj.weight, model.layers.{num_head_empty_layers + layer_idx}.mlp.up_proj.weight, fused_ffn",
+                f"model.layers.{num_head_empty_layers + layer_idx}.mlp.gate_proj.weight^T -> model.layers.{layer_idx}.mlp.gate_proj.weight",
+                f"model.layers.{num_head_empty_layers + layer_idx}.mlp.up_proj.weight^T -> model.layers.{layer_idx}.mlp.up_proj.weight",
             ]
 
         num_nextn_predict_layers = config.num_nextn_predict_layers if config.num_nextn_predict_layers else 0
@@ -1073,7 +1074,7 @@ class Glm4MoePreTrainedModel(PretrainedModel):
                 # for mtp
                 prefix_offset += ".transformer_layer"
 
-            if is_fleet and (config.moe_grouped_gemm or using_sonic_moe):
+            if is_fleet and (config.moe_expert_fusion or using_sonic_moe):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
