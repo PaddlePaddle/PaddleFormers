@@ -553,7 +553,7 @@ def collate_fn(
 
             return_list[-1].append(
                 gen_mtp_layer_mask(
-                    position_ids,
+                    original_position_ids,
                     max_seq_len,
                     training_args.num_nextn_predict_layers,
                 )
