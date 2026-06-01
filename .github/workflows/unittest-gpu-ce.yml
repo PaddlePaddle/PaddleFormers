@@ -1,6 +1,7 @@
 name: Unittest GPU CE
 
 on:
+  pull_request:
   schedule:
     - cron: "0 16 * * *"     # every day at 00:00 Beijing time (UTC+8)
   workflow_dispatch:        # allow to manually trigger the workflow
@@ -326,7 +327,7 @@ jobs:
     name: upload-allure
     needs: [unittest-gpu-ce]
     if: always()
-    runs-on: 'ernie-cpu'
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout gh-pages
         uses: actions/checkout@v5
