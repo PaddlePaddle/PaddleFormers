@@ -1,0 +1,67 @@
+# bash longjob/pdc_yaml_longjob_submit.sh longjob/submit.yaml  ./glm45.yaml lzx_glm
+# -----------paddlcloud 配置: 主要是一些提交paddlecloud任务的信息----------------------#
+ak: "7c72946009fb53d4aca10a781bc2fa46"
+sk: "4b15c34b61ec5497983a04df5a60a8c0"
+algo_id: "glm45"
+job_name: "glm45-ft"
+group_name: "nlp-BZZ3-270g-tjzj-1-1"
+priority: normal
+job-scene: "debug"
+model-domain: "llm"
+start_cmd: "sh longjob/launch_training_process.sh"
+trainer_count: 1
+gpu_card: 8
+distribute_job_type: "NCCL2"
+permission: "group"
+paddle_version: "paddle-fluid-custom"
+recovery_mode: "on"
+pdc_server: "paddlecloud.baidu-int.com"
+pdc_port: 80
+image_addr: "iregistry.baidu-int.com/paddlepaddle/base-images:paddlecloud-ubuntu24.04-gcc13.3-cuda13.0-cudnn913-bccl1.4.1.4-nccl2.26.5-openmpi4.1.5-FleetY13.5.0B-rc12"
+
+# ---------------------------数据配置-------------------------------------------------#
+fs_name: "afs://xh-bj-liuli.afs.baidu.com:8177"
+fs_ugi: "nlp,nlp_20250710"
+# afs path needed for storing codes
+output_path: "/user/nlp-bjll/lizhenxing/glm45-ft"
+mpi_on_k8s: 1
+
+# ---------------------------容错配置-------------------------------------------------#
+# pdc configs 
+# pdc_init_cmd: "sh longjob/build_env_eb5.sh"
+pdc_sync_cmd: "sh longjob/sync.sh"
+pdc_watch_log: "output/paddle_distributed_logs"
+pdc_hang_watcher_timeout: 120
+pdc_cordon_mode: on
+perf_check_training_durations: 3                                                                                                                            
+perf_max_allowed_percentage_diff: 3
+# AFS磁盘占用超过90%会报警
+afs_quota_remain_space_ratio: 90
+pdc_hang_cooling_off_hang_timeout: 420
+
+# flash device
+enable_mount_dev_shm: true
+
+# checkpoint settings
+# afs path needed for storing ckpts
+remote_checkpoint_dir: "/user/nlp-bjll/lizhenxing/glm45-ft"
+# freeze_model: inception_litev_step_365000_ema
+force_upload_interval: 1
+local_keep_models_num: 2
+check_md5: true
+checksum_bin: "/root/paddlejob/afs_tool/bin/b3sum"
+save_signal: true
+skip_download_checkpoint: false
+pdc_skip_wait_ckpt_upload: true
+watch_upload_timeout_interval: 60
+
+# ema相关设置
+ema_ptx_upload_dir: "/user/ernie_pretrain/kebo01/ema"
+comp_ema_ptx_upload_dir: "/user/ernie_pretrain/kebo01/comp_ema"
+ema_save_steps1: 300
+ema_save_steps2: 300
+enable_use_ema: true
+
+# ema临时加入的配置，后续下掉，可以直接依赖afs
+hadoop_bin: "hadoop fs -D hadoop.job.ugi=${fs_ugi} -D fs.default.name=${fs_name}"
+afsshell_bin: "/root/paddlejob/afs_tool/bin/afsshell --username=${fs_username} --password=${fs_password}"
