@@ -42,6 +42,7 @@ from .quantization_linear import (
     dequant_weight,
 )
 
+
 def _define_fleet_fallbacks():
     # Define mock objects or alternative implementations when paddlefleet is not available.
     def get_tensor_model_parallel_group():

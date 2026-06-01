@@ -151,10 +151,12 @@ Validated local inference compiler result for the true-weight reduced-depth
 checkpoint: dynamic `10840.92 tokens/s`, to_static `17253.67 tokens/s`,
 speedup `59.15%`.
 
-Training compiler dynamic mode ran successfully, but static mode currently fails
-inside Paddle dy2static with `RecursionError: maximum recursion depth exceeded`.
-This should be treated as a compiler compatibility blocker unless a local
-workaround is found.
+Training compiler inference passed locally with a `59.15%` speedup. For
+training, full-parameter static SFT reached the optimizer step and then hit
+local GPU memory pressure while creating optimizer states. The LoRA fallback
+completed dynamic and static 30-step runs with the same final loss and a
+`5.85%` speedup; it is recorded as a resource-constrained static-path
+validation, not as the formal full-training 20% target.
 
 ## Acceptance Items To Run With Full Assets
 
@@ -162,7 +164,7 @@ workaround is found.
 2. Greedy generation alignment: first 10 generated tokens match Transformers.
 3. GSM8K SFT for 300 steps with the hyperparameters in `examples/config/sft/mimo_gsm8k_300.yaml`. Reduced-depth Paddle and ms-swift runs are complete, but the loss curves are not numerically aligned yet.
 4. CI/CE tiny model upload and CE config wiring after a PaddleFormers/tiny-random-mimo checkpoint is available.
-5. Compiler on/off train and inference benchmark: inference exceeds the 20% target locally; training static mode is blocked by dy2static recursion.
+5. Compiler on/off train and inference benchmark: inference exceeds the 20% target locally; training static mode passes with the LoRA fallback, while full-parameter static training needs a freer/larger GPU for the formal speedup target.
 
 ## Notes
 

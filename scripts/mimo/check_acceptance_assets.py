@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-
 REQUIRED_MODEL_FILES = ["config.json"]
 TOKENIZER_FILES = ["tokenizer.json", "tokenizer_config.json", "vocab.json", "merges.txt"]
 
@@ -33,7 +32,9 @@ def check_checkpoint(path: Path, label: str, required: bool = True) -> bool:
     if not path.exists():
         return ok
 
-    has_weights = any(path.glob("*.safetensors")) or any(path.glob("*.pdparams")) or (path / "model_state.pdparams").exists()
+    has_weights = (
+        any(path.glob("*.safetensors")) or any(path.glob("*.pdparams")) or (path / "model_state.pdparams").exists()
+    )
     if has_weights:
         print(f"OK: {label} checkpoint weights")
     else:

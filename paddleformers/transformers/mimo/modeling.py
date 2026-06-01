@@ -26,7 +26,12 @@ from ...nn.mlp import MLP as Qwen2MLP
 from ...nn.norm import Norm as GeneralNorm
 from ..cache_utils import Cache
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
-from ..qwen2.modeling import Qwen2Attention, Qwen2ForCausalLMPipe, Qwen2Model, Qwen2PretrainedModel
+from ..qwen2.modeling import (
+    Qwen2Attention,
+    Qwen2ForCausalLMPipe,
+    Qwen2Model,
+    Qwen2PretrainedModel,
+)
 from .configuration import MiMoConfig
 
 

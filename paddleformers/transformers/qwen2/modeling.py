@@ -33,7 +33,8 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
 try:
     from paddleformers.transformers.gpt_provider import GPTModelProvider
-except ImportError as gpt_provider_import_error:
+except ImportError as import_error:
+    gpt_provider_import_error = import_error
 
     class GPTModelProvider:
         @classmethod
@@ -43,6 +44,7 @@ except ImportError as gpt_provider_import_error:
                 "Use Qwen2ForCausalLMDeprecated for动态图 tests or install paddlefleet with paddlefleet_ops."
             ) from gpt_provider_import_error
 
+
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
@@ -50,9 +52,11 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Qwen2MLP
 from ...nn.norm import Norm as GeneralNorm
+
 try:
     from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe
-except ImportError as pp_model_import_error:
+except ImportError as import_error:
+    pp_model_import_error = import_error
 
     class CriterionLayerPipe:
         def __init__(self, *args, **kwargs):
@@ -65,6 +69,8 @@ except ImportError as pp_model_import_error:
             raise ImportError(
                 "Pipeline parallel Qwen2 models require paddlefleet with paddlefleet_ops installed."
             ) from pp_model_import_error
+
+
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..contrastive_loss import SimpleContrastiveLoss

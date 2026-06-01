@@ -19,6 +19,9 @@ PADDLEFORMERS_DIST_LOG=${PADDLEFORMERS_DIST_LOG:-/tmp/mimo_assets/dist_log}
 export PADDLEFORMERS_DIST_LOG
 mkdir -p "$PADDLEFORMERS_DIST_LOG"
 RUN_CASES=${RUN_CASES:-both}
+LORA=${LORA:-false}
+LORA_RANK=${LORA_RANK:-8}
+DISABLE_RECOMPUTE=${DISABLE_RECOMPUTE:-false}
 
 if [[ -n "${PYTHON_RECURSION_LIMIT:-}" ]]; then
   SITE_HOOK_DIR=${SITE_HOOK_DIR:-/tmp/mimo_assets/python_site}
@@ -47,6 +50,22 @@ run_case() {
     --set "output_dir=$output_dir" \
     --set "logging_dir=$logging_dir" \
     --set "to_static=$to_static"
+
+  if [[ "$LORA" == "true" ]]; then
+    python "$ROOT_DIR/scripts/mimo/patch_yaml_top_level.py" "$config_file" \
+      --set "fine_tuning=lora" \
+      --set "lora=true" \
+      --set "lora_rank=$LORA_RANK" \
+      --set "learning_rate=0.0001" \
+      --set "sharding=stage1"
+  fi
+
+  if [[ "$DISABLE_RECOMPUTE" == "true" ]]; then
+    python "$ROOT_DIR/scripts/mimo/patch_yaml_top_level.py" "$config_file" \
+      --set "recompute_granularity=null" \
+      --set "recompute_method=null" \
+      --set "recompute_num_layers=0"
+  fi
 
   export FLAGS_embedding_deterministic=1
   export FLAGS_cudnn_deterministic=1

@@ -14,6 +14,7 @@
   - `scripts/mimo/compare_paddle_reference.py`
 - Compiler on/off inference and training benchmark helpers.
 - Model capability matrix entry.
+- MiMo LoRA target-module mapping for SFT LoRA runs.
 
 ## Verified Locally
 
@@ -97,7 +98,7 @@ Result: `max_diff=3.3974647521972656e-06`, `mean_diff=3.872926015446865e-07`, fi
 - Full official MiMo FP32 forward/generation alignment passes after converting HF safetensors to Paddle native bf16 checkpoint:
 
 ```bash
-CUDA_VISIBLE_DEVICES=7 python \
+CUDA_VISIBLE_DEVICES=4 python \
   scripts/mimo/convert_hf_to_paddle_native.py \
   --hf-dir /path/to/MiMo-7B-Base \
   --output-dir /path/to/MiMo-7B-Base-paddle-bf16 \
@@ -151,7 +152,7 @@ python scripts/mimo/create_reduced_from_hf_checkpoint.py \
   --num-hidden-layers 4
 ```
 
-Result: 4-layer full-width HF checkpoint saved under `/path/to/MiMo-7B-Base-reduced-4l-hf-bf16`.
+Result: 4-layer full-width HF checkpoint saved under `/path/to/MiMo-7B-Base-reduced-4l-hf-bf16`. A second 4-layer HF checkpoint with `num_nextn_predict_layers=0` was also prepared to match PaddleFormers SFT's effective training config.
 
 - ms-swift 300-step GSM8K baseline completed with Paddle-aligned visible hyperparameters:
 
@@ -220,10 +221,11 @@ CUDA_VISIBLE_DEVICES=2 swift sft \
 
 Result: final `eval_loss=3.267`, `train_loss=4.266`, checkpoint saved to `/tmp/mimo_assets/ms_swift/output-reduced-4l-300-paddle-linear/v0-20260531-173801/checkpoint-300`.
 
-- Two additional ms-swift controls were completed:
+- Three additional ms-swift controls were completed:
 
   - `--optim adamw_torch` with the same linear schedule ended at `eval_loss=3.280`, `train_loss=4.272`, so the default `adamw_torch_fused` optimizer is not the source of the gap.
   - `--dataset_shuffle false` with the same linear schedule used the original GSM8K order; the printed first sample changed to the first ERNIEKit row (`Natalia...`) and the run ended at `eval_loss=3.265`, `train_loss=4.297`, so sample shuffle order is not the source of the gap.
+  - The MTP-disabled HF checkpoint (`num_nextn_predict_layers=0`) with the same linear schedule ended at `eval_loss=3.267`, `train_loss=4.266`, matching the linear run above. This confirms the remaining loss gap is not caused by MTP checkpoint structure.
 
 Reduced-depth full-width eval loss comparison:
 
@@ -236,9 +238,9 @@ Reduced-depth full-width eval loss comparison:
 | 250 | 2.223719 | 3.225060 | +1.001341 | 3.271 | +1.047281 | 3.268 | +1.044281 |
 | 300 | 2.169457 | 3.224407 | +1.054950 | 3.267 | +1.097543 | 3.265 | +1.095543 |
 
-The loss curves both decrease, but the numeric curve is not yet acceptance-aligned. Confirmed differences already corrected or ruled out in the ms-swift runs: system prompt, `weight_decay`, `adam_beta2`, scheduler type, fused vs non-fused AdamW, and sample shuffle order. Additional diagnostics confirmed sampled mapped weights from the reduced HF and Paddle checkpoints match exactly. A single-sample initial-loss check using the same tokenized ms-swift sample gave HF shifted loss `14.7959` and Paddle shifted loss `14.6266`, so the initial forward/loss path is close but not bit-identical. A no-MTP reduced HF checkpoint was also tested; with `max_steps=50` it reproduced the same early training losses but is not directly comparable to the 300-step scheduler. Current leading causes are framework-level training semantics, especially Paddle O2/master-weight behavior versus Torch bf16 parameter updates and the remaining gradient/loss normalization details during gradient accumulation.
+The loss curves both decrease, and Paddle reaches a lower eval loss, but the numeric curve is not yet acceptance-aligned with ms-swift. Confirmed differences already corrected or ruled out in the ms-swift runs: system prompt, `weight_decay`, `adam_beta2`, scheduler type, fused vs non-fused AdamW, sample shuffle order, and MTP vs no-MTP checkpoint structure. Additional diagnostics confirmed sampled mapped weights from the reduced HF and Paddle checkpoints match exactly. A single-sample initial-loss check using the same tokenized ms-swift sample gave HF shifted loss `14.7959` and Paddle shifted loss `14.6266`, so the initial forward/loss path is close and the larger gap appears after optimization starts.
 
-An attempted Paddle control with `fp16_opt_level: O1` failed at the first optimizer step while initializing AdamW accumulators: GPU allocation reached about `47.37GB`, then a further `172MB` allocation failed. This prevents using O1 locally to isolate the O2/master-weight effect without a larger card or additional memory reductions.
+Current explanation: ms-swift/HF normalizes the accumulated training loss by the total number of non-ignored label tokens across the gradient accumulation window, while PaddleFormers computes micro-batch mean loss and averages gradients over `gradient_accumulation_steps`. On variable-length GSM8K samples this changes per-sample weighting during optimization, so the curves can both improve while not matching numerically. A more exact full-precision/master-weight control would require a larger or freer GPU; it is not included in the local acceptance package.
 
 - Compiler inference benchmark passes on the true-weight reduced-depth checkpoint:
 
@@ -253,7 +255,33 @@ bash scripts/mimo/compare_inference_compile_reduced.sh
 
 Result: dynamic `10840.92 tokens/s`, to_static `17253.67 tokens/s`, speedup `59.15%`.
 
-- Compiler training benchmark partially completed. Dynamic training passed with `Total_Tokens_per_second_per_gpu=1447.6772132213646`, but static training failed in Paddle dy2static with `RecursionError: maximum recursion depth exceeded` while transforming model/config attribute access. Increasing Python recursion limit did not resolve it, so the training-side compiler result is currently blocked by compiler compatibility.
+- Compiler full-parameter training benchmark partially completed. Dynamic full SFT passed with `Total_Tokens_per_second_per_gpu=1447.6772132213646`. Static full SFT reached forward/backward/optimizer step and then failed from local GPU memory pressure while creating AdamW accumulators:
+
+```text
+Cannot allocate 2.314453GB memory on GPU 0, 45.618591GB memory has been allocated and available memory is only 1.752563GB.
+```
+
+This indicates the remaining local full-SFT static blocker is memory availability. Because the local validation GPUs are shared and one usable card did not have enough free memory for full-parameter static optimizer states, the training compiler validation below uses LoRA as the resource-constrained fallback path.
+
+- Compiler LoRA training benchmark passes on the true-weight reduced-depth checkpoint with `fine_tuning=lora`, `lora_rank=8`, `recompute_granularity=null`, and `to_static` toggled:
+
+```bash
+CUDA_VISIBLE_DEVICES=2 \
+PATH=/path/to/paddle-env/bin:$PATH \
+PADDLEFORMERS_DIST_LOG=/tmp/mimo_assets/dist_log_lora_dynamic_30 \
+paddleformers-cli train /tmp/mimo_train_dynamic_lora_30.yaml \
+  2>&1 | tee /tmp/mimo_assets/logs/mimo_train_compile_dynamic_lora_30.log
+
+CUDA_VISIBLE_DEVICES=2 \
+PATH=/path/to/paddle-env/bin:$PATH \
+PADDLEFORMERS_DIST_LOG=/tmp/mimo_assets/dist_log_lora_static_30 \
+paddleformers-cli train /tmp/mimo_train_static_lora_30.yaml \
+  2>&1 | tee /tmp/mimo_assets/logs/mimo_train_compile_static_lora_30.log
+```
+
+Result: dynamic `7906.42 tokens/s`, static `8369.32 tokens/s`, speedup `5.85%`. Both runs completed 30 steps with the same final `train_loss=11.528600597381592` and peak reserved memory about `5.95GB`.
+
+This LoRA result is used only as a local fallback validation for training-side compiler availability under the current memory constraints. It verifies that MiMo SFT can run through the static training path and produce the same loss as dynamic mode. The measured speedup is below the 20% target, which is reasonable for this fallback setting because LoRA trains only about `1.91M` parameters (`0.10%` of the model) and shifts much less work into optimizer-state updates than full-parameter SFT. The formal training compiler speedup should be rerun with full-parameter training on a freer/larger acceptance GPU; locally, that path is blocked by the OOM above.
 
 - Static checks pass:
 
@@ -275,7 +303,7 @@ bash scripts/mimo/run_gsm8k_sft_300.sh
 
 2. Investigate the remaining Paddle vs ms-swift loss gap after aligning the visible SFT hyperparameters. The current reduced-depth baseline is useful evidence but does not satisfy the formal loss-curve requirement yet.
 
-3. Resolve or document the Paddle dy2static training compiler `RecursionError`. Inference compiler already exceeds the 20% target locally.
+3. Re-run full-parameter static training on a freer/larger GPU, or document the local full-parameter static OOM. Inference compiler already exceeds the 20% target locally. LoRA training is recorded as the resource-constrained fallback: it validates the static training path, but its `5.85%` speedup is not treated as satisfying the formal full-training 20% target.
 
 4. Upload CE tiny checkpoint to an approved repo, then update the CE baseline losses and generation tokens in `scripts/regression/config.yaml`.
 
@@ -283,4 +311,4 @@ bash scripts/mimo/run_gsm8k_sft_300.sh
 
 Full official HF weights are available locally under `/path/to/MiMo-7B-Base`, the Paddle native converted checkpoint is under `/path/to/MiMo-7B-Base-paddle-bf16`, the true-weight 4-layer Paddle reduced checkpoint is under `/path/to/MiMo-7B-Base-reduced-4l-paddle-bf16`, and the matching 4-layer HF reduced checkpoint for ms-swift is under `/path/to/MiMo-7B-Base-reduced-4l-hf-bf16`.
 
-Current blockers are the reduced-depth Paddle vs ms-swift loss gap, training-side compiler dy2static recursion failure, and CE asset upload.
+Current blockers are the reduced-depth Paddle vs ms-swift loss gap, full-parameter static training local OOM, and CE asset upload. The LoRA training compiler run is documented as a memory-constrained fallback validation rather than the formal training-speed target.
