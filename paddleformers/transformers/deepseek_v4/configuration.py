@@ -15,7 +15,7 @@
 from ..configuration_utils import PretrainedConfig
 
 
-class DeepSeekV4Config(PretrainedConfig):
+class DeepseekV4Config(PretrainedConfig):
     r"""
     Configuration class for DeepSeek-V4 model.
 
@@ -187,7 +187,7 @@ class DeepSeekV4Config(PretrainedConfig):
         context_parallel_size=1,
         sequence_parallel=False,
         # === Pipeline ===
-        pp_seg_method="layer:DeepSeekV4DecoderLayer",
+        pp_seg_method="layer:DeepseekV4DecoderLayer",
         # === Other ===
         tie_word_embeddings=False,
         activation_func_clamp_value=10.0,
@@ -322,4 +322,4 @@ class DeepSeekV4Config(PretrainedConfig):
         )
 
 
-__all__ = ["DeepSeekV4Config"]
+__all__ = ["DeepseekV4Config"]
