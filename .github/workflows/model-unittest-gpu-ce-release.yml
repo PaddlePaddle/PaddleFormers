@@ -317,7 +317,7 @@ jobs:
           if [[ "$MODE" == "pr" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
-            bos_prefix="${MODE}_${FLAGS_enable_CE}/$(date +%Y%m%d)_${{ env.RUN_ID }}"
+            bos_prefix="${MODE}_${FLAGS_enable_CE}/${{ env.RUN_ID }}"
           fi
 
           # logs
@@ -431,7 +431,7 @@ jobs:
           if [[ "$MODE" == "pr" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           else
-            bos_prefix="${MODE}_${FLAGS_enable_CE}/$(date +%Y%m%d)_${{ env.RUN_ID }}"
+            bos_prefix="${MODE}_${FLAGS_enable_CE}/${{ env.RUN_ID }}"
           fi
           echo "report: https://paddle-github-action.bj.bcebos.com/PR/PaddleFormers/ce-model-unittest-gpu/${bos_prefix}/logs/report.tar.gz"
           wget -q --no-proxy \

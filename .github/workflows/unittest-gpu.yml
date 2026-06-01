@@ -200,9 +200,9 @@ jobs:
           fi
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            bos_prefix="manual/$(date +%Y%m)_${{ github.run_id }}"
+            bos_prefix="manual/${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
-            bos_prefix="schedule/$(date +%Y%m)_${{ github.run_id }}"
+            bos_prefix="schedule/${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           fi
@@ -293,9 +293,9 @@ jobs:
           COMMIT_ID: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            bos_prefix="manual/$(date +%Y%m)_${{ github.run_id }}"
+            bos_prefix="manual/${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
-            bos_prefix="schedule/$(date +%Y%m)_${{ github.run_id }}"
+            bos_prefix="schedule/${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           fi
@@ -376,9 +376,9 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            bos_prefix="manual/$(date +%Y%m)_${{ github.run_id }}"
+            bos_prefix="manual/${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
-            bos_prefix="schedule/$(date +%Y%m)_${{ github.run_id }}"
+            bos_prefix="schedule/${{ github.run_id }}"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             bos_prefix="${PR_ID}/${COMMIT_ID}"
           fi
