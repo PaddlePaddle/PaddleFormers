@@ -12,7 +12,7 @@ jobs:
   determine-whether-update:
     name: Determine whether to update
     if: github.repository == 'PaddlePaddle/PaddleFormers'
-    runs-on: 'ernie-cpu'
+    runs-on: ubuntu-latest
     outputs:
       need_change: ${{ steps.determine.outputs.need_change }}
     steps:
@@ -41,7 +41,7 @@ jobs:
     name: Update precision
     needs: determine-whether-update
     if: needs.determine-whether-update.outputs.need_change == 'true'
-    runs-on: 'ernie-cpu'
+    runs-on: ubuntu-latest
     steps:
       - name: Clone PaddleFormers
         uses: actions/checkout@v4
