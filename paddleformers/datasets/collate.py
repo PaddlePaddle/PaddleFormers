@@ -556,7 +556,6 @@ def collate_fn(
                     original_position_ids,
                     max_seq_len,
                     training_args.num_nextn_predict_layers,
-                    tokenizer.eos_token_id,
                 )
             )
 
@@ -975,29 +974,32 @@ def gen_mtp_attn_mask_startend_row_indices(
 
 
 def gen_mtp_layer_mask(
-    batch_token_ids: List[List[int]],
+    batch_position_ids: List[List[int]],
     max_seq_len: int,
     mtp_depth: int,
-    eos_token_id: int = None,
 ) -> np.ndarray:
     """Generate MTP per-layer hidden inputs mask.
 
     Args:
-        batch_token_ids: List of token ID sequences.
+        batch_position_ids: List of position ID sequences,
+            e.g. [[0,1,2,...,N], [0,1,2,...,M]].
         max_seq_len: Padded sequence length, already extended by mtp_depth.
-        mtp_depth: Number of MTP prediction layers D.
-        eos_token_id: If provided, zero out positions where EOS appears in shifted input.
+        mtp_depth: Number of MTP prediction layers.
 
     Returns:
         np.ndarray, shape [mtp_depth, max_seq_len], dtype=int32.
     """
-    if eos_token_id is None:
-        return np.ones((mtp_depth, max_seq_len), dtype=np.int32)
-    all_token_ids = np.concatenate([np.array(ids, dtype=np.int32) for ids in batch_token_ids])
+    all_position_ids = np.concatenate([np.array(ids, dtype=np.int32) for ids in batch_position_ids])
+    if len(all_position_ids) < max_seq_len:
+        all_position_ids = np.pad(all_position_ids, (0, max_seq_len - len(all_position_ids)), constant_values=0)
+    detect = np.append(all_position_ids, 0)
+    boundaries = np.where(detect[:-1] > detect[1:])[0]
+    mask = np.ones(max_seq_len, dtype=np.int32)
+    mask[boundaries] = 0
     result = []
-    for mtp_idx in range(mtp_depth):
-        mask = np.ones(max_seq_len, dtype=np.int32)
-        shifted = all_token_ids[mtp_idx + 1 :]
-        mask[np.where(shifted == eos_token_id)[0]] = 0
+    for _ in range(mtp_depth):
+        new_mask = np.ones(max_seq_len, dtype=np.int32)
+        new_mask[:-1] = mask[1:]
+        mask = new_mask
         result.append(mask)
     return np.stack(result, axis=0)

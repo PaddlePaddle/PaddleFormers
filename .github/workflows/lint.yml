@@ -100,4 +100,5 @@ jobs:
       - name: Terminate And Delete the Container
         if: always()
         run: |
+          docker exec ${container_name} bash -c ' rm -rf /workspace/PaddleFormers/ '
           docker rm -f $container_name 2>/dev/null || true
