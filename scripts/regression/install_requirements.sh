@@ -24,7 +24,6 @@ install_requirements() {
     python -m pip config --user set global.trusted-host pypi.org
     python -m pip config --user set global.index-url https://pypi.org/simple
     python -m pip install -r requirements.txt -i https://pypi.org/simple 
-    python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
     if [[ "$ce_branch" == "CE_Release_cu129_py312_nightly" ]]; then # nightly regerssion
         #fleet
         wget -q https://paddle-github-action.bj.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp312-cp312-linux_x86_64.whl
@@ -136,7 +135,7 @@ install_requirements() {
         #paddlefleet_ops
         python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir --force-reinstall --no-dependencies
     fi
-    python -m pip install torch --index-url https://download.pytorch.org/whl/cu132 -i https://pypi.org/simple
+    python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
 
     echo "paddle commit:"
     python -c "import paddle; print(paddle.version.commit)"

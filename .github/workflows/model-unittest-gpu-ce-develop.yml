@@ -112,7 +112,7 @@ jobs:
           FLAGS_enable_CE: ${{ steps.determine_flag.outputs.FLAGS_enable_CE }}
         run: |
           if [[ "${FLAGS_enable_CE}" == *cu132* ]]; then
-            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:ubuntu24-cuda132-py312-dev" >> "$GITHUB_ENV"
+            echo "IMAGE_NAME=iregistry.baidu-int.com/paddlepaddle/base-images:paddlecloud-ubuntu24.04-gcc13.3-cuda13.2-cudnn920-bccl1.4.1.4-nccl2.26.5-openmpi4.1.5-FleetY13.5.0B-rc14-test" >> "$GITHUB_ENV"
           elif [[ "${FLAGS_enable_CE}" == *cu130* ]]; then
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda130-dev" >> "$GITHUB_ENV"
           elif [[ "${FLAGS_enable_CE}" == *cu129* ]]; then
