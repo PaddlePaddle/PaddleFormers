@@ -2135,6 +2135,45 @@ class EMAStateAssembler:
 
         logger.info(f"[EMAStateAssembler] [Rank {self.rank}] Loading EMA state from {ema_state_path}.")
         ema_state_dict = paddle.load(str(ema_state_path))
+        if "master_weights" not in ema_state_dict:
+            # FC format: flat dict with .w_0 suffix keys → rename back + re-pad to old format
+            model_state_dict = self.model.state_dict()
+            struct_name_to_static_name = {k: v.name for k, v in model_state_dict.items()}
+            opt_master_weights = self.optimizer.state_dict().get("master_weights", {})
+
+            master_weights = {}
+            model_params = {}
+            for k, v in ema_state_dict.items():
+                if k.endswith(".w_0"):
+                    struct_name = k[:-4]
+                    tensor_name = struct_name_to_static_name[struct_name]
+                    if tensor_name in opt_master_weights:
+                        opt_tensor = opt_master_weights[tensor_name]
+                        if opt_tensor.ndim == 1:
+                            # Flattened format (sharding_v2) → flatten + re-pad
+                            flat = v.flatten()
+                            expected_numel = opt_tensor._numel()
+                            if flat._numel() < expected_numel:
+                                padded = paddle.zeros([expected_numel], dtype=v.dtype)
+                                padded[: flat._numel()] = flat
+                                padded.name = tensor_name
+                                master_weights[tensor_name] = padded
+                                flat._clear()
+                            else:
+                                flat.name = tensor_name
+                                master_weights[tensor_name] = flat
+                        else:
+                            # Non-flattened (Muon etc.) → reshape to optimizer's shape
+                            reshaped = v.reshape(opt_tensor.shape)
+                            reshaped.name = tensor_name
+                            master_weights[tensor_name] = reshaped
+                    else:
+                        master_weights[tensor_name] = v
+                else:
+                    model_params[k] = v
+            ema_state_dict = {}
+            ema_state_dict["master_weights"] = master_weights
+            ema_state_dict.update(model_params)
         return ema_state_dict
 
     def _build_ema_sharded_state_dict(self, ema_state_dict):
