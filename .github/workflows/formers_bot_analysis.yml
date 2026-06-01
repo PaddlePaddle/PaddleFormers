@@ -252,7 +252,7 @@ jobs:
               f"## PaddleFormers Log Analysis\n\n"
               f"> Run [`#{run_id}`]({run_url}) · Attempt `{run_attempt}`\n\n"
               f"{body}\n\n"
-              f"---\n"             
+              f"---\n"       
               f"> 🔍 **准确性记录**：请点击评论底部 😊 图标，"
               f"选择 👍（准确）或 👎（有误），将自动记录到 CI 监控系统\n\n"
               f"<sub>🔄 每次 Re-run 后自动更新</sub>"
