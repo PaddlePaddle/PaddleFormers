@@ -171,6 +171,7 @@ from .trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
     InterleaveGateUpCallback,
+    InternalMedicineCallback,
     PrinterCallback,
     ProgressCallback,
     SPGradSyncCallback,
@@ -492,7 +493,15 @@ class Trainer:
             assert (isinstance(model, LoRAModel) and isinstance(model.model, PipelineLayer)) or isinstance(
                 model, PipelineLayer
             ), f"Only support pipeline parallel mode when model is PipelineLayer or PipelineLayer!!! but get {type(model.model)}"
-        default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(self.args.report_to)
+        default_callbacks = DEFAULT_CALLBACKS.copy()
+        if getattr(self.args, "internal_medicine_monitors", ""):
+            default_callbacks.append(
+                InternalMedicineCallback(
+                    monitors=self.args.internal_medicine_monitors,
+                    monitor_interval=self.args.internal_medicine_monitor_interval,
+                )
+            )
+        default_callbacks += get_reporting_integration_callbacks(self.args.report_to)
         callbacks = default_callbacks if callbacks is None else default_callbacks + callbacks
         self.callback_handler = CallbackHandler(
             callbacks, self.model, self.tokenizer, self.optimizer, self.lr_scheduler

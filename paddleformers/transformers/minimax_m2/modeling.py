@@ -288,8 +288,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 slice_config[f"{prefix}.self_attn.kv_b_proj.weight"] = (
                     mla_slice_fn,
                     {
-                        # For GQA, kv_b_proj has num_key_value_heads, not num_attention_heads.
-                        "head_num": num_key_value_heads,
+                        "head_num": num_attention_head,
                         "axis": 1,
                         "head_split_sizes": [config.qk_nope_head_dim, config.v_head_dim],
                     },
@@ -636,13 +635,13 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(num_experts):
-                    ep_weight1.append(f"{prefix}.mlp.experts.{expert_id}.up_gate_proj.weight")
-                    ep_weight2.append(f"{prefix}.mlp.experts.{expert_id}.down_proj.weight")
+                    ep_weight1.append(f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight")
+                    ep_weight2.append(f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight")
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 aoa_config["aoa_statements"] += [
-                    f"{group_gemm1} -> {prefix_offset}.mlp.grouped_gemm_experts.weight1, axis=0"
-                    f"{group_gemm2} -> {prefix_offset}.mlp.grouped_gemm_experts.weight2, axis=0"
+                    f"{group_gemm1} -> {prefix_offset}.mlp.grouped_gemm_experts.weight1, axis=0",
+                    f"{group_gemm2} -> {prefix_offset}.mlp.grouped_gemm_experts.weight2, axis=0",
                 ]
             else:
                 if config.get("fd_fallback", False):
@@ -654,8 +653,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     group1 = ",".join(ep_weight1)
                     group2 = ",".join(ep_weight2)
                     aoa_config["aoa_statements"] += [
-                        f"{group1} -> {prefix_offset}.mlp.experts.up_gate_proj, axis=0"
-                        f"{group2} -> {prefix_offset}.mlp.experts.down_proj, axis=0"
+                        f"{group1} -> {prefix_offset}.mlp.experts.up_gate_proj, axis=0",
+                        f"{group2} -> {prefix_offset}.mlp.experts.down_proj, axis=0",
                     ]
 
         return aoa_config
@@ -878,13 +877,13 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
-                    ep_weight1.append(f"{prefix}.mlp.experts.{expert_id}.up_gate_proj.weight")
-                    ep_weight2.append(f"{prefix}.mlp.experts.{expert_id}.down_proj.weight")
+                    ep_weight1.append(f"{prefix_offset}.mlp.experts.{expert_id}.up_gate_proj.weight")
+                    ep_weight2.append(f"{prefix_offset}.mlp.experts.{expert_id}.down_proj.weight")
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 aoa_statements += [
-                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight1 -> {group_gemm1}, axis=0"
-                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight2 -> {group_gemm2}, axis=0"
+                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight1 -> {group_gemm1}, axis=0",
+                    f"{prefix_offset}.mlp.grouped_gemm_experts.weight2 -> {group_gemm2}, axis=0",
                 ]
             else:
                 if config.get("fd_fallback", False):
@@ -896,8 +895,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     group1 = ",".join(ep_weight1)
                     group2 = ",".join(ep_weight2)
                     aoa_statements += [
-                        f"{prefix_offset}.mlp.experts.up_gate_proj -> {group1}, axis=0"
-                        f"{prefix_offset}.mlp.experts.down_proj -> {group2}, axis=0"
+                        f"{prefix_offset}.mlp.experts.up_gate_proj -> {group1}, axis=0",
+                        f"{prefix_offset}.mlp.experts.down_proj -> {group2}, axis=0",
                     ]
 
             if n_shared_experts > 0:
