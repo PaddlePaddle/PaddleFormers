@@ -25,9 +25,9 @@ jobs:
           -H "Authorization: Bearer ${{ github.token }}" \
           -H "X-GitHub-Api-Version: 2022-11-28" \
           https://api.github.com/repos/PaddlePaddle/PaddleFormers/commits/${{ github.sha }}/pulls)
-          pr_number=$(echo "$response" | grep -o '"number":[0-9]*' | head -1 | grep -o '[0-9]*')
+          apt-get update && apt-get install -y jq || yum install -y jq || apk add jq
+          pr_number=$(echo "$response" | jq -r '.[] | select(.url | contains("PaddlePaddle/PaddleFormers")) | .number')
           echo "PR number: $pr_number"
-          # pr_number=$(echo "$response" | jq -r '.[] | select(.url | contains("PaddlePaddle/PaddleFormers")) | .number')
           set +e
           wget --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/precision/PaddleFormers/${pr_number}/precision_list.txt
           if [ $? -eq 0 ]; then
