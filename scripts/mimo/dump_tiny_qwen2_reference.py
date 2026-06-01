@@ -67,7 +67,9 @@ def main():
 
     input_len = int(inputs["input_ids"].shape[1])
     new_tokens = generated[:, input_len : input_len + args.topk].detach().cpu().numpy().tolist()
-    decoded = tokenizer.batch_decode(generated[:, input_len:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
+    decoded = tokenizer.batch_decode(
+        generated[:, input_len:], skip_special_tokens=True, clean_up_tokenization_spaces=False
+    )
     metadata = {
         "model": args.model,
         "reference_model": "Qwen2ForCausalLM",

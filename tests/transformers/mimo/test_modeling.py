@@ -17,11 +17,20 @@ import unittest
 
 import paddle
 
-from paddleformers.transformers import MiMoConfig, MiMoForCausalLM, MiMoForCausalLMDeprecated, MiMoModel
+from paddleformers.transformers import (
+    MiMoConfig,
+    MiMoForCausalLM,
+    MiMoForCausalLMDeprecated,
+    MiMoModel,
+)
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
-from tests.transformers.test_modeling_common import ModelTesterMixin, ids_tensor, random_attention_mask
+from tests.transformers.test_modeling_common import (
+    ModelTesterMixin,
+    ids_tensor,
+    random_attention_mask,
+)
 
 
 class MiMoModelTester:
