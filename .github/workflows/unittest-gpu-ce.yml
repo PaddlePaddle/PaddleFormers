@@ -329,21 +329,16 @@ jobs:
     if: always()
     runs-on: 'ernie-cpu'
     steps:
-      - name: Configure proxy
-        run: |
-          source ${{ github.workspace }}/../../../proxy
-          echo "http_proxy=$http_proxy" >> $GITHUB_ENV
-          echo "https_proxy=$https_proxy" >> $GITHUB_ENV
-          echo "HTTP_PROXY=$http_proxy" >> $GITHUB_ENV
-          echo "HTTPS_PROXY=$https_proxy" >> $GITHUB_ENV
-          git config --global http.proxy "$http_proxy"
-          git config --global https.proxy "$https_proxy"
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          repository: PaddlePaddle/PaddleFormers
+          ref: develop
       - name: Checkout gh-pages
         uses: actions/checkout@v5
         with:
           ref: gh-pages
           path: gh-pages
-        continue-on-error: true
       - name: Determine trigger mode && Restore history
         id: trigger_mode
         run: |
@@ -399,7 +394,6 @@ jobs:
       - name: Deploy to GitHub Pages
         if: always()
         timeout-minutes: 5
-        continue-on-error: true
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
