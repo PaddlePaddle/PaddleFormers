@@ -31,13 +31,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
     @staticmethod
     def get_layer_attn_split_info(config, layer_idx):
-        use_mla = bool(getattr(config, "multi_latent_attention", False))
         if is_layer_window_attention(
             config.sliding_window,
             config.window_attn_skip_freq,
             layer_idx - config.num_empty_layers_add_in_head,
         ):
-            assert not use_mla, "MLA need to rewrite get_layer_attn_split_info func"
             head_dim = config.swa_head_dim
             v_head_dim = config.swa_v_head_dim
             num_attention_heads = config.swa_num_attention_heads
@@ -335,7 +333,9 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
             # MLA weights
             if use_mla and mla_slice_fn is not None:
-                num_attention_heads = config.num_attention_heads
+                # NOTE(XiangruiYU): reset num_attention_heads and v_head_dim for SWA.
+                num_attention_heads = num_heads
+                v_head_dim = split_dims[-1]
                 assert (
                     hasattr(config, "qk_nope_head_dim")
                     and hasattr(config, "qk_rope_head_dim")
@@ -362,7 +362,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     {
                         "head_num": num_attention_heads,
                         "axis": 1,
-                        "head_split_sizes": [config.qk_nope_head_dim, config.v_head_dim],
+                        "head_split_sizes": [config.qk_nope_head_dim, v_head_dim],
                     },
                 )
 
