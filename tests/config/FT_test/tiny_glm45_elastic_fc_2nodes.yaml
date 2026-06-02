@@ -39,7 +39,7 @@ min_lr: 0.000001
 
 tensor_model_parallel_size: 1
 tp_sync_param: true
-pipeline_model_parallel_size: 1
+pipeline_model_parallel_size: 2
 sharding_parallel_size: 8
 pp_delay_scale_loss: true
 use_expert_parallel: false
@@ -74,6 +74,7 @@ tensorwise_offload_optimizer: false
 
 convert_from_hf: true
 save_to_hf: true
+replicate_saved_into_local: true
 
 
 amp_custom_white_list:
