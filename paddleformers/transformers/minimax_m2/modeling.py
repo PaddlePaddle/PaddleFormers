@@ -835,6 +835,12 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix}.block_sparse_moe.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
                 f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight",
             ]
+
+            if config.routed_scaling_factor_learnable:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.block_sparse_moe.gate.routed_scaling_factor_param -> {prefix_offset}.mlp.gate.routed_scaling_factor_param",
+                ]
+
             if config.moe_latent_size is not None and config.moe_latent_size > 0:
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.block_sparse_moe.fc1_latent_proj.weight^T -> {prefix_offset}.mlp.fc1_latent_proj.weight",
@@ -1253,6 +1259,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 f"{prefix_offset}.mlp.gate.weight -> {prefix}.block_sparse_moe.gate.weight",
                 f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.block_sparse_moe.e_score_correction_bias",
             ]
+
+            if config.routed_scaling_factor_learnable:
+                aoa_statements += [
+                    f"{prefix_offset}.mlp.gate.routed_scaling_factor_param -> {prefix}.block_sparse_moe.gate.routed_scaling_factor_param",
+                ]
 
             if config.moe_latent_size is not None and config.moe_latent_size > 0:
                 aoa_statements += [
