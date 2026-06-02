@@ -327,8 +327,17 @@ jobs:
     name: upload-allure
     needs: [unittest-gpu-ce]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: 'ernie-cpu'
     steps:
+      - name: Configure proxy
+        run: |
+          source ${{ github.workspace }}/../../../proxy
+          echo "http_proxy=$http_proxy" >> $GITHUB_ENV
+          echo "https_proxy=$https_proxy" >> $GITHUB_ENV
+          echo "HTTP_PROXY=$http_proxy" >> $GITHUB_ENV
+          echo "HTTPS_PROXY=$https_proxy" >> $GITHUB_ENV
+          git config --global http.proxy "$http_proxy"
+          git config --global https.proxy "$https_proxy"
       - name: Checkout gh-pages
         uses: actions/checkout@v5
         with:
