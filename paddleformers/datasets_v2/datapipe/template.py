@@ -506,6 +506,9 @@ def parse_template(tokenizer: Any) -> TemplateMeta:
     else:
         default_system = ""
 
+    eos_token = getattr(tokenizer, "eos_token", None) or ""
+    efficient_eos = eos_token not in assistant_slot
+
     return TemplateMeta(
         name="_auto_parsed",
         user=[user_slot],
@@ -517,7 +520,7 @@ def parse_template(tokenizer: Any) -> TemplateMeta:
         stop_tokens=[],
         thought_words=("<think>\n", "\n</think>\n\n"),
         enable_thinking=True if is_reasoning else None,
-        efficient_eos=True,
+        efficient_eos=efficient_eos,
     )
 
 
