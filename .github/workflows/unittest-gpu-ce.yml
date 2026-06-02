@@ -403,8 +403,6 @@ jobs:
         env:
           http_proxy: ${{ env.http_proxy }}
           https_proxy: ${{ env.https_proxy }}
-          HTTP_PROXY: ${{ env.http_proxy }}
-          HTTPS_PROXY: ${{ env.https_proxy }}
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./report
