@@ -61,7 +61,7 @@ jobs:
 
   unittest-gpu-ce:
     needs: check_skip
-    if: needs.check_skip.outputs.skip == 'falsev'
+    if: needs.check_skip.outputs.skip == 'true'
     name: unittest-gpu-ce
     runs-on: 'ernie-unittest'
     outputs:  
@@ -329,12 +329,12 @@ jobs:
     runs-on: 'ernie-cpu'
     steps:
       - name: Checkout gh-pages
+        continue-on-error: true
         uses: actions/checkout@v5
         with:
           ref: gh-pages
           path: gh-pages
       - name: Determine trigger mode && Restore history
-        continue-on-error: true
         id: trigger_mode
         run: |
           MODE="pr"
