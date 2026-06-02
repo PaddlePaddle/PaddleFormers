@@ -59,6 +59,8 @@ IMAGE_PROCESSOR_MAPPING_NAMES.update(
         "qwen2_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen3_vl": ("Qwen3VLImageProcessor", "Qwen3VLImageProcessorFast"),
         "glm_ocr": ("Glm46VImageProcessor"),
+        "mistral3": ("PixtralImageProcessor",),
+        "pixtral": ("PixtralImageProcessor",),
     }
 )
 
