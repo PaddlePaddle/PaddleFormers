@@ -54,14 +54,14 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Skip CE but mark success
-        if: steps.check_skip.outputs.skip == 'false'
+        if: steps.check_skip.outputs.skip == 'true'
         run: |
           echo "skip-unittest-ce label found"
           echo "Downstream GPU jobs will be skipped"
 
   unittest-gpu-ce:
     needs: check_skip
-    if: needs.check_skip.outputs.skip == 'true'
+    if: needs.check_skip.outputs.skip == 'false'
     name: unittest-gpu-ce
     runs-on: 'ernie-unittest'
     outputs:  
