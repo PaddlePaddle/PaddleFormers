@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import paddlefleet_ops.deep_ep as deep_ep
+
 HAVE_DEEP_EP = True
 
 import paddle
