@@ -273,6 +273,18 @@ import_structure = {
     ],
     "llama4.multimodal": ["Llama4ForConditionalGeneration", "Llama4VisionEncoderLayer", "Llama4VisionModel"],
     "llama4.processor": ["Llama4Processor", "Llama4ProcessorKwargs"],
+    "minicpm.configuration": ["MiniCPMConfig"],
+    "minicpm.modeling": [
+        "MiniCPMModel",
+        "MiniCPMPretrainedModel",
+        "MiniCPMForCausalLM",
+        "MiniCPMForCausalLMPipe",
+        "MiniCPMForSequenceClassification",
+        "MiniCPMForTokenClassification",
+        "MiniCPMSentenceEmbedding",
+        "MiniCPMForCausalLMDeprecated",
+        "MiniCPMForCausalLMPipeDeprecated",
+    ],
     "optimization": [
         "LinearDecayWithWarmup",
         "ConstScheduleWithWarmup",
