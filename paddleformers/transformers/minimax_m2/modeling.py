@@ -16,7 +16,10 @@ import logging
 import math
 
 import paddle
-from paddlefleet.transformer.utils import is_layer_window_attention
+from paddlefleet.transformer.utils import (
+    get_real_layer_idx_for_swa,
+    is_layer_window_attention,
+)
 
 from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe
 from ..glm4_moe.modeling import GLMMoEModelProvider
@@ -30,16 +33,66 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
     config: MiniMaxM2Config
 
     @staticmethod
-    def get_layer_attn_split_info(config, layer_idx):
-        if is_layer_window_attention(
+    def _is_layer_swa(config, layer_idx):
+        real_layer_idx = get_real_layer_idx_for_swa(layer_idx, config.num_empty_layers_add_in_head)
+        return is_layer_window_attention(
             config.sliding_window,
             config.window_attn_skip_freq,
-            layer_idx - config.num_empty_layers_add_in_head,
-        ):
-            head_dim = config.swa_head_dim
-            v_head_dim = config.swa_v_head_dim
-            num_attention_heads = config.swa_num_attention_heads
-            num_key_value_heads = config.swa_num_key_value_heads
+            real_layer_idx,
+        )
+
+    @classmethod
+    def get_layer_mla_dims(cls, config, layer_idx):
+        is_swa = cls._is_layer_swa(config, layer_idx)
+        if not is_swa:
+            return {
+                "num_attention_heads": config.num_attention_heads,
+                "num_key_value_heads": config.num_key_value_heads,
+                "qk_nope_head_dim": config.qk_nope_head_dim,
+                "qk_rope_head_dim": config.qk_rope_head_dim,
+                "kv_lora_rank": config.kv_lora_rank,
+                "q_lora_rank": config.q_lora_rank,
+                "v_head_dim": config.v_head_dim,
+                "rope_theta": config.rope_theta,
+            }
+
+        def inherit_swa(swa_key, full_key):
+            value = getattr(config, swa_key, None)
+            if value is None:
+                return getattr(config, full_key)
+            return value
+
+        return {
+            "num_attention_heads": inherit_swa("swa_num_attention_heads", "num_attention_heads"),
+            "num_key_value_heads": inherit_swa("swa_num_key_value_heads", "num_key_value_heads"),
+            "qk_nope_head_dim": inherit_swa("swa_qk_nope_head_dim", "qk_nope_head_dim"),
+            "qk_rope_head_dim": inherit_swa("swa_qk_rope_head_dim", "qk_rope_head_dim"),
+            "kv_lora_rank": inherit_swa("swa_kv_lora_rank", "kv_lora_rank"),
+            "q_lora_rank": inherit_swa("swa_q_lora_rank", "q_lora_rank"),
+            "v_head_dim": inherit_swa("swa_v_head_dim", "v_head_dim"),
+            "rope_theta": inherit_swa("swa_rope_theta", "rope_theta"),
+        }
+
+    @classmethod
+    def get_layer_attn_split_info(cls, config, layer_idx):
+        use_mla = bool(getattr(config, "multi_latent_attention", False))
+        if cls._is_layer_swa(config, layer_idx):
+            assert not use_mla, (
+                "get_layer_attn_split_info is only for non-MLA attention. "
+                "MLA layers should use MLA-specific slicing instead."
+            )
+            head_dim = getattr(config, "swa_head_dim", None)
+            if head_dim is None:
+                head_dim = config.head_dim
+            v_head_dim = getattr(config, "swa_v_head_dim", None)
+            if v_head_dim is None:
+                v_head_dim = config.v_head_dim
+            num_attention_heads = getattr(config, "swa_num_attention_heads", None)
+            if num_attention_heads is None:
+                num_attention_heads = config.num_attention_heads
+            num_key_value_heads = getattr(config, "swa_num_key_value_heads", None)
+            if num_key_value_heads is None:
+                num_key_value_heads = config.num_key_value_heads
 
         else:
             head_dim = config.head_dim
@@ -287,9 +340,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         },
                     )
 
-            num_heads, num_kv_heads, num_query_groups, split_dims = cls.get_layer_attn_split_info(config, layer_idx)
             # Fused QKV weights (non-MLA path)
             if not use_mla and qkv_slice_fn is not None:
+                num_heads, num_kv_heads, num_query_groups, split_dims = cls.get_layer_attn_split_info(
+                    config, layer_idx
+                )
                 qkv_kwargs = {"num_query_groups": num_query_groups, "split_dims": split_dims}
                 slice_config[f"{prefix}.self_attn.qkv_proj.weight"] = (qkv_slice_fn, qkv_kwargs)
 
@@ -333,43 +388,54 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
             # MLA weights
             if use_mla and mla_slice_fn is not None:
-                # NOTE(XiangruiYU): reset num_attention_heads and v_head_dim for SWA.
-                num_attention_heads = num_heads
-                v_head_dim = split_dims[-1]
                 assert (
                     hasattr(config, "qk_nope_head_dim")
                     and hasattr(config, "qk_rope_head_dim")
                     and hasattr(config, "kv_lora_rank")
                     and hasattr(config, "v_head_dim")
                 )
+                mla_dims = cls.get_layer_mla_dims(config, layer_idx)
 
                 slice_config[f"{prefix}.self_attn.q_b_proj.weight"] = (
                     mla_slice_fn,
                     {
-                        "head_num": num_attention_heads,
+                        "head_num": mla_dims["num_attention_heads"],
                         "axis": 1,
-                        "head_split_sizes": [config.qk_nope_head_dim, config.qk_rope_head_dim],
+                        "head_split_sizes": [
+                            mla_dims["qk_nope_head_dim"],
+                            mla_dims["qk_rope_head_dim"],
+                        ],
                     },
                 )
 
                 slice_config[f"{prefix}.self_attn.kv_a_proj_with_mqa.weight"] = (
                     mla_slice_fn,
-                    {"head_num": 1, "axis": 1, "head_split_sizes": [config.kv_lora_rank, config.qk_rope_head_dim]},
+                    {
+                        "head_num": 1,
+                        "axis": 1,
+                        "head_split_sizes": [
+                            mla_dims["kv_lora_rank"],
+                            mla_dims["qk_rope_head_dim"],
+                        ],
+                    },
                 )
 
                 slice_config[f"{prefix}.self_attn.kv_b_proj.weight"] = (
                     mla_slice_fn,
                     {
-                        "head_num": num_attention_heads,
+                        "head_num": mla_dims["num_attention_heads"],
                         "axis": 1,
-                        "head_split_sizes": [config.qk_nope_head_dim, v_head_dim],
+                        "head_split_sizes": [
+                            mla_dims["qk_nope_head_dim"],
+                            mla_dims["v_head_dim"],
+                        ],
                     },
                 )
 
                 if use_gated_attn:
                     slice_config[f"{prefix}.self_attn.gate_proj.weight"] = (
                         mla_slice_fn,
-                        {"head_num": num_attention_heads, "axis": 1},
+                        {"head_num": mla_dims["num_attention_heads"], "axis": 1},
                     )
 
         # Main layers
@@ -553,7 +619,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     f"{prefix}.self_attn.gate_proj.weight^T -> {prefix_offset}.self_attn.gate_proj.weight",
                 ]
 
-            is_swa = is_layer_window_attention(config.sliding_window, config.window_attn_skip_freq, layer_idx)
+            is_swa = cls._is_layer_swa(config, layer_idx_offset)
             if (
                 config.softmax_type == "learnable"
                 or (config.add_full_attention_sink_bias and not is_swa)
@@ -1002,7 +1068,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     f"{prefix_offset}.self_attn.vha_postmix_V -> {prefix}.self_attn.vha_postmix_V",
                 ]
 
-            is_swa = is_layer_window_attention(config.sliding_window, config.window_attn_skip_freq, layer_idx)
+            is_swa = cls._is_layer_swa(config, layer_idx_offset)
             if (
                 config.softmax_type == "learnable"
                 or (config.add_full_attention_sink_bias and not is_swa)
