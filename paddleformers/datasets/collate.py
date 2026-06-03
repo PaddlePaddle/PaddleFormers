@@ -1010,9 +1010,12 @@ def gen_mtp_hidden_inputs_mask_all(
     mask = np.ones(max_seq_len, dtype=np.int32)
     mask[boundaries] = 0
     result = []
-    for _ in range(mtp_depth):
-        new_mask = np.ones(max_seq_len, dtype=np.int32)
-        new_mask[:-1] = mask[1:]
-        mask = new_mask
-        result.append(mask)
+    for k in range(mtp_depth):
+        if k == 0:
+            result.append(mask.copy())
+        else:
+            new_mask = np.ones(max_seq_len, dtype=np.int32)
+            new_mask[:-1] = mask[1:]
+            mask = new_mask
+            result.append(mask.copy())
     return np.stack(result, axis=0)[None, :, :]

@@ -20,8 +20,8 @@ from paddleformers.datasets.collate import (
     calc_padding_size,
     gen_attn_mask_startend_row_indices,
     gen_mtp_attn_mask,
-    gen_mtp_startend_row_indices_all,
     gen_mtp_hidden_inputs_mask_all,
+    gen_mtp_startend_row_indices_all,
     gen_self_attn_mask,
     pad_batch_data,
 )
@@ -193,10 +193,12 @@ class TestGenMtpStartendRowIndicesAll(unittest.TestCase):
 # position_ids = [[0,1,2], [0,1,2]] -> concatenated = [0,1,2,0,1,2]
 # Padded to max_seq_len=8: [0,1,2,0,1,2,0,0]
 #
-# Layer 0: shifted = all_pos[1:] = [1,2,0,1,2,0,0]
-#   boundary: shifted[i]>shifted[i+1] -> i=1(2>0), i=4(2>0) -> mask[1]=0, mask[4]=0
-# Layer 1: shifted = all_pos[2:] = [2,0,1,2,0,0]
-#   boundary: shifted[i]>shifted[i+1] -> i=0(2>0), i=3(2>0) -> mask[0]=0, mask[3]=0
+# detect = [0,1,2,0,1,2,0,0, 0]
+# boundaries: detect[:-1]>detect[1:] => [2, 5]
+# mask = [1,1,0,1,1,0,1,1]
+#
+# Layer 0: mask itself -> [1,1,0,1,1,0,1,1]
+# Layer 1: left shift  -> [1,0,1,1,0,1,1,1]
 # ---------------------------------------------------------------------------
 
 
@@ -207,8 +209,7 @@ class TestGenMtpHiddenInputsMaskAll(unittest.TestCase):
 
     EXPECTED = np.array(
         [
-            [[1, 0, 1, 1, 0, 1, 1, 1],
-             [0, 1, 1, 0, 1, 1, 1, 1]],
+            [[1, 1, 0, 1, 1, 0, 1, 1], [1, 0, 1, 1, 0, 1, 1, 1]],
         ],
         dtype=np.int32,
     )
@@ -223,16 +224,16 @@ class TestGenMtpHiddenInputsMaskAll(unittest.TestCase):
         np.testing.assert_array_equal(result, self.EXPECTED)
 
     def test_layer0_boundaries(self):
-        """Layer 0: boundaries at positions 1 and 4."""
+        """Layer 0: boundaries at positions 2 and 5."""
         result = gen_mtp_hidden_inputs_mask_all(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
-        self.assertEqual(result[0, 0, 1], 0)
-        self.assertEqual(result[0, 0, 4], 0)
+        self.assertEqual(result[0, 0, 2], 0)
+        self.assertEqual(result[0, 0, 5], 0)
 
     def test_layer1_boundaries(self):
-        """Layer 1: boundaries at positions 0 and 3."""
+        """Layer 1: boundaries at positions 1 and 4."""
         result = gen_mtp_hidden_inputs_mask_all(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
-        self.assertEqual(result[0, 1, 0], 0)
-        self.assertEqual(result[0, 1, 3], 0)
+        self.assertEqual(result[0, 1, 1], 0)
+        self.assertEqual(result[0, 1, 4], 0)
 
     def test_padding_area_is_one(self):
         result = gen_mtp_hidden_inputs_mask_all(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
@@ -244,10 +245,12 @@ class TestGenMtpHiddenInputsMaskAll(unittest.TestCase):
         pos_ids = [[0, 1, 2, 3, 4]]
         result = gen_mtp_hidden_inputs_mask_all(pos_ids, 8, 2)
         # Padded: [0,1,2,3,4,0,0,0]
-        # Layer 0: shifted=[1,2,3,4,0,0,0], boundary at i=3(4>0) -> mask[3]=0
-        # Layer 1: shifted=[2,3,4,0,0,0], boundary at i=2(4>0) -> mask[2]=0
-        self.assertEqual(result[0, 0, 3], 0)
-        self.assertEqual(result[0, 1, 2], 0)
+        # boundaries = [4] (4>0)
+        # mask = [1,1,1,1,0,1,1,1]
+        # Layer 0: mask itself -> [1,1,1,1,0,1,1,1], boundary at pos 4
+        # Layer 1: left shift -> [1,1,1,0,1,1,1,1], boundary at pos 3
+        self.assertEqual(result[0, 0, 4], 0)
+        self.assertEqual(result[0, 1, 3], 0)
         self.assertEqual(result[0, 0].sum(), 7)
         self.assertEqual(result[0, 1].sum(), 7)
 
@@ -259,12 +262,13 @@ class TestGenMtpHiddenInputsMaskAll(unittest.TestCase):
 # total_len=8, max_seq_len=11 (8+3)
 # Padded to 11: [0,1,2,0,1,0,1,2,0,0,0]
 #
-# Layer 0: shifted = all_pos[1:] = [1,2,0,1,0,1,2,0,0,0]
-#   boundary: i=1(2>0), i=3(1>0), i=6(2>0) -> mask[1]=0, mask[3]=0, mask[6]=0
-# Layer 1: shifted = all_pos[2:] = [2,0,1,0,1,2,0,0,0]
-#   boundary: i=0(2>0), i=2(1>0), i=5(2>0) -> mask[0]=0, mask[2]=0, mask[5]=0
-# Layer 2: shifted = all_pos[3:] = [0,1,0,1,2,0,0,0]
-#   boundary: i=1(1>0), i=4(2>0) -> mask[1]=0, mask[4]=0
+# detect = [0,1,2,0,1,0,1,2,0,0,0, 0]
+# boundaries: detect[:-1]>detect[1:] => [2, 4, 7]
+# mask = [1,1,0,1,0,1,1,0,1,1,1]
+#
+# Layer 0: mask itself -> [1,1,0,1,0,1,1,0,1,1,1]
+# Layer 1: left shift  -> [1,0,1,0,1,1,0,1,1,1,1]
+# Layer 2: left shift  -> [0,1,0,1,1,0,1,1,1,1,1]
 # ---------------------------------------------------------------------------
 
 
@@ -277,9 +281,7 @@ class TestGenMtpHiddenInputsMaskAllDepth3(unittest.TestCase):
 
     EXPECTED = np.array(
         [
-            [[1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1],
-             [0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1],
-             [1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1]],
+            [[1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1], [1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1], [0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1]],
         ],
         dtype=np.int32,
     )
