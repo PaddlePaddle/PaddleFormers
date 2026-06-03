@@ -57,6 +57,18 @@ for FILE in "${PADDLEFORMERS_TRAINER_FILES[@]}"; do
     fi
 done
 
+PADDLEFORMERS_REQUIREMENTS_APPROVERS="zjjlivein From00"
+PADDLEFORMERS_REQUIREMENTS_FILES=(
+    "requirements.txt"
+)
+for FILE in "${PADDLEFORMERS_REQUIREMENTS_FILES[@]}"; do
+    HAS_MODIFIED=$(git diff --name-only "${DIFF_BASE}" HEAD -- | grep "^${FILE}" || true)
+    if [ "${HAS_MODIFIED}" != "" ] && [ "${PR_ID}" != "" ]; then
+        echo_line="You must be approved by zjjlivein or From00 for changes in ${FILE}.\n"
+        APPROVER_LIST=(${PADDLEFORMERS_REQUIREMENTS_APPROVERS})
+        check_approval 1 "${APPROVER_LIST[@]}"
+    fi
+done
 
 if [ -n "${echo_list}" ];then
   echo "****************"
