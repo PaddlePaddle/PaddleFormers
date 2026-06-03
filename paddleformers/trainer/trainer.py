@@ -1299,13 +1299,34 @@ class Trainer:
         logger.debug(f"enable_bf16_opt: {enable_bf16_opt}")
 
         if self.args.sharded_model_from_ema:
-            ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
-            ema_state_dict = paddle.load(ema_states_path)
-            ema_master_weights = ema_state_dict.pop("master_weights", None)
-            opt_state_dict = {"master_weights": ema_master_weights}
-            self.optimizer.set_state_dict(opt_state_dict)
+            ema_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC)
+            if self._is_fc_format_ema(ema_path):
+                model_sharded_state_dict = self.model.sharded_state_dict()
+                init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
+                optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+                ema_state = {}
+                for k, v in model_sharded_state_dict.items():
+                    if v.local_tensor.dtype == paddle.float32:
+                        ema_state[k] = v
+                for k, v in optimizer_sharded_state_dict.items():
+                    if k.endswith(".w_0"):
+                        ema_state[k] = v
+                dist.load_state_dict(
+                    ema_state,
+                    ema_path,
+                    aoa_config=self.args.aoa_config,
+                    offload=self.args.load_via_cpu,
+                    comm_method=flex_ckpt_comm_method,
+                    worker_groups=worker_groups,
+                )
+            else:
+                ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
+                ema_state_dict = paddle.load(ema_states_path)
+                ema_master_weights = ema_state_dict.pop("master_weights", None)
+                opt_state_dict = {"master_weights": ema_master_weights}
+                self.optimizer.set_state_dict(opt_state_dict)
 
-            self.model.set_state_dict(ema_state_dict)
+                self.model.set_state_dict(ema_state_dict)
         else:
 
             def bf16_filtered_sharded_state_dict(sharded_state_dict):
