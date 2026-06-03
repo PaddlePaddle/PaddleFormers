@@ -2737,6 +2737,15 @@ class Trainer:
             if in_auto_parallel_align_mode():
                 logs["loss_md5"] = avg_loss._md5sum()
 
+            # Log MD5 of the post-DP-allreduce (here all_gather+mean) global loss.
+            # Mirrors LOG_LOSS_MD5 hooks in PaddleFleet's loss path so it can be
+            # diff'd against Megatron's [LOSS_PATH_MD5] output.
+            if os.environ.get("LOG_LOSS_MD5", "0") == "1":
+                import hashlib
+
+                _md5_loss_t = avg_loss.detach().cast("float32").reshape([1])
+                logs["loss_md5"] = hashlib.md5(_md5_loss_t.numpy().tobytes()).hexdigest()
+
             divisor = 2**30
             # TODO(@gexiao): replace these codes with unified APIs in Paddle
             current_device = framework._current_expected_place_()
@@ -2785,9 +2794,54 @@ class Trainer:
                 )
 
                 if LanguageLoss.mtp_loss_tracker:
-                    logs.update(
-                        {k: v.item() if hasattr(v, "item") else v for k, v in LanguageLoss.mtp_loss_tracker.items()}
-                    )
+                    # By default keep the legacy behavior of logging the local
+                    # (rank-0 / per-rank) mtp loss value.
+                    # When LOG_LOSS_MD5=1, mirror Megatron's
+                    # MTPLossLoggingHelper.reduce_loss_in_tracker by averaging
+                    # across the full data-parallel-equivalent group
+                    # (DP + sharding + CP) so the value is the global mtp loss
+                    # comparable to Megatron's `mtp_{i} loss`, and additionally
+                    # emit a per-key `_md5` field for cross-framework diff.
+                    _log_md5 = os.environ.get("LOG_LOSS_MD5", "0") == "1"
+
+                    _avg_group = None
+                    if _log_md5:
+                        try:
+                            import paddle.distributed as _pf_dist
+                            from paddle.distributed import fleet as _pf_fleet
+
+                            _hcg = _pf_fleet.get_hybrid_communicate_group()
+                            _avg_group = _hcg.get_check_parallel_group()
+                            if _avg_group is None or _avg_group.nranks <= 1:
+                                _avg_group = _hcg.get_sharding_parallel_group()
+                            if _avg_group is None or _avg_group.nranks <= 1:
+                                _avg_group = _hcg.get_data_parallel_group()
+                        except Exception:
+                            _avg_group = None
+
+                    _reduced_mtp = {}
+                    if _log_md5:
+                        import hashlib as _hashlib
+
+                        import numpy as _np
+                    for k, v in LanguageLoss.mtp_loss_tracker.items():
+                        if hasattr(v, "item"):
+                            if _log_md5 and _avg_group is not None and _avg_group.nranks > 1:
+                                v = v.detach().clone()
+                                _pf_dist.all_reduce(v, group=_avg_group)
+                                v = v / _avg_group.nranks
+                            _scalar = v.item()
+                            _reduced_mtp[k] = _scalar
+                            if _log_md5:
+                                # md5 over float32 bytes — same scheme used for
+                                # main loss_md5 and Megatron's mtp_{i} loss_md5,
+                                # so values can be diff'd directly.
+                                _reduced_mtp[f"{k}_md5"] = _hashlib.md5(
+                                    _np.array([_scalar], dtype=_np.float32).tobytes()
+                                ).hexdigest()
+                        else:
+                            _reduced_mtp[k] = v
+                    logs.update(_reduced_mtp)
             except (ImportError, AttributeError):
                 pass
 
