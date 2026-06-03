@@ -383,7 +383,7 @@ def run_dpo_v2(
             checkpoint = last_checkpoint
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
 
-        if not training_args.autotuner_benchmark and not training_args.benchmark:
+        if not training_args.autotuner_benchmark and not getattr(training_args, "benchmark", False):
             trainer.save_model(merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True)
             trainer.log_metrics("train", train_result.metrics)
             trainer.save_metrics("train", train_result.metrics)

@@ -197,23 +197,29 @@ def _slots_to_ids(tokenizer: Any, slots: List[Slot]) -> List[int]:
 # ============================================================
 
 
-def _format_function_content(content: str, tool_format: str, thought_words: Optional[Tuple[str, str]] = None) -> str:
+def _format_function_content(content, tool_format: str, thought_words: Optional[Tuple[str, str]] = None) -> str:
     """Format function call content using tool_utils.
 
     Parses JSON tool calls and formats them according to the tool_format.
+    content can be a JSON string or an already-parsed list/dict.
     """
     thought = None
-    if thought_words and len(thought_words) == 2 and len(content) > 0:
+    # Extract thought only from string content
+    if isinstance(content, str) and thought_words and len(thought_words) == 2 and len(content) > 0:
         regex = re.compile(rf"{re.escape(thought_words[0])}(.*?){re.escape(thought_words[1])}", re.DOTALL)
         thought = re.search(regex, content)
-
-    if thought:
-        content = content.replace(thought.group(0), "")
+        if thought:
+            content = content.replace(thought.group(0), "")
 
     tool_utils = get_tool_utils(tool_format)
     functions: list[FunctionCall] = []
     try:
-        tool_calls = json.loads(content)
+        # Handle both string (JSON) and already-parsed list/dict
+        if isinstance(content, str):
+            tool_calls = json.loads(content)
+        else:
+            tool_calls = content
+
         if not isinstance(tool_calls, list):
             tool_calls = [tool_calls]
 
@@ -225,8 +231,8 @@ def _format_function_content(content: str, tool_format: str, thought_words: Opti
                 arguments = json.dumps(arguments, ensure_ascii=False)
             functions.append(FunctionCall(tool_call["name"], arguments))
 
-    except json.JSONDecodeError:
-        raise RuntimeError(f"Invalid JSON format in function message: {str([content])}.")
+    except (json.JSONDecodeError, TypeError):
+        raise RuntimeError(f"Invalid format in function message: {str([content])}.")
 
     function_str = tool_utils.function_formatter(functions)
     if thought:
@@ -235,14 +241,20 @@ def _format_function_content(content: str, tool_format: str, thought_words: Opti
     return function_str
 
 
-def _format_tools_content(content: str, tool_format: str) -> str:
-    """Format tools description using tool_utils."""
+def _format_tools_content(content, tool_format: str) -> str:
+    """Format tools description using tool_utils.
+
+    content can be a JSON string or an already-parsed list.
+    """
     tool_utils = get_tool_utils(tool_format)
     try:
-        tools = json.loads(content)
+        if isinstance(content, str):
+            tools = json.loads(content)
+        else:
+            tools = content
         return tool_utils.tool_formatter(tools) if len(tools) != 0 else ""
-    except json.JSONDecodeError:
-        raise RuntimeError(f"Invalid JSON format in tool description: {str([content])}.")
+    except (json.JSONDecodeError, TypeError):
+        raise RuntimeError(f"Invalid format in tool description: {str([content])}.")
 
 
 # ============================================================
@@ -276,7 +288,7 @@ def encode_multiturn(
     tokenizer: Any,
     messages: List[Dict[str, str]],
     system: Optional[str] = None,
-    tools: Optional[str] = None,
+    tools: Optional[Any] = None,
 ) -> List[Tuple[List[int], List[int]]]:
     """Encode a multi-turn conversation into (prompt_ids, response_ids) pairs.
 
@@ -327,6 +339,13 @@ def encode_multiturn(
                 func_content = _format_function_content(
                     message["tool_calls"], template.tool_format, template.thought_words
                 )
+                # Preserve thinking from content field if present
+                if content and template.thought_words:
+                    think_start, think_end = template.thought_words
+                    thought_regex = re.compile(rf"{re.escape(think_start)}.*?{re.escape(think_end)}", re.DOTALL)
+                    thought_match = thought_regex.search(content if isinstance(content, str) else "")
+                    if thought_match:
+                        func_content = thought_match.group(0) + func_content
                 func_slots = template.function or template.assistant
                 elements += _substitute_slots(func_slots, content=func_content)
             else:
@@ -343,10 +362,11 @@ def encode_multiturn(
                 elements += _substitute_slots(template.assistant, content=content)
             if i < len(actual_messages) - 1 and template.chat_sep:
                 elements.append(template.chat_sep)
-        elif role in ("observation", "tool_response"):
+        elif role in ("observation", "tool_response", "tool"):
             # Tool response
             obs_slots = template.observation or template.user
-            elements += _substitute_slots(obs_slots, content=content)
+            obs_content = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+            elements += _substitute_slots(obs_slots, content=obs_content)
         else:
             # Fallback: treat unknown roles as user
             elements += _substitute_slots(template.user, content=content)
@@ -368,7 +388,7 @@ def encode_multiturn_reasoning(
     tokenizer: Any,
     messages: List[Dict[str, str]],
     system: Optional[str] = None,
-    tools: Optional[str] = None,
+    tools: Optional[Any] = None,
 ) -> List[Tuple[List[int], List[int]]]:
     """Encode with reasoning/thinking support.
 
@@ -629,12 +649,16 @@ def encode_multiturn_jinja(
         if i < len(messages) and messages[i].get("role") == "user":
             accumulated.append(messages[i])
             # Encode up to this user message with generation prompt
-            prompt_ids = tokenizer.apply_chat_template(accumulated, add_generation_prompt=True, tokenize=True)
+            prompt_ids = tokenizer.apply_chat_template(
+                accumulated, add_generation_prompt=True, tokenize=True, return_dict=False
+            )
 
             if i + 1 < len(messages) and messages[i + 1].get("role") == "assistant":
                 accumulated.append(messages[i + 1])
                 # Encode with assistant response included
-                full_ids = tokenizer.apply_chat_template(accumulated, add_generation_prompt=False, tokenize=True)
+                full_ids = tokenizer.apply_chat_template(
+                    accumulated, add_generation_prompt=False, tokenize=True, return_dict=False
+                )
                 response_ids = full_ids[len(prompt_ids) :]
                 pairs.append((prompt_ids if not pairs else prompt_ids[prev_len:], response_ids))
                 prev_len = len(full_ids)
@@ -673,12 +697,16 @@ def _encode_jinja_simple(
         msg = messages[i]
         if msg.get("role") == "user":
             accumulated.append(msg)
-            prompt_ids_full = tokenizer.apply_chat_template(accumulated, add_generation_prompt=True, tokenize=True)
+            prompt_ids_full = tokenizer.apply_chat_template(
+                accumulated, add_generation_prompt=True, tokenize=True, return_dict=False
+            )
             prompt_ids = prompt_ids_full[prev_len:]
 
             if i + 1 < len(messages) and messages[i + 1].get("role") == "assistant":
                 accumulated.append(messages[i + 1])
-                full_ids = tokenizer.apply_chat_template(accumulated, add_generation_prompt=False, tokenize=True)
+                full_ids = tokenizer.apply_chat_template(
+                    accumulated, add_generation_prompt=False, tokenize=True, return_dict=False
+                )
                 response_ids = full_ids[len(prompt_ids_full) :]
                 pairs.append((prompt_ids, response_ids))
                 prev_len = len(full_ids)

@@ -92,12 +92,13 @@ def _dispatch_encode(
     template: Optional[TemplateMeta],
     tokenizer: Any,
     messages: List[Dict[str, Any]],
+    tools: Optional[Any] = None,
 ) -> List[Tuple[List[int], List[int]]]:
     if template is not None:
         if template.enable_thinking is not None:
-            return encode_multiturn_reasoning(template, tokenizer, messages)
+            return encode_multiturn_reasoning(template, tokenizer, messages, tools=tools)
         else:
-            return encode_multiturn(template, tokenizer, messages)
+            return encode_multiturn(template, tokenizer, messages, tools=tools)
     else:
         return encode_multiturn_jinja(tokenizer, messages)
 
@@ -149,19 +150,32 @@ def _add_dynamic_eos(input_ids: List[int], labels: List[int], suffix_tokens_id: 
                 labels[start : start + suffix_len] = suffix_tokens_id
 
 
+def _get_suffix_ids(template: Optional[TemplateMeta], tokenizer: Any) -> List[int]:
+    """Get suffix token IDs using tokenize+convert_tokens_to_ids (aligned with V1 SFTDataset)."""
+    if template is None or not template.suffix:
+        return []
+    return tokenizer.convert_tokens_to_ids(tokenizer.tokenize(template.suffix[-1]))
+
+
 def _apply_dynamic_eos(token_ids: List[int], labels: List[int], template: Optional[TemplateMeta], tokenizer: Any):
     if template is not None and template.suffix:
-        suffix_ids = tokenizer.encode(template.suffix[-1], add_special_tokens=False)
+        suffix_ids = _get_suffix_ids(template, tokenizer)
         _add_dynamic_eos(token_ids, labels, suffix_ids)
 
 
 def _apply_efficient_eos(token_ids: List[int], labels: List[int], template: Optional[TemplateMeta], tokenizer: Any):
     if template and template.efficient_eos:
         if template.suffix:
-            suffix_ids = tokenizer.encode(template.suffix[-1], add_special_tokens=False)
+            suffix_ids = _get_suffix_ids(template, tokenizer)
             token_ids.extend(suffix_ids)
             labels.extend(suffix_ids)
         elif tokenizer.eos_token_id is not None:
+            token_ids.append(tokenizer.eos_token_id)
+            labels.append(tokenizer.eos_token_id)
+    elif template is None:
+        # Jinja mode: append eos_token to align with V1's efficient_eos behavior
+        # V1's parse_template always sets efficient_eos=True with suffix=[tokenizer.eos_token]
+        if tokenizer.eos_token_id is not None:
             token_ids.append(tokenizer.eos_token_id)
             labels.append(tokenizer.eos_token_id)
 
@@ -267,11 +281,14 @@ def encode_sft(
     if not messages or len(messages) < 2:
         return None
 
+    # Extract tools definition (for function calling)
+    tools = example.get("tools")
+
     if template is not None:
         messages = _inject_ernie_think_system(messages, template)
 
     loss_mask = _extract_loss_mask(messages)
-    pairs = _dispatch_encode(template, tokenizer, messages)
+    pairs = _dispatch_encode(template, tokenizer, messages, tools=tools)
     if not pairs:
         return None
 
@@ -285,12 +302,13 @@ def encode_sft(
 
     _apply_dynamic_eos(token_ids, labels, template, tokenizer)
     _apply_efficient_eos(token_ids, labels, template, tokenizer)
-    labels = _apply_label_shift(labels, config)
 
     result = _apply_truncation(token_ids, labels, config)
     if result is None:
         return None
     token_ids, labels = result
+
+    labels = _apply_label_shift(labels, config)
 
     token_ids, labels = _apply_auto_bos(token_ids, labels, config, tokenizer)
 
@@ -403,7 +421,8 @@ def encode_vl_sft(
         messages = _inject_ernie_think_system(messages, template)
 
     loss_mask = _extract_loss_mask(messages)
-    pairs = _dispatch_encode(template, tokenizer, messages)
+    tools = example.get("tools")
+    pairs = _dispatch_encode(template, tokenizer, messages, tools=tools)
     if not pairs:
         return None
 
@@ -583,8 +602,9 @@ def encode_dpo(
         return None
 
     # Encode the full chosen and rejected conversations
-    chosen_pairs = _dispatch_encode(template, tokenizer, messages)
-    rejected_pairs = _dispatch_encode(template, tokenizer, rejected_messages)
+    tools = example.get("tools")
+    chosen_pairs = _dispatch_encode(template, tokenizer, messages, tools=tools)
+    rejected_pairs = _dispatch_encode(template, tokenizer, rejected_messages, tools=tools)
 
     if not chosen_pairs or not rejected_pairs:
         logger.warning("[SKIP] DPO encoding produced empty pairs")

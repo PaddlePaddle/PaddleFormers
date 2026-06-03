@@ -2,15 +2,13 @@
 
 ## 1. 概述
 
-datasets_v2 是 PaddleFormers 的新一代数据处理模块，参考 ms-swift 的 dataset 架构，基于 HuggingFace datasets 库构建，目标是提供统一的、可扩展的数据加载与预处理管线。
+datasets_v2 是 PaddleFormers 的新一代数据处理模块，基于 HuggingFace datasets 库构建，目标是提供统一的、可扩展的数据加载与预处理管线。
 
 **核心设计原则：**
 - 显式 schema 作为管线契约（所有模块基于同一份字段定义交互）
 - 基于 HF Dataset.map() 的批处理框架（兼容 Map 式和 Iterable 流式）
 - 多格式归一化：无论输入是什么格式，输出统一为 messages 标准格式
 - 面向多模态 + 纯文本双重场景
-
-**对应 ms-swift 源码：** `/ms-swift/swift/dataset/`
 
 ---
 
@@ -167,7 +165,7 @@ else → ResponsePreprocessor
 
 ### 5.1 ops.py — 数据集操作
 
-对应 ms-swift 的 `dataset/utils.py`，提供：
+提供：
 - `sample_dataset(dataset, n)` — 采样
 - `split_dataset(dataset, ratio)` — 训练/验证拆分
 - `concat_datasets([ds1, ds2, ...])` — 合并
@@ -179,7 +177,6 @@ else → ResponsePreprocessor
 
 - 数据集名称 → 元信息（路径/URL、preprocessor 类型、列映射）的注册机制
 - 支持内置数据集和用户自定义注册
-- 对应 ms-swift 的 `dataset/register.py`
 
 ### 5.3 loaders.py — 数据加载
 
@@ -204,27 +201,9 @@ dataset = load_dataset("dataset_name", split="train", streaming=False)
 
 ---
 
-## 6. 与 ms-swift 的对应关系
+## 6. 关键设计决策记录
 
-| paddleformers datasets_v2 | ms-swift dataset | 说明 |
-|---|---|---|
-| schema.py | preprocessor/core.py (常量部分) | 独立成文件，更清晰 |
-| preprocessors/base.py | preprocessor/core.py:RowPreprocessor | 去除采样逻辑，纯化批处理 |
-| preprocessors/response.py | preprocessor/core.py:ResponsePreprocessor | 基本一致 |
-| preprocessors/messages.py | preprocessor/core.py:MessagesPreprocessor | 基本一致 |
-| preprocessors/extra.py | preprocessor/core.py:AlpacaPreprocessor | 基本一致 |
-| preprocessors/auto.py | preprocessor/core.py:AutoPreprocessor | 基本一致 |
-| ops.py | dataset/utils.py | 待实现 |
-| registry.py | dataset/register.py | 待实现 |
-| loaders.py | dataset/loader/ | 待实现 |
-| builder.py | dataset/load_dataset.py | 待实现 |
-| adapters.py | (trainer 层处理) | 待实现 |
-
----
-
-## 7. 关键设计决策记录
-
-1. **schema 独立成文件** — ms-swift 将字段定义散落在 preprocessor 中，我们集中到 schema.py 作为单一真相源
+1. **schema 独立成文件** — 将字段定义集中到 schema.py 作为单一真相源
 2. **HF Dataset 类型命名** — `HfMapDataset` / `HfIterableDataset`，体现来源（HF）和访问模式（Map/Iterable）
 3. **DATASET_TYPE 放在 schema** — 跨模块使用的类型定义统一放在契约层
 4. **preprocessors 分文件** — 基础类各自独立（response、messages），薄封装合并到 extra.py
@@ -233,7 +212,7 @@ dataset = load_dataset("dataset_name", split="train", streaming=False)
 
 ---
 
-## 8. 测试
+## 7. 测试
 
 测试文件：`tests/datasets_v2/test_preprocessors.py`
 

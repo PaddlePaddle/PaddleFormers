@@ -20,6 +20,8 @@ for data loading, encoding, and collation. Supports packing + flashmask.
 
 import logging
 
+import numpy as np
+
 logging.getLogger("paddleformers.transformers.modeling_rope_utils").setLevel(logging.ERROR)
 
 import math
@@ -66,26 +68,21 @@ os.environ["USE_CASUAL_MASK"] = "False"
 
 
 def _detect_template(tokenizer, data_args) -> str:
-    """Detect which template to use based on config and tokenizer."""
+    """Detect which template to use based on config and tokenizer.
+
+    Priority:
+    1. use_template=False → "empty" (no template formatting)
+    2. Explicit template name in config → use that
+    3. Tokenizer has chat_template → "__jinja__" (parse from tokenizer, aligned with V1 parse_template)
+    4. Fallback → "chatml"
+    """
     if hasattr(data_args, "use_template") and not data_args.use_template:
         return "empty"
 
     if data_args.template:
         return data_args.template
 
-    # Auto-detect from model name
-    model_path = getattr(data_args, "_model_name_or_path", "")
-    model_lower = model_path.lower()
-    if "qwen" in model_lower:
-        return "chatml"
-    elif "llama" in model_lower:
-        return "llama3"
-    elif "deepseek" in model_lower:
-        return "deepseek3"
-    elif "glm" in model_lower:
-        return "chatml"
-
-    # Default: use jinja if tokenizer has chat_template, else chatml
+    # Use tokenizer's chat_template if available (aligned with V1's parse_template behavior)
     if tokenizer.chat_template is not None:
         return "__jinja__"
     return "chatml"
@@ -221,10 +218,8 @@ def run_sft_v2(
     # ====== Dataset (datasets_v2) ======
     logger.info("[datasets_v2] Loading dataset...")
 
-    # Stash model path for template detection
     data_args._model_name_or_path = model_args.model_name_or_path
 
-    # Determine template
     template_name = _detect_template(tokenizer, data_args)
     use_jinja = template_name == "__jinja__"
 
@@ -242,7 +237,6 @@ def run_sft_v2(
         label_shift=True,
     )
 
-    # Build encode function
     is_pretraining = "pt" in model_args.stage.lower()
 
     if is_pretraining:
@@ -264,21 +258,19 @@ def run_sft_v2(
     train_dataset = None
     eval_dataset = None
     num_proc = getattr(data_args, "dataset_num_proc", 1)
-    # dataset_type 控制数据集加载模式:
-    #   iterable → streaming=True, 不下载到本地, 逐条从网络拉取(IterableDataset)
-    #   map      → streaming=False, 下载到HF cache后全量加载(MapDataset, 支持随机访问)
-    # V2 管道默认使用 map 模式（支持 packing），除非用户显式指定 iterable
     dataset_type = getattr(data_args, "dataset_type", "iterable")
-    use_packing = getattr(data_args, "packing", False) or getattr(data_args, "binpacking", False)
+    use_packing = getattr(data_args, "packing", False)
 
-    # 如果用户未显式设置 dataset_type（仍为默认值 iterable）且开启了 packing，V2 自动用 map
+    # Auto-switch to map mode when packing is enabled (packing requires random access)
+    auto_switched_to_map = False
     if dataset_type == "iterable" and use_packing:
         dataset_type = "map"
+        auto_switched_to_map = True
         logger.info("V2 pipeline: auto-switching dataset_type to 'map' (packing requires map mode).")
 
     is_iterable = dataset_type == "iterable"
 
-    # 获取数据格式 hint（兼容旧配置的 train_dataset_type）
+    # Get dataset format hint (backward compatible with train_dataset_type config)
     train_format = getattr(data_args, "train_dataset_type", None)
     eval_format = getattr(data_args, "eval_dataset_type", None)
 
@@ -287,12 +279,11 @@ def run_sft_v2(
             if training_args.max_steps <= 0:
                 raise ValueError("dataset_type=iterable requires --max_steps to be explicitly set (no len available).")
 
-            # dataset_type=iterable → HF streaming=True，无论在线离线都返回 IterableDataset
+            # Iterable mode: HF streaming=True, returns IterableDataset
             hf_ds = v2_load_dataset(
                 data_args.train_dataset_path, streaming=True, num_proc=1, dataset_format=train_format
             )
 
-            # Use HF IterableDataset.map() for lazy encoding
             def _streaming_encode(row):
                 result = encode_fn(row)
                 if result is None:
@@ -300,22 +291,21 @@ def run_sft_v2(
                 return {"input_ids": result.input_ids, "labels": result.labels, "seq_len": result.seq_len}
 
             hf_ds = hf_ds.map(_streaming_encode, remove_columns=hf_ds.column_names or [])
-            # Filter out empty samples
             hf_ds = hf_ds.filter(lambda x: x["seq_len"] > 0)
-            # Shuffle with buffer
-            hf_ds = hf_ds.shuffle(buffer_size=getattr(data_args, "buffer_size", 500))
 
-            train_dataset = StreamingDataset(hf_ds)
-            # Force single-thread DataLoader for iterable mode
+            random_shuffle = getattr(data_args, "random_shuffle", True)
+            train_dataset = StreamingDataset(
+                hf_ds, shuffle=random_shuffle, seed=training_args.seed, lazy=training_args.lazy_data_processing
+            )
             training_args.dataloader_num_workers = 0
             logger.info("[datasets_v2] Train dataset ready (iterable mode, streaming=True)")
         else:
-            # dataset_type=map → HF streaming=False，全量加载（在线则先下载到缓存）
+            # Map mode: HF streaming=False, full download then random access
             hf_ds = v2_load_dataset(
                 data_args.train_dataset_path, streaming=False, num_proc=num_proc, dataset_format=train_format
             )
 
-            # Auto-split: if eval path is same as train or not set, split from train
+            # Auto-split: if eval path is same as train or not set
             need_auto_split = training_args.do_eval and (
                 not data_args.eval_dataset_path or data_args.eval_dataset_path == data_args.train_dataset_path
             )
@@ -327,31 +317,30 @@ def run_sft_v2(
                 eval_dataset = LazyEncodeDataset(hf_eval_ds, encode_fn, seed=training_args.seed)
                 logger.info(f"[datasets_v2] Auto-split: train={len(hf_ds)}, eval={len(hf_eval_ds)}")
 
+            # Pre-shuffle to align with V1 ConcatDataset behavior.
+            # Explicit map: double shuffle (pre-shuffle + Trainer sampler).
+            # Auto-switched map (packing): single shuffle only (disable Trainer sampler).
+            random_shuffle = getattr(data_args, "random_shuffle", True)
+            if random_shuffle:
+                preshuffle_rng = np.random.RandomState(0 + training_args.seed)
+                indices = list(range(len(hf_ds)))
+                preshuffle_rng.shuffle(indices)
+                hf_ds = hf_ds.select(indices)
+
+                if auto_switched_to_map:
+                    training_args.dataloader_shuffle = False
+                    logger.info(
+                        "V2 pipeline: disabled Trainer shuffle (auto-switched map, aligning with V1 iterator)."
+                    )
+
             train_dataset = LazyEncodeDataset(hf_ds, encode_fn, seed=training_args.seed)
             logger.info(f"[datasets_v2] Train dataset loaded: {len(train_dataset)} samples")
 
-    # Load eval dataset (only if not auto-split above)
+    # Eval always uses map mode (StreamingDataset's infinite iteration hangs eval loop)
     if training_args.do_eval and training_args.should_load_dataset and eval_dataset is None:
-        if is_iterable:
-            # eval 也走流式，不下载到本地
-            hf_eval_ds = v2_load_dataset(
-                data_args.eval_dataset_path, streaming=True, num_proc=1, dataset_format=eval_format
-            )
-
-            def _streaming_eval_encode(row):
-                result = encode_fn(row)
-                if result is None:
-                    return {"input_ids": [], "labels": [], "seq_len": 0}
-                return {"input_ids": result.input_ids, "labels": result.labels, "seq_len": result.seq_len}
-
-            hf_eval_ds = hf_eval_ds.map(_streaming_eval_encode, remove_columns=hf_eval_ds.column_names or [])
-            hf_eval_ds = hf_eval_ds.filter(lambda x: x["seq_len"] > 0)
-            eval_dataset = StreamingDataset(hf_eval_ds)
-            logger.info("[datasets_v2] Eval dataset ready (iterable mode, streaming=True)")
-        else:
-            hf_eval_ds = v2_load_dataset(data_args.eval_dataset_path, num_proc=num_proc, dataset_format=eval_format)
-            eval_dataset = LazyEncodeDataset(hf_eval_ds, encode_fn, seed=training_args.seed)
-            logger.info(f"[datasets_v2] Eval dataset loaded: {len(eval_dataset)} samples")
+        hf_eval_ds = v2_load_dataset(data_args.eval_dataset_path, num_proc=num_proc, dataset_format=eval_format)
+        eval_dataset = LazyEncodeDataset(hf_eval_ds, encode_fn, seed=training_args.seed)
+        logger.info(f"[datasets_v2] Eval dataset loaded: {len(eval_dataset)} samples")
 
     # ====== Collate Function ======
     max_seq_len = (
@@ -359,9 +348,7 @@ def run_sft_v2(
         if (data_args.packing or training_args.sequence_parallel or training_args.context_parallel_size > 1)
         else None
     )
-    logger.info(f"[datasets_v2] max_seq_len for collate: {max_seq_len}")
 
-    # Determine whether to use flashmask compact format
     use_startend = getattr(model_args, "use_attn_mask_startend_row_indices", True)
     use_global_causal_attn = getattr(model_args, "use_global_causal_attn", False)
 
@@ -468,24 +455,19 @@ def run_sft_v2(
             checkpoint = last_checkpoint
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
 
-        if training_args.benchmark:
-            total_tokens = (
-                data_args.max_seq_len
-                * training_args.per_device_train_batch_size
-                * training_args.dataset_world_size
-                * training_args.gradient_accumulation_steps
-                * training_args.max_steps
-            )
-            total_tokens_per_second_per_gpu = (
-                total_tokens / train_result.metrics["train_runtime"] / training_args.world_size
-            )
-            logger.info(f"Total_Tokens_per_second_per_gpu: {total_tokens_per_second_per_gpu}")
-            logger.info("Benchmark done.")
-        else:
-            if not training_args.autotuner_benchmark:
-                trainer.save_model(
-                    merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True
-                )
-                trainer.log_metrics("train", train_result.metrics)
-                trainer.save_metrics("train", train_result.metrics)
-                trainer.save_state()
+        total_tokens = (
+            data_args.max_seq_len
+            * training_args.per_device_train_batch_size
+            * training_args.dataset_world_size
+            * training_args.gradient_accumulation_steps
+            * training_args.max_steps
+        )
+        total_tokens_per_second_per_gpu = (
+            total_tokens / train_result.metrics["train_runtime"] / training_args.world_size
+        )
+        logger.info(f"Total_Tokens_per_second_per_gpu: {total_tokens_per_second_per_gpu}")
+        if not training_args.autotuner_benchmark:
+            trainer.save_model(merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True)
+            trainer.log_metrics("train", train_result.metrics)
+            trainer.save_metrics("train", train_result.metrics)
+            trainer.save_state()

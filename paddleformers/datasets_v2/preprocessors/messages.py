@@ -65,7 +65,7 @@ class MessagesPreprocessor(BasePreprocessor):
         self.user_roles = ["user", "human"] if user_role is None else [user_role]
         self.assistant_roles = ["assistant", "gpt", "bot"] if assistant_role is None else [assistant_role]
         self.tool_call_roles = ["function_call"]
-        self.tool_response_roles = ["function_response", "observation", "observations"]
+        self.tool_response_roles = ["function_response", "observation", "observations", "tool"]
 
         self.system_role = system_role
         self.repair_messages = repair_messages

@@ -409,7 +409,7 @@ def run_vl_sft_v2(
             checkpoint = last_checkpoint
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
 
-        if training_args.benchmark:
+        if getattr(training_args, "benchmark", False):
             total_tokens = (
                 data_args.max_seq_len
                 * training_args.per_device_train_batch_size
