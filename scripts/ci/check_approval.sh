@@ -16,7 +16,7 @@ if [ -z "${BRANCH:-}" ]; then
     BRANCH="develop"
 fi
 
-PADDLE_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}")/../" && pwd )"
+PADDLE_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}")/../../" && pwd )"
 
 UPSTREAM_BRANCH="upstream/${BRANCH}"
 if ! DIFF_BASE=$(git merge-base HEAD "${UPSTREAM_BRANCH}"); then
