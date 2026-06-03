@@ -52,7 +52,10 @@ from paddleformers.transformers.model_utils import PipelinePretrainedModel
 from paddleformers.utils.log import logger
 
 try:
-    import paddlefleet_ops.deep_ep as deep_ep
+    from paddlefleet_ops import is_deep_ep_available
+
+    if is_deep_ep_available():
+        import paddlefleet_ops.deep_ep as deep_ep
 except ImportError:
     deep_ep = None
 

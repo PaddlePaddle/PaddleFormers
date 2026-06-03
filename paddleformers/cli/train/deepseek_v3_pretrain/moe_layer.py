@@ -46,7 +46,10 @@ from .token_dispatcher import MoEFlexTokenDispatcherFast as MoEFlexTokenDispatch
 from .token_dispatcher import PreDispatchNode
 
 try:
-    import paddlefleet_ops.deep_ep as deep_ep
+    from paddlefleet_ops import is_deep_ep_available
+
+    if is_deep_ep_available():
+        import paddlefleet_ops.deep_ep as deep_ep
 except ImportError:
     deep_ep = None
 
