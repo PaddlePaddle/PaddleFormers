@@ -36,4 +36,4 @@ jobs:
         run: |
           git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
           git fetch upstream $BRANCH
-          bash ci/check_approval.sh
+          bash scripts/ci/check_approval.sh
