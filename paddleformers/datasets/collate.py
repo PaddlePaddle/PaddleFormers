@@ -483,10 +483,10 @@ def collate_fn(
     if training_args.num_nextn_predict_layers > 0:
         max_seq_len += training_args.num_nextn_predict_layers
         if model_args.use_attn_mask_startend_row_indices:
-            input_keys.append("mtp_attn_mask_startend_row_indices")
+            input_keys.append("mtp_startend_row_indices_all")
         else:
             input_keys.append("mtp_attn_mask")
-        input_keys.append("mtp_layer_mask")
+        input_keys.append("mtp_hidden_inputs_mask_all")
 
     for batch_sequence in batch:
         if len(batch_sequence) == 1 and isinstance(batch_sequence[0].position_ids[0], List):
@@ -534,7 +534,7 @@ def collate_fn(
 
             if model_args.use_attn_mask_startend_row_indices:
                 return_list[-1].append(
-                    gen_mtp_attn_mask_startend_row_indices(
+                    gen_mtp_startend_row_indices_all(
                         original_position_ids,
                         max_seq_len,
                         training_args.num_nextn_predict_layers,
@@ -552,7 +552,7 @@ def collate_fn(
                 )
 
             return_list[-1].append(
-                gen_mtp_layer_mask(
+                gen_mtp_hidden_inputs_mask_all(
                     original_position_ids,
                     max_seq_len,
                     training_args.num_nextn_predict_layers,
@@ -903,7 +903,8 @@ def gen_mtp_attn_mask(
             otherwise use block-causal mask with per-layer shifted boundaries.
 
     Returns:
-        np.ndarray, shape [mtp_depth, 1, max_seq_len, max_seq_len], dtype=float32.
+        np.ndarray, shape [1, mtp_depth, max_seq_len, max_seq_len], dtype=float32.
+        After collate (np.concatenate along dim0), final shape is [B, num_mtp, S, S].
     """
     total_len = sum(len(ids) for ids in batch_token_ids)
     if use_global_causal_attn:
@@ -928,10 +929,10 @@ def gen_mtp_attn_mask(
                 prev = boundary
             result.append(mask)
         result = np.stack(result, axis=0)
-    return result[:, None, :, :]
+    return result[None, :, :, :]
 
 
-def gen_mtp_attn_mask_startend_row_indices(
+def gen_mtp_startend_row_indices_all(
     batch_token_ids: List[List[int]],
     max_seq_len: int,
     mtp_depth: int,
@@ -946,7 +947,8 @@ def gen_mtp_attn_mask_startend_row_indices(
         use_global_causal_attn: If True, single global block; otherwise per-layer shifted blocks.
 
     Returns:
-        np.ndarray, shape [mtp_depth, 1, max_seq_len, 1], dtype=int32.
+        np.ndarray, shape [1, mtp_depth, max_seq_len, 1], dtype=int32.
+        After collate (np.concatenate along dim0), final shape is [B, num_mtp, S, 1].
     """
     total_len = sum(len(ids) for ids in batch_token_ids)
     pad_indices = list(range(total_len, max_seq_len))
@@ -970,10 +972,10 @@ def gen_mtp_attn_mask_startend_row_indices(
                 prev = boundary
             result.append(indices + pad_indices)
         result = np.array(result, dtype=np.int32)
-    return result[:, None, :, None]
+    return result[None, :, :, None]
 
 
-def gen_mtp_layer_mask(
+def gen_mtp_hidden_inputs_mask_all(
     batch_position_ids: List[List[int]],
     max_seq_len: int,
     mtp_depth: int,
@@ -987,7 +989,8 @@ def gen_mtp_layer_mask(
         mtp_depth: Number of MTP prediction layers.
 
     Returns:
-        np.ndarray, shape [mtp_depth, max_seq_len], dtype=int32.
+        np.ndarray, shape [1, mtp_depth, max_seq_len], dtype=int32.
+        After collate (np.concatenate along dim0), final shape is [B, num_mtp, S].
     """
     all_position_ids = np.concatenate([np.array(ids, dtype=np.int32) for ids in batch_position_ids])
     if len(all_position_ids) < max_seq_len:
@@ -1002,4 +1005,4 @@ def gen_mtp_layer_mask(
         new_mask[:-1] = mask[1:]
         mask = new_mask
         result.append(mask)
-    return np.stack(result, axis=0)
+    return np.stack(result, axis=0)[None, :, :]
