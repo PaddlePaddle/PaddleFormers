@@ -240,6 +240,18 @@ import_structure = {
     "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe", "LlamaRotaryEmbedding"],
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
+    "minicpm.configuration": ["MiniCPMConfig"],
+    "minicpm.modeling": [
+        "MiniCPMModel",
+        "MiniCPMPretrainedModel",
+        "MiniCPMForCausalLM",
+        "MiniCPMForCausalLMPipe",
+        "MiniCPMForSequenceClassification",
+        "MiniCPMForTokenClassification",
+        "MiniCPMSentenceEmbedding",
+        "MiniCPMForCausalLMDeprecated",
+        "MiniCPMForCausalLMPipeDeprecated",
+    ],
     "optimization": [
         "LinearDecayWithWarmup",
         "ConstScheduleWithWarmup",
