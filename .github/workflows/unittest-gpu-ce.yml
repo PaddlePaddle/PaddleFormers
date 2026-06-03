@@ -154,6 +154,7 @@ jobs:
           python --version
           DOCKER_EOF
       - name: Test
+        id: test
         run: |
           docker exec -t $container_name /bin/bash -c '
           . /opt/conda/etc/profile.d/conda.sh
@@ -169,7 +170,18 @@ jobs:
           source $work_dir/../../../AISTUDIO_ACCESS_TOKEN
           bash -x scripts/unit_test/ci_unittest.sh ${paddle_whl} true ${PYTEST_EXECUTE_FLAG_FILE} ${AGILE_COMPILE_BRANCH}
           '
+      - name: Display Test Summary
+        if: always()
+        run: |
+          if [[ "${{ steps.test.outcome }}" == "success" ]]; then
+            echo "✅ Test passed successfully"
+            tail -n 1 ${{ github.workspace }}/PaddleFormers/unittest_logs/unittest.log
+          else
+            echo "❌ Test failed with status: ${{ steps.test.outcome }}"
+            cat ${{ github.workspace }}/PaddleFormers/unittest_logs/unittest_FAIL.log
+          fi
       - name: Upload Products
+        if: always()
         env:
           home_path: ${{ github.workspace }}/../../..
           bos_file: ${{ github.workspace }}/../../../bos/BosClient.py
@@ -244,6 +256,7 @@ jobs:
           fi
           '
       - name: Set pytest execute flag output
+        if: always()
         id: set_pytest_flag  # 专门设置输出的步骤
         run: |
           # 检查标志文件是否存在，并设置作业输出

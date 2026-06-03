@@ -210,6 +210,7 @@ jobs:
           python --version
           DOCKER_EOF
       - name: Test
+        id: test
         run: |
           # Use step outputs from previous step instead of env vars
           MODE="${{ steps.trigger_mode.outputs.mode }}"
@@ -240,6 +241,16 @@ jobs:
           echo "PR number: ${PR_NUMBER}"
           bash -x scripts/regression/ci_model_unittest.sh True False "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
           DOCKER_EOF
+      - name: Display Test Summary
+        if: always()
+        run: |
+          if [[ "${{ steps.test.outcome }}" == "success" ]]; then
+            echo "✅ Test passed successfully"
+            tail -n 1 ${{ github.workspace }}/PaddleFormers/model_unittest_logs/model_unittest.log
+          else
+            echo "❌ Test failed with status: ${{ steps.test.outcome }}"
+            cat ${{ github.workspace }}/PaddleFormers/model_unittest_logs/model_unittest_FAIL.log
+          fi
       - name: Upload Products
         if: always()
         env:

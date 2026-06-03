@@ -110,12 +110,7 @@ print_info() {
             | grep -v "SKIPPED" | grep -v "warning" > ${log_path}/model_unittest_FAIL.log
         tail -n 1 ${log_path}/model_unittest.log >> ${log_path}/model_unittest_FAIL.log
         echo -e "\033[31m ${log_path}/model_unittest_FAIL \033[0m"
-        cat ${log_path}/model_unittest_FAIL.log
-        if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
-            cp ${log_path}/model_unittest_FAIL.log ${PPNLP_HOME}/upload/model_unittest_FAIL.log.${AGILE_PIPELINE_BUILD_ID}.${AGILE_JOB_BUILD_ID}
-            cd ${PPNLP_HOME} && python upload.py ${PPNLP_HOME}/upload 'paddlenlp/PaddleNLP_CI/PaddleNLP-CI-Model-Unittest-GPU'
-            rm -rf upload/* && cd -
-        fi
+        tail -n 1 ${log_path}/model_unittest_FAIL.log
         if [ $1 -eq 124 ]; then
             echo "\033[32m [failed-timeout] Test case execution was terminated after exceeding the ${running_time} min limit."
         fi

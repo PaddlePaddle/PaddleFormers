@@ -248,6 +248,7 @@ jobs:
           python --version
           DOCKER_EOF
       - name: Test
+        id: test
         env:
           FLAGS_enable_CE: ${{ steps.determine_flag.outputs.FLAGS_enable_CE }}
         run: |
@@ -284,6 +285,16 @@ jobs:
           source ${work_dir}/../../../proxy_huggingface
           bash -x scripts/regression/ci_model_unittest.sh False $FLAGS_enable_CE "$UPDATE_BASELINE_MODELS" $BRANCH ${PR_NUMBER}
           DOCKER_EOF
+      - name: Display Test Summary
+        if: always()
+        run: |
+          if [[ "${{ steps.test.outcome }}" == "success" ]]; then
+            echo "✅ Test passed successfully"
+            tail -n 1 ${{ github.workspace }}/PaddleFormers/model_unittest_logs/model_unittest.log
+          else
+            echo "❌ Test failed with status: ${{ steps.test.outcome }}"
+            cat ${{ github.workspace }}/PaddleFormers/model_unittest_logs/model_unittest_FAIL.log
+          fi
       - name: Upload Products
         if: always()
         env:
