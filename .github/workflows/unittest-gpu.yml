@@ -344,7 +344,7 @@ jobs:
   upload-allure:
     name: upload-allure
     needs: [unittest-gpu-ci]
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: always()
     runs-on: ernie-cpu
     permissions:
       contents: write
