@@ -14,8 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import paddle.distributed.communication.deep_ep as deep_ep
-
+import paddlefleet_ops.deep_ep as deep_ep
 HAVE_DEEP_EP = True
 
 import paddle

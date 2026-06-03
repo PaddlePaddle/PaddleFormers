@@ -53,7 +53,7 @@ from .modeling import (
 from .moe_utils import get_env_device
 
 try:
-    import paddle.distributed.communication.deep_ep as deep_ep
+    import paddlefleet_ops.deep_ep as deep_ep
 except ImportError:
     deep_ep = None
 
