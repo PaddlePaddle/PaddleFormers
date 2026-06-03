@@ -18,9 +18,11 @@ from paddlefleet_ops import is_deep_ep_available
 
 if is_deep_ep_available():
     import paddlefleet_ops.deep_ep as deep_ep
+
+    HAVE_DEEP_EP = True
 else:
     deep_ep = None
-HAVE_DEEP_EP = True
+    HAVE_DEEP_EP = False
 
 import paddle
 from paddle.autograd import PyLayer
