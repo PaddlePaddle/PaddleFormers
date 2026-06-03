@@ -2318,7 +2318,7 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
             self.ema_model_params_ckpt_meta, self.ema_model_state_filter = saved_ckptmeta(
                 ema_model_params_sharded,
                 self.ckpt_data_name,
-                replicate_saved_into_local=self.args.replicate_saved_into_local,
+                replicate_saved_into_local=True,
             )
         else:
             self.ema_model_params_ckpt_meta = None
