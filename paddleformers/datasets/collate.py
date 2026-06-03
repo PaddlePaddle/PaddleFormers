@@ -468,26 +468,26 @@ def collate_fn(
     """
     input_keys = ["input_ids", "labels", "position_ids"]
     mtp_depth = training_args.num_nextn_predict_layers
-    use_mtp_flexiable_mask = getattr(model_args, "mtp_flexiable_mask", False) and mtp_depth > 0
+    use_mtp_attention_flexible = getattr(model_args, "mtp_attention_flexible", False) and mtp_depth > 0
 
     if mtp_depth > 0:
         input_keys.append("nbatch_pack_offset")
 
-    if use_mtp_flexiable_mask:
-        input_keys.append("attn_mask_startend_row_indices")
-        input_keys.append("mtp_startend_row_indices_all")
+    if use_mtp_attention_flexible:
+        if model_args.use_attn_mask_startend_row_indices:
+            input_keys.append("attn_mask_startend_row_indices")
+        else:
+            input_keys.append("attention_mask")
+        if model_args.use_attn_mask_startend_row_indices:
+            input_keys.append("mtp_startend_row_indices_all")
+        else:
+            input_keys.append("mtp_attn_mask")
         input_keys.append("mtp_hidden_inputs_mask_all")
     else:
         if model_args.use_attn_mask_startend_row_indices:
             input_keys.append("attn_mask_startend_row_indices")
         else:
             input_keys.append("attention_mask")
-        if mtp_depth > 0:
-            if model_args.use_attn_mask_startend_row_indices:
-                input_keys.append("mtp_startend_row_indices_all")
-            else:
-                input_keys.append("mtp_attn_mask")
-            input_keys.append("mtp_hidden_inputs_mask_all")
 
     return_list = []
     if padding_free:
@@ -499,8 +499,8 @@ def collate_fn(
     if mtp_depth > 0:
         max_seq_len += mtp_depth
 
-    # mask_seq_len: when mtp_flexiable_mask is enabled, masks use (max_seq_len - mtp_depth)
-    mask_seq_len = max_seq_len - mtp_depth if use_mtp_flexiable_mask else max_seq_len
+    # mask_seq_len: when mtp_attention_flexible is enabled, masks use (max_seq_len - mtp_depth)
+    mask_seq_len = max_seq_len - mtp_depth if use_mtp_attention_flexible else max_seq_len
 
     for batch_sequence in batch:
         if len(batch_sequence) == 1 and isinstance(batch_sequence[0].position_ids[0], List):
@@ -533,30 +533,8 @@ def collate_fn(
             padded_nbatch_pack_offset = pad_batch_data([nbatch_pack_offset], pad_idx=0, max_seq_len=max_seq_len)
             return_list[-1].append(padded_nbatch_pack_offset)
 
-        if use_mtp_flexiable_mask:
-            # mtp_flexiable_mask path: all masks use mask_seq_len
-            return_list[-1].append(
-                gen_attn_mask_startend_row_indices(
-                    original_position_ids, mask_seq_len, model_args.use_global_causal_attn
-                )
-            )
-            return_list[-1].append(
-                gen_mtp_startend_row_indices_all(
-                    original_position_ids,
-                    mask_seq_len,
-                    mtp_depth,
-                    model_args.use_global_causal_attn,
-                )
-            )
-            return_list[-1].append(
-                gen_mtp_hidden_inputs_mask_all(
-                    original_position_ids,
-                    mask_seq_len,
-                    mtp_depth,
-                )
-            )
-        else:
-            # original data flow
+        if use_mtp_attention_flexible:
+            # mtp_attention_flexible path: all masks use mask_seq_len
             if model_args.use_attn_mask_startend_row_indices:
                 return_list[-1].append(
                     gen_attn_mask_startend_row_indices(
@@ -567,33 +545,42 @@ def collate_fn(
                 return_list[-1].append(
                     gen_self_attn_mask(original_position_ids, mask_seq_len, model_args.use_global_causal_attn)
                 )
-
-            if mtp_depth > 0:
-                if model_args.use_attn_mask_startend_row_indices:
-                    return_list[-1].append(
-                        gen_mtp_startend_row_indices_all(
-                            original_position_ids,
-                            mask_seq_len,
-                            mtp_depth,
-                            model_args.use_global_causal_attn,
-                        )
-                    )
-                else:
-                    return_list[-1].append(
-                        gen_mtp_attn_mask(
-                            original_position_ids,
-                            mask_seq_len,
-                            mtp_depth,
-                            model_args.use_global_causal_attn,
-                        )
-                    )
-
+            if model_args.use_attn_mask_startend_row_indices:
                 return_list[-1].append(
-                    gen_mtp_hidden_inputs_mask_all(
+                    gen_mtp_startend_row_indices_all(
                         original_position_ids,
                         mask_seq_len,
                         mtp_depth,
+                        model_args.use_global_causal_attn,
                     )
+                )
+            else:
+                return_list[-1].append(
+                    gen_mtp_attn_mask(
+                        original_position_ids,
+                        mask_seq_len,
+                        mtp_depth,
+                        model_args.use_global_causal_attn,
+                    )
+                )
+            return_list[-1].append(
+                gen_mtp_hidden_inputs_mask_all(
+                    original_position_ids,
+                    mask_seq_len,
+                    mtp_depth,
+                )
+            )
+        else:
+            # original data flow: only attn mask
+            if model_args.use_attn_mask_startend_row_indices:
+                return_list[-1].append(
+                    gen_attn_mask_startend_row_indices(
+                        original_position_ids, mask_seq_len, model_args.use_global_causal_attn
+                    )
+                )
+            else:
+                return_list[-1].append(
+                    gen_self_attn_mask(original_position_ids, mask_seq_len, model_args.use_global_causal_attn)
                 )
 
     return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
@@ -663,14 +650,20 @@ def mm_collate_fn(
         input_keys.append("feature_attention_mask")
 
     mtp_depth = training_args.num_nextn_predict_layers
-    use_mtp_flexiable_mask = getattr(model_args, "mtp_flexiable_mask", False) and mtp_depth > 0
+    use_mtp_attention_flexible = getattr(model_args, "mtp_attention_flexible", False) and mtp_depth > 0
 
     if mtp_depth > 0:
         input_keys.append("nbatch_pack_offset")
 
-    if use_mtp_flexiable_mask:
-        input_keys.append("attn_mask_startend_row_indices")
-        input_keys.append("mtp_startend_row_indices_all")
+    if use_mtp_attention_flexible:
+        if model_args.use_attn_mask_startend_row_indices:
+            input_keys.append("attn_mask_startend_row_indices")
+        else:
+            input_keys.append("attention_mask")
+        if model_args.use_attn_mask_startend_row_indices:
+            input_keys.append("mtp_startend_row_indices_all")
+        else:
+            input_keys.append("mtp_attn_mask")
         input_keys.append("mtp_hidden_inputs_mask_all")
     else:
         if model_args.use_attn_mask_startend_row_indices:
@@ -688,8 +681,8 @@ def mm_collate_fn(
     if mtp_depth > 0:
         max_seq_len += mtp_depth
 
-    # mask_seq_len: when mtp_flexiable_mask is enabled, masks use (max_seq_len - mtp_depth)
-    mask_seq_len = max_seq_len - mtp_depth if use_mtp_flexiable_mask else max_seq_len
+    # mask_seq_len: when mtp_attention_flexible is enabled, masks use (max_seq_len - mtp_depth)
+    mask_seq_len = max_seq_len - mtp_depth if use_mtp_attention_flexible else max_seq_len
 
     for batch_sequence in batch:
         original_token_ids = []
@@ -798,19 +791,36 @@ def mm_collate_fn(
             padded_nbatch_pack_offset = pad_batch_data([nbatch_pack_offset], pad_idx=0, max_seq_len=max_seq_len)
             return_list[-1].append(padded_nbatch_pack_offset)
 
-        if use_mtp_flexiable_mask:
-            # mtp_flexiable_mask path: all masks use mask_seq_len
-            return_list[-1].append(
-                gen_attn_mask_startend_row_indices(original_token_ids, mask_seq_len, model_args.use_global_causal_attn)
-            )
-            return_list[-1].append(
-                gen_mtp_startend_row_indices_all(
-                    original_token_ids,
-                    mask_seq_len,
-                    mtp_depth,
-                    model_args.use_global_causal_attn,
+        if use_mtp_attention_flexible:
+            # mtp_attention_flexible path: all masks use mask_seq_len
+            if model_args.use_attn_mask_startend_row_indices:
+                return_list[-1].append(
+                    gen_attn_mask_startend_row_indices(
+                        original_token_ids, mask_seq_len, model_args.use_global_causal_attn
+                    )
                 )
-            )
+            else:
+                return_list[-1].append(
+                    gen_self_attn_mask(original_token_ids, mask_seq_len, model_args.use_global_causal_attn)
+                )
+            if model_args.use_attn_mask_startend_row_indices:
+                return_list[-1].append(
+                    gen_mtp_startend_row_indices_all(
+                        original_token_ids,
+                        mask_seq_len,
+                        mtp_depth,
+                        model_args.use_global_causal_attn,
+                    )
+                )
+            else:
+                return_list[-1].append(
+                    gen_mtp_attn_mask(
+                        original_token_ids,
+                        mask_seq_len,
+                        mtp_depth,
+                        model_args.use_global_causal_attn,
+                    )
+                )
             return_list[-1].append(
                 gen_mtp_hidden_inputs_mask_all(
                     original_token_ids,
@@ -819,7 +829,7 @@ def mm_collate_fn(
                 )
             )
         else:
-            # original data flow
+            # original data flow: only attn mask
             if model_args.use_attn_mask_startend_row_indices:
                 return_list[-1].append(
                     gen_attn_mask_startend_row_indices(
