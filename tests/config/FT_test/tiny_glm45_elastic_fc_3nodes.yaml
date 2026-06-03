@@ -39,8 +39,8 @@ min_lr: 0.000001
 
 tensor_model_parallel_size: 1
 tp_sync_param: true
-pipeline_model_parallel_size: 3
-sharding_parallel_size: 8
+pipeline_model_parallel_size: 1
+sharding_parallel_size: 24
 pp_delay_scale_loss: true
 use_expert_parallel: false
 expert_model_parallel_size: 1
