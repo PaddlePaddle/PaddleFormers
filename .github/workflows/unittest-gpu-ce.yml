@@ -355,12 +355,12 @@ jobs:
           mkdir -p result
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             MODE="manual"
-            PR_NUMBER="manual"
+            PR_NUMBER=0
             cp -r gh-pages/unit_CE/manual/history result/ || true
             destination_dir="unit_CE/manual"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
             MODE="schedule"
-            PR_NUMBER="schedule"
+            PR_NUMBER=0
             cp -r gh-pages/unit_CE/schedule/history result/ || true
             destination_dir="unit_CE/schedule"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then

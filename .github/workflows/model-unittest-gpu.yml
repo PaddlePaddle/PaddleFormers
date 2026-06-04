@@ -168,11 +168,11 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             MODE="manual"
             UPDATE_BASELINE_MODELS="${{ github.event.inputs.update_baseline_models }}"
-            PR_NUMBER="manual"
+            PR_NUMBER=0
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
             MODE="schedule"
             UPDATE_BASELINE_MODELS="false"
-            PR_NUMBER="schedule"
+            PR_NUMBER=0
           elif [[ "${{ github.event_name }}" == "issue_comment" ]]; then
             # Parse comment for [update-baseline: models]
             if grep -qE '\[update-baseline:[[:space:]]*[a-zA-Z0-9_,]+\]' <<< "$COMMENT_BODY"; then
@@ -344,12 +344,12 @@ jobs:
           mkdir -p result
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             MODE="manual"
-            PR_NUMBER="manual"
+            PR_NUMBER=0
             cp -r gh-pages/model_CI/manual/history result/ || true
             destination_dir="model_CI/manual"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
             MODE="schedule"
-            PR_NUMBER="schedule"
+            PR_NUMBER=0
             cp -r gh-pages/model_CI/schedule/history result/ || true
             destination_dir="model_CI/schedule"
           elif [[ "${{ github.event_name }}" == "issue_comment" ]]; then
