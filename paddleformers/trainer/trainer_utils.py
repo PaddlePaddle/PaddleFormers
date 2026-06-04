@@ -1911,6 +1911,7 @@ class EMAStateAssembler:
         self.model = model
         self.optimizer = optimizer
         self.model_sharded_state_dict = self.model.sharded_state_dict()
+        self.is_gpt_model = GPTModel is not None and isinstance(self.model, GPTModel)
         n_routed_experts = self.model.config.n_routed_experts
 
         hcg = paddle.distributed.fleet.get_hybrid_communicate_group()
@@ -2140,13 +2141,12 @@ class EMAStateAssembler:
             model_state_dict = self.model.state_dict()
             struct_name_to_static_name = {k: v.name for k, v in model_state_dict.items()}
             opt_master_weights = self.optimizer.state_dict().get("master_weights", {})
-
             master_weights = {}
             model_params = {}
             for k, v in ema_state_dict.items():
                 if k.endswith(".w_0"):
                     struct_name = k[:-4]
-                    tensor_name = struct_name_to_static_name[struct_name]
+                    tensor_name = struct_name_to_static_name[self._rename(struct_name, False)]
                     if tensor_name in opt_master_weights:
                         opt_tensor = opt_master_weights[tensor_name]
                         if opt_tensor.ndim == 1:
@@ -2176,20 +2176,7 @@ class EMAStateAssembler:
             ema_state_dict.update(model_params)
         return ema_state_dict
 
-    def _build_ema_sharded_state_dict(self, ema_state_dict):
-        group_getter = GroupGetter(self.model)
-        ema_state_dict_grouped = split_opt_state(ema_state_dict, group_getter)
-        ema_params_recovered = {}
-        for gid in group_getter.get_group_ids():
-            sub_ema_state_dict = ema_state_dict_grouped.get(gid, {})
-            group = group_getter.get_group_by_id(gid)
-            recovered = recover_params_from_master_weight(sub_ema_state_dict, self.model, self.optimizer, group)
-            ema_params_recovered.update(recovered)
-
-        ema_sharded_state_dict = {}
-
-        is_gpt_model = GPTModel is not None and isinstance(self.model, GPTModel)
-
+    def _rename(self, key, add_mode=True):
         def _remove_layer_suffix(s):
             return re.sub(r"_layer_\d+$", "", s)
 
@@ -2204,20 +2191,31 @@ class EMAStateAssembler:
 
             return re.sub(r"(?<=experts\.)\d+", replace, s)
 
-        def _rename(key, add_mode=True):
-            if ".experts." in key:
-                assert (
-                    self.expert_id_offset != -1
-                ), f"Your n_routed_experts is {self.model.config.n_routed_experts}, but you have param name:{key}, please check!"
-                if not is_gpt_model:
-                    key = _update_expert_number(key, self.expert_id_offset, add_mode)
-            elif "_layer_" in key:
-                key = _remove_layer_suffix(key)
-            return key
+        if ".experts." in key:
+            assert (
+                self.expert_id_offset != -1
+            ), f"Your n_routed_experts is {self.model.config.n_routed_experts}, but you have param name:{key}, please check!"
+            if not self.is_gpt_model:
+                key = _update_expert_number(key, self.expert_id_offset, add_mode)
+        elif "_layer_" in key:
+            key = _remove_layer_suffix(key)
+        return key
+
+    def _build_ema_sharded_state_dict(self, ema_state_dict):
+        group_getter = GroupGetter(self.model)
+        ema_state_dict_grouped = split_opt_state(ema_state_dict, group_getter)
+        ema_params_recovered = {}
+        for gid in group_getter.get_group_ids():
+            sub_ema_state_dict = ema_state_dict_grouped.get(gid, {})
+            group = group_getter.get_group_by_id(gid)
+            recovered = recover_params_from_master_weight(sub_ema_state_dict, self.model, self.optimizer, group)
+            ema_params_recovered.update(recovered)
+
+        ema_sharded_state_dict = {}
 
         for k, v in self.model_sharded_state_dict.items():
             if v.local_tensor.dtype == paddle.bfloat16:
-                ema_tensor = ema_params_recovered[_rename(k, False)]
+                ema_tensor = ema_params_recovered[self._rename(k, False)]
                 expected_shape = v.local_shape
                 # Handle grouped_gemm_experts: reshape 3D [num_experts, hidden, intermediate] to 2D [num_experts*hidden, intermediate]
                 group_gemm_param_name_pattern = [
