@@ -179,6 +179,7 @@ from .trainer_callback import (
     TrainerState,
 )
 from .trainer_utils import (  # set_hyrbid_parallel_seed,
+    EMAStateAssembler,
     EvalLoopOutput,
     EvalPrediction,
     IntervalStrategy,
@@ -1653,7 +1654,21 @@ class Trainer:
             self.create_zcc_manager(model, resume_from_checkpoint)
 
         elif self.args.zcc_save_ema_coef is not None:
-            self.add_non_zcc_ema_callback(resume_from_checkpoint)
+            ema_state_assembler = None
+            if self.args.save_hf_steps is not None and self.args.save_hf_steps > 0:
+                memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
+                ema_state_assembler = EMAStateAssembler(
+                    output_dir=self.args.output_dir,
+                    save_checkpoint_format=self.args.save_checkpoint_format,
+                    save_hf_steps=self.args.save_hf_steps,
+                    save_steps=self.args.save_steps,
+                    optimizer_name_suffix=self.args.optimizer_name_suffix,
+                    model=self.model,
+                    optimizer=self.optimizer,
+                    start_step=self.state.global_step,
+                    memory_growth_threshold=memory_growth_threshold_bytes,
+                )
+            self.add_non_zcc_ema_callback(resume_from_checkpoint, ema_state_assembler)
 
         if self.args.using_sonic_moe:
             callback = InterleaveGateUpCallback(self.model, resume_from_checkpoint, self.args.output_dir)
