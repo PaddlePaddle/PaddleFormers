@@ -796,7 +796,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
             # --- MoE Gate ---
             stmts += [
-                f"{tl}.mlp.gate.weight -> {mtp_tgt}.ffn.gate.weight, dtype='bfloat16'",
+                f"{tl}.mlp.gate.weight -> {mtp_tgt}.ffn.gate.weight, dtype='float32'",
                 f"{tl}.mlp.gate.e_score_correction_bias -> {mtp_tgt}.ffn.gate.bias",
             ]
 
@@ -920,7 +920,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- MoE Gate ---
-            stmts += [f"{src}.mlp.gate.weight -> {tgt}.ffn.gate.weight,dtype='bfloat16'"]
+            stmts += [f"{src}.mlp.gate.weight -> {tgt}.ffn.gate.weight,dtype='float32'"]
             if L >= moe_n_hash_layers:
                 stmts += [f"{src}.mlp.gate.e_score_correction_bias -> {tgt}.ffn.gate.bias"]
             else:
