@@ -20,6 +20,7 @@ from __future__ import annotations
 import collections
 import contextlib
 import gc
+import hashlib
 import inspect
 import json
 import math
@@ -164,6 +165,1214 @@ from ..utils.import_utils import is_datasets_available, is_paddle_cuda_available
 from ..utils.log import MetricsDumper, logger
 from ..utils.pdc_sdk import FLASH_DEVICE
 from ..utils.tools import paddle_device
+
+
+def _dsv4_grad_inventory_enabled() -> bool:
+    return os.getenv("DSV4_LOG_GRAD_INVENTORY", "0") == "1"
+
+
+def _dsv4_grad_inventory_rank_enabled(rank: int) -> bool:
+    ranks = os.getenv("DSV4_GRAD_INVENTORY_RANKS", "0")
+    if ranks.strip().lower() == "all":
+        return True
+    return str(rank) in {item.strip() for item in ranks.split(",") if item.strip()}
+
+
+def _dsv4_grad_inventory_stage_enabled(stage: str) -> bool:
+    stages = os.getenv("DSV4_GRAD_INVENTORY_STAGES", "pre_optimizer")
+    selected = {item.strip() for item in stages.split(",") if item.strip()}
+    return "all" in selected or stage in selected
+
+
+def _dsv4_grad_inventory_step_enabled(step: int) -> bool:
+    steps = os.getenv("DSV4_GRAD_INVENTORY_STEPS", "")
+    if not steps:
+        return True
+    selected = {item.strip() for item in steps.split(",") if item.strip()}
+    return "all" in selected or str(step) in selected
+
+
+def _dsv4_grad_category(name: str) -> str:
+    lowered = name.lower()
+    if "mtp" in lowered:
+        return "mtp"
+    if "word_embedding" in lowered or "word_embeddings" in lowered or "embedding" in lowered:
+        return "embedding"
+    if "lm_head" in lowered or "output_layer" in lowered:
+        return "lm_head"
+    if "mapping_proj" in lowered or "alpha_pre" in lowered or "alpha_post" in lowered or "alpha_res" in lowered:
+        return "hc"
+    if "router" in lowered or ".gate." in lowered or "expert_bias" in lowered:
+        return "moe_router"
+    if "expert" in lowered or "grouped_mlp" in lowered:
+        return "moe_expert"
+    if "self_attention" in lowered or "attention" in lowered or "attn" in lowered:
+        return "attention"
+    if "mlp" in lowered:
+        return "mlp"
+    if "norm" in lowered or "layernorm" in lowered:
+        return "norm"
+    return "other"
+
+
+def _dsv4_grad_inventory_should_log_param(name: str, numel: int) -> bool:
+    if os.getenv("DSV4_GRAD_INVENTORY_LOG_ALL_PARAMS", "0") == "1":
+        return True
+    patterns = os.getenv(
+        "DSV4_GRAD_INVENTORY_PARAM_PATTERNS",
+        "alpha_pre,alpha_post,alpha_res,mapping_proj,router,gate,expert_bias,"
+        "linear_q,linear_kv,linear_proj,input_layernorm,pre_mlp_layernorm,final_layernorm,"
+        "lm_head,output_layer,word_embeddings,embedding",
+    )
+    lowered = name.lower()
+    if not any(pattern.strip().lower() in lowered for pattern in patterns.split(",") if pattern.strip()):
+        return False
+    return True
+
+
+def _dsv4_tensor_md5_float32(tensor: paddle.Tensor) -> str:
+    tensor = tensor.detach()
+    digest = hashlib.md5()
+    chunk0 = int(os.getenv("DSV4_GRAD_INVENTORY_MD5_CHUNK0", "8"))
+    if len(tensor.shape) == 0:
+        tensor_for_md5 = tensor.cast("float32").cpu()
+        digest.update(tensor_for_md5.numpy().tobytes())
+        return digest.hexdigest()
+    for start in range(0, int(tensor.shape[0]), chunk0):
+        part = tensor[start : start + chunk0].cast("float32").cpu()
+        digest.update(part.numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _dsv4_tensor_md5_float32_t(tensor: paddle.Tensor) -> str:
+    if len(tensor.shape) != 2:
+        return "NA"
+    return _dsv4_tensor_md5_float32(paddle.transpose(tensor.detach(), [1, 0]))
+
+
+def _dsv4_safe_filename(value: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in value)
+
+
+def _dsv4_grad_tensor_dump_enabled() -> bool:
+    return os.getenv("DSV4_GRAD_TENSOR_DUMP", "0") == "1"
+
+
+def _dsv4_grad_tensor_dump_should_save(name: str) -> bool:
+    patterns = os.getenv("DSV4_GRAD_TENSOR_DUMP_PARAM_PATTERNS", "").strip()
+    if not patterns:
+        patterns = os.getenv("DSV4_GRAD_INVENTORY_PARAM_PATTERNS", "")
+    selected = [item.strip().lower() for item in patterns.split(",") if item.strip()]
+    if not selected:
+        return False
+    lowered = name.lower()
+    return "all" in selected or any(pattern in lowered for pattern in selected)
+
+
+def _dsv4_grad_tensor_dump_offsets() -> list[int]:
+    offsets = os.getenv("DSV4_GRAD_TENSOR_DUMP_OFFSETS", "")
+    if not offsets.strip():
+        return [0]
+    result: list[int] = []
+    for item in offsets.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            result.append(max(0, int(item)))
+        except ValueError:
+            continue
+    return result or [0]
+
+
+def _dsv4_dump_grad_tensor(
+    framework: str,
+    rank: int,
+    step: int,
+    stage: str,
+    name: str,
+    grad: paddle.Tensor,
+    source: str,
+) -> list[str]:
+    if not _dsv4_grad_tensor_dump_enabled() or not _dsv4_grad_tensor_dump_should_save(name):
+        return []
+    output_dir = os.getenv("DSV4_GRAD_TENSOR_DUMP_DIR", "").strip()
+    if not output_dir:
+        return []
+
+    max_numel = int(os.getenv("DSV4_GRAD_TENSOR_DUMP_MAX_NUMEL", "1048576"))
+    dump_dir = Path(output_dir)
+    dump_dir.mkdir(parents=True, exist_ok=True)
+    flat = paddle.reshape(grad.detach(), [-1])
+    total_numel = int(np.prod(list(grad.shape)))
+    saved: list[str] = []
+    for offset in _dsv4_grad_tensor_dump_offsets():
+        if offset >= total_numel:
+            continue
+        take = min(max_numel, total_numel - offset)
+        tensor_cpu = flat[offset : offset + take].cast("float32").cpu()
+        file_name = (
+            f"{framework}_rank{rank}_step{step}_{stage}_"
+            f"{_dsv4_safe_filename(name)}_offset{offset}_numel{take}.pd"
+        )
+        out_file = dump_dir / file_name
+        paddle.save(
+            {
+                "framework": framework,
+                "rank": rank,
+                "step": step,
+                "stage": stage,
+                "name": name,
+                "source": source,
+                "shape": list(grad.shape),
+                "dtype": str(grad.dtype),
+                "offset": offset,
+                "numel": take,
+                "total_numel": total_numel,
+                "tensor": tensor_cpu,
+            },
+            str(out_file),
+        )
+        saved.append(str(out_file))
+    return saved
+
+
+def _dsv4_emit_inventory_lines(
+    framework: str,
+    kind: str,
+    rank: int,
+    step: int,
+    stage: str,
+    lines: list[str],
+    max_lines: int,
+    emit: Callable[[str], None],
+) -> None:
+    output_dir = os.getenv("DSV4_INVENTORY_OUTPUT_DIR", "")
+    if output_dir:
+        path = Path(output_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        out_file = path / f"{framework}_{kind}_rank{rank}_step{step}_{stage}.log"
+        out_file.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+        print(
+            f"[DSV4_INVENTORY_FILE] framework={framework} kind={kind} rank={rank} "
+            f"step={step} stage={stage} lines={len(lines)} path={out_file}",
+            flush=True,
+        )
+        return
+
+    for line in lines[:max_lines]:
+        emit(line)
+    if len(lines) > max_lines:
+        prefix = "DSV4_PARAM" if kind == "param" else "DSV4_GRAD_PARAM"
+        emit(
+            f"[{prefix}] framework={framework} rank={rank} step={step} "
+            f"stage={stage} truncated={len(lines) - max_lines}"
+        )
+
+
+def _dsv4_optimizer_update_probe_enabled() -> bool:
+    return os.getenv("DSV4_LOG_OPTIMIZER_UPDATE_PROBE", "0") == "1"
+
+
+def _dsv4_optimizer_update_probe_stage_enabled(stage: str) -> bool:
+    stages = os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_STAGES", "pre_optimizer_before_step,post_optimizer_after_step")
+    selected = {item.strip() for item in stages.split(",") if item.strip()}
+    return "all" in selected or stage in selected
+
+
+def _dsv4_optimizer_update_probe_step_enabled(step: int) -> bool:
+    steps = os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_STEPS", "")
+    selected = {item.strip().lower() for item in steps.split(",") if item.strip()}
+    if not selected or "all" in selected:
+        return True
+    return str(step) in selected
+
+
+def _dsv4_optimizer_update_probe_rank_enabled(rank: int) -> bool:
+    ranks = os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_RANKS", "0")
+    if ranks.strip().lower() == "all":
+        return True
+    return str(rank) in {item.strip() for item in ranks.split(",") if item.strip()}
+
+
+def _dsv4_optimizer_update_probe_should_log(name: str) -> bool:
+    patterns = os.getenv(
+        "DSV4_OPTIMIZER_UPDATE_PROBE_PATTERNS",
+        "linear_q_up_proj.weight,linear_kv_proj.weight,shared_experts.up_gate_proj.weight,"
+        "shared_experts.down_proj.weight,.mlp.gate.weight,alpha_post,mapping_proj.weight",
+    )
+    selected = {pattern.strip().lower() for pattern in patterns.split(",") if pattern.strip()}
+    if "all" in selected:
+        return True
+    lowered = name.lower()
+    return any(pattern in lowered for pattern in selected)
+
+
+def _dsv4_unwrap_optimizer(optimizer):
+    current = optimizer
+    seen = set()
+    while hasattr(current, "_inner_opt") and id(current) not in seen:
+        seen.add(id(current))
+        current = current._inner_opt
+    return current
+
+
+def _dsv4_optimizer_chain(optimizer):
+    chain = []
+    current = optimizer
+    seen = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        chain.append(current)
+        current = getattr(current, "_inner_opt", None)
+    return chain
+
+
+def _dsv4_find_sharding_optimizer(optimizer):
+    for current in _dsv4_optimizer_chain(optimizer):
+        if hasattr(current, "_slice_params"):
+            return current
+    return None
+
+
+def _dsv4_optimizer_tensor_stats(tensor) -> tuple[str, str, str, str]:
+    if tensor is None:
+        return "NA", "NA", "NA", "NA"
+    try:
+        initialized = getattr(tensor, "_is_initialized", None)
+        if callable(initialized) and not initialized():
+            return str(list(tensor.shape)), str(tensor.dtype), "UNINITIALIZED", "UNINITIALIZED"
+    except Exception:
+        pass
+    numel = int(np.prod(list(tensor.shape)))
+    max_numel = int(os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_MD5_MAX_NUMEL", "5000000"))
+    tensor_fp32 = tensor.detach().cast("float32")
+    norm = f"{float(paddle.linalg.norm(tensor_fp32).item()):.20f}"
+    md5 = _dsv4_tensor_md5_float32(tensor) if numel <= max_numel else "SKIP"
+    return str(list(tensor.shape)), str(tensor.dtype), norm, md5
+
+
+def _dsv4_optimizer_stream_md5(tensor, tensor_name: str) -> str:
+    selected = {
+        item.strip()
+        for item in os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_STREAM_MD5_TENSORS", "").split(",")
+        if item.strip()
+    }
+    if not tensor_name or tensor_name not in selected:
+        return "NA"
+    if tensor is None:
+        return "NA"
+    try:
+        initialized = getattr(tensor, "_is_initialized", None)
+        if callable(initialized) and not initialized():
+            return "UNINITIALIZED"
+    except Exception:
+        pass
+    chunk_numel = int(os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_STREAM_MD5_CHUNK_NUMEL", "1048576"))
+    digest = hashlib.md5()
+    flat = tensor.detach().flatten()
+    total_numel = int(np.prod(list(tensor.shape)))
+    for start in range(0, total_numel, chunk_numel):
+        part = flat[start : start + chunk_numel].cast("float32").cpu()
+        digest.update(part.numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _dsv4_optimizer_chunk_md5_lines(
+    param_name: str,
+    step: int,
+    stage: str,
+    tensor_name: str,
+    tensor,
+    rank: int,
+    base_offset: int = 0,
+):
+    selected = {
+        item.strip()
+        for item in os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_CHUNK_MD5_TENSORS", "").split(",")
+        if item.strip()
+    }
+    transpose_selected = {
+        item.strip()
+        for item in os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_CHUNK_MD5_TRANSPOSE_TENSORS", "").split(",")
+        if item.strip()
+    }
+    if not tensor_name or (tensor_name not in selected and tensor_name not in transpose_selected) or tensor is None:
+        return []
+    try:
+        initialized = getattr(tensor, "_is_initialized", None)
+        if callable(initialized) and not initialized():
+            return []
+    except Exception:
+        pass
+    chunk_numel = int(os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_CHUNK_MD5_NUMEL", "1048576"))
+    max_chunks = int(os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_CHUNK_MD5_MAX_CHUNKS", "0"))
+    total_numel = int(np.prod(list(tensor.shape)))
+    lines = []
+    ranges_env = os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_CHUNK_MD5_RANGES", "")
+    if ranges_env.strip():
+        ranges = []
+        for item in ranges_env.split(","):
+            item = item.strip()
+            if not item:
+                continue
+            start_text, end_text = item.split(":", 1)
+            start = int(start_text)
+            end = total_numel if end_text.strip().lower() == "end" else int(end_text)
+            ranges.append((max(0, min(start, total_numel)), max(0, min(end, total_numel))))
+    else:
+        ranges = [
+            (start, min(start + chunk_numel, total_numel))
+            for start in range(0, total_numel, chunk_numel)
+        ]
+    if max_chunks > 0:
+        ranges = ranges[:max_chunks]
+    if tensor_name in selected:
+        flat = tensor.detach().flatten()
+        for chunk_idx, (start, end) in enumerate(ranges):
+            part = flat[start:end].cast("float32").cpu()
+            digest = hashlib.md5(part.numpy().tobytes()).hexdigest()
+            lines.append(
+                f"[DSV4_OPT_CHUNK_MD5] framework=fleet rank={rank} step={step} stage={stage} "
+                f"name={param_name} tensor={tensor_name} dtype={tensor.dtype} shape={list(tensor.shape)} "
+                f"total_numel={total_numel} chunk_idx={chunk_idx} offset={start} end={end} "
+                f"param_offset={base_offset + start} param_end={base_offset + end} md5_float32={digest}"
+            )
+    if tensor_name in transpose_selected and len(list(tensor.shape)) == 2:
+        flat_t = paddle.transpose(tensor.detach(), [1, 0]).flatten()
+        for chunk_idx, (start, end) in enumerate(ranges):
+            part = flat_t[start:end].cast("float32").cpu()
+            digest = hashlib.md5(part.numpy().tobytes()).hexdigest()
+            lines.append(
+                f"[DSV4_OPT_CHUNK_MD5_T] framework=fleet rank={rank} step={step} stage={stage} "
+                f"name={param_name} tensor={tensor_name} dtype={tensor.dtype} shape={list(tensor.shape)} "
+                f"total_numel={total_numel} chunk_idx={chunk_idx} offset={start} end={end} "
+                f"param_offset={base_offset + start} param_end={base_offset + end} md5_float32={digest}"
+            )
+    return lines
+
+
+def _dsv4_optimizer_semantic_t_chunk_md5_lines(
+    param_name: str,
+    step: int,
+    stage: str,
+    tensor_name: str,
+    tensor,
+    rank: int,
+    original_shape,
+    base_offset: int = 0,
+):
+    selected = {
+        item.strip()
+        for item in os.getenv(
+            "DSV4_OPTIMIZER_UPDATE_PROBE_SEMANTIC_T_CHUNK_MD5_TENSORS", ""
+        ).split(",")
+        if item.strip()
+    }
+    if not tensor_name or tensor_name not in selected:
+        return []
+    if original_shape is None or len(list(original_shape)) != 2:
+        return []
+
+    in_dim, out_dim = [int(dim) for dim in list(original_shape)]
+    total_numel = in_dim * out_dim
+    ranges_env = os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_SEMANTIC_T_CHUNK_MD5_RANGES", "")
+    if not ranges_env.strip():
+        chunk_numel = int(os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_SEMANTIC_T_CHUNK_MD5_NUMEL", "1048576"))
+        ranges = [
+            (start, min(start + chunk_numel, total_numel))
+            for start in range(0, total_numel, chunk_numel)
+        ]
+    else:
+        ranges = []
+        for item in ranges_env.split(","):
+            item = item.strip()
+            if not item:
+                continue
+            start_text, end_text = item.split(":", 1)
+            start = int(start_text)
+            end = total_numel if end_text.strip().lower() == "end" else int(end_text)
+            ranges.append((max(0, min(start, total_numel)), max(0, min(end, total_numel))))
+    max_chunks = int(os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_SEMANTIC_T_CHUNK_MD5_MAX_CHUNKS", "0"))
+    if max_chunks > 0:
+        ranges = ranges[:max_chunks]
+
+    try:
+        initialized = getattr(tensor, "_is_initialized", None) if tensor is not None else None
+        tensor_is_ready = tensor is not None and not (callable(initialized) and not initialized())
+    except Exception:
+        tensor_is_ready = tensor is not None
+    flat = tensor.detach().flatten() if tensor_is_ready else None
+    local_numel = int(np.prod(list(tensor.shape))) if tensor_is_ready else 0
+    local_start = int(base_offset) if tensor_is_ready else 0
+    local_end = local_start + local_numel
+    log_rank = int(os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_SEMANTIC_T_CHUNK_MD5_LOG_RANK", "0"))
+
+    lines = []
+    for chunk_idx, (start, end) in enumerate(ranges):
+        if end <= start:
+            continue
+        length = end - start
+        positions = paddle.arange(start, end, dtype="int64")
+        source_i = positions % in_dim
+        source_o = positions // in_dim
+        source_io = source_i * out_dim + source_o
+        merged = paddle.zeros([length], dtype="float32")
+        local_selected = 0
+        if tensor_is_ready and local_numel > 0:
+            mask = paddle.logical_and(source_io >= local_start, source_io < local_end)
+            selected_pos = paddle.nonzero(mask).flatten()
+            local_selected = int(np.prod(list(selected_pos.shape)))
+            if local_selected > 0:
+                local_idx = paddle.gather(source_io - local_start, selected_pos)
+                values = paddle.gather(flat, local_idx).cast("float32")
+                merged = paddle.scatter(merged, selected_pos, values, overwrite=True)
+        dist.all_reduce(merged, op=dist.ReduceOp.SUM)
+        if rank == log_rank:
+            digest = hashlib.md5(merged.cpu().numpy().tobytes()).hexdigest()
+            lines.append(
+                f"[DSV4_OPT_SEMANTIC_T_CHUNK_MD5] framework=fleet rank={rank} step={step} "
+                f"stage={stage} name={param_name} tensor={tensor_name} dtype={getattr(tensor, 'dtype', 'NA')} "
+                f"original_shape={tuple(original_shape)} semantic_shape=({out_dim}, {in_dim}) "
+                f"chunk_idx={chunk_idx} semantic_offset={start} semantic_end={end} "
+                f"local_base_offset={local_start} local_numel={local_numel} "
+                f"local_selected={local_selected} md5_float32={digest}"
+            )
+    return lines
+
+
+def _dsv4_optimizer_global_chunk_md5_lines(
+    param_name: str,
+    step: int,
+    stage: str,
+    tensor_name: str,
+    tensor,
+    rank: int,
+    original_numel,
+    base_offset: int = 0,
+):
+    selected = {
+        item.strip()
+        for item in os.getenv(
+            "DSV4_OPTIMIZER_UPDATE_PROBE_GLOBAL_CHUNK_MD5_TENSORS", ""
+        ).split(",")
+        if item.strip()
+    }
+    if not tensor_name or tensor_name not in selected:
+        return []
+    if original_numel in (None, "NA"):
+        return []
+
+    total_numel = int(original_numel)
+    ranges_env = os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_GLOBAL_CHUNK_MD5_RANGES", "")
+    if not ranges_env.strip():
+        chunk_numel = int(os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_GLOBAL_CHUNK_MD5_NUMEL", "1048576"))
+        ranges = [
+            (start, min(start + chunk_numel, total_numel))
+            for start in range(0, total_numel, chunk_numel)
+        ]
+    else:
+        ranges = []
+        for item in ranges_env.split(","):
+            item = item.strip()
+            if not item:
+                continue
+            start_text, end_text = item.split(":", 1)
+            start = int(start_text)
+            end = total_numel if end_text.strip().lower() == "end" else int(end_text)
+            ranges.append((max(0, min(start, total_numel)), max(0, min(end, total_numel))))
+    max_chunks = int(os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_GLOBAL_CHUNK_MD5_MAX_CHUNKS", "0"))
+    if max_chunks > 0:
+        ranges = ranges[:max_chunks]
+
+    try:
+        initialized = getattr(tensor, "_is_initialized", None) if tensor is not None else None
+        tensor_is_ready = tensor is not None and not (callable(initialized) and not initialized())
+    except Exception:
+        tensor_is_ready = tensor is not None
+    flat = tensor.detach().flatten() if tensor_is_ready else None
+    local_numel = int(np.prod(list(tensor.shape))) if tensor_is_ready else 0
+    local_start = int(base_offset) if tensor_is_ready else 0
+    local_end = local_start + local_numel
+    log_rank = int(os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_GLOBAL_CHUNK_MD5_LOG_RANK", "0"))
+
+    lines = []
+    for chunk_idx, (start, end) in enumerate(ranges):
+        if end <= start:
+            continue
+        length = end - start
+        merged = paddle.zeros([length], dtype="float32")
+        overlap_start = max(start, local_start)
+        overlap_end = min(end, local_end)
+        local_selected = 0
+        if tensor_is_ready and overlap_end > overlap_start:
+            local_selected = overlap_end - overlap_start
+            local_slice_start = overlap_start - local_start
+            local_slice_end = overlap_end - local_start
+            dest_start = overlap_start - start
+            values = flat[local_slice_start:local_slice_end].cast("float32")
+            merged[dest_start : dest_start + local_selected] = values
+        dist.all_reduce(merged, op=dist.ReduceOp.SUM)
+        if rank == log_rank:
+            digest = hashlib.md5(merged.cpu().numpy().tobytes()).hexdigest()
+            lines.append(
+                f"[DSV4_OPT_GLOBAL_CHUNK_MD5] framework=fleet rank={rank} step={step} "
+                f"stage={stage} name={param_name} tensor={tensor_name} dtype={getattr(tensor, 'dtype', 'NA')} "
+                f"total_numel={total_numel} chunk_idx={chunk_idx} global_offset={start} "
+                f"global_end={end} local_base_offset={local_start} local_numel={local_numel} "
+                f"local_selected={local_selected} md5_float32={digest}"
+            )
+    return lines
+
+
+def _dsv4_optimizer_save_slice(
+    param_name: str,
+    step: int,
+    stage: str,
+    tensor_name: str,
+    tensor,
+    rank: int,
+) -> None:
+    save_dir = os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_SAVE_DIR", "")
+    if not save_dir or tensor is None:
+        return
+    try:
+        initialized = getattr(tensor, "_is_initialized", None)
+        if callable(initialized) and not initialized():
+            return
+    except Exception:
+        pass
+    max_numel = int(os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_SAVE_NUMEL", "4096"))
+    offsets_env = os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_SAVE_OFFSETS", "")
+    if offsets_env.strip():
+        offsets = [int(item.strip()) for item in offsets_env.split(",") if item.strip()]
+    else:
+        offsets = [int(os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_SAVE_OFFSET", "0"))]
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", param_name)
+    os.makedirs(save_dir, exist_ok=True)
+    flat_tensor = tensor.detach().flatten()
+    total_numel = int(np.prod(list(tensor.shape)))
+    for offset in offsets:
+        if offset < 0:
+            offset = max(total_numel + offset, 0)
+        offset = min(offset, total_numel)
+        end = min(offset + max_numel, total_numel)
+        offset_suffix = "" if offset == 0 and len(offsets) == 1 else f"_offset{offset}"
+        path = os.path.join(
+            save_dir,
+            f"fleet_rank{rank}_step{step}_{stage}_{safe_name}_{tensor_name}{offset_suffix}.pd",
+        )
+        values = flat_tensor[offset:end].cast("float32").cpu()
+        paddle.save(
+            {
+                "framework": "fleet",
+                "rank": rank,
+                "step": step,
+                "stage": stage,
+                "name": param_name,
+                "tensor": tensor_name,
+                "shape": list(tensor.shape),
+                "dtype": str(tensor.dtype),
+                "offset": offset,
+                "total_numel": total_numel,
+                "values": values,
+            },
+            path,
+        )
+
+
+def _dsv4_get_optimizer_accumulator(inner_opt, attr_name: str, param):
+    acc_name = getattr(inner_opt, attr_name, None)
+    if not acc_name:
+        return None
+    try:
+        get_master = getattr(inner_opt, "_get_accumulator_master", None)
+        if callable(get_master):
+            acc = get_master(acc_name, param)
+            if acc is not None:
+                return acc
+    except Exception:
+        pass
+    try:
+        get_acc = getattr(inner_opt, "_get_accumulator", None)
+        if callable(get_acc):
+            return get_acc(acc_name, param)
+    except Exception:
+        return None
+    return None
+
+
+def _dsv4_optimizer_master_items(optimizer_chain):
+    for opt in optimizer_chain:
+        master_weights = getattr(opt, "_master_weights", None)
+        if isinstance(master_weights, dict):
+            for key, value in master_weights.items():
+                yield opt, key, value
+
+
+def _dsv4_find_optimizer_master(optimizer_chain, candidate_keys):
+    for opt, key, value in _dsv4_optimizer_master_items(optimizer_chain):
+        if key in candidate_keys:
+            return value, key, type(opt).__name__
+    return None, "NA", "NA"
+
+
+def _dsv4_find_optimizer_accumulator(optimizer_chain, attr_name: str, params):
+    for opt in optimizer_chain:
+        for param in params:
+            acc = _dsv4_get_optimizer_accumulator(opt, attr_name, param)
+            if acc is not None:
+                return acc, type(opt).__name__, getattr(param, "name", "NA")
+    return None, "NA", "NA"
+
+
+def _dsv4_optimizer_debug_summary(optimizer_chain, slice_params, rank: int, stage: str) -> None:
+    if os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_DEBUG", "0") != "1":
+        return
+    chain_desc = []
+    for idx, opt in enumerate(optimizer_chain):
+        master_weights = getattr(opt, "_master_weights", None)
+        param_groups = getattr(opt, "_param_groups", None)
+        parameter_list = getattr(opt, "_parameter_list", None)
+        master_count = len(master_weights) if isinstance(master_weights, dict) else "NA"
+        group_count = len(param_groups) if isinstance(param_groups, list) else "NA"
+        parameter_count = len(parameter_list) if isinstance(parameter_list, list) else "NA"
+        chain_desc.append(
+            f"{idx}:{type(opt).__name__}(masters={master_count},groups={group_count},params={parameter_count})"
+        )
+    logger.info(
+        f"[DSV4_OPT_UPDATE_DEBUG] framework=fleet rank={rank} stage={stage} "
+        f"optimizer_chain={'/'.join(chain_desc)} slice_params={len(slice_params)}"
+    )
+    sample_limit = int(os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_DEBUG_KEY_SAMPLES", "12"))
+    samples = []
+    for opt, key, value in _dsv4_optimizer_master_items(optimizer_chain):
+        samples.append(f"{type(opt).__name__}:{key}:{list(value.shape)}:{value.dtype}")
+        if len(samples) >= sample_limit:
+            break
+    logger.info(
+        f"[DSV4_OPT_UPDATE_DEBUG] framework=fleet rank={rank} stage={stage} "
+        f"master_key_samples={'|'.join(samples) if samples else 'NA'}"
+    )
+    for idx, opt in enumerate(optimizer_chain):
+        apply_opt = getattr(opt, "_apply_optimize", None)
+        append_opt = getattr(opt, "_append_optimize_op", None)
+        logger.info(
+            f"[DSV4_OPT_UPDATE_DEBUG] framework=fleet rank={rank} stage={stage} "
+            f"chain_idx={idx} opt_type={type(opt).__name__} "
+            f"apply_optimize_owner={getattr(apply_opt, '__qualname__', 'NA')} "
+            f"append_optimize_owner={getattr(append_opt, '__qualname__', 'NA')}"
+        )
+
+
+def _dsv4_get_optimizer_lr(inner_opt, param):
+    try:
+        lr = inner_opt._create_param_lr((param, None))
+        if isinstance(lr, paddle.Tensor):
+            return f"{float(lr.detach().cast('float32').numpy().reshape([-1])[0]):.20f}"
+        return str(lr)
+    except Exception:
+        return "NA"
+
+
+@paddle.no_grad()
+def _dsv4_sync_optimizer_lr_tensor_from_scheduler(optimizer, lr_scheduler) -> None:
+    if os.getenv("DSV4_FLEET_SYNC_OPTIMIZER_LR_TENSOR", "0") != "1":
+        return
+    if lr_scheduler is None:
+        return
+    try:
+        lr_value = float(lr_scheduler())
+    except Exception:
+        try:
+            lr_value = float(lr_scheduler.get_lr())
+        except Exception:
+            return
+
+    synced = 0
+    for opt in _dsv4_optimizer_chain(optimizer):
+        learning_rate = getattr(opt, "_learning_rate", None)
+        if learning_rate is None or not callable(learning_rate):
+            continue
+        try:
+            lr_tensor = opt._global_learning_rate()
+        except Exception:
+            lr_tensor = None
+        if not isinstance(lr_tensor, paddle.Tensor):
+            continue
+        lr_tensor.set_value(paddle.full(lr_tensor.shape, lr_value, dtype=lr_tensor.dtype))
+        synced += 1
+
+    if os.getenv("DSV4_FLEET_SYNC_OPTIMIZER_LR_TENSOR_DEBUG", "0") == "1":
+        try:
+            rank = dist.get_rank()
+        except Exception:
+            rank = 0
+        logger.info(
+            f"[DSV4_LR_SYNC] framework=fleet rank={rank} lr={lr_value:.20f} synced_tensors={synced}"
+        )
+
+
+@paddle.no_grad()
+def _dsv4_log_optimizer_update_probe(model: nn.Layer, optimizer, step: int, stage: str) -> None:
+    if not _dsv4_optimizer_update_probe_enabled():
+        return
+    if not _dsv4_optimizer_update_probe_stage_enabled(stage):
+        return
+    if not _dsv4_optimizer_update_probe_step_enabled(step):
+        return
+    try:
+        rank = dist.get_rank()
+    except Exception:
+        rank = 0
+    if not _dsv4_optimizer_update_probe_rank_enabled(rank):
+        return
+
+    inner_opt = _dsv4_unwrap_optimizer(optimizer)
+    optimizer_chain = _dsv4_optimizer_chain(optimizer)
+    sharding_opt = _dsv4_find_sharding_optimizer(optimizer)
+    slice_params = getattr(sharding_opt, "_slice_params", {}) if sharding_opt is not None else {}
+    _dsv4_optimizer_debug_summary(optimizer_chain, slice_params, rank, stage)
+    grad_view_map = {}
+    if sharding_opt is not None:
+        for comm_buffer in getattr(sharding_opt, "_comm_buffer_list", []) or []:
+            views = getattr(comm_buffer, "_sharding_param_grad_view", {}) or {}
+            grad_view_map.update(views)
+
+    max_lines = int(os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_MAX_LINES", "40"))
+    lines = []
+    if os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_OPT_PARAMS_ONLY", "0") == "1":
+        opt_params = getattr(inner_opt, "_parameter_list", [])
+        if opt_params and isinstance(opt_params[0], dict):
+            flat_params = []
+            for group in opt_params:
+                flat_params.extend(group.get("params", []))
+            opt_params = flat_params
+        for idx, param in enumerate(opt_params):
+            name = getattr(param, "name", f"opt_param_{idx}")
+            if not _dsv4_optimizer_update_probe_should_log(name):
+                continue
+            grad = getattr(param, "main_grad", None)
+            grad_source = "opt_param_main_grad"
+            if grad is None:
+                grad = getattr(param, "grad", None)
+                grad_source = "opt_param_grad"
+            if grad is None:
+                try:
+                    grad = param._grad_ivar()
+                    grad_source = "opt_param_grad_ivar"
+                except Exception:
+                    grad = None
+            if grad is None:
+                grad_shape = grad_dtype = grad_numel = grad_stream_md5 = "NA"
+            else:
+                grad_shape = str(list(grad.shape))
+                grad_dtype = str(grad.dtype)
+                grad_numel = str(int(np.prod(list(grad.shape))))
+                grad_stream_md5 = _dsv4_optimizer_stream_md5(grad, "grad")
+            grad_view = grad_view_map.get(name)
+            if grad_view is None:
+                view_index = view_padded_size = view_param_begin = view_param_end = "NA"
+                view_rank_begin = param_offset_start = param_offset_end = "NA"
+                chunk_base_offset = 0
+            else:
+                view_index = int(getattr(grad_view, "_index", 0))
+                view_padded_size = int(getattr(grad_view, "_padded_size", 0))
+                view_param_begin = int(getattr(grad_view, "_param_begin", 0))
+                view_param_end = int(getattr(grad_view, "_param_end", 0))
+                view_rank_begin = int(getattr(grad_view, "_rank_begin", 0))
+                param_offset_start = max(0, view_param_begin - view_index)
+                param_offset_end = max(0, view_param_end - view_index)
+                chunk_base_offset = param_offset_start
+            original_shape = getattr(param, "_dsv4_original_shape", None)
+            original_numel = (
+                int(np.prod(list(original_shape))) if original_shape is not None else "NA"
+            )
+            candidate_keys = {str(item) for item in (name, getattr(param, "name", None)) if item is not None}
+            master, master_key, master_owner = _dsv4_find_optimizer_master(optimizer_chain, candidate_keys)
+            moment1, moment1_owner, moment1_param_name = _dsv4_find_optimizer_accumulator(
+                optimizer_chain, "_moment1_acc_str", [param]
+            )
+            moment2, moment2_owner, moment2_param_name = _dsv4_find_optimizer_accumulator(
+                optimizer_chain, "_moment2_acc_str", [param]
+            )
+            lines.append(
+                f"[DSV4_OPT_UPDATE] framework=fleet rank={rank} step={step} stage={stage} "
+                f"opt_param_idx={idx} name={name} grad_source={grad_source} "
+                f"grad_shape={grad_shape} grad_dtype={grad_dtype} grad_numel={grad_numel} "
+                f"grad_stream_md5={grad_stream_md5} original_shape={original_shape} "
+                f"original_numel={original_numel} view_index={view_index} "
+                f"view_padded_size={view_padded_size} view_rank_begin={view_rank_begin} "
+                f"view_param_begin={view_param_begin} view_param_end={view_param_end} "
+                f"param_offset_start={param_offset_start} param_offset_end={param_offset_end} "
+                f"master_owner={master_owner} master_key={master_key} "
+                f"moment1_owner={moment1_owner} moment1_param={moment1_param_name} "
+                f"moment2_owner={moment2_owner} moment2_param={moment2_param_name}"
+            )
+            lines.extend(
+                _dsv4_optimizer_global_chunk_md5_lines(
+                    name,
+                    step,
+                    stage,
+                    "param",
+                    param,
+                    rank,
+                    original_numel,
+                    base_offset=chunk_base_offset,
+                )
+            )
+            lines.extend(
+                _dsv4_optimizer_global_chunk_md5_lines(
+                    name,
+                    step,
+                    stage,
+                    "master",
+                    master,
+                    rank,
+                    original_numel,
+                    base_offset=chunk_base_offset,
+                )
+            )
+            lines.extend(
+                _dsv4_optimizer_global_chunk_md5_lines(
+                    name,
+                    step,
+                    stage,
+                    "moment1",
+                    moment1,
+                    rank,
+                    original_numel,
+                    base_offset=chunk_base_offset,
+                )
+            )
+            lines.extend(
+                _dsv4_optimizer_global_chunk_md5_lines(
+                    name,
+                    step,
+                    stage,
+                    "moment2",
+                    moment2,
+                    rank,
+                    original_numel,
+                    base_offset=chunk_base_offset,
+                )
+            )
+            lines.extend(
+                _dsv4_optimizer_chunk_md5_lines(
+                    name, step, stage, "grad", grad, rank, base_offset=chunk_base_offset
+                )
+            )
+            lines.extend(
+                _dsv4_optimizer_semantic_t_chunk_md5_lines(
+                    name,
+                    step,
+                    stage,
+                    "grad",
+                    grad,
+                    rank,
+                    original_shape,
+                    base_offset=chunk_base_offset,
+                )
+            )
+            lines.extend(
+                _dsv4_optimizer_global_chunk_md5_lines(
+                    name,
+                    step,
+                    stage,
+                    "grad",
+                    grad,
+                    rank,
+                    original_numel,
+                    base_offset=chunk_base_offset,
+                )
+            )
+        use_print = os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_PRINT", "0") == "1"
+        emit = (lambda msg: print(msg, flush=True)) if use_print else logger.info
+        for line in lines[:max_lines]:
+            emit(line)
+        if len(lines) > max_lines:
+            emit(
+                f"[DSV4_OPT_UPDATE] framework=fleet rank={rank} step={step} "
+                f"stage={stage} truncated={len(lines) - max_lines}"
+            )
+        return
+
+    for param_name, param in model.named_parameters():
+        if not _dsv4_optimizer_update_probe_should_log(param_name):
+            continue
+        slice_param = slice_params.get(param.name, param)
+        grad = getattr(slice_param, "main_grad", None)
+        grad_source = "slice_main_grad"
+        if grad is None:
+            grad = getattr(slice_param, "grad", None)
+            grad_source = "slice_grad"
+        if grad is None:
+            grad = getattr(param, "main_grad", None)
+            grad_source = "model_main_grad"
+        if grad is None:
+            grad = getattr(param, "grad", None)
+            grad_source = "model_grad"
+
+        if os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_GRAD_ONLY", "0") == "1":
+            if grad is None:
+                grad_shape = grad_dtype = grad_numel = grad_stream_md5 = "NA"
+            else:
+                grad_shape = str(list(grad.shape))
+                grad_dtype = str(grad.dtype)
+                grad_numel = str(int(np.prod(list(grad.shape))))
+                grad_stream_md5 = _dsv4_optimizer_stream_md5(grad, "grad")
+            lines.append(
+                f"[DSV4_OPT_UPDATE] framework=fleet rank={rank} step={step} stage={stage} "
+                f"name={param_name} param_name={param.name} slice_name={getattr(slice_param, 'name', None)} "
+                f"grad_source={grad_source} grad_shape={grad_shape} grad_dtype={grad_dtype} "
+                f"grad_numel={grad_numel} grad_stream_md5={grad_stream_md5}"
+            )
+            continue
+
+        model_shape, model_dtype, model_norm, model_md5 = _dsv4_optimizer_tensor_stats(param)
+        slice_shape, slice_dtype, slice_norm, slice_md5 = _dsv4_optimizer_tensor_stats(slice_param)
+        grad_shape, grad_dtype, grad_norm, grad_md5 = _dsv4_optimizer_tensor_stats(grad)
+        candidate_keys = {
+            str(item)
+            for item in (
+                getattr(param, "name", None),
+                getattr(slice_param, "name", None),
+                param_name,
+            )
+            if item is not None
+        }
+        master, master_key, master_owner = _dsv4_find_optimizer_master(optimizer_chain, candidate_keys)
+        master_shape, master_dtype, master_norm, master_md5 = _dsv4_optimizer_tensor_stats(master)
+
+        param_candidates = []
+        for item in (slice_param, param):
+            if item is not None and all(item is not existing for existing in param_candidates):
+                param_candidates.append(item)
+        moment1, moment1_owner, moment1_param_name = _dsv4_find_optimizer_accumulator(
+            optimizer_chain, "_moment1_acc_str", param_candidates
+        )
+        moment2, moment2_owner, moment2_param_name = _dsv4_find_optimizer_accumulator(
+            optimizer_chain, "_moment2_acc_str", param_candidates
+        )
+        beta1_pow, beta1_pow_owner, beta1_pow_param_name = _dsv4_find_optimizer_accumulator(
+            optimizer_chain, "_beta1_pow_acc_str", param_candidates
+        )
+        beta2_pow, beta2_pow_owner, beta2_pow_param_name = _dsv4_find_optimizer_accumulator(
+            optimizer_chain, "_beta2_pow_acc_str", param_candidates
+        )
+        _, _, moment1_norm, moment1_md5 = _dsv4_optimizer_tensor_stats(moment1)
+        _, _, moment2_norm, moment2_md5 = _dsv4_optimizer_tensor_stats(moment2)
+        _, _, beta1_pow_norm, beta1_pow_md5 = _dsv4_optimizer_tensor_stats(beta1_pow)
+        _, _, beta2_pow_norm, beta2_pow_md5 = _dsv4_optimizer_tensor_stats(beta2_pow)
+        model_stream_md5 = _dsv4_optimizer_stream_md5(param, "model")
+        slice_stream_md5 = _dsv4_optimizer_stream_md5(slice_param, "slice")
+        grad_stream_md5 = _dsv4_optimizer_stream_md5(grad, "grad")
+        master_stream_md5 = _dsv4_optimizer_stream_md5(master, "master")
+        moment1_stream_md5 = _dsv4_optimizer_stream_md5(moment1, "moment1")
+        moment2_stream_md5 = _dsv4_optimizer_stream_md5(moment2, "moment2")
+
+        _dsv4_optimizer_save_slice(param_name, step, stage, "model", param, rank)
+        _dsv4_optimizer_save_slice(param_name, step, stage, "slice", slice_param, rank)
+        _dsv4_optimizer_save_slice(param_name, step, stage, "grad", grad, rank)
+        _dsv4_optimizer_save_slice(param_name, step, stage, "master", master, rank)
+        _dsv4_optimizer_save_slice(param_name, step, stage, "moment1", moment1, rank)
+        _dsv4_optimizer_save_slice(param_name, step, stage, "moment2", moment2, rank)
+        _dsv4_optimizer_save_slice(param_name, step, stage, "beta1_pow", beta1_pow, rank)
+        _dsv4_optimizer_save_slice(param_name, step, stage, "beta2_pow", beta2_pow, rank)
+        lines.extend(_dsv4_optimizer_chunk_md5_lines(param_name, step, stage, "model", param, rank))
+        lines.extend(
+            _dsv4_optimizer_chunk_md5_lines(param_name, step, stage, "slice", slice_param, rank)
+        )
+        lines.extend(_dsv4_optimizer_chunk_md5_lines(param_name, step, stage, "grad", grad, rank))
+        lines.extend(
+            _dsv4_optimizer_chunk_md5_lines(param_name, step, stage, "master", master, rank)
+        )
+        lines.extend(
+            _dsv4_optimizer_chunk_md5_lines(param_name, step, stage, "moment1", moment1, rank)
+        )
+        lines.extend(
+            _dsv4_optimizer_chunk_md5_lines(param_name, step, stage, "moment2", moment2, rank)
+        )
+
+        lines.append(
+            f"[DSV4_OPT_UPDATE] framework=fleet rank={rank} step={step} stage={stage} "
+            f"name={param_name} param_name={param.name} slice_name={getattr(slice_param, 'name', None)} "
+            f"model_shape={model_shape} model_dtype={model_dtype} model_norm={model_norm} model_md5={model_md5} "
+            f"slice_shape={slice_shape} slice_dtype={slice_dtype} slice_norm={slice_norm} slice_md5={slice_md5} "
+            f"grad_source={grad_source} grad_shape={grad_shape} grad_dtype={grad_dtype} "
+            f"grad_norm={grad_norm} grad_md5={grad_md5} "
+            f"master_owner={master_owner} master_key={master_key} master_shape={master_shape} "
+            f"master_dtype={master_dtype} master_norm={master_norm} master_md5={master_md5} "
+            f"moment1_owner={moment1_owner} moment1_param={moment1_param_name} "
+            f"moment1_norm={moment1_norm} moment1_md5={moment1_md5} "
+            f"moment2_owner={moment2_owner} moment2_param={moment2_param_name} "
+            f"moment2_norm={moment2_norm} moment2_md5={moment2_md5} "
+            f"beta1_pow_owner={beta1_pow_owner} beta1_pow_param={beta1_pow_param_name} "
+            f"beta1_pow_norm={beta1_pow_norm} beta1_pow_md5={beta1_pow_md5} "
+            f"beta2_pow_owner={beta2_pow_owner} beta2_pow_param={beta2_pow_param_name} "
+            f"beta2_pow_norm={beta2_pow_norm} beta2_pow_md5={beta2_pow_md5} "
+            f"model_stream_md5={model_stream_md5} slice_stream_md5={slice_stream_md5} "
+            f"grad_stream_md5={grad_stream_md5} master_stream_md5={master_stream_md5} "
+            f"moment1_stream_md5={moment1_stream_md5} moment2_stream_md5={moment2_stream_md5} "
+            f"lr={_dsv4_get_optimizer_lr(inner_opt, slice_param)}"
+        )
+
+    use_print = os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_PRINT", "0") == "1"
+    emit = (lambda msg: print(msg, flush=True)) if use_print else logger.info
+    log_dir = os.getenv("DSV4_OPTIMIZER_UPDATE_PROBE_LOG_DIR", "")
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, f"fleet_rank{rank}_{stage}.log")
+        with open(log_path, "a", encoding="utf-8") as f:
+            for line in lines[:max_lines]:
+                f.write(line + "\n")
+            if len(lines) > max_lines:
+                f.write(
+                    f"[DSV4_OPT_UPDATE] framework=fleet rank={rank} step={step} "
+                    f"stage={stage} truncated={len(lines) - max_lines}\n"
+                )
+    for line in lines[:max_lines]:
+        emit(line)
+    if len(lines) > max_lines:
+        emit(
+            f"[DSV4_OPT_UPDATE] framework=fleet rank={rank} step={step} "
+            f"stage={stage} truncated={len(lines) - max_lines}"
+        )
+
+
+@paddle.no_grad()
+def _dsv4_log_grad_inventory(model: nn.Layer, step: int, stage: str = "pre_optimizer") -> None:
+    if not _dsv4_grad_inventory_enabled():
+        return
+    if not _dsv4_grad_inventory_stage_enabled(stage):
+        return
+    if not _dsv4_grad_inventory_step_enabled(step):
+        return
+    try:
+        rank = dist.get_rank()
+    except Exception:
+        rank = 0
+    if not _dsv4_grad_inventory_rank_enabled(rank):
+        return
+
+    category_sums: dict[str, paddle.Tensor] = {}
+    category_lines: list[str] = []
+    param_lines: list[str] = []
+    named_parameters = model.named_parameters() if hasattr(model, "named_parameters") else []
+    use_print = os.getenv("DSV4_GRAD_INVENTORY_PRINT", "0") == "1"
+    emit = (lambda msg: print(msg, flush=True)) if use_print else logger.info
+
+    for param_name, param in named_parameters:
+        grad = getattr(param, "main_grad", None)
+        grad_source = "main_grad"
+        if grad is None:
+            grad = getattr(param, "grad", None)
+            grad_source = "grad"
+        if grad is None:
+            continue
+
+        category = _dsv4_grad_category(param_name)
+        grad_fp32 = grad.detach().cast("float32")
+        grad_square_sum = paddle.sum(grad_fp32 * grad_fp32)
+        category_sums[category] = category_sums.get(category, paddle.zeros_like(grad_square_sum)) + grad_square_sum
+
+        numel = int(np.prod(list(grad.shape)))
+        norm = float(paddle.sqrt(grad_square_sum).item())
+        if _dsv4_grad_inventory_should_log_param(param_name, numel):
+            max_numel = int(os.getenv("DSV4_GRAD_INVENTORY_MD5_MAX_NUMEL", "5000000"))
+            md5 = _dsv4_tensor_md5_float32(grad) if numel <= max_numel else "SKIP"
+            md5_t = _dsv4_tensor_md5_float32_t(grad) if numel <= max_numel else "SKIP"
+            dump_paths = _dsv4_dump_grad_tensor("fleet", rank, step, stage, param_name, grad, grad_source)
+            param_lines.append(
+                f"[DSV4_GRAD_PARAM] framework=fleet rank={rank} step={step} "
+                f"stage={stage} category={category} name={param_name} source={grad_source} "
+            f"shape={list(grad.shape)} dtype={grad.dtype} numel={numel} "
+            f"norm={norm:.20f} md5_float32={md5} md5_float32_t={md5_t} "
+            f"is_distributed={getattr(param, 'is_distributed', None)} "
+            f"no_sync={getattr(param, 'no_sync', None)} "
+            f"grad_added_to_main_grad={getattr(param, 'grad_added_to_main_grad', None)} "
+            f"color={getattr(param, 'color', None)} "
+            f"dump_paths={','.join(dump_paths) if dump_paths else 'NA'}"
+        )
+
+    for category in sorted(category_sums):
+        norm = float(paddle.sqrt(category_sums[category]).item())
+        scalar = paddle.to_tensor([norm], dtype="float32")
+        category_lines.append(
+            f"[DSV4_GRAD_CATEGORY] framework=fleet rank={rank} step={step} "
+            f"stage={stage} category={category} norm={norm:.20f} "
+            f"md5_float32={_dsv4_tensor_md5_float32(scalar)}"
+        )
+
+    max_param_lines = int(os.getenv("DSV4_GRAD_INVENTORY_MAX_PARAM_LINES", "80"))
+    _dsv4_emit_inventory_lines(
+        "fleet", "grad", rank, step, stage, category_lines + param_lines, max_param_lines, emit
+    )
+
+
+def _dsv4_param_inventory_enabled() -> bool:
+    return os.getenv("DSV4_LOG_PARAM_INVENTORY", "0") == "1"
+
+
+def _dsv4_param_inventory_stage_enabled(stage: str) -> bool:
+    stages = os.getenv("DSV4_PARAM_INVENTORY_STAGES", "post_optimizer")
+    selected = {item.strip() for item in stages.split(",") if item.strip()}
+    return "all" in selected or stage in selected
+
+
+def _dsv4_param_inventory_step_enabled(step: int) -> bool:
+    steps = os.getenv("DSV4_PARAM_INVENTORY_STEPS", "")
+    if not steps:
+        return True
+    selected = {item.strip() for item in steps.split(",") if item.strip()}
+    return "all" in selected or str(step) in selected
+
+
+@paddle.no_grad()
+def _dsv4_log_param_inventory(model: nn.Layer, step: int, stage: str = "post_optimizer") -> None:
+    if not _dsv4_param_inventory_enabled():
+        return
+    if not _dsv4_param_inventory_stage_enabled(stage):
+        return
+    if not _dsv4_param_inventory_step_enabled(step):
+        return
+    try:
+        rank = dist.get_rank()
+    except Exception:
+        rank = 0
+    if not _dsv4_grad_inventory_rank_enabled(rank):
+        return
+
+    max_param_lines = int(os.getenv("DSV4_PARAM_INVENTORY_MAX_PARAM_LINES", "80"))
+    max_numel = int(os.getenv("DSV4_PARAM_INVENTORY_MD5_MAX_NUMEL", "5000000"))
+    param_lines: list[str] = []
+    use_print = os.getenv("DSV4_PARAM_INVENTORY_PRINT", "0") == "1"
+    emit = (lambda msg: print(msg, flush=True)) if use_print else logger.info
+
+    named_parameters = model.named_parameters() if hasattr(model, "named_parameters") else []
+    for param_name, param in named_parameters:
+        numel = int(np.prod(list(param.shape)))
+        if not _dsv4_grad_inventory_should_log_param(param_name, numel):
+            continue
+        tensor_fp32 = param.detach().cast("float32")
+        norm = float(paddle.linalg.norm(tensor_fp32).item())
+        md5 = _dsv4_tensor_md5_float32(param) if numel <= max_numel else "SKIP"
+        md5_t = _dsv4_tensor_md5_float32_t(param) if numel <= max_numel else "SKIP"
+        param_lines.append(
+            f"[DSV4_PARAM] framework=fleet rank={rank} step={step} stage={stage} "
+            f"category={_dsv4_grad_category(param_name)} name={param_name} "
+            f"inner_name={getattr(param, 'name', 'NA')} "
+            f"shape={list(param.shape)} dtype={param.dtype} numel={numel} "
+            f"norm={norm:.20f} md5_float32={md5} md5_float32_t={md5_t} "
+            f"is_distributed={getattr(param, 'is_distributed', None)} "
+            f"no_sync={getattr(param, 'no_sync', None)} "
+            f"allreduce={getattr(param, 'allreduce', None)} "
+            f"color={getattr(param, 'color', None)}"
+        )
+
+    _dsv4_emit_inventory_lines("fleet", "param", rank, step, stage, param_lines, max_param_lines, emit)
+
+
 from .argparser import strtobool
 from .integrations import get_reporting_integration_callbacks
 from .plugins.timer import RuntimeTimer, get_timers, set_timers
@@ -171,7 +1380,6 @@ from .trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
     InterleaveGateUpCallback,
-    InternalMedicineCallback,
     PrinterCallback,
     ProgressCallback,
     SPGradSyncCallback,
@@ -493,15 +1701,7 @@ class Trainer:
             assert (isinstance(model, LoRAModel) and isinstance(model.model, PipelineLayer)) or isinstance(
                 model, PipelineLayer
             ), f"Only support pipeline parallel mode when model is PipelineLayer or PipelineLayer!!! but get {type(model.model)}"
-        default_callbacks = DEFAULT_CALLBACKS.copy()
-        if getattr(self.args, "internal_medicine_monitors", ""):
-            default_callbacks.append(
-                InternalMedicineCallback(
-                    monitors=self.args.internal_medicine_monitors,
-                    monitor_interval=self.args.internal_medicine_monitor_interval,
-                )
-            )
-        default_callbacks += get_reporting_integration_callbacks(self.args.report_to)
+        default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(self.args.report_to)
         callbacks = default_callbacks if callbacks is None else default_callbacks + callbacks
         self.callback_handler = CallbackHandler(
             callbacks, self.model, self.tokenizer, self.optimizer, self.lr_scheduler
@@ -992,27 +2192,6 @@ class Trainer:
         if resume_from_checkpoint is None:
             return
 
-        if self.args.zcc_save_ema_coef is None:
-            return
-
-        # Path A: main process completed EMA reshard, pass via shared memory
-        if hasattr(self, "_ema_reshard_result") and self._ema_reshard_result is not None:
-            # Pass tensor_refs to manager so it can keep them alive until workers consume
-            tensor_refs = getattr(self, "_ema_shared_tensor_refs", None)
-            shm_filenames = getattr(self, "_ema_shm_filenames", [])
-            num_refs = len(tensor_refs) if tensor_refs else 0
-            logger.info(f"[EMA Reshard] Transferring {num_refs} shared memory refs to manager")
-            self.zcc_manager.set_ema_shared_memory(
-                self._ema_reshard_result, tensor_refs=tensor_refs, shm_filenames=shm_filenames
-            )
-            # Clear local refs (manager now owns them, refcount NOT zero yet)
-            self._ema_shared_tensor_refs = None
-            self._ema_reshard_result = None
-            self._ema_shm_filenames = None
-            logger.info("[EMA Reshard] Local refs cleared, manager holds ownership until workers consume")
-            return
-
-        # Path B: no reshard needed, subprocess loads from file (existing logic)
         ema_state_path = self._get_ema_state_path(resume_from_checkpoint)
 
         if not os.path.exists(ema_state_path):
@@ -1076,6 +2255,7 @@ class Trainer:
         logger.info("Zero cost checkpoint manager created successfully.")
 
     def add_non_zcc_ema_callback(self, resume_from_checkpoint, ema_state_assembler=None):
+
         non_zcc_ema_callback = NonZCCEMACallback.create_nonzcc_callback(
             args=self.args,
             resume_from_checkpoint=resume_from_checkpoint,
@@ -1085,6 +2265,7 @@ class Trainer:
             hcg=self.hcg,
             ema_state_assembler=ema_state_assembler,
         )
+
         self.add_callback(non_zcc_ema_callback)
 
     def _save_flex_model_state(self, output_dir):
@@ -1224,31 +2405,6 @@ class Trainer:
         if not self.args.sharded_model_from_ema:
             init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
 
-            # ===== EMA State Resharding for ZCC (right after optimizer init) =====
-            # Non-ZCC handles reshard internally in EMABufferFcBased._load()
-            self._ema_reshard_result = None
-            if self.args.enable_zero_cost_checkpoint:
-                ema_state_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC)
-                if (
-                    os.path.exists(ema_state_path)
-                    and self.args.zcc_save_ema_coef is not None
-                    and self._is_fc_format_ema(ema_state_path)
-                ):
-                    same_strategy, err_msg = DistInfoCollectorValidator(self.args, self.hcg).check_same_strategy(
-                        resume_from_checkpoint
-                    )
-
-                    if not same_strategy:
-                        logger.info(
-                            f"[EMA Reshard] Parallelism strategy changed ({err_msg}), performing EMA reshard..."
-                        )
-                        self._ema_reshard_result = self._load_ema_with_reshard(
-                            ema_state_path, flex_ckpt_comm_method, worker_groups
-                        )
-                        logger.info("[EMA Reshard] EMA reshard completed, results stored for subprocess")
-                    else:
-                        logger.info("[EMA Reshard] Same strategy, subprocess will load EMA directly from file")
-
             optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
             opt_states = {}
             master_weights = {}
@@ -1258,12 +2414,10 @@ class Trainer:
                 else:
                     opt_states[k] = v
 
-            # use filtered AOA for master_weight (excludes FP32-only params)
-            master_weight_aoa = getattr(self.args, "aoa_config_master_weight", None) or self.args.aoa_config
             dist.load_state_dict(
                 master_weights,
                 master_weights_path,
-                aoa_config=master_weight_aoa,
+                aoa_config=self.args.aoa_config,
                 offload=self.args.load_via_cpu,
                 comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
@@ -1299,34 +2453,13 @@ class Trainer:
         logger.debug(f"enable_bf16_opt: {enable_bf16_opt}")
 
         if self.args.sharded_model_from_ema:
-            ema_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC)
-            if self._is_fc_format_ema(ema_path):
-                model_sharded_state_dict = self.model.sharded_state_dict()
-                init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
-                optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
-                ema_state = {}
-                for k, v in model_sharded_state_dict.items():
-                    if v.local_tensor.dtype == paddle.float32:
-                        ema_state[k] = v
-                for k, v in optimizer_sharded_state_dict.items():
-                    if k.endswith(".w_0"):
-                        ema_state[k] = v
-                dist.load_state_dict(
-                    ema_state,
-                    ema_path,
-                    aoa_config=self.args.aoa_config,
-                    offload=self.args.load_via_cpu,
-                    comm_method=flex_ckpt_comm_method,
-                    worker_groups=worker_groups,
-                )
-            else:
-                ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
-                ema_state_dict = paddle.load(ema_states_path)
-                ema_master_weights = ema_state_dict.pop("master_weights", None)
-                opt_state_dict = {"master_weights": ema_master_weights}
-                self.optimizer.set_state_dict(opt_state_dict)
+            ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
+            ema_state_dict = paddle.load(ema_states_path)
+            ema_master_weights = ema_state_dict.pop("master_weights", None)
+            opt_state_dict = {"master_weights": ema_master_weights}
+            self.optimizer.set_state_dict(opt_state_dict)
 
-                self.model.set_state_dict(ema_state_dict)
+            self.model.set_state_dict(ema_state_dict)
         else:
 
             def bf16_filtered_sharded_state_dict(sharded_state_dict):
@@ -1339,13 +2472,7 @@ class Trainer:
 
             # NOTE(xingmingyyj) When saving model states only in float32 format, we assume that users
             # will not use AOA to change the mapping relationships among these float32 weights.
-            if os.getenv("HACK_CONVERT_CKPT", "0").lower() in ["true", "1"]:
-                # model_state only loads params not in master_weight
-                # params in master_weight will be cast from master_weight
-                if enable_bf16_opt:
-                    model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
-                aoa_config = getattr(self.args, "aoa_config_model_state", None)
-            elif enable_bf16_opt:
+            if enable_bf16_opt:
                 model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
                 aoa_config = None
             else:
@@ -1463,82 +2590,6 @@ class Trainer:
                             paddle.assign(
                                 paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key]
                             )
-
-    def _is_fc_format_ema(self, ema_state_path):
-        """Check if EMA state is in FC format by looking for .metadata file."""
-        if not os.path.isdir(ema_state_path):
-            return False
-        return any(f.endswith(".metadata") for f in os.listdir(ema_state_path))
-
-    def _load_ema_with_reshard(self, ema_state_path, comm_method, worker_groups):
-        """Use FlexCheckpoint to reshard EMA state, return shared memory metas for subprocess."""
-        model_sharded_state_dict = self.model.sharded_state_dict()
-        opt_sharded = self.optimizer.sharded_state_dict(model_sharded_state_dict)
-        ema_target = {}
-
-        # master_weights portion: use .w_0 keys directly (same as optimizer master_weights key format)
-        for k, sw in opt_sharded.items():
-            if k.endswith(".w_0"):
-                local_tensor = paddle.zeros(sw.local_tensor.shape, dtype=paddle.float32)
-                ema_target[k] = ShardedWeight(
-                    key=sw.key,
-                    local_tensor=local_tensor,
-                    local_shape=sw.local_shape,
-                    global_shape=sw.global_shape,
-                    global_offset=sw.global_offset,
-                    is_flattened=sw.is_flattened,
-                    flattened_range=sw.flattened_range,
-                )
-
-        # model_params portion: float32 items from model sharded state dict (no suffix change)
-        for k, sw in model_sharded_state_dict.items():
-            if sw.local_tensor.dtype == paddle.float32:
-                local_tensor = paddle.zeros(sw.local_shape, dtype=paddle.float32)
-                ema_target[k] = ShardedWeight(
-                    key=sw.key,
-                    local_tensor=local_tensor,
-                    local_shape=sw.local_shape,
-                    global_shape=sw.global_shape,
-                    global_offset=sw.global_offset,
-                    is_flattened=getattr(sw, "is_flattened", False),
-                    flattened_range=getattr(sw, "flattened_range", None),
-                )
-
-        logger.info(f"[EMA Reshard] Loading {len(ema_target)} EMA tensors via dist.load_state_dict...")
-        dist.load_state_dict(
-            ema_target,
-            ema_state_path,
-            aoa_config=self.args.aoa_config,
-            offload=self.args.load_via_cpu,
-            comm_method=comm_method,
-            worker_groups=worker_groups,
-        )
-        logger.info("[EMA Reshard] dist.load_state_dict completed")
-
-        # Move to CPU shared memory for subprocess consumption
-        ema_shared_result = {}
-        self._ema_shared_tensor_refs = {}
-        self._ema_shm_filenames = []  # Track specific shm files for leak detection
-
-        for k, sw in ema_target.items():
-            cpu_tensor = sw.local_tensor.cpu().flatten()
-            shared_meta = cpu_tensor.value().get_tensor()._share_filename(False)
-            ema_shared_result[k] = {
-                "shared_meta": shared_meta,
-                "shape": list(sw.local_tensor.shape),
-            }
-            # shared_meta[0] is the shm filename (e.g. "/dev/shm/paddle_12345_0_xxx")
-            if shared_meta and len(shared_meta) > 0:
-                self._ema_shm_filenames.append(shared_meta[0])
-            # Keep reference to prevent GC before subprocess reads the data
-            self._ema_shared_tensor_refs[k] = cpu_tensor
-            sw.local_tensor._clear()
-
-        logger.info(
-            f"[EMA Reshard] Created shared memory for {len(ema_shared_result)} EMA tensors, "
-            f"shm files tracked: {len(self._ema_shm_filenames)}"
-        )
-        return ema_shared_result
 
     def prepare_resume_from_checkpoint(self, args, resume_from_checkpoint):
         logger.info(f"Starting training from resume_from_checkpoint : {resume_from_checkpoint}")
@@ -2002,6 +3053,10 @@ class Trainer:
         if parameters_list is None:
             parameters_list = []
 
+        _dsv4_sync_optimizer_lr_tensor_from_scheduler(self.optimizer, self.lr_scheduler)
+        _dsv4_log_optimizer_update_probe(
+            model, self.optimizer, self.state.global_step + 1, stage="pre_optimizer_before_step"
+        )
         optimizer_was_run = True
         if self.do_grad_scaling:
             scale_before = paddle.assign(self.scaler._scale)
@@ -2023,6 +3078,9 @@ class Trainer:
             self.optimizer._step(parameters_list)
         else:
             self.optimizer.step()
+        _dsv4_log_optimizer_update_probe(
+            model, self.optimizer, self.state.global_step + 1, stage="post_optimizer_after_step"
+        )
 
         if optimizer_was_run:
             self.lr_scheduler.step()
@@ -2362,6 +3420,7 @@ class Trainer:
                             tr_loss += tr_loss_step
                     else:
                         tr_loss += tr_loss_step
+                    _dsv4_log_grad_inventory(model, self.state.global_step + 1, stage="post_backward")
 
                     def fused_allreduce_gradients_no_sync(paramlist, hcg):
                         paramlist = list(paramlist)
@@ -2370,6 +3429,146 @@ class Trainer:
                         if moelist and not self.args.use_expert_parallel:
                             logger.warning("found `no sync` param when `use_expert_parallel=False`")
                         fused_allreduce_gradients(nonmoe_list, hcg)
+
+                    def dsv4_allreduce_dense_grads_over_ep(paramlist):
+                        if os.environ.get("DSV4_FLEET_ALLREDUCE_DENSE_GRAD_OVER_EP", "0") != "1":
+                            return
+                        hcg = getattr(self.optimizer, "_hcg", None)
+                        if hcg is None or hcg.get_expert_parallel_world_size() <= 1:
+                            return
+                        ep_group = hcg.get_expert_parallel_group()
+                        ep_world_size = hcg.get_expert_parallel_world_size()
+                        with paddle.no_grad():
+                            for p in paramlist:
+                                if getattr(p, "no_sync", False):
+                                    continue
+                                grad = getattr(p, "main_grad", None)
+                                if grad is None:
+                                    grad_attr = getattr(p, "grad", None)
+                                    grad = grad_attr() if callable(grad_attr) else grad_attr
+                                if grad is None:
+                                    continue
+                                dist.all_reduce(grad, op=dist.ReduceOp.SUM, group=ep_group)
+                                grad.scale_(1.0 / ep_world_size)
+
+                    def dsv4_scale_selected_attention_grads_over_ep(model, hcg):
+                        if os.environ.get("DSV4_FLEET_SCALE_SELECTED_GRADS_OVER_EP", "0") != "1":
+                            return
+                        if hcg is None or hcg.get_expert_parallel_world_size() <= 1:
+                            return
+                        ep_world_size = hcg.get_expert_parallel_world_size()
+                        patterns = [
+                            "linear_o_group_proj",
+                            "linear_q_up_proj.weight",
+                            "linear_kv_proj.weight",
+                            "compressor.linear_wkv.weight",
+                            "compressor.linear_wgate.weight",
+                            "q_layernorm.weight",
+                            "kv_layernorm.weight",
+                            ".mlp.gate.weight",
+                            ".mlp.shared_experts.up_gate_proj.weight",
+                        ]
+                        extra_patterns = os.environ.get(
+                            "DSV4_FLEET_SCALE_SELECTED_GRADS_OVER_EP_PATTERNS", ""
+                        )
+                        if extra_patterns:
+                            patterns.extend(
+                                pattern.strip()
+                                for pattern in extra_patterns.split(",")
+                                if pattern.strip()
+                            )
+                        with paddle.no_grad():
+                            for name, p in model.named_parameters():
+                                if not any(pattern in name for pattern in patterns):
+                                    continue
+                                grad = getattr(p, "main_grad", None)
+                                if grad is None:
+                                    grad_attr = getattr(p, "grad", None)
+                                    grad = grad_attr() if callable(grad_attr) else grad_attr
+                                if grad is not None:
+                                    grad.scale_(1.0 / ep_world_size)
+
+                    def dsv4_allreduce_router_grads_over_ep(model, hcg):
+                        if os.environ.get("DSV4_FLEET_ALLREDUCE_ROUTER_GRADS_OVER_EP", "0") != "1":
+                            return
+                        if hcg is None or hcg.get_expert_parallel_world_size() <= 1:
+                            return
+                        ep_group = hcg.get_expert_parallel_group()
+                        ep_world_size = hcg.get_expert_parallel_world_size()
+                        with paddle.no_grad():
+                            for name, p in model.named_parameters():
+                                if ".mlp.gate.weight" not in name:
+                                    continue
+                                grad = getattr(p, "main_grad", None)
+                                if grad is None:
+                                    grad_attr = getattr(p, "grad", None)
+                                    grad = grad_attr() if callable(grad_attr) else grad_attr
+                                if grad is None:
+                                    continue
+                                dist.all_reduce(grad, op=dist.ReduceOp.SUM, group=ep_group)
+                                grad.scale_(1.0 / ep_world_size)
+
+                    def dsv4_use_router_fp32_wgrad(model, hcg):
+                        if os.environ.get("DSV4_FLEET_ROUTER_FP32_WGRAD", "0") != "1":
+                            return
+                        ep_world_size = (
+                            hcg.get_expert_parallel_world_size()
+                            if hcg is not None and hasattr(hcg, "get_expert_parallel_world_size")
+                            else 1
+                        )
+                        scale_by_ep = os.environ.get(
+                            "DSV4_FLEET_ROUTER_FP32_WGRAD_SCALE_BY_EP", "1"
+                        ) == "1"
+                        scale = 1.0 / ep_world_size if scale_by_ep and ep_world_size > 1 else 1.0
+                        replaced = 0
+                        replaced_names = []
+                        with paddle.no_grad():
+                            for name, p in model.named_parameters():
+                                fp32_wgrad = getattr(p, "_dsv4_router_gate_fp32_wgrad", None)
+                                if fp32_wgrad is None:
+                                    continue
+                                grad = getattr(p, "main_grad", None)
+                                if grad is None:
+                                    grad_attr = getattr(p, "grad", None)
+                                    grad = grad_attr() if callable(grad_attr) else grad_attr
+                                if grad is None:
+                                    continue
+                                scaled_wgrad = fp32_wgrad.cast(paddle.float32) * scale
+                                if os.environ.get("DSV4_FLEET_ROUTER_FP32_WGRAD_LOG_VALUES", "0") == "1":
+                                    rank = dist.get_rank() if dist.is_initialized() else 0
+                                    value = fp32_wgrad.cast(paddle.float32)
+                                    scaled_value = scaled_wgrad.cast(paddle.float32)
+                                    value_md5 = hashlib.md5(value.cpu().numpy().tobytes()).hexdigest()
+                                    scaled_md5 = hashlib.md5(scaled_value.cpu().numpy().tobytes()).hexdigest()
+                                    print(
+                                        f"[DSV4_FLEET_ROUTER_FP32_WGRAD_VALUE] rank={rank} "
+                                        f"name={name} param_name={getattr(p, 'name', 'NA')} "
+                                        f"shape={list(fp32_wgrad.shape)} scale={scale:.20f} "
+                                        f"fp32_norm={paddle.linalg.norm(value).item():.20f} "
+                                        f"fp32_md5={value_md5} "
+                                        f"scaled_norm={paddle.linalg.norm(scaled_value).item():.20f} "
+                                        f"scaled_md5={scaled_md5}",
+                                        flush=True,
+                                    )
+                                grad.set_value(scaled_wgrad.cast(grad.dtype))
+                                p._dsv4_router_gate_manual_adamw = True
+                                grad._dsv4_router_gate_manual_adamw = True
+                                p._dsv4_router_gate_fp32_wgrad = None
+                                replaced_names.append(f"{name}:{getattr(p, 'name', 'NA')}")
+                                replaced += 1
+                        if os.environ.get("DSV4_FLEET_ROUTER_FP32_WGRAD_LOG", "0") == "1":
+                            rank = dist.get_rank() if dist.is_initialized() else 0
+                            print(
+                                f"[DSV4_FLEET_ROUTER_FP32_WGRAD] rank={rank} "
+                                f"replaced={replaced} ep_world_size={ep_world_size}",
+                                flush=True,
+                            )
+                            if os.environ.get("DSV4_FLEET_ROUTER_FP32_WGRAD_LOG_NAMES", "0") == "1":
+                                print(
+                                    f"[DSV4_FLEET_ROUTER_FP32_WGRAD_NAMES] rank={rank} "
+                                    f"names={';'.join(replaced_names)}",
+                                    flush=True,
+                                )
 
                     def hybrid_parallel_scale_param_grad(paramlist, hcg):
                         if not hasattr(hcg, "get_context_parallel_world_size"):
@@ -2417,17 +3616,41 @@ class Trainer:
                             self.timers and self.timers("all-reduce").start()
                             if hasattr(self.optimizer, "_hcg"):
                                 hybrid_parallel_scale_param_grad(list(model.parameters()), self.optimizer._hcg)
+                                _dsv4_log_grad_inventory(
+                                    model,
+                                    self.state.global_step + 1,
+                                    stage="post_hybrid_scale",
+                                )
 
                             # Case 1: Use recompute and dp / sharding stage1,
                             # manually collect gradient for dp.
                             if (
                                 args.recompute_granularity is not None or args.use_expert_parallel
                             ) and available_no_sync:
-                                fused_allreduce_gradients_no_sync(list(model.parameters()), None)
+                                no_sync_hcg = (
+                                    self.optimizer._hcg
+                                    if os.environ.get("DSV4_FLEET_USE_HCG_FOR_NO_SYNC_ALLREDUCE", "0")
+                                    == "1"
+                                    and hasattr(self.optimizer, "_hcg")
+                                    else None
+                                )
+                                fused_allreduce_gradients_no_sync(list(model.parameters()), no_sync_hcg)
+                                _dsv4_log_grad_inventory(
+                                    model, self.state.global_step + 1, stage="post_fused_allreduce"
+                                )
+                                dsv4_allreduce_dense_grads_over_ep(list(model.parameters()))
+                                _dsv4_log_grad_inventory(
+                                    model,
+                                    self.state.global_step + 1,
+                                    stage="post_dense_ep_allreduce",
+                                )
 
                             # Case 2: hack dp with master_grad
                             elif dp_master_grad:
                                 fused_allreduce_gradients_no_sync(list(model.parameters()), None)
+                                _dsv4_log_grad_inventory(
+                                    model, self.state.global_step + 1, stage="post_fused_allreduce"
+                                )
 
                             # Pipeline parallel mode,  handle gradient reduce here to overlap
                             enable_dp_comm_overlap = (
@@ -2450,9 +3673,19 @@ class Trainer:
                                         self.optimizer._inner_opt.reduce_gradients(
                                             list(parameters_list), self.optimizer._hcg
                                         )
+                                        _dsv4_log_grad_inventory(
+                                            model,
+                                            self.state.global_step + 1,
+                                            stage="post_sharding_reduce",
+                                        )
 
                                     if self.optimizer._dp_enable or getattr(self.optimizer, "_sep_enable", False):
                                         fused_allreduce_gradients_no_sync(list(parameters_list), self.optimizer._hcg)
+                                        _dsv4_log_grad_inventory(
+                                            model,
+                                            self.state.global_step + 1,
+                                            stage="post_dp_reduce",
+                                        )
                             self.timers and self.timers("all-reduce").stop()
                             self.timers and self.timers("optimizer-step").start()
 
@@ -2468,11 +3701,18 @@ class Trainer:
                                         p.main_grad.scale_(1.0 / self.args.gradient_accumulation_steps)
                                     elif p.grad is not None:
                                         p.grad.scale_(1.0 / self.args.gradient_accumulation_steps)
+                        if hasattr(self.optimizer, "_hcg"):
+                            dsv4_scale_selected_attention_grads_over_ep(model, self.optimizer._hcg)
+                            dsv4_allreduce_router_grads_over_ep(model, self.optimizer._hcg)
+                            dsv4_use_router_fp32_wgrad(model, self.optimizer._hcg)
+                        _dsv4_log_grad_inventory(model, self.state.global_step + 1, stage="pre_optimizer")
+                        _dsv4_log_param_inventory(model, self.state.global_step + 1, stage="pre_optimizer")
                         # Optimizer step
                         self.callback_handler.on_optimizer_begin(
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
                         )
                         self.optimizer_step(args, model=model, parameters_list=parameters_list)
+                        _dsv4_log_param_inventory(model, self.state.global_step + 1, stage="post_optimizer")
 
                         if not args.enable_auto_parallel:
                             self.timers and self.timers("optimizer-step").stop()
@@ -2506,6 +3746,15 @@ class Trainer:
                             f"data_load_time: {_data_load_time_for_global_step * 1000:.2f} ms "
                             f"(accumulated over {args.gradient_accumulation_steps} micro-batches)"
                         )
+                        dsv4_stop_after_steps = int(os.environ.get("DSV4_STOP_AFTER_STEPS", "0") or "0")
+                        if dsv4_stop_after_steps > 0 and self.state.global_step >= dsv4_stop_after_steps:
+                            rank = dist.get_rank() if dist.is_initialized() else 0
+                            if rank == 0:
+                                logger.info(
+                                    f"[DSV4_STOP_AFTER_STEPS] stopping at global_step={self.state.global_step} "
+                                    f"while configured max_steps={self.state.max_steps}"
+                                )
+                            self.control.should_training_stop = True
                         self._print_timer()
                         # Reset data loading timer for next global_step
                         _data_load_time_for_global_step = 0.0
@@ -2758,15 +4007,6 @@ class Trainer:
             if in_auto_parallel_align_mode():
                 logs["loss_md5"] = avg_loss._md5sum()
 
-            # Log MD5 of the post-DP-allreduce (here all_gather+mean) global loss.
-            # Mirrors LOG_LOSS_MD5 hooks in PaddleFleet's loss path so it can be
-            # diff'd against Megatron's [LOSS_PATH_MD5] output.
-            if os.environ.get("LOG_LOSS_MD5", "0") == "1":
-                import hashlib
-
-                _md5_loss_t = avg_loss.detach().cast("float32").reshape([1])
-                logs["loss_md5"] = hashlib.md5(_md5_loss_t.numpy().tobytes()).hexdigest()
-
             divisor = 2**30
             # TODO(@gexiao): replace these codes with unified APIs in Paddle
             current_device = framework._current_expected_place_()
@@ -2815,54 +4055,9 @@ class Trainer:
                 )
 
                 if LanguageLoss.mtp_loss_tracker:
-                    # By default keep the legacy behavior of logging the local
-                    # (rank-0 / per-rank) mtp loss value.
-                    # When LOG_LOSS_MD5=1, mirror Megatron's
-                    # MTPLossLoggingHelper.reduce_loss_in_tracker by averaging
-                    # across the full data-parallel-equivalent group
-                    # (DP + sharding + CP) so the value is the global mtp loss
-                    # comparable to Megatron's `mtp_{i} loss`, and additionally
-                    # emit a per-key `_md5` field for cross-framework diff.
-                    _log_md5 = os.environ.get("LOG_LOSS_MD5", "0") == "1"
-
-                    _avg_group = None
-                    if _log_md5:
-                        try:
-                            import paddle.distributed as _pf_dist
-                            from paddle.distributed import fleet as _pf_fleet
-
-                            _hcg = _pf_fleet.get_hybrid_communicate_group()
-                            _avg_group = _hcg.get_check_parallel_group()
-                            if _avg_group is None or _avg_group.nranks <= 1:
-                                _avg_group = _hcg.get_sharding_parallel_group()
-                            if _avg_group is None or _avg_group.nranks <= 1:
-                                _avg_group = _hcg.get_data_parallel_group()
-                        except Exception:
-                            _avg_group = None
-
-                    _reduced_mtp = {}
-                    if _log_md5:
-                        import hashlib as _hashlib
-
-                        import numpy as _np
-                    for k, v in LanguageLoss.mtp_loss_tracker.items():
-                        if hasattr(v, "item"):
-                            if _log_md5 and _avg_group is not None and _avg_group.nranks > 1:
-                                v = v.detach().clone()
-                                _pf_dist.all_reduce(v, group=_avg_group)
-                                v = v / _avg_group.nranks
-                            _scalar = v.item()
-                            _reduced_mtp[k] = _scalar
-                            if _log_md5:
-                                # md5 over float32 bytes — same scheme used for
-                                # main loss_md5 and Megatron's mtp_{i} loss_md5,
-                                # so values can be diff'd directly.
-                                _reduced_mtp[f"{k}_md5"] = _hashlib.md5(
-                                    _np.array([_scalar], dtype=_np.float32).tobytes()
-                                ).hexdigest()
-                        else:
-                            _reduced_mtp[k] = v
-                    logs.update(_reduced_mtp)
+                    logs.update(
+                        {k: v.item() if hasattr(v, "item") else v for k, v in LanguageLoss.mtp_loss_tracker.items()}
+                    )
             except (ImportError, AttributeError):
                 pass
 
@@ -4015,6 +5210,8 @@ class Trainer:
 
         model.train()
         inputs = self._prepare_inputs(inputs)
+        os.environ["DSV4_CURRENT_TRAIN_STEP"] = str(self.state.global_step + 1)
+        _dsv4_log_param_inventory(model, self.state.global_step + 1, stage="pre_forward")
         with self.autocast_smart_context_manager():
             loss = self.compute_loss(model, inputs)
 
@@ -4097,6 +5294,8 @@ class Trainer:
         else:
             inputs = PipelineDatasetPreprocessor(_dataset_process_function)
 
+        os.environ["DSV4_CURRENT_TRAIN_STEP"] = str(self.state.global_step + 1)
+        _dsv4_log_param_inventory(model, self.state.global_step + 1, stage="pre_forward")
         with self.autocast_smart_context_manager():
             loss = model.forward_backward_pipeline(inputs, self.scaler if self.do_grad_scaling else None)
 

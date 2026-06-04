@@ -16,6 +16,7 @@
 # Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 
 import contextlib
+import ast
 import inspect
 import json
 import logging
@@ -219,9 +220,18 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
         """
 
         with model_init_device_context():
-            seg_method = "layer:TransformerLayer|EmptyLayer"
-            if self.separate_mtp_headloss:
-                seg_method = "layer:TransformerLayer|EmptyLayer|MultiTokenPredictionLayer"
+            seg_method = getattr(self, "pp_seg_method", None)
+            if isinstance(seg_method, str):
+                try:
+                    parsed_seg_method = ast.literal_eval(seg_method)
+                    if isinstance(parsed_seg_method, list):
+                        seg_method = parsed_seg_method
+                except Exception:
+                    pass
+            if not seg_method:
+                seg_method = "layer:TransformerLayer|EmptyLayer"
+                if self.separate_mtp_headloss:
+                    seg_method = "layer:TransformerLayer|EmptyLayer|MultiTokenPredictionLayer"
 
             fleet_model = gpt_builder(self, num_stages=pp_size, seg_method=seg_method, loss_fn=loss_fn)
             # Convert original FleetGPTModel to our GPTModel to correctly inherit PretrainedModel methods

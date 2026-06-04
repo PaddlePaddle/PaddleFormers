@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import hashlib
+import os
+
 import paddle
 import paddle.distributed as dist
 from paddle.autograd import no_grad
@@ -47,6 +50,59 @@ from paddle.nn import ClipGradByGlobalNorm, clip
 __all__ = [
     "MoEHybridParallelOptimizer",
 ]
+
+
+def _dsv4_scalar_md5(tensor):
+    value_tensor = tensor.astype("float32").reshape([1]).detach().cpu()
+    return hashlib.md5(value_tensor.numpy().tobytes()).hexdigest(), float(value_tensor.item())
+
+
+def _dsv4_tensor_md5_float32(tensor):
+    tensor_fp32 = tensor.astype("float32").detach().cpu()
+    tensor_bytes = tensor_fp32.numpy().tobytes()
+    md5 = hashlib.md5(tensor_bytes).hexdigest()
+    md5_t = "NA"
+    if len(tensor_fp32.shape) == 2:
+        md5_t = hashlib.md5(paddle.transpose(tensor_fp32, [1, 0]).contiguous().numpy().tobytes()).hexdigest()
+    return md5, md5_t, tensor_bytes
+
+
+def _dsv4_log_global_norm_component(stage, name, tensor):
+    if os.getenv("DSV4_LOG_GLOBAL_GRAD_NORM_PARAMS", "0") != "1":
+        return
+    rank = dist.get_rank() if dist.is_initialized() else 0
+    md5, value = _dsv4_scalar_md5(tensor)
+    logger.info(
+        f"[DSV4_GLOBAL_GRAD_NORM_PARAMS] framework=fleet rank={rank} stage={stage} "
+        f"category={name} square={value:.20f} md5_float32={md5}"
+    )
+
+
+def _dsv4_squared_l2_norm_for_clip(tensor):
+    if os.getenv("DSV4_FLEET_GLOBAL_NORM_FP32_SUM", "0") == "1":
+        tensor_fp32 = tensor.astype("float32")
+        return paddle.sum(tensor_fp32 * tensor_fp32)
+    return clip._squared_l2_norm(tensor)
+
+
+def _dsv4_torch_te_l2_square(tensors):
+    if not tensors:
+        return paddle.zeros((1,), dtype=paddle.float32)
+    import sys
+
+    torch_site_packages = os.getenv("DSV4_TORCH_SITE_PACKAGES", "")
+    if torch_site_packages and torch_site_packages not in sys.path:
+        sys.path.append(torch_site_packages)
+    import torch
+    from paddle.utils import dlpack as paddle_dlpack
+    from torch.utils import dlpack as torch_dlpack
+    from transformer_engine.pytorch.optimizers import multi_tensor_applier, multi_tensor_l2norm
+
+    torch_tensors = [torch_dlpack.from_dlpack(paddle_dlpack.to_dlpack(tensor)) for tensor in tensors]
+    dummy_overflow_buf = torch.zeros(1, dtype=torch.int, device=torch_tensors[0].device)
+    norm, _ = multi_tensor_applier(multi_tensor_l2norm, dummy_overflow_buf, [torch_tensors], False)
+    square = (norm.float() * norm.float()).detach().float().cpu().numpy()
+    return paddle.to_tensor(square.reshape([1]), dtype=paddle.float32)
 
 
 class MoEHybridParallelClipGrad:
@@ -154,6 +210,13 @@ class MoEHybridParallelClipGrad:
     def _dygraph_clip(self, params_grads):
         if self._timers:
             self._timers("dygraph-clip").start()
+        log_param_lines = os.getenv("DSV4_LOG_GLOBAL_GRAD_NORM_PARAM_LINES", "0") == "1"
+        log_inputs = os.getenv("DSV4_LOG_GLOBAL_GRAD_NORM_INPUTS", "0") == "1"
+        max_param_lines = int(os.getenv("DSV4_GLOBAL_GRAD_NORM_PARAM_MAX_LINES", "1200"))
+        param_lines = []
+        input_digests = {"__all__": hashlib.md5()}
+        input_counts = {"__all__": 0}
+        input_numels = {"__all__": 0}
         sum_square_dist_fp16 = []
         sum_square_dist_bf16 = []
         sum_square_dist_fp32 = []
@@ -169,6 +232,20 @@ class MoEHybridParallelClipGrad:
         sum_square_not_dist_moe_fp16 = []
         sum_square_not_dist_moe_bf16 = []
         sum_square_not_dist_moe_fp32 = []
+        raw_tensor_groups = {
+            "dist_moe_fp16": [],
+            "dist_moe_bf16": [],
+            "dist_moe_fp32": [],
+            "not_dist_moe_fp16": [],
+            "not_dist_moe_bf16": [],
+            "not_dist_moe_fp32": [],
+            "dist_fp16": [],
+            "dist_bf16": [],
+            "dist_fp32": [],
+            "not_dist_fp16": [],
+            "not_dist_bf16": [],
+            "not_dist_fp32": [],
+        }
 
         for p, g in params_grads:
             if g is None:
@@ -179,7 +256,7 @@ class MoEHybridParallelClipGrad:
             if g.type == core.VarDesc.VarType.SELECTED_ROWS:
                 merge_grad = clip.merge_selected_rows(g)
                 merge_grad = clip.get_tensor_from_selected_rows(merge_grad)
-            sum_square = clip._squared_l2_norm(merge_grad)
+            sum_square = _dsv4_squared_l2_norm_for_clip(merge_grad)
 
             not_shared_enable = (not hasattr(p, "is_firstly_shared")) or (
                 hasattr(p, "is_firstly_shared") and getattr(p, "is_firstly_shared", True)
@@ -188,6 +265,7 @@ class MoEHybridParallelClipGrad:
             if not_shared_enable:
                 if getattr(p, "no_sync", False):
                     if p.is_distributed:
+                        component = "dist_moe"
                         if g.dtype == paddle.float16:
                             sum_square_dist_moe_fp16.append(sum_square)
                         elif g.dtype == paddle.bfloat16:
@@ -195,6 +273,7 @@ class MoEHybridParallelClipGrad:
                         elif g.dtype == paddle.float32:
                             sum_square_dist_moe_fp32.append(sum_square)
                     else:
+                        component = "not_dist_moe"
                         if g.dtype == paddle.float16:
                             sum_square_not_dist_moe_fp16.append(sum_square)
                         elif g.dtype == paddle.bfloat16:
@@ -203,6 +282,7 @@ class MoEHybridParallelClipGrad:
                             sum_square_not_dist_moe_fp32.append(sum_square)
 
                 elif p.is_distributed:
+                    component = "dist"
                     if g.dtype == paddle.float16:
                         sum_square_dist_fp16.append(sum_square)
                     elif g.dtype == paddle.bfloat16:
@@ -210,6 +290,7 @@ class MoEHybridParallelClipGrad:
                     elif g.dtype == paddle.float32:
                         sum_square_dist_fp32.append(sum_square)
                 else:
+                    component = "not_dist"
                     assert not getattr(
                         p, "no_sync", False
                     ), f"moe param shoud be distributed, got: {p.name}, shape={p.shape}"
@@ -220,9 +301,52 @@ class MoEHybridParallelClipGrad:
                     elif g.dtype == paddle.float32:
                         sum_square_not_dist_fp32.append(sum_square)
             else:
+                component = "shared_skip"
                 assert not getattr(p, "no_sync", False), "MoE cannot handle shared param"
 
-        def add_n_list(tensor_list):
+            dtype_key = None
+            if g.dtype == paddle.float16:
+                dtype_key = "fp16"
+            elif g.dtype == paddle.bfloat16:
+                dtype_key = "bf16"
+            elif g.dtype == paddle.float32:
+                dtype_key = "fp32"
+            raw_key = f"{component}_{dtype_key}" if dtype_key is not None else None
+            if raw_key in raw_tensor_groups:
+                raw_tensor_groups[raw_key].append(merge_grad)
+
+            input_md5 = "NA"
+            input_md5_t = "NA"
+            if log_inputs and raw_key is not None:
+                input_md5, input_md5_t, input_bytes = _dsv4_tensor_md5_float32(merge_grad)
+                input_digests["__all__"].update(input_bytes)
+                input_counts["__all__"] += 1
+                input_numels["__all__"] += int(merge_grad.numel().item())
+                if raw_key not in input_digests:
+                    input_digests[raw_key] = hashlib.md5()
+                    input_counts[raw_key] = 0
+                    input_numels[raw_key] = 0
+                input_digests[raw_key].update(input_bytes)
+                input_counts[raw_key] += 1
+                input_numels[raw_key] += int(merge_grad.numel().item())
+
+            if log_param_lines and len(param_lines) < max_param_lines:
+                _, square_value = _dsv4_scalar_md5(sum_square)
+                norm_value = square_value**0.5
+                rank = dist.get_rank() if dist.is_initialized() else 0
+                param_lines.append(
+                    f"[DSV4_GLOBAL_GRAD_NORM_PARAM] framework=fleet rank={rank} stage=dygraph_clip "
+                    f"idx={len(param_lines)} component={component} name={getattr(p, 'name', None)} "
+                    f"shape={list(g.shape)} dtype={g.dtype} numel={int(g.numel().item())} "
+                    f"norm={norm_value:.20f} square={square_value:.20f} "
+                    f"is_distributed={getattr(p, 'is_distributed', None)} "
+                    f"no_sync={getattr(p, 'no_sync', None)} need_clip={getattr(p, 'need_clip', True)} "
+                    f"input_md5_float32={input_md5} input_md5_float32_t={input_md5_t}"
+                )
+
+        def add_n_list(tensor_list, raw_key=None):
+            if os.getenv("DSV4_FLEET_GLOBAL_NORM_TORCH_TE", "0") == "1" and raw_key is not None:
+                return _dsv4_torch_te_l2_square(raw_tensor_groups[raw_key])
             if not tensor_list:
                 return paddle.zeros((1,), dtype=paddle.float32)
             return paddle.add_n(tensor_list).cast(paddle.float32)
@@ -230,41 +354,53 @@ class MoEHybridParallelClipGrad:
         # moe global norm of distributed FP16 params_and_grads
         global_norm_dist_moe_fp16 = add_n_list(
             sum_square_dist_moe_fp16,
+            "dist_moe_fp16",
         )
         global_norm_not_dist_moe_fp16 = add_n_list(
             sum_square_not_dist_moe_fp16,
+            "not_dist_moe_fp16",
         )
         global_norm_dist_fp16 = add_n_list(
             sum_square_dist_fp16,
+            "dist_fp16",
         )
         global_norm_not_dist_fp16 = add_n_list(
             sum_square_not_dist_fp16,
+            "not_dist_fp16",
         )
 
         global_norm_dist_moe_bf16 = add_n_list(
             sum_square_dist_moe_bf16,
+            "dist_moe_bf16",
         )
         global_norm_not_dist_moe_bf16 = add_n_list(
             sum_square_not_dist_moe_bf16,
+            "not_dist_moe_bf16",
         )
         global_norm_dist_bf16 = add_n_list(
             sum_square_dist_bf16,
+            "dist_bf16",
         )
         global_norm_not_dist_bf16 = add_n_list(
             sum_square_not_dist_bf16,
+            "not_dist_bf16",
         )
 
         global_norm_dist_moe_fp32 = add_n_list(
             sum_square_dist_moe_fp32,
+            "dist_moe_fp32",
         )
         global_norm_not_dist_moe_fp32 = add_n_list(
             sum_square_not_dist_moe_fp32,
+            "not_dist_moe_fp32",
         )
         global_norm_dist_fp32 = add_n_list(
             sum_square_dist_fp32,
+            "dist_fp32",
         )
         global_norm_not_dist_fp32 = add_n_list(
             sum_square_not_dist_fp32,
+            "not_dist_fp32",
         )
 
         global_norm_var_dist_moe = global_norm_dist_moe_fp16 + global_norm_dist_moe_bf16 + global_norm_dist_moe_fp32
@@ -275,6 +411,48 @@ class MoEHybridParallelClipGrad:
 
         global_norm_var_dist = global_norm_dist_fp16 + global_norm_dist_bf16 + global_norm_dist_fp32
         global_norm_var_not_dist = global_norm_not_dist_fp16 + global_norm_not_dist_bf16 + global_norm_not_dist_fp32
+        for name, value in (
+            ("local_dist_moe_fp16", global_norm_dist_moe_fp16),
+            ("local_dist_moe_bf16", global_norm_dist_moe_bf16),
+            ("local_dist_moe_fp32", global_norm_dist_moe_fp32),
+            ("local_not_dist_moe_fp16", global_norm_not_dist_moe_fp16),
+            ("local_not_dist_moe_bf16", global_norm_not_dist_moe_bf16),
+            ("local_not_dist_moe_fp32", global_norm_not_dist_moe_fp32),
+            ("local_dist_fp16", global_norm_dist_fp16),
+            ("local_dist_bf16", global_norm_dist_bf16),
+            ("local_dist_fp32", global_norm_dist_fp32),
+            ("local_not_dist_fp16", global_norm_not_dist_fp16),
+            ("local_not_dist_bf16", global_norm_not_dist_bf16),
+            ("local_not_dist_fp32", global_norm_not_dist_fp32),
+            ("local_dist_moe_total", global_norm_var_dist_moe),
+            ("local_not_dist_moe_total", global_norm_var_not_dist_moe),
+            ("local_dist_total", global_norm_var_dist),
+            ("local_not_dist_total", global_norm_var_not_dist),
+        ):
+            _dsv4_log_global_norm_component("local_before_reduce", name, value)
+        for line in param_lines:
+            logger.info(line)
+        if log_inputs:
+            rank = dist.get_rank() if dist.is_initialized() else 0
+            for name in sorted(input_digests):
+                logger.info(
+                    f"[DSV4_GLOBAL_GRAD_NORM_INPUT] framework=fleet rank={rank} stage=dygraph_clip "
+                    f"category={name} md5_float32_stream={input_digests[name].hexdigest()} "
+                    f"tensor_count={input_counts[name]} grad_numel={input_numels[name]}"
+                )
+        if log_param_lines:
+            emitted = len(param_lines)
+            total_seen = sum(
+                1
+                for p, g in params_grads
+                if g is not None and getattr(p, "need_clip", True) is not False
+            )
+            if total_seen > emitted:
+                rank = dist.get_rank() if dist.is_initialized() else 0
+                logger.info(
+                    f"[DSV4_GLOBAL_GRAD_NORM_PARAM] framework=fleet rank={rank} "
+                    f"stage=dygraph_clip truncated={total_seen - emitted}"
+                )
         result = self._comm_and_clip(
             params_grads,
             global_norm_var_dist,
@@ -299,11 +477,31 @@ class MoEHybridParallelClipGrad:
         self._global_norm(
             global_norm_var_dist, global_norm_var_not_dist, global_norm_var_dist_moe, global_norm_var_not_dist_moe
         )
+        for name, value in (
+            ("reduced_dist_moe", global_norm_var_dist_moe),
+            ("reduced_not_dist_moe", global_norm_var_not_dist_moe),
+            ("reduced_dist", global_norm_var_dist),
+            ("reduced_not_dist", global_norm_var_not_dist),
+            (
+                "reduced_total_square",
+                global_norm_var_dist + global_norm_var_not_dist + global_norm_var_dist_moe + global_norm_var_not_dist_moe,
+            ),
+        ):
+            _dsv4_log_global_norm_component("after_reduce", name, value)
 
         global_norm_var_fp32 = paddle.sqrt(
             global_norm_var_dist + global_norm_var_not_dist + global_norm_var_dist_moe + global_norm_var_not_dist_moe
         )
         self.stat["global_grad_norm"] = global_norm_var_fp32.astype("float32").item()
+        if os.getenv("DSV4_LOG_GLOBAL_GRAD_NORM", "0") == "1":
+            rank = dist.get_rank() if dist.is_initialized() else 0
+            value_tensor = global_norm_var_fp32.astype("float32").reshape([1]).detach().cpu()
+            value = float(value_tensor.item())
+            md5 = hashlib.md5(value_tensor.numpy().tobytes()).hexdigest()
+            logger.info(
+                f"[DSV4_GLOBAL_GRAD_NORM] framework=fleet rank={rank} stage=moe_hybrid_clip "
+                f"value={value:.20f} md5_float32={md5}"
+            )
 
         max_global_norm = paddle.full(
             shape=[],
@@ -360,7 +558,8 @@ class MoEHybridParallelOptimizer(HPBase):
             assert (
                 hcg.get_sharding_parallel_world_size() >= 1 and split_param is True
             ), "Hybrid expert parallel only supports ShardingV2 now"
-        if hcg.get_sharding_parallel_world_size() > 1:
+        empty_parameter_list = len(getattr(optimizer, "_parameter_list", [])) == 0
+        if hcg.get_sharding_parallel_world_size() > 1 and not empty_parameter_list:
             split_param = strategy.hybrid_configs["sharding_configs"].split_param
             use_muon_sharding = getattr(strategy, "use_muon_sharding", False)
             if use_muon_sharding:
@@ -370,6 +569,8 @@ class MoEHybridParallelOptimizer(HPBase):
             else:
                 ShardingOptimizer = DygraphShardingOptimizer
             optimizer = ShardingOptimizer(optimizer, hcg)
+        elif empty_parameter_list:
+            logger.info("Skip sharding optimizer wrapping for empty pipeline stage.")
 
         self._enable_timer = strategy.hybrid_configs["enable_optimizer_timer"]
 
@@ -381,6 +582,7 @@ class MoEHybridParallelOptimizer(HPBase):
             self._timers = None
 
         self._inner_opt = optimizer
+        self._dsv4_empty_parameter_list = empty_parameter_list
         self._strategy = strategy
         self._hcg = hcg
 
@@ -390,7 +592,7 @@ class MoEHybridParallelOptimizer(HPBase):
 
         self._dp_enable = not self._use_dp_mode and self._need_dp
 
-        self._sharding_enable = self._hcg.get_sharding_parallel_world_size() > 1
+        self._sharding_enable = self._hcg.get_sharding_parallel_world_size() > 1 and not empty_parameter_list
 
         self._sep_enable = self._hcg.get_sep_parallel_world_size() > 1
 
@@ -423,3 +625,16 @@ class MoEHybridParallelOptimizer(HPBase):
                         if "grad_clip" in item.keys():
                             item["grad_clip"] = MoEHybridParallelClipGrad(inner_opt._grad_clip, hcg, self._timers)
         self.processed_steps = 0
+
+    def _step(self, parameters_list):
+        if self._dsv4_empty_parameter_list:
+            logger.info("Skip optimizer step for empty pipeline stage.")
+            self.processed_steps += 1
+            return
+        return super()._step(parameters_list)
+
+    def clear_grad(self, set_to_zero=True):
+        if self._dsv4_empty_parameter_list:
+            logger.info("Skip clear_grad for empty pipeline stage.")
+            return
+        return self._inner_opt.clear_grad(set_to_zero=set_to_zero)

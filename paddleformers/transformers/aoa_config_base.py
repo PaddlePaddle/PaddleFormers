@@ -402,7 +402,7 @@ class MoEAOAConfigGenerator:
         statements.append(
             f"{prefix}.mlp.gate.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias"
         )
-        statements.append(f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='float32'")
+        statements.append(f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight")
 
         # Shared experts (if model has them)
         if params.has_shared_experts:
