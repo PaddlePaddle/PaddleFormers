@@ -211,11 +211,11 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             MODE="manual"
             UPDATE_BASELINE_MODELS="${{ github.event.inputs.update_baseline_models }}"
-            PR_NUMBER="manual"
+            PR_NUMBER=0
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
             MODE="schedule"
             UPDATE_BASELINE_MODELS="false"
-            PR_NUMBER="schedule"
+            PR_NUMBER=0
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             # Parse PR description for [update-baseline: models]
             if grep -qE '\[update-baseline:[[:space:]]*[a-zA-Z0-9_,]+\]' <<< "$PR_BODY"; then
@@ -413,12 +413,12 @@ jobs:
           mkdir -p result
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             MODE="manual"
-            PR_NUMBER="manual"
+            PR_NUMBER=0
             cp -r gh-pages/model_$FLAGS_enable_CE/manual/history result/ || true
             destination_dir="model_$FLAGS_enable_CE/manual"
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
             MODE="schedule"
-            PR_NUMBER="schedule"
+            PR_NUMBER=0
             cp -r gh-pages/model_$FLAGS_enable_CE/schedule/history result/ || true
             destination_dir="model_$FLAGS_enable_CE/schedule"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
