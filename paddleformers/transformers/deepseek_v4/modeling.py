@@ -451,7 +451,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             ]
             # Attention sink (learnable bias per head)
             stmts += [
-                f"{src}.attn.attn_sink -> {tgt}.self_attn.core_attention.attn_sink, dtype='float32'",
+                f"{src}.attn.attn_sink -> {tgt}.self_attn.core_attention.attn_sink, dtype='bfloat16'",
             ]
 
             # --- mHC: Self-Attention HyperConnection ---
@@ -484,7 +484,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 comp_src = f"{src}.attn.compressor"
                 comp_tgt = f"{tgt}.self_attn.core_attention.compressor"
                 stmts += [
-                    f"{comp_src}.ape -> {comp_tgt}.ape, dtype='float32'",
+                    f"{comp_src}.ape -> {comp_tgt}.ape, dtype='bfloat16'",
                     f"{comp_src}.norm.weight -> {comp_tgt}.norm.weight",
                     f"{comp_src}.wgate.weight^T -> {comp_tgt}.linear_wgate.weight",
                     f"{comp_src}.wkv.weight^T -> {comp_tgt}.linear_wkv.weight",
@@ -495,7 +495,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 idx_src = f"{src}.attn.indexer"
                 idx_tgt = f"{tgt}.self_attn.core_attention.indexer"
                 stmts += [
-                    f"{idx_src}.compressor.ape -> {idx_tgt}.compressor.ape, dtype='float32'",
+                    f"{idx_src}.compressor.ape -> {idx_tgt}.compressor.ape, dtype='bfloat16'",
                     f"{idx_src}.compressor.norm.weight -> {idx_tgt}.compressor.norm.weight",
                     f"{idx_src}.compressor.wgate.weight^T -> {idx_tgt}.compressor.linear_wgate.weight",
                     f"{idx_src}.compressor.wkv.weight^T -> {idx_tgt}.compressor.linear_wkv.weight",
@@ -586,7 +586,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 f"{mtp_src}.attn.kv_norm.weight -> {tl}.self_attn.kv_layernorm.weight",
                 f"{mtp_src}.attn.wo_a.weight -> {tl}.self_attn.linear_o_group_proj",
                 f"{mtp_src}.attn.wo_b.weight^T -> {tl}.self_attn.o_proj.weight",
-                f"{mtp_src}.attn.attn_sink -> {tl}.self_attn.core_attention.attn_sink, dtype='float32'",
+                f"{mtp_src}.attn.attn_sink -> {tl}.self_attn.core_attention.attn_sink, dtype='bfloat16'",
             ]
 
             # --- mHC: Self-Attention HyperConnection (inside transformer_layer) ---
@@ -619,7 +619,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 comp_src = f"{mtp_src}.attn.compressor"
                 comp_tgt = f"{tl}.self_attn.core_attention.compressor"
                 stmts += [
-                    f"{comp_src}.ape -> {comp_tgt}.ape, dtype='float32'",
+                    f"{comp_src}.ape -> {comp_tgt}.ape, dtype='bfloat16'",
                     f"{comp_src}.norm.weight -> {comp_tgt}.norm.weight",
                     f"{comp_src}.wgate.weight^T -> {comp_tgt}.linear_wgate.weight",
                     f"{comp_src}.wkv.weight^T -> {comp_tgt}.linear_wkv.weight",
@@ -628,7 +628,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     idx_src = f"{mtp_src}.attn.indexer"
                     idx_tgt = f"{tl}.self_attn.core_attention.indexer"
                     stmts += [
-                        f"{idx_src}.compressor.ape -> {idx_tgt}.compressor.ape, dtype='float32'",
+                        f"{idx_src}.compressor.ape -> {idx_tgt}.compressor.ape, dtype='bfloat16'",
                         f"{idx_src}.compressor.norm.weight -> {idx_tgt}.compressor.norm.weight",
                         f"{idx_src}.compressor.wgate.weight^T -> {idx_tgt}.compressor.linear_wgate.weight",
                         f"{idx_src}.compressor.wkv.weight^T -> {idx_tgt}.compressor.linear_wkv.weight",
@@ -746,7 +746,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 f"{tl}.self_attn.kv_layernorm.weight -> {mtp_tgt}.attn.kv_norm.weight",
                 f"{tl}.self_attn.linear_o_group_proj -> {mtp_tgt}.attn.wo_a.weight",
                 f"{tl}.self_attn.o_proj.weight^T -> {mtp_tgt}.attn.wo_b.weight",
-                f"{tl}.self_attn.core_attention.attn_sink -> {mtp_tgt}.attn.attn_sink, dtype='float32'",
+                f"{tl}.self_attn.core_attention.attn_sink -> {mtp_tgt}.attn.attn_sink, dtype='bfloat16'",
             ]
 
             # --- mHC: Self-Attention HyperConnection ---
@@ -777,7 +777,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 comp_src = f"{tl}.self_attn.core_attention.compressor"
                 comp_tgt = f"{mtp_tgt}.attn.compressor"
                 stmts += [
-                    f"{comp_src}.ape -> {comp_tgt}.ape, dtype='float32'",
+                    f"{comp_src}.ape -> {comp_tgt}.ape, dtype='bfloat16'",
                     f"{comp_src}.norm.weight -> {comp_tgt}.norm.weight",
                     f"{comp_src}.linear_wgate.weight^T -> {comp_tgt}.wgate.weight",
                     f"{comp_src}.linear_wkv.weight^T -> {comp_tgt}.wkv.weight",
@@ -786,7 +786,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     idx_src = f"{tl}.self_attn.core_attention.indexer"
                     idx_tgt = f"{mtp_tgt}.attn.indexer"
                     stmts += [
-                        f"{idx_src}.compressor.ape -> {idx_tgt}.compressor.ape, dtype='float32'",
+                        f"{idx_src}.compressor.ape -> {idx_tgt}.compressor.ape, dtype='bfloat16'",
                         f"{idx_src}.compressor.norm.weight -> {idx_tgt}.compressor.norm.weight",
                         f"{idx_src}.compressor.linear_wgate.weight^T -> {idx_tgt}.compressor.wgate.weight",
                         f"{idx_src}.compressor.linear_wkv.weight^T -> {idx_tgt}.compressor.wkv.weight",
@@ -870,7 +870,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 f"{src}.self_attn.o_proj.weight^T -> {tgt}.attn.wo_b.weight",
             ]
             stmts += [
-                f"{src}.self_attn.core_attention.attn_sink -> {tgt}.attn.attn_sink, dtype='float32'",
+                f"{src}.self_attn.core_attention.attn_sink -> {tgt}.attn.attn_sink, dtype='bfloat16'",
             ]
 
             # --- mHC: Self-Attention HyperConnection (merge alpha_pre/post/res -> scale) ---
@@ -900,7 +900,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 comp_src = f"{src}.self_attn.core_attention.compressor"
                 comp_tgt = f"{tgt}.attn.compressor"
                 stmts += [
-                    f"{comp_src}.ape -> {comp_tgt}.ape, dtype='float32'",
+                    f"{comp_src}.ape -> {comp_tgt}.ape, dtype='bfloat16'",
                     f"{comp_src}.norm.weight -> {comp_tgt}.norm.weight",
                     f"{comp_src}.linear_wgate.weight^T -> {comp_tgt}.wgate.weight",
                     f"{comp_src}.linear_wkv.weight^T -> {comp_tgt}.wkv.weight",
@@ -911,7 +911,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 idx_src = f"{src}.self_attn.core_attention.indexer"
                 idx_tgt = f"{tgt}.attn.indexer"
                 stmts += [
-                    f"{idx_src}.compressor.ape -> {idx_tgt}.compressor.ape, dtype='float32'",
+                    f"{idx_src}.compressor.ape -> {idx_tgt}.compressor.ape, dtype='bfloat16'",
                     f"{idx_src}.compressor.norm.weight -> {idx_tgt}.compressor.norm.weight",
                     f"{idx_src}.compressor.linear_wgate.weight^T -> {idx_tgt}.compressor.wgate.weight",
                     f"{idx_src}.compressor.linear_wkv.weight^T -> {idx_tgt}.compressor.wkv.weight",
