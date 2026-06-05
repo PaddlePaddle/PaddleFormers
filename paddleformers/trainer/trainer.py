@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import collections
 import contextlib
+import fnmatch
 import gc
 import hashlib
 import inspect
@@ -46,6 +47,7 @@ import psutil
 from packaging import version
 from paddle import framework
 from paddle.base import core
+from paddle.base.framework import Variable, in_dynamic_or_pir_mode, in_pir_mode
 from paddle.distributed import ShardedWeight
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
 from paddle.distributed.fleet.meta_parallel import PipelineLayer
@@ -310,7 +312,7 @@ def _dsv4_dump_grad_tensor(
         if offset >= total_numel:
             continue
         take = min(max_numel, total_numel - offset)
-        tensor_cpu = flat[offset : offset + take].cast("float32").cpu()
+        tensor_cpu = flat[offset : offset + take].cpu()
         file_name = (
             f"{framework}_rank{rank}_step{step}_{stage}_"
             f"{_dsv4_safe_filename(name)}_offset{offset}_numel{take}.pd"
@@ -326,6 +328,88 @@ def _dsv4_dump_grad_tensor(
                 "source": source,
                 "shape": list(grad.shape),
                 "dtype": str(grad.dtype),
+                "offset": offset,
+                "numel": take,
+                "total_numel": total_numel,
+                "tensor": tensor_cpu,
+            },
+            str(out_file),
+        )
+        saved.append(str(out_file))
+    return saved
+
+
+def _dsv4_param_tensor_dump_enabled() -> bool:
+    return os.getenv("DSV4_PARAM_TENSOR_DUMP", "0") == "1"
+
+
+def _dsv4_param_tensor_dump_should_save(name: str) -> bool:
+    patterns = os.getenv("DSV4_PARAM_TENSOR_DUMP_PARAM_PATTERNS", "").strip()
+    if not patterns:
+        patterns = os.getenv("DSV4_GRAD_INVENTORY_PARAM_PATTERNS", "")
+    selected = [item.strip().lower() for item in patterns.split(",") if item.strip()]
+    if not selected:
+        return False
+    lowered = name.lower()
+    return "all" in selected or any(pattern in lowered for pattern in selected)
+
+
+def _dsv4_param_tensor_dump_offsets() -> list[int]:
+    offsets = os.getenv("DSV4_PARAM_TENSOR_DUMP_OFFSETS", "")
+    if not offsets.strip():
+        return [0]
+    result: list[int] = []
+    for item in offsets.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            result.append(max(0, int(item)))
+        except ValueError:
+            continue
+    return result or [0]
+
+
+def _dsv4_dump_param_tensor(
+    framework: str,
+    rank: int,
+    step: int,
+    stage: str,
+    name: str,
+    tensor: paddle.Tensor,
+) -> list[str]:
+    if not _dsv4_param_tensor_dump_enabled() or not _dsv4_param_tensor_dump_should_save(name):
+        return []
+    output_dir = os.getenv("DSV4_PARAM_TENSOR_DUMP_DIR", "").strip()
+    if not output_dir:
+        return []
+
+    max_numel = int(os.getenv("DSV4_PARAM_TENSOR_DUMP_MAX_NUMEL", "1048576"))
+    dump_dir = Path(output_dir)
+    dump_dir.mkdir(parents=True, exist_ok=True)
+    flat = paddle.reshape(tensor.detach(), [-1])
+    total_numel = int(np.prod(list(tensor.shape)))
+    saved: list[str] = []
+    for offset in _dsv4_param_tensor_dump_offsets():
+        if offset >= total_numel:
+            continue
+        take = min(max_numel, total_numel - offset)
+        tensor_cpu = flat[offset : offset + take].cpu()
+        file_name = (
+            f"{framework}_rank{rank}_step{step}_{stage}_"
+            f"{_dsv4_safe_filename(name)}_offset{offset}_numel{take}.pd"
+        )
+        out_file = dump_dir / file_name
+        paddle.save(
+            {
+                "framework": framework,
+                "kind": "param",
+                "rank": rank,
+                "step": step,
+                "stage": stage,
+                "name": name,
+                "shape": list(tensor.shape),
+                "dtype": str(tensor.dtype),
                 "offset": offset,
                 "numel": take,
                 "total_numel": total_numel,
@@ -411,20 +495,34 @@ def _dsv4_optimizer_update_probe_should_log(name: str) -> bool:
 def _dsv4_unwrap_optimizer(optimizer):
     current = optimizer
     seen = set()
-    while hasattr(current, "_inner_opt") and id(current) not in seen:
+    while id(current) not in seen:
         seen.add(id(current))
-        current = current._inner_opt
+        next_opt = None
+        for attr in ("_inner_opt", "_optim", "_optimizer"):
+            candidate = getattr(current, attr, None)
+            if candidate is not None:
+                next_opt = candidate
+                break
+        if next_opt is None:
+            break
+        current = next_opt
     return current
 
 
 def _dsv4_optimizer_chain(optimizer):
     chain = []
-    current = optimizer
+    stack = [optimizer]
     seen = set()
-    while current is not None and id(current) not in seen:
+    while stack:
+        current = stack.pop(0)
+        if current is None or id(current) in seen:
+            continue
         seen.add(id(current))
         chain.append(current)
-        current = getattr(current, "_inner_opt", None)
+        for attr in ("_inner_opt", "_optim", "_optimizer"):
+            candidate = getattr(current, attr, None)
+            if candidate is not None and id(candidate) not in seen:
+                stack.append(candidate)
     return chain
 
 
@@ -875,22 +973,71 @@ def _dsv4_get_optimizer_lr(inner_opt, param):
         return "NA"
 
 
+def _dsv4_compute_megatron_cosine_lr(args, optimizer_step: int) -> Optional[float]:
+    scheduler_type = str(getattr(args, "lr_scheduler_type", "")).lower()
+    if "cosine" not in scheduler_type:
+        return None
+    learning_rate = float(getattr(args, "learning_rate"))
+    min_lr = float(getattr(args, "min_lr", 0.0) or 0.0)
+    warmup_steps = int(getattr(args, "warmup_steps", 0) or 0)
+    decay_steps = int(getattr(args, "decay_steps", 0) or 0)
+    if decay_steps <= 0:
+        decay_steps = int(getattr(args, "max_steps", 0) or 0)
+    if decay_steps <= 0:
+        return None
+
+    current_step = max(0, int(optimizer_step) - 1)
+    if current_step < warmup_steps:
+        return learning_rate * float(current_step) / float(max(1, warmup_steps))
+    if current_step >= decay_steps:
+        return min_lr
+
+    num_cycles = float(getattr(args, "num_cycles", 0.5) or 0.5)
+    progress = float(current_step - warmup_steps) / float(max(1, decay_steps - warmup_steps))
+    ratio = max(0.0, 0.5 * (1.0 + math.cos(math.pi * num_cycles * 2.0 * progress)))
+    return ratio * (learning_rate - min_lr) + min_lr
+
+
+def _dsv4_native_adamw_reference_steps_configured() -> bool:
+    steps = [item.strip().lower() for item in os.getenv("DSV4_FLEET_NATIVE_ADAMW_REFERENCE_STEPS", "").split(",")]
+    disabled = {"", "0", "none", "false", "off"}
+    return any(item not in disabled for item in steps)
+
+
 @paddle.no_grad()
-def _dsv4_sync_optimizer_lr_tensor_from_scheduler(optimizer, lr_scheduler) -> None:
-    if os.getenv("DSV4_FLEET_SYNC_OPTIMIZER_LR_TENSOR", "0") != "1":
+def _dsv4_sync_optimizer_lr_tensor_from_scheduler(optimizer, lr_scheduler, optimizer_step=None, args=None) -> None:
+    sync_lr_tensor = os.getenv("DSV4_FLEET_SYNC_OPTIMIZER_LR_TENSOR", "0") == "1"
+    exact_lr_value = None
+    use_exact_lr_tensor = (
+        os.getenv("DSV4_FLEET_MEGATRON_LR_SYNC", "0") == "1"
+        or os.getenv("DSV4_ADAMW_REFERENCE_UPDATE", "0") == "1"
+    )
+    need_exact_lr_attr = use_exact_lr_tensor or _dsv4_native_adamw_reference_steps_configured()
+    if not sync_lr_tensor and not need_exact_lr_attr:
         return
-    if lr_scheduler is None:
-        return
-    try:
-        lr_value = float(lr_scheduler())
-    except Exception:
-        try:
-            lr_value = float(lr_scheduler.get_lr())
-        except Exception:
+
+    lr_value = None
+    if sync_lr_tensor:
+        if lr_scheduler is None:
             return
+        try:
+            lr_value = float(lr_scheduler())
+        except Exception:
+            try:
+                lr_value = float(lr_scheduler.get_lr())
+            except Exception:
+                return
+    if args is not None and optimizer_step is not None and need_exact_lr_attr:
+        exact_lr_value = _dsv4_compute_megatron_cosine_lr(args, int(optimizer_step))
+        if exact_lr_value is not None and use_exact_lr_tensor:
+            lr_value = exact_lr_value
 
     synced = 0
     for opt in _dsv4_optimizer_chain(optimizer):
+        if exact_lr_value is not None:
+            setattr(opt, "_dsv4_exact_lr", exact_lr_value)
+        if not sync_lr_tensor:
+            continue
         learning_rate = getattr(opt, "_learning_rate", None)
         if learning_rate is None or not callable(learning_rate):
             continue
@@ -900,7 +1047,18 @@ def _dsv4_sync_optimizer_lr_tensor_from_scheduler(optimizer, lr_scheduler) -> No
             lr_tensor = None
         if not isinstance(lr_tensor, paddle.Tensor):
             continue
-        lr_tensor.set_value(paddle.full(lr_tensor.shape, lr_value, dtype=lr_tensor.dtype))
+        if (
+            exact_lr_value is not None
+            and use_exact_lr_tensor
+            and os.getenv("DSV4_FLEET_FP64_LR_TENSOR", "0") == "1"
+            and lr_tensor.dtype != paddle.float64
+        ):
+            lr_tensor = paddle.full(lr_tensor.shape, lr_value, dtype="float64")
+            lr_map = getattr(opt, "_learning_rate_map", None)
+            if isinstance(lr_map, dict):
+                lr_map[framework.default_main_program()] = lr_tensor
+        else:
+            lr_tensor.set_value(paddle.full(lr_tensor.shape, lr_value, dtype=lr_tensor.dtype))
         synced += 1
 
     if os.getenv("DSV4_FLEET_SYNC_OPTIMIZER_LR_TENSOR_DEBUG", "0") == "1":
@@ -908,8 +1066,190 @@ def _dsv4_sync_optimizer_lr_tensor_from_scheduler(optimizer, lr_scheduler) -> No
             rank = dist.get_rank()
         except Exception:
             rank = 0
+        lr_repr = "NA" if lr_value is None else f"{lr_value:.20f}"
         logger.info(
-            f"[DSV4_LR_SYNC] framework=fleet rank={rank} lr={lr_value:.20f} synced_tensors={synced}"
+            f"[DSV4_LR_SYNC] framework=fleet rank={rank} lr={lr_repr} synced_tensors={synced}"
+        )
+
+
+def _dsv4_native_adamw_reference_step_enabled(step: int) -> bool:
+    steps = [item.strip().lower() for item in os.getenv("DSV4_FLEET_NATIVE_ADAMW_REFERENCE_STEPS", "").split(",")]
+    if not _dsv4_native_adamw_reference_steps_configured():
+        return False
+    return "all" in steps or str(int(step)) in steps
+
+
+def _dsv4_float_scalar(value) -> float:
+    if isinstance(value, paddle.Tensor):
+        return float(value.detach().cast("float64").cpu().numpy().reshape([-1])[0])
+    return float(value)
+
+
+def _dsv4_skip_update(skip_update) -> bool:
+    if isinstance(skip_update, paddle.Tensor):
+        return bool(skip_update.detach().cast("bool").cpu().numpy().reshape([-1])[0])
+    return bool(skip_update) if skip_update is not None else False
+
+
+def _dsv4_native_adamw_reference_param_enabled(param, grad) -> bool:
+    if getattr(param, "_dsv4_router_gate_manual_adamw", False) or getattr(
+        grad, "_dsv4_router_gate_manual_adamw", False
+    ):
+        return False
+    name = str(getattr(param, "name", ""))
+    patterns = os.getenv("DSV4_FLEET_NATIVE_ADAMW_REFERENCE_EXCLUDE_PATTERNS", "")
+    for pattern in [item.strip() for item in patterns.split(",") if item.strip()]:
+        if fnmatch.fnmatch(name, pattern) or pattern in name:
+            return False
+    return True
+
+
+def _dsv4_native_adamw_torch_reference(
+    optimizer,
+    param,
+    grad,
+    learning_rate,
+    moment1,
+    moment2,
+    beta1_pow,
+    beta2_pow,
+    master_weight,
+    skip_update,
+    beta1,
+    beta2,
+    epsilon,
+    lr_ratio,
+    coeff,
+    with_decay,
+    multi_precision,
+):
+    if _dsv4_skip_update(skip_update):
+        return
+    if not with_decay:
+        coeff = 0.0
+    if not multi_precision:
+        master_weight = None
+
+    import torch
+
+    lr_value = getattr(optimizer, "_dsv4_exact_lr", None)
+    if lr_value is None:
+        lr_value = _dsv4_float_scalar(learning_rate)
+    lr_value = float(lr_value) * _dsv4_float_scalar(lr_ratio)
+
+    p = master_weight if master_weight is not None else param
+    param_t = torch.utils.dlpack.from_dlpack(param.detach())
+    p_t = torch.utils.dlpack.from_dlpack(p.detach())
+    grad_t = torch.utils.dlpack.from_dlpack(grad.detach())
+    moment1_t = torch.utils.dlpack.from_dlpack(moment1.detach())
+    moment2_t = torch.utils.dlpack.from_dlpack(moment2.detach())
+
+    p_t.requires_grad_(True)
+    p_t.grad = grad_t
+    torch_optimizer = torch.optim.AdamW(
+        [p_t],
+        lr=lr_value,
+        betas=(float(beta1), float(beta2)),
+        eps=float(epsilon),
+        weight_decay=float(coeff),
+        fused=bool(p_t.is_cuda),
+    )
+
+    beta1_pow_value = _dsv4_float_scalar(beta1_pow)
+    if beta1_pow_value > 0.0 and float(beta1) not in (0.0, 1.0):
+        state_step = max(0, int(round(math.log(beta1_pow_value) / math.log(float(beta1)))) - 1)
+    else:
+        state_step = 0
+    state = torch_optimizer.state[p_t]
+    state["step"] = torch.tensor(float(state_step), dtype=torch.float32, device=p_t.device)
+    state["exp_avg"] = moment1_t
+    state["exp_avg_sq"] = moment2_t
+    torch_optimizer.step()
+    p_t.grad = None
+
+    if master_weight is not None:
+        with torch.no_grad():
+            param_t.copy_(p_t.detach().to(dtype=param_t.dtype))
+    beta1_pow[:], beta2_pow[:] = float(beta1) * beta1_pow[:], float(beta2) * beta2_pow[:]
+
+
+def _dsv4_native_adamw_reference_append_optimize_op(self, block, param_and_grad):
+    step = int(getattr(self, "_dsv4_current_optimizer_step", -1))
+    original = getattr(self, "_dsv4_original_append_optimize_op")
+    if not _dsv4_native_adamw_reference_step_enabled(step):
+        return original(block, param_and_grad)
+    if getattr(self, "_amsgrad", False):
+        return original(block, param_and_grad)
+
+    if isinstance(param_and_grad, dict):
+        param_and_grad = self._update_param_group(param_and_grad)
+    param, grad = param_and_grad
+    if not _dsv4_native_adamw_reference_param_enabled(param, grad):
+        return original(block, param_and_grad)
+
+    with_decay = True
+    if self._apply_decay_param_fun is not None and not self._apply_decay_param_fun(param.name):
+        with_decay = False
+
+    moment1 = self._get_accumulator_master(self._moment1_acc_str, param)
+    moment2 = self._get_accumulator_master(self._moment2_acc_str, param)
+    beta1_pow_acc = self._get_accumulator_master(self._beta1_pow_acc_str, param)
+    beta2_pow_acc = self._get_accumulator_master(self._beta2_pow_acc_str, param)
+    find_master = self._multi_precision and self._is_dtype_fp16_or_bf16(param.dtype)
+    master_weight = self._master_weights[param.name] if find_master else None
+    lr = self._create_param_lr(param_and_grad)
+
+    if in_dynamic_or_pir_mode():
+        lr_ratio_ = 1.0 if self._lr_ratio is None else self._lr_ratio(param)
+        _beta1 = self._beta1 if not isinstance(self._beta1, Variable) else self._beta1.item(0)
+        _beta2 = self._beta2 if not isinstance(self._beta2, Variable) else self._beta2.item(0)
+        found_inf = self._get_auxiliary_var("found_inf") if in_pir_mode() else None
+        _dsv4_native_adamw_torch_reference(
+            self,
+            param,
+            grad,
+            lr,
+            moment1,
+            moment2,
+            beta1_pow_acc,
+            beta2_pow_acc,
+            master_weight,
+            found_inf,
+            _beta1,
+            _beta2,
+            self._epsilon,
+            lr_ratio_,
+            self._weight_decay,
+            with_decay,
+            find_master,
+        )
+        return None
+
+    return original(block, param_and_grad)
+
+
+def _dsv4_patch_native_adamw_reference_update(optimizer, step: int) -> None:
+    if not _dsv4_native_adamw_reference_step_enabled(step):
+        return
+    patched = 0
+    for opt in _dsv4_optimizer_chain(optimizer):
+        cls = opt.__class__
+        if cls.__name__ != "AdamW" or cls.__module__ != "paddle.optimizer.adamw":
+            continue
+        if not hasattr(opt, "_dsv4_original_append_optimize_op"):
+            opt._dsv4_original_append_optimize_op = opt._append_optimize_op
+            opt._append_optimize_op = types.MethodType(_dsv4_native_adamw_reference_append_optimize_op, opt)
+        opt._dsv4_current_optimizer_step = int(step)
+        patched += 1
+
+    if patched and os.getenv("DSV4_FLEET_NATIVE_ADAMW_REFERENCE_DEBUG", "0") == "1":
+        try:
+            rank = dist.get_rank()
+        except Exception:
+            rank = 0
+        logger.info(
+            f"[DSV4_NATIVE_ADAMW_REFERENCE] framework=fleet rank={rank} "
+            f"step={step} patched_optimizers={patched}"
         )
 
 
@@ -1358,6 +1698,7 @@ def _dsv4_log_param_inventory(model: nn.Layer, step: int, stage: str = "post_opt
         norm = float(paddle.linalg.norm(tensor_fp32).item())
         md5 = _dsv4_tensor_md5_float32(param) if numel <= max_numel else "SKIP"
         md5_t = _dsv4_tensor_md5_float32_t(param) if numel <= max_numel else "SKIP"
+        dump_paths = _dsv4_dump_param_tensor("fleet", rank, step, stage, param_name, param)
         param_lines.append(
             f"[DSV4_PARAM] framework=fleet rank={rank} step={step} stage={stage} "
             f"category={_dsv4_grad_category(param_name)} name={param_name} "
@@ -1367,7 +1708,8 @@ def _dsv4_log_param_inventory(model: nn.Layer, step: int, stage: str = "post_opt
             f"is_distributed={getattr(param, 'is_distributed', None)} "
             f"no_sync={getattr(param, 'no_sync', None)} "
             f"allreduce={getattr(param, 'allreduce', None)} "
-            f"color={getattr(param, 'color', None)}"
+            f"color={getattr(param, 'color', None)} "
+            f"dump_paths={','.join(dump_paths) if dump_paths else 'NA'}"
         )
 
     _dsv4_emit_inventory_lines("fleet", "param", rank, step, stage, param_lines, max_param_lines, emit)
@@ -3053,7 +3395,10 @@ class Trainer:
         if parameters_list is None:
             parameters_list = []
 
-        _dsv4_sync_optimizer_lr_tensor_from_scheduler(self.optimizer, self.lr_scheduler)
+        _dsv4_sync_optimizer_lr_tensor_from_scheduler(
+            self.optimizer, self.lr_scheduler, self.state.global_step + 1, args
+        )
+        _dsv4_patch_native_adamw_reference_update(self.optimizer, self.state.global_step + 1)
         _dsv4_log_optimizer_update_probe(
             model, self.optimizer, self.state.global_step + 1, stage="pre_optimizer_before_step"
         )

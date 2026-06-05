@@ -13,6 +13,9 @@
 # limitations under the License.
 
 
+import math
+import os
+
 import paddle
 from paddle import pir
 from paddle.base import core, framework
@@ -316,7 +319,10 @@ class AdamWCustom(AdamW):
 
             found_inf = self._get_auxiliary_var("found_inf") if in_pir_mode() else None
             skip_update_param = weight_scale is not None
-            apply_adamw = self.adamw_custom if adamw_triton is None else adamw_triton
+            if os.getenv("DSV4_ADAMW_REFERENCE_UPDATE", "0") == "1":
+                apply_adamw = self.adamw_torch_reference
+            else:
+                apply_adamw = self.adamw_custom if adamw_triton is None else adamw_triton
             apply_adamw(
                 param_and_grad[0],
                 param_and_grad[1],
@@ -363,6 +369,85 @@ class AdamWCustom(AdamW):
             return None
         else:
             raise NotImplementedError("Not implemented yet.")
+
+    def adamw_torch_reference(
+        self,
+        param,
+        grad,
+        learning_rate,
+        moment1,
+        moment2,
+        beta1_pow,
+        beta2_pow,
+        master_weight,
+        skip_update,
+        beta1,
+        beta2,
+        epsilon,
+        lr_ratio,
+        coeff,
+        with_decay,
+        multi_precision,
+        skip_update_param,
+    ):
+        if isinstance(skip_update, paddle.Tensor):
+            if bool(skip_update.detach().cast("bool").numpy().reshape([-1])[0]):
+                return
+        elif skip_update:
+            return
+        if not with_decay:
+            coeff = 0.0
+        if not multi_precision:
+            master_weight = None
+
+        import torch
+
+        if isinstance(lr_ratio, paddle.Tensor):
+            lr_ratio = float(lr_ratio.detach().cast("float64").numpy().reshape([-1])[0])
+        else:
+            lr_ratio = float(lr_ratio)
+        lr_value = getattr(self, "_dsv4_exact_lr", None)
+        if lr_value is None:
+            if isinstance(learning_rate, paddle.Tensor):
+                lr_value = float(learning_rate.detach().cast("float64").numpy().reshape([-1])[0])
+            else:
+                lr_value = float(learning_rate)
+        lr_value = float(lr_value) * lr_ratio
+
+        p = master_weight if master_weight is not None else param
+        param_t = torch.utils.dlpack.from_dlpack(param.detach())
+        p_t = torch.utils.dlpack.from_dlpack(p.detach())
+        grad_t = torch.utils.dlpack.from_dlpack(grad.detach())
+        moment1_t = torch.utils.dlpack.from_dlpack(moment1.detach())
+        moment2_t = torch.utils.dlpack.from_dlpack(moment2.detach())
+
+        p_t.requires_grad_(True)
+        p_t.grad = grad_t
+        opt = torch.optim.AdamW(
+            [p_t],
+            lr=lr_value,
+            betas=(float(beta1), float(beta2)),
+            eps=float(epsilon),
+            weight_decay=float(coeff),
+            fused=bool(p_t.is_cuda),
+        )
+
+        beta1_pow_value = float(beta1_pow.detach().cast("float64").numpy().reshape([-1])[0])
+        if beta1_pow_value > 0.0 and float(beta1) not in (0.0, 1.0):
+            state_step = max(0, int(round(math.log(beta1_pow_value) / math.log(float(beta1)))) - 1)
+        else:
+            state_step = 0
+        state = opt.state[p_t]
+        state["step"] = torch.tensor(float(state_step), dtype=torch.float32, device=p_t.device)
+        state["exp_avg"] = moment1_t
+        state["exp_avg_sq"] = moment2_t
+        opt.step()
+        p_t.grad = None
+
+        if master_weight is not None and not skip_update_param:
+            param_t.copy_(p_t.detach().to(dtype=param_t.dtype))
+        beta1_pow[:], beta2_pow[:] = beta1 * beta1_pow[:], beta2 * beta2_pow[:]
+        return
 
     def adamw_custom(
         self,
