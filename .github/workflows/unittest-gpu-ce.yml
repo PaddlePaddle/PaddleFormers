@@ -175,10 +175,10 @@ jobs:
         run: |
           if [[ "${{ steps.test.outcome }}" == "success" ]]; then
             echo "✅ Test passed successfully"
-            tail -n 1 ${{ github.workspace }}/PaddleFormers/unittest_logs/unittest.log
+            tail -n 1 ${{ github.workspace }}/PaddleFormers/unittest_logs/unittest.log || true
           else
             echo "❌ Test failed with status: ${{ steps.test.outcome }}"
-            cat ${{ github.workspace }}/PaddleFormers/unittest_logs/unittest_FAIL.log
+            cat ${{ github.workspace }}/PaddleFormers/unittest_logs/unittest_FAIL.log || true
           fi
       - name: Upload Products
         if: always()
