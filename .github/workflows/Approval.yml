@@ -3,6 +3,8 @@ name: Approval
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  pull_request_review:
+    types: [submitted]
 
 env:
   BRANCH: ${{ github.base_ref }}
@@ -34,4 +36,4 @@ jobs:
         run: |
           git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
           git fetch upstream $BRANCH
-          bash ci/check_approval.sh
+          bash scripts/ci/check_approval.sh

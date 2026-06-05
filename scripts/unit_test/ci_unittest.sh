@@ -50,7 +50,9 @@ install_requirements() {
         #fleet
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
         #paddlefleet_ops
-        python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir --force-reinstall --no-dependencies
+        wget -q https://paddle-whl.bj.bcebos.com/nightly/cu129/paddlefleet-ops/paddlefleet_ops-0.3.0.dev20260604+02aed7c3-cp312-cp312-linux_x86_64.whl
+        pip install  paddlefleet_ops-0.3.0.dev20260604+02aed7c3-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ -i https://pypi.org/simple 
+        # python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
         python -m pip uninstall paddlepaddle-gpu -y
         #paddle
         wget -q $paddle
@@ -59,7 +61,9 @@ install_requirements() {
     else
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
         #paddlefleet_ops
-        python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir --force-reinstall --no-dependencies
+        wget -q https://paddle-whl.bj.bcebos.com/nightly/cu129/paddlefleet-ops/paddlefleet_ops-0.3.0.dev20260604+02aed7c3-cp312-cp312-linux_x86_64.whl
+        pip install  paddlefleet_ops-0.3.0.dev20260604+02aed7c3-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ -i https://pypi.org/simple 
+        # python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
     fi
     pip install -r tests/requirements.txt -i https://pypi.org/simple 
 
@@ -104,12 +108,7 @@ print_info() {
             | grep -v "SKIPPED" | grep -v "warning" > ${log_path}/unittest_FAIL.log
         tail -n 1 ${log_path}/unittest.log >> ${log_path}/unittest_FAIL.log
         echo -e "\033[31m ${log_path}/unittest_FAIL \033[0m"
-        cat ${log_path}/unittest_FAIL.log
-        if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
-            cp ${log_path}/unittest_FAIL.log ${PPNLP_HOME}/upload/unittest_FAIL.log.${AGILE_PIPELINE_BUILD_ID}.${AGILE_JOB_BUILD_ID}
-            cd ${PPNLP_HOME} && python upload.py ${PPNLP_HOME}/upload 'paddlenlp/PaddleNLP_CI/PaddleNLP-CI-Unittest-GPU'
-            rm -rf upload/* && cd -
-        fi
+        tail -n 1 ${log_path}/unittest_FAIL.log
         if [ $1 -eq 124 ]; then
             echo "\033[32m [failed-timeout] Test case execution was terminated after exceeding the ${running_time} min limit."
         fi
@@ -162,15 +161,6 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     print_info $exit_code unittest
     echo -e "\033[35m ---- Set PYTEST_EXECUTE_FLAG_FILE  \033[0m"
     touch ${PYTEST_EXECUTE_FLAG_FILE}
-    if [ -n "${AGILE_JOB_BUILD_ID}" ]; then
-        cd ${nlp_dir}
-        echo -e "\033[35m ---- Generate Allure Report  \033[0m"
-        cp scripts/unit_test/gen_allure_report.py ./
-        python gen_allure_report.py > /dev/null
-        echo -e "\033[35m ---- Report: https://xly.bce.baidu.com/ipipe/ipipe-report/report/${AGILE_JOB_BUILD_ID}/report/  \033[0m"
-    else
-        echo "AGILE_JOB_BUILD_ID is empty, skip generate allure report"
-    fi
 else
     echo -e "\033[32m Changed Not CI case, Skips \033[0m"
     exit_code=0

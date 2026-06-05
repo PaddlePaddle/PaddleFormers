@@ -16,7 +16,7 @@ if [ -z "${BRANCH:-}" ]; then
     BRANCH="develop"
 fi
 
-PADDLE_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}")/../" && pwd )"
+PADDLE_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}")/../../" && pwd )"
 
 UPSTREAM_BRANCH="upstream/${BRANCH}"
 if ! DIFF_BASE=$(git merge-base HEAD "${UPSTREAM_BRANCH}"); then
@@ -30,7 +30,7 @@ echo_list=()
 
 
 function check_approval(){
-    APPROVALS=$(echo "${approval_line}" | python "${PADDLE_ROOT}/ci/check_pr_approval.py" "$@")
+    APPROVALS=$(echo "${approval_line}" | python "${PADDLE_ROOT}/scripts/ci/check_pr_approval.py" "$@")
     if [[ "${APPROVALS}" == "FALSE" && "${echo_line}" != "" ]]; then
         add_failed "${failed_num}. ${echo_line}"
     fi
@@ -57,6 +57,18 @@ for FILE in "${PADDLEFORMERS_TRAINER_FILES[@]}"; do
     fi
 done
 
+PADDLEFORMERS_REQUIREMENTS_APPROVERS="zjjlivein From00"
+PADDLEFORMERS_REQUIREMENTS_FILES=(
+    "requirements.txt"
+)
+for FILE in "${PADDLEFORMERS_REQUIREMENTS_FILES[@]}"; do
+    HAS_MODIFIED=$(git diff --name-only "${DIFF_BASE}" HEAD -- | grep "^${FILE}" || true)
+    if [ "${HAS_MODIFIED}" != "" ] && [ "${PR_ID}" != "" ]; then
+        echo_line="You must be approved by zjjlivein or From00 for changes in ${FILE}.\n"
+        APPROVER_LIST=(${PADDLEFORMERS_REQUIREMENTS_APPROVERS})
+        check_approval 1 "${APPROVER_LIST[@]}"
+    fi
+done
 
 if [ -n "${echo_list}" ];then
   echo "****************"

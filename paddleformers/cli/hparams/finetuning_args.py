@@ -71,6 +71,16 @@ class PreTrainingArguments(TrainingArguments):
         default=1,
         metadata={"help": "the logging interval of global_training_logs"},
     )
+    internal_medicine_monitors: Optional[str] = field(
+        default="",
+        metadata={
+            "help": "Comma-separated list of internal medicine monitors. Options: qk_stats,moe_health,massive_act,all"
+        },
+    )
+    internal_medicine_monitor_interval: int = field(
+        default=1,
+        metadata={"help": "Step interval for internal medicine monitors."},
+    )
     num_consecutive: int = field(
         default=1,
         metadata={"help": "H5 file consecutive num."},
@@ -294,6 +304,9 @@ class FinetuningArguments(
     )
 
     def __post_init__(self):
+        if self.internal_medicine_monitors and self.internal_medicine_monitor_interval < 1:
+            raise ValueError("internal_medicine_monitor_interval must be greater than 0 when monitors are enabled")
+
         self.bf16 = True
         if self.compute_type == "bf16":
             self.fp16 = False

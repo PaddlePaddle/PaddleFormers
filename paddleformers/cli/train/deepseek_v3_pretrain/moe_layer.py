@@ -20,6 +20,7 @@ import numpy as np
 import paddle
 import paddle.distributed as dist
 from paddle import nn
+from paddlefleet_ops import is_deep_ep_available
 
 from paddleformers.transformers import _AllToAll
 from paddleformers.transformers.fp8_utils import (
@@ -45,9 +46,9 @@ from .moe_utils import (
 from .token_dispatcher import MoEFlexTokenDispatcherFast as MoEFlexTokenDispatcher
 from .token_dispatcher import PreDispatchNode
 
-try:
-    import paddle.distributed.communication.deep_ep as deep_ep
-except ImportError:
+if is_deep_ep_available():
+    import paddlefleet_ops.deep_ep as deep_ep
+else:
     deep_ep = None
 
 try:
