@@ -12,7 +12,7 @@ random_shuffle: false
 mix_strategy: concat
 _attn_implementation: flashmask
 
-num_hidden_layers: 2
+num_hidden_layers: 6
 hidden_size: 1024
 
 stage: SFT
@@ -29,7 +29,7 @@ save_steps: 10
 save_hf_steps: 10
 logging_steps: 1
 save_total_limit: 5
-gradient_accumulation_steps: 20
+gradient_accumulation_steps: 64
 output_dir: output/checkpoints/glm45
 disable_tqdm: true
 eval_accumulation_steps: 2
