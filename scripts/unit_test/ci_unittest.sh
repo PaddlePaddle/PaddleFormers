@@ -62,7 +62,7 @@ install_requirements() {
         python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --no-cache-dir --force-reinstall --no-dependencies
     fi
     pip install -r tests/requirements.txt -i https://pypi.org/simple 
-
+    sleep 2h
     echo "paddle commit:"
     python -c "import paddle; print(paddle.version.commit)"
     echo "paddlefleet commit:"
