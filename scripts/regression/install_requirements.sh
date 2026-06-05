@@ -121,8 +121,8 @@ install_requirements() {
     python -c "import paddle; print(paddle.version.commit)"
     echo "paddlefleet commit:"
     python -c "import paddlefleet; print(paddlefleet.version.commit)"
-    echo "paddlefleet_ops commit:"
-    python -c "from paddlefleet_ops import __version__; print(__version__)"
+    # echo "paddlefleet_ops commit:"
+    # python -c "from paddlefleet_ops import __version__; print(__version__)"
     echo "paddleformers commit:"
     python -c "import paddleformers; print(paddleformers.version.commit)"
     
@@ -130,7 +130,7 @@ install_requirements() {
     python -c "import paddle;print('paddle');print(paddle.__version__);print(paddle.version.show())" >> ${log_path}/commit_info.txt
     python -c "from paddleformers import __version__; print('paddleformers version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
-    python -c "from paddlefleet_ops import __version__; print('paddlefleet_ops version:', __version__)" >> ${log_path}/commit_info.txt
+    # python -c "from paddlefleet_ops import __version__; print('paddlefleet_ops version:', __version__)" >> ${log_path}/commit_info.txt
     python -c "import paddlefleet; print('paddlefleet commit:',paddlefleet.version.commit)" >> ${log_path}/commit_info.txt
     python -m pip list >> ${log_path}/commit_info.txt
     end_ts=$(date +%s)
