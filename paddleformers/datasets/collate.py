@@ -625,37 +625,6 @@ def collate_fn(
 
     return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
     input_dict = dict(zip(input_keys, return_list))
-    if fixed_tokens is not None and (
-        os.environ.get("LOG_DATA_MD5", "0") == "1" or os.environ.get("LOG_LAYER_MD5", "0") == "1"
-    ):
-        import hashlib
-
-        try:
-            rank = paddle.distributed.get_rank()
-        except Exception:
-            rank = 0
-        main_input = np.asarray([fixed_input_ids], dtype=np.int64)
-        main_labels = np.asarray([fixed_labels], dtype=np.int64)
-        if fixed_tokens_json_path:
-            print(
-                f"[DSV4_FLEET_FIXED_TOKENS] using fixed token batch from {fixed_tokens_json_path}",
-                flush=True,
-            )
-        else:
-            print(
-                f"[LOAD_FIXED_DATA_PATH] loaded from {fixed_tokens_path}",
-                flush=True,
-            )
-        print(
-            f"[DATA_PATH_MD5] rank={rank} input_ids shape={list(main_input.shape)} "
-            f"md5={hashlib.md5(main_input.tobytes()).hexdigest()}",
-            flush=True,
-        )
-        print(
-            f"[DATA_PATH_MD5] rank={rank} labels shape={list(main_labels.shape)} "
-            f"md5={hashlib.md5(main_labels.tobytes()).hexdigest()}",
-            flush=True,
-        )
     return input_dict
 
 
