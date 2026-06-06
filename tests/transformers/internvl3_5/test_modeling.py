@@ -1,0 +1,168 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+
+import tempfile
+import unittest
+
+import paddle
+import paddle.nn.functional as F
+
+from tests.transformers.test_configuration_common import ConfigTester
+
+from paddleformers.transformers import InternVLChatConfig, InternVLChatModel
+
+
+class InternVLModelTest(unittest.TestCase):
+    def get_config(self):
+        return InternVLChatConfig(
+            vision_config={
+                "image_size": 28,
+                "patch_size": 14,
+                "hidden_size": 16,
+                "intermediate_size": 32,
+                "num_hidden_layers": 1,
+                "num_attention_heads": 2,
+                "qkv_bias": True,
+                "qk_normalization": False,
+                "norm_type": "layer_norm",
+                "drop_path_rate": 0.0,
+            },
+            llm_config={
+                "architectures": ["Qwen3ForCausalLM"],
+                "vocab_size": 200,
+                "hidden_size": 16,
+                "intermediate_size": 32,
+                "num_hidden_layers": 1,
+                "num_attention_heads": 2,
+                "num_key_value_heads": 1,
+                "head_dim": 8,
+                "max_position_embeddings": 128,
+                "rms_norm_eps": 1e-6,
+                "rope_theta": 10000,
+                "attention_dropout": 0.0,
+                "attention_bias": False,
+                "hidden_act": "silu",
+                "use_cache": False,
+                "bos_token_id": 0,
+                "eos_token_id": 2,
+                "pad_token_id": 1,
+            },
+            force_image_size=28,
+            downsample_ratio=0.5,
+            ps_version="v2",
+            img_context_token_id=151,
+        )
+
+    def get_inputs(self):
+        return {
+            "input_ids": paddle.to_tensor([[10, 151, 11, 12]], dtype="int64"),
+            "pixel_values": paddle.randn([1, 3, 28, 28]),
+        }
+
+    def test_config(self):
+        config = self.get_config()
+        config_tester = ConfigTester(
+            self,
+            config_class=InternVLChatConfig,
+            has_text_modality=True,
+            common_properties=[],
+            vision_config=config.vision_config.to_dict(),
+            llm_config=config.llm_config.to_dict(),
+            force_image_size=config.force_image_size,
+            downsample_ratio=config.downsample_ratio,
+            ps_version=config.ps_version,
+            img_context_token_id=config.img_context_token_id,
+        )
+        config_tester.create_and_test_config_from_and_save_pretrained()
+
+    def test_forward_and_loss(self):
+        model = InternVLChatModel(self.get_config()).eval()
+        inputs = self.get_inputs()
+        input_ids = inputs["input_ids"]
+        labels = paddle.to_tensor([[-100, -100, 11, 12]], dtype="int64")
+        with paddle.no_grad():
+            outputs = model(**inputs, labels=labels, use_cache=False)
+        self.assertEqual(list(outputs.logits.shape), [1, 4, 200])
+        self.assertEqual(outputs.loss.ndim, 0)
+        shift_logits = outputs.logits[..., :-1, :].reshape([-1, 200])
+        shift_labels = labels[..., 1:].reshape([-1])
+        valid_mask = shift_labels != -100
+        safe_labels = paddle.where(valid_mask, shift_labels, paddle.zeros_like(shift_labels))
+        token_loss = F.cross_entropy(shift_logits, safe_labels, reduction="none")
+        expected_loss = (token_loss * valid_mask.astype(token_loss.dtype)).sum() / valid_mask.astype(
+            token_loss.dtype
+        ).sum()
+        paddle.testing.assert_close(outputs.loss, expected_loss)
+
+    def test_save_load(self):
+        paddle.seed(42)
+        model = InternVLChatModel(self.get_config()).eval()
+        inputs = self.get_inputs()
+        with paddle.no_grad():
+            expected = model(**inputs, use_cache=False).logits
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model.save_pretrained(tmpdir, save_checkpoint_format="")
+            reloaded = InternVLChatModel.from_pretrained(tmpdir, load_checkpoint_format="").eval()
+            with paddle.no_grad():
+                actual = reloaded(**inputs, use_cache=False).logits
+        paddle.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
+
+    def test_determinism(self):
+        paddle.seed(42)
+        model = InternVLChatModel(self.get_config()).eval()
+        inputs = self.get_inputs()
+        with paddle.no_grad():
+            first = model(**inputs, use_cache=False).logits
+            second = model(**inputs, use_cache=False).logits
+        paddle.testing.assert_close(second, first, atol=0.0, rtol=0.0)
+
+    def test_hidden_states_output(self):
+        model = InternVLChatModel(self.get_config()).eval()
+        with paddle.no_grad():
+            outputs = model(**self.get_inputs(), output_hidden_states=True, use_cache=False)
+        self.assertEqual(len(outputs.hidden_states), self.get_config().llm_config.num_hidden_layers + 1)
+        self.assertEqual(list(outputs.hidden_states[-1].shape), [1, 4, 16])
+
+    def test_resize_tokens_embeddings(self):
+        model = InternVLChatModel(self.get_config()).eval()
+        old_input_embeddings = model.get_input_embeddings().weight.detach().clone()
+        old_output_embeddings = model.get_output_embeddings().weight.detach().clone()
+
+        model.resize_token_embeddings(205)
+
+        self.assertEqual(model.config.vocab_size, 205)
+        self.assertEqual(model.config.llm_config.vocab_size, 205)
+        self.assertEqual(list(model.get_input_embeddings().weight.shape), [205, 16])
+        self.assertEqual(list(model.get_output_embeddings().weight.shape), [16, 205])
+        paddle.testing.assert_close(model.get_input_embeddings().weight[:200], old_input_embeddings)
+        paddle.testing.assert_close(model.get_output_embeddings().weight[:, :200], old_output_embeddings)
+
+    def test_greedy_generate(self):
+        model = InternVLChatModel(self.get_config()).eval()
+        with paddle.no_grad():
+            output_ids = model.generate(**self.get_inputs(), max_new_tokens=2)
+        self.assertEqual(list(output_ids.shape), [1, 2])
+
+    def test_beam_search_generate(self):
+        model = InternVLChatModel(self.get_config()).eval()
+        with paddle.no_grad():
+            output_ids = model.generate(**self.get_inputs(), max_new_tokens=2, num_beams=2)
+        self.assertEqual(list(output_ids.shape), [1, 2])
+
+    def test_sample_generate(self):
+        model = InternVLChatModel(self.get_config()).eval()
+        with paddle.no_grad():
+            output_ids = model.generate(**self.get_inputs(), max_new_tokens=2, do_sample=True, top_k=10)
+        self.assertEqual(list(output_ids.shape), [1, 2])
+
+    def test_mismatching_image_tokens(self):
+        model = InternVLChatModel(self.get_config()).eval()
+        input_ids = paddle.to_tensor([[10, 151, 151, 12]], dtype="int64")
+        pixel_values = paddle.randn([1, 3, 28, 28])
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            model(input_ids=input_ids, pixel_values=pixel_values, use_cache=False)
+
+
+if __name__ == "__main__":
+    unittest.main()
