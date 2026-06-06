@@ -761,11 +761,11 @@ def run_sft(
             total_tokens / train_result.metrics["train_runtime"] / training_args.world_size
         )
         logger.info(f"Total_Tokens_per_second_per_gpu: {total_tokens_per_second_per_gpu} ")
-        if not training_args.autotuner_benchmark:
-            trainer.save_model(merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True)
-            trainer.log_metrics("train", train_result.metrics)
-            trainer.save_metrics("train", train_result.metrics)
-            trainer.save_state()
+        # if not training_args.autotuner_benchmark:
+        #     trainer.save_model(merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True)
+        #     trainer.log_metrics("train", train_result.metrics)
+        #     trainer.save_metrics("train", train_result.metrics)
+        #     trainer.save_state()
 
 
 def create_peft_model(model_args, training_args, dtype, model):

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import inspect
+import json
 import math
 import os
 from typing import List
@@ -494,9 +495,28 @@ def collate_fn(
     if padding_free:
         batch = [sum(batch, [])]
         max_seq_len = sum(len(item.token_ids) for sequence in batch for item in sequence)
+    fixed_tokens_json_path = os.environ.get("DSV4_FLEET_FIXED_TOKENS")
     fixed_tokens_path = os.environ.get("LOAD_FIXED_DATA_PATH")
     fixed_tokens = None
-    if fixed_tokens_path:
+    if fixed_tokens_json_path:
+        with open(fixed_tokens_json_path, "r", encoding="utf-8") as f:
+            fixed_payload = json.load(f)
+        fixed_token_ids = fixed_payload["tokens"] if isinstance(fixed_payload, dict) else fixed_payload
+        fixed_token_ids = [int(token) for token in fixed_token_ids]
+        expected_token_count = training_args.max_seq_len + mtp_depth
+        if len(fixed_token_ids) != expected_token_count:
+            raise ValueError(
+                f"DSV4_FLEET_FIXED_TOKENS expects {expected_token_count} tokens "
+                f"for max_seq_len={training_args.max_seq_len} and "
+                f"num_nextn_predict_layers={mtp_depth}, "
+                f"got {len(fixed_token_ids)} from {fixed_tokens_json_path}"
+            )
+        fixed_input_ids = fixed_token_ids[:-mtp_depth] if mtp_depth > 0 else fixed_token_ids
+        fixed_labels = fixed_token_ids[mtp_depth:] if mtp_depth > 0 else fixed_token_ids
+        fixed_position_ids = list(range(len(fixed_input_ids)))
+        max_seq_len = calc_padding_size(len(fixed_input_ids), training_args)
+        fixed_tokens = True
+    elif fixed_tokens_path:
         rank = paddle.distributed.get_rank() if paddle.distributed.is_initialized() else 0
         seq_len = training_args.max_seq_len
         suffix = f"step0_rank{rank}_seq{seq_len}.npy"
@@ -616,10 +636,16 @@ def collate_fn(
             rank = 0
         main_input = np.asarray([fixed_input_ids], dtype=np.int64)
         main_labels = np.asarray([fixed_labels], dtype=np.int64)
-        print(
-            f"[LOAD_FIXED_DATA_PATH] loaded from {fixed_tokens_path}",
-            flush=True,
-        )
+        if fixed_tokens_json_path:
+            print(
+                f"[DSV4_FLEET_FIXED_TOKENS] using fixed token batch from {fixed_tokens_json_path}",
+                flush=True,
+            )
+        else:
+            print(
+                f"[LOAD_FIXED_DATA_PATH] loaded from {fixed_tokens_path}",
+                flush=True,
+            )
         print(
             f"[DATA_PATH_MD5] rank={rank} input_ids shape={list(main_input.shape)} "
             f"md5={hashlib.md5(main_input.tobytes()).hexdigest()}",
