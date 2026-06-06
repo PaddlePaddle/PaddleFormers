@@ -96,7 +96,7 @@ class TrainerCallbackTest(unittest.TestCase):
         config = RegressionModelConfig(a=a, b=b)
         model = RegressionPretrainedModel(config)
 
-        args = TrainingArguments(self.output_dir, disable_tqdm=disable_tqdm, report_to=[], **kwargs)
+        args = TrainingArguments(self.output_dir, disable_tqdm=disable_tqdm, report_to=[], bf16=True, **kwargs)
         return Trainer(
             model=model,
             args=args,

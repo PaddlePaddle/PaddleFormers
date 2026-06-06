@@ -1,0 +1,314 @@
+name: Post Analysis Comment
+
+on:
+  workflow_run:
+    workflows:
+      - "Unittest GPU CI"
+      - "Model Unittest GPU CI"
+      - "Fleet Model Test"
+      - "CI_XPU"
+      - "Model Unittest GPU CE Develop"
+      - "Unittest GPU CE"
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  check-and-collect:
+    runs-on:
+      group: APPROVAL
+    permissions:
+      pull-requests: read
+      actions: read
+    outputs:
+      skip:            ${{ steps.check.outputs.skip }}
+      is_schedule:     ${{ steps.check.outputs.is_schedule }}
+      pr_number:       ${{ steps.check.outputs.pr_number }}
+      failed_job_urls: ${{ steps.check.outputs.failed_job_urls }}
+      failed_run_ids:  ${{ steps.check.outputs.failed_run_ids }}
+    steps:
+      - name: Cleanup
+        run: |
+          rm -rf * .[^.]*
+
+      - name: Check all workflows done and collect failed job URLs
+        id: check
+        env:
+          GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
+          REPO:              ${{ github.repository }}
+          HEAD_SHA:          ${{ github.event.workflow_run.head_sha }}
+          TRIGGER_EVENT:     ${{ github.event.workflow_run.event }}
+          TRIGGERING_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, urllib.request, sys, time
+
+          token             = os.environ['GITHUB_TOKEN']
+          repo              = os.environ['REPO']
+          head_sha          = os.environ['HEAD_SHA']
+          trigger_event     = os.environ.get('TRIGGER_EVENT', '')
+          triggering_run_id = os.environ.get('TRIGGERING_RUN_ID', '')
+
+          watched = {
+              "Unittest GPU CI", "Model Unittest GPU CI", "Fleet Model Test", "CI_XPU"
+          }
+
+          skip_keywords = [
+              "failed log analysis", "faild-log-analysis",
+              "formers-bot", "bot log analysis", "check-and-collect",
+              "analyze", "post-comment"
+          ]
+
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+          }
+
+          def gh_get(url):
+              req = urllib.request.Request(url, headers=headers)
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      return json.loads(r.read())
+              except urllib.error.HTTPError as e:
+                  print(f"HTTP {e.code} {url}", file=sys.stderr)
+                  return {}
+
+          def skip(reason):
+              print(reason)
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write("skip=true\n")
+              sys.exit(0)
+
+          time.sleep(20)
+
+          # ── 定时触发路径 ──────────────────────────────────────────────────
+          if trigger_event == 'schedule':
+              print(f"Schedule trigger detected, run_id={triggering_run_id}")
+              run_data = gh_get(
+                  f"https://api.github.com/repos/{repo}/actions/runs/{triggering_run_id}"
+              )
+              conclusion = run_data.get('conclusion', '')
+              if conclusion != 'failure':
+                  skip(f"Schedule run {triggering_run_id} did not fail (conclusion: {conclusion})")
+              jobs_data = gh_get(
+                  f"https://api.github.com/repos/{repo}/actions/runs"
+                  f"/{triggering_run_id}/jobs?per_page=100"
+              )
+              failed_job_urls = [
+                  j['html_url'] for j in jobs_data.get('jobs', [])
+                  if j['conclusion'] == 'failure'
+                  and not any(kw in j['name'].lower() for kw in skip_keywords)
+              ]
+              failed_job_urls = list(dict.fromkeys(failed_job_urls))
+              print(f"Schedule failed_job_urls: {failed_job_urls}")
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write("skip=false\n")
+                  f.write("is_schedule=true\n")
+                  f.write("pr_number=\n")
+                  f.write(f"failed_job_urls={' '.join(failed_job_urls)}\n")
+                  f.write(f"failed_run_ids={triggering_run_id}\n")
+              sys.exit(0)
+
+          # ── PR 触发路径 ───────────────────────────────────────────────────
+          pr_number = None
+          for state in ['open', 'closed']:
+              prs = gh_get(
+                  f"https://api.github.com/repos/{repo}/pulls"
+                  f"?state={state}&per_page=100"
+              )
+              if not isinstance(prs, list):
+                  continue
+              for pr in prs:
+                  if pr.get('head', {}).get('sha') == head_sha:
+                      pr_number = pr['number']
+                      break
+              if pr_number:
+                  break
+
+          if not pr_number:
+              skip(f"No PR for sha {head_sha}")
+
+          runs = gh_get(
+              f"https://api.github.com/repos/{repo}/actions/runs"
+              f"?head_sha={head_sha}&per_page=100"
+          ).get('workflow_runs', [])
+
+          latest = {}
+          for r in runs:
+              name = r['name']
+              if name not in watched:
+                  continue
+              if name not in latest or r['run_attempt'] > latest[name]['run_attempt']:
+                  latest[name] = r
+
+          if not latest:
+              skip("No watched workflows found")
+
+          missing = watched - set(latest.keys())
+          pending = [name for name, run in latest.items() if run['status'] != 'completed']
+          all_pending = sorted(list(missing) + pending)
+          if all_pending:
+              skip(f"Still pending: {all_pending}")
+
+          failed_runs = [r for r in latest.values() if r['conclusion'] == 'failure']
+          if not failed_runs:
+              skip("All passed")
+
+          failed_job_urls = []
+          for run in failed_runs:
+              jobs_data = gh_get(
+                  f"https://api.github.com/repos/{repo}/actions/runs"
+                  f"/{run['id']}/jobs?per_page=100"
+              )
+              for job in jobs_data.get('jobs', []):
+                  if job['conclusion'] != 'failure':
+                      continue
+                  if any(kw in job['name'].lower() for kw in skip_keywords):
+                      continue
+                  failed_job_urls.append(job['html_url'])
+
+          failed_job_urls = list(dict.fromkeys(failed_job_urls))
+          failed_run_ids  = [str(r['id']) for r in failed_runs]
+
+          print(f"PR #{pr_number}, failed_job_urls: {failed_job_urls}")
+          print(f"failed_run_ids: {failed_run_ids}")
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write("skip=false\n")
+              f.write("is_schedule=false\n")
+              f.write(f"pr_number={pr_number}\n")
+              f.write(f"failed_job_urls={' '.join(failed_job_urls)}\n")
+              f.write(f"failed_run_ids={' '.join(failed_run_ids)}\n")
+          PYEOF
+
+  analyze:
+    needs: check-and-collect
+    if: needs.check-and-collect.outputs.skip == 'false'
+    runs-on: paddle-bot
+    permissions:
+      contents: read
+      actions: read
+    env:
+      PATH:    /home/paddle-1/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      TASK_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Run formers bot
+        env:
+          GITHUB_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
+          FAILED_JOB_URLS: ${{ needs.check-and-collect.outputs.failed_job_urls }}
+        run: |
+          PROMPT="Please analyze the failed CI job logs from these URLs: ${FAILED_JOB_URLS}"
+          python /home/paddle-1/paddle_ci_bot/paddle_ci_bot.py --prompt "$PROMPT" --task-id "$TASK_ID"
+
+      - name: Write summary
+        if: always()
+        run: |
+          RESULT_FILE="/tmp/bot_results/bot_result_paddleformers_${TASK_ID}.md"
+          if [ -f "$RESULT_FILE" ]; then
+            echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
+            cat "$RESULT_FILE" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## PaddleFormers Bot Log Analysis" >> $GITHUB_STEP_SUMMARY
+            echo "No analysis result generated." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Post or update PR comment
+        # 定时触发时无 PR，跳过评论；schedule 仅写 Summary
+        if: always() && needs.check-and-collect.outputs.is_schedule == 'false'
+        id: post_comment                          # ← 加 id，供下一步读 output
+        env:
+          BOT_TOKEN:   ${{ secrets.BOT_TOKEN }}
+          REPO:        ${{ github.repository }}
+          PR_NUMBER:   ${{ needs.check-and-collect.outputs.pr_number }}
+          RUN_ID:      ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RESULT_FILE: /tmp/bot_results/bot_result_paddleformers_${{ env.TASK_ID }}.md
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, urllib.request, urllib.error, sys
+
+          token       = os.environ['BOT_TOKEN']
+          repo        = os.environ['REPO']
+          pr_number   = os.environ['PR_NUMBER']
+          run_id      = os.environ['RUN_ID']
+          run_attempt = os.environ['RUN_ATTEMPT']
+          result_file = os.environ['RESULT_FILE']
+          marker      = "<!-- bot-log-analysis -->"
+
+          if not token:
+              print("ERROR: BOT_TOKEN is empty, cannot post comment.", file=sys.stderr)
+              sys.exit(1)
+
+          if os.path.isfile(result_file):
+              body = open(result_file).read()
+          else:
+              body = "⚠️ 未生成分析结果，请手动查看 Action 日志。"
+
+          run_url = f"https://github.com/{repo}/actions/runs/{run_id}"
+          comment_body = (
+              f"{marker}\n"
+              f"## PaddleFormers Log Analysis\n\n"
+              f"> Run [`#{run_id}`]({run_url}) · Attempt `{run_attempt}`\n\n"
+              f"{body}\n\n"
+              f"---\n"       
+              f"> 🔍 **准确性记录**：请点击评论底部 😊 图标，"
+              f"选择 👍（准确）或 👎（有误），将自动记录到 CI 监控系统\n\n"
+              f"<sub>🔄 每次 Re-run 后自动更新</sub>"
+          )
+
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "Content-Type": "application/json",
+          }
+
+          def gh(method, url, payload=None):
+              req = urllib.request.Request(
+                  url,
+                  data=json.dumps(payload).encode() if payload else None,
+                  headers=headers,
+                  method=method,
+              )
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      return json.loads(r.read())
+              except urllib.error.HTTPError as e:
+                  body_err = e.read().decode()
+                  print(f"HTTP {e.code} {method} {url}: {body_err}", file=sys.stderr)
+                  raise
+
+          base     = f"https://api.github.com/repos/{repo}"
+          comments = gh("GET", f"{base}/issues/{pr_number}/comments?per_page=100")
+          existing = next(
+              (c["id"] for c in comments if marker in c.get("body", "")), None
+          )
+
+          if existing:
+              res = gh("PATCH", f"{base}/issues/comments/{existing}", {"body": comment_body})
+              comment_id = existing
+              print(f"Updated comment: {res.get('html_url')}")
+          else:
+              res = gh("POST", f"{base}/issues/{pr_number}/comments", {"body": comment_body})
+              comment_id = res.get("id", 0)
+              print(f"Created comment: {res.get('html_url')}")
+
+          # ── 写入 GITHUB_OUTPUT，供 report-to-monitor 步骤读取 ──────────
+          gh_output = os.environ.get("GITHUB_OUTPUT", "")
+          if gh_output:
+              with open(gh_output, "a") as f:
+                  f.write(f"comment_id={comment_id}\n")
+          PYEOF
+
+      - name: Report to monitor
+        # 无论评论是否成功都上报，comment_id 可能为空（schedule 场景）
+        if: always()
+        env:
+          PR_NUMBER:      ${{ needs.check-and-collect.outputs.pr_number }}
+          GITHUB_RUN_ID:  ${{ github.run_id }}
+          FAILED_RUN_IDS: ${{ needs.check-and-collect.outputs.failed_run_ids }}
+          # post_comment 步骤成功时才有值；schedule/失败时为空字符串，脚本内兜底
+          BOT_COMMENT_ID: ${{ steps.post_comment.outputs.comment_id }}
+        run: |
+          python /home/paddle-1/paddle_ci_bot/report_monitor.py "$TASK_ID"

@@ -34,6 +34,7 @@ if [[ ${step} == "pt" ]]; then
   export data_dir=$root_dir/PaddleFormers/tests/fixtures/dummy/pt
   yq eval '.expert_model_parallel_size = 1
     | .num_hidden_layers = 2
+    | .per_device_eval_batch_size = 1
     | .per_device_train_batch_size = 1
     | .use_expert_parallel = false
     | .stage1_overlap = false

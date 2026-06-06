@@ -34,6 +34,7 @@ __all__ = [
 CONFIG_MAPPING_NAMES = OrderedDict(
     [
         ("deepseek_v3", "DeepseekV3Config"),
+        ("deepseek_v32", "DeepseekV32Config"),
         ("ernie4_5", "Ernie4_5Config"),
         ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
@@ -55,6 +56,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("glm_moe_dsa", "GlmMoeDsaConfig"),
         ("minimax_m2", "MiniMaxM2Config"),
         ("minicpm", "MiniCPMConfig"),
+        ("deepseek_v4", "DeepseekV4Config"),
         ("gpt_oss", "GptOssConfig"),
         ("phi3", "Phi3Config"),
         ("gemma3_text", "Gemma3TextConfig"),

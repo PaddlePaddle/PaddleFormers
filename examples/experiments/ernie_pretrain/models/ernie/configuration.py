@@ -315,7 +315,6 @@ class ErnieMoEConfig(PretrainedConfig):
             "recompute_fwd_gate_up": False,
             "dequant_input": False,
             "offline_quant_expert_weight": False,
-            "clear_origin_weight_when_offline_quant": False,
         }
         update_nested_dict(default_fp8_mem_configs, fp8_mem_configs)
         self.fp8_mem_configs = default_fp8_mem_configs

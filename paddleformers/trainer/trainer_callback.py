@@ -80,6 +80,7 @@ __all__ = [
     "MoEGateSpGradSyncCallBack",
     "SPGradSyncCallback",
     "EMAStateAssemblerCallback",
+    "InternalMedicineCallback",
 ]
 
 
@@ -730,7 +731,7 @@ class FP8QuantWeightCallback(TrainerCallback):
                 self.use_fp8 = model.use_fp8()
             if not self.use_fp8:
                 return
-            model.fp8_quant_weight(True, quant_transpose=True)
+            model.fp8_quant_weight(True, quant_transpose=False)
             optimizer.clear_param_storage("moe_expert")
             optimizer.clear_param_storage("rms_linear")
             optimizer.clear_param_storage("memory_attn")
@@ -793,8 +794,9 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
             if (
                 isinstance(layer, PretrainedMoEGate) or isinstance(layer, StandardMoERouter)
             ) and layer.topk_method == "noaux_tc":
-                biases.append(layer.e_score_correction_bias)
-                usages.append(layer.expert_usage)
+                if hasattr(layer, "e_score_correction_bias") and layer.e_score_correction_bias is not None:
+                    biases.append(layer.e_score_correction_bias)
+                    usages.append(layer.expert_usage)
 
         model.apply(get_stat)
 
@@ -830,6 +832,8 @@ class MoECorrectionBiasAdjustCallback(TrainerCallback):
             if (
                 isinstance(layer, PretrainedMoEGate) or isinstance(layer, StandardMoERouter)
             ) and layer.topk_method == "noaux_tc":
+                if not hasattr(layer, "e_score_correction_bias") or layer.e_score_correction_bias is None:
+                    return
                 with paddle.no_grad():
                     if not layer.weight.stop_gradient:
                         biases.pop(0).add_(update_list.pop(0))
@@ -919,6 +923,70 @@ class SPGradSyncCallback(TrainerCallback):
             fused_allreduce_gradients_with_group(self._sp_params, group=mp_group, scale=1.0)  # sum not mean
             another_time = time.time()
             logger.info(f"sync gradients takes {another_time - now} time")
+
+
+class InternalMedicineCallback(TrainerCallback):
+    def __init__(self, monitors=None, monitor_interval: int = 1, verbose: bool = True):
+        super().__init__()
+        self.monitors = self._normalize_monitors(monitors)
+        self.monitor_interval = monitor_interval
+        self.verbose = verbose
+        self._monitor_dict = {}
+        self._training_logs = None
+        self._setup_done = False
+
+    @staticmethod
+    def _normalize_monitors(monitors) -> list:
+        if monitors is None:
+            return ["all"]
+        if isinstance(monitors, str):
+            monitors = monitors.split(",")
+        return [str(monitor).strip() for monitor in monitors if str(monitor).strip()]
+
+    def on_train_begin(self, args, state, control, model=None, **kwargs):
+        if model is None or self._setup_done or not self.monitors:
+            return
+
+        try:
+            from internal_medicine.backends.paddlefleet import setup_monitors
+            from internal_medicine.core.training_logs import training_logs
+        except ImportError:
+            logger.exception(
+                "[InternalMedicine/pfleet] internal_medicine_monitors is enabled, but the optional "
+                "internal_medicine package is not importable. Add third_party/llm-internal-medicine/src "
+                "to PYTHONPATH or disable internal_medicine_monitors."
+            )
+            return
+
+        try:
+            setup_monitors(
+                model,
+                monitors=self.monitors,
+                monitor_dict=self._monitor_dict,
+                monitor_interval=self.monitor_interval,
+                verbose=self.verbose,
+            )
+            self._training_logs = training_logs
+            self._setup_done = True
+            logger.info("[InternalMedicine/pfleet] Monitors registered: %s" % list(self._monitor_dict.keys()))
+        except Exception:
+            logger.error("[InternalMedicine/pfleet] Failed to setup monitors")
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if not self._setup_done:
+            return
+
+        for monitor in self._monitor_dict.values():
+            monitor.step()
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if not self._setup_done or logs is None or self._training_logs is None:
+            return
+
+        aggregated = self._training_logs.gather_and_aggregate()
+        if aggregated:
+            logs.update(aggregated)
+            self._training_logs.reset()
 
 
 class EMAStateAssemblerCallback(TrainerCallback):
