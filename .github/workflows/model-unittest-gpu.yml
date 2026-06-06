@@ -23,6 +23,7 @@ on:
           - 'qwen2'
           - 'gemma3_text'
           - 'paddleocr_vl'
+          - 'florence2'
           - 'qwen2_moe'
           - 'qwen3_vl'
           - 'qwen3_vl_moe'
