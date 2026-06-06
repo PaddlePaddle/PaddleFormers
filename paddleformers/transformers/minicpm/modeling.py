@@ -24,6 +24,7 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
 import paddleformers
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
+from ...nn.criterion.interface import CriterionLayer
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as MiniCPMMLP
@@ -1499,8 +1500,8 @@ class MiniCPMModel(MiniCPMPreTrainedModel):
         attn_mask_startend_row_indices,
         position_ids,
         position_embeddings,
-        output_attentions,
         past_key_values,
+        output_attentions,
         use_cache,
     ):
         """Perform gradient checkpointing for memory-efficient training.
@@ -1512,8 +1513,8 @@ class MiniCPMModel(MiniCPMPreTrainedModel):
             attn_mask_startend_row_indices (paddle.Tensor): Variable length indices
             position_ids (paddle.Tensor): Position indices
             position_embeddings (paddle.Tensor): Position embeddings
-            output_attentions (bool): Whether to output attention weights
             past_key_values (Optional[Cache]): Cached key/value states
+            output_attentions (bool): Whether to output attention weights
             use_cache (bool): Whether to cache key/value states
 
         Returns:
@@ -1533,8 +1534,8 @@ class MiniCPMModel(MiniCPMPreTrainedModel):
             attn_mask_startend_row_indices,
             position_ids,
             position_embeddings,
-            output_attentions,
             past_key_values,
+            output_attentions,
             use_cache,
         )
         return hidden_states
@@ -1690,6 +1691,7 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
         self.model = MiniCPMModel(config)
         self.vocab_size = config.vocab_size
         self.lm_head = GeneralLMHead(config)
+        self.criterion = CriterionLayer(config)
         self.tie_weights()
 
     def get_input_embeddings(self):
@@ -1717,9 +1719,11 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
         input_ids=None,
         position_ids=None,
         attention_mask=None,
+        attn_mask_startend_row_indices=None,
         past_key_values=None,
         inputs_embeds=None,
         labels=None,
+        loss_mask=None,
         use_cache=None,
         output_attentions=None,
         output_hidden_states=None,
@@ -1757,9 +1761,24 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if kwargs.get("attn_mask_start_row_indices", None) is not None and attn_mask_startend_row_indices is None:
+            attn_mask_startend_row_indices = kwargs.pop("attn_mask_start_row_indices")
+
+        if attention_mask is not None and attention_mask.dtype != paddle.bool:
+            attention_mask = paddle.cast(attention_mask, paddle.bool)
+
+        if attn_mask_startend_row_indices is not None and attention_mask is not None:
+            logger.warning(
+                "You have provided both attn_mask_startend_row_indices and attention_mask. "
+                "The attn_mask_startend_row_indices will be used."
+            )
+            attention_mask = None
+
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             position_ids=position_ids,
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
@@ -1769,8 +1788,9 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
             return_dict=return_dict,
         )
         hidden_states = outputs[0]
-        slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
-        hidden_states = hidden_states[:, slice_indices, :].contiguous()
+        if labels is None:
+            slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
+            hidden_states = hidden_states[:, slice_indices, :].contiguous()
         if self.config.pretraining_tp > 1:
             lm_head_slices = _split_tensor(self.lm_head.weight, self.vocab_size // self.config.pretraining_tp, dim=0)
             logits = [
@@ -1779,16 +1799,11 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
             logits = paddle.cat(logits, dim=-1)
         else:
             logits = self.lm_head(hidden_states / (self.config.hidden_size / self.config.dim_model_base))
-        logits = logits.float()
+        if not isinstance(logits, (tuple, list)):
+            logits = logits.float()
         loss = None
         if labels is not None:
-            shift_logits = logits[..., :-1, :].contiguous()
-            shift_labels = labels[..., 1:].contiguous()
-            loss_fct = paddle.nn.CrossEntropyLoss()
-            shift_logits = shift_logits.view(-1, self.config.vocab_size)
-            shift_labels = shift_labels.view(-1)
-            shift_labels = shift_labels.to(shift_logits.device)
-            loss = loss_fct(shift_logits, shift_labels)
+            loss, _ = self.criterion(logits, labels, loss_mask)
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
