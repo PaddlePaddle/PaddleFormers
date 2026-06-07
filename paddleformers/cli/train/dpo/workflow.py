@@ -54,6 +54,7 @@ from ...hparams import (
     ModelArguments,
 )
 from ...utils.llm_utils import get_lora_target_modules
+from ...utils.mllm_utils import freeze_model_parameters, get_multimodel_lora_target_modules
 from .dpo_argument import DPOConfig
 from .dpo_estimate_training import dpo_estimate_training
 from .dpo_trainer import DPOTrainer
@@ -256,6 +257,10 @@ def run_dpo(
 
     logger.info("Loading model & tokenizer successfully !")
 
+    # Freeze model based on training args (Supports for MLLM Full training)
+    if not model_args.lora and getattr(training_args, "freeze_config", ""):
+        freeze_model_parameters(model, training_args.freeze_config)
+
     if model_args.lora:
         if training_args.sharding_parallel_size > 1:
             assert (
@@ -263,6 +268,8 @@ def run_dpo(
             ), "Currently not support enabling sharding_stage1_overlap in lora mode."
         if model_args.lora_path is None:
             target_modules = get_lora_target_modules(model)
+            if getattr(training_args, "freeze_config", ""):
+                target_modules = get_multimodel_lora_target_modules(model, target_modules, training_args.freeze_config)
             if model_args.rslora_plus:
                 model_args.rslora = True
                 model_args.lora_plus_scale = 4

@@ -13,9 +13,11 @@
 # limitations under the License.
 
 import numpy as np
+from PIL import Image
 
 from ..image_processing_utils import BatchFeature
-from ..image_utils import ImageInput, make_flat_list_of_images
+from ..image_transforms import to_pil_image
+from ..image_utils import ImageInput, load_image, make_flat_list_of_images
 from ..processing_utils import ProcessingKwargs, ProcessorMixin, Unpack
 from ..tokenizer_utils_base import PreTokenizedInput, TextInput
 
@@ -60,14 +62,30 @@ class InternVLProcessorKwargs(ProcessingKwargs, total=False):
         },
         "images_kwargs": {
             "crop_to_patches": True,
+            "dynamic_image_size": True,
+            "min_dynamic_patch": 1,
+            "max_dynamic_patch": 12,
+            "use_thumbnail": True,
         },
     }
 
 
 class InternVL3ImageProcessorAdapter:
-    def __init__(self, image_processor, image_seq_length: int):
+    def __init__(
+        self,
+        image_processor,
+        image_seq_length: int,
+        min_dynamic_patch: int = 1,
+        max_dynamic_patch: int = 12,
+        use_thumbnail: bool = True,
+        dynamic_image_size: bool = True,
+    ):
         self.image_processor = image_processor
         self.image_seq_length = image_seq_length
+        self.min_dynamic_patch = min_dynamic_patch
+        self.max_dynamic_patch = max_dynamic_patch
+        self.use_thumbnail = use_thumbnail
+        self.dynamic_image_size = dynamic_image_size
         self.merge_size = 1
         self.model_input_names = list(getattr(image_processor, "model_input_names", ["pixel_values"])) + [
             "image_grid_thw"
@@ -81,17 +99,133 @@ class InternVL3ImageProcessorAdapter:
             return self.image_processor.fetch_images(images)
         return images
 
+    @staticmethod
+    def _find_closest_aspect_ratio(aspect_ratio, target_ratios, width, height, image_size):
+        best_ratio_diff = float("inf")
+        best_ratio = (1, 1)
+        area = width * height
+        for ratio in target_ratios:
+            target_aspect_ratio = ratio[0] / ratio[1]
+            ratio_diff = abs(aspect_ratio - target_aspect_ratio)
+            if ratio_diff < best_ratio_diff:
+                best_ratio_diff = ratio_diff
+                best_ratio = ratio
+            elif ratio_diff == best_ratio_diff:
+                if area > 0.5 * image_size * image_size * ratio[0] * ratio[1]:
+                    best_ratio = ratio
+        return best_ratio
+
+    @classmethod
+    def _dynamic_preprocess(cls, image, min_num=1, max_num=12, image_size=448, use_thumbnail=True):
+        orig_width, orig_height = image.size
+        aspect_ratio = orig_width / orig_height
+        target_ratios = set(
+            (i, j)
+            for n in range(min_num, max_num + 1)
+            for i in range(1, n + 1)
+            for j in range(1, n + 1)
+            if min_num <= i * j <= max_num
+        )
+        target_ratios = sorted(target_ratios, key=lambda x: x[0] * x[1])
+        target_aspect_ratio = cls._find_closest_aspect_ratio(
+            aspect_ratio, target_ratios, orig_width, orig_height, image_size
+        )
+        target_width = image_size * target_aspect_ratio[0]
+        target_height = image_size * target_aspect_ratio[1]
+        blocks = target_aspect_ratio[0] * target_aspect_ratio[1]
+
+        bicubic = getattr(getattr(Image, "Resampling", Image), "BICUBIC")
+        resized_img = image.resize((target_width, target_height), resample=bicubic)
+        processed_images = []
+        for i in range(blocks):
+            box = (
+                (i % (target_width // image_size)) * image_size,
+                (i // (target_width // image_size)) * image_size,
+                ((i % (target_width // image_size)) + 1) * image_size,
+                ((i // (target_width // image_size)) + 1) * image_size,
+            )
+            processed_images.append(resized_img.crop(box))
+
+        if use_thumbnail and len(processed_images) != 1:
+            processed_images.append(image.resize((image_size, image_size), resample=bicubic))
+
+        return processed_images
+
+    @staticmethod
+    def _to_pil_rgb(image):
+        if isinstance(image, str):
+            return load_image(image)
+        if isinstance(image, Image.Image):
+            return image.convert("RGB")
+        return to_pil_image(image).convert("RGB")
+
+    @staticmethod
+    def _extract_square_size(size):
+        if size is None:
+            return None
+        if isinstance(size, int):
+            return size
+        if isinstance(size, dict):
+            height = size.get("height")
+            width = size.get("width")
+            if height is not None and width is not None and height == width:
+                return height
+            if "shortest_edge" in size:
+                return size["shortest_edge"]
+            return height or width
+        if isinstance(size, (list, tuple)):
+            if len(size) == 0:
+                return None
+            if len(size) == 1 or size[0] == size[1]:
+                return size[0]
+            return min(size)
+        return None
+
+    def _resolve_image_size(self, kwargs, image_size):
+        if image_size is not None:
+            return int(image_size)
+        return int(
+            self._extract_square_size(kwargs.get("crop_size"))
+            or self._extract_square_size(getattr(self.image_processor, "crop_size", None))
+            or self._extract_square_size(kwargs.get("size"))
+            or self._extract_square_size(getattr(self.image_processor, "size", None))
+            or 448
+        )
+
     def __call__(self, images=None, return_tensors=None, **kwargs):
         if images is None:
             return BatchFeature(data={}, tensor_type=return_tensors)
 
+        crop_to_patches = kwargs.pop("crop_to_patches", True)
+        dynamic_image_size = kwargs.pop("dynamic_image_size", self.dynamic_image_size)
+        min_dynamic_patch = int(kwargs.pop("min_dynamic_patch", self.min_dynamic_patch))
+        max_dynamic_patch = int(kwargs.pop("max_dynamic_patch", self.max_dynamic_patch))
+        use_thumbnail = kwargs.pop("use_thumbnail", self.use_thumbnail)
+        image_size = kwargs.pop("image_size", None) or kwargs.pop("input_size", None)
+        image_size = self._resolve_image_size(kwargs, image_size)
+
         images = self.fetch_images(images)
         images = make_flat_list_of_images(images)
+        num_patches = [1] * len(images)
+        if crop_to_patches and dynamic_image_size:
+            patched_images = []
+            num_patches = []
+            for image in images:
+                patches = self._dynamic_preprocess(
+                    self._to_pil_rgb(image),
+                    min_num=min_dynamic_patch,
+                    max_num=max_dynamic_patch,
+                    image_size=image_size,
+                    use_thumbnail=use_thumbnail,
+                )
+                patched_images.extend(patches)
+                num_patches.append(len(patches))
+            images = patched_images
+
         image_inputs = self.image_processor(images=images, return_tensors=return_tensors, **kwargs)
-        pixel_values = image_inputs["pixel_values"]
-        num_images = pixel_values.shape[0]
-        image_grid_thw = np.asarray([[1, 1, self.image_seq_length]] * num_images, dtype="int64")
-        num_patches = [1] * num_images
+        image_grid_thw = np.asarray(
+            [[num_patch, 1, self.image_seq_length] for num_patch in num_patches], dtype="int64"
+        )
         image_inputs["image_grid_thw"] = image_grid_thw
         image_inputs["num_patches"] = num_patches
         return image_inputs
@@ -107,16 +241,37 @@ class InternVL3Processor(ProcessorMixin):
         image_processor=None,
         tokenizer=None,
         image_seq_length: int = 256,
+        image_placeholder: str = "<image>",
+        min_dynamic_patch: int = 1,
+        max_dynamic_patch: int = 12,
+        use_thumbnail: bool = True,
+        dynamic_image_size: bool = True,
         chat_template=None,
         **kwargs,
     ):
         super().__init__(image_processor, tokenizer, chat_template=chat_template, **kwargs)
 
         self.image_seq_length = image_seq_length
-        self.image_processor = InternVL3ImageProcessorAdapter(self.image_processor, image_seq_length=image_seq_length)
+        self.image_placeholder = image_placeholder
+        self.min_dynamic_patch = min_dynamic_patch
+        self.max_dynamic_patch = max_dynamic_patch
+        self.use_thumbnail = use_thumbnail
+        self.dynamic_image_size = dynamic_image_size
+        self.image_processor = InternVL3ImageProcessorAdapter(
+            self.image_processor,
+            image_seq_length=image_seq_length,
+            min_dynamic_patch=min_dynamic_patch,
+            max_dynamic_patch=max_dynamic_patch,
+            use_thumbnail=use_thumbnail,
+            dynamic_image_size=dynamic_image_size,
+        )
         self.start_image_token = getattr(tokenizer, "start_image_token", "<img>")
         self.end_image_token = getattr(tokenizer, "end_image_token", "</img>")
         self.image_token = getattr(tokenizer, "context_image_token", "<IMG_CONTEXT>")
+        if self.image_placeholder == self.image_token:
+            raise ValueError(
+                f"image_placeholder ({self.image_placeholder}) must be different from image_token ({self.image_token})."
+            )
         self.start_image_token_id = tokenizer.convert_tokens_to_ids(self.start_image_token)
         self.end_image_token_id = tokenizer.convert_tokens_to_ids(self.end_image_token)
         self.image_token_id = tokenizer.convert_tokens_to_ids(self.image_token)
@@ -140,7 +295,9 @@ class InternVL3Processor(ProcessorMixin):
 
         for prompt in text:
             new_prompt = prompt
-            while self.image_token in new_prompt:
+            while self.image_placeholder in new_prompt:
+                if image_index >= len(image_num_patches):
+                    raise ValueError("Number of image placeholders in the prompt exceeds the number of images.")
                 start_index = image_num_patches_indices[image_index - 1] if image_index > 0 else 0
                 end_index = image_num_patches_indices[image_index]
                 image_patches.append(image_pixel_values[start_index:end_index])
@@ -149,7 +306,7 @@ class InternVL3Processor(ProcessorMixin):
                     f"{self.image_token * self.image_seq_length * image_num_patches[image_index]}"
                     f"{self.end_image_token}"
                 )
-                new_prompt = new_prompt.replace(self.image_token, replace_str, 1)
+                new_prompt = new_prompt.replace(self.image_placeholder, replace_str, 1)
                 image_index += 1
             processed_text.append(new_prompt)
 
@@ -224,6 +381,11 @@ class InternVL3Processor(ProcessorMixin):
     def to_dict(self, legacy_serialization=True):
         output = {
             "image_seq_length": self.image_seq_length,
+            "image_placeholder": self.image_placeholder,
+            "min_dynamic_patch": self.min_dynamic_patch,
+            "max_dynamic_patch": self.max_dynamic_patch,
+            "use_thumbnail": self.use_thumbnail,
+            "dynamic_image_size": self.dynamic_image_size,
             "processor_class": self.__class__.__name__,
         }
         if hasattr(self, "auto_map"):

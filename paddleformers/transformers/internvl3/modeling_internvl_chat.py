@@ -263,6 +263,18 @@ class InternVLChatModel(PretrainedModel):
 
         return None
 
+    def _ensure_img_context_token_id(self, input_ids: paddle.Tensor) -> None:
+        if self.img_context_token_id is not None:
+            return
+
+        inferred_token_id = self._infer_img_context_token_id(input_ids)
+        if inferred_token_id is None:
+            raise ValueError(
+                "img_context_token_id is not initialized and could not be inferred from input_ids. "
+                "Please call chat()/batch_chat() or set it manually."
+            )
+        self.img_context_token_id = inferred_token_id
+
     def forward(
         self,
         pixel_values: Optional[paddle.Tensor] = None,
@@ -287,17 +299,10 @@ class InternVLChatModel(PretrainedModel):
 
         if input_ids is None:
             raise ValueError("input_ids must be provided for InternVLChatModel.")
-        if self.img_context_token_id is None:
-            inferred_token_id = self._infer_img_context_token_id(input_ids)
-            if inferred_token_id is None:
-                raise ValueError(
-                    "img_context_token_id is not initialized and could not be inferred from input_ids. "
-                    "Please call chat()/batch_chat() or set it manually."
-                )
-            self.img_context_token_id = inferred_token_id
 
         input_embeds = self.language_model.get_input_embeddings()(input_ids).clone()
         if pixel_values is not None:
+            self._ensure_img_context_token_id(input_ids)
             vit_embeds = self.extract_feature(pixel_values)
             if image_flags is not None:
                 image_flags = image_flags.squeeze(-1)
@@ -338,6 +343,14 @@ class InternVLChatModel(PretrainedModel):
             hidden_states=None if isinstance(outputs, tuple) else outputs.hidden_states,
             attentions=None if isinstance(outputs, tuple) else outputs.attentions,
         )
+
+    @staticmethod
+    def _generation_ids(generation_output):
+        if isinstance(generation_output, tuple):
+            generation_output = generation_output[0]
+        if isinstance(generation_output, paddle.Tensor):
+            generation_output = generation_output.numpy().tolist()
+        return generation_output
 
     @paddle.no_grad()
     def batch_chat(
@@ -396,8 +409,7 @@ class InternVLChatModel(PretrainedModel):
             attention_mask=attention_mask,
             **generation_config,
         )
-        if isinstance(generation_output, paddle.Tensor):
-            generation_output = generation_output.numpy().tolist()
+        generation_output = self._generation_ids(generation_output)
         responses = tokenizer.batch_decode(generation_output, skip_special_tokens=True)
         return [response.split(template.sep.strip())[0].strip() for response in responses]
 
@@ -447,8 +459,7 @@ class InternVLChatModel(PretrainedModel):
             attention_mask=attention_mask,
             **generation_config,
         )
-        if isinstance(generation_output, paddle.Tensor):
-            generation_output = generation_output.numpy().tolist()
+        generation_output = self._generation_ids(generation_output)
         response = tokenizer.batch_decode(generation_output, skip_special_tokens=True)[0]
         response = response.split(template.sep.strip())[0].strip()
 
@@ -470,115 +481,73 @@ class InternVLChatModel(PretrainedModel):
     ):
         if input_ids is None:
             raise ValueError("input_ids must be provided for generation.")
-        if self.img_context_token_id is None:
-            raise ValueError(
-                "img_context_token_id is not initialized. Please call chat()/batch_chat() or set it manually."
-            )
 
-        generation_config = generation_config or {}
-        max_new_tokens = int(generation_config.get("max_new_tokens", generate_kwargs.pop("max_new_tokens", 128)))
-        eos_token_id = generation_config.get("eos_token_id", generate_kwargs.pop("eos_token_id", None))
-        do_sample = generation_config.get("do_sample", generate_kwargs.pop("do_sample", False))
-        repetition_penalty = float(
-            generation_config.get("repetition_penalty", generate_kwargs.pop("repetition_penalty", 1.0))
-        )
-        top_k = generation_config.get("top_k", generate_kwargs.pop("top_k", None))
-        top_p = generation_config.get("top_p", generate_kwargs.pop("top_p", None))
-        temperature = generation_config.get("temperature", generate_kwargs.pop("temperature", None))
-        pad_token_id = generation_config.get("pad_token_id", generate_kwargs.pop("pad_token_id", None))
-        if isinstance(eos_token_id, (list, tuple)):
-            eos_token_ids = [int(token_id) for token_id in eos_token_id]
-        elif eos_token_id is None:
-            eos_token_ids = []
-        else:
-            eos_token_ids = [int(eos_token_id)]
+        if isinstance(generation_config, dict):
+            generate_kwargs = {**generation_config, **generate_kwargs}
+            generation_config = None
 
-        if do_sample:
-            raise NotImplementedError("InternVLChatModel.generate currently only supports greedy decoding.")
-        if top_k not in (None, 0, 1):
-            raise NotImplementedError("InternVLChatModel.generate does not support top-k sampling yet.")
-        if top_p not in (None, 1.0):
-            raise NotImplementedError("InternVLChatModel.generate does not support top-p sampling yet.")
-        if temperature not in (None, 1.0):
-            raise NotImplementedError("InternVLChatModel.generate does not support temperature sampling yet.")
-        if generate_kwargs:
-            unsupported_args = ", ".join(sorted(generate_kwargs.keys()))
-            raise NotImplementedError(f"Unsupported generation arguments: {unsupported_args}")
+        do_sample = generate_kwargs.pop("do_sample", None)
+        if do_sample is True and "decode_strategy" not in generate_kwargs:
+            generate_kwargs["decode_strategy"] = "sampling"
+        elif (
+            do_sample is None
+            and getattr(generation_config, "do_sample", False)
+            and "decode_strategy" not in generate_kwargs
+        ):
+            generate_kwargs["decode_strategy"] = "sampling"
+
+        num_beams = generate_kwargs.get("num_beams", getattr(generation_config, "num_beams", None))
+        if num_beams is not None and int(num_beams) > 1 and "decode_strategy" not in generate_kwargs:
+            generate_kwargs["decode_strategy"] = "beam_search"
 
         if pixel_values is not None:
+            self._ensure_img_context_token_id(input_ids)
             vit_embeds = visual_features if visual_features is not None else self.extract_feature(pixel_values)
             input_embeds = self.language_model.get_input_embeddings()(input_ids)
             input_embeds = self._merge_input_embeds_with_vision_features(input_ids, input_embeds, vit_embeds)
         else:
             input_embeds = self.language_model.get_input_embeddings()(input_ids)
 
-        batch_size, seq_length = input_ids.shape
         if attention_mask is None:
+            batch_size, seq_length = input_ids.shape
             attention_mask = paddle.ones([batch_size, seq_length], dtype="int64")
         else:
             attention_mask = attention_mask.astype("int64")
 
-        position_ids = self._build_position_ids(attention_mask)
-        outputs = self.language_model(
-            input_ids=None,
+        use_cache = generate_kwargs.pop("use_cache", True)
+        if "output_hidden_states" in generate_kwargs:
+            output_hidden_states = generate_kwargs.pop("output_hidden_states")
+
+        outputs = self.language_model.generate(
             inputs_embeds=input_embeds,
             attention_mask=attention_mask,
-            position_ids=position_ids,
-            use_cache=True,
-            return_dict=True,
+            generation_config=generation_config,
             output_hidden_states=output_hidden_states,
+            use_cache=use_cache,
+            **generate_kwargs,
         )
-        past_key_values = outputs.past_key_values
-        next_token_logits = self._apply_repetition_penalty(outputs.logits[:, -1, :], input_ids, repetition_penalty)
-        next_tokens = paddle.argmax(next_token_logits, axis=-1).astype("int64").unsqueeze(-1)
-        generated_tokens = [next_tokens]
-        generated_sequence = paddle.concat([input_ids, next_tokens], axis=-1)
 
-        if eos_token_ids:
-            eos_tensor = paddle.to_tensor(eos_token_ids, dtype="int64")
-            finished = paddle.any(next_tokens == eos_tensor.reshape([1, -1]), axis=-1, keepdim=True)
-        else:
-            finished = paddle.zeros([batch_size, 1], dtype="bool")
+        return outputs
 
-        current_attention_mask = attention_mask
+    @property
+    def lm_head(self):
+        return self.language_model.get_output_embeddings()
 
-        for _ in range(max_new_tokens - 1):
-            if bool(paddle.all(finished).item()):
-                break
+    @lm_head.setter
+    def lm_head(self, value):
+        self.language_model.set_output_embeddings(value)
 
-            current_attention_mask = paddle.concat(
-                [current_attention_mask, paddle.ones([batch_size, 1], dtype=current_attention_mask.dtype)], axis=-1
-            )
-            position_ids = paddle.sum(current_attention_mask, axis=-1, keepdim=True).astype("int64") - 1
+    def get_input_embeddings(self):
+        return self.language_model.get_input_embeddings()
 
-            outputs = self.language_model(
-                input_ids=next_tokens,
-                attention_mask=current_attention_mask,
-                position_ids=position_ids,
-                past_key_values=past_key_values,
-                use_cache=True,
-                return_dict=True,
-                output_hidden_states=output_hidden_states,
-            )
-            past_key_values = outputs.past_key_values
-            next_token_logits = self._apply_repetition_penalty(
-                outputs.logits[:, -1, :], generated_sequence, repetition_penalty
-            )
-            next_tokens = paddle.argmax(next_token_logits, axis=-1).astype("int64").unsqueeze(-1)
+    def set_input_embeddings(self, value):
+        self.language_model.set_input_embeddings(value)
 
-            if eos_token_ids:
-                next_finished = paddle.any(next_tokens == eos_tensor.reshape([1, -1]), axis=-1, keepdim=True)
-                pad_fill_id = eos_token_ids[0] if eos_token_ids else pad_token_id
-                if pad_fill_id is None:
-                    pad_fill_id = 0
-                pad_fill = paddle.full_like(next_tokens, pad_fill_id)
-                next_tokens = paddle.where(finished, pad_fill, next_tokens)
-                finished = paddle.logical_or(finished, next_finished)
+    def get_output_embeddings(self):
+        return self.language_model.get_output_embeddings()
 
-            generated_tokens.append(next_tokens)
-            generated_sequence = paddle.concat([generated_sequence, next_tokens], axis=-1)
-
-        return paddle.concat(generated_tokens, axis=1)
+    def set_output_embeddings(self, new_embeddings):
+        self.language_model.set_output_embeddings(new_embeddings)
 
 
 class InternVLChatForConditionalGeneration(InternVLChatModel):
