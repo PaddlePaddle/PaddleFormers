@@ -2304,7 +2304,7 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
             self.ema_master_weight_ckpt_meta, self.ema_master_weights_filter = saved_ckptmeta(
                 ema_master_weights_sharded,
                 self.ckpt_data_name,
-                replicate_saved_into_local=self.args.replicate_saved_into_local,
+                replicate_saved_into_local=True,
             )
         else:
             self.ema_master_weight_ckpt_meta = None
