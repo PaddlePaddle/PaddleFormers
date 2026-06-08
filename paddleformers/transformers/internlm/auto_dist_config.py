@@ -23,16 +23,14 @@ def get_dist_config(model, prefix=""):
     config = {
         "mp_config": {
             "parallelize_plan": {
-                f"{prefix}internlm.embed_tokens": dist.ColWiseParallel(gather_output=True),
-                f"{prefix}internlm.layers.*.self_attn.qkv_proj": dist.ColWiseParallel(),
-                f"{prefix}internlm.layers.*.self_attn.q_proj": dist.ColWiseParallel(),
-                f"{prefix}internlm.layers.*.self_attn.k_proj": dist.ColWiseParallel(),
-                f"{prefix}internlm.layers.*.self_attn.v_proj": dist.ColWiseParallel(),
-                f"{prefix}internlm.layers.*.self_attn.o_proj": dist.RowWiseParallel(),
-                f"{prefix}internlm.layers.*.mlp.gate_proj": dist.ColWiseParallel(),
-                f"{prefix}internlm.layers.*.mlp.up_proj": dist.ColWiseParallel(),
-                f"{prefix}internlm.layers.*.mlp.gate_up_fused_proj": dist.ColWiseParallel(),
-                f"{prefix}internlm.layers.*.mlp.down_proj": dist.RowWiseParallel(),
+                f"{prefix}model.embed_tokens": dist.ColWiseParallel(gather_output=True),
+                f"{prefix}model.layers.*.self_attn.q_proj": dist.ColWiseParallel(),
+                f"{prefix}model.layers.*.self_attn.k_proj": dist.ColWiseParallel(),
+                f"{prefix}model.layers.*.self_attn.v_proj": dist.ColWiseParallel(),
+                f"{prefix}model.layers.*.self_attn.o_proj": dist.RowWiseParallel(),
+                f"{prefix}model.layers.*.mlp.gate_proj": dist.ColWiseParallel(),
+                f"{prefix}model.layers.*.mlp.up_proj": dist.ColWiseParallel(),
+                f"{prefix}model.layers.*.mlp.down_proj": dist.RowWiseParallel(),
                 f"{prefix}lm_head.weight": dist.ColWiseParallel(),
             }
         },

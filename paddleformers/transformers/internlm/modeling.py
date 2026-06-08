@@ -62,6 +62,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
         cos = cos.unsqueeze(0)
         sin = sin.unsqueeze(0)
 
+    position_gather_indices = None
     if position_ids is None:
         q_cos = cos[:, -q.shape[-2] :, :]
         q_sin = sin[:, -q.shape[-2] :, :]
@@ -69,14 +70,18 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
         if cos.shape[0] == 1 and position_ids.shape[0] > 1:
             cos = cos.expand([position_ids.shape[0], -1, -1])
             sin = sin.expand([position_ids.shape[0], -1, -1])
-        gather_indices = position_ids.unsqueeze(-1).expand(
+        position_gather_indices = position_ids.unsqueeze(-1).expand(
             [position_ids.shape[0], position_ids.shape[1], cos.shape[-1]]
         )
-        q_cos = paddle.take_along_axis(cos, gather_indices, axis=1)
-        q_sin = paddle.take_along_axis(sin, gather_indices, axis=1)
+        q_cos = paddle.take_along_axis(cos, position_gather_indices, axis=1)
+        q_sin = paddle.take_along_axis(sin, position_gather_indices, axis=1)
 
-    k_cos = cos[:, : k.shape[-2], :]
-    k_sin = sin[:, : k.shape[-2], :]
+    if position_gather_indices is not None and position_ids.shape[-1] == k.shape[-2]:
+        k_cos = paddle.take_along_axis(cos, position_gather_indices, axis=1)
+        k_sin = paddle.take_along_axis(sin, position_gather_indices, axis=1)
+    else:
+        k_cos = cos[:, : k.shape[-2], :]
+        k_sin = sin[:, : k.shape[-2], :]
 
     q_cos = q_cos.unsqueeze(unsqueeze_dim)
     q_sin = q_sin.unsqueeze(unsqueeze_dim)
@@ -489,6 +494,9 @@ class InternLMModel(InternLMPretrainedModel):
             inputs_embeds = inputs_embeds.reshape([-1, inputs_embeds.shape[-1]])
             inputs_embeds = ScatterOp.apply(inputs_embeds)
 
+        if isinstance(past_key_values, tuple):
+            past_key_values = DynamicCache(ddp_cache_data=past_key_values, config=self.config)
+
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)
         kv_seq_len = past_key_values.get_seq_length() if past_key_values is not None else 0
@@ -730,9 +738,9 @@ class InternLMForCausalLM(InternLMPretrainedModel):
                 input_ids = input_ids[:, -1:]
 
         position_ids = kwargs.get("position_ids", None)
-        if attention_mask is not None and position_ids is None:
-            position_ids = attention_mask.astype("int64").cumsum(-1) - 1
-            position_ids = paddle.where(attention_mask.astype("bool"), position_ids, paddle.ones_like(position_ids))
+        # InternLM's original RoPE path ignores padding-derived position ids.
+        # Let InternLMModel.forward create sequential positions from cache length
+        # unless the caller explicitly provides position_ids.
         if position_ids is not None and has_cache:
             position_ids = position_ids[:, -1].unsqueeze(-1)
 
