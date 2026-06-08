@@ -19,6 +19,8 @@ install_requirements() {
     start_ts=$(date +%s)
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet paddleformers -y
     rm -rf ./build ./dist ./paddleformers.egg-info/
+    python -m pip config --user set global.trusted-host pypi.org
+    python -m pip config --user set global.index-url https://pypi.org/simple
     # Todo: fix later 
     # python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple > /dev/null
     python -m pip install -r requirements.txt -i https://pypi.org/simple 
@@ -35,6 +37,18 @@ install_requirements() {
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl 
+    elif [[ "$ce_branch" == "CE_Develop_cu132_py312" ]]; then # nightly regerssion
+        #fleet
+        python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu132/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu132/ -i https://pypi.org/simple 
+        #paddlefleet_ops
+        bash ./scripts/install_ops_wheel.sh --branch develop
+        #paddle
+        python -m pip uninstall paddlepaddle-gpu -y
+        wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda132-Cudnn920-Trt1016-Py312-Compile/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
+        python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu132 
+        #formers
+        python setup.py bdist_wheel  > /dev/null
+        python -m pip install ./dist/*.whl
     elif [[ "$ce_branch" == "CE_Develop_cu130_py313" ]]; then # nightly regerssion
         #fleet
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ -i https://pypi.org/simple 
