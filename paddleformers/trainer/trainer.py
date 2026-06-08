@@ -2068,7 +2068,10 @@ class Trainer:
                 and isinstance(self.model, FleetGPTModel)
                 and get_batch_on_this_cp_rank is not None
             ):
-                inputs = get_batch_on_this_cp_rank(inputs)
+                inputs = get_batch_on_this_cp_rank(
+                    inputs,
+                    cp_balance_mode=getattr(self.args, "cp_balance_mode", "dualchunk_allgather"),
+                )
 
             if self.args.ignore_data_skip:
                 self.timers and self.timers("read-data").stop()
