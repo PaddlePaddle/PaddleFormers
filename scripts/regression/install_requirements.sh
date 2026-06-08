@@ -27,9 +27,9 @@ install_requirements() {
         wget -q https://paddle-github-action.bj.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp312-cp312-linux_x86_64.whl
         pip install  paddlefleet-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ -i https://pypi.org/simple 
         #paddlefleet_ops
-        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
-        pip uninstall paddlepaddle-gpu -y
+        bash ./scripts/install_ops_wheel.sh --branch release/0.2
         #paddle
+        pip uninstall paddlepaddle-gpu -y
         wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
         pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl  --index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
         #formers
@@ -39,9 +39,9 @@ install_requirements() {
         #fleet
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ -i https://pypi.org/simple 
         #paddlefleet_ops
-        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
-        python -m pip uninstall paddlepaddle-gpu -y
+        bash ./scripts/install_ops_wheel.sh --branch develop
         #paddle
+        python -m pip uninstall paddlepaddle-gpu -y
         wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda130-Cudnn913-Trt1013-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp313-cp313-linux_x86_64.whl
         python -m pip install paddlepaddle_gpu-0.0.0-cp313-cp313-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ 
         #formers
@@ -51,9 +51,9 @@ install_requirements() {
         #fleet
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ -i https://pypi.org/simple 
         #paddlefleet_ops
-        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
-        python -m pip uninstall paddlepaddle-gpu -y
+        bash ./scripts/install_ops_wheel.sh --branch develop
         #paddle
+        python -m pip uninstall paddlepaddle-gpu -y
         wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-TagBuild-Training-Linux-Gpu-Cuda130-Cudnn913-Trt1013-Mkl-Avx-Gcc11-SelfBuiltPypiUse/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
         python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ 
         #formers
@@ -64,7 +64,7 @@ install_requirements() {
         #fleet
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
         #paddlefleet_ops
-        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+        bash ./scripts/install_ops_wheel.sh --from-setup ./setup.py
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
@@ -72,7 +72,7 @@ install_requirements() {
         #fleet
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
         #paddlefleet_ops
-        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
+        bash ./scripts/install_ops_wheel.sh --from-setup ./setup.py
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
@@ -80,7 +80,7 @@ install_requirements() {
         #fleet
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
         #paddlefleet_ops
-        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+        bash ./scripts/install_ops_wheel.sh --from-setup ./setup.py
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
@@ -88,7 +88,7 @@ install_requirements() {
         #fleet
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
         #paddlefleet_ops
-        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+        bash ./scripts/install_ops_wheel.sh --from-setup ./setup.py
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl 
@@ -96,7 +96,7 @@ install_requirements() {
         #fleet
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
         #paddlefleet_ops
-        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+        bash ./scripts/install_ops_wheel.sh --from-setup ./setup.py
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl  
@@ -104,7 +104,7 @@ install_requirements() {
         #fleet
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
         #paddlefleet_ops
-        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+        bash ./scripts/install_ops_wheel.sh --from-setup ./setup.py
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl    
@@ -113,9 +113,7 @@ install_requirements() {
         python setup.py bdist_wheel > /dev/null
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
         #paddlefleet_ops
-        wget -q https://paddle-whl.bj.bcebos.com/nightly/cu129/paddlefleet-ops/paddlefleet_ops-0.3.0.dev20260604+02aed7c3-cp312-cp312-linux_x86_64.whl
-        pip install  paddlefleet_ops-0.3.0.dev20260604+02aed7c3-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ -i https://pypi.org/simple 
-        # python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+        bash ./scripts/install_ops_wheel.sh --from-setup ./setup.py
     fi
     python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
 
