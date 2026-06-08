@@ -31,11 +31,12 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
     @staticmethod
     def get_layer_attn_split_info(config, layer_idx):
-        if is_layer_window_attention(
+        layer_is_swa = is_layer_window_attention(
             config.sliding_window,
             config.window_attn_skip_freq,
             layer_idx - config.num_empty_layers_add_in_head,
-        ):
+        )
+        if layer_is_swa:
             head_dim = config.swa_head_dim
             v_head_dim = config.swa_v_head_dim
             num_attention_heads = config.swa_num_attention_heads
@@ -64,7 +65,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             # Per group: Q + K + V
             split_dims = [q_dim, head_dim, v_head_dim]
 
-        return num_attention_heads, num_key_value_heads, num_query_groups, split_dims
+        return num_attention_heads, num_key_value_heads, num_query_groups, split_dims, layer_is_swa
 
     @classmethod
     def _build_muon_slice_config(cls, model, config) -> dict:
@@ -218,7 +219,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
         # vha_premix_weight shape: [num_key_value_heads, head_dim, head_dim]
         # we reuse 3D shape moe_expert_fusion func
-        vha_premix_fn = _moe_experts if moe_expert_fusion else None
+        vha_premix_fn = _moe_experts if config.use_vha_attention else None
 
         # Determine MLA slice strategy
         mla_slice_fn = None
@@ -287,14 +288,41 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         },
                     )
 
-            num_heads, num_kv_heads, num_query_groups, split_dims = cls.get_layer_attn_split_info(config, layer_idx)
+            num_heads, num_kv_heads, num_query_groups, split_dims, layer_is_swa = cls.get_layer_attn_split_info(
+                config, layer_idx
+            )
             # Fused QKV weights (non-MLA path)
             if not use_mla and qkv_slice_fn is not None:
-                qkv_kwargs = {"num_query_groups": num_query_groups, "split_dims": split_dims}
-                slice_config[f"{prefix}.self_attn.qkv_proj.weight"] = (qkv_slice_fn, qkv_kwargs)
-
-            if vha_premix_fn is not None:
-                slice_config[f"{prefix}.self_attn.vha_premix_weight"] = (vha_premix_fn, {})
+                if config.use_vha_attention:
+                    # VHA: independent projections, split by heads then ortho each head
+                    if muon_qkv_update_mode == "split_head":
+                        g = num_heads // num_kv_heads  # heads per group in q_proj
+                        q_lora_rank = config.swa_vha_q_lora_rank if layer_is_swa else config.vha_q_lora_rank
+                        head_dim = config.swa_head_dim if layer_is_swa else config.head_dim
+                        v_head_dim = config.swa_v_head_dim if layer_is_swa else config.v_head_dim
+                        slice_config[f"{prefix}.self_attn.q_proj.weight"] = (
+                            _mla_per_head,
+                            {"head_num": g, "axis": 1, "head_split_sizes": [q_lora_rank]},
+                        )
+                        slice_config[f"{prefix}.self_attn.k_proj.weight"] = (
+                            _mla_per_head,
+                            {"head_num": num_kv_heads, "axis": 1, "head_split_sizes": [head_dim]},
+                        )
+                        slice_config[f"{prefix}.self_attn.v_proj.weight"] = (
+                            _mla_per_head,
+                            {"head_num": num_kv_heads, "axis": 1, "head_split_sizes": [v_head_dim]},
+                        )
+                        if use_gated_attn:
+                            slice_config[f"{prefix}.self_attn.gate_proj.weight"] = (
+                                _mla_per_head,
+                                {"head_num": num_heads, "axis": 1, "head_split_sizes": [v_head_dim]},
+                            )
+                        if vha_premix_fn is not None:
+                            slice_config[f"{prefix}.self_attn.vha_premix_weight"] = (vha_premix_fn, {})
+                    # split_qkv: no fuse, skip
+                else:
+                    qkv_kwargs = {"num_query_groups": num_query_groups, "split_dims": split_dims}
+                    slice_config[f"{prefix}.self_attn.qkv_proj.weight"] = (qkv_slice_fn, qkv_kwargs)
 
             # FFN gate_up weights
             if ffn_slice_fn is not None:
@@ -639,7 +667,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
                 # attention qkv
                 # get_layer_attn_split_info will minus num_empty_layers_add_in_head
-                num_heads, num_kv_heads, num_query_groups, split_dims = cls.get_layer_attn_split_info(
+                num_heads, num_kv_heads, num_query_groups, split_dims, layer_is_swa = cls.get_layer_attn_split_info(
                     config, layer_idx + config.num_empty_layers_add_in_head
                 )
 
@@ -659,93 +687,25 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 v_head_dim_chunks = v_head_dim // gcd_head_dim
 
                 if config.use_vha_attention:
-                    q_heads_per_group = num_heads // num_kv_heads
-                    g_heads_per_group = q_heads_per_group
-                    q_heads_per_group = q_heads_per_group // num_kv_heads
-
-                    q_names = []
-                    gate_names = []
-                    k_names = []
-                    v_names = []
-                    q_bias_names = []
-                    gate_bias_names = []
-                    k_bias_names = []
-                    v_bias_names = []
-                    for g in range(num_kv_heads):
-                        for h in range(q_heads_per_group):
-                            for c in range(head_dim_chunks):
-                                q_names.append(f"{prefix}.self_attn._q_g{g}_h{h}_c{c}")
-                                q_bias_names.append(f"{prefix}.self_attn._q_g{g}_h{h}_c{c}_bias")
-                        if use_gated_attn:
-                            for h in range(g_heads_per_group):
-                                for c in range(v_head_dim_chunks):
-                                    gate_names.append(f"{prefix}.self_attn._gate_g{g}_h{h}_c{c}")
-                                    gate_bias_names.append(f"{prefix}.self_attn._gate_g{g}_h{h}_c{c}_bias")
-
-                        for c in range(head_dim_chunks):
-                            k_names.append(f"{prefix}.self_attn._k_g{g}_c{c}")
-                            k_bias_names.append(f"{prefix}.self_attn._k_g{g}_c{c}_bias")
-                        for c in range(v_head_dim_chunks):
-                            v_names.append(f"{prefix}.self_attn._v_g{g}_c{c}")
-                            v_bias_names.append(f"{prefix}.self_attn._v_g{g}_c{c}_bias")
-                    aoa_config["aoa_statements"].append(
-                        f"{prefix}.self_attn.q_proj.weight -> {','.join(q_names)}, axis=0"
-                    )
-                    aoa_config["aoa_statements"].append(
-                        f"{prefix}.self_attn.k_proj.weight -> {','.join(k_names)}, axis=0"
-                    )
-                    aoa_config["aoa_statements"].append(
-                        f"{prefix}.self_attn.v_proj.weight -> {','.join(v_names)}, axis=0"
-                    )
-
+                    aoa_config["aoa_statements"] += [
+                        f"{prefix}.self_attn.q_proj.weight^T -> {prefix_offset}.self_attn.q_proj.weight",
+                        f"{prefix}.self_attn.k_proj.weight^T -> {prefix_offset}.self_attn.k_proj.weight",
+                        f"{prefix}.self_attn.v_proj.weight^T -> {prefix_offset}.self_attn.v_proj.weight",
+                    ]
                     if use_gated_attn:
                         aoa_config["aoa_statements"].append(
-                            f"{prefix}.self_attn.gate_proj.weight -> {','.join(gate_names)}, axis=0"
+                            f"{prefix}.self_attn.gate_proj.weight^T -> {prefix_offset}.self_attn.gate_proj.weight"
                         )
-
-                    # Reassemble per-group in fleet order: Q_heads, Gate_heads, K, V
-                    ordered = []
-                    bias_ordered = []
-                    for g in range(num_kv_heads):
-                        for h in range(q_heads_per_group):
-                            for c in range(head_dim_chunks):
-                                ordered.append(f"{prefix}.self_attn._q_g{g}_h{h}_c{c}")
-                                bias_ordered.append(f"{prefix}.self_attn._q_g{g}_h{h}_c{c}_bias")
-
-                        if use_gated_attn:
-                            for h in range(g_heads_per_group):
-                                for c in range(v_head_dim_chunks):
-                                    ordered.append(f"{prefix}.self_attn._gate_g{g}_h{h}_c{c}")
-                                    bias_ordered.append(f"{prefix}.self_attn._gate_g{g}_h{h}_c{c}_bias")
-
-                        for c in range(head_dim_chunks):
-                            ordered.append(f"{prefix}.self_attn._k_g{g}_c{c}")
-                            bias_ordered.append(f"{prefix}.self_attn._k_g{g}_c{c}_bias")
-                        for c in range(v_head_dim_chunks):
-                            ordered.append(f"{prefix}.self_attn._v_g{g}_c{c}")
-                            bias_ordered.append(f"{prefix}.self_attn._v_g{g}_c{c}_bias")
-
-                    fused_tmp = f"{prefix}.self_attn.qkv_fused_tmp"
-                    aoa_config["aoa_statements"].append(f"{','.join(ordered)} -> {fused_tmp}, axis=0")
-                    aoa_config["aoa_statements"].append(f"{fused_tmp}^T -> {prefix_offset}.self_attn.qkv_proj.weight")
-
                     if config.attention_bias:
+                        aoa_config["aoa_statements"] += [
+                            f"{prefix}.self_attn.q_proj.bias -> {prefix_offset}.self_attn.q_proj.bias",
+                            f"{prefix}.self_attn.k_proj.bias -> {prefix_offset}.self_attn.k_proj.bias",
+                            f"{prefix}.self_attn.v_proj.bias -> {prefix_offset}.self_attn.v_proj.bias",
+                        ]
                         if use_gated_attn:
                             aoa_config["aoa_statements"].append(
-                                f"{prefix}.self_attn.gate_proj.bias -> {','.join(gate_bias_names)}, axis=0"
+                                f"{prefix}.self_attn.gate_proj.bias -> {prefix_offset}.self_attn.gate_proj.bias"
                             )
-                        aoa_config["aoa_statements"].append(
-                            f"{prefix}.self_attn.q_proj.bias -> {','.join(q_bias_names)}, axis=0"
-                        )
-                        aoa_config["aoa_statements"].append(
-                            f"{prefix}.self_attn.k_proj.bias -> {','.join(k_bias_names)}, axis=0"
-                        )
-                        aoa_config["aoa_statements"].append(
-                            f"{prefix}.self_attn.v_proj.bias -> {','.join(v_bias_names)}, axis=0"
-                        )
-                        aoa_config["aoa_statements"].append(
-                            f"{','.join(bias_ordered)} -> {prefix_offset}.self_attn.qkv_proj.bias, axis=0"
-                        )
 
                 else:
                     q_names = []
@@ -984,6 +944,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             ]
 
             use_mla = bool(getattr(config, "multi_latent_attention", False))
+            is_swa = is_layer_window_attention(config.sliding_window, config.window_attn_skip_freq, layer_idx)
 
             if config.use_gated_attn and use_mla:
                 # MLA mode: gate_proj is a separate parameter
@@ -1002,7 +963,6 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     f"{prefix_offset}.self_attn.vha_postmix_V -> {prefix}.self_attn.vha_postmix_V",
                 ]
 
-            is_swa = is_layer_window_attention(config.sliding_window, config.window_attn_skip_freq, layer_idx)
             if (
                 config.softmax_type == "learnable"
                 or (config.add_full_attention_sink_bias and not is_swa)
@@ -1073,7 +1033,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         f"{prefix_offset}.self_attn.k_norm.weight -> {prefix}.self_attn.k_norm.weight",
                     ]
 
-                num_heads, num_kv_heads, num_query_groups, split_dims = cls.get_layer_attn_split_info(
+                num_heads, num_kv_heads, num_query_groups, split_dims, layer_is_swa = cls.get_layer_attn_split_info(
                     config, layer_idx + config.num_empty_layers_add_in_head
                 )
                 # Non-MLA gated attention: gate is fused in qkv_proj
@@ -1091,58 +1051,34 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 head_dim_chunks = head_dim // gcd_head_dim
                 v_head_dim_chunks = v_head_dim // gcd_head_dim
 
-                fleet_key = f"{prefix_offset}.self_attn.qkv_proj.weight"
-                fused_tmp = f"{prefix}.self_attn.qkv_fused_tmp"
-
-                # Step 1: Transpose fleet weight
-                aoa_statements.append(f"{fleet_key}^T -> {fused_tmp}")
-
                 if config.use_vha_attention:
-                    q_heads_per_group = num_heads // num_kv_heads
-                    g_heads_per_group = q_heads_per_group
-                    q_heads_per_group = q_heads_per_group // num_kv_heads
-
-                    # Step 2: Split into per-group chunks along axis=0
-                    chunk_names = []
-                    bias_chunk_names = []
-                    for g in range(num_kv_heads):
-                        for h in range(q_heads_per_group):
-                            for c in range(head_dim_chunks):
-                                chunk_names.append(f"{prefix}.self_attn._q_g{g}_h{h}_c{c}")
-                                bias_chunk_names.append(f"{prefix}.self_attn._q_g{g}_h{h}_c{c}_bias")
+                    aoa_statements += [
+                        f"{prefix_offset}.self_attn.q_proj.weight^T -> {prefix}.self_attn.q_proj.weight",
+                        f"{prefix_offset}.self_attn.k_proj.weight^T -> {prefix}.self_attn.k_proj.weight",
+                        f"{prefix_offset}.self_attn.v_proj.weight^T -> {prefix}.self_attn.v_proj.weight",
+                    ]
+                    if use_gated_attn:
+                        aoa_statements.append(
+                            f"{prefix_offset}.self_attn.gate_proj.weight^T -> {prefix}.self_attn.gate_proj.weight"
+                        )
+                    if config.attention_bias:
+                        aoa_statements += [
+                            f"{prefix_offset}.self_attn.q_proj.bias -> {prefix}.self_attn.q_proj.bias",
+                            f"{prefix_offset}.self_attn.k_proj.bias -> {prefix}.self_attn.k_proj.bias",
+                            f"{prefix_offset}.self_attn.v_proj.bias -> {prefix}.self_attn.v_proj.bias",
+                        ]
                         if use_gated_attn:
-                            for h in range(g_heads_per_group):
-                                for c in range(v_head_dim_chunks):
-                                    chunk_names.append(f"{prefix}.self_attn._gate_g{g}_h{h}_c{c}")
-                                    bias_chunk_names.append(f"{prefix}.self_attn._gate_g{g}_h{h}_c{c}_bias")
-
-                        for c in range(head_dim_chunks):
-                            chunk_names.append(f"{prefix}.self_attn._k_g{g}_c{c}")
-                            bias_chunk_names.append(f"{prefix}.self_attn._k_g{g}_c{c}_bias")
-                        for c in range(v_head_dim_chunks):
-                            chunk_names.append(f"{prefix}.self_attn._v_g{g}_c{c}")
-                            bias_chunk_names.append(f"{prefix}.self_attn._v_g{g}_c{c}_bias")
-                    aoa_statements.append(f"{fused_tmp} -> {','.join(chunk_names)}, axis=0")
-
-                    # Step 3: Reassemble q_proj (interleaved Q+Gate)
-                    q_ordered = []
-                    g_ordered = []
-                    bias_q_ordered = []
-                    bias_g_ordered = []
-                    for g in range(num_kv_heads):
-                        for h in range(q_heads_per_group):
-                            for c in range(head_dim_chunks):
-                                q_ordered.append(f"{prefix}.self_attn._q_g{g}_h{h}_c{c}")
-                                bias_q_ordered.append(f"{prefix}.self_attn._q_g{g}_h{h}_c{c}_bias")
-                        for h in range(g_heads_per_group):
-                            if use_gated_attn:
-                                for c in range(v_head_dim_chunks):
-                                    g_ordered.append(f"{prefix}.self_attn._gate_g{g}_h{h}_c{c}")
-                                    bias_g_ordered.append(f"{prefix}.self_attn._gate_g{g}_h{h}_c{c}_bias")
-                    aoa_statements.append(f"{','.join(q_ordered)} -> {prefix}.self_attn.q_proj.weight, axis=0")
-                    aoa_statements.append(f"{','.join(g_ordered)} -> {prefix}.self_attn.gate_proj.weight, axis=0")
+                            aoa_statements.append(
+                                f"{prefix_offset}.self_attn.gate_proj.bias -> {prefix}.self_attn.gate_proj.bias"
+                            )
 
                 else:
+                    fleet_key = f"{prefix_offset}.self_attn.qkv_proj.weight"
+                    fused_tmp = f"{prefix}.self_attn.qkv_fused_tmp"
+
+                    # Step 1: Transpose fleet weight
+                    aoa_statements.append(f"{fleet_key}^T -> {fused_tmp}")
+
                     heads_per_group = num_heads // num_kv_heads
 
                     # Step 2: Split into per-group chunks along axis=0
@@ -1181,35 +1117,31 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                                     bias_q_ordered.append(f"{prefix}.self_attn._gate_g{g}_h{h}_c{c}_bias")
                     aoa_statements.append(f"{','.join(q_ordered)} -> {prefix}.self_attn.q_proj.weight, axis=0")
 
-                # k_proj
-                k_ordered = []
-                bias_k_ordered = []
-                for g in range(num_kv_heads):
-                    for c in range(head_dim_chunks):
-                        k_ordered.append(f"{prefix}.self_attn._k_g{g}_c{c}")
-                        bias_k_ordered.append(f"{prefix}.self_attn._k_g{g}_c{c}_bias")
-                aoa_statements.append(f"{','.join(k_ordered)} -> {prefix}.self_attn.k_proj.weight, axis=0")
+                    # k_proj
+                    k_ordered = []
+                    bias_k_ordered = []
+                    for g in range(num_kv_heads):
+                        for c in range(head_dim_chunks):
+                            k_ordered.append(f"{prefix}.self_attn._k_g{g}_c{c}")
+                            bias_k_ordered.append(f"{prefix}.self_attn._k_g{g}_c{c}_bias")
+                    aoa_statements.append(f"{','.join(k_ordered)} -> {prefix}.self_attn.k_proj.weight, axis=0")
 
-                # v_proj
-                v_ordered = []
-                bias_v_ordered = []
-                for g in range(num_kv_heads):
-                    for c in range(v_head_dim_chunks):
-                        v_ordered.append(f"{prefix}.self_attn._v_g{g}_c{c}")
-                        bias_v_ordered.append(f"{prefix}.self_attn._v_g{g}_c{c}_bias")
-                aoa_statements.append(f"{','.join(v_ordered)} -> {prefix}.self_attn.v_proj.weight, axis=0")
+                    # v_proj
+                    v_ordered = []
+                    bias_v_ordered = []
+                    for g in range(num_kv_heads):
+                        for c in range(v_head_dim_chunks):
+                            v_ordered.append(f"{prefix}.self_attn._v_g{g}_c{c}")
+                            bias_v_ordered.append(f"{prefix}.self_attn._v_g{g}_c{c}_bias")
+                    aoa_statements.append(f"{','.join(v_ordered)} -> {prefix}.self_attn.v_proj.weight, axis=0")
 
-                if config.attention_bias:
-                    aoa_statements.append(
-                        f"{prefix_offset}.self_attn.qkv_proj.bias -> {','.join(bias_chunk_names)}, axis=0"
-                    )
-                    if config.use_vha_attention:
+                    if config.attention_bias:
                         aoa_statements.append(
-                            f"{','.join(bias_g_ordered)} -> {prefix}.self_attn.gate_proj.bias, axis=0"
+                            f"{prefix_offset}.self_attn.qkv_proj.bias -> {','.join(bias_chunk_names)}, axis=0"
                         )
-                    aoa_statements.append(f"{','.join(bias_q_ordered)} -> {prefix}.self_attn.q_proj.bias, axis=0")
-                    aoa_statements.append(f"{','.join(bias_k_ordered)} -> {prefix}.self_attn.k_proj.bias, axis=0")
-                    aoa_statements.append(f"{','.join(bias_v_ordered)} -> {prefix}.self_attn.v_proj.bias, axis=0")
+                        aoa_statements.append(f"{','.join(bias_q_ordered)} -> {prefix}.self_attn.q_proj.bias, axis=0")
+                        aoa_statements.append(f"{','.join(bias_k_ordered)} -> {prefix}.self_attn.k_proj.bias, axis=0")
+                        aoa_statements.append(f"{','.join(bias_v_ordered)} -> {prefix}.self_attn.v_proj.bias, axis=0")
 
         # All layers are MoE (first_k_dense_replace=0)
         moe_layer_end = num_hidden_layers if config.use_dense_mtp else num_hidden_layers + num_nextn_predict_layers
