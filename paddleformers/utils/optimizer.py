@@ -409,9 +409,9 @@ class AdamWCustom(AdamW):
         if master_weight is not None:
             master_weight[:] = p
             if not skip_update_param:
-                param[:] = p.astype(param.dtype)
+                param.set_value(p.astype(param.dtype))
         else:
-            param[:] = p
+            param.set_value(p)
         moment1[:] = mom1.astype(moment_dtype)
         moment2[:] = mom2.astype(moment_dtype)
         beta1_pow[:], beta2_pow[:] = beta1 * beta1_pow[:], beta2 * beta2_pow[:]

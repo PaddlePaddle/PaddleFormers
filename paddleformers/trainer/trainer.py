@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import collections
 import contextlib
+import fnmatch
 import gc
 import inspect
 import json
@@ -45,6 +46,7 @@ import psutil
 from packaging import version
 from paddle import framework
 from paddle.base import core
+from paddle.base.framework import Variable, in_dynamic_or_pir_mode, in_pir_mode
 from paddle.distributed import ShardedWeight
 from paddle.distributed.auto_parallel._utils import _patch_grads_for_step
 from paddle.distributed.fleet.meta_parallel import PipelineLayer
@@ -164,6 +166,103 @@ from ..utils.import_utils import is_datasets_available, is_paddle_cuda_available
 from ..utils.log import MetricsDumper, logger
 from ..utils.pdc_sdk import FLASH_DEVICE
 from ..utils.tools import paddle_device
+
+
+def _dsv4_optimizer_chain(optimizer):
+    chain = []
+    stack = [optimizer]
+    seen = set()
+    while stack:
+        current = stack.pop(0)
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        chain.append(current)
+        for attr in ("_inner_opt", "_optim", "_optimizer"):
+            candidate = getattr(current, attr, None)
+            if candidate is not None and id(candidate) not in seen:
+                stack.append(candidate)
+    return chain
+
+
+def _dsv4_compute_megatron_cosine_lr(args, optimizer_step: int) -> Optional[float]:
+    scheduler_type = str(getattr(args, "lr_scheduler_type", "")).lower()
+    if "cosine" not in scheduler_type:
+        return None
+    learning_rate = float(getattr(args, "learning_rate"))
+    min_lr = float(getattr(args, "min_lr", 0.0) or 0.0)
+    warmup_steps = int(getattr(args, "warmup_steps", 0) or 0)
+    decay_steps = int(getattr(args, "decay_steps", 0) or 0)
+    if decay_steps <= 0:
+        decay_steps = int(getattr(args, "max_steps", 0) or 0)
+    if decay_steps <= 0:
+        return None
+
+    current_step = max(0, int(optimizer_step) - 1)
+    if current_step < warmup_steps:
+        return learning_rate * float(current_step) / float(max(1, warmup_steps))
+    if current_step >= decay_steps:
+        return min_lr
+
+    num_cycles = float(getattr(args, "num_cycles", 0.5) or 0.5)
+    progress = float(current_step - warmup_steps) / float(max(1, decay_steps - warmup_steps))
+    ratio = max(0.0, 0.5 * (1.0 + math.cos(math.pi * num_cycles * 2.0 * progress)))
+    return ratio * (learning_rate - min_lr) + min_lr
+
+
+@paddle.no_grad()
+def _dsv4_sync_optimizer_lr_tensor_from_scheduler(optimizer, lr_scheduler, optimizer_step=None, args=None) -> None:
+    sync_lr_tensor = os.getenv("DSV4_FLEET_SYNC_OPTIMIZER_LR_TENSOR", "0") == "1"
+    exact_lr_value = None
+    use_exact_lr_tensor = os.getenv("DSV4_FLEET_MEGATRON_LR_SYNC", "0") == "1"
+    need_exact_lr_attr = use_exact_lr_tensor or os.getenv("DSV4_FLEET_FP64_LR_TENSOR", "0") == "1"
+    if not sync_lr_tensor and not need_exact_lr_attr:
+        return
+
+    lr_value = None
+    if sync_lr_tensor:
+        if lr_scheduler is None:
+            return
+        try:
+            lr_value = float(lr_scheduler())
+        except Exception:
+            try:
+                lr_value = float(lr_scheduler.get_lr())
+            except Exception:
+                return
+    if args is not None and optimizer_step is not None and need_exact_lr_attr:
+        exact_lr_value = _dsv4_compute_megatron_cosine_lr(args, int(optimizer_step))
+        if exact_lr_value is not None and use_exact_lr_tensor:
+            lr_value = exact_lr_value
+
+    synced = 0
+    for opt in _dsv4_optimizer_chain(optimizer):
+        if exact_lr_value is not None:
+            setattr(opt, "_dsv4_exact_lr", exact_lr_value)
+        if not sync_lr_tensor:
+            continue
+        learning_rate = getattr(opt, "_learning_rate", None)
+        if learning_rate is None or not callable(learning_rate):
+            continue
+        try:
+            lr_tensor = opt._global_learning_rate()
+        except Exception:
+            lr_tensor = None
+        if not isinstance(lr_tensor, paddle.Tensor):
+            continue
+        if (
+            exact_lr_value is not None
+            and os.getenv("DSV4_FLEET_FP64_LR_TENSOR", "0") == "1"
+            and lr_tensor.dtype != paddle.float64
+        ):
+            lr_tensor = paddle.full(lr_tensor.shape, lr_value, dtype="float64")
+            lr_map = getattr(opt, "_learning_rate_map", None)
+            if isinstance(lr_map, dict):
+                lr_map[framework.default_main_program()] = lr_tensor
+        else:
+            lr_tensor.set_value(paddle.full(lr_tensor.shape, lr_value, dtype=lr_tensor.dtype))
+        synced += 1
+
 from .argparser import strtobool
 from .integrations import get_reporting_integration_callbacks
 from .plugins.timer import RuntimeTimer, get_timers, set_timers
@@ -171,7 +270,6 @@ from .trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
     InterleaveGateUpCallback,
-    InternalMedicineCallback,
     PrinterCallback,
     ProgressCallback,
     SPGradSyncCallback,
@@ -493,15 +591,7 @@ class Trainer:
             assert (isinstance(model, LoRAModel) and isinstance(model.model, PipelineLayer)) or isinstance(
                 model, PipelineLayer
             ), f"Only support pipeline parallel mode when model is PipelineLayer or PipelineLayer!!! but get {type(model.model)}"
-        default_callbacks = DEFAULT_CALLBACKS.copy()
-        if getattr(self.args, "internal_medicine_monitors", ""):
-            default_callbacks.append(
-                InternalMedicineCallback(
-                    monitors=self.args.internal_medicine_monitors,
-                    monitor_interval=self.args.internal_medicine_monitor_interval,
-                )
-            )
-        default_callbacks += get_reporting_integration_callbacks(self.args.report_to)
+        default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(self.args.report_to)
         callbacks = default_callbacks if callbacks is None else default_callbacks + callbacks
         self.callback_handler = CallbackHandler(
             callbacks, self.model, self.tokenizer, self.optimizer, self.lr_scheduler
@@ -992,27 +1082,6 @@ class Trainer:
         if resume_from_checkpoint is None:
             return
 
-        if self.args.zcc_save_ema_coef is None:
-            return
-
-        # Path A: main process completed EMA reshard, pass via shared memory
-        if hasattr(self, "_ema_reshard_result") and self._ema_reshard_result is not None:
-            # Pass tensor_refs to manager so it can keep them alive until workers consume
-            tensor_refs = getattr(self, "_ema_shared_tensor_refs", None)
-            shm_filenames = getattr(self, "_ema_shm_filenames", [])
-            num_refs = len(tensor_refs) if tensor_refs else 0
-            logger.info(f"[EMA Reshard] Transferring {num_refs} shared memory refs to manager")
-            self.zcc_manager.set_ema_shared_memory(
-                self._ema_reshard_result, tensor_refs=tensor_refs, shm_filenames=shm_filenames
-            )
-            # Clear local refs (manager now owns them, refcount NOT zero yet)
-            self._ema_shared_tensor_refs = None
-            self._ema_reshard_result = None
-            self._ema_shm_filenames = None
-            logger.info("[EMA Reshard] Local refs cleared, manager holds ownership until workers consume")
-            return
-
-        # Path B: no reshard needed, subprocess loads from file (existing logic)
         ema_state_path = self._get_ema_state_path(resume_from_checkpoint)
 
         if not os.path.exists(ema_state_path):
@@ -1076,6 +1145,7 @@ class Trainer:
         logger.info("Zero cost checkpoint manager created successfully.")
 
     def add_non_zcc_ema_callback(self, resume_from_checkpoint, ema_state_assembler=None):
+
         non_zcc_ema_callback = NonZCCEMACallback.create_nonzcc_callback(
             args=self.args,
             resume_from_checkpoint=resume_from_checkpoint,
@@ -1085,6 +1155,7 @@ class Trainer:
             hcg=self.hcg,
             ema_state_assembler=ema_state_assembler,
         )
+
         self.add_callback(non_zcc_ema_callback)
 
     def _save_flex_model_state(self, output_dir):
@@ -1224,31 +1295,6 @@ class Trainer:
         if not self.args.sharded_model_from_ema:
             init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
 
-            # ===== EMA State Resharding for ZCC (right after optimizer init) =====
-            # Non-ZCC handles reshard internally in EMABufferFcBased._load()
-            self._ema_reshard_result = None
-            if self.args.enable_zero_cost_checkpoint:
-                ema_state_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC)
-                if (
-                    os.path.exists(ema_state_path)
-                    and self.args.zcc_save_ema_coef is not None
-                    and self._is_fc_format_ema(ema_state_path)
-                ):
-                    same_strategy, err_msg = DistInfoCollectorValidator(self.args, self.hcg).check_same_strategy(
-                        resume_from_checkpoint
-                    )
-
-                    if not same_strategy:
-                        logger.info(
-                            f"[EMA Reshard] Parallelism strategy changed ({err_msg}), performing EMA reshard..."
-                        )
-                        self._ema_reshard_result = self._load_ema_with_reshard(
-                            ema_state_path, flex_ckpt_comm_method, worker_groups
-                        )
-                        logger.info("[EMA Reshard] EMA reshard completed, results stored for subprocess")
-                    else:
-                        logger.info("[EMA Reshard] Same strategy, subprocess will load EMA directly from file")
-
             optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
             opt_states = {}
             master_weights = {}
@@ -1258,12 +1304,10 @@ class Trainer:
                 else:
                     opt_states[k] = v
 
-            # use filtered AOA for master_weight (excludes FP32-only params)
-            master_weight_aoa = getattr(self.args, "aoa_config_master_weight", None) or self.args.aoa_config
             dist.load_state_dict(
                 master_weights,
                 master_weights_path,
-                aoa_config=master_weight_aoa,
+                aoa_config=self.args.aoa_config,
                 offload=self.args.load_via_cpu,
                 comm_method=flex_ckpt_comm_method,
                 worker_groups=worker_groups,
@@ -1299,34 +1343,13 @@ class Trainer:
         logger.debug(f"enable_bf16_opt: {enable_bf16_opt}")
 
         if self.args.sharded_model_from_ema:
-            ema_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC)
-            if self._is_fc_format_ema(ema_path):
-                model_sharded_state_dict = self.model.sharded_state_dict()
-                init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
-                optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
-                ema_state = {}
-                for k, v in model_sharded_state_dict.items():
-                    if v.local_tensor.dtype == paddle.float32:
-                        ema_state[k] = v
-                for k, v in optimizer_sharded_state_dict.items():
-                    if k.endswith(".w_0"):
-                        ema_state[k] = v
-                dist.load_state_dict(
-                    ema_state,
-                    ema_path,
-                    aoa_config=self.args.aoa_config,
-                    offload=self.args.load_via_cpu,
-                    comm_method=flex_ckpt_comm_method,
-                    worker_groups=worker_groups,
-                )
-            else:
-                ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
-                ema_state_dict = paddle.load(ema_states_path)
-                ema_master_weights = ema_state_dict.pop("master_weights", None)
-                opt_state_dict = {"master_weights": ema_master_weights}
-                self.optimizer.set_state_dict(opt_state_dict)
+            ema_states_path = os.path.join(resume_from_checkpoint, EMA_STATE_DIC, f"{dist.get_rank()}_0.distcp")
+            ema_state_dict = paddle.load(ema_states_path)
+            ema_master_weights = ema_state_dict.pop("master_weights", None)
+            opt_state_dict = {"master_weights": ema_master_weights}
+            self.optimizer.set_state_dict(opt_state_dict)
 
-                self.model.set_state_dict(ema_state_dict)
+            self.model.set_state_dict(ema_state_dict)
         else:
 
             def bf16_filtered_sharded_state_dict(sharded_state_dict):
@@ -1339,13 +1362,7 @@ class Trainer:
 
             # NOTE(xingmingyyj) When saving model states only in float32 format, we assume that users
             # will not use AOA to change the mapping relationships among these float32 weights.
-            if os.getenv("HACK_CONVERT_CKPT", "0").lower() in ["true", "1"]:
-                # model_state only loads params not in master_weight
-                # params in master_weight will be cast from master_weight
-                if enable_bf16_opt:
-                    model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
-                aoa_config = getattr(self.args, "aoa_config_model_state", None)
-            elif enable_bf16_opt:
+            if enable_bf16_opt:
                 model_sharded_state_dict = bf16_filtered_sharded_state_dict(model_sharded_state_dict)
                 aoa_config = None
             else:
@@ -1463,82 +1480,6 @@ class Trainer:
                             paddle.assign(
                                 paddle.cast(to_device(master_weight), paddle.bfloat16), model_state_dict[key]
                             )
-
-    def _is_fc_format_ema(self, ema_state_path):
-        """Check if EMA state is in FC format by looking for .metadata file."""
-        if not os.path.isdir(ema_state_path):
-            return False
-        return any(f.endswith(".metadata") for f in os.listdir(ema_state_path))
-
-    def _load_ema_with_reshard(self, ema_state_path, comm_method, worker_groups):
-        """Use FlexCheckpoint to reshard EMA state, return shared memory metas for subprocess."""
-        model_sharded_state_dict = self.model.sharded_state_dict()
-        opt_sharded = self.optimizer.sharded_state_dict(model_sharded_state_dict)
-        ema_target = {}
-
-        # master_weights portion: use .w_0 keys directly (same as optimizer master_weights key format)
-        for k, sw in opt_sharded.items():
-            if k.endswith(".w_0"):
-                local_tensor = paddle.zeros(sw.local_tensor.shape, dtype=paddle.float32)
-                ema_target[k] = ShardedWeight(
-                    key=sw.key,
-                    local_tensor=local_tensor,
-                    local_shape=sw.local_shape,
-                    global_shape=sw.global_shape,
-                    global_offset=sw.global_offset,
-                    is_flattened=sw.is_flattened,
-                    flattened_range=sw.flattened_range,
-                )
-
-        # model_params portion: float32 items from model sharded state dict (no suffix change)
-        for k, sw in model_sharded_state_dict.items():
-            if sw.local_tensor.dtype == paddle.float32:
-                local_tensor = paddle.zeros(sw.local_shape, dtype=paddle.float32)
-                ema_target[k] = ShardedWeight(
-                    key=sw.key,
-                    local_tensor=local_tensor,
-                    local_shape=sw.local_shape,
-                    global_shape=sw.global_shape,
-                    global_offset=sw.global_offset,
-                    is_flattened=getattr(sw, "is_flattened", False),
-                    flattened_range=getattr(sw, "flattened_range", None),
-                )
-
-        logger.info(f"[EMA Reshard] Loading {len(ema_target)} EMA tensors via dist.load_state_dict...")
-        dist.load_state_dict(
-            ema_target,
-            ema_state_path,
-            aoa_config=self.args.aoa_config,
-            offload=self.args.load_via_cpu,
-            comm_method=comm_method,
-            worker_groups=worker_groups,
-        )
-        logger.info("[EMA Reshard] dist.load_state_dict completed")
-
-        # Move to CPU shared memory for subprocess consumption
-        ema_shared_result = {}
-        self._ema_shared_tensor_refs = {}
-        self._ema_shm_filenames = []  # Track specific shm files for leak detection
-
-        for k, sw in ema_target.items():
-            cpu_tensor = sw.local_tensor.cpu().flatten()
-            shared_meta = cpu_tensor.value().get_tensor()._share_filename(False)
-            ema_shared_result[k] = {
-                "shared_meta": shared_meta,
-                "shape": list(sw.local_tensor.shape),
-            }
-            # shared_meta[0] is the shm filename (e.g. "/dev/shm/paddle_12345_0_xxx")
-            if shared_meta and len(shared_meta) > 0:
-                self._ema_shm_filenames.append(shared_meta[0])
-            # Keep reference to prevent GC before subprocess reads the data
-            self._ema_shared_tensor_refs[k] = cpu_tensor
-            sw.local_tensor._clear()
-
-        logger.info(
-            f"[EMA Reshard] Created shared memory for {len(ema_shared_result)} EMA tensors, "
-            f"shm files tracked: {len(self._ema_shm_filenames)}"
-        )
-        return ema_shared_result
 
     def prepare_resume_from_checkpoint(self, args, resume_from_checkpoint):
         logger.info(f"Starting training from resume_from_checkpoint : {resume_from_checkpoint}")
@@ -2002,6 +1943,9 @@ class Trainer:
         if parameters_list is None:
             parameters_list = []
 
+        _dsv4_sync_optimizer_lr_tensor_from_scheduler(
+            self.optimizer, self.lr_scheduler, self.state.global_step + 1, args
+        )
         optimizer_was_run = True
         if self.do_grad_scaling:
             scale_before = paddle.assign(self.scaler._scale)
@@ -2363,6 +2307,52 @@ class Trainer:
                     else:
                         tr_loss += tr_loss_step
 
+                    def dsv4_use_seqfirst_wgrad(model):
+                        def dsv4_seqfirst_feature_enabled(name):
+                            value = os.environ.get(name)
+                            if value is not None:
+                                return value.strip().lower() in {"1", "true", "yes", "on"}
+                            return os.environ.get(
+                                "DSV4_FLEET_MBS2_SEQUENCE_FIRST", "0"
+                            ).strip().lower() in {"1", "true", "yes", "on"}
+
+                        attrs = []
+                        if dsv4_seqfirst_feature_enabled(
+                            "DSV4_FLEET_HC_MAPPING_SEQFIRST_WGRAD"
+                        ):
+                            attrs.append("_dsv4_hc_mapping_seqfirst_wgrad")
+                        if not attrs:
+                            return
+                        with paddle.no_grad():
+                            for name, p in model.named_parameters():
+                                seqfirst_wgrad = None
+                                matched_attr = None
+                                for attr in attrs:
+                                    seqfirst_wgrad = getattr(p, attr, None)
+                                    if seqfirst_wgrad is not None:
+                                        matched_attr = attr
+                                        break
+                                if matched_attr is None:
+                                    continue
+                                grad = getattr(p, "main_grad", None)
+                                if grad is None:
+                                    grad_attr = getattr(p, "grad", None)
+                                    grad = grad_attr() if callable(grad_attr) else grad_attr
+                                if grad is None:
+                                    continue
+                                grad.set_value(seqfirst_wgrad.cast(grad.dtype))
+                                setattr(p, matched_attr, None)
+
+                    dsv4_should_flush_seqfirst_wgrad = (
+                        (step_control + 1) % args.gradient_accumulation_steps == 0
+                        or (
+                            steps_in_epoch <= args.gradient_accumulation_steps
+                            and (step + 1) == steps_in_epoch
+                        )
+                    )
+                    if dsv4_should_flush_seqfirst_wgrad:
+                        dsv4_use_seqfirst_wgrad(model)
+
                     def fused_allreduce_gradients_no_sync(paramlist, hcg):
                         paramlist = list(paramlist)
                         nonmoe_list = [p for p in paramlist if not getattr(p, "no_sync", False)]
@@ -2370,6 +2360,79 @@ class Trainer:
                         if moelist and not self.args.use_expert_parallel:
                             logger.warning("found `no sync` param when `use_expert_parallel=False`")
                         fused_allreduce_gradients(nonmoe_list, hcg)
+
+                    def dsv4_allreduce_dense_grads_over_ep(paramlist):
+                        if os.environ.get("DSV4_FLEET_ALLREDUCE_DENSE_GRAD_OVER_EP", "0") != "1":
+                            return
+                        hcg = getattr(self.optimizer, "_hcg", None)
+                        if hcg is None or hcg.get_expert_parallel_world_size() <= 1:
+                            return
+                        ep_group = hcg.get_expert_parallel_group()
+                        ep_world_size = hcg.get_expert_parallel_world_size()
+                        with paddle.no_grad():
+                            for p in paramlist:
+                                if getattr(p, "no_sync", False):
+                                    continue
+                                grad = getattr(p, "main_grad", None)
+                                if grad is None:
+                                    grad_attr = getattr(p, "grad", None)
+                                    grad = grad_attr() if callable(grad_attr) else grad_attr
+                                if grad is None:
+                                    continue
+                                dist.all_reduce(grad, op=dist.ReduceOp.SUM, group=ep_group)
+                                grad.scale_(1.0 / ep_world_size)
+
+                    def dsv4_use_router_fp32_wgrad(model, hcg):
+                        if os.environ.get("DSV4_FLEET_ROUTER_FP32_WGRAD", "0") != "1":
+                            return
+                        ep_world_size = (
+                            hcg.get_expert_parallel_world_size()
+                            if hcg is not None and hasattr(hcg, "get_expert_parallel_world_size")
+                            else 1
+                        )
+                        scale_by_ep = os.environ.get(
+                            "DSV4_FLEET_ROUTER_FP32_WGRAD_SCALE_BY_EP", "1"
+                        ) == "1"
+                        scale = 1.0 / ep_world_size if scale_by_ep and ep_world_size > 1 else 1.0
+                        if (
+                            args.gradient_accumulation_steps > 1
+                            and os.environ.get("DSV4_FLEET_SCALE_LOSS_BEFORE_BACKWARD", "0") != "1"
+                        ):
+                            scale *= 1.0 / args.gradient_accumulation_steps
+                            if (
+                                os.environ.get(
+                                    "DSV4_FLEET_ROUTER_FP32_WGRAD_SCALE_ACC_SQUARED",
+                                    "1",
+                                )
+                                == "1"
+                            ):
+                                scale *= 1.0 / args.gradient_accumulation_steps
+                        with paddle.no_grad():
+                            for name, p in model.named_parameters():
+                                fp32_wgrad = getattr(p, "_dsv4_router_gate_fp32_wgrad", None)
+                                if fp32_wgrad is None:
+                                    continue
+                                grad = getattr(p, "main_grad", None)
+                                if grad is None:
+                                    grad_attr = getattr(p, "grad", None)
+                                    grad = grad_attr() if callable(grad_attr) else grad_attr
+                                if grad is None:
+                                    continue
+                                if (
+                                    os.environ.get(
+                                        "DSV4_FLEET_ROUTER_FP32_WGRAD_BF16_ROUND",
+                                        "0",
+                                    )
+                                    == "1"
+                                ):
+                                    wgrad_for_optimizer = fp32_wgrad.cast(paddle.bfloat16).cast(
+                                        paddle.float32
+                                    )
+                                else:
+                                    wgrad_for_optimizer = fp32_wgrad.cast(paddle.float32)
+                                scaled_wgrad = wgrad_for_optimizer * scale
+                                grad.set_value(scaled_wgrad.cast(grad.dtype))
+                                p._dsv4_router_gate_fp32_wgrad = None
 
                     def hybrid_parallel_scale_param_grad(paramlist, hcg):
                         if not hasattr(hcg, "get_context_parallel_world_size"):
@@ -2424,6 +2487,7 @@ class Trainer:
                                 args.recompute_granularity is not None or args.use_expert_parallel
                             ) and available_no_sync:
                                 fused_allreduce_gradients_no_sync(list(model.parameters()), None)
+                                dsv4_allreduce_dense_grads_over_ep(list(model.parameters()))
 
                             # Case 2: hack dp with master_grad
                             elif dp_master_grad:
@@ -2456,7 +2520,14 @@ class Trainer:
                             self.timers and self.timers("all-reduce").stop()
                             self.timers and self.timers("optimizer-step").start()
 
-                        if not args.enable_auto_parallel and self.args.gradient_accumulation_steps > 1:
+                        dsv4_scale_loss_before_backward = (
+                            os.environ.get("DSV4_FLEET_SCALE_LOSS_BEFORE_BACKWARD", "0") == "1"
+                        )
+                        if (
+                            not args.enable_auto_parallel
+                            and self.args.gradient_accumulation_steps > 1
+                            and not dsv4_scale_loss_before_backward
+                        ):
                             paddle.device.synchronize()
                             parameters = (
                                 model._layers.parameters() if hasattr(model, "_layers") else model.parameters()
@@ -2468,6 +2539,8 @@ class Trainer:
                                         p.main_grad.scale_(1.0 / self.args.gradient_accumulation_steps)
                                     elif p.grad is not None:
                                         p.grad.scale_(1.0 / self.args.gradient_accumulation_steps)
+                        if hasattr(self.optimizer, "_hcg"):
+                            dsv4_use_router_fp32_wgrad(model, self.optimizer._hcg)
                         # Optimizer step
                         self.callback_handler.on_optimizer_begin(
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
@@ -2755,17 +2828,6 @@ class Trainer:
 
             logs["learning_rate"] = float("{0:.3e}".format(self._get_learning_rate()))
             logs["global_step"] = int(self.state.global_step)
-            if in_auto_parallel_align_mode():
-                logs["loss_md5"] = avg_loss._md5sum()
-
-            # Log MD5 of the post-DP-allreduce (here all_gather+mean) global loss.
-            # Mirrors LOG_LOSS_MD5 hooks in PaddleFleet's loss path so it can be
-            # diff'd against Megatron's [LOSS_PATH_MD5] output.
-            if os.environ.get("LOG_LOSS_MD5", "0") == "1":
-                import hashlib
-
-                _md5_loss_t = avg_loss.detach().cast("float32").reshape([1])
-                logs["loss_md5"] = hashlib.md5(_md5_loss_t.numpy().tobytes()).hexdigest()
 
             divisor = 2**30
             # TODO(@gexiao): replace these codes with unified APIs in Paddle
@@ -2815,54 +2877,9 @@ class Trainer:
                 )
 
                 if LanguageLoss.mtp_loss_tracker:
-                    # By default keep the legacy behavior of logging the local
-                    # (rank-0 / per-rank) mtp loss value.
-                    # When LOG_LOSS_MD5=1, mirror Megatron's
-                    # MTPLossLoggingHelper.reduce_loss_in_tracker by averaging
-                    # across the full data-parallel-equivalent group
-                    # (DP + sharding + CP) so the value is the global mtp loss
-                    # comparable to Megatron's `mtp_{i} loss`, and additionally
-                    # emit a per-key `_md5` field for cross-framework diff.
-                    _log_md5 = os.environ.get("LOG_LOSS_MD5", "0") == "1"
-
-                    _avg_group = None
-                    if _log_md5:
-                        try:
-                            import paddle.distributed as _pf_dist
-                            from paddle.distributed import fleet as _pf_fleet
-
-                            _hcg = _pf_fleet.get_hybrid_communicate_group()
-                            _avg_group = _hcg.get_check_parallel_group()
-                            if _avg_group is None or _avg_group.nranks <= 1:
-                                _avg_group = _hcg.get_sharding_parallel_group()
-                            if _avg_group is None or _avg_group.nranks <= 1:
-                                _avg_group = _hcg.get_data_parallel_group()
-                        except Exception:
-                            _avg_group = None
-
-                    _reduced_mtp = {}
-                    if _log_md5:
-                        import hashlib as _hashlib
-
-                        import numpy as _np
-                    for k, v in LanguageLoss.mtp_loss_tracker.items():
-                        if hasattr(v, "item"):
-                            if _log_md5 and _avg_group is not None and _avg_group.nranks > 1:
-                                v = v.detach().clone()
-                                _pf_dist.all_reduce(v, group=_avg_group)
-                                v = v / _avg_group.nranks
-                            _scalar = v.item()
-                            _reduced_mtp[k] = _scalar
-                            if _log_md5:
-                                # md5 over float32 bytes — same scheme used for
-                                # main loss_md5 and Megatron's mtp_{i} loss_md5,
-                                # so values can be diff'd directly.
-                                _reduced_mtp[f"{k}_md5"] = _hashlib.md5(
-                                    _np.array([_scalar], dtype=_np.float32).tobytes()
-                                ).hexdigest()
-                        else:
-                            _reduced_mtp[k] = v
-                    logs.update(_reduced_mtp)
+                    logs.update(
+                        {k: v.item() if hasattr(v, "item") else v for k, v in LanguageLoss.mtp_loss_tracker.items()}
+                    )
             except (ImportError, AttributeError):
                 pass
 
@@ -4018,11 +4035,37 @@ class Trainer:
         with self.autocast_smart_context_manager():
             loss = self.compute_loss(model, inputs)
 
+        dsv4_scale_loss_before_backward = (
+            self.args.gradient_accumulation_steps > 1
+            and os.environ.get("DSV4_FLEET_SCALE_LOSS_BEFORE_BACKWARD", "0") == "1"
+        )
+        if dsv4_scale_loss_before_backward:
+            loss = loss / self.args.gradient_accumulation_steps
+            dsv4_acc_scale = paddle.to_tensor(
+                1.0 / self.args.gradient_accumulation_steps,
+                dtype=paddle.float32,
+            )
+            try:
+                from paddlefleet.transformer.multi_token_prediction import (
+                    MTPLossAutoScaler,
+                )
+
+                MTPLossAutoScaler.set_loss_scale(dsv4_acc_scale)
+            except (ImportError, AttributeError):
+                pass
+            try:
+                from paddlefleet.transformer.dsa_attention import (
+                    DSAIndexerLossAutoScaler,
+                )
+
+                DSAIndexerLossAutoScaler.set_loss_scale(dsv4_acc_scale)
+            except (ImportError, AttributeError):
+                pass
         if self.do_grad_scaling:
             self.scaler.scale(loss).backward()
         else:
             loss.backward()
-        if self.args.gradient_accumulation_steps > 1:
+        if self.args.gradient_accumulation_steps > 1 and not dsv4_scale_loss_before_backward:
             loss = loss / self.args.gradient_accumulation_steps
 
         if not self.args.enable_auto_parallel:

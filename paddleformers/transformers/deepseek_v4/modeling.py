@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import os
 from dataclasses import dataclass
 
 from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe
@@ -21,6 +22,11 @@ from ..model_utils import PretrainedModel
 from .configuration import DeepseekV4Config
 
 logger = logging.getLogger(__name__)
+
+
+def _apply_deterministic_mode_override(config):
+    if os.getenv("DSV4_FLEET_DETERMINISTIC", "0") == "1":
+        config.deterministic_mode = True
 
 
 @dataclass
@@ -504,7 +510,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- MoE Gate ---
-            stmts += [f"{src}.ffn.gate.weight -> {tgt}.mlp.gate.weight, dtype='float32'"]
+            stmts += [f"{src}.ffn.gate.weight -> {tgt}.mlp.gate.weight"]
             # Non-hash layers have e_score_correction_bias; hash layers use tid2eid
             if L >= moe_n_hash_layers:
                 stmts += [f"{src}.ffn.gate.bias -> {tgt}.mlp.gate.e_score_correction_bias"]
@@ -638,7 +644,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
             # --- MoE Gate (MTP layers are always non-hash, so always have bias) ---
             stmts += [
-                f"{mtp_src}.ffn.gate.weight -> {tl}.mlp.gate.weight, dtype='float32'",
+                f"{mtp_src}.ffn.gate.weight -> {tl}.mlp.gate.weight",
                 f"{mtp_src}.ffn.gate.bias -> {tl}.mlp.gate.e_score_correction_bias",
             ]
 
@@ -985,6 +991,7 @@ class DeepseekV4ForCausalLM(DeepseekV4PreTrainedModel):
         config.multi_latent_attention = True
         config.experimental_attention_variant = "dsv4_hybrid"
         config.enable_hyper_connections = True
+        _apply_deterministic_mode_override(config)
 
         model_provider = DeepseekV4ModelProvider.from_config(config)
         loss_fn = None
@@ -1018,6 +1025,7 @@ class DeepseekV4ForCausalLMPipe(DeepseekV4PreTrainedModel, GeneralModelForCausal
         config.multi_latent_attention = True
         config.experimental_attention_variant = "dsv4_hybrid"
         config.enable_hyper_connections = True
+        _apply_deterministic_mode_override(config)
 
         model_provider = DeepseekV4ModelProvider.from_config(config)
         loss_fn = None
