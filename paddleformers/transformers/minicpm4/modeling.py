@@ -24,6 +24,7 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
 import paddleformers
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
+from ...nn.criterion.interface import CriterionLayer
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as MiniCPMMLP
@@ -771,35 +772,47 @@ class MiniCPMAttention(nn.Layer):
         self.max_position_embeddings = config.max_position_embeddings
         self.rope_theta = config.rope_theta
         self.is_causal = True
+        self.fuse_attention_qkv = getattr(config, "fuse_attention_qkv", False)
         if self.head_dim * self.num_heads != self.hidden_size:
             raise ValueError(
                 f"hidden_size must be divisible by num_heads (got `hidden_size`: {self.hidden_size} and `num_heads`: {self.num_heads})."
             )
-        self.q_proj = GeneralLinear.create(
-            self.hidden_size,
-            self.num_heads * self.head_dim,
-            has_bias=config.use_bias,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.k_proj = GeneralLinear.create(
-            self.hidden_size,
-            self.num_key_value_heads * self.head_dim,
-            has_bias=config.use_bias,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.v_proj = GeneralLinear.create(
-            self.hidden_size,
-            self.num_key_value_heads * self.head_dim,
-            has_bias=config.use_bias,
-            config=config,
-            tp_plan="colwise",
-        )
+        attention_bias = getattr(config, "attention_bias", config.use_bias)
+        if self.fuse_attention_qkv:
+            qkv_hidden_size = (self.num_heads + 2 * self.num_key_value_heads) * self.head_dim
+            self.qkv_proj = GeneralLinear.create(
+                self.hidden_size,
+                qkv_hidden_size,
+                has_bias=attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
+        else:
+            self.q_proj = GeneralLinear.create(
+                self.hidden_size,
+                self.num_heads * self.head_dim,
+                has_bias=attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
+            self.k_proj = GeneralLinear.create(
+                self.hidden_size,
+                self.num_key_value_heads * self.head_dim,
+                has_bias=attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
+            self.v_proj = GeneralLinear.create(
+                self.hidden_size,
+                self.num_key_value_heads * self.head_dim,
+                has_bias=attention_bias,
+                config=config,
+                tp_plan="colwise",
+            )
         self.o_proj = GeneralLinear.create(
             self.num_heads * self.head_dim,
             self.hidden_size,
-            has_bias=config.use_bias,
+            has_bias=attention_bias,
             config=config,
             tp_plan="rowwise",
         )
@@ -869,23 +882,56 @@ class MiniCPMAttention(nn.Layer):
         else:
             bsz, q_len, _ = hidden_states.shape
 
-        if self.config.pretraining_tp > 1:
+        if self.fuse_attention_qkv:
+            mix_layer = self.qkv_proj(hidden_states)
+            mix_layer = mix_layer.reshape([bsz, q_len, -1, (self.num_key_value_groups + 2) * self.head_dim])
+            query_states, key_states, value_states = paddle.split(
+                mix_layer,
+                num_or_sections=[
+                    self.num_key_value_groups * self.head_dim,
+                    self.head_dim,
+                    self.head_dim,
+                ],
+                axis=-1,
+            )
+            query_states = query_states.reshape([bsz, q_len, -1, self.head_dim])
+            key_states = key_states.reshape([bsz, q_len, -1, self.head_dim])
+            value_states = value_states.reshape([bsz, q_len, -1, self.head_dim])
+        elif self.config.pretraining_tp > 1:
             key_value_slicing = (self.num_key_value_heads * self.head_dim) // self.config.pretraining_tp
             query_slices = _split_tensor(
-                self.q_proj.weight, (self.num_heads * self.head_dim) // self.config.pretraining_tp, dim=0
+                self.q_proj.weight, (self.num_heads * self.head_dim) // self.config.pretraining_tp, dim=1
             )
-            key_slices = _split_tensor(self.k_proj.weight, key_value_slicing, dim=0)
-            value_slices = _split_tensor(self.v_proj.weight, key_value_slicing, dim=0)
+            key_slices = _split_tensor(self.k_proj.weight, key_value_slicing, dim=1)
+            value_slices = _split_tensor(self.v_proj.weight, key_value_slicing, dim=1)
+            query_bias_slices = (
+                _split_tensor(self.q_proj.bias, (self.num_heads * self.head_dim) // self.config.pretraining_tp, dim=0)
+                if getattr(self.q_proj, "bias", None) is not None
+                else [None] * self.config.pretraining_tp
+            )
+            key_bias_slices = (
+                _split_tensor(self.k_proj.bias, key_value_slicing, dim=0)
+                if getattr(self.k_proj, "bias", None) is not None
+                else [None] * self.config.pretraining_tp
+            )
+            value_bias_slices = (
+                _split_tensor(self.v_proj.bias, key_value_slicing, dim=0)
+                if getattr(self.v_proj, "bias", None) is not None
+                else [None] * self.config.pretraining_tp
+            )
             query_states = [
-                nn.functional.linear(hidden_states, query_slices[i]) for i in range(self.config.pretraining_tp)
+                nn.functional.linear(hidden_states, query_slices[i], query_bias_slices[i])
+                for i in range(self.config.pretraining_tp)
             ]
             query_states = paddle.cat(query_states, dim=-1)
             key_states = [
-                nn.functional.linear(hidden_states, key_slices[i]) for i in range(self.config.pretraining_tp)
+                nn.functional.linear(hidden_states, key_slices[i], key_bias_slices[i])
+                for i in range(self.config.pretraining_tp)
             ]
             key_states = paddle.cat(key_states, dim=-1)
             value_states = [
-                nn.functional.linear(hidden_states, value_slices[i]) for i in range(self.config.pretraining_tp)
+                nn.functional.linear(hidden_states, value_slices[i], value_bias_slices[i])
+                for i in range(self.config.pretraining_tp)
             ]
             value_states = paddle.cat(value_states, dim=-1)
         else:
@@ -1015,7 +1061,7 @@ class MiniCPMDecoderLayer(nn.Layer):
         #     config=config, layer_idx=layer_idx
         # )
         self.self_attn = MiniCPMAttention(config, layer_idx)
-        self.mlp = MiniCPMMLP(config)
+        self.mlp = MiniCPMMLP(config, fuse_up_gate=getattr(config, "fuse_attention_ffn", False))
         self.config = config
         self.input_layernorm = GeneralNorm.create(
             config=config,
@@ -1134,7 +1180,17 @@ MINICPM_START_DOCSTRING = """
 class MiniCPMPreTrainedModel(PretrainedModel):
     config_class = MiniCPMConfig
     base_model_prefix = "model"
-    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    transpose_weight_keys = [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "qkv_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "up_gate_proj",
+        "down_proj",
+    ]
     supports_gradient_checkpointing = True
     _no_split_modules = ["MiniCPMDecoderLayer"]
     _skip_keys_device_placement = "past_key_values"
@@ -1169,22 +1225,28 @@ class MiniCPMPreTrainedModel(PretrainedModel):
             num_attention_heads=config.num_attention_heads,
         )
 
-        LAYER_COLWISE = [
-            "self_attn.q_proj.weight",
-            "self_attn.k_proj.weight",
-            "self_attn.v_proj.weight",
-            "mlp.up_proj.weight",
-            "mlp.gate_proj.weight",
-        ]
+        if getattr(config, "fuse_attention_qkv", False):
+            attention_colwise_keys = ["self_attn.qkv_proj.weight"]
+        else:
+            attention_colwise_keys = [
+                "self_attn.q_proj.weight",
+                "self_attn.k_proj.weight",
+                "self_attn.v_proj.weight",
+            ]
+
+        if getattr(config, "fuse_attention_ffn", False):
+            ffn_colwise_keys = ["mlp.up_gate_proj.weight"]
+        else:
+            ffn_colwise_keys = [
+                "mlp.up_proj.weight",
+                "mlp.gate_proj.weight",
+            ]
+
+        LAYER_COLWISE = attention_colwise_keys + ffn_colwise_keys
 
         LAYER_ROWWISE = ["self_attn.o_proj.weight", "mlp.down_proj.weight"]
 
-        BIAS_KEYS = [
-            "self_attn.q_proj.bias",
-            "self_attn.k_proj.bias",
-            "self_attn.v_proj.bias",
-            "mlp.gate_proj.bias",
-            "mlp.up_proj.bias",
+        BIAS_KEYS = [key.replace(".weight", ".bias") for key in LAYER_COLWISE] + [
             "self_attn.o_proj.bias",
             "mlp.down_proj.bias",
             "lm_head.bias",
@@ -1532,9 +1594,7 @@ class MiniCPMModel(MiniCPMPreTrainedModel):
                 raise ValueError(
                     "You must use the new past_key_values format, such as the Cache class, instead of the old tuple format."
                 )
-            past_key_values_length = (
-                past_key_values.get_seq_length() if isinstance(past_key_values, InfLLMv2Cache) else 0
-            )
+            past_key_values_length = past_key_values.get_seq_length()
             if self.config.sparse_config is not None and paddle.cuda.is_available() and past_key_values_length == 0:
                 past_key_values = InfLLMv2Cache(config=self.config, num_hidden_layers=self.config.num_hidden_layers)
         # if position_ids is None:
@@ -1641,6 +1701,7 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
         self.model = MiniCPMModel(config)
         self.vocab_size = config.vocab_size
         self.lm_head = GeneralLMHead(config)
+        self.criterion = CriterionLayer(config)
         # self.post_init()
         self.tie_weights()
 
@@ -1676,6 +1737,8 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
+        loss_mask: Optional[paddle.Tensor] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         logits_to_keep: Union[int, paddle.Tensor] = 0,
         **kwargs,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
@@ -1719,28 +1782,32 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )
         hidden_states = outputs[0]
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
         hidden_states = hidden_states[:, slice_indices, :].contiguous()
+        hidden_states = hidden_states / (self.config.hidden_size / self.config.dim_model_base)
         if self.config.pretraining_tp > 1:
             lm_head_slices = _split_tensor(self.lm_head.weight, self.vocab_size // self.config.pretraining_tp, dim=0)
+            lm_head_bias = getattr(self.lm_head, "bias", None)
+            lm_head_bias_slices = (
+                _split_tensor(lm_head_bias, self.vocab_size // self.config.pretraining_tp, dim=0)
+                if lm_head_bias is not None
+                else [None] * self.config.pretraining_tp
+            )
             logits = [
-                nn.functional.linear(hidden_states, lm_head_slices[i]) for i in range(self.config.pretraining_tp)
+                paddle.matmul(hidden_states, lm_head_slices[i], transpose_y=True)
+                + (lm_head_bias_slices[i] if lm_head_bias_slices[i] is not None else 0)
+                for i in range(self.config.pretraining_tp)
             ]
             logits = paddle.cat(logits, dim=-1)
         else:
-            logits = self.lm_head(hidden_states / (self.config.hidden_size / self.config.dim_model_base))
+            logits = self.lm_head(hidden_states)
         logits = logits.float()
         loss = None
         if labels is not None:
-            shift_logits = logits[..., :-1, :].contiguous()
-            shift_labels = labels[..., 1:].contiguous()
-            loss_fct = paddle.nn.CrossEntropyLoss()
-            shift_logits = shift_logits.view(-1, self.config.vocab_size)
-            shift_labels = shift_labels.view(-1)
-            shift_labels = shift_labels.to(shift_logits.device)
-            loss = loss_fct(shift_logits, shift_labels)
+            loss, _ = self.criterion(logits, labels, loss_mask)
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
@@ -1833,34 +1900,42 @@ class MiniCPMForCausalLM(MiniCPMPreTrainedModel):
     ):
         if history is None:
             history = []
-        if logits_processor:
-            gen_kwargs = {
-                "max_length": max_length,
-                "num_beams": num_beams,
-                "do_sample": do_sample,
-                "top_p": top_p,
-                "temperature": temperature,
-                "logits_processor": logits_processor,
-                **kwargs,
-            }
-        else:
-            gen_kwargs = {
-                "max_length": max_length,
-                "num_beams": num_beams,
-                "do_sample": do_sample,
-                "top_p": top_p,
-                "temperature": temperature,
-                "logits_processor": logits_processor,
-                **kwargs,
-            }
+        gen_kwargs = {
+            "max_length": max_length,
+            "num_beams": num_beams,
+            "do_sample": do_sample,
+            "top_p": top_p,
+            "temperature": temperature,
+            **kwargs,
+        }
+        if logits_processor is not None:
+            gen_kwargs["logits_processors"] = logits_processor
         history.append({"role": role, "content": query})
         history_str = tokenizer.apply_chat_template(history, tokenize=False, add_generation_prompt=False)
-        inputs = tokenizer(history_str, return_tensors="pt").to(self.device)
+        inputs = tokenizer(history_str, return_tensors="pd")
+        prompt_ids = inputs["input_ids"][0].tolist()
         outputs = self.generate(**inputs, **gen_kwargs)
         if isinstance(outputs, (tuple, list)):
             outputs = outputs[0]
-        outputs = outputs.tolist()[0][:-1]
-        response = tokenizer.decode(outputs)
+        output_ids = outputs[0].tolist() if paddle.is_tensor(outputs) else outputs[0]
+        if len(output_ids) >= len(prompt_ids) and output_ids[: len(prompt_ids)] == prompt_ids:
+            output_ids = output_ids[len(prompt_ids) :]
+
+        eos_token_id = getattr(self.generation_config, "eos_token_id", None)
+        if eos_token_id is None:
+            eos_token_id = getattr(self.config, "eos_token_id", None)
+        if eos_token_id is None:
+            eos_token_id = getattr(tokenizer, "eos_token_id", None)
+        if isinstance(eos_token_id, int):
+            eos_token_ids = {eos_token_id}
+        elif eos_token_id is None:
+            eos_token_ids = set()
+        else:
+            eos_token_ids = set(eos_token_id)
+        if output_ids and output_ids[-1] in eos_token_ids:
+            output_ids = output_ids[:-1]
+
+        response = tokenizer.decode(output_ids)
         pattern = re.compile(".*?(?=<AI>|<用户>)", re.DOTALL)
         matches = pattern.findall(response)
         if len(matches) > 0:

@@ -183,28 +183,26 @@ class MiniCPMConfig(PretrainedConfig):
         self.recompute_mtp_granularity = recompute_mtp_granularity
         self.recompute_mtp_method = recompute_mtp_method
         self.recompute_mtp_modules = recompute_mtp_modules
-        self.register_unsavable_keys(
-            [
-                "attention_dropout_prob",
-                "hidden_dropout_prob",
-                "ignored_index",
-                "scale_qk_coeff",
-                "recompute_use_reentrant",
-                "pp_seg_method",
-                "micro_batch_size",
-                "fuse_softmax_mask",
-                "max_sequence_length",
-                "dpo_config",
-                "kto_config",
-                "recompute_granularity",
-                "recompute_method",
-                "recompute_modules",
-                "recompute_num_layers",
-                "recompute_mtp_granularity",
-                "recompute_mtp_method",
-                "recompute_mtp_modules",
-            ]
-        )
+        unsavable_keys = [
+            "attention_dropout_prob",
+            "hidden_dropout_prob",
+            "ignored_index",
+            "scale_qk_coeff",
+            "recompute_use_reentrant",
+            "pp_seg_method",
+            "micro_batch_size",
+            "fuse_softmax_mask",
+            "max_sequence_length",
+            "dpo_config",
+            "kto_config",
+            "recompute_granularity",
+            "recompute_method",
+            "recompute_modules",
+            "recompute_num_layers",
+            "recompute_mtp_granularity",
+            "recompute_mtp_method",
+            "recompute_mtp_modules",
+        ]
         super().__init__(
             pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,
@@ -212,12 +210,7 @@ class MiniCPMConfig(PretrainedConfig):
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
         )
-        try:
-            pass
-            # self._attn_implementation = "flash_attention_2"
-            self._attn_implementation = "eager"
-        except:
-            pass
+        self.register_unsavable_keys(unsavable_keys)
         standardize_rope_params(self, rope_theta=rope_theta)
         rope_config_validation(self)
 
