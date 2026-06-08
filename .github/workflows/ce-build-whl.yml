@@ -89,7 +89,7 @@ jobs:
           cd /workspace/PaddleFormers/upload
           cp /home/models/bos/bos_tools.py ./
           cp /home/models/bos/notify_paddle_link.py ./
-          for FILE in /workspace/PaddleFormers/upload/*; do
+          for FILE in /workspace/PaddleFormers/upload/*.whl; do
             file=$(basename "$FILE")
             for cuda in cu126 cu129 cu130; do
               python bos_tools.py $file paddle-whl/nightly/$cuda/paddleformers/
