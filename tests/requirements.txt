@@ -22,7 +22,7 @@ pytest-timeout
 paddleocr
 pre-commit
 wandb
-swanlab==0.7.19
+swanlab
 tensorboard
 tensorboardX
 triton >= 3.1
