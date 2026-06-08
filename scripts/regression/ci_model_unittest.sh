@@ -110,7 +110,7 @@ print_info() {
             | grep -v "SKIPPED" | grep -v "warning" > ${log_path}/model_unittest_FAIL.log
         tail -n 1 ${log_path}/model_unittest.log >> ${log_path}/model_unittest_FAIL.log
         echo -e "\033[31m ${log_path}/model_unittest_FAIL \033[0m"
-        tail -n 1 ${log_path}/model_unittest_FAIL.log
+        cat ${log_path}/model_unittest_FAIL.log
         if [ $1 -eq 124 ]; then
             echo "\033[32m [failed-timeout] Test case execution was terminated after exceeding the ${running_time} min limit."
         fi
