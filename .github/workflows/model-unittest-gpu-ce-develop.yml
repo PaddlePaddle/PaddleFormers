@@ -274,10 +274,10 @@ jobs:
           file_failed=${{ github.workspace }}/PaddleFormers/model_unittest_logs/model_unittest_FAIL.log
           if [[ "${{ steps.test.outcome }}" == "success" ]]; then
             echo "✅ Test passed successfully"
-            tail -n 1 ${file} || true
+            tail -n 1 ${file_success} || true
           else
             echo "❌ Test failed with status: ${{ steps.test.outcome }}"
-            grep "^FAILED scripts/regression" ${file} | awk '{print $2}' | sort -u || true
+            grep "^FAILED scripts/regression" ${file_failed} | awk '{print $2}' | sort -u || true
           fi
       - name: Upload Products
         if: always()
