@@ -2,7 +2,7 @@ name: Model Unittest GPU CE Release
 
 on:
   schedule:
-    - cron: "10 19 * * 0-4" # 每周日、一、二、三、四的4点
+    - cron: "10 21 * * 0-4" # 每周日、一、二、三、四的6点
     - cron: "0 9 * * 5"
     - cron: "0 12 * * 5"
     - cron: "0 15 * * 5"
@@ -36,8 +36,6 @@ on:
         type: choice
         options:
           - 'CE_Release_cu129_py312_nightly'
-          - 'CE_Develop_cu130_py313'
-          - 'CE_Develop_cu130_py312'
           - 'CE_Release_cu130_py313'
           - 'CE_Release_cu130_py312'
           - 'CE_Release_cu130_py311'
@@ -102,7 +100,7 @@ jobs:
         id: determine_flag
         run: |
           schedule_time="${{ github.event.schedule || '' }}"
-          if [[ "$schedule_time" == "10 19 * * 0-4" ]]; then
+          if [[ "$schedule_time" == "10 21 * * 0-4" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu129_py312_nightly" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "0 9 * * 5" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu130_py313" >> $GITHUB_OUTPUT
