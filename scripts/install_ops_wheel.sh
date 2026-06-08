@@ -25,6 +25,7 @@
 #        - pure X.Y.Z (stable release)      → release/<major>.<minor> branch
 #        - dev/post no hash / not installed  → develop branch
 #
+# If packages/ commits cannot be found via the anchor, falls back to develop branch.
 # Uses GitHub API — no need to clone PaddleFleet locally.
 #
 # Usage:
@@ -35,7 +36,8 @@
 #   ./install_ops_wheel.sh --from-setup               # auto from ./setup.py
 #   ./install_ops_wheel.sh --from-setup /path/to/PaddleFormers/setup.py
 
-set -e
+# NOT using set -e — all errors are handled explicitly for better diagnostics.
+# If you see a failure, scroll up for the [ERROR] message.
 
 # ============================================================
 # Configuration
@@ -53,44 +55,44 @@ print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 # Helpers
 # ============================================================
 
+# curl wrapper that returns the HTTP body (to stdout) and sets CURL_HTTP_CODE.
+# Does NOT fail on non-200 — caller must check CURL_HTTP_CODE.
 github_api_get() {
     local url="$1"
-    local response
-    response=$(curl -sL --fail "$url" 2>/dev/null) || {
-        sleep 2
-        response=$(curl -sL --fail "$url" 2>/dev/null) || true
-    }
-    echo "$response"
+    local tmp
+    tmp=$(mktemp)
+    CURL_HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$tmp" "$url" 2>/dev/null || echo "000")
+    cat "$tmp"
+    rm -f "$tmp"
 }
 
-parse_json() {
+# Pretty-print the GitHub API error summary when the response is not a list.
+# Returns 0 if data looks valid (list), 1 if error.
+check_api_response() {
     local json="$1"
-    local stmt="$2"
-    local result
-    result=$(echo "$json" | python3 -c "
+    local label="$2"
+    echo "$json" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 if isinstance(data, dict) and 'message' in data:
-    print('API_ERROR:' + data['message'], file=sys.stderr)
+    print(f'[ERROR] GitHub API ({label}): {data[\"message\"]}', file=sys.stderr)
     sys.exit(1)
-$stmt
-" 2>&1) || {
-        local err=$(echo "$result" | head -1)
-        if [[ "$err" == API_ERROR:* ]]; then
-            print_error "GitHub API: ${err#API_ERROR:}"
-        else
-            print_error "Parse error: $err"
-        fi
-        return 1
-    }
-    echo "$result"
+" 2>/dev/null || return 1
+    return 0
+}
+
+# Extract field(s) from JSON. Usage: get_json_field <json> <python-expr>
+get_json_field() {
+    local json="$1"
+    local stmt="$2"
+    echo "$json" | python3 -c "import json,sys; data=json.load(sys.stdin); $stmt" 2>/dev/null || echo ""
 }
 
 # Check if a branch exists in the remote repo
 branch_exists() {
     local branch="$1"
     local http_code
-    http_code=$(curl -sL -o /dev/null -w "%{http_code}" "${GITHUB_API}/branches/${branch}" 2>/dev/null || true)
+    http_code=$(curl -sL -o /dev/null -w "%{http_code}" "${GITHUB_API}/branches/${branch}" 2>/dev/null || echo "000")
     [[ "$http_code" == "200" ]]
 }
 
@@ -143,7 +145,7 @@ if [[ -n "$FLEET_COMMIT" ]]; then
 # Priority 2: --branch
 elif [[ -n "$FLEET_BRANCH" ]]; then
     MODE="branch"
-    print_info "→ [branch mode] using branch: $FLEET_BRANCH"
+    print_info "Mode: branch → $FLEET_BRANCH"
 
 # Priority 3: --from-setup (read from PaddleFormers setup.py)
 elif [[ -n "$FROM_SETUP" ]]; then
@@ -210,14 +212,26 @@ RESOLVED_SHA=""
 if [[ "$MODE" == "commit" ]]; then
     print_info "Resolving commit: $FLEET_COMMIT"
     RESP=$(github_api_get "${GITHUB_API}/commits/${FLEET_COMMIT}")
-    [[ -z "$RESP" ]] && { print_error "Failed to fetch commit $FLEET_COMMIT"; exit 1; }
-    RESOLVED_SHA=$(parse_json "$RESP" "print(data['sha'])") || exit 1
+    if [[ "$CURL_HTTP_CODE" != "200" ]]; then
+        print_error "GitHub API returned HTTP $CURL_HTTP_CODE for commit $FLEET_COMMIT"
+        print_error "Check the commit SHA or your network / API rate limit."
+        exit 1
+    fi
+    check_api_response "$RESP" "commit $FLEET_COMMIT" || exit 1
+    RESOLVED_SHA=$(get_json_field "$RESP" "print(data['sha'])")
+    [[ -z "$RESOLVED_SHA" ]] && { print_error "Failed to parse commit SHA from API response"; exit 1; }
     print_info "Resolved: $RESOLVED_SHA"
 else
     print_info "Resolving branch HEAD: $FLEET_BRANCH"
     RESP=$(github_api_get "${GITHUB_API}/branches/${FLEET_BRANCH}")
-    [[ -z "$RESP" ]] && { print_error "Failed to fetch branch $FLEET_BRANCH"; exit 1; }
-    RESOLVED_SHA=$(parse_json "$RESP" "print(data['commit']['sha'])") || exit 1
+    if [[ "$CURL_HTTP_CODE" != "200" ]]; then
+        print_error "GitHub API returned HTTP $CURL_HTTP_CODE for branch $FLEET_BRANCH"
+        print_error "Check if the branch exists or your API rate limit."
+        exit 1
+    fi
+    check_api_response "$RESP" "branch $FLEET_BRANCH" || exit 1
+    RESOLVED_SHA=$(get_json_field "$RESP" "print(data['commit']['sha'])")
+    [[ -z "$RESOLVED_SHA" ]] && { print_error "Failed to parse branch commit SHA"; exit 1; }
     print_info "Resolved ${FLEET_BRANCH} HEAD: $RESOLVED_SHA"
 fi
 
@@ -225,22 +239,30 @@ fi
 # Step 3: Fetch version.txt from the resolved commit
 # ============================================================
 print_info "Fetching version.txt at ${RESOLVED_SHA:0:12}..."
-BASE_VERSION=$(curl -sL --fail "${GITHUB_RAW}/${RESOLVED_SHA}/version.txt" | head -1 | tr -d '[:space:]') || {
-    print_error "Failed to fetch version.txt"
+BASE_VERSION=$(curl -sL --fail "${GITHUB_RAW}/${RESOLVED_SHA}/version.txt" 2>/dev/null | head -1 | tr -d '[:space:]')
+if [[ -z "$BASE_VERSION" ]]; then
+    print_error "Failed to fetch version.txt at ${RESOLVED_SHA:0:12}"
+    print_error "URL: ${GITHUB_RAW}/${RESOLVED_SHA}/version.txt"
     exit 1
-}
-[[ -z "$BASE_VERSION" ]] && { print_error "version.txt is empty"; exit 1; }
+fi
 print_info "PaddleFleet version: $BASE_VERSION"
 
 # ============================================================
 # Step 4: Find the latest packages/ modification from this ref
 # ============================================================
-print_info "Searching packages/ last modification..."
-API_URL="${GITHUB_API}/commits?path=packages/&sha=${RESOLVED_SHA}&per_page=1"
-RESP=$(github_api_get "$API_URL")
-[[ -z "$RESP" ]] && { print_error "Failed to fetch packages/ commits"; exit 1; }
+find_packages_commit() {
+    local ref="$1"
+    print_info "Searching packages/ last modification from ref ${ref:0:12}..."
+    local RESP
+    RESP=$(github_api_get "${GITHUB_API}/commits?path=packages/&sha=${ref}&per_page=1")
+    if [[ "$CURL_HTTP_CODE" != "200" ]]; then
+        print_warn "GitHub API returned HTTP $CURL_HTTP_CODE for packages/ history (rate limit?)"
+        return 1
+    fi
+    check_api_response "$RESP" "packages/ history" || return 1
 
-PACKAGES_INFO=$(parse_json "$RESP" "
+    local result
+    result=$(get_json_field "$RESP" "
 import json, sys
 data = json.load(sys.stdin)
 if not data:
@@ -248,12 +270,36 @@ if not data:
     sys.exit(0)
 c = data[0]
 print(c['sha'], c['commit']['committer']['date'])
-") || exit 1
+")
+    if [[ -z "$result" || "$result" == "NO_COMMIT" ]]; then
+        print_warn "No packages/ modification found from ref ${ref:0:12}"
+        return 1
+    fi
+    echo "$result"
+    return 0
+}
 
-if [[ "$PACKAGES_INFO" == "NO_COMMIT" ]]; then
-    print_error "Cannot find any commit that modified packages/ from ref ${RESOLVED_SHA:0:12}"
-    exit 1
-fi
+PACKAGES_INFO=$(find_packages_commit "$RESOLVED_SHA") || {
+    print_warn "Trying fallback: search packages/ from develop branch HEAD..."
+    # Resolve develop branch HEAD
+    RESP_DEV=$(github_api_get "${GITHUB_API}/branches/develop")
+    if [[ "$CURL_HTTP_CODE" == "200" ]]; then
+        DEV_SHA=$(get_json_field "$RESP_DEV" "print(data['commit']['sha'])")
+        if [[ -n "$DEV_SHA" ]]; then
+            print_info "Develop HEAD: $DEV_SHA"
+            PACKAGES_INFO=$(find_packages_commit "$DEV_SHA") || {
+                print_error "Failed to find packages/ commit from both anchor ref and develop branch."
+                exit 1
+            }
+        else
+            print_error "Failed to fallback to develop branch."
+            exit 1
+        fi
+    else
+        print_error "Failed to fallback to develop branch (HTTP $CURL_HTTP_CODE)."
+        exit 1
+    fi
+}
 
 PKG_SHA=$(echo "$PACKAGES_INFO" | awk '{print $1}')
 PKG_DATE=$(echo "$PACKAGES_INFO" | awk '{print $2}')
@@ -268,9 +314,9 @@ print_info "Date: $PKG_DATE → $DATE_STR"
 # ============================================================
 detect_cuda_version() {
     if command -v nvcc &>/dev/null; then
-        nvcc --version | grep -oP 'release \K[0-9]+\.[0-9]+'
+        nvcc --version 2>/dev/null | grep -oP 'release \K[0-9]+\.[0-9]+'
     elif command -v nvidia-smi &>/dev/null; then
-        nvidia-smi | grep -oP 'CUDA Version: \K[0-9]+\.[0-9]+'
+        nvidia-smi 2>/dev/null | grep -oP 'CUDA Version: \K[0-9]+\.[0-9]+'
     elif [[ -n "${CUDA_HOME:-}" ]]; then
         "${CUDA_HOME}/bin/nvcc" --version 2>/dev/null | grep -oP 'release \K[0-9]+\.[0-9]+'
     elif [[ -n "${CUDA_PATH:-}" ]]; then
@@ -279,15 +325,20 @@ detect_cuda_version() {
 }
 
 CUDA_VER=$(detect_cuda_version)
-[[ -z "$CUDA_VER" ]] && { print_error "Cannot detect CUDA version."; exit 1; }
+if [[ -z "$CUDA_VER" ]]; then
+    print_error "Cannot detect CUDA version. Install CUDA toolkit or ensure nvidia-smi works."
+    exit 1
+fi
 print_info "CUDA: $CUDA_VER"
 
 case "$CUDA_VER" in
     "13.2") CUDA_SUFFIX="cu132" ;;
     "13.0") CUDA_SUFFIX="cu130" ;;
     "12.9") CUDA_SUFFIX="cu129" ;;
-    "12.6") CUDA_SUFFIX="cu126" ;;
-    *) print_error "Unsupported CUDA: $CUDA_VER (supported: 13.2, 13.0, 12.9, 12.6)"; exit 1 ;;
+    *)
+        print_error "Unsupported CUDA: $CUDA_VER (supported: 13.2, 13.0, 12.9)"
+        exit 1
+        ;;
 esac
 print_info "CUDA suffix: $CUDA_SUFFIX"
 
@@ -305,5 +356,10 @@ WHEEL_URL="https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_SUFFIX}/"
 print_info "Target: paddlefleet_ops==${PKG_VERSION}"
 print_info "Index:  $WHEEL_URL"
 
-pip install "paddlefleet_ops==${PKG_VERSION}" --extra-index-url "${WHEEL_URL}" && \
+if pip install "paddlefleet_ops==${PKG_VERSION}" --extra-index-url "${WHEEL_URL}"; then
     print_info "Successfully installed paddlefleet_ops ${PKG_VERSION}"
+else
+    print_error "pip install failed for paddlefleet_ops==${PKG_VERSION}"
+    print_error "The wheel may not be available yet. Check: ${WHEEL_URL}"
+    exit 1
+fi
