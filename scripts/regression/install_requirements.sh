@@ -165,6 +165,7 @@ install_requirements() {
 
 install_ops_wheel(){
     local fleet_branch=${1:-"develop"}
+    echo "Download PaddleFleet form https://paddle-qa.bj.bcebos.com/CodeSync/${fleet_branch}/PaddleFleet.tar"
     wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/${fleet_branch}/PaddleFleet.tar --no-check-certificate
     rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
     cd PaddleFleet && bash scripts/install_ops_wheel.sh && cd -
