@@ -88,7 +88,7 @@ install_requirements() {
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
         #paddlefleet_ops
         install_ops_wheel
-        #paddle
+        #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
     elif [[ "$ce_branch" == "CE_Release_cu130_py312" ]]; then # release regerssion
@@ -96,7 +96,7 @@ install_requirements() {
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
         #paddlefleet_ops
         install_ops_wheel
-        #paddle
+        #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
      elif [[ "$ce_branch" == "CE_Release_cu130_py311" ]]; then # release regerssion
@@ -104,7 +104,7 @@ install_requirements() {
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
         #paddlefleet_ops
         install_ops_wheel
-        #paddle
+        #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
     elif [[ "$ce_branch" == "CE_Release_cu129_py313" ]]; then # release regerssion
@@ -112,7 +112,7 @@ install_requirements() {
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
         #paddlefleet_ops
         install_ops_wheel
-        #paddle
+        #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl 
     elif [[ "$ce_branch" == "CE_Release_cu129_py312_weekly" ]]; then # release regerssion
@@ -120,7 +120,7 @@ install_requirements() {
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
         #paddlefleet_ops
         install_ops_wheel
-        #paddle
+        #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl  
     elif [[ "$ce_branch" == "CE_Release_cu126_py310" ]]; then # release regerssion
@@ -128,7 +128,7 @@ install_requirements() {
         python -m pip install "paddleformers[paddlefleet]" --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
         #paddlefleet_ops
         install_ops_wheel
-        #paddle
+        #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl    
     else
