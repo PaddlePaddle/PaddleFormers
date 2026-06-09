@@ -40,8 +40,9 @@ install_requirements() {
     python -m pip config --user set global.index-url https://pypi.org/simple
     python -m pip uninstall paddlepaddle paddlepaddle_gpu paddlefleet -y
     python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple  > /dev/null
-    cd /home/models/my_packages && dpkg -i *.deb > /dev/null
-    cd -
+    # cd /home/models/my_packages && dpkg -i *.deb > /dev/null
+    # cd -
+    apt-get update && apt-get install -y ffmpeg
     # python -m pip install --no-cache-dir ${paddle} --no-dependencies --progress-bar off
     # echo "paddlepaddle-gpu @ https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-TagBuild-Training-Linux-Gpu-Cuda12.9-Cudnn9.9-Trt10.5-Mkl-Avx-Gcc11-SelfBuiltPypiUse/cbf3469113cd76b7d5f4cba7b8d7d5f55d9e9911/paddlepaddle_gpu-3.3.0-cp310-cp310-linux_x86_64.whl" >> requirements.txt
     python setup.py bdist_wheel > /dev/null
