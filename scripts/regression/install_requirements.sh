@@ -30,7 +30,7 @@ install_requirements() {
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
         #paddlefleet_ops
-        install_ops_wheel "${1:-release/0.3}"
+        install_ops_wheel "release/0.3"
         #formers - reinstall
         python -m pip install ./dist/*.whl 
     elif [[ "$ce_branch" == "CE_Develop_cu132_py312" ]]; then # nightly regerssion
@@ -51,7 +51,7 @@ install_requirements() {
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu132/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu132/
         #paddlefleet_ops
-        install_ops_wheel "${1:-release/0.3}"
+        install_ops_wheel "release/0.3"
         #formers - reinstall
         python -m pip install ./dist/*.whl
     elif [[ "$ce_branch" == "CE_Develop_cu130_py313" ]]; then # nightly regerssion
@@ -84,7 +84,7 @@ install_requirements() {
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
         #paddlefleet_ops
-        install_ops_wheel "${1:-release/0.3}"
+        install_ops_wheel "release/0.3"
         #formers - reinstall
         python -m pip install ./dist/*.whl
     elif [[ "$ce_branch" == "CE_Release_cu130_py312" ]]; then # release regerssion
@@ -93,7 +93,7 @@ install_requirements() {
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
         #paddlefleet_ops
-        install_ops_wheel "${1:-release/0.3}"
+        install_ops_wheel "release/0.3"
         #formers - reinstall
         python -m pip install ./dist/*.whl
      elif [[ "$ce_branch" == "CE_Release_cu130_py311" ]]; then # release regerssion
@@ -102,7 +102,7 @@ install_requirements() {
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
         #paddlefleet_ops
-        install_ops_wheel "${1:-release/0.3}"
+        install_ops_wheel "release/0.3"
         #formers - reinstall
         python -m pip install ./dist/*.whl
     elif [[ "$ce_branch" == "CE_Release_cu129_py313" ]]; then # release regerssion
@@ -111,7 +111,7 @@ install_requirements() {
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
         #paddlefleet_ops
-        install_ops_wheel "${1:-release/0.3}"
+        install_ops_wheel "release/0.3"
         #formers - reinstall
         python -m pip install ./dist/*.whl 
     elif [[ "$ce_branch" == "CE_Release_cu129_py312_weekly" ]]; then # release regerssion
@@ -120,7 +120,7 @@ install_requirements() {
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
         #paddlefleet_ops
-        install_ops_wheel "${1:-release/0.3}"
+        install_ops_wheel "release/0.3"
         #formers - reinstall
         python -m pip install ./dist/*.whl  
     elif [[ "$ce_branch" == "CE_Release_cu126_py310" ]]; then # release regerssion
@@ -129,7 +129,7 @@ install_requirements() {
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
         #paddlefleet_ops
-        install_ops_wheel "${1:-release/0.3}"
+        install_ops_wheel "release/0.3"
         #formers - reinstall
         python -m pip install ./dist/*.whl    
     else
@@ -164,7 +164,7 @@ install_requirements() {
 }
 
 install_ops_wheel(){
-    local fleet_branch=${1:-"develop"}
+    local fleet_branch=${2:-"develop"}
     echo "Download PaddleFleet form https://paddle-qa.bj.bcebos.com/CodeSync/${fleet_branch}/PaddleFleet.tar"
     wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/${fleet_branch}/PaddleFleet.tar --no-check-certificate
     rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
