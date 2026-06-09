@@ -47,23 +47,23 @@ install_requirements() {
     python setup.py bdist_wheel > /dev/null
     if [ $FLAGS_enable_CE == "true" ];then
         python -m pip install dist/*.whl 
-        #fleet
+        #fleet develop
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
-        #paddlefleet_ops
-        wget -q https://paddle-whl.bj.bcebos.com/nightly/cu129/paddlefleet-ops/paddlefleet_ops-0.3.0.dev20260604+02aed7c3-cp312-cp312-linux_x86_64.whl
-        pip install  paddlefleet_ops-0.3.0.dev20260604+02aed7c3-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ -i https://pypi.org/simple 
-        # python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+        #paddlefleet_ops develop
+        wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar --no-check-certificate
+        rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
+        cd PaddleFleet && bash scripts/install_ops_wheel.sh && cd -
+        #paddle develop
         python -m pip uninstall paddlepaddle-gpu -y
-        #paddle
         wget -q $paddle
         python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
-
     else
+        # fleet_locked paddle_locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-        #paddlefleet_ops
-        wget -q https://paddle-whl.bj.bcebos.com/nightly/cu129/paddlefleet-ops/paddlefleet_ops-0.3.0.dev20260604+02aed7c3-cp312-cp312-linux_x86_64.whl
-        pip install  paddlefleet_ops-0.3.0.dev20260604+02aed7c3-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ -i https://pypi.org/simple 
-        # python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+        #paddlefleet_ops for fleet_locked
+        wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar --no-check-certificate
+        rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
+        cd PaddleFleet && bash scripts/install_ops_wheel.sh && cd -
     fi
     pip install -r tests/requirements.txt -i https://pypi.org/simple 
 
