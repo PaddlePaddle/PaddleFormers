@@ -14,26 +14,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Script to install paddlefleet_ops that matches a given PaddleFleet ref.
+# Install paddlefleet_ops matching a given PaddleFleet ref.
 #
-# Uses git protocol (not GitHub REST API) to avoid API rate limits in
-# restricted network environments. All remote operations are shallow
-# fetches — no need to clone PaddleFleet fully.
-#
-# Anchor resolution priority:
-#   1. --commit <SHA>       → use the exact commit as anchor
-#   2. --branch <name>      → use the branch HEAD as anchor
-#   3. --from-setup [path]  → read locked commit from PaddleFormers' setup.py
-#   4. --from-env (default) → auto-detect from pip-installed paddlefleet
-#
-# If packages/ commits cannot be found via the anchor, falls back to develop.
+# Two resolution strategies:
+#   A. Version string with embedded packages/ commit hash (fast, no remote calls):
+#        0.3.0.dev20260529+30f17a82ef4  → parse base/date/hash directly
+#   B. Branch mode (no hash, need git):
+#        develop / release/0.2          → git ls-remote + fetch to find packages/ commit
 #
 # Usage:
-#   ./install_ops_wheel.sh                            # auto from env (default)
-#   ./install_ops_wheel.sh --branch develop
+#   ./install_ops_wheel.sh                                # auto from env (default)
+#   ./install_ops_wheel.sh --from-setup ./setup.py        # from PaddleFormers setup.py
+#   ./install_ops_wheel.sh --commit 30f17a82ef4           # explicit commit (as fallback)
+#   ./install_ops_wheel.sh --branch develop               # explicit branch
 #   ./install_ops_wheel.sh --branch release/0.2
-#   ./install_ops_wheel.sh --commit 30f17a82ef4
-#   ./install_ops_wheel.sh --from-setup ./setup.py
 
 set -u
 
@@ -50,44 +44,34 @@ print_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 GIT_DIR=""
-
-cleanup() {
-    if [[ -n "$GIT_DIR" && -d "$GIT_DIR" ]]; then
-        rm -rf "$GIT_DIR"
-    fi
-}
+cleanup() { [[ -n "$GIT_DIR" && -d "$GIT_DIR" ]] && rm -rf "$GIT_DIR"; }
 trap cleanup EXIT
 
-# ============================================================
-# Helpers
-# ============================================================
-
-# git_run <args...> — run git in a temporary bare repo
+git_init() {
+    GIT_DIR=$(mktemp -d)
+    git -C "$GIT_DIR" init -q --bare
+}
 git_run() {
-    if [[ -z "$GIT_DIR" ]]; then
-        GIT_DIR=$(mktemp -d)
-        git -C "$GIT_DIR" init -q --bare
-    fi
+    [[ -z "$GIT_DIR" ]] && git_init
     git -C "$GIT_DIR" "$@" 2>&1
 }
 
-# Fetch enough history from a given ref to walk the commit graph.
-# Uses --shallow-since to get a wide enough window.
-git_fetch_ref() {
-    local ref="$1"
-    local since="${2:-2025-01-01}"
-    print_info "Fetching git history for $ref (since $since)..."
-    local output
-    output=$(git_run fetch --shallow-since="$since" --no-tags "$PADDLE_FLEET_URL" "$ref" 2>&1) || {
-        print_warn "Shallow fetch failed (network issue?), retrying with depth=200..."
-        output=$(git_run fetch --depth=200 --no-tags "$PADDLE_FLEET_URL" "$ref" 2>&1) || {
-            print_error "Git fetch failed. Check your network."
-            print_error "Command: git fetch --depth=200 --no-tags $PADDLE_FLEET_URL $ref"
-            print_error "Output: $(echo "$output" | tail -3)"
-            return 1
-        }
-    }
-    return 0
+# ============================================================
+# Parse version string → extract version components
+# Input:  "0.3.0.dev20260529+30f17a82ef4"
+# Output: base="0.3.0" suffix="dev" date="20260529" hash="30f17a82ef4"
+# ============================================================
+parse_version() {
+    local ver="$1"
+    # Match: X.Y.Z.devDATE+HASH or X.Y.Z.postDATE+HASH
+    if [[ "$ver" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\.(dev|post)([0-9]{8})\+([a-f0-9]{8,40})$ ]]; then
+        BASE_VERSION="${BASH_REMATCH[1]}"
+        VERSION_SUFFIX="${BASH_REMATCH[2]}"
+        DATE_STR="${BASH_REMATCH[3]}"
+        OPS_HASH="${BASH_REMATCH[4]:0:8}"
+        return 0
+    fi
+    return 1
 }
 
 # ============================================================
@@ -99,210 +83,183 @@ FROM_SETUP=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --commit)
-            FLEET_COMMIT="$2"
-            shift 2
-            ;;
-        --branch)
-            FLEET_BRANCH="$2"
-            shift 2
-            ;;
+        --commit)     FLEET_COMMIT="$2";      shift 2 ;;
+        --branch)     FLEET_BRANCH="$2";      shift 2 ;;
         --from-setup)
             if [[ -n "$2" && "$2" != --* ]]; then
-                FROM_SETUP="$2"
-                shift 2
+                FROM_SETUP="$2"; shift 2
             else
-                FROM_SETUP="."
-                shift 1
-            fi
-            ;;
-        --from-env)
-            shift 1
-            ;;
+                FROM_SETUP="."; shift 1
+            fi ;;
+        --from-env)   shift 1 ;;
         *)
-            print_error "Unknown argument: $1"
+            print_error "Unknown: $1"
             echo "Usage: $0 [--commit <SHA> | --branch <name> | --from-setup [path] | --from-env]"
-            exit 1
-            ;;
+            exit 1 ;;
     esac
 done
 
 # ============================================================
-# Step 1: Determine anchor ref
+# Step 1: Determine anchor — extract version info or fallback
 # ============================================================
-MODE=""
+OPS_VERSION=""
+NEED_GIT=false
 
+# Priority 1: --commit (explicit hash, need git to find packages/)
 if [[ -n "$FLEET_COMMIT" ]]; then
-    MODE="commit"
+    NEED_GIT=true
+    print_info "Mode: commit → $FLEET_COMMIT (using raw URLs + API)"
+fi
 
-elif [[ -n "$FLEET_BRANCH" ]]; then
-    MODE="branch"
+# Priority 2: --branch
+if [[ -n "$FLEET_BRANCH" ]]; then
+    NEED_GIT=true
     print_info "Mode: branch → $FLEET_BRANCH"
+fi
 
-elif [[ -n "$FROM_SETUP" ]]; then
+# Priority 3: --from-setup (read from setup.py)
+if [[ -z "$FLEET_COMMIT" && -z "$FLEET_BRANCH" && -n "$FROM_SETUP" ]]; then
     SETUP_PY="$FROM_SETUP"
     [[ -d "$SETUP_PY" ]] && SETUP_PY="${SETUP_PY}/setup.py"
     if [[ ! -f "$SETUP_PY" ]]; then
-        print_error "setup.py not found at $SETUP_PY"
-        exit 1
+        print_error "setup.py not found at $SETUP_PY"; exit 1
     fi
-    print_info "Reading PaddleFleet dependency from $SETUP_PY"
 
-    FLEET_COMMIT=$(grep -oP 'paddlefleet==[0-9]+\.[0-9]+\.[0-9]+[^"]*\+\K[a-f0-9]{8,40}' "$SETUP_PY" 2>/dev/null || true)
-    if [[ -n "$FLEET_COMMIT" ]]; then
-        MODE="commit"
-        print_info "Detected locked commit $FLEET_COMMIT from setup.py"
+    # Extract the full version string: "paddlefleet==0.3.0.dev20260529+30f17a82ef4"
+    FLEET_VER=$(grep -oP 'paddlefleet==\K[0-9]+\.[0-9]+\.[0-9]+[^"]*' "$SETUP_PY" 2>/dev/null || true)
+    if [[ -n "$FLEET_VER" ]] && parse_version "$FLEET_VER"; then
+        OPS_VERSION="${BASE_VERSION}.${VERSION_SUFFIX}${DATE_STR}+${OPS_HASH}"
+        print_info "Parsed from setup.py: base=$BASE_VERSION, date=$DATE_STR, hash=$OPS_HASH"
+        print_info "→ paddlefleet_ops==${OPS_VERSION}"
+    else
+        print_warn "No commit hash in setup.py version (${FLEET_VER:-none}), fallback to develop"
+        NEED_GIT=true
+        FLEET_BRANCH="develop"
+    fi
+fi
+
+# Priority 4: --from-env (default, auto-detect from pip-installed paddlefleet)
+if [[ -z "$FLEET_COMMIT" && -z "$FLEET_BRANCH" && -z "$OPS_VERSION" ]]; then
+    INSTALLED_VER=$(pip show paddlefleet 2>/dev/null | grep -oP '(?<=Version: )[0-9]+\.[0-9]+\.[0-9]+.*')
+    if [[ -n "$INSTALLED_VER" ]] && parse_version "$INSTALLED_VER"; then
+        OPS_VERSION="${BASE_VERSION}.${VERSION_SUFFIX}${DATE_STR}+${OPS_HASH}"
+        print_info "Parsed from installed paddlefleet v${INSTALLED_VER}"
+        print_info "→ paddlefleet_ops==${OPS_VERSION}"
+    elif [[ -n "$INSTALLED_VER" ]]; then
+        # Pure version without hash (e.g. "0.3.0" or "0.3.0.dev20260601")
+        local_version=$(echo "$INSTALLED_VER" | grep -oP '^[0-9]+\.[0-9]+\.[0-9]+')
+        if [[ "$INSTALLED_VER" == "$local_version" ]]; then
+            FLEET_BRANCH="release/$(echo "$local_version" | grep -oP '^[0-9]+\.[0-9]+')"
+            print_info "Installed paddlefleet v${INSTALLED_VER} (stable), trying branch: $FLEET_BRANCH"
+        else
+            FLEET_BRANCH="develop"
+            print_info "Installed paddlefleet v${INSTALLED_VER} (no hash), using branch: $FLEET_BRANCH"
+        fi
+        NEED_GIT=true
     else
         FLEET_BRANCH="develop"
-        MODE="branch"
-        print_info "No commit hash in setup.py, using branch: $FLEET_BRANCH"
+        NEED_GIT=true
+        print_info "paddlefleet not installed, using branch: develop"
     fi
+fi
 
-else
-    MODE="env-auto"
-    INSTALLED_VERSION=$(pip show paddlefleet 2>/dev/null | grep -oP '(?<=Version: )[0-9]+\.[0-9]+\.[0-9]+.*')
+# ============================================================
+# Step 2: If version was parsed directly, skip git path
+# ============================================================
+if [[ -n "$OPS_VERSION" ]]; then
+    print_info "All version info available locally, skipping git fetch."
+fi
 
-    if [[ -n "$INSTALLED_VERSION" ]]; then
-        FLEET_COMMIT=$(echo "$INSTALLED_VERSION" | grep -oP '\+\K[a-f0-9]{8,40}')
-        if [[ -n "$FLEET_COMMIT" ]]; then
-            MODE="commit"
-            print_info "Installed paddlefleet v${INSTALLED_VERSION} → commit $FLEET_COMMIT"
-        else
-            local_version=$(echo "$INSTALLED_VERSION" | grep -oP '^[0-9]+\.[0-9]+\.[0-9]+')
-            if [[ "$INSTALLED_VERSION" == "$local_version" ]]; then
-                RELEASE_BRANCH="release/$(echo "$local_version" | grep -oP '^[0-9]+\.[0-9]+')"
-                print_info "Installed paddlefleet v${INSTALLED_VERSION} (stable release)"
-                # Check branch existence via git ls-remote
-                BRANCH_EXISTS=$(git_run ls-remote --heads "$PADDLE_FLEET_URL" "$RELEASE_BRANCH" 2>/dev/null | wc -l)
-                if [[ "$BRANCH_EXISTS" -gt 0 ]]; then
-                    FLEET_BRANCH="$RELEASE_BRANCH"
-                    print_info "→ mapped to branch: $FLEET_BRANCH"
-                else
-                    FLEET_BRANCH="develop"
-                    print_warn "Branch $RELEASE_BRANCH not found, fallback to develop"
-                fi
-            else
-                FLEET_BRANCH="develop"
-                print_info "Installed paddlefleet v${INSTALLED_VERSION} (no hash) → develop"
+# ============================================================
+# Step 3 (git path): Resolve branch → find packages/ commit
+# Only reached when NEED_GIT=true
+# ============================================================
+BASE_VERSION=""
+DATE_STR=""
+OPS_HASH=""
+
+if $NEED_GIT; then
+    if [[ -n "$FLEET_COMMIT" ]]; then
+        # --commit mode: no branch, use raw URLs + commit itself
+        print_info "Commit mode: fetching info for $FLEET_COMMIT via raw URLs..."
+        BASE_VERSION=$(curl -sL --fail "${GITHUB_RAW}/${FLEET_COMMIT}/version.txt" 2>/dev/null | head -1 | tr -d '[:space:]') || {
+            print_error "Cannot fetch version.txt at commit $FLEET_COMMIT"
+            print_error "URL: ${GITHUB_RAW}/${FLEET_COMMIT}/version.txt"
+            exit 1
+        }
+        OPS_HASH="${FLEET_COMMIT:0:8}"
+        VERSION_SUFFIX="dev"
+        # Use commit date (best-effort, fallback to today if unavailable)
+        DATE_STR=$(date +%Y%m%d)
+        print_warn "Using today's date for commit mode: $DATE_STR (commit date unavailable via raw URLs)"
+        OPS_VERSION="${BASE_VERSION}.${VERSION_SUFFIX}${DATE_STR}+${OPS_HASH}"
+        print_info "Commit resolved: base=$BASE_VERSION, date=$DATE_STR, hash=$OPS_HASH"
+        print_info "→ paddlefleet_ops==${OPS_VERSION}"
+
+    else
+        # 3a. Check branch exists
+        BRANCH_SHA=$(git_run ls-remote "$PADDLE_FLEET_URL" "refs/heads/${FLEET_BRANCH}" 2>/dev/null | awk '{print $1}')
+        if [[ -z "$BRANCH_SHA" ]]; then
+            print_warn "Branch '$FLEET_BRANCH' not found, fallback to develop"
+            FLEET_BRANCH="develop"
+            BRANCH_SHA=$(git_run ls-remote "$PADDLE_FLEET_URL" "refs/heads/develop" | awk '{print $1}')
+            if [[ -z "$BRANCH_SHA" ]]; then
+                print_error "Cannot reach github.com. Check your network."
+                exit 1
             fi
         fi
-    else
-        FLEET_BRANCH="develop"
-        print_info "paddlefleet not installed → develop"
-    fi
-fi
 
-# ============================================================
-# Step 2: Resolve anchor ref & get version.txt
-# ============================================================
-RESOLVED_SHA=""
-BASE_VERSION=""
-FETCH_REF=""
+        # 3b. Fetch the branch
+        print_info "Fetching branch: $FLEET_BRANCH (${BRANCH_SHA:0:12})"
+        git_run fetch --depth=200 --no-tags "$PADDLE_FLEET_URL" "$FLEET_BRANCH" 2>/dev/null || {
+            print_error "Git fetch failed for $FLEET_BRANCH. Network issue?"
+            exit 1
+        }
 
-if [[ "$MODE" == "commit" ]]; then
-    # Fetch just enough to resolve the commit and get version.txt
-    FETCH_REF="$FLEET_COMMIT"
-    git_fetch_ref "$FETCH_REF" || exit 1
-
-    RESOLVED_SHA=$(git_run rev-parse "FETCH_HEAD" 2>/dev/null) || {
-        print_error "Failed to resolve commit $FLEET_COMMIT after fetch"
-        exit 1
-    }
-    print_info "Resolved commit: $RESOLVED_SHA"
-
-    # Get version.txt from that commit
-    BASE_VERSION=$(git_run show "FETCH_HEAD:version.txt" 2>/dev/null | head -1 | tr -d '[:space:]') || true
-else
-    # Branch mode: get branch HEAD via ls-remote, then fetch
-    RESOLVED_SHA=$(git_run ls-remote "$PADDLE_FLEET_URL" "refs/heads/${FLEET_BRANCH}" 2>/dev/null | awk '{print $1}')
-    if [[ -z "$RESOLVED_SHA" ]]; then
-        print_error "Branch '$FLEET_BRANCH' not found in PaddleFleet remote"
-        exit 1
-    fi
-    print_info "Resolved ${FLEET_BRANCH} HEAD: $RESOLVED_SHA"
-
-    FETCH_REF="$RESOLVED_SHA"
-    git_fetch_ref "$FETCH_REF" || exit 1
-
-    BASE_VERSION=$(git_run show "FETCH_HEAD:version.txt" 2>/dev/null | head -1 | tr -d '[:space:]') || true
-fi
-
-if [[ -z "$BASE_VERSION" ]]; then
-    # Fallback: try via raw.githubusercontent.com
-    print_warn "version.txt not found via git, trying raw URL..."
-    BASE_VERSION=$(curl -sL --fail "${GITHUB_RAW}/${RESOLVED_SHA}/version.txt" 2>/dev/null | head -1 | tr -d '[:space:]') || true
-fi
-if [[ -z "$BASE_VERSION" ]]; then
-    print_error "Failed to fetch version.txt"
-    exit 1
-fi
-print_info "PaddleFleet version: $BASE_VERSION"
-
-# ============================================================
-# Step 3: Find the latest packages/ modification from this ref
-# ============================================================
-find_packages_commit_from_ref() {
-    local ref="$1"
-    # git log -- packages/ walks the commit graph from the given ref
-    # This works if we have sufficient history
-    local result
-    result=$(git_run log "FETCH_HEAD" -1 --format="%H %cd" --date=format:"%Y%m%d" -- "packages/" 2>/dev/null) || true
-    echo "$result"
-}
-
-PACKAGES_INFO=$(find_packages_commit_from_ref "$FETCH_REF")
-
-if [[ -z "$PACKAGES_INFO" ]]; then
-    print_warn "packages/ not found from anchor ref, trying raw URL fallback..."
-
-    # Fallback: use the commit itself (the packages/ dir may be in this commit)
-    # Try raw.githubusercontent.com to check if packages/ exists at this commit
-    PKG_TEST=$(curl -sL --fail "${GITHUB_RAW}/${RESOLVED_SHA}/packages/" 2>/dev/null || true)
-    if [[ -n "$PKG_TEST" ]]; then
-        # The commit itself contains packages/ changes, use the commit directly
-        PKG_SHA="$RESOLVED_SHA"
-        PKG_SHORT="${PKG_SHA:0:8}"
-        # Use raw URL to get commit date
-        DATE_STR=$(curl -s "${GITHUB_API:-https://api.github.com}/repos/${PADDLE_FLEET_REPO}/commits/${RESOLVED_SHA}" 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['commit']['committer']['date'][:10].replace('-',''))" 2>/dev/null || echo "")
-        if [[ -z "$DATE_STR" ]]; then
-            DATE_STR=$(date +%Y%m%d)
-            print_warn "Could not determine date, using today: $DATE_STR"
+        # 3c. Get version.txt
+        BASE_VERSION=$(git_run show "FETCH_HEAD:version.txt" 2>/dev/null | head -1 | tr -d '[:space:]')
+        if [[ -z "$BASE_VERSION" ]]; then
+            print_warn "version.txt via git failed, trying raw URL..."
+            BASE_VERSION=$(curl -sL --fail "${GITHUB_RAW}/${BRANCH_SHA}/version.txt" 2>/dev/null | head -1 | tr -d '[:space:]') || true
         fi
-        print_info "Using anchor commit directly for packages/: $PKG_SHA (date: $DATE_STR)"
-    else
-        print_warn "Trying fallback: develop branch..."
-        # Resolve develop HEAD via ls-remote
-        DEV_SHA=$(git_run ls-remote "$PADDLE_FLEET_URL" "refs/heads/develop" 2>/dev/null | awk '{print $1}')
-        if [[ -z "$DEV_SHA" ]]; then
-            print_error "Failed to resolve develop branch"
+        if [[ -z "$BASE_VERSION" ]]; then
+            print_error "Cannot fetch version.txt. Try specifying a commit with --commit <SHA>"
             exit 1
         fi
-        print_info "Develop HEAD: $DEV_SHA"
-        git_fetch_ref "$DEV_SHA" || exit 1
 
+        # 3d. Find packages/ commit via git log
         PACKAGES_INFO=$(git_run log "FETCH_HEAD" -1 --format="%H %cd" --date=format:"%Y%m%d" -- "packages/" 2>/dev/null) || true
+
         if [[ -z "$PACKAGES_INFO" ]]; then
-            # One more fallback: deeper history
-            print_warn "Still no packages/ commit found, trying depth=500..."
-            git_run fetch --depth=500 --no-tags "$PADDLE_FLEET_URL" "$DEV_SHA" 2>/dev/null || true
+            # Try deeper history
+            print_warn "Shallow log too short, trying depth=500..."
+            git_run fetch --depth=500 --no-tags "$PADDLE_FLEET_URL" "$FLEET_BRANCH" 2>/dev/null || true
             PACKAGES_INFO=$(git_run log "FETCH_HEAD" -1 --format="%H %cd" --date=format:"%Y%m%d" -- "packages/" 2>/dev/null) || true
         fi
-    fi
-fi
 
-if [[ -z "$PACKAGES_INFO" ]]; then
-    print_error "Cannot find packages/ commit from any source."
-    exit 1
-fi
+        if [[ -z "$PACKAGES_INFO" ]]; then
+            # Fallback: use FETCH_HEAD itself as packages/ commit
+            PKG_SHA="$BRANCH_SHA"
+            PKG_SHORT="${PKG_SHA:0:8}"
+            DATE_STR=$(date +%Y%m%d)
+            print_warn "Could not find packages/ commit history. Using branch HEAD as fallback."
+            print_warn "  → commit: $PKG_SHORT, date: $DATE_STR (today)"
+        else
+            PKG_SHA=$(echo "$PACKAGES_INFO" | awk '{print $1}')
+            DATE_STR=$(echo "$PACKAGES_INFO" | awk '{print $2}')
+            PKG_SHORT="${PKG_SHA:0:8}"
+        fi
 
-if [[ -z "$PKG_SHA" ]]; then
-    # Parse from git log output
-    PKG_SHA=$(echo "$PACKAGES_INFO" | awk '{print $1}')
-    DATE_STR=$(echo "$PACKAGES_INFO" | awk '{print $2}')
-    PKG_SHORT="${PKG_SHA:0:8}"
-fi
+        # Determine version suffix
+        VERSION_SUFFIX="dev"
+        [[ "$FLEET_BRANCH" == release/* ]] && VERSION_SUFFIX="post"
 
-print_info "packages/ commit: $PKG_SHA (short: $PKG_SHORT, date: $DATE_STR)"
+        OPS_HASH="$PKG_SHORT"
+        OPS_VERSION="${BASE_VERSION}.${VERSION_SUFFIX}${DATE_STR}+${OPS_HASH}"
+        print_info "Branch resolved: base=$BASE_VERSION, suffix=$VERSION_SUFFIX, date=$DATE_STR, hash=$OPS_HASH"
+        print_info "→ paddlefleet_ops==${OPS_VERSION}"
+    fi  # end commit vs branch
+fi  # end NEED_GIT
 
 # ============================================================
 # Step 4: Detect CUDA version
@@ -338,23 +295,17 @@ esac
 print_info "CUDA suffix: $CUDA_SUFFIX"
 
 # ============================================================
-# Step 5: Build version & install
+# Step 5: Install
 # ============================================================
-VERSION_SUFFIX="dev"
-if [[ -n "$FLEET_BRANCH" && "$FLEET_BRANCH" == release/* ]]; then
-    VERSION_SUFFIX="post"
-fi
-
-PKG_VERSION="${BASE_VERSION}.${VERSION_SUFFIX}${DATE_STR}+${PKG_SHORT}"
 WHEEL_URL="https://www.paddlepaddle.org.cn/packages/nightly/${CUDA_SUFFIX}/"
 
-print_info "Target: paddlefleet_ops==${PKG_VERSION}"
-print_info "Index:  $WHEEL_URL"
+print_info "Installing paddlefleet_ops==${OPS_VERSION}"
+print_info "Index: $WHEEL_URL"
 
-if pip install "paddlefleet_ops==${PKG_VERSION}" --extra-index-url "${WHEEL_URL}"; then
-    print_info "Successfully installed paddlefleet_ops ${PKG_VERSION}"
+if pip install "paddlefleet_ops==${OPS_VERSION}" --extra-index-url "${WHEEL_URL}"; then
+    print_info "Successfully installed paddlefleet_ops ${OPS_VERSION}"
 else
-    print_error "pip install failed for paddlefleet_ops==${PKG_VERSION}"
-    print_error "The wheel may not be available yet. Check: ${WHEEL_URL}"
+    print_error "pip install failed for paddlefleet_ops==${OPS_VERSION}"
+    print_error "Check if the wheel exists at: ${WHEEL_URL}"
     exit 1
 fi
