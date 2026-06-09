@@ -25,13 +25,12 @@ install_requirements() {
     # python -m pip install -U --no-cache-dir transformers -i https://pypi.org/simple > /dev/null
     python -m pip install -r requirements.txt -i https://pypi.org/simple 
     if [[ "$ce_branch" == "CE_Release_cu129_py312_nightly" ]]; then # nightly regerssion
-        #formers - build wheel first
-        python setup.py bdist_wheel  > /dev/null
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
         #paddlefleet_ops
         install_ops_wheel "${1:-release/0.3}"
-        #formers - reinstall
+        #formers
+        python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl 
     elif [[ "$ce_branch" == "CE_Develop_cu132_py312" ]]; then # nightly regerssion
         #fleet
@@ -46,13 +45,12 @@ install_requirements() {
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
     elif [[ "$ce_branch" == "CE_Release_cu132_py312" ]]; then
-        #formers - build wheel first
-        python setup.py bdist_wheel  > /dev/null
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu132/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu132/
         #paddlefleet_ops
         install_ops_wheel "${1:-release/0.3}"
-        #formers - reinstall
+        #formers
+        python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
     elif [[ "$ce_branch" == "CE_Develop_cu130_py313" ]]; then # nightly regerssion
         #fleet
@@ -79,64 +77,56 @@ install_requirements() {
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
     elif [[ "$ce_branch" == "CE_Release_cu130_py313" ]]; then # release regerssion
-        #formers - build wheel first
-        python setup.py bdist_wheel  > /dev/null
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
         #paddlefleet_ops
         install_ops_wheel "${1:-release/0.3}"
-        #formers - reinstall
+        #formers
+        python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
     elif [[ "$ce_branch" == "CE_Release_cu130_py312" ]]; then # release regerssion
-        #formers - build wheel first
-        python setup.py bdist_wheel  > /dev/null
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
         #paddlefleet_ops
         install_ops_wheel "${1:-release/0.3}"
-        #formers - reinstall
+        #formers
+        python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
      elif [[ "$ce_branch" == "CE_Release_cu130_py311" ]]; then # release regerssion
-        #formers - build wheel first
-        python setup.py bdist_wheel  > /dev/null
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/
         #paddlefleet_ops
         install_ops_wheel "${1:-release/0.3}"
-        #formers - reinstall
+        #formers
+        python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
     elif [[ "$ce_branch" == "CE_Release_cu129_py313" ]]; then # release regerssion
-        #formers - build wheel first
-        python setup.py bdist_wheel  > /dev/null
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
         #paddlefleet_ops
         install_ops_wheel "${1:-release/0.3}"
-        #formers - reinstall
+        #formers
+        python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl 
     elif [[ "$ce_branch" == "CE_Release_cu129_py312_weekly" ]]; then # release regerssion
-        #formers - build wheel first
-        python setup.py bdist_wheel  > /dev/null
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
         #paddlefleet_ops
         install_ops_wheel "${1:-release/0.3}"
-        #formers - reinstall
+        #formers
+        python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl  
     elif [[ "$ce_branch" == "CE_Release_cu126_py310" ]]; then # release regerssion
-        #formers - build wheel first
-        python setup.py bdist_wheel  > /dev/null
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu126/
         #paddlefleet_ops
         install_ops_wheel "${1:-release/0.3}"
-        #formers - reinstall
+        #formers
+        python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl    
     else
         echo "Install CI ENV: Cuda129+Python312"
-        #formers - build wheel first
         python setup.py bdist_wheel > /dev/null
-        #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
         #paddlefleet_ops
         install_ops_wheel
