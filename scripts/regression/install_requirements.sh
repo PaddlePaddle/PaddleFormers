@@ -43,9 +43,10 @@ install_requirements() {
         # wget -q https://xly-devops.bj.bcebos.com/gushiwei/cuda132/paddle_nvidia_nvshmem_cu13-3.4.5-py3-none-manylinux_2_17_x86_64.whl
         # python -m pip install paddle_nvidia_nvshmem_cu13-3.4.5-py3-none-manylinux_2_17_x86_64.whl -i https://pypi.org/simple 
         #paddlefleet_ops
-        python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu132/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu132/
-        python -m pip uninstall paddlepaddle-gpu -y
+        wget -q https://paddle-whl.bj.bcebos.com/nightly/cu132/paddlefleet-ops/paddlefleet_ops-0.3.0.dev20260608+63c81966-cp312-cp312-linux_x86_64.whl
+        pip install paddlefleet-ops/paddlefleet_ops-0.3.0.dev20260608+63c81966-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu132/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu132/ -i https://pypi.org/simple 
         #paddle
+        python -m pip uninstall paddlepaddle-gpu -y
         wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Develop-GpuAll-LinuxCentos-Gcc11-Cuda132-Cudnn920-Trt1016-Py312-Compile/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
         python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu132 
         #formers
