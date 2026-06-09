@@ -88,6 +88,9 @@ class GLMMoEModelProvider(GPTModelProvider):
     bias_dropout_fusion: bool = True
     moe_expert_fusion: bool = False
 
+    attention_softmax_in_fp32: bool = True
+    bf16: bool = True
+
 
 def eager_attention_forward(
     module: nn.Layer,
