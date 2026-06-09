@@ -65,6 +65,7 @@ init_env() {
     else
         # CI Release
         echo "CI: install paddle stable + fleet stable + release formers"
+        bash ./scripts/regression/install_requirements.sh ${FLAGS_enable_CI}
         cd ./scripts/regression
         wget https://paddle-qa.bj.bcebos.com/paddleformers/ci_release_config/config.yaml
         python merge_configs.py --origin_config config_origin.yaml --update_config config.yaml --output config.yaml 2>&1 | tee /tmp/merge_output.txt
