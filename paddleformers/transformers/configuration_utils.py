@@ -530,6 +530,27 @@ class LlmMetaConfig:
         ),
         ("fa_version", int, 2, "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."),
         ("experimental_dataflow", bool, False, "Whether to enable experimental dataflow in Fleet. Default is False."),
+        (
+            "enable_hyper_connections",
+            bool,
+            False,
+            "Enable mHC (Manifold-Constrained Hyper-Connections) residual connections.",
+        ),
+        ("num_residual_streams", int, 4, "Number of residual streams for mHC."),
+        ("mhc_sinkhorn_iterations", int, 20, "Number of Sinkhorn-Knopp iterations for mHC."),
+        ("mhc_init_gating_factor", float, 0.01, "Initial gating factor for mHC."),
+        (
+            "use_fused_mhc",
+            bool,
+            False,
+            "Whether to use fused mHC (Manifold-Constrained Hyper-Connections) residual connections.",
+        ),
+        (
+            "high_precision_mhc",
+            bool,
+            False,
+            "Whether to use high precision mHC (Manifold-Constrained Hyper-Connections) residual connections.",
+        ),
     ]
 
     @classmethod
