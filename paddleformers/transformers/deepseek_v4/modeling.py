@@ -542,12 +542,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
         # === 3. Top-level mHC head contraction (output head HyperConnection) ===
-        if mtp_num_layers > 0:
-            stmts += [
-                "hc_head_base -> model.mhc_contract.hc_head_base, dtype='bfloat16'",
-                "hc_head_fn^T -> model.mhc_contract.hc_head_fn, dtype='bfloat16'",
-                "hc_head_scale -> model.mhc_contract.hc_head_scale, dtype='bfloat16'",
-            ]
+        stmts += [
+            "hc_head_base -> model.mhc_contract.hc_head_base, dtype='bfloat16'",
+            "hc_head_fn^T -> model.mhc_contract.hc_head_fn, dtype='bfloat16'",
+            "hc_head_scale -> model.mhc_contract.hc_head_scale, dtype='bfloat16'",
+        ]
 
         # === 4. MTP (Multi-Token Prediction) layers ===
         for i in range(mtp_num_layers):
