@@ -19,7 +19,6 @@ export paddle=$1
 export FLAGS_enable_CE=${2-false}
 export nlp_dir=/workspace/PaddleFormers
 export log_path=/workspace/PaddleFormers/unittest_logs
-unset http_proxy && unset https_proxy
 cd $nlp_dir
 if [ ! -d "unittest_logs" ];then
     mkdir unittest_logs
@@ -142,7 +141,8 @@ if [[ ${FLAGS_enable_CI} == "true" ]] || [[ ${FLAGS_enable_CE} == "true" ]];then
     export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}
     set +e
     export PYTHONFAULTHANDLER=1
-    
+    unset http_proxy && unset https_proxy
+
     DOWNLOAD_SOURCE=aistudio WAIT_UNTIL_DONE=True PADDLEFORMERS_TESTING=True \
     PYTHONPATH=$(pwd) \
     COVERAGE_SOURCE=paddleformers \
