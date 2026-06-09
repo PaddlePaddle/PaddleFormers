@@ -49,6 +49,14 @@ install_requirements() {
         #formers
         python setup.py bdist_wheel  > /dev/null
         python -m pip install ./dist/*.whl
+    elif [[ "$ce_branch" == "CE_Release_cu132_py312" ]]; then
+        #fleet
+        python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu132/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu132/ -i https://pypi.org/simple 
+        #paddlefleet_ops
+        bash ./scripts/install_ops_wheel.sh --branch release/0.2
+        #formers
+        python setup.py bdist_wheel  > /dev/null
+        python -m pip install ./dist/*.whl
     elif [[ "$ce_branch" == "CE_Develop_cu130_py313" ]]; then # nightly regerssion
         #fleet
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu130/ -i https://pypi.org/simple 
