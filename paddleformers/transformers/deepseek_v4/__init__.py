@@ -17,10 +17,10 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "configuration": ["DeepSeekV4Config"],
+    "configuration": ["DeepseekV4Config"],
     "modeling": [
-        "DeepSeekV4ForCausalLMPipe",
-        "DeepSeekV4ForCausalLM",
+        "DeepseekV4ForCausalLMPipe",
+        "DeepseekV4ForCausalLM",
     ],
 }
 

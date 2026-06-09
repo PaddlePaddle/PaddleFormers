@@ -1,0 +1,3 @@
+[submodule "third_party/llm-internal-medicine"]
+	path = third_party/llm-internal-medicine
+	url = https://github.com/bo-ke/llm-internal-medicine.git

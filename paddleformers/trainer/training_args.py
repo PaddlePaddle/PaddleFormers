@@ -793,6 +793,10 @@ class TrainingArguments:
             )
         },
     )
+    cp_balance_mode: str = field(
+        default="dualchunk_allgather",
+        metadata={"help": "CP scatter/gather layout mode: 'dualchunk_allgather' or 'contiguous_allgather'."},
+    )
     expert_model_parallel_size: int = field(
         default=-1,
         metadata={"help": ("The paddle expert data parallel strategy.")},
@@ -1696,6 +1700,11 @@ class TrainingArguments:
         metadata={
             "help": "When enabled, the computation part of the moelayer will use the implementation provided by SonicMoE."
         },
+    )
+
+    dsa_indexer_loss_coeff: float = field(
+        default=0.01,
+        metadata={"help": "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term."},
     )
 
     online_merge_ema: bool = field(

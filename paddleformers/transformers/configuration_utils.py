@@ -248,6 +248,7 @@ class LlmMetaConfig:
         ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
         # context_parallel
         ("context_parallel_size", int, 1, "context_parallel_size"),
+        ("cp_balance_mode", str, "dualchunk_allgather", "CP scatter/gather layout mode"),
         # pp refine recompute
         ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
         ("num_empty_layers_add_in_tail", int, 0, "Additional layers to append at the end"),
@@ -410,6 +411,12 @@ class LlmMetaConfig:
             False,
             "Whether to use SonicMoE as the computation backend for the moelayer.",
         ),
+        (
+            "dsa_indexer_loss_coeff",
+            float,
+            0.01,
+            "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term.",
+        ),
     ]
 
     mtp_attributes = [
@@ -522,16 +529,7 @@ class LlmMetaConfig:
             "Standard deviation for embedding layer initialization (only effective if `embedding_init_method='normal'`). Defaults to 0.02 (common choice for transformer embeddings to avoid saturation).",
         ),
         ("fa_version", int, 2, "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."),
-        (
-            "enable_hyper_connections",
-            bool,
-            False,
-            "Enable mHC (Manifold-Constrained Hyper-Connections) residual connections.",
-        ),
-        ("num_residual_streams", int, 4, "Number of residual streams for mHC."),
-        ("mhc_sinkhorn_iterations", int, 20, "Number of Sinkhorn-Knopp iterations for mHC."),
-        ("mhc_init_gating_factor", float, 0.01, "Initial gating factor for mHC."),
-        ("mhc_recompute_layer_num", Optional[int], None, "Number of layers per mHC recompute block."),
+        ("experimental_dataflow", bool, False, "Whether to enable experimental dataflow in Fleet. Default is False."),
     ]
 
     @classmethod
