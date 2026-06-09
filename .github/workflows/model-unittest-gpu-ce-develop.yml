@@ -4,6 +4,7 @@ on:
   schedule:
     - cron: "10 12 * * 0-4" # 每周日、一、二、三、四的20点
     - cron: "10 15 * * 0-4" # 每周日、一、二、三、四的0点
+    - cron: "10 18 * * 0-4" # 每周日、一、二、三、四的3点
   workflow_dispatch:
     inputs:
       update_baseline_models:
@@ -30,16 +31,9 @@ on:
         default: 'CE_Develop_cu130_py312'
         type: choice
         options:
-          - 'CE_Release_cu129_py312_nightly'
+          - 'CE_Develop_cu132_py312'
           - 'CE_Develop_cu130_py313'
           - 'CE_Develop_cu130_py312'
-          - 'CE_Release_cu130_py313'
-          - 'CE_Release_cu130_py312'
-          - 'CE_Release_cu130_py311'
-          - 'CE_Release_cu129_py313'
-          - 'CE_Release_cu129_py312_weekly'
-          - 'CE_Release_cu126_py310'
-
 concurrency:
   group: model-unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
@@ -100,6 +94,8 @@ jobs:
             echo "FLAGS_enable_CE=CE_Develop_cu130_py313" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "10 15 "* ]]; then
             echo "FLAGS_enable_CE=CE_Develop_cu130_py312" >> $GITHUB_OUTPUT
+          elif [[ "$schedule_time" == "10 18 "* ]]; then
+            echo "FLAGS_enable_CE=CE_Develop_cu132_py312" >> $GITHUB_OUTPUT
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "FLAGS_enable_CE=${{ github.event.inputs.FLAGS_enable_CE }}" >> $GITHUB_OUTPUT
           else
@@ -109,7 +105,9 @@ jobs:
         env:
           FLAGS_enable_CE: ${{ steps.determine_flag.outputs.FLAGS_enable_CE }}
         run: |
-          if [[ "${FLAGS_enable_CE}" == *cu130* ]]; then
+          if [[ "${FLAGS_enable_CE}" == *cu132* ]]; then
+            echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:ubuntu24-cuda132-py312-dev" >> "$GITHUB_ENV"
+          elif [[ "${FLAGS_enable_CE}" == *cu130* ]]; then
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda130-dev" >> "$GITHUB_ENV"
           elif [[ "${FLAGS_enable_CE}" == *cu129* ]]; then
             echo "IMAGE_NAME=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle:cuda129-dev" >> "$GITHUB_ENV"

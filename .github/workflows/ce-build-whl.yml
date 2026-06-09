@@ -1,7 +1,7 @@
 name: Build Whl CE
 
 on:
-  pull_request:
+  push:
     branches:
       - develop
       - release/*
@@ -88,25 +88,13 @@ jobs:
           docker exec -t $container_name /bin/bash -c '
           cd /workspace/PaddleFormers/upload
           cp /home/models/bos/bos_tools.py ./
-          for FILE in /workspace/PaddleFormers/upload/*; do
+          cp /home/models/bos/notify_paddle_link.py ./
+          for FILE in /workspace/PaddleFormers/upload/*.whl; do
             file=$(basename "$FILE")
             for cuda in cu126 cu129 cu130; do
               python bos_tools.py $file paddle-whl/nightly/$cuda/paddleformers/
               echo "$file: https://paddle-whl.bj.bcebos.com/nightly/$cuda/paddleformers/$file"
-              python3 -c "
-              import requests, os, time
-              url = \"http://paddletest.baidu-int.com:8999/api/paddle_link\"
-              params = {
-                  \"build_type\": \"COMMIT\",
-                  \"branch\": os.environ.get(\"BRANCH\", \"\"),
-                  \"commit_id\": os.environ.get(\"COMMIT_ID\", \"\"),
-                  \"artifact_url\": \"https://paddle-whl.bj.bcebos.com/nightly/$cuda/paddleformers/$file\",
-                  \"commit_time\": str(int(time.time())),
-                  \"repo\": \"PaddleFormers\"
-              }
-              response = requests.post(url, params=params)
-              print(response.text)
-              "
+              python3 notify_paddle_link.py $cuda $file
             done
           done
           '

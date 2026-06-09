@@ -248,6 +248,7 @@ class LlmMetaConfig:
         ("expert_model_parallel_size", int, 1, "expert_model_parallel_size"),
         # context_parallel
         ("context_parallel_size", int, 1, "context_parallel_size"),
+        ("cp_balance_mode", str, "dualchunk_allgather", "CP scatter/gather layout mode"),
         # pp refine recompute
         ("no_recompute_layers", Optional[List[int]], None, "no_recompute_layers"),
         ("num_empty_layers_add_in_tail", int, 0, "Additional layers to append at the end"),

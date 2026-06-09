@@ -2068,7 +2068,10 @@ class Trainer:
                 and isinstance(self.model, FleetGPTModel)
                 and get_batch_on_this_cp_rank is not None
             ):
-                inputs = get_batch_on_this_cp_rank(inputs)
+                inputs = get_batch_on_this_cp_rank(
+                    inputs,
+                    cp_balance_mode=getattr(self.args, "cp_balance_mode", "dualchunk_allgather"),
+                )
 
             if self.args.ignore_data_skip:
                 self.timers and self.timers("read-data").stop()
@@ -2872,15 +2875,32 @@ class Trainer:
                     DSAIndexerLossLoggingHelper,
                 )
 
-                if DSAIndexerLossLoggingHelper.tracker.get("values") is not None:
-                    loss_scale = 1.0 / self.args.gradient_accumulation_steps
-                    DSAIndexerLossLoggingHelper.reduce_loss_in_tracker()
-                    tracker = DSAIndexerLossLoggingHelper.tracker
-                    indexer_loss_values = tracker["values"] * loss_scale
-                    num_layers = indexer_loss_values.shape[0]
-                    avg_indexer_loss = indexer_loss_values.sum() / num_layers
-                    logs["indexer_loss"] = avg_indexer_loss.item()
-                    DSAIndexerLossLoggingHelper.clean_loss_in_tracker()
+                config = getattr(self.model, "config", None)
+                num_layers = None
+                csa_compress_ratios = None
+                if config is not None:
+                    num_layers = config.num_hidden_layers + (
+                        getattr(config, "mtp_num_layers", 0) or getattr(config, "num_nextn_predict_layers", 0)
+                    )
+                    csa_compress_ratios = getattr(config, "csa_compress_ratios", None)
+                loss_scale = 1.0 / self.args.gradient_accumulation_steps
+                try:
+                    DSAIndexerLossLoggingHelper.track_indexer_metrics(
+                        loss_scale=loss_scale,
+                        iteration=self.state.global_step,
+                        total_loss_dict=logs,
+                        num_layers=num_layers,
+                        csa_compress_ratios=csa_compress_ratios,
+                    )
+                except TypeError:
+                    if DSAIndexerLossLoggingHelper.tracker.get("values") is not None:
+                        DSAIndexerLossLoggingHelper.track_indexer_metrics(
+                            loss_scale=loss_scale,
+                            iteration=self.state.global_step,
+                            total_loss_dict=logs,
+                        )
+                if "indexer loss" in logs:
+                    logs["indexer_loss"] = logs.pop("indexer loss").item()
             except (ImportError, AttributeError):
                 pass
 

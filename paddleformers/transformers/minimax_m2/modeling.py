@@ -1153,7 +1153,15 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 # for mtp
                 prefix_offset += ".transformer_layer"
 
-            if config.moe_expert_fusion or using_sonic_moe:
+            use_fused_weight = config.moe_expert_fusion
+            if config.fp8 and (config.moe_expert_fusion is False) and config.moe_deep_gemm:
+                raise ValueError(
+                    "For fp8 deep_gemm (i.e. use k-grouped gemm in backward), moe_expert_fusion must be True."
+                )
+            if config.fp8 and config.moe_expert_fusion and config.moe_deep_gemm is False:
+                use_fused_weight = False
+
+            if use_fused_weight:
                 ep_weight1 = []
                 ep_weight2 = []
                 for expert_id in range(config.n_routed_experts):
