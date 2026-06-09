@@ -3333,11 +3333,9 @@ class Trainer:
         Trainer's init through `optimizers`, or subclass and override this method in a subclass.
         """
         if self.optimizer is None:
-            if self.optimizer_grouped_parameters is not None:
-                params = self.optimizer_grouped_parameters
-                apply_decay_param_fun = None
-            else:
-                params = [p for p in self.model.parameters() if not p.stop_gradient]
+
+            def _build_apply_decay_param_fun():
+                # Keep the default AdamW behavior: apply weight decay to all trainable parameters except bias and norm.
                 decay_parameters = [
                     p.name
                     for n, p in self.model.named_parameters()
@@ -3346,6 +3344,20 @@ class Trainer:
 
                 def apply_decay_param_fun(x):
                     return x in decay_parameters
+
+                return apply_decay_param_fun
+
+            if self.optimizer_grouped_parameters is not None:
+                params = self.optimizer_grouped_parameters
+                # A plain list only customizes the trainable set, so it should still use the default decay filter.
+                # But dict may define per-group weight_decay explicitly, so do not override.
+                is_param_group_dict = (
+                    isinstance(params, (list, tuple)) and len(params) > 0 and isinstance(params[0], dict)
+                )
+                apply_decay_param_fun = None if is_param_group_dict else _build_apply_decay_param_fun()
+            else:
+                params = [p for p in self.model.parameters() if not p.stop_gradient]
+                apply_decay_param_fun = _build_apply_decay_param_fun()
 
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
             if self.args.optim == OptimizerNames.ADAMW_CUSTOM:
