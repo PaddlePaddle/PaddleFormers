@@ -2257,6 +2257,10 @@ class EMAStateAssembler:
                 v = paddle.reshape(v, expected_shape)
             ema_sharded_state_dict[k] = create_sharded_weight_with_new_local(k, v, ref_tensor)
 
+        sharded_state_dict = self.model.sharded_state_dict()
+        for k, v in sharded_state_dict.items():
+            if v.local_tensor.stop_gradient:
+                ema_sharded_state_dict[k] = v
         return ema_sharded_state_dict
 
     def _save_full_ema_states(self, step, ema_sharded_state_dict):
