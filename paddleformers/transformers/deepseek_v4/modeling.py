@@ -836,12 +836,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
         # === 3. Top-level mHC head contraction (inverse) ===
-        if mtp_num_layers > 0:
-            stmts += [
-                "model.mhc_contract.hc_head_base -> hc_head_base, dtype='float32'",
-                "model.mhc_contract.hc_head_fn^T -> hc_head_fn, dtype='float32'",
-                "model.mhc_contract.hc_head_scale -> hc_head_scale, dtype='float32'",
-            ]
+        stmts += [
+            "model.mhc_contract.hc_head_base -> hc_head_base, dtype='float32'",
+            "model.mhc_contract.hc_head_fn^T -> hc_head_fn, dtype='float32'",
+            "model.mhc_contract.hc_head_scale -> hc_head_scale, dtype='float32'",
+        ]
 
         # === 4. Per-layer mappings (reversed to avoid intermediate tensor name collisions) ===
         for L in reversed(range(num_decoder_layers)):
