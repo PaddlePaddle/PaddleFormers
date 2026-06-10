@@ -86,6 +86,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
         def _qkv_per_head(matrix_2d_global, ortho_fn, num_query_groups=None, split_dims=None):
             """Slice QKV by heads, orthogonalise each head independently."""
             groups = paddle.split(matrix_2d_global, num_query_groups, axis=1)
+            q_heads_per_group = split_dims[0] // split_dims[-2]
 
             processed_groups = []
             if len(split_dims) == 4:
@@ -95,9 +96,9 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         split_dims,
                         axis=1,
                     )
-                    q_heads = paddle.split(q_part, num_query_groups, axis=1)
+                    q_heads = paddle.split(q_part, q_heads_per_group, axis=1)
                     q_ortho = paddle.concat([ortho_fn(h) for h in q_heads], axis=1)
-                    gate_heads = paddle.split(gate_part, num_query_groups, axis=1)
+                    gate_heads = paddle.split(gate_part, q_heads_per_group, axis=1)
                     gate_ortho = paddle.concat([ortho_fn(g) for g in gate_heads], axis=1)
                     processed_groups.append(
                         paddle.concat([q_ortho, gate_ortho, ortho_fn(k_head), ortho_fn(v_head)], axis=1)
@@ -109,7 +110,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         split_dims,
                         axis=1,
                     )
-                    q_heads = paddle.split(q_part, num_query_groups, axis=1)
+                    q_heads = paddle.split(q_part, q_heads_per_group, axis=1)
                     q_ortho = paddle.concat([ortho_fn(h) for h in q_heads], axis=1)
                     processed_groups.append(paddle.concat([q_ortho, ortho_fn(k_head), ortho_fn(v_head)], axis=1))
 
