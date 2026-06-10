@@ -1,0 +1,1464 @@
+"Status","Start Time","Stop Time","Duration in ms","Parent Suite","Suite","Sub Suite","Test Class","Test Method","Name","Description"
+"skipped","Wed Jun 10 09:47:49 UTC 2026","Wed Jun 10 09:47:49 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_fsdp_vl[qwen2-sft-vl]","Test full FSDP training for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:44:49 UTC 2026","Wed Jun 10 07:46:10 UTC 2026","80653","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[qwen3-sft]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:47:49 UTC 2026","Wed Jun 10 09:47:49 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_fsdp_vl[glm4_moe-sft-vl]","Test full FSDP training for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:53:31 UTC 2026","Wed Jun 10 07:54:53 UTC 2026","82430","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[qwen2-sft]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:41:44 UTC 2026","Wed Jun 10 09:41:44 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora_vl[glm4_moe-sft-vl]","Test LoRA fine-tuning workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:22:56 UTC 2026","Wed Jun 10 09:24:19 UTC 2026","83026","scripts.regression","test_models","TestTrain","","","test_full_function_call[llama-sft]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:54:55 UTC 2026","Wed Jun 10 08:56:43 UTC 2026","108138","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[phi3-sft]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:22:03 UTC 2026","Wed Jun 10 08:24:13 UTC 2026","129624","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[qwen3moe-pt]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 06:38:32 UTC 2026","Wed Jun 10 06:38:32 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full[qwen3_vl-dpo]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:11:01 UTC 2026","Wed Jun 10 09:11:01 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[qwen3_vl-dpo]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:37:47 UTC 2026","Wed Jun 10 09:37:47 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_function_call[qwen3_vl-dpo]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:46:10 UTC 2026","Wed Jun 10 07:47:31 UTC 2026","81702","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[qwen3-dpo]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:56:16 UTC 2026","Wed Jun 10 07:57:37 UTC 2026","80616","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[qwen2-pt]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:37:47 UTC 2026","Wed Jun 10 09:37:47 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_vl[llama-sft-vl]","Test full model training workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:33:01 UTC 2026","Wed Jun 10 09:34:45 UTC 2026","104602","scripts.regression","test_models","TestTrain","","","test_full_function_call[gemma3_text-dpo]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 08:15:08 UTC 2026","Wed Jun 10 08:15:08 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[paddleocr_vl-pt]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:37:00 UTC 2026","Wed Jun 10 06:38:32 UTC 2026","92134","scripts.regression","test_models","TestTrain","","","test_full[deepseek_v3-pt]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:09:31 UTC 2026","Wed Jun 10 07:11:12 UTC 2026","100778","scripts.regression","test_models","TestTrain","","","test_lora[qwen2-dpo]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:37:47 UTC 2026","Wed Jun 10 09:37:47 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_vl[qwen3moe-sft-vl]","Test full model training workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 07:39:54 UTC 2026","Wed Jun 10 07:39:54 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora[qwen3_vl-pt]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:47:49 UTC 2026","Wed Jun 10 09:47:49 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_fsdp_vl[llama-sft-vl]","Test full FSDP training for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:39:57 UTC 2026","Wed Jun 10 09:41:44 UTC 2026","106276","scripts.regression","test_models","TestTrain","","","test_full_vl[qwen3_vl-sft-vl]","Test full model training workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 06:49:13 UTC 2026","Wed Jun 10 06:49:13 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_map[paddleocr_vl-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:03:46 UTC 2026","Wed Jun 10 07:05:39 UTC 2026","113283","scripts.regression","test_models","TestTrain","","","test_lora[glm4_moe-dpo]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:20:16 UTC 2026","Wed Jun 10 09:21:36 UTC 2026","80592","scripts.regression","test_models","TestTrain","","","test_full_function_call[qwen2-sft]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:07:40 UTC 2026","Wed Jun 10 06:08:59 UTC 2026","79453","scripts.regression","test_models","TestTrain","","","test_full[qwen3-pt]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:47:49 UTC 2026","Wed Jun 10 09:47:49 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_fsdp_vl[qwen3moe-sft-vl]","Test full FSDP training for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:43:48 UTC 2026","Wed Jun 10 09:45:35 UTC 2026","106555","scripts.regression","test_models","TestTrain","","","test_lora_vl[qwen3_vl-sft-vl]","Test LoRA fine-tuning workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:01:51 UTC 2026","Wed Jun 10 07:03:46 UTC 2026","114521","scripts.regression","test_models","TestTrain","","","test_lora[glm4_moe-sft]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:27:59 UTC 2026","Wed Jun 10 08:29:47 UTC 2026","108069","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[qwen3-pt]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:05:22 UTC 2026","Wed Jun 10 09:05:22 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[paddleocr_vl-sft]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:11:02 UTC 2026","Wed Jun 10 09:12:39 UTC 2026","96987","scripts.regression","test_models","TestTrain","","","test_full_function_call[qwen3moe-sft]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:13:46 UTC 2026","Wed Jun 10 08:15:08 UTC 2026","81679","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[gemma3_text-pt]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:45:35 UTC 2026","Wed Jun 10 09:47:49 UTC 2026","134474","scripts.regression","test_models","TestTrain","","","test_full_tp_vl[qwen3_vl-sft-vl]","Test full training with tensor parallelism for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:01:46 UTC 2026","Wed Jun 10 06:03:21 UTC 2026","95049","scripts.regression","test_models","TestTrain","","","test_full[qwen3moe-dpo]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:47:49 UTC 2026","Wed Jun 10 09:47:50 UTC 2026","56","scripts.regression","test_models","TestTrain","","","test_full_fsdp_vl[paddleocr_vl-sft-vl]","Test full FSDP training for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:48:01 UTC 2026","Wed Jun 10 06:49:13 UTC 2026","71902","scripts.regression","test_models","TestTrain","","","test_full_map[gemma3_text-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:18:43 UTC 2026","Wed Jun 10 06:20:09 UTC 2026","86126","scripts.regression","test_models","TestTrain","","","test_full[llama-dpo]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 08:15:08 UTC 2026","Wed Jun 10 08:15:08 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[paddleocr_vl-dpo]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 08:19:56 UTC 2026","Wed Jun 10 08:19:56 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[qwen3_vl-dpo]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:41:44 UTC 2026","Wed Jun 10 09:41:44 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora_vl[qwen3moe-sft-vl]","Test LoRA fine-tuning workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 08:15:08 UTC 2026","Wed Jun 10 08:15:08 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[paddleocr_vl-sft]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:41:44 UTC 2026","Wed Jun 10 09:41:44 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora_vl[qwen3_next-sft-vl]","Test LoRA fine-tuning workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:09:09 UTC 2026","Wed Jun 10 09:11:01 UTC 2026","112822","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[deepseek_v3-dpo]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:18:20 UTC 2026","Wed Jun 10 08:19:56 UTC 2026","96509","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[deepseek_v3-pt]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:07:13 UTC 2026","Wed Jun 10 09:09:09 UTC 2026","115695","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[deepseek_v3-pt]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:34:01 UTC 2026","Wed Jun 10 06:35:31 UTC 2026","89684","scripts.regression","test_models","TestTrain","","","test_full[deepseek_v3-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:45:26 UTC 2026","Wed Jun 10 06:46:48 UTC 2026","81537","scripts.regression","test_models","TestTrain","","","test_full_map[qwen3_next-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:00:33 UTC 2026","Wed Jun 10 08:02:01 UTC 2026","87030","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[llama-pt]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 08:19:56 UTC 2026","Wed Jun 10 08:19:56 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[qwen3_vl-sft]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:41:44 UTC 2026","Wed Jun 10 09:43:48 UTC 2026","124524","scripts.regression","test_models","TestTrain","","","test_lora_vl[paddleocr_vl-sft-vl]","Test LoRA fine-tuning workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:41:19 UTC 2026","Wed Jun 10 06:42:43 UTC 2026","83526","scripts.regression","test_models","TestTrain","","","test_full_map[glm4_moe-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:30:08 UTC 2026","Wed Jun 10 09:31:27 UTC 2026","78913","scripts.regression","test_models","TestTrain","","","test_full_function_call[phi3-dpo]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:37:47 UTC 2026","Wed Jun 10 09:37:47 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_vl[qwen3-sft-vl]","Test full model training workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:00:06 UTC 2026","Wed Jun 10 06:01:46 UTC 2026","100258","scripts.regression","test_models","TestTrain","","","test_full[qwen3moe-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:18:44 UTC 2026","Wed Jun 10 09:20:15 UTC 2026","91718","scripts.regression","test_models","TestTrain","","","test_full_function_call[glm4_moe-dpo]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:05:22 UTC 2026","Wed Jun 10 09:05:22 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[paddleocr_vl-pt]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:08:59 UTC 2026","Wed Jun 10 06:10:24 UTC 2026","84586","scripts.regression","test_models","TestTrain","","","test_full[glm4_moe-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 08:19:56 UTC 2026","Wed Jun 10 08:19:56 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[qwen3_vl-pt]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 07:34:24 UTC 2026","Wed Jun 10 07:34:24 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora[paddleocr_vl-sft]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:39:25 UTC 2026","Wed Jun 10 08:41:09 UTC 2026","104125","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[qwen2-pt]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:12:39 UTC 2026","Wed Jun 10 09:14:33 UTC 2026","114113","scripts.regression","test_models","TestTrain","","","test_full_function_call[qwen3moe-dpo]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:33:33 UTC 2026","Wed Jun 10 08:35:38 UTC 2026","125834","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[glm4_moe-pt]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:47:49 UTC 2026","Wed Jun 10 09:47:49 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_fsdp_vl[qwen3-sft-vl]","Test full FSDP training for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:26:06 UTC 2026","Wed Jun 10 06:27:23 UTC 2026","76743","scripts.regression","test_models","TestTrain","","","test_full[phi3-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:05:39 UTC 2026","Wed Jun 10 07:07:44 UTC 2026","125216","scripts.regression","test_models","TestTrain","","","test_lora[glm4_moe-pt]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:31:27 UTC 2026","Wed Jun 10 09:33:01 UTC 2026","93951","scripts.regression","test_models","TestTrain","","","test_full_function_call[gemma3_text-sft]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:47:49 UTC 2026","Wed Jun 10 09:47:49 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_fsdp_vl[qwen3_next-sft-vl]","Test full FSDP training for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:52:41 UTC 2026","Wed Jun 10 06:54:44 UTC 2026","123218","scripts.regression","test_models","TestTrain","","","test_lora[qwen3moe-dpo]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:49:13 UTC 2026","Wed Jun 10 06:50:36 UTC 2026","82888","scripts.regression","test_models","TestTrain","","","test_full_map[deepseek_v3-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:34:24 UTC 2026","Wed Jun 10 07:36:16 UTC 2026","111697","scripts.regression","test_models","TestTrain","","","test_lora[deepseek_v3-sft]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:36:16 UTC 2026","Wed Jun 10 07:38:02 UTC 2026","106059","scripts.regression","test_models","TestTrain","","","test_lora[deepseek_v3-dpo]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:39:57 UTC 2026","Wed Jun 10 09:39:57 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_vl[deepseek_v3-sft-vl]","Test full model training workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:44:49 UTC 2026","Wed Jun 10 08:46:42 UTC 2026","113169","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[llama-pt]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:35:31 UTC 2026","Wed Jun 10 06:37:00 UTC 2026","88702","scripts.regression","test_models","TestTrain","","","test_full[deepseek_v3-dpo]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:20:17 UTC 2026","Wed Jun 10 07:22:10 UTC 2026","113094","scripts.regression","test_models","TestTrain","","","test_lora[qwen3_next-dpo]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:02:01 UTC 2026","Wed Jun 10 08:03:46 UTC 2026","104724","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[qwen3_next-sft]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:07:44 UTC 2026","Wed Jun 10 07:09:31 UTC 2026","106789","scripts.regression","test_models","TestTrain","","","test_lora[qwen2-sft]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 07:39:54 UTC 2026","Wed Jun 10 07:39:54 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora[qwen3_vl-dpo]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:38:02 UTC 2026","Wed Jun 10 07:39:54 UTC 2026","112357","scripts.regression","test_models","TestTrain","","","test_lora[deepseek_v3-pt]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:46:42 UTC 2026","Wed Jun 10 08:48:31 UTC 2026","108888","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[llama-dpo]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 06:38:32 UTC 2026","Wed Jun 10 06:38:32 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full[qwen3_vl-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:57:37 UTC 2026","Wed Jun 10 07:59:05 UTC 2026","88200","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[llama-sft]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:06:19 UTC 2026","Wed Jun 10 06:07:40 UTC 2026","80635","scripts.regression","test_models","TestTrain","","","test_full[qwen3-dpo]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 06:34:01 UTC 2026","Wed Jun 10 06:34:01 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full[paddleocr_vl-pt]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:37:48 UTC 2026","Wed Jun 10 09:39:57 UTC 2026","129632","scripts.regression","test_models","TestTrain","","","test_full_vl[paddleocr_vl-sft-vl]","Test full model training workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:08:31 UTC 2026","Wed Jun 10 08:09:48 UTC 2026","77642","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[phi3-dpo]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:07:11 UTC 2026","Wed Jun 10 08:08:31 UTC 2026","79662","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[phi3-sft]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:24:13 UTC 2026","Wed Jun 10 08:26:16 UTC 2026","123133","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[qwen3moe-dpo]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:45:35 UTC 2026","Wed Jun 10 09:45:35 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_tp_vl[deepseek_v3-sft-vl]","Test full training with tensor parallelism for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:50:37 UTC 2026","Wed Jun 10 06:52:41 UTC 2026","124223","scripts.regression","test_models","TestTrain","","","test_lora[qwen3moe-sft]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:41:44 UTC 2026","Wed Jun 10 09:41:44 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora_vl[llama-sft-vl]","Test LoRA fine-tuning workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:51:56 UTC 2026","Wed Jun 10 07:53:31 UTC 2026","95297","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[glm4_moe-pt]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:45:35 UTC 2026","Wed Jun 10 09:45:35 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_tp_vl[llama-sft-vl]","Test full training with tensor parallelism for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:17:14 UTC 2026","Wed Jun 10 09:18:44 UTC 2026","89617","scripts.regression","test_models","TestTrain","","","test_full_function_call[glm4_moe-sft]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:37:47 UTC 2026","Wed Jun 10 09:37:47 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_vl[qwen3_next-sft-vl]","Test full model training workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:11:12 UTC 2026","Wed Jun 10 07:12:58 UTC 2026","105631","scripts.regression","test_models","TestTrain","","","test_lora[qwen2-pt]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:45:35 UTC 2026","Wed Jun 10 09:45:35 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_tp_vl[glm4_moe-sft-vl]","Test full training with tensor parallelism for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:21:36 UTC 2026","Wed Jun 10 09:22:56 UTC 2026","79531","scripts.regression","test_models","TestTrain","","","test_full_function_call[qwen2-dpo]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:43:48 UTC 2026","Wed Jun 10 09:43:48 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora_vl[deepseek_v3-sft-vl]","Test LoRA fine-tuning workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:45:35 UTC 2026","Wed Jun 10 09:45:35 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_tp_vl[phi3-sft-vl]","Test full training with tensor parallelism for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:37:47 UTC 2026","Wed Jun 10 09:37:47 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_vl[glm4_moe-sft-vl]","Test full model training workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:50:21 UTC 2026","Wed Jun 10 07:51:56 UTC 2026","94486","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[glm4_moe-dpo]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:15:08 UTC 2026","Wed Jun 10 08:16:43 UTC 2026","95607","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[deepseek_v3-sft]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:14:46 UTC 2026","Wed Jun 10 07:16:35 UTC 2026","109221","scripts.regression","test_models","TestTrain","","","test_lora[llama-dpo]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:47:31 UTC 2026","Wed Jun 10 07:48:50 UTC 2026","78790","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[qwen3-pt]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:45:35 UTC 2026","Wed Jun 10 09:45:35 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_tp_vl[qwen2-sft-vl]","Test full training with tensor parallelism for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:17:17 UTC 2026","Wed Jun 10 06:18:43 UTC 2026","86050","scripts.regression","test_models","TestTrain","","","test_full[llama-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:11:01 UTC 2026","Wed Jun 10 09:11:01 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[qwen3_vl-sft]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:45:35 UTC 2026","Wed Jun 10 09:45:35 UTC 2026","56","scripts.regression","test_models","TestTrain","","","test_full_tp_vl[paddleocr_vl-sft-vl]","Test full training with tensor parallelism for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:13:21 UTC 2026","Wed Jun 10 06:14:40 UTC 2026","79382","scripts.regression","test_models","TestTrain","","","test_full[qwen2-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:41:44 UTC 2026","Wed Jun 10 09:41:44 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora_vl[qwen2-sft-vl]","Test LoRA fine-tuning workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:03:46 UTC 2026","Wed Jun 10 08:05:27 UTC 2026","101688","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[qwen3_next-dpo]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:11:01 UTC 2026","Wed Jun 10 09:11:01 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[qwen3_vl-pt]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:54:54 UTC 2026","Wed Jun 10 07:56:16 UTC 2026","82243","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[qwen2-dpo]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:37:47 UTC 2026","Wed Jun 10 09:37:47 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_vl[gemma3_text-sft-vl]","Test full model training workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:05:01 UTC 2026","Wed Jun 10 06:06:19 UTC 2026","77920","scripts.regression","test_models","TestTrain","","","test_full[qwen3-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:41:44 UTC 2026","Wed Jun 10 09:41:44 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora_vl[phi3-sft-vl]","Test LoRA fine-tuning workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:12:58 UTC 2026","Wed Jun 10 07:14:46 UTC 2026","108321","scripts.regression","test_models","TestTrain","","","test_lora[llama-sft]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:38:33 UTC 2026","Wed Jun 10 06:40:02 UTC 2026","88977","scripts.regression","test_models","TestTrain","","","test_full_map[qwen3moe-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:22:10 UTC 2026","Wed Jun 10 07:24:11 UTC 2026","121034","scripts.regression","test_models","TestTrain","","","test_lora[qwen3_next-pt]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:37:47 UTC 2026","Wed Jun 10 09:37:47 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_vl[qwen2-sft-vl]","Test full model training workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:24:11 UTC 2026","Wed Jun 10 07:25:51 UTC 2026","100563","scripts.regression","test_models","TestTrain","","","test_lora[phi3-sft]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:56:53 UTC 2026","Wed Jun 10 06:58:29 UTC 2026","96223","scripts.regression","test_models","TestTrain","","","test_lora[qwen3-sft]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:39:55 UTC 2026","Wed Jun 10 07:41:33 UTC 2026","98193","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[qwen3moe-sft]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:48:31 UTC 2026","Wed Jun 10 08:50:40 UTC 2026","128569","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[qwen3_next-sft]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:45:35 UTC 2026","Wed Jun 10 09:45:35 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_tp_vl[qwen3moe-sft-vl]","Test full training with tensor parallelism for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:15:57 UTC 2026","Wed Jun 10 06:17:17 UTC 2026","80298","scripts.regression","test_models","TestTrain","","","test_full[qwen2-pt]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:27:23 UTC 2026","Wed Jun 10 06:28:39 UTC 2026","75898","scripts.regression","test_models","TestTrain","","","test_full[phi3-dpo]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:34:45 UTC 2026","Wed Jun 10 09:34:45 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_function_call[paddleocr_vl-dpo]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:48:50 UTC 2026","Wed Jun 10 07:50:21 UTC 2026","90587","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[glm4_moe-sft]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:25:51 UTC 2026","Wed Jun 10 09:27:16 UTC 2026","85611","scripts.regression","test_models","TestTrain","","","test_full_function_call[qwen3_next-sft]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:54:44 UTC 2026","Wed Jun 10 06:56:53 UTC 2026","128340","scripts.regression","test_models","TestTrain","","","test_lora[qwen3moe-pt]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 06:38:32 UTC 2026","Wed Jun 10 06:38:32 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full[qwen3_vl-pt]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 06:34:01 UTC 2026","Wed Jun 10 06:34:01 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full[paddleocr_vl-dpo]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:28:51 UTC 2026","Wed Jun 10 09:30:08 UTC 2026","76726","scripts.regression","test_models","TestTrain","","","test_full_function_call[phi3-sft]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:45:35 UTC 2026","Wed Jun 10 09:45:35 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_tp_vl[qwen3_next-sft-vl]","Test full training with tensor parallelism for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:29:47 UTC 2026","Wed Jun 10 08:31:34 UTC 2026","107214","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[qwen3-dpo]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:40:02 UTC 2026","Wed Jun 10 06:41:19 UTC 2026","77726","scripts.regression","test_models","TestTrain","","","test_full_map[qwen3-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:34:45 UTC 2026","Wed Jun 10 09:36:15 UTC 2026","89702","scripts.regression","test_models","TestTrain","","","test_full_function_call[deepseek_v3-sft]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:15:53 UTC 2026","Wed Jun 10 09:17:14 UTC 2026","80797","scripts.regression","test_models","TestTrain","","","test_full_function_call[qwen3-dpo]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:32:27 UTC 2026","Wed Jun 10 07:34:24 UTC 2026","117022","scripts.regression","test_models","TestTrain","","","test_lora[gemma3_text-pt]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:16:35 UTC 2026","Wed Jun 10 07:18:29 UTC 2026","113650","scripts.regression","test_models","TestTrain","","","test_lora[llama-pt]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:41:44 UTC 2026","Wed Jun 10 09:41:44 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora_vl[qwen3-sft-vl]","Test LoRA fine-tuning workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:11:12 UTC 2026","Wed Jun 10 08:12:28 UTC 2026","75669","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[gemma3_text-sft]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:58:30 UTC 2026","Wed Jun 10 09:00:13 UTC 2026","103253","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[phi3-dpo]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 07:34:24 UTC 2026","Wed Jun 10 07:34:24 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora[paddleocr_vl-dpo]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 06:34:01 UTC 2026","Wed Jun 10 06:34:01 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full[paddleocr_vl-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:47:50 UTC 2026","Wed Jun 10 09:47:50 UTC 2026","56","scripts.regression","test_models","TestTrain","","","test_full_fsdp_vl[qwen3_vl-sft-vl]","Test full FSDP training for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:43:14 UTC 2026","Wed Jun 10 07:44:49 UTC 2026","94716","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[qwen3moe-pt]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:00:07 UTC 2026","Wed Jun 10 07:01:51 UTC 2026","104143","scripts.regression","test_models","TestTrain","","","test_lora[qwen3-pt]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 07:39:54 UTC 2026","Wed Jun 10 07:39:54 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora[qwen3_vl-sft]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:05:22 UTC 2026","Wed Jun 10 09:05:22 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[paddleocr_vl-dpo]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:50:40 UTC 2026","Wed Jun 10 08:52:50 UTC 2026","130118","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[qwen3_next-pt]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:27:16 UTC 2026","Wed Jun 10 09:28:51 UTC 2026","94588","scripts.regression","test_models","TestTrain","","","test_full_function_call[qwen3_next-dpo]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:42:43 UTC 2026","Wed Jun 10 06:44:02 UTC 2026","78433","scripts.regression","test_models","TestTrain","","","test_full_map[qwen2-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:37:38 UTC 2026","Wed Jun 10 08:39:25 UTC 2026","106998","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[qwen2-sft]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:28:39 UTC 2026","Wed Jun 10 06:29:53 UTC 2026","73757","scripts.regression","test_models","TestTrain","","","test_full[phi3-pt]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:09:48 UTC 2026","Wed Jun 10 08:11:12 UTC 2026","83920","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[phi3-pt]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:35:38 UTC 2026","Wed Jun 10 08:37:37 UTC 2026","118982","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[glm4_moe-dpo]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:01:53 UTC 2026","Wed Jun 10 09:03:36 UTC 2026","102524","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[gemma3_text-pt]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:47:49 UTC 2026","Wed Jun 10 09:47:49 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_fsdp_vl[gemma3_text-sft-vl]","Test full FSDP training for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:45:35 UTC 2026","Wed Jun 10 09:45:35 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_tp_vl[qwen3-sft-vl]","Test full training with tensor parallelism for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:27:26 UTC 2026","Wed Jun 10 07:29:07 UTC 2026","101154","scripts.regression","test_models","TestTrain","","","test_lora[phi3-pt]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:42:56 UTC 2026","Wed Jun 10 08:44:49 UTC 2026","113193","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[llama-sft]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:14:33 UTC 2026","Wed Jun 10 09:15:53 UTC 2026","80017","scripts.regression","test_models","TestTrain","","","test_full_function_call[qwen3-sft]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:20:10 UTC 2026","Wed Jun 10 06:21:38 UTC 2026","88026","scripts.regression","test_models","TestTrain","","","test_full[llama-pt]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:31:06 UTC 2026","Wed Jun 10 06:32:24 UTC 2026","77578","scripts.regression","test_models","TestTrain","","","test_full[gemma3_text-dpo]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:37:47 UTC 2026","Wed Jun 10 09:37:47 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_vl[phi3-sft-vl]","Test full model training workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:25:51 UTC 2026","Wed Jun 10 07:27:26 UTC 2026","94259","scripts.regression","test_models","TestTrain","","","test_lora[phi3-dpo]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:16:44 UTC 2026","Wed Jun 10 08:18:19 UTC 2026","95720","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[deepseek_v3-dpo]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:37:47 UTC 2026","Wed Jun 10 09:37:47 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_function_call[qwen3_vl-sft]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:41:09 UTC 2026","Wed Jun 10 08:42:56 UTC 2026","107029","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[qwen2-dpo]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:21:38 UTC 2026","Wed Jun 10 06:23:01 UTC 2026","82477","scripts.regression","test_models","TestTrain","","","test_full[qwen3_next-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:32:24 UTC 2026","Wed Jun 10 06:34:01 UTC 2026","96859","scripts.regression","test_models","TestTrain","","","test_full[gemma3_text-pt]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:05:22 UTC 2026","Wed Jun 10 09:07:13 UTC 2026","110751","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[deepseek_v3-sft]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:12:28 UTC 2026","Wed Jun 10 08:13:46 UTC 2026","77719","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[gemma3_text-dpo]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:19:57 UTC 2026","Wed Jun 10 08:22:03 UTC 2026","126606","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[qwen3moe-sft]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:05:27 UTC 2026","Wed Jun 10 08:07:11 UTC 2026","103745","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[qwen3_next-pt]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:03:36 UTC 2026","Wed Jun 10 09:05:22 UTC 2026","106328","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[gemma3_text-dpo]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:31:34 UTC 2026","Wed Jun 10 08:33:33 UTC 2026","118090","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[glm4_moe-sft]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:47:50 UTC 2026","Wed Jun 10 09:47:50 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_fsdp_vl[deepseek_v3-sft-vl]","Test full FSDP training for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 07:34:24 UTC 2026","Wed Jun 10 07:34:24 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora[paddleocr_vl-pt]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:34:45 UTC 2026","Wed Jun 10 09:34:45 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_function_call[paddleocr_vl-sft]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:56:43 UTC 2026","Wed Jun 10 08:58:30 UTC 2026","106529","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[phi3-pt]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:10:24 UTC 2026","Wed Jun 10 06:11:50 UTC 2026","85559","scripts.regression","test_models","TestTrain","","","test_full[glm4_moe-dpo]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:29:53 UTC 2026","Wed Jun 10 06:31:06 UTC 2026","73682","scripts.regression","test_models","TestTrain","","","test_full[gemma3_text-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:26:16 UTC 2026","Wed Jun 10 08:27:59 UTC 2026","102895","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[qwen3-sft]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:47:49 UTC 2026","Wed Jun 10 09:47:49 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_fsdp_vl[phi3-sft-vl]","Test full FSDP training for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:24:27 UTC 2026","Wed Jun 10 06:26:06 UTC 2026","98766","scripts.regression","test_models","TestTrain","","","test_full[qwen3_next-pt]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:11:50 UTC 2026","Wed Jun 10 06:13:21 UTC 2026","90711","scripts.regression","test_models","TestTrain","","","test_full[glm4_moe-pt]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:23:01 UTC 2026","Wed Jun 10 06:24:27 UTC 2026","86783","scripts.regression","test_models","TestTrain","","","test_full[qwen3_next-dpo]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 06:50:36 UTC 2026","Wed Jun 10 06:50:36 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_map[qwen3_vl-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:00:13 UTC 2026","Wed Jun 10 09:01:53 UTC 2026","100244","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[gemma3_text-sft]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:03:21 UTC 2026","Wed Jun 10 06:05:01 UTC 2026","99943","scripts.regression","test_models","TestTrain","","","test_full[qwen3moe-pt]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:29:07 UTC 2026","Wed Jun 10 07:30:45 UTC 2026","98331","scripts.regression","test_models","TestTrain","","","test_lora[gemma3_text-sft]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:36:15 UTC 2026","Wed Jun 10 09:37:47 UTC 2026","91818","scripts.regression","test_models","TestTrain","","","test_full_function_call[deepseek_v3-dpo]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 09:24:19 UTC 2026","Wed Jun 10 09:25:50 UTC 2026","91177","scripts.regression","test_models","TestTrain","","","test_full_function_call[llama-dpo]","Test full training with function calling support for text models.
+
+        Args:
+            train_type: Training type (sft, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:58:29 UTC 2026","Wed Jun 10 07:00:07 UTC 2026","98038","scripts.regression","test_models","TestTrain","","","test_lora[qwen3-dpo]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:14:40 UTC 2026","Wed Jun 10 06:15:56 UTC 2026","76335","scripts.regression","test_models","TestTrain","","","test_full[qwen2-dpo]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:30:45 UTC 2026","Wed Jun 10 07:32:27 UTC 2026","101955","scripts.regression","test_models","TestTrain","","","test_lora[gemma3_text-dpo]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:41:44 UTC 2026","Wed Jun 10 09:41:44 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_lora_vl[gemma3_text-sft-vl]","Test LoRA fine-tuning workflow for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"skipped","Wed Jun 10 09:45:35 UTC 2026","Wed Jun 10 09:45:35 UTC 2026","0","scripts.regression","test_models","TestTrain","","","test_full_tp_vl[gemma3_text-sft-vl]","Test full training with tensor parallelism for VL models.
+
+        Args:
+            train_type: Training type (sft-vl, dpo-vl).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 08:52:50 UTC 2026","Wed Jun 10 08:54:55 UTC 2026","124772","scripts.regression","test_models","TestTrain","","","test_lora_tp_pp[qwen3_next-dpo]","Test LoRA training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, pt, dpo).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:46:48 UTC 2026","Wed Jun 10 06:48:01 UTC 2026","73845","scripts.regression","test_models","TestTrain","","","test_full_map[phi3-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:59:05 UTC 2026","Wed Jun 10 08:00:33 UTC 2026","88122","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[llama-dpo]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 06:44:02 UTC 2026","Wed Jun 10 06:45:26 UTC 2026","84142","scripts.regression","test_models","TestTrain","","","test_full_map[llama-sft]","Test full model training workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:18:29 UTC 2026","Wed Jun 10 07:20:17 UTC 2026","107383","scripts.regression","test_models","TestTrain","","","test_lora[qwen3_next-sft]","Test LoRA fine-tuning workflow for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
+"passed","Wed Jun 10 07:41:33 UTC 2026","Wed Jun 10 07:43:14 UTC 2026","100979","scripts.regression","test_models","TestTrain","","","test_full_tp_pp[qwen3moe-dpo]","Test full training with tensor and pipeline parallelism for text models.
+
+        Args:
+            train_type: Training type (sft, dpo, pt).
+            model_key: Model identifier from pytest parametrization.
+            request: Pytest request fixture.
+        "
