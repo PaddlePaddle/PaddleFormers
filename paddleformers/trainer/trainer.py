@@ -173,6 +173,7 @@ from .trainer_callback import (
     InterleaveGateUpCallback,
     PrinterCallback,
     ProgressCallback,
+    SonicMoELayoutSwitchCallback,
     SPGradSyncCallback,
     TrainerCallback,
     TrainerControl,
@@ -1648,8 +1649,10 @@ class Trainer:
             self.add_non_zcc_ema_callback(resume_from_checkpoint)
 
         if self.args.using_sonic_moe:
-            callback = InterleaveGateUpCallback(self.model, resume_from_checkpoint, self.args.output_dir)
-            self.add_callback(callback)
+            # callback = InterleaveGateUpCallback(self.model, resume_from_checkpoint, self.args.output_dir)
+            # self.add_callback(callback)
+            print("==== add sonicmoe callback ====")
+            self.add_callback(SonicMoELayoutSwitchCallback())
 
         self.log_trainable_numel(model)
 

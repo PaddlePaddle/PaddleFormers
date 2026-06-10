@@ -820,8 +820,8 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 aoa_config["aoa_statements"] += [
-                    f"{group_gemm1} -> {tgt_prefix}.mlp.grouped_gemm_experts.weight1, axis=0"
-                    f"{group_gemm2} -> {tgt_prefix}.mlp.grouped_gemm_experts.weight2, axis=0"
+                    f"{group_gemm1} -> {tgt_prefix}.mlp.grouped_gemm_experts.weight1, axis=0",
+                    f"{group_gemm2} -> {tgt_prefix}.mlp.grouped_gemm_experts.weight2, axis=0",
                 ]
         else:
             if config.get("fd_fallback", False):
@@ -903,8 +903,8 @@ class Qwen3MoePretrainedModel(PretrainedModel):
                 group_gemm1 = ",".join(ep_weight1)
                 group_gemm2 = ",".join(ep_weight2)
                 aoa_statements += [
-                    f"{model_prefix}layers.{layer_id}.mlp.grouped_gemm_experts.weight1 -> {group_gemm1}, axis=0"
-                    f"{model_prefix}layers.{layer_id}.mlp.grouped_gemm_experts.weight2 -> {group_gemm2}, axis=0"
+                    f"{model_prefix}layers.{layer_id}.mlp.grouped_gemm_experts.weight1 -> {group_gemm1}, axis=0",
+                    f"{model_prefix}layers.{layer_id}.mlp.grouped_gemm_experts.weight2 -> {group_gemm2}, axis=0",
                 ]
         else:
             if config.get("fd_fallback", False):
