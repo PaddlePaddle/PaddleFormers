@@ -55,6 +55,7 @@ IMAGE_PROCESSOR_MAPPING_NAMES.update(
         "glm4v_moe": ("Glm4vImageProcessor", "Glm4vImageProcessorFast"),
         "kimi_k25": ("KimiK25VisionProcessor"),
         "paddleocr_vl": ("PaddleOCRVLImageProcessor"),
+        "phi4_multimodal": ("Phi4MultimodalImageProcessor"),
         "qwen2_5_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen2_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen3_vl": ("Qwen3VLImageProcessor", "Qwen3VLImageProcessorFast"),
@@ -68,6 +69,9 @@ IMAGE_PROCESSOR_MAPPING = _LazyAutoMapping(CONFIG_MAPPING_NAMES, IMAGE_PROCESSOR
 
 
 def get_image_processor_class_from_name(class_name: str):
+    if class_name == "Phi4MMImageProcessor":
+        class_name = "Phi4MultimodalImageProcessor"
+
     if class_name == "BaseImageProcessorFast":
         return BaseImageProcessorFast
 

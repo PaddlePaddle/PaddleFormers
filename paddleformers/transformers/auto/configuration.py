@@ -56,6 +56,10 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("minimax_m2", "MiniMaxM2Config"),
         ("gpt_oss", "GptOssConfig"),
         ("phi3", "Phi3Config"),
+        ("phi4mm", "Phi4MultimodalConfig"),
+        ("phi4_multimodal", "Phi4MultimodalConfig"),
+        ("phi4_multimodal_audio", "Phi4MultimodalAudioConfig"),
+        ("phi4_multimodal_vision", "Phi4MultimodalVisionConfig"),
         ("gemma3_text", "Gemma3TextConfig"),
         ("glm4v_moe", "Glm4vMoeConfig"),
         ("glm_ocr", "GlmOcrConfig"),
@@ -87,6 +91,9 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_vl_moe", "Qwen3VLMoe"),
         ("qwen3_vl_moe_text", "Qwen3VLMoeText"),
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
+        ("phi4_multimodal", "Phi4Multimodal"),
+        ("phi4_multimodal_audio", "Phi4MultimodalAudio"),
+        ("phi4_multimodal_vision", "Phi4MultimodalVision"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
     ]
@@ -100,6 +107,9 @@ MULTI_MODELS_MAPPING = OrderedDict(
 SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
     [
         ("qwen2_5_vl_text", "qwen2_5_vl"),
+        ("phi4_multimodal_audio", "phi4_multimodal"),
+        ("phi4_multimodal_vision", "phi4_multimodal"),
+        ("phi4mm", "phi4_multimodal"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
     ]

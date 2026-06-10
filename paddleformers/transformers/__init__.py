@@ -314,6 +314,27 @@ import_structure = {
     "phi3.configuration": ["Phi3Config"],
     "phi3.tokenizer": ["Phi3Tokenizer"],
     "phi3.modeling": ["Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
+    "phi4_multimodal.configuration": [
+        "Phi4MultimodalAudioConfig",
+        "Phi4MultimodalConfig",
+        "Phi4MultimodalVisionConfig",
+    ],
+    "phi4_multimodal.feature_extraction": ["Phi4MultimodalFeatureExtractor"],
+    "phi4_multimodal.image_processor": ["Phi4MultimodalImageProcessor"],
+    "phi4_multimodal.modeling": [
+        "Phi4Multimodal",
+        "Phi4MultimodalAudio",
+        "Phi4MultimodalAudioModel",
+        "Phi4MultimodalAudioPreTrainedModel",
+        "Phi4MultimodalForCausalLM",
+        "Phi4MultimodalForConditionalGeneration",
+        "Phi4MultimodalModel",
+        "Phi4MultimodalPreTrainedModel",
+        "Phi4MultimodalVision",
+        "Phi4MultimodalVisionModel",
+        "Phi4MultimodalVisionPreTrainedModel",
+    ],
+    "phi4_multimodal.processor": ["Phi4MultimodalProcessor"],
     "glm4v_moe.configuration": ["Glm4vMoeConfig", "Glm4vMoeTextConfig", "Glm4vMoeVisionConfig"],
     "glm4v_moe.modeling": [
         "Glm4vMoeForConditionalGeneration",
@@ -408,6 +429,7 @@ if TYPE_CHECKING:
     from .minimax_m2 import *
     from .gpt_oss import *
     from .phi3 import *
+    from .phi4_multimodal import *
     from .gemma3_text import *
     from .glm_ocr import *
 else:

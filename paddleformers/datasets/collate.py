@@ -625,6 +625,13 @@ def mm_collate_fn(
         input_keys.append("video_grid_thw")
         input_keys.append("input_features")
         input_keys.append("feature_attention_mask")
+        input_keys.append("image_pixel_values")
+        input_keys.append("image_sizes")
+        input_keys.append("image_attention_mask")
+        input_keys.append("audio_input_features")
+        input_keys.append("audio_embed_sizes")
+        input_keys.append("audio_attention_mask")
+        input_keys.append("input_mode")
 
     if training_args.num_nextn_predict_layers > 0:
         input_keys.append("nbatch_pack_offset")
@@ -652,6 +659,13 @@ def mm_collate_fn(
         video_grid_thw = []
         input_features = []
         feature_attention_mask = []
+        image_pixel_values = []
+        image_sizes = []
+        image_attention_mask = []
+        audio_input_features = []
+        audio_embed_sizes = []
+        audio_attention_mask = []
+        input_mode = []
         for seq in batch_sequence:
             original_token_ids.append(seq.token_ids)
             mm_inputs = seq.mm_inputs
@@ -667,6 +681,20 @@ def mm_collate_fn(
                 input_features.append(mm_inputs["input_features"])
             if "feature_attention_mask" in mm_inputs:
                 feature_attention_mask.append(mm_inputs["feature_attention_mask"])
+            if "image_pixel_values" in mm_inputs:
+                image_pixel_values.append(mm_inputs["image_pixel_values"])
+            if "image_sizes" in mm_inputs:
+                image_sizes.append(mm_inputs["image_sizes"])
+            if "image_attention_mask" in mm_inputs:
+                image_attention_mask.append(mm_inputs["image_attention_mask"])
+            if "audio_input_features" in mm_inputs:
+                audio_input_features.append(mm_inputs["audio_input_features"])
+            if "audio_embed_sizes" in mm_inputs:
+                audio_embed_sizes.append(mm_inputs["audio_embed_sizes"])
+            if "audio_attention_mask" in mm_inputs:
+                audio_attention_mask.append(mm_inputs["audio_attention_mask"])
+            if "input_mode" in mm_inputs:
+                input_mode.append(mm_inputs["input_mode"])
             if get_rope_func is not None:
                 filtered_args = {k: paddle.to_tensor(mm_inputs[k]) for k in func_params if k in mm_inputs}
                 total_input_ids = paddle.to_tensor([seq.token_ids])
@@ -712,6 +740,20 @@ def mm_collate_fn(
             input_features = paddle.concat(input_features, axis=0)
         if len(feature_attention_mask) > 0:
             feature_attention_mask = paddle.concat(feature_attention_mask, axis=0)
+        if len(image_pixel_values) > 0:
+            image_pixel_values = paddle.concat(image_pixel_values, axis=0)
+        if len(image_sizes) > 0:
+            image_sizes = paddle.concat(image_sizes, axis=0)
+        if len(image_attention_mask) > 0:
+            image_attention_mask = paddle.concat(image_attention_mask, axis=0)
+        if len(audio_input_features) > 0:
+            audio_input_features = paddle.concat(audio_input_features, axis=0)
+        if len(audio_embed_sizes) > 0:
+            audio_embed_sizes = paddle.concat(audio_embed_sizes, axis=0)
+        if len(audio_attention_mask) > 0:
+            audio_attention_mask = paddle.concat(audio_attention_mask, axis=0)
+        if len(input_mode) > 0:
+            input_mode = paddle.concat(input_mode, axis=0)
         if get_token_type_func is not None:  # ernie45vl
             bs_idx_in_rope = 0
             padded_position_ids = padded_position_ids.transpose([1, 2, 0])
@@ -736,6 +778,13 @@ def mm_collate_fn(
                     video_grid_thw,
                     input_features,
                     feature_attention_mask,
+                    image_pixel_values,
+                    image_sizes,
+                    image_attention_mask,
+                    audio_input_features,
+                    audio_embed_sizes,
+                    audio_attention_mask,
+                    input_mode,
                 ]
             )
 

@@ -618,6 +618,7 @@ class BaseSFTDataset:
 
             # label shift
             labels = labels[1:] + [-100]
+            labels = self._mask_mm_token_labels(tokens, labels)
 
             pos_ids = list(range(len(tokens)))  # only pure text, mm_position_ids will be reconstructed in collate.py
 
@@ -808,6 +809,7 @@ class BaseSFTDataset:
 
         # label shift
         labels = labels[1:] + [-100]
+        labels = self._mask_mm_token_labels(tokens, labels)
 
         pos_ids = list(range(len(tokens)))
 
@@ -886,6 +888,27 @@ class BaseSFTDataset:
         labels = [labels[i] for i in keep_idx]
 
         return input_ids, labels
+
+    def _mask_mm_token_labels(self, tokens, labels):
+        if not self.use_template or self.template_backend == "jinja" or self.template is None:
+            return labels
+
+        mm_plugin = getattr(self.template, "mm_plugin", None)
+        if not getattr(mm_plugin, "mask_mm_token_labels", False):
+            return labels
+
+        mm_tokens = [token for token in [mm_plugin.image_token, mm_plugin.audio_token] if token is not None]
+        if not mm_tokens:
+            return labels
+
+        mm_token_ids = self.tokenizer.convert_tokens_to_ids(mm_tokens)
+        if not isinstance(mm_token_ids, list):
+            mm_token_ids = [mm_token_ids]
+        mm_token_ids = {token_id for token_id in mm_token_ids if token_id is not None}
+        for i, token in enumerate(tokens):
+            if token in mm_token_ids or labels[i] in mm_token_ids:
+                labels[i] = -100
+        return labels
 
     def _encode_truncated(self, input_ids, labels):
         length = self._get_length(input_ids, labels)

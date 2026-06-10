@@ -49,6 +49,7 @@ from .tokenizer import AutoTokenizer
 PROCESSOR_MAPPING_NAMES = OrderedDict(
     [
         ("kimi_k25", "KimiK25Processor"),
+        ("phi4_multimodal", "Phi4MultimodalProcessor"),
         ("qwen2_5_vl", "Qwen2_5_VLProcessor"),
         ("qwen3_vl", "Qwen3VLProcessor"),
         ("qwen2_vl", "Qwen2VLProcessor"),
@@ -64,6 +65,9 @@ PROCESSOR_MAPPING = _LazyAutoMapping(CONFIG_MAPPING_NAMES, PROCESSOR_MAPPING_NAM
 
 
 def processor_class_from_name(class_name: str):
+    if class_name == "Phi4MMProcessor":
+        class_name = "Phi4MultimodalProcessor"
+
     for module_name, extractors in PROCESSOR_MAPPING_NAMES.items():
         if class_name in extractors:
             module_name = model_type_to_module_name(module_name)
