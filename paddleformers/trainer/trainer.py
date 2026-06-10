@@ -2083,7 +2083,10 @@ class Trainer:
                 and isinstance(self.model, FleetGPTModel)
                 and get_batch_on_this_cp_rank is not None
             ):
-                inputs = get_batch_on_this_cp_rank(inputs)
+                inputs = get_batch_on_this_cp_rank(
+                    inputs,
+                    cp_balance_mode=getattr(self.args, "cp_balance_mode", "dualchunk_allgather"),
+                )
 
             if self.args.ignore_data_skip:
                 self.timers and self.timers("read-data").stop()
@@ -2887,15 +2890,32 @@ class Trainer:
                     DSAIndexerLossLoggingHelper,
                 )
 
-                if DSAIndexerLossLoggingHelper.tracker.get("values") is not None:
-                    loss_scale = 1.0 / self.args.gradient_accumulation_steps
-                    DSAIndexerLossLoggingHelper.reduce_loss_in_tracker()
-                    tracker = DSAIndexerLossLoggingHelper.tracker
-                    indexer_loss_values = tracker["values"] * loss_scale
-                    num_layers = indexer_loss_values.shape[0]
-                    avg_indexer_loss = indexer_loss_values.sum() / num_layers
-                    logs["indexer_loss"] = avg_indexer_loss.item()
-                    DSAIndexerLossLoggingHelper.clean_loss_in_tracker()
+                config = getattr(self.model, "config", None)
+                num_layers = None
+                csa_compress_ratios = None
+                if config is not None:
+                    num_layers = config.num_hidden_layers + (
+                        getattr(config, "mtp_num_layers", 0) or getattr(config, "num_nextn_predict_layers", 0)
+                    )
+                    csa_compress_ratios = getattr(config, "csa_compress_ratios", None)
+                loss_scale = 1.0 / self.args.gradient_accumulation_steps
+                try:
+                    DSAIndexerLossLoggingHelper.track_indexer_metrics(
+                        loss_scale=loss_scale,
+                        iteration=self.state.global_step,
+                        total_loss_dict=logs,
+                        num_layers=num_layers,
+                        csa_compress_ratios=csa_compress_ratios,
+                    )
+                except TypeError:
+                    if DSAIndexerLossLoggingHelper.tracker.get("values") is not None:
+                        DSAIndexerLossLoggingHelper.track_indexer_metrics(
+                            loss_scale=loss_scale,
+                            iteration=self.state.global_step,
+                            total_loss_dict=logs,
+                        )
+                if "indexer loss" in logs:
+                    logs["indexer_loss"] = logs.pop("indexer loss").item()
             except (ImportError, AttributeError):
                 pass
 
@@ -3328,11 +3348,9 @@ class Trainer:
         Trainer's init through `optimizers`, or subclass and override this method in a subclass.
         """
         if self.optimizer is None:
-            if self.optimizer_grouped_parameters is not None:
-                params = self.optimizer_grouped_parameters
-                apply_decay_param_fun = None
-            else:
-                params = [p for p in self.model.parameters() if not p.stop_gradient]
+
+            def _build_apply_decay_param_fun():
+                # Keep the default AdamW behavior: apply weight decay to all trainable parameters except bias and norm.
                 decay_parameters = [
                     p.name
                     for n, p in self.model.named_parameters()
@@ -3341,6 +3359,20 @@ class Trainer:
 
                 def apply_decay_param_fun(x):
                     return x in decay_parameters
+
+                return apply_decay_param_fun
+
+            if self.optimizer_grouped_parameters is not None:
+                params = self.optimizer_grouped_parameters
+                # A plain list only customizes the trainable set, so it should still use the default decay filter.
+                # But dict may define per-group weight_decay explicitly, so do not override.
+                is_param_group_dict = (
+                    isinstance(params, (list, tuple)) and len(params) > 0 and isinstance(params[0], dict)
+                )
+                apply_decay_param_fun = None if is_param_group_dict else _build_apply_decay_param_fun()
+            else:
+                params = [p for p in self.model.parameters() if not p.stop_gradient]
+                apply_decay_param_fun = _build_apply_decay_param_fun()
 
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
             if self.args.optim == OptimizerNames.ADAMW_CUSTOM:

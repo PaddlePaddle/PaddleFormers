@@ -633,7 +633,7 @@ class ZeroCostCheckpointCallback(TrainerCallback):
             non_cached_objects = (lr_scheduler.state_dict(), state, self.get_rng_states(args))
             self.manager.get_idle_worker_for_saving((save_infos, non_cached_objects))
             self.runtime_timer.stop()
-            if not isinstance(model, PipelineLayer):
+            if not (args.pipeline_model_parallel_size > 1 and isinstance(model, PipelineLayer)):
                 self.manager.zcc_pipeline_hook(0)
 
     def get_rng_states(self, args):
@@ -2313,7 +2313,7 @@ class ZeroCostCheckpointCallbackFcBased(ZeroCostCheckpointCallback):
                 ema_master_weights_sharded,
                 self.ckpt_data_name,
                 process_group=meta_group,
-                replicate_saved_into_local=self.args.replicate_saved_into_local,
+                replicate_saved_into_local=True,
             )
         else:
             self.ema_master_weight_ckpt_meta = None

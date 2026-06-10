@@ -173,12 +173,14 @@ jobs:
       - name: Display Test Summary
         if: always()
         run: |
+          file_success=${{ github.workspace }}/PaddleFormers/unittest_logs/unittest.log
+          file_failed=${{ github.workspace }}/PaddleFormers/unittest_logs/unittest_FAIL.log
           if [[ "${{ steps.test.outcome }}" == "success" ]]; then
             echo "✅ Test passed successfully"
-            tail -n 1 ${{ github.workspace }}/PaddleFormers/unittest_logs/unittest.log || true
+            tail -n 1 ${file_success} || true
           else
             echo "❌ Test failed with status: ${{ steps.test.outcome }}"
-            cat ${{ github.workspace }}/PaddleFormers/unittest_logs/unittest_FAIL.log || true
+            grep "^FAILED tests" ${file_failed} | awk '{print $2}' | sort -u || true
           fi
       - name: Upload Products
         if: always()

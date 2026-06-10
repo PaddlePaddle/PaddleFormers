@@ -47,23 +47,47 @@ install_requirements() {
     python setup.py bdist_wheel > /dev/null
     if [ $FLAGS_enable_CE == "true" ];then
         python -m pip install dist/*.whl 
-        #fleet
+        #fleet develop
         python -m pip install --pre paddlefleet --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
-        #paddlefleet_ops
-        wget -q https://paddle-whl.bj.bcebos.com/nightly/cu129/paddlefleet-ops/paddlefleet_ops-0.3.0.dev20260604+02aed7c3-cp312-cp312-linux_x86_64.whl
-        pip install  paddlefleet_ops-0.3.0.dev20260604+02aed7c3-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ -i https://pypi.org/simple 
-        # python -m pip install --pre paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+        #paddlefleet_ops develop
+        echo "Download PaddleFleet form https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar"
+        wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar --no-check-certificate
+        rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
+        local commit=$(python -c "import paddlefleet; print(paddlefleet.version.commit)" 2>/dev/null || echo "")
+        if [[ -z "${commit}" ]]; then
+            echo "Warning: failed to get paddlefleet commit from env, skip git reset"
+        else
+            echo "Reset PaddleFleet to commit: ${commit}"
+        fi
+        cd PaddleFleet
+        if [[ -n "${commit}" ]]; then
+            git reset --hard ${commit}
+        fi
+        bash scripts/install_ops_wheel.sh
+        cd -
+        #paddle develop
         python -m pip uninstall paddlepaddle-gpu -y
-        #paddle
         wget -q $paddle
         python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ 
-
     else
+        # fleet_locked paddle_locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
-        #paddlefleet_ops
-        wget -q https://paddle-whl.bj.bcebos.com/nightly/cu129/paddlefleet-ops/paddlefleet_ops-0.3.0.dev20260604+02aed7c3-cp312-cp312-linux_x86_64.whl
-        pip install  paddlefleet_ops-0.3.0.dev20260604+02aed7c3-cp312-cp312-linux_x86_64.whl --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ -i https://pypi.org/simple 
-        # python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+        #paddlefleet_ops for fleet_locked
+        echo "Download PaddleFleet form https://paddle-qa.bj.bcebos.com/CodeSync/release/0.3/PaddleFleet.tar"
+        wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/release/0.3/PaddleFleet.tar --no-check-certificate
+        rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
+        local commit=$(python -c "import paddlefleet; print(paddlefleet.version.commit)" 2>/dev/null || echo "")
+        if [[ -z "${commit}" ]]; then
+            echo "Warning: failed to get paddlefleet commit from env, skip git reset"
+        else
+            echo "Reset PaddleFleet to commit: ${commit}"
+        fi
+        cd PaddleFleet
+        if [[ -n "${commit}" ]]; then
+            git reset --hard ${commit}
+        fi
+        bash scripts/install_ops_wheel.sh
+        cd -
     fi
     pip install -r tests/requirements.txt -i https://pypi.org/simple 
 
@@ -106,6 +130,7 @@ print_info() {
     if [ $1 -ne 0 ]; then
         cat ${log_path}/unittest.log | grep -v "Fail to fscanf: Success" \
             | grep -v "SKIPPED" | grep -v "warning" > ${log_path}/unittest_FAIL.log
+        cat ${log_path}/unittest_FAIL.log
         tail -n 1 ${log_path}/unittest.log >> ${log_path}/unittest_FAIL.log
         echo -e "\033[31m ${log_path}/unittest_FAIL \033[0m"
         tail -n 1 ${log_path}/unittest_FAIL.log
