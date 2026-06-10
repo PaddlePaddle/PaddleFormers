@@ -199,13 +199,5 @@ install_ops_wheel_release(){
     cd -
 }
 
-install_ops_wheel_release(){
-    echo "Download PaddleFleet form https://paddle-qa.bj.bcebos.com/CodeSync/release/0.3/PaddleFleet.tar"
-    wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/release/0.3/PaddleFleet.tar --no-check-certificate
-    rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
-    cd PaddleFleet && bash scripts/install_ops_wheel.sh
-    cd -
-}
-
 # Call the function with the first argument (ce_branch), default to "false" for CI env: Cuda126+Python310
 install_requirements "${1:-false}"
