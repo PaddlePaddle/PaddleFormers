@@ -712,10 +712,56 @@ def enable_in_dict_config(config, key):
 skip_count = 0
 
 
+_FP8_STORAGE_COLORS = (
+    "moe_expert",
+    "rms_linear",
+    "memory_attn",
+    "attn_out_project",
+    "shared_expert",
+)
+
+
+def _clear_fp8_param_storage(optimizer, colors=None):
+    colors = _FP8_STORAGE_COLORS if colors is None else colors
+    for color in colors:
+        optimizer.clear_param_storage(color)
+
+
+def _get_moe_expert_param_names(optimizer):
+    inner_opt = getattr(optimizer, "_inner_opt", optimizer)
+    parameters = getattr(inner_opt, "_parameter_list", ())
+    names = []
+    for param in parameters:
+        color = getattr(param, "color", -1)
+        if isinstance(color, dict) and color.get("color") == "moe_expert":
+            names.append(param.name)
+    return names
+
+
+def _offload_moe_expert_master_weights(optimizer):
+    master_weights = getattr(optimizer, "_master_weights", {})
+    moe_weights_name = _get_moe_expert_param_names(optimizer)
+    for name in moe_weights_name:
+        # NOTE(Waynezee): when moe_sharding_degree > 1, experts parameter's master_weight may exist in ranks of another moe_sharding_rank.
+        if name in master_weights:
+            offload(master_weights[name])
+    return moe_weights_name
+
+
+def _reload_moe_expert_master_weights(optimizer, moe_weights_name):
+    master_weights = getattr(optimizer, "_master_weights", {})
+    for name in moe_weights_name:
+        if name in master_weights:
+            reload(master_weights[name])
+
+
 class FP8QuantWeightCallback(TrainerCallback):
     """
     Callback for FP8 weight quantization during training
     """
+
+    def __init__(self):
+        self.moe_weights_name = []
 
     def on_step_begin(self, args, state, control, **kwargs):
         """
@@ -739,23 +785,13 @@ class FP8QuantWeightCallback(TrainerCallback):
                 self.use_fp8 = model.use_fp8()
             if not self.use_fp8:
                 return
-            model.fp8_quant_weight(True, quant_transpose=False)
-            optimizer.clear_param_storage("moe_expert")
-            optimizer.clear_param_storage("rms_linear")
-            optimizer.clear_param_storage("memory_attn")
-            optimizer.clear_param_storage("attn_out_project")
-            optimizer.clear_param_storage("shared_expert")
-            if not args.offload_fp8_expert_master_weight:
+            model.fp8_quant_weight(True, quant_transpose=True)
+            _clear_fp8_param_storage(optimizer)
+            if not getattr(args, "offload_fp8_expert_master_weight", False):
                 return
-            for param in optimizer._inner_opt._parameter_list:
-                color = getattr(param, "color", -1)
-                if isinstance(color, dict) and color["color"] == "moe_expert":
-                    self.moe_weights_name.append(param.name)
-
-            for name in self.moe_weights_name:
-                # NOTE(Waynezee): when moe_sharding_degree > 1, experts parameter's master_weight may exist in ranks of another moe_sharding_rank.
-                if name in optimizer._master_weights:
-                    offload(optimizer._master_weights[name])
+            self.moe_weights_name = _offload_moe_expert_master_weights(
+                optimizer
+            )
 
         skip_count += 1
 
@@ -775,9 +811,9 @@ class FP8QuantWeightCallback(TrainerCallback):
             and hasattr(model, "fp8_quant_weight")
             and not args.sharding_parallel_size <= 1
         ):
-            for name in self.moe_weights_name:
-                if name in optimizer._master_weights:
-                    reload(optimizer._master_weights[name])
+            _reload_moe_expert_master_weights(
+                optimizer, self.moe_weights_name
+            )
 
 
 class MoECorrectionBiasAdjustCallback(TrainerCallback):
@@ -1012,6 +1048,10 @@ class EMAStateAssemblerCallback(TrainerCallback):
 
 
 class SonicMoELayoutSwitchCallback(TrainerCallback):
+    def __init__(self):
+        self._expert_storage_cleared = False
+        self.moe_weights_name = []
+
     def _apply_to_sonic_moe_experts(self, model, fn_name):
         def apply_layout_switch(layer):
             if isinstance(layer, SonicMoEExpert):
@@ -1020,6 +1060,8 @@ class SonicMoELayoutSwitchCallback(TrainerCallback):
         model.apply(apply_layout_switch)
 
     def _prepare_sonic_moe_fp8_weights(self, model):
+        SonicMoEExpert.clear_fp8_weight_cache()
+
         def prepare_fp8_weights(layer):
             if isinstance(layer, SonicMoEExpert):
                 layer.convert_weights_to_sonic_layout()
@@ -1029,13 +1071,55 @@ class SonicMoELayoutSwitchCallback(TrainerCallback):
 
     def on_step_begin(self, args, state, control, **kwargs):
         if args.using_sonic_moe:
-            self._prepare_sonic_moe_fp8_weights(kwargs["model"])
-            # kwargs["optimizer"].clear_param_storage("moe_expert")
+            self._expert_storage_cleared = False
+            self.moe_weights_name = []
+            if args.fp8:
+                self._prepare_sonic_moe_fp8_weights(kwargs["model"])
+                optimizer = kwargs.get("optimizer")
+                clear_storage = os.environ.get(
+                    "SONIC_MOE_CLEAR_FP8_STORAGE", "1"
+                )
+                if (
+                    clear_storage != "0"
+                    and optimizer is not None
+                    and not args.sharding_parallel_size <= 1
+                ):
+                    colors = None
+                    if clear_storage != "1":
+                        colors = tuple(
+                            color.strip()
+                            for color in clear_storage.split(",")
+                            if color.strip()
+                        )
+                    effective_colors = (
+                        _FP8_STORAGE_COLORS if colors is None else colors
+                    )
+                    _clear_fp8_param_storage(optimizer, effective_colors)
+                    self._expert_storage_cleared = (
+                        "moe_expert" in effective_colors
+                    )
+                    offload_master_weight = getattr(
+                        args, "offload_fp8_expert_master_weight", False
+                    )
+                    if self._expert_storage_cleared and offload_master_weight:
+                        self.moe_weights_name = (
+                            _offload_moe_expert_master_weights(optimizer)
+                        )
+            else:
+                self._apply_to_sonic_moe_experts(
+                    kwargs["model"], "convert_weights_to_sonic_layout"
+                )
 
     def on_optimizer_begin(self, args, state, control, **kwargs):
         if args.using_sonic_moe:
-            self._apply_to_sonic_moe_experts(kwargs["model"], "convert_weights_to_grouped_layout")
-
+            if getattr(args, "offload_fp8_expert_master_weight", False):
+                _reload_moe_expert_master_weights(
+                    kwargs["optimizer"], self.moe_weights_name
+                )
+            if not self._expert_storage_cleared:
+                self._apply_to_sonic_moe_experts(
+                    kwargs["model"], "convert_weights_to_grouped_layout"
+                )
 
 class InterleaveGateUpCallback(TrainerCallback):
     def __init__(self, model, resume_from_checkpoint=None, output_dir=None):
