@@ -139,7 +139,7 @@ install_requirements() {
         #fleet paddle locked
         pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/
         #paddlefleet_ops
-        install_ops_wheel_dev
+        install_ops_wheel_release
     fi
     python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
 
@@ -167,7 +167,35 @@ install_ops_wheel_dev(){
     echo "Download PaddleFleet form https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar"
     wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/develop/PaddleFleet.tar --no-check-certificate
     rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
-    cd PaddleFleet && bash scripts/install_ops_wheel.sh
+    local commit=$(python -c "import paddlefleet; print(paddlefleet.version.commit)" 2>/dev/null || echo "")
+    if [[ -z "${commit}" ]]; then
+        echo "Warning: failed to get paddlefleet commit from env, skip git reset"
+    else
+        echo "Reset PaddleFleet to commit: ${commit}"
+    fi
+    cd PaddleFleet
+    if [[ -n "${commit}" ]]; then
+        git reset --hard ${commit}
+    fi
+    bash scripts/install_ops_wheel.sh
+    cd -
+}
+
+install_ops_wheel_release(){
+    echo "Download PaddleFleet form https://paddle-qa.bj.bcebos.com/CodeSync/release/0.3/PaddleFleet.tar"
+    wget -q --no-proxy  https://paddle-qa.bj.bcebos.com/CodeSync/release/0.3/PaddleFleet.tar --no-check-certificate
+    rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
+    local commit=$(python -c "import paddlefleet; print(paddlefleet.version.commit)" 2>/dev/null || echo "")
+    if [[ -z "${commit}" ]]; then
+        echo "Warning: failed to get paddlefleet commit from env, skip git reset"
+    else
+        echo "Reset PaddleFleet to commit: ${commit}"
+    fi
+    cd PaddleFleet
+    if [[ -n "${commit}" ]]; then
+        git reset --hard ${commit}
+    fi
+    bash scripts/install_ops_wheel.sh
     cd -
 }
 
