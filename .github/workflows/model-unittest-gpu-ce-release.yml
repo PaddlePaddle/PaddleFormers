@@ -9,7 +9,6 @@ on:
     - cron: "0 18 * * 5"
     - cron: "0 21 * * 5"
     - cron: "0 23 * * 5"
-    - cron: "0 1 * * 6"
   workflow_dispatch:
     inputs:
       update_baseline_models:
@@ -33,7 +32,7 @@ on:
           - 'paddleocr_vl'
       FLAGS_enable_CE:
         required: false
-        default: 'CE_Release_cu132_py312'
+        default: 'CE_Release_cu129_py312_nightly'
         type: choice
         options:
           - 'CE_Release_cu129_py312_nightly'
@@ -43,7 +42,6 @@ on:
           - 'CE_Release_cu130_py311'
           - 'CE_Release_cu129_py313'
           - 'CE_Release_cu129_py312_weekly'
-          - 'CE_Release_cu126_py310'
 
 concurrency:
   group: model-unittest-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
@@ -104,8 +102,6 @@ jobs:
           schedule_time="${{ github.event.schedule || '' }}"
           if [[ "$schedule_time" == "10 21 * * 0-4" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu129_py312_nightly" >> $GITHUB_OUTPUT
-          elif [[ "$schedule_time" == "0 1 * * 6" ]]; then
-            echo "FLAGS_enable_CE=CE_Release_cu132_py312" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "0 9 * * 5" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu130_py313" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "0 12 * * 5" ]]; then
@@ -117,11 +113,11 @@ jobs:
           elif [[ "$schedule_time" == "0 21 * * 5" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu129_py312_weekly" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "0 23 * * 5" ]]; then
-            echo "FLAGS_enable_CE=CE_Release_cu126_py310" >> $GITHUB_OUTPUT
+            echo "FLAGS_enable_CE=CE_Release_cu132_py312" >> $GITHUB_OUTPUT
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "FLAGS_enable_CE=${{ github.event.inputs.FLAGS_enable_CE }}" >> $GITHUB_OUTPUT
           else
-            echo "FLAGS_enable_CE=CE_Release_cu132_py312" >> $GITHUB_OUTPUT
+            echo "FLAGS_enable_CE=CE_Release_cu129_py312_nightly" >> $GITHUB_OUTPUT
           fi
       - name: Determine Image Name
         env:
@@ -390,7 +386,7 @@ jobs:
         id: determine_flag
         run: |
           schedule_time="${{ github.event.schedule || '' }}"
-          if [[ "$schedule_time" == "10 19 * * 0-4" ]]; then
+          if [[ "$schedule_time" == "10 21 * * 0-4" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu129_py312_nightly" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "0 9 * * 5" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu130_py313" >> $GITHUB_OUTPUT
@@ -403,7 +399,7 @@ jobs:
           elif [[ "$schedule_time" == "0 21 * * 5" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu129_py312_weekly" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "0 23 * * 5" ]]; then
-            echo "FLAGS_enable_CE=CE_Release_cu126_py310" >> $GITHUB_OUTPUT
+            echo "FLAGS_enable_CE=CE_Release_cu132_py312" >> $GITHUB_OUTPUT
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "FLAGS_enable_CE=${{ github.event.inputs.FLAGS_enable_CE }}" >> $GITHUB_OUTPUT
           else

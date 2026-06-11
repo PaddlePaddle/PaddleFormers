@@ -370,6 +370,8 @@ jobs:
             echo "FLAGS_enable_CE=CE_Develop_cu130_py313" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "10 15 "* ]]; then
             echo "FLAGS_enable_CE=CE_Develop_cu130_py312" >> $GITHUB_OUTPUT
+          elif [[ "$schedule_time" == "10 18 "* ]]; then
+            echo "FLAGS_enable_CE=CE_Develop_cu132_py312" >> $GITHUB_OUTPUT
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "FLAGS_enable_CE=${{ github.event.inputs.FLAGS_enable_CE }}" >> $GITHUB_OUTPUT
           else
