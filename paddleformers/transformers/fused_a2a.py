@@ -14,15 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from paddlefleet_ops import is_deep_ep_available
+import paddle.distributed.communication.deep_ep as deep_ep
 
-if is_deep_ep_available():
-    import paddlefleet_ops.deep_ep as deep_ep
-
-    HAVE_DEEP_EP = True
-else:
-    deep_ep = None
-    HAVE_DEEP_EP = False
+HAVE_DEEP_EP = True
 
 import paddle
 from paddle.autograd import PyLayer

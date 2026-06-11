@@ -35,7 +35,6 @@ except ImportError:
 
 from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
-from paddlefleet_ops import is_deep_ep_available
 
 from paddleformers.transformers.model_utils import PipelinePretrainedModel
 from paddleformers.utils.log import logger
@@ -53,9 +52,9 @@ from .modeling import (
 )
 from .moe_utils import get_env_device
 
-if is_deep_ep_available():
-    import paddlefleet_ops.deep_ep as deep_ep
-else:
+try:
+    import paddle.distributed.communication.deep_ep as deep_ep
+except ImportError:
     deep_ep = None
 
 from paddleformers.transformers.fp8_utils import (
