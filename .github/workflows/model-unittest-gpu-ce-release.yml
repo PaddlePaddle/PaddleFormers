@@ -390,8 +390,10 @@ jobs:
         id: determine_flag
         run: |
           schedule_time="${{ github.event.schedule || '' }}"
-          if [[ "$schedule_time" == "10 19 * * 0-4" ]]; then
+          if [[ "$schedule_time" == "10 21 * * 0-4" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu129_py312_nightly" >> $GITHUB_OUTPUT
+          elif [[ "$schedule_time" == "0 1 * * 6" ]]; then
+            echo "FLAGS_enable_CE=CE_Release_cu132_py312" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "0 9 * * 5" ]]; then
             echo "FLAGS_enable_CE=CE_Release_cu130_py313" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "0 12 * * 5" ]]; then
