@@ -366,7 +366,7 @@ jobs:
         id: determine_flag
         run: |
           schedule_time="${{ github.event.schedule || '' }}"
-           if [[ "$schedule_time" == "10 12 "* ]]; then
+          if [[ "$schedule_time" == "10 12 "* ]]; then
             echo "FLAGS_enable_CE=CE_Develop_cu130_py313" >> $GITHUB_OUTPUT
           elif [[ "$schedule_time" == "10 15 "* ]]; then
             echo "FLAGS_enable_CE=CE_Develop_cu130_py312" >> $GITHUB_OUTPUT
