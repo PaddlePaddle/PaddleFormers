@@ -2259,7 +2259,7 @@ class EMAStateAssembler:
 
         sharded_state_dict = self.model.sharded_state_dict()
         for k, v in sharded_state_dict.items():
-            if v.local_tensor.stop_gradient:
+            if v.local_tensor.stop_gradient and k not in ema_sharded_state_dict:
                 ema_sharded_state_dict[k] = v
         return ema_sharded_state_dict
 
