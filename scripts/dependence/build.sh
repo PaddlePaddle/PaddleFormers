@@ -51,12 +51,25 @@ paddleformers_build (){
     python -c "import paddleformers; print('paddleformers commit:',paddleformers.version.commit)" >> ${log_path}/commit_info.txt
     commit=$(python -c "import paddleformers; print(paddleformers.version.commit)")
     commit=${commit:-unknown}
-    cp $formers_dir/dist/p****.whl ${upload_path}/
-    cp $formers_dir/dist/p****.whl ${upload_path}/paddleformers-0.0.0.dev-py3-none-any.whl
-    
+
     whl_file=$(ls $formers_dir/dist/paddleformers-*.whl)
     base_name=$(basename $whl_file)
-    new_name=$(echo $base_name | sed "s/\.dev[0-9]\+/&+${commit}/")
+
+    # 复制原始 whl
+    cp "$whl_file" "${upload_path}/${base_name}"
+
+    # 固定名称备份，支持 dev 和 post
+    if echo "$base_name" | grep -q "\.post[0-9]*"; then
+        cp "$whl_file" "${upload_path}/paddleformers-0.0.0.post0-py3-none-any.whl"
+        new_name=$(echo $base_name | sed "s/\.post[0-9]\+/&+${commit}/")
+    elif echo "$base_name" | grep -q "\.dev[0-9]*"; then
+        cp "$whl_file" "${upload_path}/paddleformers-0.0.0.dev0-py3-none-any.whl"
+        new_name=$(echo $base_name | sed "s/\.dev[0-9]\+/&+${commit}/")
+    else
+        cp "$whl_file" "${upload_path}/paddleformers-0.0.0-py3-none-any.whl"
+        new_name="${base_name%.whl}+${commit}.whl"
+    fi
+
     echo "commit whl: $new_name"
     cp "$whl_file" "${upload_path}/${new_name}"
 
