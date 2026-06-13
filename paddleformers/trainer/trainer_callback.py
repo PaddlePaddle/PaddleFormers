@@ -42,11 +42,15 @@ from ..utils.import_utils import is_paddlefleet_available
 # Conditionally import paddlefleet modules
 if is_paddlefleet_available():
     from paddlefleet.models.gpt import GPTModel
+    from paddlefleet.transformer.moe.moe_expert import SonicMoEExpert
     from paddlefleet.transformer.moe.moe_layer import MoELayer
     from paddlefleet.transformer.moe.moe_router import StandardMoERouter
 else:
 
     class GPTModel:
+        pass
+
+    class SonicMoEExpert:
         pass
 
     class MoELayer:
@@ -81,6 +85,7 @@ __all__ = [
     "SPGradSyncCallback",
     "EMAStateAssemblerCallback",
     "InternalMedicineCallback",
+    "SonicMoELayoutSwitchCallback",
 ]
 
 
@@ -716,6 +721,9 @@ class FP8QuantWeightCallback(TrainerCallback):
         """
         Quantize expert weights to FP8 before each training step
         """
+        if args.using_sonic_moe:
+            # sonicmoe cannot support offline quant now.
+            return
         model = kwargs["model"]
         optimizer = kwargs["optimizer"]
         global skip_count
@@ -755,6 +763,9 @@ class FP8QuantWeightCallback(TrainerCallback):
         """
         Reload weights before optimizer step
         """
+        if args.using_sonic_moe:
+            # sonicmoe cannot support offline quant now.
+            return
         model = kwargs["model"]
         optimizer = kwargs["optimizer"]
         global skip_count
@@ -998,6 +1009,32 @@ class EMAStateAssemblerCallback(TrainerCallback):
         self.ema_state_assembler.run()
         duration = time.time() - start
         logger.info(f"[EMAStateAssembler] Assembling EMA state took {duration:.3f} seconds.")
+
+
+class SonicMoELayoutSwitchCallback(TrainerCallback):
+    def _apply_to_sonic_moe_experts(self, model, fn_name):
+        def apply_layout_switch(layer):
+            if isinstance(layer, SonicMoEExpert):
+                getattr(layer, fn_name)()
+
+        model.apply(apply_layout_switch)
+
+    def _prepare_sonic_moe_fp8_weights(self, model):
+        def prepare_fp8_weights(layer):
+            if isinstance(layer, SonicMoEExpert):
+                layer.convert_weights_to_sonic_layout()
+                layer.quant_weight()
+
+        model.apply(prepare_fp8_weights)
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        if args.using_sonic_moe:
+            self._prepare_sonic_moe_fp8_weights(kwargs["model"])
+            # kwargs["optimizer"].clear_param_storage("moe_expert")
+
+    def on_optimizer_begin(self, args, state, control, **kwargs):
+        if args.using_sonic_moe:
+            self._apply_to_sonic_moe_experts(kwargs["model"], "convert_weights_to_grouped_layout")
 
 
 class InterleaveGateUpCallback(TrainerCallback):
