@@ -789,9 +789,7 @@ class FP8QuantWeightCallback(TrainerCallback):
             _clear_fp8_param_storage(optimizer)
             if not getattr(args, "offload_fp8_expert_master_weight", False):
                 return
-            self.moe_weights_name = _offload_moe_expert_master_weights(
-                optimizer
-            )
+            self.moe_weights_name = _offload_moe_expert_master_weights(optimizer)
 
         skip_count += 1
 
@@ -811,9 +809,7 @@ class FP8QuantWeightCallback(TrainerCallback):
             and hasattr(model, "fp8_quant_weight")
             and not args.sharding_parallel_size <= 1
         ):
-            _reload_moe_expert_master_weights(
-                optimizer, self.moe_weights_name
-            )
+            _reload_moe_expert_master_weights(optimizer, self.moe_weights_name)
 
 
 class MoECorrectionBiasAdjustCallback(TrainerCallback):
@@ -1076,50 +1072,27 @@ class SonicMoELayoutSwitchCallback(TrainerCallback):
             if args.fp8:
                 self._prepare_sonic_moe_fp8_weights(kwargs["model"])
                 optimizer = kwargs.get("optimizer")
-                clear_storage = os.environ.get(
-                    "SONIC_MOE_CLEAR_FP8_STORAGE", "1"
-                )
-                if (
-                    clear_storage != "0"
-                    and optimizer is not None
-                    and not args.sharding_parallel_size <= 1
-                ):
+                clear_storage = os.environ.get("SONIC_MOE_CLEAR_FP8_STORAGE", "1")
+                if clear_storage != "0" and optimizer is not None and not args.sharding_parallel_size <= 1:
                     colors = None
                     if clear_storage != "1":
-                        colors = tuple(
-                            color.strip()
-                            for color in clear_storage.split(",")
-                            if color.strip()
-                        )
-                    effective_colors = (
-                        _FP8_STORAGE_COLORS if colors is None else colors
-                    )
+                        colors = tuple(color.strip() for color in clear_storage.split(",") if color.strip())
+                    effective_colors = _FP8_STORAGE_COLORS if colors is None else colors
                     _clear_fp8_param_storage(optimizer, effective_colors)
-                    self._expert_storage_cleared = (
-                        "moe_expert" in effective_colors
-                    )
-                    offload_master_weight = getattr(
-                        args, "offload_fp8_expert_master_weight", False
-                    )
+                    self._expert_storage_cleared = "moe_expert" in effective_colors
+                    offload_master_weight = getattr(args, "offload_fp8_expert_master_weight", False)
                     if self._expert_storage_cleared and offload_master_weight:
-                        self.moe_weights_name = (
-                            _offload_moe_expert_master_weights(optimizer)
-                        )
+                        self.moe_weights_name = _offload_moe_expert_master_weights(optimizer)
             else:
-                self._apply_to_sonic_moe_experts(
-                    kwargs["model"], "convert_weights_to_sonic_layout"
-                )
+                self._apply_to_sonic_moe_experts(kwargs["model"], "convert_weights_to_sonic_layout")
 
     def on_optimizer_begin(self, args, state, control, **kwargs):
         if args.using_sonic_moe:
             if getattr(args, "offload_fp8_expert_master_weight", False):
-                _reload_moe_expert_master_weights(
-                    kwargs["optimizer"], self.moe_weights_name
-                )
+                _reload_moe_expert_master_weights(kwargs["optimizer"], self.moe_weights_name)
             if not self._expert_storage_cleared:
-                self._apply_to_sonic_moe_experts(
-                    kwargs["model"], "convert_weights_to_grouped_layout"
-                )
+                self._apply_to_sonic_moe_experts(kwargs["model"], "convert_weights_to_grouped_layout")
+
 
 class InterleaveGateUpCallback(TrainerCallback):
     def __init__(self, model, resume_from_checkpoint=None, output_dir=None):

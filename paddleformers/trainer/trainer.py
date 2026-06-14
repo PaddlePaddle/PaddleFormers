@@ -170,7 +170,6 @@ from .plugins.timer import RuntimeTimer, get_timers, set_timers
 from .trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
-    InterleaveGateUpCallback,
     InternalMedicineCallback,
     PrinterCallback,
     ProgressCallback,
