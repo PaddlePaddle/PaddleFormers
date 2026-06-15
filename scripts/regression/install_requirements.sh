@@ -64,7 +64,11 @@ install_requirements() {
         #formers - build wheel first
         python setup.py bdist_wheel  > /dev/null
         #fleet paddle locked
-        pip install "$(ls -t dist/*.whl | head -1)[paddlefleet]" -i https://pypi.org/simple --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu132/ --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu132/
+        wget -q https://paddle-github-action.bj.bcebos.com/PaddleFleet/release/0.3/latest/paddlefleet-0.0.0-py3-none-linux_x86_64.whl
+        python -m pip install paddlefleet-0.0.0-py3-none-linux_x86_64.whl 
+        python -m pip uninstall paddlepaddle-gpu -y
+        wget -q https://paddle-qa.bj.bcebos.com/paddle-pipeline/Release-GpuAll-LinuxCentos-Gcc11-Cuda132-Cudnn920-Trt1016-Py312-Compile/latest/paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl
+        python -m pip install paddlepaddle_gpu-0.0.0-cp312-cp312-linux_x86_64.whl  --extra-index-url https://www.paddlepaddle.org.cn/packages/nightly/cu132 -i https://pypi.org/simple
         #paddlefleet_ops
         install_ops_wheel_release
         #formers - reinstall
