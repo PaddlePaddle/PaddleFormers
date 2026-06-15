@@ -54,12 +54,11 @@ try:
 except:
     PipelineDatasetPreprocessor = None
 
-from ..utils.import_utils import is_paddlefleet_available
+from ..utils.import_utils import is_paddleformers_available
 
-# Conditionally import paddlefleet modules
-if is_paddlefleet_available():
-    from paddlefleet.models.gpt import GPTModel as FleetGPTModel
-
+# Conditionally import paddleformers.fleet modules
+if is_paddleformers_available():
+    from paddleformers.fleet.models.gpt import GPTModel as FleetGPTModel
     from paddleformers.transformers.gpt_provider import GPTModel
 else:
     FleetGPTModel = None
@@ -108,8 +107,8 @@ from ..quantization.quantization_linear import (
     RowParallelQuantizationLinear,
 )
 
-if is_paddlefleet_available():
-    from paddlefleet.utils import get_batch_on_this_cp_rank
+if is_paddleformers_available():
+    from paddleformers.fleet.utils import get_batch_on_this_cp_rank
 else:
     get_batch_on_this_cp_rank = None
 if TYPE_CHECKING:
@@ -344,7 +343,7 @@ class Trainer:
         processing_class: Optional[ImageProcessingMixin] = None,
         resume_from_custom_func: Optional[Callable] = None,
     ):
-        if is_paddlefleet_available() and (
+        if is_paddleformers_available() and (
             isinstance(model, FleetGPTModel)
             or (isinstance(model, LoRAModel) and isinstance(model.model, FleetGPTModel))
         ):
@@ -366,7 +365,7 @@ class Trainer:
         self._memory_tracker.start()
 
         # Seed must be set before instantiating the model when using model
-        if is_paddlefleet_available():
+        if is_paddleformers_available():
             if not self.args.enable_auto_parallel:
                 set_random_seed(seed_=self.args.seed)
             else:
@@ -441,8 +440,8 @@ class Trainer:
         if not args.skip_profile_timer:
             set_timers()
         self.timers = get_timers()
-        if is_paddlefleet_available():
-            from paddlefleet.training.global_vars import set_profile_timers
+        if is_paddleformers_available():
+            from paddleformers.fleet.training.global_vars import set_profile_timers
 
             set_profile_timers(self.timers)
         self.runtime_timer = RuntimeTimer("RuntimeTimer")
@@ -2063,7 +2062,7 @@ class Trainer:
             if (
                 self.args.use_hybrid_parallel
                 and self.args.context_parallel_size > 1
-                and is_paddlefleet_available()
+                and is_paddleformers_available()
                 and FleetGPTModel is not None
                 and isinstance(self.model, FleetGPTModel)
                 and get_batch_on_this_cp_rank is not None
@@ -2813,7 +2812,7 @@ class Trainer:
 
             # Add MTP loss metrics if available
             try:
-                from paddlefleet.models.common.language_loss.language_loss import (
+                from paddleformers.fleet.models.common.language_loss.language_loss import (
                     LanguageLoss,
                 )
 
@@ -2871,7 +2870,7 @@ class Trainer:
 
             # Add DSA indexer loss metrics if available
             try:
-                from paddlefleet.transformer.dsa_attention import (
+                from paddleformers.fleet.transformer.dsa_attention import (
                     DSAIndexerLossLoggingHelper,
                 )
 
@@ -3130,7 +3129,7 @@ class Trainer:
                 drop_last=False,
             )
         else:
-            if (is_paddlefleet_available() and self.using_fleet_model) or self.args.pipeline_model_parallel_size > 1:
+            if (is_paddleformers_available() and self.using_fleet_model) or self.args.pipeline_model_parallel_size > 1:
                 # In pipeline parallelism, batch size will be strictly checked
                 # Use LastBatchPaddingSampler to pad the last batch with the first batch
                 from .trainer_utils import LastBatchPaddingSampler
@@ -3703,7 +3702,7 @@ class Trainer:
 
         if isinstance(model, LoRAModel):
             model = model.model
-        if is_paddlefleet_available() and self.using_fleet_model:
+        if is_paddleformers_available() and self.using_fleet_model:
             in_pipeline_parallel_mode = True
         else:
             in_pipeline_parallel_mode = self.args.pipeline_model_parallel_size > 1
@@ -3768,7 +3767,7 @@ class Trainer:
 
                     keys = list(inputs[0].keys())
                     inputs_batch = {key: [data.pop(key) for data in inputs] for key in keys}
-                    if is_paddlefleet_available() and self.using_fleet_model:
+                    if is_paddleformers_available() and self.using_fleet_model:
                         first_stage_inputs_batch = inputs_batch
                         last_stage_inputs = first_stage_inputs_batch.get("labels")
                         outputs = (
@@ -4036,7 +4035,7 @@ class Trainer:
         Return:
             `paddle.Tensor`: The tensor with training loss on this batch.
         """
-        if is_paddlefleet_available() and self.using_fleet_model:
+        if is_paddleformers_available() and self.using_fleet_model:
             return self.training_pipeline_step(model, inputs)
 
         if self.args.pipeline_model_parallel_size > 1:
@@ -5024,7 +5023,7 @@ class Trainer:
             if _prepare_pipeline_inputs_func is not None:
                 model._prepare_pipeline_inputs_func = _prepare_pipeline_inputs_func
         elif (
-            is_paddlefleet_available()
+            is_paddleformers_available()
             and isinstance(self.model, GPTModel)
             or (isinstance(self.model, LoRAModel) and isinstance(self.model.model, GPTModel))
         ):
@@ -5323,7 +5322,7 @@ class Trainer:
                             inputs = {"input_ids": inputs[0], "position_ids": inputs[1]}
                         return inputs
 
-                    if is_paddlefleet_available() and self.using_fleet_model:
+                    if is_paddleformers_available() and self.using_fleet_model:
                         inputs = _prepare_inputs_for_fleet(inputs)
                     loss = model.eval_batch(data_provider, compute_loss=True)
                     # loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
@@ -5569,10 +5568,10 @@ class Trainer:
         logger.debug("{:^40}".format("{} Configuration Arguments".format(key)))
         logger.debug("{:30}: {}".format("paddle commit id", paddle.version.commit))
         logger.debug("{:30}: {}".format("paddleformers commit id", paddleformers.version.commit))
-        if is_paddlefleet_available():
-            import paddlefleet
+        if is_paddleformers_available():
+            import paddleformers.fleet
 
-            logger.debug("{:30}: {}".format("paddlefleet commit id", paddlefleet.version.commit))
+            logger.debug("{:30}: {}".format("paddleformers.fleet commit id", paddleformers.fleet.version.commit))
 
         for a in dir(args):
             if a[:2] != "__":  # don't print double underscore methods

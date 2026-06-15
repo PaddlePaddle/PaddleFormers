@@ -36,22 +36,24 @@ from paddle.incubate.nn import FusedLinear
 
 from ...nn.experts import MoeExpertsBase
 from ...transformers.model_utils import VLMS
-from ...utils.import_utils import is_paddlefleet_available
+from ...utils.import_utils import is_paddleformers_available
 
-# Conditionally import paddlefleet modules
-if is_paddlefleet_available():
-    from paddlefleet.models.gpt import GPTModel as FleetGPTModel
-    from paddlefleet.parallel_state import (
+# Conditionally import paddleformers.fleet modules
+if is_paddleformers_available():
+    from paddleformers.fleet.models.gpt import GPTModel as FleetGPTModel
+    from paddleformers.fleet.parallel_state import (
         get_tensor_model_parallel_group,
         get_tensor_model_parallel_world_size,
     )
-    from paddlefleet.tensor_parallel import (
+    from paddleformers.fleet.tensor_parallel import (
         ColumnParallelLinear as FleetColumnParallelLinear,
     )
-    from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
-    from paddlefleet.transformer.moe.moe_expert import GroupedMLPExpert
+    from paddleformers.fleet.tensor_parallel import (
+        RowParallelLinear as FleetRowParallelLinear,
+    )
+    from paddleformers.fleet.transformer.moe.moe_expert import GroupedMLPExpert
 else:
-    # Define mock objects or alternative implementations when paddlefleet is not available
+    # Define mock objects or alternative implementations when paddleformers.fleet is not available
     def get_tensor_model_parallel_group():
         return None
 
@@ -177,7 +179,7 @@ from .lora_quantization_layers import (
     RowParallelQuantizationLoRALinear,
 )
 
-if is_paddlefleet_available():
+if is_paddleformers_available():
     from ...quantization.quantization_linear import (
         FleetColumnParallelQuantizationLinear,
         FleetQuantizationLinear,
@@ -255,15 +257,15 @@ class LoRAModel(nn.Layer):
             self.is_pipelinemodel = True
             self.model._single_to_pp_mapping = None
 
-        self.use_paddlefleet = False
-        if is_paddlefleet_available():
+        self.use_paddleformers_fleet = False
+        if is_paddleformers_available():
             if isinstance(self.model, FleetGPTModel):
-                self.use_paddlefleet = True
+                self.use_paddleformers_fleet = True
 
         # For composite models (e.g., VL models), the inner language_model may be a
         # PaddleFleet PipelineLayer. Invalidate its cached name mapping so it gets
         # rebuilt on next state_dict() call with the newly added LoRA parameter keys.
-        if not self.is_pipelinemodel and self.use_paddlefleet:
+        if not self.is_pipelinemodel and self.use_paddleformers_fleet:
             for sublayer in self.model.sublayers():
                 if isinstance(sublayer, PipelineLayer):
                     sublayer._pipeline_name_mapping = None
@@ -534,10 +536,10 @@ class LoRAModel(nn.Layer):
         trainable_name_action_mappings = self._get_tensor_parallel_convert_actions(
             trainable_state_dict.keys(), is_split=False
         )
-        if self.use_paddlefleet:
-            if not is_paddlefleet_available():
+        if self.use_paddleformers_fleet:
+            if not is_paddleformers_available():
                 raise ImportError(
-                    "paddlefleet is required for _merge_trainable_tensor_parallel with paddlefleet. Please install paddlefleet."
+                    "paddleformers.fleet is required for _merge_trainable_tensor_parallel with paddleformers.fleet. Please install paddleformers.fleet."
                 )
             mp_group = get_tensor_model_parallel_group()
             is_dst = get_tensor_model_parallel_world_size() > 1
@@ -612,7 +614,7 @@ class LoRAModel(nn.Layer):
 
         if self.is_pipelinemodel:
             self.model._single_to_pp_mapping = None
-        if not self.is_pipelinemodel and self.use_paddlefleet:
+        if not self.is_pipelinemodel and self.use_paddleformers_fleet:
             for sublayer in self.model.sublayers():
                 if isinstance(sublayer, PipelineLayer):
                     sublayer._pipeline_name_mapping = None
@@ -854,7 +856,7 @@ class LoRAModel(nn.Layer):
                 self.add_lora_split_mapping(module_name + ".weight_quanter._scale", is_column=False)
                 self.add_lora_split_mapping(module_name + ".activation_quanter._scale", is_column=False)
                 self.add_lora_split_mapping(module_name + ".activation_quanter.quanter._scale", is_column=False)
-        elif is_paddlefleet_available() and (
+        elif is_paddleformers_available() and (
             isinstance(module, FleetColumnParallelLinear) or isinstance(module, FleetRowParallelLinear)
         ):
             if module.world_size == 1:
@@ -954,13 +956,13 @@ class LoRAModel(nn.Layer):
                     self.add_lora_split_mapping(module_name + ".weight_quanter._scale", is_column=True)
                     self.add_lora_split_mapping(module_name + ".activation_quanter._scale", is_column=False)
                     self.add_lora_split_mapping(module_name + ".activation_quanter.quanter._scale", is_column=False)
-        elif is_paddlefleet_available() and isinstance(module, FleetQuantizationLinear):
+        elif is_paddleformers_available() and isinstance(module, FleetQuantizationLinear):
             lora_module = FleetQuantizationLoRALinear(module, module.skip_bias_add, lora_config)
-        elif is_paddlefleet_available() and isinstance(module, FleetColumnParallelQuantizationLinear):
+        elif is_paddleformers_available() and isinstance(module, FleetColumnParallelQuantizationLinear):
             lora_module = FleetColumnParallelQuantizationLoRALinear(module, module.skip_bias_add, lora_config)
             # Lora column parallel will spilt lora B matrix
             self.add_lora_split_mapping(module_name + ".lora_B", is_column=True)
-        elif is_paddlefleet_available() and isinstance(module, FleetRowParallelQuantizationLinear):
+        elif is_paddleformers_available() and isinstance(module, FleetRowParallelQuantizationLinear):
             lora_module = FleetRowParallelQuantizationLoRALinear(module, module.skip_bias_add, lora_config)
             # Lora row parallel will spilt lora A matrix
             self.add_lora_split_mapping(module_name + ".lora_A", is_column=False)

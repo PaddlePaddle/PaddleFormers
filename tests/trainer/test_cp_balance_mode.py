@@ -65,7 +65,7 @@ class TestGetInputsListCpBalanceMode(unittest.TestCase):
     def test_passes_contiguous_mode(self):
         mock_get_batch = MagicMock(side_effect=lambda inputs, **kw: inputs)
 
-        with patch("paddleformers.trainer.trainer.is_paddlefleet_available", return_value=True), patch(
+        with patch("paddleformers.trainer.trainer.is_paddleformers_available", return_value=True), patch(
             "paddleformers.trainer.trainer.FleetGPTModel", str
         ), patch("paddleformers.trainer.trainer.get_batch_on_this_cp_rank", mock_get_batch):
 

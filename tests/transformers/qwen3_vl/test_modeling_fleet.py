@@ -37,7 +37,7 @@ except Exception as error:
     _FLEET_IMPORT_ERROR = error
 
 
-@unittest.skipUnless(Qwen3VLVisionModel is not None, f"paddlefleet import failed: {_FLEET_IMPORT_ERROR}")
+@unittest.skipUnless(Qwen3VLVisionModel is not None, f"paddleformers.fleet import failed: {_FLEET_IMPORT_ERROR}")
 class Qwen3VLFleetPositionalEncodingTest(unittest.TestCase):
     FAST_POS_EMBED_ATOL = 2e-5
 

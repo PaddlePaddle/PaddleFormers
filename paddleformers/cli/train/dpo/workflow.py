@@ -44,7 +44,7 @@ from paddleformers.transformers import (
     AutoTokenizer,
 )
 from paddleformers.transformers.configuration_utils import LlmMetaConfig
-from paddleformers.utils.import_utils import is_paddlefleet_available
+from paddleformers.utils.import_utils import is_paddleformers_available
 from paddleformers.utils.log import logger
 
 from ...hparams import (
@@ -58,7 +58,7 @@ from .dpo_argument import DPOConfig
 from .dpo_estimate_training import dpo_estimate_training
 from .dpo_trainer import DPOTrainer
 
-if is_paddlefleet_available():
+if is_paddleformers_available():
     from paddleformers.transformers.gpt_provider import GPTModel
 
 
@@ -105,7 +105,7 @@ def run_dpo(
         if training_args.tensor_model_parallel_size <= 1:
             training_args.sequence_parallel = False
             logger.info("tensor_model_parallel_size = 1. Set sequence_parallel to False.")
-    if is_paddlefleet_available() and model_args.lora and training_args.moe_token_dispatcher_type == "deepep":
+    if is_paddleformers_available() and model_args.lora and training_args.moe_token_dispatcher_type == "deepep":
         logger.warning("For PaddleFleet, moe_use_fusion_node should False when using LoRA.")
         training_args.moe_use_fusion_node = False
     training_args.print_config(model_args, "Model")
@@ -237,7 +237,7 @@ def run_dpo(
         else:
             ref_model = None
 
-    if is_paddlefleet_available() and isinstance(model, GPTModel):
+    if is_paddleformers_available() and isinstance(model, GPTModel):
         training_args.per_device_eval_batch_size = training_args.per_device_train_batch_size
         logger.warning(f"eval_batch_size set to {training_args.per_device_eval_batch_size} in Pipeline Parallel!")
 

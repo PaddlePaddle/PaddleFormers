@@ -66,9 +66,9 @@ from transformers.tokenization_utils_base import BatchEncoding
 
 # from ..ops import Topology
 from ..trainer.argparser import strtobool
-from ..utils.import_utils import is_paddlefleet_available
+from ..utils.import_utils import is_paddleformers_available
 
-if is_paddlefleet_available():
+if is_paddleformers_available():
     from ..transformers.gpt_provider import GPTModel
 else:
     GPTModel = None
@@ -339,16 +339,16 @@ def set_random_seed(
 ):
     """Set random seed for reproducability."""
     if seed_ is not None and seed_ > 0:
-        from ..utils.import_utils import is_paddlefleet_available
+        from ..utils.import_utils import is_paddleformers_available
 
-        if is_paddlefleet_available():
-            import paddlefleet
+        if is_paddleformers_available():
+            import paddleformers.fleet
 
             # Ensure that different pipeline MP stages get different seeds.
-            seed = seed_ + (100 * paddlefleet.parallel_state.get_pipeline_model_parallel_rank())
+            seed = seed_ + (100 * paddleformers.fleet.parallel_state.get_pipeline_model_parallel_rank())
             # Ensure different data parallel ranks get different seeds
             if data_parallel_random_init:
-                seed = seed + (10 * paddlefleet.parallel_state.get_data_parallel_rank())
+                seed = seed + (10 * paddleformers.fleet.parallel_state.get_data_parallel_rank())
             random.seed(seed)
             np.random.seed(seed)
             try:
@@ -357,11 +357,11 @@ def set_random_seed(
                 paddle.seed(seed)
 
             if paddle.cuda.device_count() > 0:
-                paddlefleet.tensor_parallel.model_parallel_cuda_manual_seed(
+                paddleformers.fleet.tensor_parallel.model_parallel_cuda_manual_seed(
                     seed, te_rng_tracker, inference_rng_tracker, use_cudagraphable_rng
                 )
         else:
-            # Fallback for when paddlefleet is not available
+            # Fallback for when paddleformers.fleet is not available
             random.seed(seed_)
             np.random.seed(seed_)
             try:

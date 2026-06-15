@@ -1,0 +1,148 @@
+# Special unit test configuration file, defaults to 8 GPUs.
+# If you have special requirements, refer to the example and add them to this file.
+tests:
+  - test_case: [tests/multi_card_tests/tensor_parallel/*.py]
+    products:
+      - num_gpus: 4
+  - test_case: [tests/multi_card_tests/pipeline_parallel/test_vpp_with_shared_weight.py]
+    products:
+      - num_gpus: 4
+  - test_case: [tests/multi_card_tests/pipeline_parallel/test_vpp_fthenb_with_shared_weight.py]
+    products:
+      - num_gpus: 4
+  - test_case: [tests/multi_card_tests/pipeline_parallel/test_vpp_balanced_memory_with_shared_weight.py]
+    products:
+      - num_gpus: 4
+  - test_case: [tests/multi_card_tests/pipeline_parallel/test_gpt_pp.py]
+    products:
+      - num_gpus: 4
+  - test_case: [tests/multi_card_tests/pipeline_parallel/test_gpt_pp_with_moe.py]
+    products:
+      - num_gpus: 8
+  - test_case: [tests/multi_card_tests/pipeline_parallel/test_gpt_pp_with_moe_with_mtp.py]
+    products:
+      - num_gpus: 8
+  - test_case: [tests/multi_card_tests/pipeline_parallel/test_gpt_pp_with_moe_with_mtp_with_overlap.py]
+    products:
+      - num_gpus: 8
+  - test_case: [tests/multi_card_tests/pipeline_parallel/test_gpt_pp_with_moe_recompute.py]
+    products:
+      - num_gpus: 8
+  - test_case: [tests/multi_card_tests/pipeline_parallel/test_gpt_pp_with_group_gemm.py]
+    products:
+      - num_gpus: 8
+  - test_case: [tests/multi_card_tests/pipeline_parallel/test_gpt_pp_dense.py]
+    products:
+      - num_gpus: 8
+  - test_case: [tests/multi_card_tests/pipeline_parallel/test_gpt_pp_with_recompute.py]
+    products:
+      - num_gpus: 4
+  - test_case: [tests/multi_card_tests/moe/test_shared_expert.py]
+    products:
+      - num_gpus: 4
+  - test_case: [tests/multi_card_tests/moe/test_shared_expert_gated.py]
+    products:
+      - num_gpus: 4
+  # ai_edited_test: tensor_parallel (Pattern A/B, TP=4 sharding=2 -> 8 GPUs)
+  - test_case: [tests/multi_card_tests/ai_edited_test/tensor_parallel/test_ai_mappings.py]
+    products:
+      - num_gpus: 4
+  - test_case: [tests/multi_card_tests/ai_edited_test/tensor_parallel/test_ai_parallel_state.py]
+    products:
+      - num_gpus: 4
+  # ai_edited_test: pipeline_parallel (Pattern C, PP=4)
+  - test_case: [tests/multi_card_tests/ai_edited_test/pipeline_parallel/test_ai_forward_backward_overlap_utils.py]
+    products:
+      - num_gpus: 4
+  # ai_edited_test: transformer (Pattern D, TP=4 sharding=2 -> 8 GPUs)
+  - test_case: [tests/multi_card_tests/ai_edited_test/transformer/test_ai_transformer_layer.py]
+    products:
+      - num_gpus: 8
+  - test_case: [tests/multi_card_tests/ai_edited_test/models/test_ai_gpt_builders_2.py]
+    products:
+      - num_gpus: 4
+  # ai_edited_test: moe (Pattern D, TP=4)
+  - test_case: [tests/multi_card_tests/ai_edited_test/moe/test_ai_gpt_layer_specs.py]
+    products:
+      - num_gpus: 4
+  - test_case: [tests/multi_card_tests/ai_edited_test/moe/test_ai_moe_utils.py]
+    products:
+      - num_gpus: 8
+  # ai_edited_test: models (Pattern C, PP=4)
+  - test_case: [tests/multi_card_tests/ai_edited_test/models/test_ai_gpt_model.py]
+    products:
+      - num_gpus: 4
+  - test_case: [tests/multi_card_tests/ai_edited_test/models/test_ai_gpt_builders.py]
+    products:
+      - num_gpus: 4
+  # ai_edited_test: pipeline_parallel advanced (Pattern B, PP=2)
+  - test_case: [tests/multi_card_tests/ai_edited_test/pipeline_parallel/test_ai_p2p_communication.py]
+    products:
+      - num_gpus: 2
+  - test_case: [tests/multi_card_tests/ai_edited_test/pipeline_parallel/test_ai_p2p_communication_2.py]
+    products:
+      - num_gpus: 2
+  - test_case: [tests/multi_card_tests/ai_edited_test/pipeline_parallel/test_ai_p2p_communication_3.py]
+    products:
+      - num_gpus: 2
+  - test_case: [tests/multi_card_tests/ai_edited_test/pipeline_parallel/test_ai_forward_backward_overlap_utils_2.py]
+    products:
+      - num_gpus: 2
+  - test_case: [tests/multi_card_tests/ai_edited_test/pipeline_parallel/test_ai_four_directions_p2p_communication.py]
+    products:
+      - num_gpus: 2
+  - test_case: [tests/multi_card_tests/ai_edited_test/pipeline_parallel/test_ai_four_directions_p2p_communication_2.py]
+    products:
+      - num_gpus: 2
+  - test_case: [tests/multi_card_tests/ai_edited_test/pipeline_parallel/test_ai_four_directions_p2p_communication_3.py]
+    products:
+      - num_gpus: 4
+  - test_case: [tests/multi_card_tests/ai_edited_test/pipeline_parallel/test_ai_four_directions_p2p_communication_4.py]
+    products:
+      - num_gpus: 2
+  # ai_edited_test: tensor_parallel advanced (Pattern A/B, TP=4)
+  - test_case: [tests/multi_card_tests/ai_edited_test/tensor_parallel/test_ai_mappings_2.py]
+    products:
+      - num_gpus: 4
+  - test_case: [tests/multi_card_tests/ai_edited_test/tensor_parallel/test_ai_layers.py]
+    products:
+      - num_gpus: 4
+  # ai_edited_test: transformer advanced (Pattern B/D, PP=2-4)
+  - test_case: [tests/multi_card_tests/ai_edited_test/pipeline_parallel/test_ai_vpp_simulator.py]
+    products:
+      - num_gpus: 4
+  - test_case: [tests/multi_card_tests/ai_edited_test/transformer/test_ai_transformer_encoder.py]
+    products:
+      - num_gpus: 2
+  - test_case: [tests/multi_card_tests/ai_edited_test/moe/test_ai_gpt_layer_specs_2.py]
+    products:
+      - num_gpus: 4
+  # ai_edited_test: moe advanced (Pattern D, EP/TP=4)
+  - test_case: [tests/multi_card_tests/ai_edited_test/moe/test_ai_token_dispatcher.py]
+    products:
+      - num_gpus: 4
+  - test_case: [tests/multi_card_tests/ai_edited_test/moe/test_ai_moe_router.py]
+    products:
+      - num_gpus: 4
+  # ai_edited_test: models advanced (Pattern B, PP=2)
+  - test_case: [tests/multi_card_tests/ai_edited_test/models/test_ai_language_loss.py]
+    products:
+      - num_gpus: 2
+  # transformer: DSA sequence_parallel (TP=2)
+  - test_case: [tests/multi_card_tests/transformer/test_dsa_attention_sp.py]
+    products:
+      - num_gpus: 2
+  # transformer: MTP input mask when tp > 1 (TP=2)
+  - test_case: [tests/multi_card_tests/transformer/test_mtp_input_mask_tp.py]
+    products:
+      - num_gpus: 2
+  # default fallback for remaining multi_card_tests
+  - test_case: [tests/multi_card_tests/pipeline_parallel/*.py]
+    products:
+      - num_gpus: 2
+  - test_case: [tests/multi_card_tests/test_subbatch.py]
+    products:
+      - num_gpus: 4
+  - test_case: [tests/test/*.py]
+    products:
+      - num_gpus: 2

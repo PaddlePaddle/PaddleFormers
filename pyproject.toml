@@ -1,3 +1,72 @@
+[build-system]
+requires = ["setuptools>=66.1.0", "wheel", "numpy"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paddleformers"
+version = "1.2.0.dev20260615"
+description = "Easy-to-use and powerful NLP library with Awesome model zoo, supporting wide-range of NLP tasks from research to industrial applications."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "Apache 2.0" }
+authors = [{ name = "PaddleFormers Team", email = "paddleformers@baidu.com" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "colorlog",
+    "scikit-learn",
+    "multiprocess",
+    "datasets>=3.0.0",
+    "tqdm",
+    "sentencepiece",
+    "huggingface_hub>=0.19.2",
+    "protobuf>=3.20.2",
+    "visualdl",
+    "safetensors",
+    "paddlecodec>=0.2,<0.3; sys_platform == 'linux'",
+    "fast_dataindex>=0.1.1; platform_system == 'Linux'",
+    "aistudio-sdk>=0.3.0",
+    "jinja2",
+    "regex",
+    "numpy",
+    "tiktoken",
+    "ml_dtypes",
+    "omegaconf",
+    "modelscope",
+    "transformers>=5.0.0,<5.4.0",
+    "GPUtil",
+    "importlib_metadata",
+    "librosa",
+    "binpacking",
+    "orjson",
+]
+
+[project.urls]
+Homepage = "https://github.com/PaddlePaddle/PaddleFormers"
+
+[project.scripts]
+paddleformers-cli = "paddleformers.cli.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["paddleformers*"]
+exclude = ["examples*", "tests*", "applications*", "fast_generation*", "model_zoo*", "build*"]
+
+[tool.setuptools.package-data]
+paddleformers = ["datasets/reader/data_info.json"]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+paddlefleet-ops = { workspace = true }
+
 [tool.isort]
 profile = 'black'
 known_third_party = ["paddle"]
@@ -21,6 +90,7 @@ testpaths = [
     "tests/trainer",
     "tests/transformers",
     "tests/utils",
+    "tests/fleet",
     "tests/ai_edited_test/cli",
     "tests/ai_edited_test/data",
     "tests/ai_edited_test/datasets",

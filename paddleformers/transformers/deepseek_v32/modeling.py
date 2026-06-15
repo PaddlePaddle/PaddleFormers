@@ -20,7 +20,7 @@ interface used by PaddleFormers with the PaddleFleet provider system.
 
 Pattern follows glm_moe_dsa/modeling.py (GLM5 PR #3940) exactly:
   - DeepseekV32ForCausalLM.__new__() calls DeepSeekV3_2BaseProvider.from_config(config)
-  - provider.provide() calls paddlefleet.gpt_builders.gpt_builder()
+  - provider.provide() calls paddleformers.fleet.gpt_builders.gpt_builder()
   - Returns a PaddleFleet GPT model (Megatron-style)
 """
 
@@ -86,7 +86,7 @@ def _build_model(config):
     config.expert_model_parallel_size = max(getattr(config, "expert_model_parallel_size", 1), 1)
 
     # 2. Resolve provider module path.
-    #    The provider lives under examples/experiments/paddlefleet/ which is
+    #    The provider lives under examples/experiments/paddleformers.fleet/ which is
     #    not a proper package. We add it to sys.path if needed.
     _provider_dir = os.path.join(
         os.path.dirname(__file__),  # .../paddleformers/transformers/deepseek_v32/
@@ -95,7 +95,7 @@ def _build_model(config):
         "..",
         "examples",
         "experiments",
-        "paddlefleet",
+        "paddleformers.fleet",
     )
     _provider_dir = os.path.normpath(_provider_dir)
     if _provider_dir not in sys.path:

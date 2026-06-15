@@ -29,29 +29,38 @@ import paddle.nn as nn
 import paddle.nn.functional as F
 from paddle.distributed.fleet.meta_parallel import LayerSpec
 from paddle.distributed.fleet.utils import recompute
-from paddlefleet import parallel_state, tensor_parallel
-from paddlefleet.fusions.fused_bias_dropout import get_bias_dropout_add
-from paddlefleet.models.common.vision_layer.vision_layer import VisionLayer
-from paddlefleet.models.multimodal.llava_model import LLaVAModel as MCoreLLaVAModel
-from paddlefleet.packed_seq_params import PackedSeqParams
-from paddlefleet.process_groups_config import ProcessGroupCollection
-from paddlefleet.tensor_parallel.layers import ColumnParallelLinear, RowParallelLinear
-from paddlefleet.transformer.attention import SelfAttention, SelfAttentionSublayersSpec
-from paddlefleet.transformer.dot_product_attention import DotProductAttention
-from paddlefleet.transformer.enums import AttnMaskType, ModelType
-from paddlefleet.transformer.identity_op import IdentityOp
-from paddlefleet.transformer.mlp import MLP, MLPSublayersSpec
-from paddlefleet.transformer.paddle_norm import FusedRMSNorm, LayerNorm
-from paddlefleet.transformer.transformer_block import (
+
+from paddleformers.fleet import parallel_state, tensor_parallel
+from paddleformers.fleet.fusions.fused_bias_dropout import get_bias_dropout_add
+from paddleformers.fleet.models.common.vision_layer.vision_layer import VisionLayer
+from paddleformers.fleet.models.multimodal.llava_model import (
+    LLaVAModel as MCoreLLaVAModel,
+)
+from paddleformers.fleet.packed_seq_params import PackedSeqParams
+from paddleformers.fleet.process_groups_config import ProcessGroupCollection
+from paddleformers.fleet.tensor_parallel.layers import (
+    ColumnParallelLinear,
+    RowParallelLinear,
+)
+from paddleformers.fleet.transformer.attention import (
+    SelfAttention,
+    SelfAttentionSublayersSpec,
+)
+from paddleformers.fleet.transformer.dot_product_attention import DotProductAttention
+from paddleformers.fleet.transformer.enums import AttnMaskType, ModelType
+from paddleformers.fleet.transformer.identity_op import IdentityOp
+from paddleformers.fleet.transformer.mlp import MLP, MLPSublayersSpec
+from paddleformers.fleet.transformer.paddle_norm import FusedRMSNorm, LayerNorm
+from paddleformers.fleet.transformer.transformer_block import (
     TransformerBlock,
     TransformerBlockSublayersSpec,
 )
-from paddlefleet.transformer.transformer_config import TransformerConfig
-from paddlefleet.transformer.transformer_layer import (
+from paddleformers.fleet.transformer.transformer_config import TransformerConfig
+from paddleformers.fleet.transformer.transformer_layer import (
     TransformerLayer,
     TransformerLayerSublayersSpec,
 )
-from paddlefleet.utils import WrappedTensor, deprecate_inference_params
+from paddleformers.fleet.utils import WrappedTensor, deprecate_inference_params
 
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.pp_model import GeneralModelForCausalLMPipe

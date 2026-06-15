@@ -33,7 +33,7 @@ except:
     qlora_weight_linear = None
     qlora_weight_quantize = None
 
-from ..utils.import_utils import is_paddlefleet_available
+from ..utils.import_utils import is_paddleformers_available
 from ..utils.log import logger
 from .quantization_linear import (
     ColumnParallelQuantizationLinear,
@@ -42,16 +42,18 @@ from .quantization_linear import (
     dequant_weight,
 )
 
-# Conditionally import paddlefleet modules
-if is_paddlefleet_available():
-    from paddlefleet.parallel_state import (
+# Conditionally import paddleformers.fleet modules
+if is_paddleformers_available():
+    from paddleformers.fleet.parallel_state import (
         get_tensor_model_parallel_group,
         get_tensor_model_parallel_world_size,
     )
-    from paddlefleet.tensor_parallel import (
+    from paddleformers.fleet.tensor_parallel import (
         ColumnParallelLinear as FleetColumnParallelLinear,
     )
-    from paddlefleet.tensor_parallel import RowParallelLinear as FleetRowParallelLinear
+    from paddleformers.fleet.tensor_parallel import (
+        RowParallelLinear as FleetRowParallelLinear,
+    )
 
     from .quantization_linear import (
         FleetColumnParallelQuantizationLinear,
@@ -59,7 +61,7 @@ if is_paddlefleet_available():
         FleetRowParallelQuantizationLinear,
     )
 else:
-    # Define mock objects or alternative implementations when paddlefleet is not available
+    # Define mock objects or alternative implementations when paddleformers.fleet is not available
     def get_tensor_model_parallel_group():
         return None
 
@@ -182,7 +184,7 @@ def replace_with_quantization_linear(model, quantization_config, llm_int8_thresh
                     input_is_parallel=True,
                     sequence_parallel=True,
                 )
-            elif is_paddlefleet_available() and (
+            elif is_paddleformers_available() and (
                 isinstance(child, FleetColumnParallelLinear) or isinstance(child, FleetRowParallelLinear)
             ):
                 if child.world_size == 1:

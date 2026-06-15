@@ -295,13 +295,13 @@ def is_transformers_available() -> bool:
     return is_package_available("transformers")
 
 
-def is_paddlefleet_available() -> bool:
-    """check if `paddlefleet` package is installed and can be imported
+def is_paddleformers_available() -> bool:
+    """check if `paddleformers` package is installed and can be imported
 
     Returns:
-        bool: if `paddlefleet` is available
+        bool: if `paddleformers` is available
     """
-    return is_package_available("paddlefleet")
+    return is_package_available("paddleformers")
 
 
 def install_package(

@@ -27,6 +27,20 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+packages/paddlefleet_ops/src/_third_party_install_temp/
+packages/paddlefleet_ops/src/paddlefleet_ops/version.py
+packages/paddlefleet_ops/src/paddlefleet_ops/cudnn/
+packages/paddlefleet_ops/src/paddlefleet_ops/deep_ep/
+packages/paddlefleet_ops/src/paddlefleet_ops/deep_ep_cpp.so
+packages/paddlefleet_ops/src/paddlefleet_ops/deep_gemm/
+packages/paddlefleet_ops/src/paddlefleet_ops/deep_gemm_cpp/
+packages/paddlefleet_ops/src/paddlefleet_ops/flash_mask/
+packages/paddlefleet_ops/src/paddlefleet_ops/flash_mla/
+packages/paddlefleet_ops/src/paddlefleet_ops/hybrid_ep/
+packages/paddlefleet_ops/src/paddlefleet_ops/hybrid_ep_cpp.so
+packages/paddlefleet_ops/src/paddlefleet_ops/ops/
+packages/paddlefleet_ops/src/paddlefleet_ops/quack/
+packages/paddlefleet_ops/src/paddlefleet_ops/sonicmoe/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

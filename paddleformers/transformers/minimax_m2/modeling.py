@@ -16,7 +16,8 @@ import logging
 import math
 
 import paddle
-from paddlefleet.transformer.utils import is_layer_window_attention
+
+from paddleformers.fleet.transformer.utils import is_layer_window_attention
 
 from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe
 from ..glm4_moe.modeling import GLMMoEModelProvider

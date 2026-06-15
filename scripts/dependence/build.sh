@@ -40,7 +40,8 @@ paddleformers_build (){
     rm -rf paddleformers.egg-info/
 
     python -m pip install -r requirements.txt
-    python setup.py bdist_wheel
+    python -m pip install build
+    python -m build --wheel
 
     echo "install_formers_develop_whl"
     cd ../

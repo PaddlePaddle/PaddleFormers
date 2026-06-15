@@ -49,7 +49,7 @@ import_structure = {
         "is_g2p_en_available",
         "is_datasets_available",
         "is_transformers_available",
-        "is_paddlefleet_available",
+        "is_paddleformers_available",
         "dynamic_graph_pybind_context",
         "custom_import",
         "direct_paddleformers_import",
