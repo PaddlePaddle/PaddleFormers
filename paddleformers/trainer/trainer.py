@@ -170,6 +170,7 @@ from .plugins.timer import RuntimeTimer, get_timers, set_timers
 from .trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
+    EMAStateAssemblerCallback,
     InterleaveGateUpCallback,
     InternalMedicineCallback,
     PrinterCallback,
@@ -180,6 +181,7 @@ from .trainer_callback import (
     TrainerState,
 )
 from .trainer_utils import (  # set_hyrbid_parallel_seed,
+    EMAStateAssembler,
     EvalLoopOutput,
     EvalPrediction,
     IntervalStrategy,
@@ -1087,6 +1089,23 @@ class Trainer:
         )
         self.add_callback(non_zcc_ema_callback)
 
+    def create_ema_state_assembler(self):
+        global_steps = self.state.global_step
+        memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
+        self.ema_state_assembler = EMAStateAssembler(
+            output_dir=self.args.output_dir,
+            save_checkpoint_format=self.args.save_checkpoint_format,
+            save_hf_steps=self.args.save_hf_steps,
+            save_steps=self.args.save_steps,
+            optimizer_name_suffix=self.args.optimizer_name_suffix,
+            model=self.model,
+            optimizer=self.optimizer,
+            start_step=global_steps,
+            memory_growth_threshold=memory_growth_threshold_bytes,
+        )
+        callback = EMAStateAssemblerCallback(self.ema_state_assembler)
+        self.add_callback(callback)
+
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
         for key, sharded_weight in model_sharded_state_dict.items():
@@ -1800,10 +1819,31 @@ class Trainer:
                 self._load_optimizer_and_scheduler(resume_from_checkpoint)
 
         if self.args.enable_zero_cost_checkpoint:
+            if (
+                getattr(self.args, "online_merge_ema", True)
+                and self.args.save_hf_steps is not None
+                and self.args.save_hf_steps > 0
+                and self.args.zcc_save_ema_coef is not None
+            ):
+                self.create_ema_state_assembler()
             self.create_zcc_manager(model, resume_from_checkpoint)
 
         elif self.args.zcc_save_ema_coef is not None:
-            self.add_non_zcc_ema_callback(resume_from_checkpoint)
+            ema_state_assembler = None
+            if self.args.save_hf_steps is not None and self.args.save_hf_steps > 0:
+                memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
+                ema_state_assembler = EMAStateAssembler(
+                    output_dir=self.args.output_dir,
+                    save_checkpoint_format=self.args.save_checkpoint_format,
+                    save_hf_steps=self.args.save_hf_steps,
+                    save_steps=self.args.save_steps,
+                    optimizer_name_suffix=self.args.optimizer_name_suffix,
+                    model=self.model,
+                    optimizer=self.optimizer,
+                    start_step=self.state.global_step,
+                    memory_growth_threshold=memory_growth_threshold_bytes,
+                )
+            self.add_non_zcc_ema_callback(resume_from_checkpoint, ema_state_assembler)
 
         if self.args.using_sonic_moe:
             callback = InterleaveGateUpCallback(self.model, resume_from_checkpoint, self.args.output_dir)
